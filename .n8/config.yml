@@ -1,0 +1,12 @@
+version: 1
+plugin_version: 0.7.0
+stack: python             # Django web app, uv-managed
+initialized: 2026-10-07
+wiki: enabled
+repo: nathanpond/Epistrel-Console
+visibility: public
+context7: installed
+security_findings: issues
+areas: [web, client, ci, infra, docs]
+related_repos:
+  - nathanpond/Epistrel   # the Engine service this harness exercises; its docs/ hold the authoritative design
