@@ -34,3 +34,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Why:** Same policy as the Engine: open-source, self-hosted, no production deployment to protect.
 - **Decision:** Moved `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` to environment variables before the first public push.
   **Why:** `startproject` hardcodes a secret key; publishing it would make it a known value. A dev-only fallback key is accepted only while DEBUG is on.
+
+## /n8-roadmap — 2026-10-07
+
+- **Decision:** Milestones M0–M10 mirror the Engine's one-for-one; each Console M<n> depends on Engine M<n> being verified. 26 epics, one per Engine capability that gets a Console surface, each naming the Engine epics it mirrors.
+  **Why:** The Console's purpose is to see and debug the Engine working; its roadmap has no independent shape.
+- **Decision:** Single-operator dev tool with Django auth; the logged-in user is the requesting principal. Play view and inspector panels side by side.
+- **Decision:** Django templates + HTMX, no JS build step. Console DB holds only its own concerns.
+- **Decision:** No accessibility work and no 508 audit.
+  **Why:** User's call for a single-operator dev tool.
+- **Decision:** No project invariants.
+  **Why:** User judged the CI and maintenance cost unjustified for a dev console; CLAUDE.md guidance (REST-only, env secrets) covers the one rule that matters, and `/n8-audit` still checks it.
+- **Decision:** Deployment = compose alongside the Engine `edge` image with Postgres; SQLite for dev; `v*` tags publish image + release. Nothing hosted.
+- **Decision:** CI tests use a fake Engine built from the Engine's OpenAPI schema, plus one live smoke job against the Engine `edge` service container.
+  **Why:** Catches API drift in the Console's own CI without making every test depend on a running Engine.
+- **Decision:** M9 "Bug fixes & testing" left unplanned; M10 Audit.
