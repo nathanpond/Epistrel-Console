@@ -10,3 +10,18 @@ security_findings: issues
 areas: [web, client, ci, infra, docs]
 related_repos:
   - nathanpond/Epistrel   # the Engine service this harness exercises; its docs/ hold the authoritative design
+deployment:
+  targets: "GHCR container image + GitHub releases; runs in compose alongside the Engine `edge` image (no hosted instance)"
+  environments:
+    dev: "`manage.py runserver` with SQLite against a local Engine"
+    edge: "ghcr.io Console image tagged `edge`, built from main; compose runs it with Engine `edge` + Postgres"
+    production: "tagged GitHub release with a versioned ghcr.io image"
+  notes: "Nothing hosted; local/LAN only, no internet exposure. Console DB holds only its own concerns (users, Engine connection, preferences, saved debug sessions); story data is fetched live from the Engine."
+ci:
+  provider: github-actions
+  on_pr: [ruff, format-check, mypy-strict, pytest, django-check, makemigrations-check, engine-edge-smoke]
+  triggers:
+    - "pull request → full PR gate (fake Engine from OpenAPI schema; one job runs a smoke suite against the Engine `edge` service container)"
+    - "push main → ghcr :edge image"
+    - "push tag v* → versioned ghcr image + GitHub release"
+engine_repo: nathanpond/Epistrel   # each Console milestone M<n> mirrors and depends on Engine M<n>

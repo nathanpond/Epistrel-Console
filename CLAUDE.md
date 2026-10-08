@@ -3,7 +3,11 @@
 Django web app: the human-facing test harness for the Epistrel Engine (nathanpond/Epistrel, a separate repo). Its purpose is to drive and inspect Engine capabilities. Console features mirror Engine capabilities and talk to the Engine only through its public REST API. The Engine's `docs/` hold the authoritative design and requirement IDs (`FR-`/`NFR-`).
 
 - Tooling: `uv sync`, `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`, `uv run mypy` (strict, django-stubs).
-- Settings come from the environment (`DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`). Never commit a real secret.
+- Settings come from the environment (`DJANGO_DEBUG`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, Engine URL and service key). Never commit a real secret.
+- Front-end is Django templates + HTMX; no JavaScript build step or Node toolchain. Plain functional UI, desktop only.
+- Single-operator dev tool: Django auth, the logged-in user is the requesting principal sent to the Engine. The Console's own DB holds only users, Engine connection settings, preferences, and saved debug sessions; story data is fetched live.
+- Each Console milestone M<n> mirrors Engine M<n> and can't be verified before it. Epics name the Engine epics they mirror.
+- No project invariants were declared for this repo (roadmap decision, 2026-10-07).
 
 ## n8SDLC project
 
