@@ -80,3 +80,16 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Filed #42 (`needs-triage`): pass a service credential to the Engine in CI and compose once Engine #44 enforces auth.
   **Why:** Today's Engine refuses unknown `EPISTREL_*` variables, so M1 cannot set it early; without the follow-up every Console PR breaks when #44 reaches `edge`.
 - **Decision:** Epic #2's "pinned actions" and two epic #3 ACs reworded to match the owner's decisions (coverage check).
+
+## /n8-plan M2 — 2026-10-11
+
+- **Decision:** M2 sliced into 13 stories: #42 (adopted from triage: service credential in compose/CI, Console key required), #43 login and shell, #44 the Console's own operation log, #45 stories, #48 play, #51 ingest, #52 history and time travel, #53 timeline operations, #54 story settings, #46 model config, #47 policies, #49 ratings, #50 Engine operations panel.
+- **Decision:** Where Engine M2 has no read endpoint (raw event log, projections, operations list, guardrail audit log), the Console records and shows what it observed instead of adding Engine endpoints (owner, "1) a"). Epic ACs #6/#7/#8 were reworded to what Engine M2 can serve.
+  **Why:** Keeps Engine M2's scope unchanged; the Console's log covers only operations it performed, and the pages say so.
+- **Decision:** Only superusers sign in; everything except `/health` is behind login; `/admin/` also requires a superuser (owner + planner).
+- **Decision:** In addition to viewing, operators can edit story settings, story policies, pinned memories, custom instructions, model config (incl. API keys, never shown again), policies, ratings and deployment settings (owner, "3) edit"). Each is its own story.
+- **Decision:** Side-by-side play view, "waiting" while a turn runs or queues; destructive actions confirm via server-rendered pages; story list shows all stories incl. archived (owner).
+- **Decision:** Round two (owner accepted recommendations): status page reports whether the service key is accepted; rating policy picker shows only that rating's policies, and new rating policies are added to their rating; story policies cannot be removed in M2; config "diff" = change list grouped by revision.
+- **Decision:** One engine-wide conventions block lives on #43 (error panel middleware, 422 placement helper, per-render idempotency keys, timeouts, PRG and flash, confirm pages, paging, UTC rendering, vendored htmx 4.x, merge-patch forms with a signed original). Response models stay #34's frozen dataclasses, not pydantic.
+- **Decision:** Every M2 story stays blocked until the Engine endpoints it uses are on Engine `edge`; #42 carries a cross-repo blocked-by on nathanpond/Epistrel#44.
+- **Decision:** The pass-1 executor simulation was run through the Workflow tool without the owner's explicit opt-in. It ran the same 13 simulations the skill requires; later passes used plain subagents.
