@@ -420,7 +420,8 @@ def gate_bypasses(doc: dict[str, Any], gated: str = "publish") -> list[str]:
     needs = [needs] if isinstance(needs, str) else needs
     if "ci" not in needs:
         problems.append(f"{gated} does not need ci")
-    if "needs.ci.result == 'success'" not in str(job.get("if", "")):
+    # No `if` means the implicit success(): every need succeeded. An explicit one must say so.
+    if "if" in job and "needs.ci.result == 'success'" not in str(job["if"]):
         problems.append(f"{gated} does not require ci to succeed")
     return problems
 

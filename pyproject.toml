@@ -38,10 +38,12 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "DJ", "PT"]
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest's plain `assert` is the assertion mechanism in tests.
 "tests/**" = ["S101"]
+# S603/S607: release tooling runs `docker`/`gh` with a fixed, non-user-controlled argv.
+"tools/**" = ["S603", "S607"]
 
 [tool.mypy]
 strict = true
-files = ["epistrel_console", "console", "tests", "manage.py"]
+files = ["epistrel_console", "console", "tools", "tests", "manage.py"]
 plugins = ["mypy_django_plugin.main"]
 
 [tool.django-stubs]

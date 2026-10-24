@@ -25,3 +25,36 @@ gh workflow run publish-edge.yml -f ref=<full 40-hex sha>
 - To restore, dispatch again with the current `main` SHA.
 
 Watch a run with `gh run watch`.
+
+## Cutting a release
+
+The Console's version tracks the Engine's. Console `vX.Y.Z` is the Console for Engine `X.Y.Z`, and its release is tested against that Engine release's image instead of `edge`. There are no Console-only version numbers. A Console fix made after Console `X.Y.Z` reaches users through `edge` and waits for the Engine's next version. `-rc.N` is the only pre-release form, and Console `vX.Y.Z-rc.N` is tested against Engine `X.Y.Z-rc.N`, or `X.Y.Z` when that rc has no Engine image.
+
+1. Open a PR that bumps `[project].version` in `pyproject.toml` (`X.Y.Z`, or `X.Y.ZrcN` for `vX.Y.Z-rc.N`). Merge it.
+2. Tag the merge commit and push the tag:
+   ```bash
+   git switch main && git pull --ff-only
+   git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z
+   ```
+   `/n8-release` in the n8SDLC workflow does the same. Only repository admins can create, move or delete `v*` tags, through the `release-tags` tag ruleset (`.github/rulesets/release-tags.json`, created with `gh api -X POST repos/nathanpond/Epistrel-Console/rulesets --input .github/rulesets/release-tags.json`).
+3. `release.yml` runs these steps:
+   - Checks that the tag is on `main`.
+   - Runs `uv run python -m tools.release validate`, which refuses a malformed tag, a tag that doesn't match `pyproject.toml`, an rc of an already-released stable version, or a version with no matching Engine image.
+   - Runs the full gate (`ci.yml`), including the live Engine smoke against that Engine image.
+   - Pushes the multi-arch image by digest and checks that it answers `/health`, then adds the version tags.
+   - Creates the GitHub release with notes generated from merged PR titles (categories in `.github/release.yml`). The notes end with the image line and the Engine it was tested with:
+     ```text
+     Image: `ghcr.io/nathanpond/epistrel-console:X.Y.Z@sha256:…`
+     Tested with Engine <engine version> (`ghcr.io/nathanpond/epistrel@sha256:…`)
+     ```
+
+What results:
+
+| tag pushed | needs Engine image | Console image tags | GitHub release |
+|---|---|---|---|
+| `v1.2.3`, highest stable so far | `1.2.3` | `1.2.3`, `1.2`, `1`, `latest` | marked **Latest** |
+| `v1.2.3` while `1.3.0` exists | `1.2.3` | `1.2.3`, `1.2` (if highest in 1.2.x) | not marked latest |
+| `v1.2.3-rc.1` | `1.2.3-rc.1`, else `1.2.3` | `1.2.3-rc.1` only | marked **Pre-release** |
+| any, with no matching Engine image | — | nothing | none: `validate` fails |
+
+`latest` is never moved by a pre-release, and never by a version lower than the highest stable version already published. Re-running the workflow for an existing tag rebuilds and re-pushes the version's image, then rewrites only the release's `Image:` and `Tested with Engine` lines (naming the newly tested Engine) and leaves the generated notes alone.
