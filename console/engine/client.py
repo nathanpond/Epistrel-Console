@@ -21,7 +21,9 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    ContentRating,
     ContentRatingList,
+    ContentRatingMutation,
     ContentRatingSummary,
     DeploymentSettings,
     HealthResponse,
@@ -37,6 +39,8 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     QueuedTurn,
+    RatingVersion,
+    RatingVersionList,
     RespondResponse,
     Story,
     StoryCreated,
@@ -387,6 +391,67 @@ class EngineClient:
         response = self._request("GET", "/admin/content-ratings", params=params)
         return _parse(response, ContentRatingList).items
 
+    @operation("GET", "/admin/content-ratings/{rating_id}", response_model=ContentRating)
+    def get_content_rating(self, rating_id: str) -> ContentRating:
+        """``GET /admin/content-ratings/{id}``: the rating at its latest version, with its
+        effective guardrails (own and inherited policies, each with its source rating)."""
+        return _parse(self._request("GET", _rating_path(rating_id)), ContentRating)
+
+    @operation(
+        "GET", "/admin/content-ratings/{rating_id}/versions", response_model=RatingVersionList
+    )
+    def list_content_rating_versions(self, rating_id: str) -> list[RatingVersion]:
+        """``GET /admin/content-ratings/{id}/versions``: every version (the live Engine lists
+        them newest first; callers sort)."""
+        response = self._request("GET", f"{_rating_path(rating_id)}/versions")
+        return _parse(response, RatingVersionList).items
+
+    @operation("POST", "/admin/content-ratings", response_model=ContentRatingMutation)
+    def create_content_rating(
+        self, fields: Mapping[str, Any], *, idempotency_key: str
+    ) -> ContentRatingMutation:
+        """``POST /admin/content-ratings`` with a ``RatingFields`` body (201)."""
+        response = self._request(
+            "POST",
+            "/admin/content-ratings",
+            json=dict(fields),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ContentRatingMutation)
+
+    @operation("PUT", "/admin/content-ratings/{rating_id}", response_model=ContentRatingMutation)
+    def update_content_rating(
+        self, rating_id: str, replacement: Mapping[str, Any], *, idempotency_key: str
+    ) -> ContentRatingMutation:
+        """``PUT /admin/content-ratings/{id}`` with a ``RatingReplacement`` body: every field,
+        replaced, as a new version. A retired rating is 409; an inheritance loop is 422
+        ``inheritance_cycle``."""
+        response = self._request(
+            "PUT",
+            _rating_path(rating_id),
+            json=dict(replacement),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ContentRatingMutation)
+
+    @operation("DELETE", "/admin/content-ratings/{rating_id}", response_model=ContentRatingMutation)
+    def retire_content_rating(
+        self, rating_id: str, *, idempotency_key: str
+    ) -> ContentRatingMutation | None:
+        """``DELETE /admin/content-ratings/{id}``: retire the rating (stories using it keep their
+        version). ``None`` when it was already retired (204); the deployment default is 409."""
+        response = self._request(
+            "DELETE",
+            _rating_path(rating_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 204:
+            return None
+        return _parse(response, ContentRatingMutation)
+
     @operation("GET", "/admin/settings", response_model=DeploymentSettings)
     def get_deployment_settings(self) -> DeploymentSettings:
         """``GET /admin/settings``: every deployment setting and its ``config_revision``."""
@@ -609,6 +674,11 @@ def _story_path(story_id: str) -> str:
 def _purpose_path(purpose: str) -> str:
     """``/admin/model-config/<purpose>``, the name percent-encoded."""
     return f"/admin/model-config/{quote(purpose, safe='')}"
+
+
+def _rating_path(rating_id: str) -> str:
+    """``/admin/content-ratings/<id>``, the id percent-encoded."""
+    return f"/admin/content-ratings/{quote(rating_id, safe='')}"
 
 
 def _policy_path(policy_id: str) -> str:

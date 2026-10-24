@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{{ name }} versions — Content ratings — Epistrel Console{% endblock %}
+{% block heading %}Versions: {{ name }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'ratings:detail' rating_id %}">Back to the rating</a> · <a href="{% url 'ratings:list' %}">All ratings</a></p>
+{% if page.object_list %}
+<table class="versions">
+  <thead><tr><th>Version</th><th>Created at</th><th>Created by</th></tr></thead>
+  <tbody>
+    {% for entry in page.object_list %}<tr><td><a href="{% url 'ratings:version' rating_id entry.version %}">{{ entry.version }}</a></td><td>{{ entry.created_at|engine_time }}</td><td>{{ entry.created_by }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if page.has_other_pages %}
+<p class="paging">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Previous</a>{% endif %}
+  Page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next</a>{% endif %}
+</p>
+{% endif %}
+{% else %}
+<p class="empty">No versions.</p>
+{% endif %}
+{% endblock %}

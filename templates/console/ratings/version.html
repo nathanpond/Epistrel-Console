@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{{ entry.name }} version {{ entry.version }} — Content ratings — Epistrel Console{% endblock %}
+{% block heading %}{{ entry.name }} — version {{ entry.version }}{% if entry.version == latest %} (latest){% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'ratings:detail' entry.id %}">Back to the rating</a> · <a href="{% url 'ratings:versions' entry.id %}">All versions</a></p>
+<dl class="rating">
+  <dt>Id</dt><dd><code>{{ entry.id }}</code></dd>
+  <dt>Version id</dt><dd><code>{{ entry.version_id }}</code></dd>
+  <dt>Name</dt><dd>{{ entry.name }}</dd>
+  <dt>Description</dt><dd>{{ entry.description|default:"(none)" }}</dd>
+  <dt>Display order</dt><dd>{{ entry.display_order }}</dd>
+  <dt>Policies</dt><dd>{% for pid in entry.policy_ids %}<code>{{ pid }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}</dd>
+  <dt>Inherits from</dt><dd class="inherits">{{ parents|join:", "|default:"nothing" }}</dd>
+  <dt>Created</dt><dd>{{ entry.created_at|engine_time }} by {{ entry.created_by }}</dd>
+  {% if entry.retired_at %}<dt>Retired</dt><dd>{{ entry.retired_at|engine_time }}</dd>{% endif %}
+</dl>
+{% include "console/ratings/_guidance.html" %}
+{% endblock %}

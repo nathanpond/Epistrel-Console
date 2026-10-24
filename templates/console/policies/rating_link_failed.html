@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ policy.name }} — Guardrail policies — Epistrel Console{% endblock %}
+{% block heading %}Policy created: {{ policy.name }}{% endblock %}
+{% block content %}
+<p>The policy <code>{{ policy.id }}</code> was created, scoped to {{ rating }}, but it was <strong>not added</strong> to the rating's policies, so the rating does not apply it yet. Add it from the rating's Edit page.</p>
+{% include "console/_engine_error.html" %}
+<p><a href="{% url 'policies:detail' policy.id %}">The policy</a> · <a href="{% url 'ratings:edit' rating_id %}">Edit {{ rating }}</a> · <a href="{% url 'policies:list' %}">All policies</a></p>
+{% endblock %}

@@ -697,12 +697,53 @@ class ContentRatingSummary(Model):
     created_by: str
     retired_at: str | None
 
+    @property
+    def retired(self) -> bool:
+        return self.retired_at is not None
+
 
 @dataclass(frozen=True)
 class ContentRatingList(Model):
     """``RatingList``: content ratings in display order."""
 
     items: list[ContentRatingSummary]
+
+
+@dataclass(frozen=True)
+class EffectiveGuardrail(Model):
+    """``EffectiveGuardrail``: a policy a rating applies, and the rating (itself or one it
+    inherits from) that contributes it."""
+
+    policy_id: str
+    source_rating_id: str
+
+
+@dataclass(frozen=True)
+class ContentRating(ContentRatingSummary):
+    """``RatingDetailBody``: a rating at its latest version, with its effective guardrails."""
+
+    effective_guardrails: list[EffectiveGuardrail]
+
+
+@dataclass(frozen=True)
+class ContentRatingMutation(ContentRatingSummary):
+    """``RatingMutation``: a rating after a write, with the deployment's ``config_revision``."""
+
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class RatingVersion(ContentRatingSummary):
+    """One version of a rating, as ``GET /admin/content-ratings/{id}/versions`` lists it (a
+    ``RatingBody``)."""
+
+
+@dataclass(frozen=True)
+class RatingVersionList(Model):
+    """``RatingList`` as the versions endpoint answers it: one rating's versions."""
+
+    items: list[RatingVersion]
 
 
 # --- Deployment settings (#45 reads the default rating; #50 edits them) -----------------------

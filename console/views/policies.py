@@ -14,7 +14,7 @@ change them, retire the policy and create another.
 """
 
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from django.contrib import messages
@@ -51,6 +51,7 @@ from console.forms.policy import (
     target_label,
 )
 from console.ids import new_ulid
+from console.rating_policies import attach_key, attach_policy
 
 PAGE_SIZE = 50
 MINORS_POLICY_ID = "minors_no_sexual_content"
@@ -318,6 +319,42 @@ def policy_new(request: HttpRequest) -> HttpResponse:
             return _render_new(request, form, ratings)
         return _render_new(request, form, ratings, engine_error=panel_for(exc))
     _flash_write(request, "Created", created, key)
+    if created.scope == "rating" and created.scope_id:
+        return _attach_to_rating(request, created, ratings, key)
+    return redirect(_detail_url(created.id))
+
+
+def _attach_to_rating(
+    request: HttpRequest, created: PolicyMutation, ratings: Ratings, key: str
+) -> HttpResponse:
+    """#49's second write: add the new rating policy to its rating's ``policy_ids`` (a rating
+    ``PUT``, recorded on its own). If it fails, the policy stays created and the page says it
+    was not added."""
+    rating_id = created.scope_id or ""
+    label = _rating_label(ratings, rating_id)
+    try:
+        added = attach_policy(
+            engine_client_for(request), rating_id, created.id, idempotency_key=attach_key(key)
+        )
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        panel = replace(
+            panel_for(exc),
+            headline=f"{created.name} was not added to {label}'s policies — "
+            f"{panel_for(exc).headline}",
+        )
+        return render(
+            request,
+            "console/policies/rating_link_failed.html",
+            {"policy": created, "rating_id": rating_id, "rating": label, "engine_error": panel},
+        )
+    if added is not None:
+        messages.success(
+            request,
+            f"Added {created.name} to {added.name}'s policies — version {added.version}, "
+            f"config revision {added.config_revision}, "
+            f"idempotency key {added.idempotency_key or attach_key(key)}",
+        )
     return redirect(_detail_url(created.id))
 
 

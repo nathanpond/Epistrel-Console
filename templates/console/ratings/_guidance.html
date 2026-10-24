@@ -1,0 +1,8 @@
+{# A rating version's guidance. Context: entry (a rating), guidance_note. #}
+<p class="note">{{ guidance_note }}</p>
+<dl class="guidance">
+  <dt>Prompt guidance</dt>
+  <dd>{% if entry.prompt_guidance %}<pre class="prompt-guidance" style="white-space: pre-wrap">{{ entry.prompt_guidance }}</pre>{% else %}(none){% endif %}</dd>
+  <dt>Image guidance</dt>
+  <dd>{% if entry.image_guidance %}<pre class="image-guidance" style="white-space: pre-wrap">{{ entry.image_guidance }}</pre>{% else %}(none){% endif %}</dd>
+</dl>

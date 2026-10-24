@@ -535,3 +535,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** CI's `engine-up.sh` passes `EPISTREL_MODEL_ADAPTER=stub` (dropped for images without the setting) and `compose.smoke.yml` sets it too; the live smoke `test_play_one_turn_live` (`engine_live` + `engine_auth`) creates its own two-character story via the client, plays one turn through the play view and deletes the story in `finally`. Checked locally against `edge`, and in a browser (Playwright) against `edge` with `EPISTREL_STUB_LATENCY_S=6` and `turn_concurrency: queue`: viewpoint switch, a double-click making one turn (one log row), a queued turn's waiting card through to its result, and earlier-turn selection.
   **Why:** The test plan's smoke "against the Engine edge stub adapter"; without the adapter the edge Engine has no model and every turn is `model_unavailable`.
   **Issue:** #48
+- **Decision (drift):** #49's "(planner, pass 2)" bullets "List page:", "Effective guardrails:", "Policy picker and the second write:" and "Errors and redirects:" are empty in the issue body and in its edit history (their sub-bullets were lost at planning). Built from the AC, the other planner lines and #47's patterns; each choice below.
+  **Why:** The brief says not to ask; nothing recoverable remained.
+  **Issue:** #49
+- **Decision (drift):** No schema re-record for #49. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, stub adapter, torn down after) reports a match. Checked live: `inheritance_cycle` is 422 with `details.field = body.inherits_from`; retiring the default is 409 `validation_error` with `details.reason = "is_default"`; a PUT to a retired rating is 409 `details.reason = "retired"`; an identical PUT writes no version; creating a rating-scoped policy does not add it to the rating's `policy_ids`; the versions list comes newest first; effective guardrails list each policy once, from the nearest source; edge's default rating is Everyone (the demo's "Teen is default" holds only in the fixtures).
+  **Why:** The conventions re-record only when the live document differs; the behaviours fix the error mapping.
+  **Issue:** #49
+- **Decision:** Client `get_content_rating`, `list_content_rating_versions`, `create_content_rating`, `update_content_rating`, `retire_content_rating` (204 → `None`); models `ContentRating` (`RatingDetailBody`), `EffectiveGuardrail`, `ContentRatingMutation` (`RatingMutation`), `RatingVersion` (a `RatingBody`) and `RatingVersionList`, all contract-checked; `ContentRatingSummary.retired`.
+  **Why:** The planner's method and model names; #43's one-method-per-endpoint rule.
+  **Issue:** #49
+- **Decision:** The list always reads `include_retired=1` and "Show retired" (`?retired=1`) filters in the Console, so a retired parent still shows by name in "Inherits from"; Console-side paging at 50. Retired ratings have no Edit or Retire; the default keeps Retire.
+  **Why:** One read serves both the rows and the parent names; #43's paging rule.
+  **Issue:** #49
+- **Decision:** Detail: own guardrails first, then inherited, in one table with an own/inherited column and the source rating linked; the inheritance is one line ("Everyone → Teen → Mature → Explicit") while every rating has at most one parent, else a nested `<ul>` (a loop or a depth over 64 stops the drawing). Versions sorted newest first: 20 on the detail page, and `/guardrails/ratings/<id>/versions/` (an added URL, name `ratings:versions`) pages all of them at 50.
+  **Why:** AC "own distinguished from inherited", "nested when several parents"; the planner's "newest 20 with all versions paging".
+  **Issue:** #49
+- **Decision:** Policy picker (edit only) = live policies scoped to this rating, plus any id the rating applies now that is not one of them (retired, another rating's, unknown) so saving never drops it unseen — the Engine accepts those already on the rating. A failed policies or ratings read leaves that field out with a note, and the PUT resends the current value. Options (and the rating's name/version for the heading) travel in a signed `options` field; a tampered one is re-read.
+  **Why:** Owner's "only this rating's policies"; #45/#46's signed-options pattern so refused input makes zero calls.
+  **Issue:** #49
+- **Decision:** Edit POST: validate, then re-read the rating and compare (`console/forms/ratings.py:unchanged`); no change → flash "No changes — no new version", no PUT. `inheritance_cycle` → "That would make <form name> inherit from itself" on `inherits_from`; any 409 on PUT → "Retired ratings cannot be changed"; other 422s placed by `apply_engine_errors`; anything else the panel above the kept form. Retire: confirm page; 409 `reason = is_default` → its own page with the message and a link to `/engine/`; other errors the shared panel.
+  **Why:** The planner's error mapping.
+  **Issue:** #49
+- **Decision:** #47's `policy_new` adds a created rating-scoped policy to its rating (`console/rating_policies.py:attach_policy`: GET the rating, skip when already listed, else PUT with the id appended), with the idempotency key `<create key>.rating` so a replayed create replays it. On failure the page says "<policy> was not added to <rating>'s policies" above the error panel, with links to the policy and the rating's Edit page; on success a second flash names the rating's new version.
+  **Why:** AC "second write, recorded separately; on failure the policy stays and the panel says it was not added".
+  **Issue:** #49
+- **Decision:** The ratings placeholder route is gone (`placeholder()` stays for `/engine/` and #52's history); `test_shell` no longer lists `/guardrails/ratings/` as a placeholder and the #47 navigation test checks only the policies side (the ratings side is in `tests/ratings`). Added an `engine_live` + `engine_auth` smoke running the demo against the real Engine.
+  **Why:** The owning story replaces its placeholder (#43).
+  **Issue:** #49

@@ -5,7 +5,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from console.auth import OperatorAuthenticationForm
-from console.views import models, operations, play, policies, status, stories
+from console.views import models, operations, play, policies, ratings, status, stories
 from console.views.placeholders import placeholder
 
 operation_patterns = (
@@ -60,6 +60,19 @@ policy_patterns = (
     "policies",
 )
 
+rating_patterns = (
+    [
+        path("", ratings.rating_list, name="list"),
+        path("new/", ratings.rating_new, name="new"),
+        path("<str:rating_id>/", ratings.rating_detail, name="detail"),
+        path("<str:rating_id>/edit/", ratings.rating_edit, name="edit"),
+        path("<str:rating_id>/retire/", ratings.rating_retire, name="retire"),
+        path("<str:rating_id>/versions/", ratings.rating_versions, name="versions"),
+        path("<str:rating_id>/versions/<int:version>/", ratings.rating_version, name="version"),
+    ],
+    "ratings",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -72,13 +85,9 @@ urlpatterns = [
     path("operations/", include(operation_patterns)),
     path("stories/", include(story_patterns)),
     path("models/", include(model_patterns)),
-    # Placeholders: each owning M2 story replaces its own.
     path("guardrails/policies/", include(policy_patterns)),
-    path(
-        "guardrails/ratings/",
-        placeholder("Guardrail ratings", links=(("Guardrail policies", "/guardrails/policies/"),)),
-        name="guardrail-ratings",
-    ),
+    path("guardrails/ratings/", include(rating_patterns)),
+    # Placeholders: each owning M2 story replaces its own.
     path("engine/", placeholder("Engine"), name="engine"),
     path("admin/", admin.site.urls),
 ]

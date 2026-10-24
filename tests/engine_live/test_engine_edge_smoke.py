@@ -262,6 +262,99 @@ def test_policy_create_edit_retire_and_retired_refusal_live(
 
 
 @pytest.mark.engine_auth
+def test_rating_create_policy_edit_cycle_and_default_live(
+    url: str, key: str, operator_client: Client
+) -> None:
+    """#49's demo against the real Engine: a new rating inheriting from Explicit; a
+    rating-scoped policy created in #47 lands in its ``policy_ids`` (the second write) and shows
+    as its own guardrail; an edit makes version 2 and an unchanged save makes none; Explicit
+    inheriting from it is the cycle message; retiring the default is refused."""
+    client = EngineClient(url, key, principal="console:smoke")
+    ratings = {r.name: r for r in client.list_content_ratings()}
+    explicit = ratings["Explicit"].id
+    default = client.get_deployment_settings().default_content_rating_id
+    name = f"Smoke {new_ulid()[-8:]}"
+    base = "/guardrails/ratings/"
+    form = {
+        "name": name,
+        "description": "Console smoke rating",
+        "display_order": "",
+        "prompt_guidance": "Smoke guidance.",
+        "image_guidance": "",
+        "inherits_from": [explicit],
+    }
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        created = operator_client.post(f"{base}new/", {**form, "idempotency_key": new_ulid()})
+        assert created.status_code == 302, created.content.decode()
+        rating_id = created["Location"].removeprefix(base).strip("/")
+        policy_id = ""
+        try:
+            policy = operator_client.post(
+                "/guardrails/policies/new/",
+                {
+                    "id": "",
+                    "scope": f"rating:{rating_id}",
+                    "name": f"{name} policy",
+                    "applies_to": ["text_output"],
+                    "rule_type": "wordlist",
+                    "words": "wyvern",
+                    "on_uncertain": "violation",
+                    "age_condition": "",
+                    "message": "No wyverns",
+                    "idempotency_key": new_ulid(),
+                },
+            )
+            assert policy.status_code == 302, policy.content.decode()
+            policy_id = policy["Location"].removeprefix("/guardrails/policies/").strip("/")
+            assert client.get_content_rating(rating_id).policy_ids == [policy_id]
+            detail = operator_client.get(f"{base}{rating_id}/").content.decode()
+            assert re.search(rf'<tr class="own"><td><code>{policy_id}</code>', detail)
+            assert f"{name} → Explicit" in detail
+
+            edit = {
+                **form,
+                "display_order": str(client.get_content_rating(rating_id).display_order),
+                "policy_ids": [policy_id],
+            }
+            saved = operator_client.post(
+                f"{base}{rating_id}/edit/",
+                {**edit, "prompt_guidance": "Edited.", "idempotency_key": new_ulid()},
+            )
+            assert saved.status_code == 302, saved.content.decode()
+            same = operator_client.post(
+                f"{base}{rating_id}/edit/",
+                {**edit, "prompt_guidance": "Edited.", "idempotency_key": new_ulid()},
+            )
+            assert same.status_code == 302
+            versions = client.list_content_rating_versions(rating_id)
+            assert sorted(v.version for v in versions) == [1, 2, 3]  # create, second write, edit
+
+            current = client.get_content_rating(explicit)
+            cycle = operator_client.post(
+                f"{base}{explicit}/edit/",
+                {
+                    "name": current.name,
+                    "description": current.description,
+                    "display_order": str(current.display_order),
+                    "prompt_guidance": current.prompt_guidance,
+                    "image_guidance": current.image_guidance,
+                    "policy_ids": current.policy_ids,
+                    "inherits_from": [rating_id],
+                    "idempotency_key": new_ulid(),
+                },
+            )
+            assert "That would make Explicit inherit from itself" in cycle.content.decode()
+
+            refused = operator_client.post(f"{base}{default}/retire/", {"name": "default"})
+            assert "This is the deployment default" in refused.content.decode()
+        finally:
+            if policy_id:
+                client.retire_policy(policy_id, idempotency_key=new_ulid())
+            retired = operator_client.post(f"{base}{rating_id}/retire/", {"name": name})
+        assert retired.status_code == 302, retired.content.decode()
+
+
+@pytest.mark.engine_auth
 def test_play_one_turn_live(url: str, key: str, operator_client: Client, operator: object) -> None:
     """#48: play one Lite turn from the play view against the Engine's stub model adapter
     (engine-up.sh / compose.smoke.yml set ``EPISTREL_MODEL_ADAPTER=stub``)."""

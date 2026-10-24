@@ -3,7 +3,7 @@
 {% block title %}Guardrail policies — Epistrel Console{% endblock %}
 {% block heading %}Guardrail policies{% endblock %}
 {% block content %}
-<p><a href="{% url 'policies:new' %}">New policy</a> · <a class="rejections" href="{{ rejections_url }}">Guardrail rejections →</a> · <a href="/guardrails/ratings/">Content ratings</a></p>
+<p><a href="{% url 'policies:new' %}">New policy</a> · <a class="rejections" href="{{ rejections_url }}">Guardrail rejections →</a> · <a href="{% url 'ratings:list' %}">Content ratings</a></p>
 
 <form method="get" action="" class="filters">
   <label>Scope

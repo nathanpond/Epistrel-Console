@@ -682,8 +682,8 @@ def test_every_write_is_recorded(operator_client: Client, engine: FakeEngine) ->
 def test_policies_are_reachable_from_the_guardrails_section(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    ratings = operator_client.get("/guardrails/ratings/").content.decode()
-    assert '<a href="/guardrails/policies/">Guardrail policies</a>' in ratings
+    # The ratings page's link here is tested with the ratings (#49).
     answer_list(engine)
     html = operator_client.get(URL).content.decode()
     assert '<a href="/guardrails/ratings/" class="active">Guardrails</a>' in html
+    assert '<a href="/guardrails/ratings/">Content ratings</a>' in html
