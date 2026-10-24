@@ -69,7 +69,7 @@ The docker tests build the image themselves and pull the Engine `edge` image. Wi
 
 ### Live Engine smoke
 
-Every PR also runs a smoke suite (`tests/engine_live/`, marker `engine_live`) against the published Engine `edge` image, and a broken Engine `edge` blocks the merge. To run it locally against the real `edge`, publish this stack's Engine on `127.0.0.1:8000` with the `compose.smoke.yml` override. Stop the Engine repo's own stack first: both use port 8000.
+Every PR also runs a smoke suite (`tests/engine_live/`, marker `engine_live`) against the published Engine `edge` image, and a broken Engine `edge` blocks the merge. It runs a second time against the newest Engine release (`engine-release-smoke`), because released Engines know fewer settings than `edge` and every Console release is smoked against one. `.github/scripts/engine-up.sh` asks each Engine image which settings it accepts and passes only those. To run it locally against the real `edge`, publish this stack's Engine on `127.0.0.1:8000` with the `compose.smoke.yml` override. Stop the Engine repo's own stack first: both use port 8000.
 
 ```bash
 docker compose -f docker-compose.yml -f compose.smoke.yml up -d --wait engine db

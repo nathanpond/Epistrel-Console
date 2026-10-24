@@ -541,7 +541,10 @@ LIVE_ON = "github.event_name == 'pull_request' || inputs.live_smoke"
 
 
 def engine_env_vars(script: str) -> set[str]:
-    return set(re.findall(r"-e (EPISTREL_[A-Z_]+)=", script))
+    """Every EPISTREL_* the script can pass: its ENGINE_SETTINGS entries and any literal `-e`."""
+    table = re.search(r"^ENGINE_SETTINGS=\((.*?)^\)", script, re.M | re.S)
+    entries = re.findall(r'^\s*"(EPISTREL_[A-Z_]+)=', table.group(1), re.M) if table else []
+    return set(entries) | set(re.findall(r"-e (EPISTREL_[A-Z_]+)=", script))
 
 
 def test_ci_workflow_call_inputs_and_outputs() -> None:
@@ -582,7 +585,15 @@ def test_gate_uses_the_script_with_every_result() -> None:
     gate = jobs(load(CI))["gate"]
     step = gate["steps"][-1]
     assert step["run"] == ".github/scripts/gate.sh"
-    assert set(step["env"]) == {"LINT", "TYPES", "TEST", "DOCKER", "ENGINE_SMOKE"}
+    assert set(step["env"]) == {
+        "LINT",
+        "TYPES",
+        "TEST",
+        "DOCKER",
+        "ENGINE_SMOKE",
+        "ENGINE_RELEASE_SMOKE",
+    }
+    assert step["env"]["ENGINE_RELEASE_SMOKE"] == "${{ needs.engine-release-smoke.result }}"
 
 
 def test_docker_job_drops_engine_edge_only_without_live_smoke() -> None:
@@ -594,7 +605,7 @@ def test_docker_job_drops_engine_edge_only_without_live_smoke() -> None:
     assert step["run"] == 'uv run pytest -m "$MARKERS"'
 
 
-def test_engine_gets_exactly_its_four_variables() -> None:
+def test_engine_may_get_only_these_four_variables() -> None:
     assert engine_env_vars(ENGINE_UP.read_text()) == {
         "EPISTREL_DATABASE_URL",
         "EPISTREL_LOG_LEVEL",
@@ -606,6 +617,50 @@ def test_engine_gets_exactly_its_four_variables() -> None:
 def test_engine_variable_rule_bites() -> None:
     script = ENGINE_UP.read_text() + "\n    -e EPISTREL_MODEL=x \\\n"
     assert "EPISTREL_MODEL" in engine_env_vars(script)
+    table = ENGINE_UP.read_text().replace(
+        '  "EPISTREL_LOG_LEVEL=INFO"\n', '  "EPISTREL_LOG_LEVEL=INFO"\n  "EPISTREL_MODEL=x"\n'
+    )
+    assert "EPISTREL_MODEL" in engine_env_vars(table)
+
+
+def test_engine_release_smoke_starts_the_newest_engine_release() -> None:
+    doc = load(CI)
+    job = jobs(doc)["engine-release-smoke"]
+    smoke = jobs(doc)["engine-smoke"]
+    assert job["if"] == smoke["if"]
+    assert LIVE_ON in job["if"]
+    assert "engine-release-smoke" in jobs(doc)["gate"]["needs"]
+    assert job["services"] == smoke["services"]
+    assert job["env"] == {"ENGINE_LIVE_URL": "http://127.0.0.1:8000"}
+    assert job["permissions"] == {"contents": "read"}
+    steps = job["steps"]
+    runs = [str(s.get("run", "")) for s in steps]
+    resolve = next(s for s in steps if s.get("name") == "newest Engine release")
+    assert resolve["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    assert (
+        "gh release view --repo nathanpond/Epistrel --json tagName --jq .tagName" in resolve["run"]
+    )
+    assert (
+        'echo "ENGINE_IMAGE=ghcr.io/nathanpond/epistrel:${tag#v}" >> "$GITHUB_ENV"'
+        in resolve["run"]
+    )
+    assert '[ -n "$tag" ] ||' in resolve["run"]
+    order = [
+        steps.index(resolve),
+        runs.index(".github/scripts/engine-up.sh start"),
+        runs.index(".github/scripts/engine-up.sh wait"),
+        runs.index(".github/scripts/engine-up.sh identify"),
+        runs.index("uv run pytest -m engine_live"),
+    ]
+    assert order == sorted(order)
+    # The same tail as engine-smoke: summary always, Engine and Postgres logs on failure.
+    assert [s for s in steps if s.get("name") in ("summary", "logs")] == [
+        s for s in smoke["steps"] if s.get("name") in ("summary", "logs")
+    ]
+    start = next(s for s in steps if s.get("run") == ".github/scripts/engine-up.sh start")
+    assert start["env"] == {"NETWORK": "${{ job.services.postgres.network }}"}
+    # Its outputs are not the gate's: a release names the Engine engine-smoke tested.
+    assert "outputs" not in job
 
 
 # --- publishing edge (#37) ------------------------------------------------------------------

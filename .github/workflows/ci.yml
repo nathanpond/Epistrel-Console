@@ -187,14 +187,72 @@ jobs:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: .github/scripts/engine-up.sh logs
 
+  engine-release-smoke:
+    # engine-smoke against the newest Engine *release*, not edge (#124): released Engines know fewer
+    # settings than edge, and a release's smoke starts one, so engine-up.sh must keep working there.
+    if: ${{ github.event_name == 'pull_request' || inputs.live_smoke }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: epistrel
+          POSTGRES_PASSWORD: epistrel-dev  # the Engine compose's dev-only value, as docker-compose.yml
+          POSTGRES_DB: epistrel
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ENGINE_LIVE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      # The Engine's latest (highest stable) GitHub release; its image tag drops the `v`.
+      - name: newest Engine release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo nathanpond/Epistrel --json tagName --jq .tagName)
+          [ -n "$tag" ] || { echo "::error::nathanpond/Epistrel has no release"; exit 1; }
+          echo "ENGINE_IMAGE=ghcr.io/nathanpond/epistrel:${tag#v}" >> "$GITHUB_ENV"
+      - name: start the Engine
+        env:
+          NETWORK: ${{ job.services.postgres.network }}
+        run: .github/scripts/engine-up.sh start
+      - run: .github/scripts/engine-up.sh wait
+      - id: identify
+        run: .github/scripts/engine-up.sh identify
+      - run: uv run pytest -m engine_live
+      - name: summary
+        if: always()
+        env:
+          ENGINE_DIGEST: ${{ steps.identify.outputs.engine_digest }}
+          ENGINE_VERSION: ${{ steps.identify.outputs.engine_version }}
+        run: .github/scripts/engine-up.sh summary
+      - name: logs
+        if: failure()
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: .github/scripts/engine-up.sh logs
+
   gate:
-    # One context for the ruleset to require: red unless every job above succeeded (engine-smoke
-    # may be skipped only when the caller turned the live smoke off).
+    # One context for the ruleset to require: red unless every job above succeeded (the two Engine
+    # smokes may be skipped only when the caller turned the live smoke off).
     name: gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [lint, types, test, docker, engine-smoke]
+    needs: [lint, types, test, docker, engine-smoke, engine-release-smoke]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -207,4 +265,5 @@ jobs:
           TEST: ${{ needs.test.result }}
           DOCKER: ${{ needs.docker.result }}
           ENGINE_SMOKE: ${{ needs.engine-smoke.result }}
+          ENGINE_RELEASE_SMOKE: ${{ needs.engine-release-smoke.result }}
         run: .github/scripts/gate.sh

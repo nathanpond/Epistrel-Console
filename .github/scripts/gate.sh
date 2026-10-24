@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# ci.yml's gate: green only if every job succeeded. `engine-smoke` alone may be `skipped`, and only
-# when the caller turned the live smoke off (LIVE_SMOKE=false: edge publishing and edge rollback,
-# #37). Inputs are the jobs' results as env: LINT TYPES TEST DOCKER ENGINE_SMOKE, plus LIVE_SMOKE.
+# ci.yml's gate: green only if every job succeeded. The Engine smokes alone (`engine-smoke`, and
+# `engine-release-smoke` from #124) may be `skipped`, and only when the caller turned the live smoke
+# off (LIVE_SMOKE=false: edge publishing and edge rollback, #37). Inputs are the jobs' results as
+# env: LINT TYPES TEST DOCKER ENGINE_SMOKE ENGINE_RELEASE_SMOKE, plus LIVE_SMOKE.
 set -euo pipefail
 
 : "${LIVE_SMOKE:=true}"
 rows=("| job | result |" "|---|---|")
 failed=()
-for job in LINT TYPES TEST DOCKER ENGINE_SMOKE; do
+for job in LINT TYPES TEST DOCKER ENGINE_SMOKE ENGINE_RELEASE_SMOKE; do
   result="${!job:-missing}"
   name=$(echo "$job" | tr '[:upper:]_' '[:lower:]-')
   rows+=("| $name | $result |")
   if [ "$result" = "success" ]; then
     continue
   fi
-  if [ "$job" = "ENGINE_SMOKE" ] && [ "$result" = "skipped" ] && [ "$LIVE_SMOKE" = "false" ]; then
+  if { [ "$job" = "ENGINE_SMOKE" ] || [ "$job" = "ENGINE_RELEASE_SMOKE" ]; } \
+    && [ "$result" = "skipped" ] && [ "$LIVE_SMOKE" = "false" ]; then
     continue
   fi
   failed+=("$name=$result")

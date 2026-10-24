@@ -9,25 +9,54 @@
 #   engine-up.sh logs       dump the Engine's and Postgres's logs (POSTGRES_CONTAINER)
 #
 # The Engine is a step, not a service container: it runs its migrations at start and exits if
-# Postgres is not ready yet, and service containers start together. It refuses unknown EPISTREL_*
-# variables and refuses to start without a service credential, so it gets exactly these four. The
-# credential and config key are the Engine compose's dev-only literals (as in docker-compose.yml);
-# the smoke calls only unauthenticated routes.
+# Postgres is not ready yet, and service containers start together. An Engine refuses EPISTREL_*
+# variables it does not know, and `edge` refuses to start without a service credential. Released
+# Engines know fewer settings than `edge` (0.1.x has no SERVICE_CREDENTIALS or CONFIG_KEY, #124).
+# So `start` asks the image which settings it has (the Settings model, via the image's own Python)
+# and passes only those of ENGINE_SETTINGS. It refuses to guess when the probe fails or the image
+# lacks DATABASE_URL. The credential and config key are the Engine compose's dev-only literals (as
+# in docker-compose.yml); the smoke calls only unauthenticated routes.
 set -euo pipefail
 
 ENGINE_URL=http://127.0.0.1:8000
 ENGINE_REPO=ghcr.io/nathanpond/epistrel
 WAIT_S=120
 
+# Every setting the smoke may pass; `start` drops the ones the image does not know.
+ENGINE_SETTINGS=(
+  "EPISTREL_DATABASE_URL=postgresql+psycopg://epistrel:epistrel-dev@postgres:5432/epistrel"
+  "EPISTREL_LOG_LEVEL=INFO"
+  "EPISTREL_SERVICE_CREDENTIALS=dev-only-credential-change-me-00000000"
+  "EPISTREL_CONFIG_KEY=ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA="
+)
+PROBE='from epistrel.config import ENV_PREFIX, Settings
+print("\n".join(ENV_PREFIX + name.upper() for name in Settings.model_fields))'
+
+# The EPISTREL_* names ENGINE_IMAGE's Settings model has, one per line.
+known_settings() {
+  docker run --rm --entrypoint python "$ENGINE_IMAGE" -c "$PROBE"
+}
+
 start() {
   : "${ENGINE_IMAGE:?ENGINE_IMAGE is required}" "${NETWORK:?NETWORK is required}"
   docker pull "$ENGINE_IMAGE" || { echo "::warning::pull failed; retrying in 10 s"; sleep 10; docker pull "$ENGINE_IMAGE"; }
-  docker run -d --name engine --network "$NETWORK" -p 127.0.0.1:8000:8000 \
-    -e EPISTREL_DATABASE_URL=postgresql+psycopg://epistrel:epistrel-dev@postgres:5432/epistrel \
-    -e EPISTREL_LOG_LEVEL=INFO \
-    -e EPISTREL_SERVICE_CREDENTIALS=dev-only-credential-change-me-00000000 \
-    -e EPISTREL_CONFIG_KEY=ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA= \
-    "$ENGINE_IMAGE"
+  local known setting args=()
+  if ! known=$(known_settings); then
+    echo "::error::could not read the settings $ENGINE_IMAGE accepts"
+    return 1
+  fi
+  if ! grep -qx 'EPISTREL_DATABASE_URL' <<<"$known"; then
+    echo "::error::$ENGINE_IMAGE has no EPISTREL_DATABASE_URL setting; got: $(tr '\n' ' ' <<<"$known")"
+    return 1
+  fi
+  for setting in "${ENGINE_SETTINGS[@]}"; do
+    if grep -qx "${setting%%=*}" <<<"$known"; then
+      args+=(-e "$setting")
+    else
+      echo "$ENGINE_IMAGE has no ${setting%%=*}; not passed"
+    fi
+  done
+  docker run -d --name engine --network "$NETWORK" -p 127.0.0.1:8000:8000 "${args[@]}" "$ENGINE_IMAGE"
 }
 
 wait_healthy() {
@@ -40,7 +69,7 @@ wait_healthy() {
     sleep 2
   done
   logs
-  echo "::error::Engine edge did not become healthy in $WAIT_S s"
+  echo "::error::Engine ${ENGINE_IMAGE:-} did not become healthy in $WAIT_S s"
   return 1
 }
 
