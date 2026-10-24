@@ -108,6 +108,19 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 
 ## Ad-hoc — 2026-10-24
 
-- **Change:** Found while planning M3. (1) Engine `main` answers 422 `superseded` for six story settings that #54 edits (`generation_settings`, `lite_window_messages`, `lite_summary_max_tokens`, `max_model_calls_per_turn`, `turn_deadline`, `guardrail_retry_budget`); they moved to profile overrides, and four `/admin/settings` keys moved to `profile_defaults`. (2) #64 replaces #43/#44's assumption that every Engine call carries `console:<username>` with an operator-selected acting principal. (3) The Engine added milestone M9 "Performance tuning" and renumbered Bug fixes to M10 and Audit to M11, so the Console's M9 and M10 no longer mirror Engine M9 and M10 one-for-one.
+- **Change:** Found while planning M3. (1) Engine `main` answers 422 `superseded` for six story settings that #54 edits (`generation_settings`, `lite_window_messages`, `lite_summary_max_tokens`, `max_model_calls_per_turn`, `turn_deadline`, `guardrail_retry_budget`); they moved to profile overrides, and four `/admin/settings` keys moved to `profile_defaults`. (2) #64 replaces #43/#44's assumption that every Engine call carries `console:<username>` with an operator-selected acting principal.
   **Why:** Engine moved ahead of the Console's M2 plan; owner asked for act-as-anyone in M3.
-  **Affects:** M2 (#43, #44, #50, #54), and the roadmap's M9/M10 mirroring. Run `/n8-replan M2`.
+  **Affects:** M2 (#43, #44, #50, #54). — reconciled by /n8-replan 2026-10-24
+
+## Ad-hoc — 2026-10-24 (roadmap)
+
+- **Change:** The Engine added milestone M9 "Performance tuning" and renumbered Bug fixes to M10 and Audit to M11, so the Console's M9 "Bug fixes & testing" and M10 "Audit" no longer mirror Engine M9 and M10 one-for-one (the roadmap rule "each Console M<n> mirrors Engine M<n>").
+  **Why:** Engine roadmap change after the Console roadmap was set.
+  **Affects:** Console M9, M10 and the mirroring rule in CLAUDE.md; decide whether to add a Console M9 performance milestone or re-map.
+
+## /n8-replan M2 — 2026-10-24
+
+- **Decision:** Replanned M2 (#42–#54) against Engine `main` (M3 and M4 merged), plus knock-on edits to M3 #80, #84 and #85. ACs changed in #46 (purposes from the Engine, own/inherited/default sources, embedding read-only), #50 (today's settings keys, no reset-to-default, profile defaults read-only) and #54 (only the settings the Engine still accepts, plus `allow_new_arrivals`; the six superseded dials link to #85's Config). Detail-level fixes in the rest: turn deadline from `effective_budget`, new story states and error codes, compose volumes, schema renames.
+  **Why:** Engine M3 moved engine dials into profiles and added paused/held states and erasure error codes; Console M2 runs against `main`.
+- **Decision:** Deployment `profile_defaults` are shown read-only in #50; M3 #84 edits them with its schema-generated form (owner: "recs").
+- **Decision:** The `embedding` model is read-only in #46; editing it waits for M4 (#59), because a change re-embeds every story (owner: "recs").
