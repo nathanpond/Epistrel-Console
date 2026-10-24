@@ -1,9 +1,14 @@
 """Guards over rollback.yml (#39): dispatch from main only; nothing mutates before validation."""
 
 import copy
+import re
+from pathlib import Path
 from typing import Any
 
-from tests.test_workflows import WORKFLOWS, jobs, load, triggers
+import pytest
+
+from tests.test_workflows import WORKFLOWS, jobs, load, steps, triggers
+from tests.workflow_steps import StepRun, run_step, step
 
 ROLLBACK = WORKFLOWS / "rollback.yml"
 MUTATIONS = ("imagetools create", "gh release edit")
@@ -55,8 +60,204 @@ def test_a_mutation_before_the_prechecks_fails_the_rule() -> None:
 def test_prechecks_cover_the_refusals() -> None:
     pre = next(s for s in jobs(load(ROLLBACK))["rollback"]["steps"] if s.get("id") == "pre")
     run = pre["run"]
-    assert "image tag not found" in run
+    assert "image tag not found, or the registry refused" in run
     assert "in_progress|queued|waiting|pending|requested" in run
     assert "good_version and bad_version are the same" in run
     assert 'gh release view "v$GOOD"' in run
     assert 'gh release view "v$BAD"' in run
+
+
+# --- what a rollback does, and never does (#107) ---------------------------------------------
+
+# Word-bounded: "docker build" must not match "docker buildx imagetools".
+BUILDS = re.compile(r"docker/build-push-action@|\bdocker build\b|\bbuildx build\b|\bdocker push\b")
+GOOD_DIGEST, BAD_DIGEST, OLD_DIGEST = "sha256:good", "sha256:bad", "sha256:old"
+
+
+def rollback_job() -> dict[str, Any]:
+    job: dict[str, Any] = copy.deepcopy(jobs(load(ROLLBACK))["rollback"])
+    return job
+
+
+def rebuild_steps(doc: dict[str, Any]) -> list[str]:
+    """Steps that build or push an image: a rollback only re-points tags at existing ones."""
+    return [
+        str(s.get("name") or s.get("id") or s.get("uses"))
+        for _, s in steps(doc)
+        if BUILDS.search(str(s.get("uses", "")) + "\n" + str(s.get("run", "")))
+    ]
+
+
+def test_rollback_never_rebuilds() -> None:
+    assert rebuild_steps(load(ROLLBACK)) == []
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        {"name": "rebuild", "uses": "docker/build-push-action@v7"},
+        {"name": "rebuild", "run": "docker buildx build --push -t x ."},
+        {"name": "rebuild", "run": "docker push x"},
+    ],
+)
+def test_rebuild_rule_bites(added: dict[str, Any]) -> None:
+    doc = copy.deepcopy(load(ROLLBACK))
+    doc["jobs"]["rollback"]["steps"].append(added)
+    assert rebuild_steps(doc) == ["rebuild"]
+
+
+PROMOTE = "Promote the good release, demote the bad one"
+GH_STUB = """
+case "$1 $2" in
+  "release view") printf 'Bad notes\\n'; exit 0 ;;
+  "release edit") exit 0 ;;
+esac
+"""
+
+
+def promote(tmp_path: Path, script: str, bad: str = "0.1.1") -> StepRun:
+    env = {"GOOD": "0.1.0", "BAD": bad}
+    return run_step(script, tmp_path, env=env, stubs={"gh": GH_STUB})
+
+
+def demote_problems(result: StepRun) -> list[str]:
+    """Why the bad release could still be (or become) latest after the step."""
+    edits = result.called("gh", "release", "edit", "v0.1.1")
+    if len(edits) != 1:
+        return [f"{len(edits)} edits of the bad release"]
+    problems = [
+        f"bad release not {f}" for f in ("--prerelease", "--latest=false") if f not in edits[0]
+    ]
+    return problems
+
+
+def test_promote_makes_good_latest_and_demotes_bad(tmp_path: Path) -> None:
+    result = promote(tmp_path, step(rollback_job(), PROMOTE)["run"])
+    assert result.rc == 0, result.output
+    good = result.called("gh", "release", "edit", "v0.1.0")
+    assert good == [
+        ["gh", "release", "edit", "v0.1.0", "--repo", "nathanpond/Epistrel-Console",
+         "--latest", "--prerelease=false"],
+    ]  # fmt: skip
+    assert demote_problems(result) == []
+    note = (tmp_path / "bad-body.md").read_text()
+    assert "use v0.1.0." in note
+    assert "Bad notes" in note
+
+
+def test_without_a_bad_version_only_good_is_edited(tmp_path: Path) -> None:
+    result = promote(tmp_path, step(rollback_job(), PROMOTE)["run"], bad="")
+    assert result.rc == 0, result.output
+    assert [c[3] for c in result.called("gh", "release", "edit")] == ["v0.1.0"]
+
+
+def test_demote_rule_bites(tmp_path: Path) -> None:
+    script = step(rollback_job(), PROMOTE)["run"]
+    assert script.count("--prerelease --latest=false") == 1
+    result = promote(tmp_path, script.replace("--prerelease --latest=false", "--prerelease"))
+    assert demote_problems(result) == ["bad release not --latest=false"]
+
+
+RETAG = "Re-point floating tags"
+
+
+def docker_stub(tags: dict[str, str]) -> str:
+    """``docker buildx imagetools``: ``inspect`` answers from ``tags``; ``create`` succeeds."""
+    cases = "".join(f'    "$IMAGE:{t}") echo "{d}"; exit 0 ;;\n' for t, d in tags.items())
+    return f"""
+if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
+  case "$4" in
+{cases}  esac
+  echo "ERROR: $4: not found" >&2; exit 1
+fi
+[ "$1 $2 $3" = "buildx imagetools create" ] && exit 0
+"""
+
+
+def retag(tmp_path: Path, good: str, bad: str, tags: dict[str, str]) -> list[str]:
+    """The tags the step re-pointed at the good digest."""
+    env = {"GOOD": good, "BAD": bad, "GOOD_DIGEST": GOOD_DIGEST, "BAD_DIGEST": BAD_DIGEST}
+    result = run_step(step(rollback_job(), RETAG)["run"], tmp_path, env=env,
+                      stubs={"docker": docker_stub(tags)})  # fmt: skip
+    assert result.rc == 0, result.output
+    moved = []
+    for call in result.called("docker", "buildx", "imagetools", "create"):
+        assert call[-1] == f"ghcr.io/nathanpond/epistrel-console@{GOOD_DIGEST}"
+        moved.append(call[call.index("-t") + 1].rsplit(":", 1)[1])
+    assert result.outputs["moved"].split() == moved
+    return moved
+
+
+@pytest.mark.parametrize(
+    ("good", "bad", "tags", "moved"),
+    [
+        # Same minor line: latest, X.Y and X all pointed at the bad image, all move back.
+        ("1.2.4", "1.2.5", {"latest": BAD_DIGEST, "1.2": BAD_DIGEST, "1": BAD_DIGEST},
+         ["latest", "1.2", "1"]),
+        # Bad 1.3.0, good 1.2.5: `1` moves, `1.2` stays even if it pointed at the bad image,
+        # and `1.3` (bad's own line) is never touched.
+        ("1.2.5", "1.3.0", {"latest": BAD_DIGEST, "1.2": BAD_DIGEST, "1.3": BAD_DIGEST,
+                            "1": BAD_DIGEST}, ["latest", "1"]),
+        # Different major: only latest.
+        ("1.9.0", "2.0.0", {"latest": BAD_DIGEST, "1.9": BAD_DIGEST, "1": BAD_DIGEST},
+         ["latest"]),
+        # A floating tag that is not on the bad image stays.
+        ("1.2.4", "1.2.5", {"latest": BAD_DIGEST, "1.2": OLD_DIGEST, "1": OLD_DIGEST},
+         ["latest"]),
+        # No bad version: only latest.
+        ("1.2.4", "", {"latest": BAD_DIGEST, "1.2": BAD_DIGEST, "1": BAD_DIGEST}, ["latest"]),
+    ],
+)  # fmt: skip
+def test_floating_tags_move_only_within_the_good_line(
+    tmp_path: Path, good: str, bad: str, tags: dict[str, str], moved: list[str]
+) -> None:
+    assert retag(tmp_path, good, bad, tags) == moved
+
+
+PRE_GH = """
+case "$1 $2" in
+  "run list") echo 0; exit 0 ;;
+  "release view") exit 0 ;;
+esac
+"""
+
+
+def precheck(tmp_path: Path, good: str, bad: str = "", docker: str | None = None) -> StepRun:
+    stubs = {"gh": PRE_GH, "docker": docker or docker_stub({good: GOOD_DIGEST, bad: BAD_DIGEST})}
+    pre = step(rollback_job(), "pre")["run"]
+    return run_step(pre, tmp_path, env={"GOOD": good, "BAD": bad}, stubs=stubs)
+
+
+def test_prechecks_pass_for_bare_versions(tmp_path: Path) -> None:
+    result = precheck(tmp_path, "0.1.0", "0.1.1")
+    assert result.rc == 0, result.output
+    assert result.outputs == {"good_digest": GOOD_DIGEST, "bad_digest": BAD_DIGEST}
+
+
+@pytest.mark.parametrize(
+    ("good", "bad", "why"),
+    [
+        ("0.1.0\nx", "", "good_version must be bare X.Y.Z"),
+        ("x\n0.1.0", "", "good_version must be bare X.Y.Z"),
+        ("v0.1.0", "", "good_version must be bare X.Y.Z"),
+        ("0.1.0-rc.1", "", "good_version must be bare X.Y.Z"),
+        ("0.1.0", "0.1.1\nx", "bad_version must be bare X.Y.Z"),
+        ("0.1.0", "0.1.0", "are the same"),
+    ],
+)
+def test_prechecks_refuse_bad_versions_for_their_shape(
+    tmp_path: Path, good: str, bad: str, why: str
+) -> None:
+    result = precheck(tmp_path, good, bad)
+    assert result.rc == 1
+    assert why in result.output
+    # Refused at validation: nothing was asked of the registry or GitHub.
+    assert result.calls == []
+
+
+def test_an_inspect_failure_reports_the_registrys_message(tmp_path: Path) -> None:
+    denied = 'echo "ERROR: unexpected status from HEAD request: 401 Unauthorized" >&2; exit 1'
+    result = precheck(tmp_path, "0.1.0", docker=denied)
+    assert result.rc == 1
+    assert "401 Unauthorized" in result.output
+    assert result.called("gh", "release", "edit") == []
