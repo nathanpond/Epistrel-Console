@@ -134,6 +134,8 @@ def check_operation(doc: dict[str, Any], op: Operation) -> list[str]:
         return []
     problems: list[str] = []
     checked = 0
+    # A status answered with another model (respond's 202 ``QueuedTurn``) is checked against it.
+    others = {str(status): model for status, model in op.status_models}
     for status, response in item[op.method.lower()].get("responses", {}).items():
         content = resolve(doc, response).get("content", {}).get("application/json", {})
         schema = content.get("schema")
@@ -141,7 +143,10 @@ def check_operation(doc: dict[str, Any], op: Operation) -> list[str]:
             if schema["$ref"] == ERROR_REF:
                 continue  # the error envelope: EngineError, not the response model
             checked += 1
-            problems.extend(compare_model(doc, op.response_model, schema, f"{name} {status}"))
+            model = others.get(status, op.response_model)
+            problems.extend(compare_model(doc, model, schema, f"{name} {status}"))
+    for status in sorted(set(others) - set(item[op.method.lower()].get("responses", {}))):
+        problems.append(f"{name}: no {status} response in the schema")
     if checked == 0:
         problems.append(f"{name}: no JSON response references a component")
     return problems

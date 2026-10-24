@@ -11,18 +11,13 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_safe
 
 from console.engine.client import EngineClientError
-from console.engine.models import OperationRecord, TurnReport
+from console.engine.models import OperationRecord
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.models import EngineOperation
-from console.operation_log import (
-    input_violations,
-    is_turn,
-    output_violations,
-    policy_ids,
-    turn_report_json,
-)
+from console.operation_log import input_violations, is_turn, output_violations, policy_ids
 from console.redaction import redact
+from console.turn_reports import stored_turn_report, violation_rows
 
 PAGE_SIZE = 50
 EMPTY = "—"
@@ -99,38 +94,6 @@ def operation_list(request: HttpRequest) -> HttpResponse:
     return render(request, "console/operations.html", context)
 
 
-@dataclass(frozen=True)
-class ViolationRow:
-    policy_id: str
-    name: str
-    message: str
-    locators: tuple[str, ...]
-
-
-def _violation_rows(violations: list[dict[str, Any]]) -> list[ViolationRow]:
-    rows = []
-    for v in violations:
-        locators: tuple[str, ...] = ()
-        if isinstance(v.get("locator"), str):
-            locators = (v["locator"],)
-        elif isinstance(v.get("locators"), list):
-            locators = tuple(str(item) for item in v["locators"])
-        rows.append(
-            ViolationRow(
-                str(v.get("policy_id", EMPTY)),
-                str(v.get("name", EMPTY)),
-                str(v.get("message", EMPTY)),
-                locators,
-            )
-        )
-    return rows
-
-
-def _turn_report(value: object) -> TurnReport | None:
-    report = turn_report_json(value)
-    return TurnReport.from_json(report) if report is not None else None
-
-
 def _viewpoint(row: EngineOperation) -> str | None:
     body = row.request.get("body") if isinstance(row.request, dict) else None
     viewpoint = body.get("output_viewpoint") if isinstance(body, dict) else None
@@ -143,9 +106,9 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     context: dict[str, Any] = {
         "row": row,
         "is_turn": is_turn(row.response),
-        "report": _turn_report(row.response),
-        "input_violations": _violation_rows(input_violations(row.response)),
-        "output_violations": _violation_rows(output_violations(row.response)),
+        "report": stored_turn_report(row.response),
+        "input_violations": violation_rows(input_violations(row.response)),
+        "output_violations": violation_rows(output_violations(row.response)),
     }
     if request.GET.get("fetch") == "1" and row.engine_operation_id:
         fetched: OperationRecord | None = None
@@ -163,6 +126,6 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             fetched=fetched,
             fetch_error=fetch_error,
             fetched_body=result_body,
-            fetched_report=_turn_report(result_body),
+            fetched_report=stored_turn_report(result_body),
         )
     return render(request, "console/operation_detail.html", context)

@@ -1,0 +1,5 @@
+{# The answer to a turn POST (#48): the inspector's content, then out-of-band the waiting area, the form and (after a finished turn) the transcript. #}
+{% include "console/play/_inspector_body.html" %}
+{% include "console/play/_status.html" with oob=True %}
+{% include "console/play/_turn_form.html" with oob=True %}
+{% if transcript %}{% include "console/play/_transcript.html" with oob=True %}{% endif %}

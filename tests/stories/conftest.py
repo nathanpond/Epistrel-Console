@@ -1,4 +1,5 @@
-"""Shared set-up for the story pages (#45): a fake Engine behind ``engine_client_for``."""
+"""Shared set-up for the story pages (#45; the story page is #48's play view): a fake Engine
+behind ``engine_client_for``."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -9,6 +10,7 @@ from django.test import override_settings
 
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
+from console.views import play as play_views
 from console.views import stories as views
 from tests.fakes.engine import FakeEngine
 
@@ -24,5 +26,6 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
         return client
 
     monkeypatch.setattr(views, "engine_client_for", client_with_fake)
+    monkeypatch.setattr(play_views, "engine_client_for", client_with_fake)  # /stories/<id>/
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake

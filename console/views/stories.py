@@ -1,8 +1,8 @@
 """Stories (#45): every story in the Engine, a new Lite story with its cast, and archive,
 unarchive and delete behind confirm pages.
 
-``/stories/<id>/`` is a minimal header page (name, status, revision, rating, cast and the
-actions); #48 builds the play view on it.
+``/stories/<id>/`` is the play view (#48, ``console/views/play.py``); its header shows these
+actions.
 """
 
 from dataclasses import dataclass
@@ -24,7 +24,7 @@ from console.confirm import (
     shown_name,
 )
 from console.engine.client import EngineClient, EngineClientError, EngineError
-from console.engine.models import Story, StorySummary
+from console.engine.models import StorySummary
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
@@ -93,23 +93,6 @@ def story_list(request: HttpRequest) -> HttpResponse:
         request,
         "console/stories/list.html",
         {"rows": rows, "filters": filters, "status": status or "", "empty_text": empty_text},
-    )
-
-
-# --- Detail (minimal; #48's play view) --------------------------------------------------------
-
-
-@require_safe
-def story_detail(request: HttpRequest, story_id: str) -> HttpResponse:
-    story: Story = engine_client_for(request).get_story(story_id)
-    return render(
-        request,
-        "console/stories/detail.html",
-        {
-            "story": story,
-            "cast": story.cast,
-            "actions_query": confirm_query(story.name, request.get_full_path()),
-        },
     )
 
 

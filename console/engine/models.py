@@ -316,6 +316,199 @@ class OperationRecord(Model):
     stages: list[OperationStage] = field(default_factory=list)
 
 
+# --- Turns and history (#48; #51-#53 reuse them) ------------------------------------------------
+
+Channel = Literal["say", "do", "think", "latent", "narration", "message", "audit"]
+
+
+@dataclass(frozen=True)
+class HistoryItem(Model):
+    """``HistoryItemModel``: one history item (a beat, a narration, a reply message or an audit
+    record) with its position and the operation that recorded it.
+
+    An omniscient read's ``OmniscientHistoryItemModel`` has these fields too (plus
+    ``true_ages``), so this parses both. The structured-turn extras (#150) stay raw JSON.
+    """
+
+    turn: int | None
+    variant: int | None
+    beat: int | None
+    kind: str
+    actor_character_id: str | None
+    render_character_ids: list[str] | None
+    channel: Channel
+    text: str
+    operation_id: str
+    message_id: str
+    origin: Literal["generated", "ingested"]
+    detected: Any = None
+    effects: Any = None
+    labels: Any = None
+    propositions: Any = None
+    quarantined: bool = False
+    redacted: bool = False
+    visibility: Any = None
+
+
+def _history_items(raw: list[Any]) -> list[HistoryItem]:
+    parsed = (HistoryItem.from_json(item) for item in raw)
+    return [item for item in parsed if item is not None]
+
+
+@dataclass(frozen=True)
+class TurnMessage(Model):
+    """``TurnMessageModel``: a turn's reply as history lists it."""
+
+    message_id: str
+    text: str
+
+
+@dataclass(frozen=True)
+class TurnSummary(Model):
+    """``TurnSummaryModel``: one turn on a history page and its reply (``None`` when reply-less,
+    e.g. an ingested player turn)."""
+
+    turn: int
+    variant: int | None
+    message: TurnMessage | None
+
+
+@dataclass(frozen=True)
+class History(Model):
+    """``HistoryResponse``: a page of a story's history for one output viewpoint.
+
+    Pages hold whole turns, newest page first; ``items`` are ascending within the page.
+    ``items`` (and ``audit``) are raw, because the schema's item is a union (omniscient or
+    not); :attr:`entries` parses them. ``summary`` stays raw JSON.
+    """
+
+    items: list[Any]
+    turns: list[TurnSummary]
+    output_viewpoint: str
+    audience_filter: Literal["none", "co_location", "full"]
+    as_of: int
+    timeline_revision: int
+    next_before_turn: int | None
+    audit: list[Any] | None = None
+    summary: Any = None
+
+    @property
+    def entries(self) -> list[HistoryItem]:
+        """The items, in the Engine's order (an item that does not parse is left out)."""
+        return _history_items(self.items)
+
+
+@dataclass(frozen=True)
+class ReplyMessage(Model):
+    """``MessageBody``: a finished reply's transcript row id and text."""
+
+    message_id: str
+    text: str
+    mode: Literal["polished", "deterministic"] | None = None
+
+
+@dataclass(frozen=True)
+class RespondResponse(Model):
+    """``RespondResponse``: one finished turn (``POST /stories/{id}/respond``'s 200).
+
+    ``beats`` are raw (the schema's item is a union); :attr:`entries` parses them, and
+    :attr:`report` is the turn report the inspector shows.
+    """
+
+    timeline_revision: int
+    message: ReplyMessage
+    beats: list[Any]
+    turn: int
+    variant: int
+    output_viewpoint: str
+    audience_filter: Literal["none", "co_location", "full"]
+    model_calls: list[ModelCall]
+    elapsed_ms: int
+    degradation: list[str]
+    degradation_details: list[DegradationStep]
+    guardrail: TurnGuardrail
+    call_counts: dict[str, int]
+    budget: TurnBudget | None
+    fingerprint: str | None
+    capabilities: list[str]
+    quality_status: QualityStatus | None
+    profile: ProfileVersionRef | None
+    config_revision: int | None
+    idempotency_key: str | None = None
+    queued_ms: int | None = None
+    first_call_offset_ms: int | None = None
+    warnings: list[TurnWarning] = field(default_factory=list)
+
+    @property
+    def entries(self) -> list[HistoryItem]:
+        return _history_items(self.beats)
+
+    @property
+    def report(self) -> TurnReport:
+        return TurnReport(
+            model_calls=self.model_calls,
+            elapsed_ms=self.elapsed_ms,
+            call_counts=self.call_counts,
+            budget=self.budget,
+            degradation=self.degradation,
+            degradation_details=self.degradation_details,
+            guardrail=self.guardrail,
+            queued_ms=self.queued_ms,
+            first_call_offset_ms=self.first_call_offset_ms,
+            fingerprint=self.fingerprint,
+            capabilities=self.capabilities,
+            quality_status=self.quality_status,
+            profile=self.profile,
+            config_revision=self.config_revision,
+            warnings=self.warnings,
+            timeline_revision=self.timeline_revision,
+            turn=self.turn,
+            variant=self.variant,
+        )
+
+
+@dataclass(frozen=True)
+class QueuedTurn(Model):
+    """``QueuedTurn``: a turn the Engine queued (``respond``'s 202); poll
+    ``GET /operations/{operation_id}``."""
+
+    operation_id: str
+    position: int
+
+
+@dataclass(frozen=True)
+class EffectiveBudget(Model):
+    """``EffectiveBudgetBody``: a story's per-turn model-call cap and deadline (seconds), the
+    guardrail calls a turn reserves and the smallest cap a request may ask for."""
+
+    max_model_calls_per_turn: int
+    source: str
+    turn_deadline: float
+    reserved: dict[str, int]
+    minimum_required: int
+
+
+@dataclass(frozen=True)
+class GuardrailCalls(Model):
+    """``GuardrailCallsBody``: the model-assisted guardrail calls a turn makes on each side."""
+
+    input: int
+    output: int
+
+
+@dataclass(frozen=True)
+class StorySettings(Model):
+    """``StorySettingsBody`` (``GET /stories/{id}/settings``): the story's settings (raw), its
+    effective and inactive policies (raw ``EffectivePolicyBody`` items, for #54) and its
+    effective budget."""
+
+    settings: dict[str, Any]
+    effective_policies: list[Any]
+    inactive_policies: list[Any]
+    guardrail_calls: GuardrailCalls
+    effective_budget: EffectiveBudget
+
+
 # --- Stories (#45; #48's play view and #50's settings page reuse them) -------------------------
 
 

@@ -259,3 +259,59 @@ def test_policy_create_edit_retire_and_retired_refusal_live(
         )
         assert refused.status_code == 200
         assert "Retired policies cannot be changed" in refused.content.decode()
+
+
+@pytest.mark.engine_auth
+def test_play_one_turn_live(url: str, key: str, operator_client: Client, operator: object) -> None:
+    """#48: play one Lite turn from the play view against the Engine's stub model adapter
+    (engine-up.sh / compose.smoke.yml set ``EPISTREL_MODEL_ADAPTER=stub``)."""
+    client = EngineClient(url, key, principal="console:smoke")
+    ratings = client.list_content_ratings()
+    created = client.create_story(
+        {
+            "name": "Console smoke turn",
+            "content_rating_id": ratings[0].id,
+            "characters": [
+                {
+                    "name": "Mara",
+                    "definition": "A harbour pilot.",
+                    "true_age": 34,
+                    "is_player": True,
+                },
+                {"name": "Tobin", "definition": "Her brother.", "true_age": 41, "is_player": False},
+            ],
+        },
+        idempotency_key=new_ulid(),
+    )
+    story_id = created.story_id
+    assert story_id is not None
+    mara, tobin = (c.id for c in created.characters)
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            page = operator_client.get(f"/stories/{story_id}/").content.decode()
+            snapshot = re.search(r'name="snapshot" value="([^"]+)"', page)
+            idempotency_key = re.search(r'name="idempotency_key" value="([^"]+)"', page)
+            assert snapshot is not None, page
+            assert idempotency_key is not None, page
+            answer = operator_client.post(
+                f"/stories/{story_id}/turn/",
+                {
+                    "snapshot": snapshot.group(1),
+                    "idempotency_key": idempotency_key.group(1),
+                    "actor": mara,
+                    "say": "Is the ferry late again?",
+                    "output_viewpoint": f"character:{tobin}",
+                },
+                HTTP_HX_REQUEST="true",
+            ).content.decode()
+        inspector = answer.split('<div id="turn-status"')[0]
+        reply = re.search(r'<blockquote class="reply">(.+?)</blockquote>', inspector, re.S)
+        assert reply is not None, answer
+        assert reply.group(1).strip(), answer
+        assert "<h4>Model calls (0)</h4>" not in inspector
+        assert re.search(r"<h4>Model calls \(\d+\)</h4>", inspector), inspector
+        assert "Is the ferry late again?" in answer.split('<div id="transcript"')[1]
+        history = client.get_history(story_id, viewpoint=f"character:{tobin}")
+        assert any(item.channel == "message" and item.text for item in history.entries)
+    finally:
+        client.delete_story(story_id, idempotency_key=new_ulid())

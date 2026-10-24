@@ -696,12 +696,14 @@ def test_the_live_service_key_has_one_source(workflow: Path) -> None:
         assert "CONSOLE_ENGINE_SERVICE_KEY" not in text
 
 
-def test_engine_may_get_only_these_four_variables() -> None:
+def test_engine_may_get_only_these_five_variables() -> None:
+    # EPISTREL_MODEL_ADAPTER=stub: the smoke's turn (#48) runs on the Engine's test adapter.
     assert engine_env_vars(ENGINE_UP.read_text()) == {
         "EPISTREL_DATABASE_URL",
         "EPISTREL_LOG_LEVEL",
         "EPISTREL_SERVICE_CREDENTIALS",
         "EPISTREL_CONFIG_KEY",
+        "EPISTREL_MODEL_ADAPTER",
     }
 
 

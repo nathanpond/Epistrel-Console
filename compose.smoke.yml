@@ -5,5 +5,7 @@
 #     ENGINE_LIVE_SERVICE_KEY=dev-only-credential-change-me-00000000 uv run pytest -m engine_live
 services:
   engine:
+    environment:
+      EPISTREL_MODEL_ADAPTER: stub  # the smoke plays a turn without model credentials (#48)
     ports:
       - "127.0.0.1:8000:8000"

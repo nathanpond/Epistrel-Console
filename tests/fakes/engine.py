@@ -92,6 +92,7 @@ class FakeEngine:
             if method in item
         ]
         self._canned: dict[tuple[str, str], _Canned] = {}
+        self._sequences: dict[tuple[str, str], list[_Canned]] = {}
         self._served: dict[tuple[str, str], _Canned] = {}
         self._failures: dict[tuple[str, str], Exception] = {}
         registry: Registry[Any] = Registry().with_resource(
@@ -130,6 +131,39 @@ class FakeEngine:
         validates against that status's response schema.
         """
         method = method.upper()
+        self._sequences.pop((method, path), None)
+        self._canned[(method, path)] = self._validated(method, path, status, json, headers, delay)
+
+    def respond_sequence(self, method: str, path: str, answers: list[dict[str, Any]]) -> None:
+        """Answer ``method path`` with ``answers`` in order, one per request; the last one
+        repeats. Each answer is ``{"status", "json"?, "headers"?, "delay"?}``, validated as
+        :meth:`respond` validates (a scripted poll: ``queued``, ``in_flight``, ``committed``)."""
+        method = method.upper()
+        if not answers:
+            raise ValueError("a sequence needs at least one answer")
+        canned = [
+            self._validated(
+                method,
+                path,
+                a["status"],
+                a.get("json"),
+                a.get("headers"),
+                a.get("delay", 0.0),
+            )
+            for a in answers
+        ]
+        self._canned[(method, path)] = canned[-1]
+        self._sequences[(method, path)] = canned[:-1]
+
+    def _validated(
+        self,
+        method: str,
+        path: str,
+        status: int,
+        json: object | None,
+        headers: dict[str, str] | None,
+        delay: float,
+    ) -> _Canned:
         responses = self._declared(method, path).get("responses", {})
         key = self._response_key(responses, status)
         if key is None:
@@ -143,7 +177,7 @@ class FakeEngine:
             )
             ref = {"$ref": f"{DOC_URI}#/{pointer}/application~1json/schema"}
             Draft202012Validator(ref, registry=self._registry).validate(json)
-        self._canned[(method, path)] = _Canned(status, json, headers or {}, delay)
+        return _Canned(status, json, headers or {}, delay)
 
     def serve(
         self, method: str, path: str, status: int, json: object | None = None, delay: float = 0.0
@@ -185,7 +219,8 @@ class FakeEngine:
         if canned is None:
             if template is None:
                 raise UndeclaredEngineCall(f"{method} {path} is not in the Engine's schema")
-            canned = self._canned.get((method, template))
+            queued = self._sequences.get((method, template))
+            canned = queued.pop(0) if queued else self._canned.get((method, template))
             if canned is None:
                 raise UnconfiguredEngineCall(f"no answer registered for {method} {template}")
         if canned.delay:

@@ -1,0 +1,5 @@
+{# The poll that ended a waiting card (#48): a closing line in the card's place, then out-of-band the inspector, the form and (after a committed turn) the transcript. #}
+<p class="turn-note" id="waiting-{{ card.operation_id }}">{{ note }} <code>{{ card.operation_id }}</code></p>
+{% if inspector %}<div id="inspector" hx-swap-oob="true">{% include "console/play/_inspector_body.html" %}</div>{% endif %}
+{% include "console/play/_turn_form.html" with oob=True %}
+{% if transcript %}{% include "console/play/_transcript.html" with oob=True %}{% endif %}

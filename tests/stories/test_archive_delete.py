@@ -191,6 +191,11 @@ def test_detail_page_shows_the_header_and_actions(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     engine.respond("GET", "/stories/{story_id}", 200, json=engine_fixture("get_story"))
+    # The story page is the play view (#48): it also reads the settings and the history.
+    engine.respond(
+        "GET", "/stories/{story_id}/settings", 200, json=engine_fixture("get_story_settings")
+    )
+    engine.respond("GET", "/stories/{story_id}/history", 200, json=engine_fixture("get_history"))
     html = operator_client.get(f"/stories/{STORY}/").content.decode()
     assert "<h1>Harbour</h1>" in html
     assert "<li>Mara (player)</li>" in html

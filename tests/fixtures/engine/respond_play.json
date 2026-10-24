@@ -1,0 +1,93 @@
+{
+  "timeline_revision": 2,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KY1",
+  "message": {
+    "message_id": "01M5R0QNTZV2CSB478YYC57Y3W",
+    "text": "[stub generation 1b602790b1a2] Mara: \"Is the ferry late again?\""
+  },
+  "beats": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Is the ferry late again?",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0OP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC57Y3V",
+      "origin": "generated"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "[stub generation 1b602790b1a2] Mara: \"Is the ferry late again?\"",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0OP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC57Y3W",
+      "origin": "generated"
+    }
+  ],
+  "turn": 1,
+  "variant": 1,
+  "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+  "audience_filter": "none",
+  "model_calls": [
+    {
+      "purpose": "generation",
+      "model": "stub",
+      "attempt": 1,
+      "outcome": "ok",
+      "latency_ms": 0,
+      "tokens_in": 108,
+      "tokens_out": 15,
+      "cost": 0.0,
+      "request_id": "stub-1b602790b1a26689fc0efada",
+      "finish_reason": "stop"
+    }
+  ],
+  "elapsed_ms": 47,
+  "degradation": [],
+  "degradation_details": [],
+  "guardrail": {
+    "violations": [],
+    "fallback_used": false
+  },
+  "call_counts": {
+    "generation": 1
+  },
+  "budget": {
+    "max_calls": 9,
+    "reserved": {
+      "guardrail_input": 0,
+      "guardrail_output": 0
+    },
+    "used": 1
+  },
+  "queued_ms": null,
+  "first_call_offset_ms": 39,
+  "fingerprint": "sha256:2b36736933bae77180bbd820be64ede15ad7ef4167d1510abf6f135d90ed5d2a",
+  "capabilities": [
+    "budgets",
+    "lite",
+    "models",
+    "pins",
+    "polish",
+    "rolling_summary"
+  ],
+  "quality_status": {
+    "status": "uncertified"
+  },
+  "profile": {
+    "id": "00000000000000000000PRF001",
+    "version": 1
+  },
+  "config_revision": 0
+}

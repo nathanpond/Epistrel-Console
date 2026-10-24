@@ -26,6 +26,7 @@ from console.engine.models import (
     DeploymentSettings,
     HealthResponse,
     HealthResult,
+    History,
     Model,
     ModelConfig,
     ModelConfigItem,
@@ -35,9 +36,12 @@ from console.engine.models import (
     PolicyList,
     PolicyMutation,
     PolicyScope,
+    QueuedTurn,
+    RespondResponse,
     Story,
     StoryCreated,
     StoryList,
+    StorySettings,
     StoryStatusChange,
     StorySummary,
 )
@@ -46,6 +50,8 @@ from console.version import VERSION
 USER_AGENT = f"epistrel-console/{VERSION}"
 DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
 MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
+TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
+DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
 # Routes the Engine serves without auth (Engine #44): never sent the service key.
 EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/redoc"})
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -68,13 +74,21 @@ class EngineError(EngineClientError):
     """The Engine answered with a non-success status (or, for ``openapi()``, a bad body)."""
 
     def __init__(
-        self, code: str, message: str, details: dict[str, Any] | None, http_status: int
+        self,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None,
+        http_status: int,
+        *,
+        retry_after: str | None = None,
     ) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
         self.details: dict[str, Any] = details if details is not None else {}
         self.http_status = http_status
+        # The ``Retry-After`` header (seconds) a 423/503 carries, as sent (#48).
+        self.retry_after = retry_after
 
 
 class EngineUnreachable(EngineClientError):
@@ -100,6 +114,9 @@ class Operation:
     path: str
     response_model: type[Model] | None
     schema_exempt: bool
+    # Success statuses answered with another model than ``response_model`` (respond's 202
+    # ``QueuedTurn``), as ``(status, model)`` pairs; the contract test checks each.
+    status_models: tuple[tuple[int, type[Model]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -140,6 +157,7 @@ def operation(
     path: str,
     response_model: type[Model] | None = None,
     schema_exempt: bool = False,
+    status_models: Mapping[int, type[Model]] | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a client method as the Engine operation ``method path``.
 
@@ -149,7 +167,8 @@ def operation(
     """
 
     def register(func: Callable[P, R]) -> Callable[P, R]:
-        op = Operation(method, path, response_model, schema_exempt)
+        others = tuple(sorted((status_models or {}).items()))
+        op = Operation(method, path, response_model, schema_exempt, others)
         OPERATIONS[f"{method} {path}"] = op
         call = Call(func.__name__, op)
 
@@ -499,6 +518,70 @@ class EngineClient:
             return None
         return _parse(response, PolicyMutation)
 
+    @operation(
+        "POST",
+        "/stories/{story_id}/respond",
+        response_model=RespondResponse,
+        status_models={202: QueuedTurn},
+    )
+    def respond(
+        self,
+        story_id: str,
+        body: Mapping[str, Any],
+        *,
+        idempotency_key: str,
+        prefer_async: bool = True,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
+    ) -> RespondResponse | QueuedTurn:
+        """``POST /stories/{id}/respond``: play one turn (#48).
+
+        A finished turn is :class:`RespondResponse` (200, a replay too); a queued one is
+        :class:`QueuedTurn` (202, poll ``GET /operations/{id}``). ``prefer_async`` sends
+        ``Prefer: respond-async`` (an idle story still answers 200 at once). ``timeout`` is the
+        turn's effective deadline plus 15 s (:func:`turn_timeout`).
+        """
+        headers = {"Idempotency-Key": idempotency_key}
+        if prefer_async:
+            headers["Prefer"] = "respond-async"
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/respond",
+            json=dict(body),
+            headers=headers,
+            timeout=timeout,
+        )
+        if response.status_code == 202:
+            return _parse(response, QueuedTurn)
+        return _parse(response, RespondResponse)
+
+    @operation("GET", "/stories/{story_id}/history", response_model=History)
+    def get_history(
+        self,
+        story_id: str,
+        *,
+        viewpoint: str | None = None,
+        limit: int | None = None,
+        before_turn: int | None = None,
+    ) -> History:
+        """``GET /stories/{id}/history``: one page (whole turns, newest page first, items
+        ascending) for ``viewpoint`` (``character:<id>`` or ``omniscient``; else the story's
+        default)."""
+        params: dict[str, str] = {}
+        if viewpoint:
+            params["viewpoint"] = viewpoint
+        if limit is not None:
+            params["limit"] = str(limit)
+        if before_turn is not None:
+            params["before_turn"] = str(before_turn)
+        response = self._request("GET", f"{_story_path(story_id)}/history", params=params or None)
+        return _parse(response, History)
+
+    @operation("GET", "/stories/{story_id}/settings", response_model=StorySettings)
+    def get_story_settings(self, story_id: str) -> StorySettings:
+        """``GET /stories/{id}/settings``: the story's settings, policies and effective budget
+        (``effective_budget.turn_deadline`` is the turn deadline in seconds)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/settings"), StorySettings)
+
     @operation("GET", "/operations/{operation_id}", response_model=OperationRecord)
     def get_operation(self, operation_id: str, viewpoint: str | None = None) -> OperationRecord:
         """``GET /operations/{id}``: the Engine's record of one operation.
@@ -509,6 +592,13 @@ class EngineClient:
         params = {"viewpoint": viewpoint} if viewpoint else None
         path = f"/operations/{quote(operation_id, safe='')}"
         return _parse(self._request("GET", path, params=params), OperationRecord)
+
+
+def turn_timeout(deadline_s: float | None) -> float:
+    """The HTTP timeout for a turn-producing call (respond, regenerate, ingest, swap): its
+    effective deadline (the request's ``budget.deadline_s``, else the story's
+    ``effective_budget.turn_deadline``, else 45 s) plus 15 s."""
+    return (deadline_s if deadline_s is not None else DEFAULT_TURN_DEADLINE_S) + TURN_GRACE_S
 
 
 def _story_path(story_id: str) -> str:
@@ -566,6 +656,16 @@ def _raise_for_envelope(response: httpx.Response) -> None:
     ):
         details = error.get("details")
         raise EngineError(
-            error["code"], error["message"], details if isinstance(details, dict) else {}, code
+            error["code"],
+            error["message"],
+            details if isinstance(details, dict) else {},
+            code,
+            retry_after=response.headers.get("Retry-After"),
         )
-    raise EngineError(f"http_{code}", _snippet(response), {}, code)
+    raise EngineError(
+        f"http_{code}",
+        _snippet(response),
+        {},
+        code,
+        retry_after=response.headers.get("Retry-After"),
+    )

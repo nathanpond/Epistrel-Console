@@ -1,0 +1,47 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Is the ferry late again?",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0OP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC57Y3V",
+      "origin": "generated"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "[stub generation 1b602790b1a2] Mara: \"Is the ferry late again?\"",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0OP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC57Y3W",
+      "origin": "generated"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R0QNTZV2CSB478YYC57Y3W",
+        "text": "[stub generation 1b602790b1a2] Mara: \"Is the ferry late again?\""
+      }
+    }
+  ],
+  "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+  "audience_filter": "none",
+  "as_of": 1,
+  "timeline_revision": 2,
+  "next_before_turn": null
+}

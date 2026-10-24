@@ -77,7 +77,7 @@ docker compose -f docker-compose.yml -f compose.smoke.yml up -d --wait engine db
 ENGINE_LIVE_URL=http://127.0.0.1:8000 ENGINE_LIVE_SERVICE_KEY=dev-only-credential-change-me-00000000 uv run pytest -m engine_live
 ```
 
-Selecting `engine_live` without `ENGINE_LIVE_URL` or `ENGINE_LIVE_SERVICE_KEY` is an error, never a silent skip. In CI, `engine-up.sh` gives the Engine a CI-only credential and hands the same value to the smoke. Tests marked `engine_auth` need an Engine that enforces service auth; `engine-release-smoke` leaves them out while the newest Engine release has none.
+Selecting `engine_live` without `ENGINE_LIVE_URL` or `ENGINE_LIVE_SERVICE_KEY` is an error, never a silent skip. In CI, `engine-up.sh` gives the Engine a CI-only credential and hands the same value to the smoke. Tests marked `engine_auth` need an Engine that enforces service auth; `engine-release-smoke` leaves them out while the newest Engine release has none. The smoke plays one turn (#48) on the Engine's deterministic `stub` model adapter, which `engine-up.sh` and `compose.smoke.yml` switch on (`EPISTREL_MODEL_ADAPTER=stub`), so it needs no model credentials.
 
 ## Run with Docker
 

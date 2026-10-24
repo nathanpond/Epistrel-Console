@@ -22,9 +22,13 @@ from console.engine.models import (
     DegradationStep,
     DeploymentSettings,
     DormantChain,
+    EffectiveBudget,
+    GuardrailCalls,
     GuardrailViolation,
     HealthChecks,
     HealthResponse,
+    History,
+    HistoryItem,
     ModelCall,
     ModelConfig,
     ModelConfigEntry,
@@ -41,6 +45,9 @@ from console.engine.models import (
     PolicyTarget,
     ProfileVersionRef,
     QualityStatus,
+    QueuedTurn,
+    ReplyMessage,
+    RespondResponse,
     ScenarioOrigin,
     StoredResult,
     Story,
@@ -50,11 +57,14 @@ from console.engine.models import (
     StoryPause,
     StoryPauseProgress,
     StoryRating,
+    StorySettings,
     StoryStatusChange,
     StorySummary,
     TurnBudget,
     TurnGuardrail,
+    TurnMessage,
     TurnReport,
+    TurnSummary,
     TurnWarning,
     VariantChain,
     WorkersCheck,
@@ -155,6 +165,16 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (Policy, "PolicyBody"),
         (PolicyList, "PolicyList"),
         (PolicyMutation, "PolicyMutation"),
+        (RespondResponse, "RespondResponse"),
+        (ReplyMessage, "MessageBody"),
+        (QueuedTurn, "QueuedTurn"),
+        (History, "HistoryResponse"),
+        (HistoryItem, "HistoryItemModel"),
+        (TurnSummary, "TurnSummaryModel"),
+        (TurnMessage, "TurnMessageModel"),
+        (StorySettings, "StorySettingsBody"),
+        (EffectiveBudget, "EffectiveBudgetBody"),
+        (GuardrailCalls, "GuardrailCallsBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -231,3 +251,16 @@ def test_age_condition_is_the_bodies_one_value(component: str) -> None:
     consts = {o["const"] for o in options if "const" in o}
     assert consts == set(typing.get_args(AgeCondition))
     assert {"type": "null"} in options
+
+
+def test_respond_checks_its_202_against_queued_turn() -> None:
+    op = OPERATIONS["POST /stories/{story_id}/respond"]
+    assert op.status_models == ((202, QueuedTurn),)
+    wrong = Operation(op.method, op.path, op.response_model, False, ((202, RespondResponse),))
+    assert any("202" in problem for problem in check_operation(DOC, wrong))
+
+
+def test_a_status_model_for_an_undeclared_status_is_reported() -> None:
+    op = OPERATIONS["POST /stories/{story_id}/respond"]
+    extra = Operation(op.method, op.path, op.response_model, False, ((201, QueuedTurn),))
+    assert "no 201 response in the schema" in " ".join(check_operation(DOC, extra))

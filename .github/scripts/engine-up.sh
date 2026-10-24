@@ -31,6 +31,9 @@ ENGINE_SETTINGS=(
   "EPISTREL_LOG_LEVEL=INFO"
   "EPISTREL_SERVICE_CREDENTIALS=$SERVICE_KEY"
   "EPISTREL_CONFIG_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="  # CI-only, not a secret: 32 zero bytes
+  # The Engine's deterministic test model adapter, so the smoke can play a turn (#48) without
+  # model credentials. Released Engines without the setting drop it (their smoke plays none).
+  "EPISTREL_MODEL_ADAPTER=stub"
 )
 PROBE='from epistrel.config import ENV_PREFIX, Settings
 print("\n".join(ENV_PREFIX + name.upper() for name in Settings.model_fields))'
