@@ -93,3 +93,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** One engine-wide conventions block lives on #43 (error panel middleware, 422 placement helper, per-render idempotency keys, timeouts, PRG and flash, confirm pages, paging, UTC rendering, vendored htmx 4.x, merge-patch forms with a signed original). Response models stay #34's frozen dataclasses, not pydantic.
 - **Decision:** Every M2 story stays blocked until the Engine endpoints it uses are on Engine `edge`; #42 carries a cross-repo blocked-by on nathanpond/Epistrel#44.
 - **Decision:** The pass-1 executor simulation was run through the Workflow tool without the owner's explicit opt-in. It ran the same 13 simulations the skill requires; later passes used plain subagents.
+
+## /n8-plan M3 — 2026-10-24
+
+- **Decision:** M3 sliced into 24 stories (#64–#87) across epics #9–#14. Source: the epics' ACs (37 items, no coverage-claim block), plus 10 items pulled in: archive/delete, listing status, version history, companion editing, adding a character to a running story, assigning a profile, media library, copy/delete profiles, erasure re-apply, and an acting-principal switcher.
+  **Why:** Owner took the planner's suggested pull-ins (round one, "defaults fine") and the round-two recommendations ("All recs good"). Feedback aggregates, review lists, export and resumable uploads were offered and left out.
+- **Decision:** The operator can act as any principal through a global "Acting as" selector (#64). Every Engine call carries the selected principal, and the operation log records both operator and principal.
+  **Why:** Owner, round one: "console should allow me to act as any user. This can be a global setting".
+- **Decision:** M3-wide conventions (20 items) live on #64; per-story builder calls live in each story's Claude's Discretion. Notable ones: a fresh idempotency key on "Apply anyway"; real offboarding and erasure runs reachable only from a signed preview; reports re-read from the #44 row; a Console media proxy that never exposes the credential.
+- **Decision:** Mirror the Engine: no Console-side gating on owner, relations or listing status; dry run first for offboarding and erasure; one-click "Apply anyway" after the Engine's report; inline polling for long checks (owner, round one).
+- **Decision:** Filed Engine requests nathanpond/Epistrel#526 (names and status on a principal's related items) and #527 (filter stories by engine profile). Until they land, #76 shows ids and #78 reads every story, bounded at 10 s.
+- **Decision:** Triage: #57, #58 and #59 moved to M4; #61, #62 and #63 moved to M5. All kept `needs-triage` for those plans to absorb.
+- **Decision:** Executor simulations used plain subagents (24 per pass, two passes), not the Workflow tool.
+
+## Ad-hoc — 2026-10-24
+
+- **Change:** Found while planning M3. (1) Engine `main` answers 422 `superseded` for six story settings that #54 edits (`generation_settings`, `lite_window_messages`, `lite_summary_max_tokens`, `max_model_calls_per_turn`, `turn_deadline`, `guardrail_retry_budget`); they moved to profile overrides, and four `/admin/settings` keys moved to `profile_defaults`. (2) #64 replaces #43/#44's assumption that every Engine call carries `console:<username>` with an operator-selected acting principal. (3) The Engine added milestone M9 "Performance tuning" and renumbered Bug fixes to M10 and Audit to M11, so the Console's M9 and M10 no longer mirror Engine M9 and M10 one-for-one.
+  **Why:** Engine moved ahead of the Console's M2 plan; owner asked for act-as-anyone in M3.
+  **Affects:** M2 (#43, #44, #50, #54), and the roadmap's M9/M10 mirroring. Run `/n8-replan M2`.
