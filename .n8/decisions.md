@@ -252,3 +252,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #110
 - **Decision:** #105 and #110 share one commit (7f03c0f), because both edit `tests/test_workflows.py`.
   **Issue:** #105, #110
+
+## /n8-exec M1 (second verification fixes) — 2026-10-24
+
+- **Decision:** M1's PRs #101 and #111 had already merged, so this run executed the six bugs the second `/n8-verify M1` filed (#112–#117) on a new branch, `milestone/m1-verify-fixes-2`. Every mutation the issues listed was applied to the real file, the suite was run, and the file was restored and checked byte for byte. All of them now fail at least one test.
+  **Issue:** #112–#117
+- **Decision:** The smoke and Tag step tests are parametrized over `publish-edge.yml` and `release.yml`, because the two scripts are identical. That covers #113's D3 (the release smoke's `exit 1`) from `tests/test_workflows.py`.
+  **Issue:** #112, #113
+- **Decision:** publish-edge's short-SHA refusal is now case-insensitive and also refuses a hex prefix followed by `~`/`^` (`grep -Eiq '^[0-9a-f]{7,39}([~^].*)?$'`). A branch or tag named like a short SHA was already refused, so nothing legitimate is newly lost.
+  **Issue:** #112
+- **Decision:** In `rollback.yml`, an inspect error matching `not found|manifest unknown` (case-insensitive) counts as a missing tag. Any other inspect error stops the run and quotes the registry's stderr. The retag step now reads all three tags before moving any, using indexed arrays (bash 3.2-safe) rather than an associative array. Before, a refusal on `X.Y` would have come after `latest` had already moved. `RELEASING.md` lists the new refusal.
+  **Why:** #115 asked for a missing bad tag to be fine and any other error to abort. Checking every tag first makes "abort before mutating" hold for the retag step too.
+  **Issue:** #115
+- **Decision:** #114 and #115 share one commit (a90c985), because both edit `rollback.yml`'s pre step and `tests/test_rollback_workflow.py`. Two of the first round's #114 mutations were wrong: `{ …; exit 1; } || true` still exits, so behaviour never changed. They were re-run as the issue states them (`>/dev/null || true` on the `gh release view` call) and were killed.
+  **Issue:** #114, #115
+- **Decision:** `[tool.mypy]` is now checked against an allow-list instead of prefix matches. Allowed: `strict = true`; any `disallow_*`/`warn_*`/`check_*`/`strict_*`/`extra_checks`/`local_partial_types` set to true; the full `files` list; `plugins == ["mypy_django_plugin.main"]`; `enable_error_code`; and `module` inside overrides. Anything else fails, including `# mypy:` inline comments and a whole-line `# type: ignore` in checked files. A `# type: ignore[code]` on a line of code stays allowed (strict's `warn_unused_ignores` checks it).
+  **Issue:** #116
+- **Decision:** `requires-python` changed from `>=3.12` to `>=3.14`, reversing the previous run's call to leave it. Re-locking removed only cp312/cp313/pp312 wheels and one `typing-extensions; python < '3.13'` marker. No package version changed. Ruff's target moved with it, so `console/engine/client.py` lost a quoted annotation (UP037) and `console/version.py` took PEP 758's unparenthesized `except` (Rule 3: the gate would fail otherwise). Every setup-uv step and both Dockerfile stages are now tested against `.python-version`, and so is every workflow's `UV_VERSION`.
+  **Why:** #116 item 4 filed the mismatch. The lock change was checked to be wheel-only before committing.
+  **Issue:** #116
+- **Decision:** `tools.drift_issue` returns 4 ("no verdict", engine_schema's own code) for exit 1 with an empty or whitespace-only diff. The workflow's check step is unchanged. Fixing it in the tool keeps one place that decides what counts as drift.
+  **Issue:** #117
