@@ -19,8 +19,10 @@ dev = [
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-django>=4.9",
+    "pyyaml>=6",
     "ruff>=0.8",
     "types-jsonschema>=4.26.0.20261006",
+    "types-pyyaml>=6.0.12",
 ]
 
 [tool.uv]
@@ -48,5 +50,6 @@ django_settings_module = "epistrel_console.settings"
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "epistrel_console.settings"
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-ra --strict-markers -m 'not docker'"
 markers = ["docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`"]

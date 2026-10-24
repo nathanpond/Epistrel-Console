@@ -178,3 +178,9 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #34
 - **Decision:** The client still treats all five planned routes as exempt from the key (`/health`, `/metrics`, `/openapi.json`, `/docs`, `/redoc`). The live schema marks only `/health` and `/metrics` without `security`, because FastAPI doesn't list its own doc routes.
   **Issue:** #34
+- **Decision:** The `REQUIRE_DOCKER_TESTS` skip→fail hook lives in `tests/plugins/require_docker.py`, loaded from `tests/conftest.py` through `pytest_plugins`, not inline in `conftest.py`. A separate module is what `pytester` can load (`-p tests.plugins.require_docker`) to prove both directions. A `skipif` mark skips during setup, so under the hook it reports as an error, not a failure. Either way the run exits non-zero.
+  **Issue:** #35
+- **Decision:** Actions resolved 2026-10-24: `actions/checkout@v7` (v7.0.1), `astral-sh/setup-uv@v10.3.2` (exact, since there is no `v10` tag), uv `0.13.5` (= Dockerfile). `.github/rulesets/main-pr-required.json` is the Engine's file verbatim, because its `pull_request` parameters equal this repo's live ruleset.
+  **Issue:** #35
+- **Decision:** The `test` and `lint` jobs run their later checks with `if: always()`, so one failure doesn't hide the next. `manage.py check` and `makemigrations --check` run even if pytest fails.
+  **Issue:** #35

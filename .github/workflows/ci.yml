@@ -1,0 +1,132 @@
+# The merge gate. Runs on every pull request and is reused (workflow_call) by the publish and
+# release workflows, so what guards a merge is exactly what guards a release. Mirrors the Engine's
+# ci.yml (nathanpond/Epistrel), minus its milestone-gate steps, coverage and Postgres tests.
+name: CI
+
+on:
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out (callers pin a SHA; PR runs use the default merge ref)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# PR runs cancel superseded builds; a caller's release gate is never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Exact uv release, resolved 2026-10-24; equal to the Dockerfile's pin (tests/test_workflows.py).
+  UV_VERSION: "0.13.5"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv lock --check
+      - run: uv sync --frozen
+      # Each check after the sync runs even if an earlier one failed, so every failure is reported.
+      - run: uv run ruff check --output-format=github .
+        if: always()
+      - run: uv run ruff format --check .
+        if: always()
+
+  types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      # Strict mode comes from pyproject's [tool.mypy] strict = true (tests/test_repo_config.py).
+      - run: uv run mypy
+
+  test:
+    # CONSOLE_ENGINE_URL stays unset here: tests and tooling must not need an Engine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest
+      - run: uv run python manage.py check
+        if: always()
+      - run: uv run python manage.py makemigrations --check --dry-run
+        if: always()
+
+  docker:
+    # M0's image and compose tests (#31, #32). They build the image themselves with the runner's
+    # default Docker, so this job is also the Docker build check. No setup-buildx: its container
+    # driver would keep the image out of the local store those tests use. With
+    # REQUIRE_DOCKER_TESTS=1 a docker test that would skip (no daemon, pull failed) fails instead.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: pytest -m docker
+        env:
+          REQUIRE_DOCKER_TESTS: "1"
+        run: uv run pytest -m docker
+
+  gate:
+    # One context for the ruleset to require: red if any job above did not succeed.
+    name: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [lint, types, test, docker]
+    steps:
+      - name: Summarise
+        env:
+          LINT: ${{ needs.lint.result }}
+          TYPES: ${{ needs.types.result }}
+          TEST: ${{ needs.test.result }}
+          DOCKER: ${{ needs.docker.result }}
+        run: |
+          printf '%s\n' '| job | result |' '|---|---|' \
+            "| lint | $LINT |" "| types | $TYPES |" "| test | $TEST |" \
+            "| docker | $DOCKER |" >> "$GITHUB_STEP_SUMMARY"
+          for r in "$LINT" "$TYPES" "$TEST" "$DOCKER"; do
+            [ "$r" = "success" ] || { echo "gate: a job did not succeed ($LINT/$TYPES/$TEST/$DOCKER)"; exit 1; }
+          done
+          echo "gate: all jobs succeeded"

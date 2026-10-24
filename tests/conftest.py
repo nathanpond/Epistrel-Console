@@ -4,6 +4,8 @@ import pytest
 
 from tests.fakes.engine import FakeEngine
 
+pytest_plugins = ["pytester", "tests.plugins.require_docker"]
+
 
 @pytest.fixture(autouse=True)
 def _no_console_env(monkeypatch: pytest.MonkeyPatch) -> None:

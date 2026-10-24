@@ -48,6 +48,24 @@ All settings come from the process environment.
 
 Any other variable starting with `CONSOLE_` is treated as a typo and refuses start.
 
+### The PR gate
+
+Every pull request runs `.github/workflows/ci.yml`, and `main` accepts a merge only when its `gate` check is green. These are its commands, in order, so you can run the same checks locally. Leave `CONSOLE_ENGINE_URL` unset for the test commands: the tests and tooling must not need an Engine.
+
+```bash
+uv lock --check                                    # uv.lock matches pyproject.toml
+uv sync --frozen
+uv run ruff check .                                # lint
+uv run ruff format --check .                       # formatting
+uv run mypy                                        # types (strict)
+uv run pytest                                      # tests (docker tests deselected)
+uv run python manage.py check                      # Django's system checks
+uv run python manage.py makemigrations --check --dry-run   # no missing migrations
+REQUIRE_DOCKER_TESTS=1 uv run pytest -m docker     # image + compose tests; needs Docker
+```
+
+The docker tests build the image themselves and pull the Engine `edge` image. With `REQUIRE_DOCKER_TESTS=1` (as in CI), a docker test that would skip (no Docker CLI or daemon, pull failed) fails instead. Without it, those tests skip.
+
 ## Run with Docker
 
 `docker-compose.yml` runs the Console, the Engine's published `edge` image and the Postgres it needs. No `.env` or setup is needed.
