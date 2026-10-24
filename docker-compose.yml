@@ -1,0 +1,68 @@
+# Edge environment: the Console, the Engine's published `edge` image and the Postgres it needs.
+# `docker compose up --build -d --wait`, then http://127.0.0.1:7739/. Every value is a literal (no
+# variable interpolation), so a stray .env can never change the stack. Only the Console's port is published, and
+# only on 127.0.0.1, so this stack runs next to the Engine repo's own (8000, 5432). No service has
+# a restart policy: the stack comes up only when you run `up`.
+name: epistrel-console
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: epistrel
+      POSTGRES_PASSWORD: epistrel-dev  # the Engine compose's dev-only value; the DB is not published
+      POSTGRES_DB: epistrel
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U epistrel -d epistrel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  engine:
+    image: ghcr.io/nathanpond/epistrel:edge
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      EPISTREL_DATABASE_URL: postgresql+psycopg://epistrel:epistrel-dev@db:5432/epistrel
+      EPISTREL_LOG_LEVEL: INFO
+      # The Engine refuses to start without a service credential. These are the Engine compose's
+      # dev-only literals; the Console does not send a key yet (#42).
+      EPISTREL_SERVICE_CREDENTIALS: dev-only-credential-change-me-00000000
+      EPISTREL_CONFIG_KEY: ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA=
+    volumes:
+      - engine-media:/var/lib/epistrel/media  # uploaded media survives recreating the container
+      - engine-erasure-ledger:/var/lib/epistrel/erasure-ledger
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # a model server on the host stays reachable
+    healthcheck:
+      interval: 5s
+      start_period: 10s
+
+  console:
+    build: .
+    image: epistrel-console:dev
+    pull_policy: build  # `docker compose pull` pulls engine and db, never this local tag
+    depends_on:
+      engine:
+        condition: service_started  # a broken Engine never stops the Console starting
+    environment:
+      CONSOLE_ENGINE_URL: http://engine:8000
+      CONSOLE_DATA_DIR: /data
+      DJANGO_DEBUG: "0"
+    ports:
+      - "127.0.0.1:7739:7739"
+    volumes:
+      - console-data:/data
+    healthcheck:
+      interval: 5s
+      start_period: 10s
+
+volumes:
+  pgdata:
+  engine-media:
+  engine-erasure-ledger:
+  console-data:

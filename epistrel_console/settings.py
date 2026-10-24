@@ -11,7 +11,10 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
+
+from epistrel_console import engine_config, secret_key
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,19 +23,30 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
-# The dev fallback key is only accepted while DEBUG is on; any non-debug run must set its own.
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
-if not SECRET_KEY:
-    if not DEBUG:
-        raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off")
-    SECRET_KEY = "django-insecure-dev-only-not-a-secret"  # noqa: S105
+# Console data (SQLite database and, with debug off, the generated secret key) lives in one
+# directory, so a container mounts a single volume (#31).
+DATA_DIR = secret_key.data_dir(os.environ.get(engine_config.DATA_DIR_VAR), BASE_DIR)
+try:
+    if DEBUG:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        secret_key.ensure_dir(DATA_DIR)
+    SECRET_KEY = secret_key.resolve(os.environ.get("DJANGO_SECRET_KEY"), DATA_DIR, DEBUG)
+except secret_key.StartupError as _exc:
+    print(f"error: {_exc.name}: {_exc.reason}", file=sys.stderr)
+    sys.exit(1)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
+
+# The Engine (see engine_config). None when unset or invalid; serving entry points refuse to start
+# in that case, while tooling (mypy, pytest, migrate) runs without an Engine configured.
+_ENGINE = engine_config.parse(os.environ)
+ENGINE_URL: str | None = _ENGINE.url
+ENGINE_SERVICE_KEY: str | None = _ENGINE.service_key
 
 
 # Application definition
@@ -43,11 +57,15 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Before staticfiles, so the console app's runserver (port 7739, Engine URL check) wins.
+    "console",
     "django.contrib.staticfiles",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Static files from the image itself (no web server in front), always on.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -82,7 +100,7 @@ WSGI_APPLICATION = "epistrel_console.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": DATA_DIR / "db.sqlite3",
     }
 }
 
@@ -122,6 +140,22 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT.mkdir(exist_ok=True)
+# No manifest: tests and runserver need no collectstatic.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
+WHITENOISE_USE_FINDERS = DEBUG
+WHITENOISE_AUTOREFRESH = DEBUG
+
+# Plain HTTP on localhost: no secure-cookie or HSTS settings (`check --deploy` warns; tolerated).
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+] or ["http://127.0.0.1:7739", "http://localhost:7739"]
 
 
 # Email

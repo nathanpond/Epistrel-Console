@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Status — Epistrel Console{% endblock %}
+{% block content %}
+<h2>Engine</h2>
+<dl>
+  <dt>URL</dt>
+  <dd>{% if engine_url %}{{ engine_url }}{% else %}not configured{% endif %}</dd>
+  <dt>State</dt>
+  <dd class="state-{{ result.state }}">
+    <strong>{{ state_word }}</strong>{% if result.reason %} — {{ result.reason }}{% endif %}
+  </dd>
+  {% if result.checks %}
+  <dt>Checks</dt>
+  <dd>
+    <ul>
+      {% for name, value in result.checks.items %}<li>{{ name }}: {{ value }}</li>{% endfor %}
+    </ul>
+  </dd>
+  {% endif %}
+  {% if result.latency_ms is not None %}
+  <dt>Latency</dt>
+  <dd>{{ result.latency_ms }} ms</dd>
+  {% endif %}
+  <dt>Service key</dt>
+  <dd>{% if key_set %}Service key: set{% else %}Service key: not set{% endif %}</dd>
+</dl>
+<p>Console version {{ version }} · <a href="/health">/health</a> · <a href="/admin/">admin</a></p>
+{% endblock %}

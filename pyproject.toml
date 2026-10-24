@@ -7,6 +7,9 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "django>=6.1",
+    "gunicorn>=26",
+    "httpx>=0.28",
+    "whitenoise>=6.12",
 ]
 
 [dependency-groups]
@@ -34,7 +37,7 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "DJ", "PT"]
 
 [tool.mypy]
 strict = true
-files = ["epistrel_console", "tests", "manage.py"]
+files = ["epistrel_console", "console", "tests", "manage.py"]
 plugins = ["mypy_django_plugin.main"]
 
 [tool.django-stubs]
@@ -43,4 +46,5 @@ django_settings_module = "epistrel_console.settings"
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "epistrel_console.settings"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m 'not docker'"
+markers = ["docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`"]
