@@ -207,19 +207,41 @@ def test_ci_jobs_run_the_planned_checks() -> None:
     assert any(r.startswith("uv run pytest -m") for r in runs["docker"])
 
 
-# A mypy flag that turns a strict check off, or points mypy at other settings.
+# A mypy flag that turns a strict check off, or points mypy at other settings or files.
 MYPY_WEAKENING_FLAG = re.compile(
-    r"--(?:no-(?:strict|warn|check|disallow)\S*|allow-\S+|disable-error-code\S*"
-    r"|ignore-missing-imports|follow-imports\S*|config-file\S*)"
+    r"--(?:no-(?:strict|warn|check|disallow|extra|local)\S*|allow-\S+|implicit-\S+"
+    r"|disable-error-code\S*|ignore-missing-imports|follow-\S+|config-file\S*|exclude\S*)"
 )
+# What `[tool.mypy]` may hold (#116): anything else, or another value, is a weakening. A check
+# that is part of --strict or stricter still may be set, but only to true.
+MYPY_FILES = ("epistrel_console", "console", "tools", "tests", "manage.py")
+MYPY_STRICTER = re.compile(
+    r"(?:disallow|warn|check|strict)_\w+|extra_checks|local_partial_types|strict"
+)
+# An inline config comment, or a whole-line `# type: ignore` (above the code, it skips the file).
+MYPY_INLINE = re.compile(r"^\s*#\s*(?:mypy\s*:|type\s*:\s*ignore\s*$)", re.MULTILINE)
+
+
+def mypy_setting_problem(key: str, value: Any, top: bool) -> str | None:
+    if MYPY_STRICTER.fullmatch(key):
+        return None if value is True else "must be true"
+    if top and key == "files":
+        missing = [f for f in MYPY_FILES if f not in (value or [])]
+        return f"misses {missing}" if missing else None
+    if top and key == "plugins":
+        return None if value == ["mypy_django_plugin.main"] else "is not the django plugin"
+    if key == "enable_error_code" or (not top and key == "module"):
+        return None
+    return "is not an allowed setting"
 
 
 def mypy_weakenings(ci: dict[str, Any], pyproject: dict[str, Any]) -> list[str]:
-    """How the gate's mypy is less than ``strict = true`` with every check on (#110).
+    """How the gate's mypy is less than ``strict = true`` with every check on (#110, #116).
 
     In the workflow: any mypy command carrying a weakening flag. In ``[tool.mypy]`` and each
-    ``[[tool.mypy.overrides]]``: ``strict`` off, an ``ignore_*``/``allow_*`` turned on,
-    ``disable_error_code``, or a ``disallow_*``/``warn_*``/``check_*``/``strict_*`` turned off.
+    ``[[tool.mypy.overrides]]``: ``strict`` not true, or any setting outside the allow-list
+    (stricter checks set to true, the full ``files`` list, the django plugin,
+    ``enable_error_code``).
     """
     found = []
     for _, step in steps(ci):
@@ -229,15 +251,30 @@ def mypy_weakenings(ci: dict[str, Any], pyproject: dict[str, Any]) -> list[str]:
     mypy = (pyproject.get("tool") or {}).get("mypy") or {}
     if mypy.get("strict") is not True:
         found.append("pyproject: strict is not true")
-    sections = [("[tool.mypy]", mypy)]
-    sections += [(f"override {o.get('module')}", o) for o in mypy.get("overrides") or []]
-    for where, section in sections:
+    sections = [("[tool.mypy]", {k: v for k, v in mypy.items() if k != "overrides"}, True)]
+    sections += [(f"override {o.get('module')}", o, False) for o in mypy.get("overrides") or []]
+    for where, section, top in sections:
         for key, value in section.items():
-            on = key.startswith(("ignore_", "allow_")) and value is True
-            off = key.startswith(("disallow_", "warn_", "check_", "strict_")) and value is False
-            if on or off or key == "disable_error_code":
-                found.append(f"pyproject {where}: {key} = {value!r}")
+            problem = mypy_setting_problem(key, value, top)
+            if problem and not (top and key == "strict"):
+                found.append(f"pyproject {where}: {key} = {value!r} {problem}")
     return found
+
+
+def mypy_inline_weakenings(sources: dict[str, str]) -> list[str]:
+    """``path:line`` of each inline mypy config comment or whole-line ``# type: ignore``."""
+    return [
+        f"{path}:{text.count(chr(10), 0, m.start()) + 1}"
+        for path, text in sources.items()
+        for m in MYPY_INLINE.finditer(text)
+    ]
+
+
+def mypy_sources() -> dict[str, str]:
+    paths = [REPO_ROOT / f for f in MYPY_FILES]
+    files = [p for p in paths if p.is_file()]
+    files += [f for p in paths if p.is_dir() for f in sorted(p.rglob("*.py"))]
+    return {str(f.relative_to(REPO_ROOT)): f.read_text(encoding="utf-8") for f in files}
 
 
 def load_pyproject() -> dict[str, Any]:
@@ -246,6 +283,19 @@ def load_pyproject() -> dict[str, Any]:
 
 def test_mypy_is_not_weakened() -> None:
     assert mypy_weakenings(load(CI), load_pyproject()) == []
+    assert mypy_inline_weakenings(mypy_sources()) == []
+    assert len(mypy_sources()) > 20
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["# mypy: ignore-errors", "#mypy: disable-error-code=attr-defined", "# type: ignore"],
+)
+def test_inline_mypy_weakening_bites(line: str) -> None:
+    sources = {"console/x.py": f'"""Doc."""\n{line}\nimport os\n', "console/y.py": "x = 1\n"}
+    assert mypy_inline_weakenings(sources) == ["console/x.py:2"]
+    # A `# type: ignore[code]` on a line of code is a normal, checked (warn_unused_ignores) ignore.
+    assert mypy_inline_weakenings({"a.py": "x: int = y  # type: ignore[name-defined]\n"}) == []
 
 
 @pytest.mark.parametrize(
@@ -257,6 +307,10 @@ def test_mypy_is_not_weakened() -> None:
         "--no-warn-unused-ignores",
         "--ignore-missing-imports",
         "--follow-imports=skip",
+        "--follow-untyped-imports",
+        "--implicit-reexport",
+        "--no-extra-checks",
+        "--exclude=console/",
         "--config-file=lax.toml",
     ],
 )
@@ -284,6 +338,19 @@ def test_mypy_flag_weakening_bites(flag: str) -> None:
             {"overrides": [{"module": "y", "ignore_missing_imports": True}]},
             "ignore_missing_imports = True",
         ),
+        ({"follow_imports": "skip"}, "follow_imports = 'skip' is not an allowed setting"),
+        ({"follow_untyped_imports": True}, "follow_untyped_imports = True is not an allowed"),
+        ({"implicit_reexport": True}, "implicit_reexport = True is not an allowed setting"),
+        ({"implicit_optional": True}, "implicit_optional = True is not an allowed setting"),
+        ({"extra_checks": False}, "extra_checks = False must be true"),
+        ({"local_partial_types": False}, "local_partial_types = False must be true"),
+        ({"exclude": ["console/"]}, "exclude = ['console/'] is not an allowed setting"),
+        ({"files": ["epistrel_console", "tests"]}, "misses ['console', 'tools', 'manage.py']"),
+        ({"plugins": []}, "plugins = [] is not the django plugin"),
+        (
+            {"overrides": [{"module": "z", "follow_imports": "skip"}]},
+            "override z: follow_imports = 'skip' is not an allowed setting",
+        ),
     ],
 )
 def test_pyproject_mypy_weakening_bites(change: dict[str, Any], expected: str) -> None:
@@ -304,10 +371,22 @@ def test_uv_and_python_versions_match_the_image() -> None:
     doc = load(CI)
     assert doc["env"]["UV_VERSION"] == dockerfile_uv_version()
     python = (REPO_ROOT / ".python-version").read_text().strip()
-    for _, step in steps(doc):
-        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@"):
-            assert step["with"]["python-version"] == python
-            assert step["with"]["version"] == "${{ env.UV_VERSION }}"
+    for path in workflow_files():
+        for _, step in steps(load(path)):
+            if str(step.get("uses", "")).startswith("astral-sh/setup-uv@"):
+                assert step["with"]["python-version"] == python, path.name
+                assert step["with"]["version"] == "${{ env.UV_VERSION }}", path.name
+                assert load(path)["env"]["UV_VERSION"] == dockerfile_uv_version(), path.name
+
+
+def test_requires_python_and_the_image_match_the_pin() -> None:
+    # One Python everywhere (#116): .python-version, pyproject, the Dockerfile's stages.
+    python = (REPO_ROOT / ".python-version").read_text().strip()
+    assert load_pyproject()["project"]["requires-python"] == f">={python}"
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    bases = re.findall(r"^FROM\s+python:(\S+?)-slim\b", dockerfile, re.MULTILINE)
+    assert bases, dockerfile
+    assert set(bases) == {python}, bases
 
 
 def test_no_workflow_sets_the_engine_url_for_ci_tests() -> None:

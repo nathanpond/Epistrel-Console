@@ -142,7 +142,7 @@ class EngineClient:
         self.timeout = timeout
 
     @classmethod
-    def from_settings(cls, *, transport: httpx.BaseTransport | None = None) -> "EngineClient":
+    def from_settings(cls, *, transport: httpx.BaseTransport | None = None) -> EngineClient:
         url: str | None = settings.ENGINE_URL
         if url is None:
             raise EngineNotConfigured("no Engine URL is configured")

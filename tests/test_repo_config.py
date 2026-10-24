@@ -43,6 +43,13 @@ def ruleset_problems(doc: dict[str, Any]) -> list[str]:
         problems.append("not strict")
     if {"context": "gate", "integration_id": 15368} not in checks.get("required_status_checks", []):
         problems.append("gate (GitHub Actions, 15368) is not required")
+    if checks.get("do_not_enforce_on_create", False) is not False:
+        problems.append("not enforced on create")
+    # Nobody bypasses the gate, and the rule covers main with no carve-outs (#116).
+    if doc.get("bypass_actors") != []:
+        problems.append("has bypass actors")
+    if doc.get("conditions") != {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}:
+        problems.append("conditions are not exactly the default branch")
     return problems
 
 
@@ -118,3 +125,21 @@ def test_readme_names_the_pinned_python() -> None:
     python = (REPO_ROOT / ".python-version").read_text().strip()
     readme = (REPO_ROOT / "README.md").read_text()
     assert f"Python {python} (pinned in `.python-version`" in readme
+
+
+def test_ruleset_bypass_and_carve_outs_fail() -> None:
+    doc = copy.deepcopy(load_ruleset())
+    doc["bypass_actors"] = [
+        {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+    ]
+    doc["conditions"]["ref_name"]["exclude"] = ["~DEFAULT_BRANCH"]
+    for rule in doc["rules"]:
+        if rule["type"] == "required_status_checks":
+            rule["parameters"]["do_not_enforce_on_create"] = True
+    assert ruleset_problems(doc) == [
+        "not enforced on create",
+        "has bypass actors",
+        "conditions are not exactly the default branch",
+    ]
+    del doc["conditions"]["ref_name"]["exclude"]
+    assert "conditions are not exactly the default branch" in ruleset_problems(doc)

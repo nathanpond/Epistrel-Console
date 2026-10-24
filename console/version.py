@@ -10,7 +10,7 @@ def _read_version() -> str:
     try:
         with PYPROJECT.open("rb") as handle:
             version = tomllib.load(handle)["project"]["version"]
-    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError):
+    except OSError, tomllib.TOMLDecodeError, KeyError, TypeError:
         return "unknown"
     return str(version)
 
