@@ -15,7 +15,14 @@ from console.engine.models import OperationRecord
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.models import EngineOperation
-from console.operation_log import input_violations, is_turn, output_violations, policy_ids
+from console.operation_log import (
+    input_violations,
+    is_turn,
+    output_violations,
+    policy_ids,
+    rebuild_job_id,
+    rebuild_job_text,
+)
 from console.redaction import redact
 from console.turn_reports import stored_turn_report, violation_rows
 
@@ -100,6 +107,12 @@ def _viewpoint(row: EngineOperation) -> str | None:
     return viewpoint if isinstance(viewpoint, str) and viewpoint else None
 
 
+def _rebuild_job_text(row: EngineOperation) -> str:
+    """A queued rebuild's honest job message (#50); "" for anything else."""
+    job_id = rebuild_job_id(row.kind, row.http_status, row.response)
+    return rebuild_job_text(job_id) if job_id is not None else ""
+
+
 @require_safe
 def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     row = get_object_or_404(EngineOperation, pk=pk)
@@ -109,6 +122,7 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "report": stored_turn_report(row.response),
         "input_violations": violation_rows(input_violations(row.response)),
         "output_violations": violation_rows(output_violations(row.response)),
+        "job_text": _rebuild_job_text(row),
     }
     if request.GET.get("fetch") == "1" and row.engine_operation_id:
         fetched: OperationRecord | None = None

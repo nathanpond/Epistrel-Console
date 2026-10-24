@@ -8,11 +8,14 @@ field is required exactly when it has no default.
 the wrong type or a required one is missing, so a malformed answer never raises.
 
 A field typed ``Any`` holds raw JSON (any value), for parts the Console shows only as JSON.
+
+A JSON key that is not a valid Python name (``class``) is read into a field declared with
+``field(metadata={JSON_NAME: "class"})`` (:func:`json_name`).
 """
 
 import types
 import typing
-from dataclasses import MISSING, dataclass, field, fields, is_dataclass
+from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from typing import Any, Literal, Self, Union
 
 
@@ -68,17 +71,27 @@ def _parse(tp: Any, value: object) -> tuple[bool, object]:
     raise TypeError(f"unsupported model annotation {tp!r}")
 
 
+JSON_NAME = "json"
+
+
+def json_name(f: Field[Any]) -> str:
+    """The JSON key a model field reads: its ``JSON_NAME`` metadata, else its own name."""
+    name = f.metadata.get(JSON_NAME, f.name)
+    return name if isinstance(name, str) else f.name
+
+
 def _from_json(cls: type, obj: object) -> object | None:
     if not isinstance(obj, dict):
         return None
     hints = typing.get_type_hints(cls)
     kwargs: dict[str, object] = {}
     for f in fields(cls):
-        if f.name not in obj:
+        key = json_name(f)
+        if key not in obj:
             if f.default is MISSING and f.default_factory is MISSING:
                 return None
             continue
-        ok, parsed = _parse(hints[f.name], obj[f.name])
+        ok, parsed = _parse(hints[f.name], obj[key])
         if not ok:
             return None
         kwargs[f.name] = parsed
@@ -821,6 +834,57 @@ class DeploymentSettings(Model):
     uncertain_below: float = 0.5
     validation_model_calls: int = 0
     worker_heartbeat_timeout: float = 60.0
+
+
+# --- Engine operations panel (#50): rebuild and configuration changes --------------------------
+
+
+@dataclass(frozen=True)
+class RebuildResult(Model):
+    """``RebuildResponse``: rows written per projection table (Engine order) and the
+    ``maintenance`` operation that wrote them."""
+
+    timeline_revision: int
+    counts: dict[str, int]
+    operation_id: str
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class RebuildQueued(Model):
+    """``RebuildQueuedResponse`` (202): a large story's rebuild, handed to a worker job. The
+    Engine has no status read for that job."""
+
+    timeline_revision: int
+    job_id: str
+    idempotency_key: str | None = None
+
+
+ConfigClass = Literal["interpretive", "prospective"]
+CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
+
+
+@dataclass(frozen=True)
+class ConfigChange(Model):
+    """``ConfigChangeItem``: one changed setting, the revision it produced, its old and new
+    values (raw JSON, secrets redacted by the Engine), who made it (``actor``, verbatim) and
+    when. ``change_class`` is the JSON ``class``."""
+
+    config_revision: int
+    setting: str
+    change_class: ConfigClass = field(metadata={JSON_NAME: "class"})
+    old: Any
+    new: Any
+    actor: str
+    at: str
+
+
+@dataclass(frozen=True)
+class ConfigChanges(Model):
+    """``ConfigChangesBody``: one page, newest first, and the cursor to the next (``after``)."""
+
+    items: list[ConfigChange]
+    next: str | None
 
 
 # --- Model configuration (#46) -----------------------------------------------------------------

@@ -426,7 +426,7 @@ def test_retiring_the_default_says_so(operator_client: Client, engine: FakeEngin
     assert response.status_code == 200
     html = response.content.decode()
     assert "This is the deployment default — choose another default first" in html
-    assert '<a href="/engine/">deployment settings</a>' in html
+    assert '<a href="/engine/settings/">deployment settings</a>' in html
 
 
 def test_other_retire_409_shows_the_panel(operator_client: Client, engine: FakeEngine) -> None:

@@ -58,7 +58,7 @@ RETIRED_REFUSAL = "Retired ratings cannot be changed"
 NO_CHANGES = "No changes — no new version"
 GUIDANCE_NOTE = "Guidance is not inherited"
 RETIRE_QUESTION = "Stories using {name} keep their version; new stories cannot choose it."
-SETTINGS_URL = "/engine/"  # deployment settings (#50)
+SETTINGS_URL = "/engine/settings/"  # deployment settings (#50)
 GLOBAL_POLICIES_URL = "/guardrails/policies/?scope=global"
 CHAIN_DEPTH_MAX = 64  # guards the drawing against a loop the Engine should never store
 

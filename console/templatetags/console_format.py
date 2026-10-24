@@ -65,3 +65,10 @@ def engine_time(value: Any) -> SafeString | str:
 def pretty_json(value: Any) -> str:
     """A JSON value indented by two spaces (put it in ``<pre>``); non-ASCII kept as is."""
     return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+
+
+@register.filter
+def json_value(value: Any) -> str:
+    """A JSON value on one line: ``null``, ``true``, ``"medium"``, ``{"model": null}`` (#50's
+    profile-defaults table)."""
+    return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), default=str)

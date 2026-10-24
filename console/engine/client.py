@@ -21,6 +21,7 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    ConfigChanges,
     ContentRating,
     ContentRatingList,
     ContentRatingMutation,
@@ -41,6 +42,8 @@ from console.engine.models import (
     QueuedTurn,
     RatingVersion,
     RatingVersionList,
+    RebuildQueued,
+    RebuildResult,
     RespondResponse,
     Story,
     StoryCreated,
@@ -56,6 +59,8 @@ DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
 MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
+LONG_MUTATION_TIMEOUT_S = 30.0  # fork and rebuild (#43's timeouts)
+CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 # Routes the Engine serves without auth (Engine #44): never sent the service key.
 EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/redoc"})
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -457,6 +462,62 @@ class EngineClient:
         """``GET /admin/settings``: every deployment setting and its ``config_revision``."""
         return _parse(self._request("GET", "/admin/settings"), DeploymentSettings)
 
+    @operation("PUT", "/admin/settings", response_model=DeploymentSettings)
+    def update_admin_settings(
+        self, patch: Mapping[str, Any], *, idempotency_key: str
+    ) -> DeploymentSettings:
+        """``PUT /admin/settings`` with a ``SettingsPatch`` body (#50): merge semantics, only the
+        keys sent change (a list replaces the stored list; ``null`` unsets the three nullable
+        settings). Answers every setting at the new ``config_revision``."""
+        response = self._request(
+            "PUT",
+            "/admin/settings",
+            json=dict(patch),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, DeploymentSettings)
+
+    @operation("GET", "/admin/config-changes", response_model=ConfigChanges)
+    def list_admin_config_changes(
+        self,
+        *,
+        setting: str | None = None,
+        change_class: str | None = None,
+        since: str | None = None,
+        after: str | None = None,
+        limit: int = CONFIG_CHANGES_PAGE,
+    ) -> ConfigChanges:
+        """``GET /admin/config-changes``: the deployment's configuration changes, newest first,
+        one page (``next`` is the ``after`` cursor of the following page)."""
+        params = _config_change_params(setting, change_class, since, after, limit)
+        return _parse(self._request("GET", "/admin/config-changes", params=params), ConfigChanges)
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/rebuild",
+        response_model=RebuildResult,
+        status_models={202: RebuildQueued},
+    )
+    def rebuild_story(
+        self, story_id: str, *, idempotency_key: str
+    ) -> RebuildResult | RebuildQueued:
+        """``POST /admin/stories/{id}/rebuild``: refold every projection from the event log.
+
+        A synchronous rebuild is :class:`RebuildResult` (rows per table and the ``maintenance``
+        operation id); a large story's is handed to a worker, :class:`RebuildQueued` (202, a
+        job the Engine offers no status read for). Waits 30 s (#43's rebuild timeout).
+        """
+        response = self._request(
+            "POST",
+            f"/admin{_story_path(story_id)}/rebuild",
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=LONG_MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 202:
+            return _parse(response, RebuildQueued)
+        return _parse(response, RebuildResult)
+
     @operation("GET", "/admin/model-config", response_model=ModelConfig)
     def list_model_config(self) -> ModelConfig:
         """``GET /admin/model-config``: every purpose's effective configuration (#46)."""
@@ -664,6 +725,23 @@ def turn_timeout(deadline_s: float | None) -> float:
     effective deadline (the request's ``budget.deadline_s``, else the story's
     ``effective_budget.turn_deadline``, else 45 s) plus 15 s."""
     return (deadline_s if deadline_s is not None else DEFAULT_TURN_DEADLINE_S) + TURN_GRACE_S
+
+
+def _config_change_params(
+    setting: str | None,
+    change_class: str | None,
+    since: str | None,
+    after: str | None,
+    limit: int,
+) -> dict[str, str]:
+    """The query of a configuration-change list (deployment here; a story's, #54, the same)."""
+    params = {"limit": str(limit)}
+    for name, value in (("setting", setting), ("class", change_class), ("since", since)):
+        if value:
+            params[name] = value
+    if after:
+        params["after"] = after
+    return params
 
 
 def _story_path(story_id: str) -> str:

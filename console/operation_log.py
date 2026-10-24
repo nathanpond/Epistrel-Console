@@ -28,6 +28,7 @@ IDEMPOTENCY_HEADER = "Idempotency-Key"
 REPLAY_HEADER = "Idempotent-Replay"
 GUARDRAIL_VIOLATION = "guardrail_violation"
 STORY_PATH = re.compile(r"^/stories/([^/?]+)")
+ADMIN_STORY_PATH = re.compile(r"^/admin/stories/([^/?]+)")  # story maintenance (#50's rebuild)
 ULID_LEN = 26
 Outcome = EngineOperation.Outcome
 
@@ -117,10 +118,12 @@ def config_revision(body: Mapping[str, Any], path: str) -> int | None:
 
 
 def story_id(path: str, body: Mapping[str, Any]) -> str | None:
-    """The story the call was about: none for admin calls; the new story for a call that
-    answers with a ``story_id`` (create, fork); else the path's story id."""
+    """The story the call was about: for admin calls, only a story-maintenance path's story
+    (``/admin/stories/{id}/…``); the new story for a call that answers with a ``story_id``
+    (create, fork); else the path's story id."""
     if path.startswith("/admin/"):
-        return None
+        admin = ADMIN_STORY_PATH.match(path)
+        return admin.group(1) if admin else None
     created = _str(body, "story_id")
     if created is not None:
         return created
@@ -192,6 +195,25 @@ def is_guardrail_rejection(error_code: str, response: object) -> bool:
         error_code == GUARDRAIL_VIOLATION
         or bool(output_violations(response))
         or fallback_used(response)
+    )
+
+
+REBUILD_KIND = "rebuild_story"
+
+
+def rebuild_job_id(kind: str, http_status: int | None, response: object) -> str | None:
+    """The worker job a queued rebuild (202) was handed to (#50), else ``None``. The Engine has
+    no status read for it, so the row stays ``queued``."""
+    if kind != REBUILD_KIND or http_status != 202:
+        return None
+    return _str(_dict(response), "job_id")
+
+
+def rebuild_job_text(job_id: str) -> str:
+    """What a queued rebuild says, stated honestly: nothing can be polled (#50)."""
+    return (
+        f"Rebuild running as job {job_id} — the Engine has no job status endpoint for "
+        "rebuilds; check the Engine logs"
     )
 
 

@@ -21,6 +21,8 @@
   <dt>Elapsed (Console)</dt><dd>{% if row.elapsed_ms is not None %}{{ row.elapsed_ms }} ms{% else %}—{% endif %}</dd>
 </dl>
 
+{% if job_text %}{% include "console/engine/_rebuild_job.html" %}{% endif %}
+
 {% if input_violations %}
 <section class="guardrail-input">
   <h2>Input rejected</h2>

@@ -15,6 +15,8 @@ from console.engine.models import (
     AgeCondition,
     CatalogSource,
     ChainRef,
+    ConfigChange,
+    ConfigChanges,
     ConfigSources,
     ContentRating,
     ContentRatingList,
@@ -51,6 +53,8 @@ from console.engine.models import (
     QueuedTurn,
     RatingVersion,
     RatingVersionList,
+    RebuildQueued,
+    RebuildResult,
     ReplyMessage,
     RespondResponse,
     ScenarioOrigin,
@@ -185,6 +189,10 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (StorySettings, "StorySettingsBody"),
         (EffectiveBudget, "EffectiveBudgetBody"),
         (GuardrailCalls, "GuardrailCallsBody"),
+        (RebuildResult, "RebuildResponse"),
+        (RebuildQueued, "RebuildQueuedResponse"),
+        (ConfigChange, "ConfigChangeItem"),
+        (ConfigChanges, "ConfigChangesBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

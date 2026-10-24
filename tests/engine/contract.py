@@ -16,6 +16,7 @@ from dataclasses import MISSING, fields, is_dataclass
 from typing import Any, Literal, Union
 
 from console.engine.client import Operation
+from console.engine.models import json_name
 
 JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
@@ -99,8 +100,9 @@ def compare_model(doc: dict[str, Any], model: type, node: dict[str, Any], where:
     problems: list[str] = []
     if node.get("type") != "object":
         problems.append(f"{where}: schema type {node.get('type')} is not object")
-    hints = typing.get_type_hints(model)
-    model_fields = {f.name: f for f in fields(model)}
+    hints = {json_name(f): typing.get_type_hints(model)[f.name] for f in fields(model)}
+    # Keyed by the JSON name a field reads (``class`` for ``ConfigChange.change_class``).
+    model_fields = {json_name(f): f for f in fields(model)}
     properties: dict[str, Any] = node.get("properties", {})
     if set(model_fields) != set(properties):
         problems.append(

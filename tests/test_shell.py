@@ -89,7 +89,7 @@ def test_active_section_is_marked(operator_client: Client) -> None:
     assert '<a href="/stories/">Stories</a>' in html
 
 
-@pytest.mark.parametrize("path", ["/engine/"])
+@pytest.mark.parametrize("path", ["/stories/01J9Z8Q4N5V6W7X8Y9Z0A1B2C3/history/"])
 def test_placeholders_render_in_the_shell(operator_client: Client, path: str) -> None:
     response = operator_client.get(path)
     assert response.status_code == 200

@@ -5,7 +5,16 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from console.auth import OperatorAuthenticationForm
-from console.views import models, operations, play, policies, ratings, status, stories
+from console.views import (
+    engine_panel,
+    models,
+    operations,
+    play,
+    policies,
+    ratings,
+    status,
+    stories,
+)
 from console.views.placeholders import placeholder
 
 operation_patterns = (
@@ -73,6 +82,19 @@ rating_patterns = (
     "ratings",
 )
 
+engine_patterns = (
+    [
+        path("", engine_panel.engine_home, name="home"),
+        path("rebuild/", engine_panel.rebuild_pick, name="rebuild-pick"),
+        # A result is a Console operation id (an integer); a story id is a ULID.
+        path("rebuild/<int:pk>/", engine_panel.rebuild_result, name="rebuild-result"),
+        path("rebuild/<str:story_id>/", engine_panel.rebuild, name="rebuild"),
+        path("settings/", engine_panel.deployment_settings, name="settings"),
+        path("config-changes/", engine_panel.config_changes, name="config-changes"),
+    ],
+    "engine",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -87,7 +109,6 @@ urlpatterns = [
     path("models/", include(model_patterns)),
     path("guardrails/policies/", include(policy_patterns)),
     path("guardrails/ratings/", include(rating_patterns)),
-    # Placeholders: each owning M2 story replaces its own.
-    path("engine/", placeholder("Engine"), name="engine"),
+    path("engine/", include(engine_patterns)),
     path("admin/", admin.site.urls),
 ]

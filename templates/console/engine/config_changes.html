@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Config changes — Epistrel Console{% endblock %}
+{% block heading %}Config changes{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:home' %}">← Engine</a> · <a href="{% url 'engine:settings' %}">Deployment settings</a></p>
+<p class="scope">The deployment's configuration changes, newest first, as the Engine records them (who: the Engine's actor).</p>
+
+<form method="get" action="{% url 'engine:config-changes' %}" class="filters">
+  {{ form.non_field_errors }}
+  <label>{{ form.setting.label }} {{ form.setting }}</label>
+  {{ form.setting.errors }}
+  <label>{{ form.prefixed.label }} {{ form.prefixed }}</label>
+  {{ form.prefixed.errors }}
+  <label>{{ form.change_class.label }} {{ form.change_class }}</label>
+  {{ form.change_class.errors }}
+  <label>{{ form.since.label }} {{ form.since }}</label>
+  {{ form.since.errors }}
+  <button type="submit">Filter</button>
+  <a href="{% url 'engine:config-changes' %}">Clear</a>
+</form>
+
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% elif not form.errors %}
+{% include "console/_config_changes.html" %}
+<p class="paging">
+  {% if paged %}<a href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a href="?{{ next_query }}">Next</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

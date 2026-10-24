@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Story busy — Epistrel Console{% endblock %}
+{% block heading %}Rebuild projections{% endblock %}
+{% block content %}
+<h2 class="busy">{{ heading }}</h2>
+{% include "console/_engine_error.html" %}
+{% if retry_after %}<p class="retry-after">Retry-After: {{ retry_after }} s</p>{% endif %}
+<p><a href="{{ back }}">Back</a></p>
+{% endblock %}

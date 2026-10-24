@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Engine — Epistrel Console{% endblock %}
+{% block heading %}Engine{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:settings' %}">Deployment settings</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a></p>
+
+<section class="health">
+  <h2>Health</h2>
+  <p class="state-{{ result.state }}"><strong>{{ result.state_word }}</strong>{% if result.reason %} — {{ result.reason }}{% endif %}
+    · <a href="{% url 'engine:home' %}">Refresh</a></p>
+  {% if health_rows %}
+  <table class="health-detail">
+    <tbody>
+      {% for row in health_rows %}
+      <tr>
+        <th>{{ row.label }}</th>
+        <td><span{% if row.degraded %} class="degraded"{% endif %}>{{ row.text }}</span>{% if row.degraded and row.threshold %} <span class="muted">{{ row.threshold }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if result.latency_ms is not None %}<p class="muted">Probe latency {{ result.latency_ms }} ms.</p>{% endif %}
+</section>
+
+<section class="rebuild">
+  <h2>Rebuild projections</h2>
+  <p>Refold a story's projections (transcript, texts, heads, summaries) from its event log.</p>
+  {% if stories_error %}
+  {% include "console/_engine_error.html" with engine_error=stories_error %}
+  {% elif stories %}
+  <form method="get" action="{% url 'engine:rebuild-pick' %}">
+    <input type="hidden" name="story_names" value="{{ story_names }}">
+    <label>Story
+      <select name="story">
+        {% for story in stories %}<option value="{{ story.id }}"{% if story.disabled %} disabled{% endif %}>{{ story.label }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Rebuild projections</button>
+  </form>
+  {% else %}
+  <p>No stories.</p>
+  {% endif %}
+</section>
+{% endblock %}

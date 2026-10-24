@@ -1,0 +1,87 @@
+{
+    "items": [
+        {
+            "config_revision": 3,
+            "setting": "minor_age_threshold",
+            "class": "interpretive",
+            "old": 21,
+            "new": 22,
+            "actor": "console:nate",
+            "at": "2026-10-24T23:29:15.306345Z"
+        },
+        {
+            "config_revision": 3,
+            "setting": "feedback_retention",
+            "class": "prospective",
+            "old": 30,
+            "new": "story_lifetime",
+            "actor": "console:nate",
+            "at": "2026-10-24T23:29:15.306345Z"
+        },
+        {
+            "config_revision": 2,
+            "setting": "media_moderation_webhook_url",
+            "class": "prospective",
+            "old": null,
+            "new": "https://x.example/h",
+            "actor": "console:nate",
+            "at": "2026-10-24T23:17:33.580122Z"
+        },
+        {
+            "config_revision": 2,
+            "setting": "listing_status_values",
+            "class": "prospective",
+            "old": [
+                "private",
+                "in_review",
+                "public"
+            ],
+            "new": [
+                "private",
+                "public"
+            ],
+            "actor": "console:nate",
+            "at": "2026-10-24T23:17:33.580122Z"
+        },
+        {
+            "config_revision": 2,
+            "setting": "feedback_tags",
+            "class": "prospective",
+            "old": [
+                "out_of_character",
+                "repetitive",
+                "forgot_something",
+                "factual_error",
+                "ignored_my_action",
+                "too_long",
+                "too_short",
+                "should_have_been_blocked",
+                "other"
+            ],
+            "new": [
+                "other"
+            ],
+            "actor": "console:nate",
+            "at": "2026-10-24T23:17:33.580122Z"
+        },
+        {
+            "config_revision": 2,
+            "setting": "feedback_retention",
+            "class": "prospective",
+            "old": "story_lifetime",
+            "new": 30,
+            "actor": "console:nate",
+            "at": "2026-10-24T23:17:33.580122Z"
+        },
+        {
+            "config_revision": 1,
+            "setting": "minor_age_threshold",
+            "class": "interpretive",
+            "old": 18,
+            "new": 21,
+            "actor": "console:nate",
+            "at": "2026-10-24T23:17:27.814914Z"
+        }
+    ],
+    "next": "MDJfY3Vyc29y"
+}

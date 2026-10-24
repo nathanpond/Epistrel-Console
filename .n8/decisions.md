@@ -562,3 +562,45 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The ratings placeholder route is gone (`placeholder()` stays for `/engine/` and #52's history); `test_shell` no longer lists `/guardrails/ratings/` as a placeholder and the #47 navigation test checks only the policies side (the ratings side is in `tests/ratings`). Added an `engine_live` + `engine_auth` smoke running the demo against the real Engine.
   **Why:** The owning story replaces its placeholder (#43).
   **Issue:** #49
+- **Decision (drift):** No schema re-record for #50. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, torn down after) reports a match; `POST /admin/stories/{id}/rebuild` (200 `RebuildResponse`, 202 `RebuildQueuedResponse`), `PUT /admin/settings` and `GET /admin/config-changes` are all in the recording.
+  **Why:** The conventions re-record only when the live document differs.
+  **Issue:** #50
+- **Decision (Rule 3):** `ConfigChange` (`ConfigChangeItem`) reads the JSON key `class` into the field `change_class` through new field metadata (`console.engine.models.JSON_NAME`, `json_name(field)`); `_from_json` and the contract test's `compare_model` key fields by their JSON name.
+  **Why:** `class` is a Python keyword, so the one-field-per-property dataclass convention could not name it.
+  **Issue:** #50
+- **Decision (Rule 2):** The operation log records the story of a story-maintenance admin call (`/admin/stories/{id}/…`, i.e. rebuild); other admin calls still have none.
+  **Why:** A rebuild row without its story could not be found by the story filter, and the result page names the story from the row.
+  **Issue:** #50
+- **Decision:** Client methods `rebuild_story(story_id, *, idempotency_key) -> RebuildResult | RebuildQueued` (30 s, new `LONG_MUTATION_TIMEOUT_S`; 202 by status code), `update_admin_settings(patch, *, idempotency_key) -> DeploymentSettings` and `list_admin_config_changes(*, setting, change_class, since, after, limit=50) -> ConfigChanges` (query built by `_config_change_params`, which #54's story variant can reuse). The read reuses #45's `get_deployment_settings` rather than adding a `get_admin_settings`.
+  **Why:** One method per endpoint (#43); the read already existed.
+  **Issue:** #50
+- **Decision (drift):** `DeploymentSettingsForm` lives in `console/forms/deployment.py` (forms became a package in #47), hand-written with small field factories that also record each schema default (`DEFAULTS`) and unit (`UNITS`). Nullable settings get `clear_<name>` checkboxes; `feedback_retention` is one `MultiValueField` (radio + days), so the guard test compares the non-`clear_` fields with `SettingsPatch` minus `profile_defaults` exactly; a second guard checks the defaults against `SettingsBody`.
+  **Why:** The planner's hand-written form and guard test; keeping one form field per setting keeps change detection per top-level field.
+  **Issue:** #50
+- **Decision:** Settings the AC's section list does not name are placed: `worker_heartbeat_timeout`, `timer_lag_alert`, `lite_summary_chunk`, `structured_retry_budget`, `idempotency_result_window` under Turns; `thunks_max_open` under Caps; `public_base_url` under Media; `cascade_threshold`, `uncertain_below`, `rating_check_model_calls_per_record` under Verification and gates; `validation_model_calls`, `require_primary_image` under Catalog. Unit suffixes come from the name (`_days`, `_s`, `_ms`, `_bytes`) or the Engine meaning where the name has none (`idempotency_result_window` hours, media TTLs/intervals seconds, media sizes bytes).
+  **Why:** The AC lists sections with "…"; every setting must be in exactly one.
+  **Issue:** #50
+- **Decision:** A blank nullable setting whose current value is set is a form error ("Enter a value, or tick Clear to unset it."); only Clear sends `null`. Clear on an already-unset setting is no change. A forged `clear_` on any other setting is ignored, and blank non-nullable inputs are "required" errors, so no other setting can send `null`. No change at all redirects with "No changes — nothing was sent." and makes no Engine call.
+  **Why:** AC: Clear is the only way to send null; no change → no write.
+  **Issue:** #50
+- **Decision:** Settings errors: a 422 `superseded` becomes the non-field error "Moved to profile defaults: <replacement>"; other 422s go through `apply_engine_errors` with aliases `rating_retired` → `default_content_rating_id`, `profile_deleted` → `default_engine_profile_id` (the live Engine sends `details.field` for both); 409 `listing_status_in_use` names `details.value` (and `count`) at `listing_status_values`; 409 `feedback_tag_in_use` lists `details.in_use` tags with their current/history counts at `feedback_tags`. Anything else is the error panel above the kept form.
+  **Why:** AC placements; error shapes checked against the live edge.
+  **Issue:** #50
+- **Decision (drift):** URLs end with `/` (#43): `/engine/settings/`, `/engine/config-changes/`; the rebuild result is `/engine/rebuild/<int:pk>/`, routed before `/engine/rebuild/<str:story_id>/` (ULIDs are never all digits). The story select GETs `/engine/rebuild/?story=<id>` with a signed id → name map, so the confirm page shows the name with no Engine call. The result page is found by the rebuild's idempotency key in the operation log (rendered inline if the row could not be written); "Back to story" only when `next` is a story page.
+  **Why:** #43's URL and confirm conventions and pass 2's redirect-to-result.
+  **Issue:** #50
+- **Decision:** Held stories are labelled "(held) …<last 6 id characters>" and disabled; other non-active stories show their status in brackets ("(archived)") and stay enabled. Health highlighting uses #43's probe thresholds (`HEARTBEAT_LATE_S`, `OVERDUE_ALERT_S`) and marks values only while the Engine's state is not healthy (a database value other than ok/skipped is always marked).
+  **Why:** The Engine's state is authoritative (#43); "…<id>" read as a truncated id, as #48's duplicate-name labels.
+  **Issue:** #50
+- **Decision:** Config changes: a shared partial `templates/console/_config_changes.html` fed by `console/config_changes.py:revision_groups(changes)` (consecutive rows of one revision under a header row naming time and actors; values as compact JSON cut at 120 with the full value in `<details>`); actor `console:<username>` links to `/operations/?operator=<username>` only when that user exists (pass 2). Filters in `console/forms/config_changes.py:ConfigChangeFilterForm(data, settings=setting_filter(RECORDED, path))` — enum select plus prefixed key from the recorded schema; both at once, a bad prefixed key, an unknown setting or class, or an unparsable `since` is a form error with zero calls. The class GET parameter is `change_class` (sent as `class`).
+  **Why:** #54 reuses the partial, the grouping and the filter with the story endpoint.
+  **Issue:** #50
+- **Decision:** Profile-defaults values show as compact JSON (`null`, `true`, `"medium"`, `{}`); an empty object or a list is a leaf. "Edit profile defaults" is plain text naming `/engine/profile-defaults/edit/` (not built yet, M3 #84).
+  **Why:** JSON keeps `null` distinct from the string "null"; the link would 404 until #84.
+  **Issue:** #50
+- **Decision (drift):** #49's rating-retire message now links `/engine/settings/` (was the `/engine/` placeholder), and the shell's placeholder test uses the story-history placeholder, since `/engine/` is built. A queued rebuild's #44 operation detail page shows the same honest job message (shared `console/engine/_rebuild_job.html`, `operation_log.rebuild_job_id` / `rebuild_job_text`).
+  **Why:** The deployment settings now have their own page; the planner asks #44's detail to say the same.
+  **Issue:** #50
+- **Decision:** Several "(planner, pass 2)" headings in #50 (Story select:, Rebuild outcomes:, Settings form:, Health page:) have no sub-bullets; those parts were built from the AC and the round-one planner lines. Two live tests were added (`tests/engine_live/test_engine_panel_live.py`, `engine_auth`): rebuild through the panel, and change a setting then see it in Config changes by `console:nate` (restored afterwards).
+  **Why:** As #49 noted, some pass-2 sub-bullets were lost in planning.
+  **Issue:** #50
