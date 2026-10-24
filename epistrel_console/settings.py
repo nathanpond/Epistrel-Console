@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+from epistrel_console import engine_config
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -34,6 +36,12 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
 
+# The Engine (see engine_config). None when unset or invalid; serving entry points refuse to start
+# in that case, while tooling (mypy, pytest, migrate) runs without an Engine configured.
+_ENGINE = engine_config.parse(os.environ)
+ENGINE_URL: str | None = _ENGINE.url
+ENGINE_SERVICE_KEY: str | None = _ENGINE.service_key
+
 
 # Application definition
 
@@ -43,6 +51,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Before staticfiles, so the console app's runserver (port 7739, Engine URL check) wins.
+    "console",
     "django.contrib.staticfiles",
 ]
 

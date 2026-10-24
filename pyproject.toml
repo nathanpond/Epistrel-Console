@@ -7,6 +7,7 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "django>=6.1",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
@@ -34,7 +35,7 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "DJ", "PT"]
 
 [tool.mypy]
 strict = true
-files = ["epistrel_console", "tests", "manage.py"]
+files = ["epistrel_console", "console", "tests", "manage.py"]
 plugins = ["mypy_django_plugin.main"]
 
 [tool.django-stubs]
