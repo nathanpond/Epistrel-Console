@@ -218,3 +218,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #41
 - **Decision:** The concurrency test was checked against a mutant (`max_workers=1`): it failed at 2.07 s against the 1.8 s bound, then the file was restored. Against the live Engine `edge`, the `xfail(strict=False)` API-match smoke test XPASSes.
   **Issue:** #41
+
+## /n8-exec M1 (post-merge proofs) — 2026-10-24
+
+- **Decision:** The milestone PR (#101) was opened as a draft right after #35, so the new CI ran on GitHub while the rest landed. That surfaced the runner Compose-output and `null == false` problems early. The body was rewritten with the `Closes` lines before merging. Only #34, #36 and #41 were in `Closes`. #35 and #37–#40 have post-merge acceptance criteria and were closed by hand once their proofs were recorded.
+  **Issue:** #101
+- **Decision:** The "inspect `edge` while logged out of ghcr" check used an empty `DOCKER_CONFIG` holding only a link to the CLI plugins, not `docker logout ghcr.io`. Logging out would have removed the owner's stored ghcr credentials on this machine. The package was already `public` after the first push, so `needs-owner-action` wasn't needed.
+  **Issue:** #37
+- **Incident:** While preparing the `n8/drift-probe` branch, `git commit -am` also committed the owner's uncommitted `.idea/epistrel-console.iml` edit, and that commit was pushed. Fixes: the owner's edit was restored to the working tree byte for byte (checked with `cmp`), the probe branch was force-pushed with only `console/engine/openapi.json`, and the branch was deleted after the proof. The IDE file's content sat on the remote for about a minute in a now-unreferenced commit.
+  **Issue:** #40
