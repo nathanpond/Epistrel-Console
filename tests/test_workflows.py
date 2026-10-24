@@ -218,8 +218,11 @@ MYPY_FILES = ("epistrel_console", "console", "tools", "tests", "manage.py")
 MYPY_STRICTER = re.compile(
     r"(?:disallow|warn|check|strict)_\w+|extra_checks|local_partial_types|strict"
 )
-# An inline config comment, or a whole-line `# type: ignore` (above the code, it skips the file).
-MYPY_INLINE = re.compile(r"^\s*#\s*(?:mypy\s*:|type\s*:\s*ignore\s*$)", re.MULTILINE)
+# An inline config comment, or a whole-line `# type: ignore` (above the code, it skips the file),
+# with or without a trailing `# reason` (#120). A whole-line `# type: ignore[code]` is an error.
+MYPY_INLINE = re.compile(r"^\s*#\s*(?:mypy\s*:|type\s*:\s*ignore\s*(?:#.*)?$)", re.MULTILINE)
+# Config files mypy reads in place of `[tool.mypy]` when present (#120).
+MYPY_SHADOWING_FILES = ("mypy.ini", ".mypy.ini")
 
 
 def mypy_setting_problem(key: str, value: Any, top: bool) -> str | None:
@@ -270,6 +273,17 @@ def mypy_inline_weakenings(sources: dict[str, str]) -> list[str]:
     ]
 
 
+def mypy_config_shadows(root: Path) -> list[str]:
+    """Config files in ``root`` that mypy could read instead of pyproject's ``[tool.mypy]``."""
+    found = [name for name in MYPY_SHADOWING_FILES if (root / name).exists()]
+    setup_cfg = root / "setup.cfg"
+    if setup_cfg.is_file() and re.search(
+        r"^\s*\[mypy", setup_cfg.read_text(encoding="utf-8"), re.MULTILINE
+    ):
+        found.append("setup.cfg [mypy]")
+    return found
+
+
 def mypy_sources() -> dict[str, str]:
     paths = [REPO_ROOT / f for f in MYPY_FILES]
     files = [p for p in paths if p.is_file()]
@@ -285,11 +299,36 @@ def test_mypy_is_not_weakened() -> None:
     assert mypy_weakenings(load(CI), load_pyproject()) == []
     assert mypy_inline_weakenings(mypy_sources()) == []
     assert len(mypy_sources()) > 20
+    assert mypy_config_shadows(REPO_ROOT) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "expected"),
+    [
+        ("mypy.ini", "[mypy]\nstrict = False\n", ["mypy.ini"]),
+        (".mypy.ini", "[mypy]\n", [".mypy.ini"]),
+        ("setup.cfg", "[metadata]\nname = x\n\n[mypy]\nstrict = False\n", ["setup.cfg [mypy]"]),
+        ("setup.cfg", "[mypy-console.*]\nignore_errors = True\n", ["setup.cfg [mypy]"]),
+        ("setup.cfg", "[metadata]\nname = x\n", []),
+    ],
+)
+def test_mypy_config_shadow_bites(
+    tmp_path: Path, name: str, text: str, expected: list[str]
+) -> None:
+    assert mypy_config_shadows(tmp_path) == []
+    (tmp_path / name).write_text(text, encoding="utf-8")
+    assert mypy_config_shadows(tmp_path) == expected
 
 
 @pytest.mark.parametrize(
     "line",
-    ["# mypy: ignore-errors", "#mypy: disable-error-code=attr-defined", "# type: ignore"],
+    [
+        "# mypy: ignore-errors",
+        "#mypy: disable-error-code=attr-defined",
+        "# type: ignore",
+        "# type: ignore  # legacy",
+        "#type:ignore#x",
+    ],
 )
 def test_inline_mypy_weakening_bites(line: str) -> None:
     sources = {"console/x.py": f'"""Doc."""\n{line}\nimport os\n', "console/y.py": "x = 1\n"}
@@ -921,6 +960,186 @@ def test_existing_digest_rule_bites(tmp_path: Path) -> None:
     mutated = EXISTING_STEP.replace(old, "true")
     result = existing(tmp_path, mutated, {f"{IMAGE}:sha-abc1234": DIGEST})
     assert result.outputs != {"digest": DIGEST}
+
+
+def test_only_a_dispatch_looks_for_an_existing_image() -> None:
+    # A push always gates and builds; a dispatch (edge rollback) re-tags when it can (#119).
+    resolve = jobs(load(PUBLISH_EDGE))["resolve"]
+    dispatch = "github.event_name == 'workflow_dispatch'"
+    assert workflow_steps.step(resolve, "existing")["if"] == dispatch
+    login = next(s for s in resolve["steps"] if str(s.get("uses", "")).startswith("docker/login"))
+    assert login["if"] == dispatch
+    assert resolve["outputs"]["existing_digest"] == "${{ steps.existing.outputs.digest }}"
+
+
+# --- the re-tag path and the summary (#119) -------------------------------------------------
+
+RETAG_JOB = jobs(load(PUBLISH_EDGE))["retag"]
+RETAG_STEP: str = workflow_steps.step(RETAG_JOB, "Re-point edge")["run"]
+
+
+def retag(tmp_path: Path, script: str, edge: str) -> StepRun:
+    """Re-point edge at DIGEST, with the registry answering that edge is now at ``edge``."""
+    stubs = {"docker": manifest_stub({f"{IMAGE}:edge": edge})}
+    return run_step(script, tmp_path, env={"DIGEST": DIGEST}, stubs=stubs)
+
+
+def test_retag_points_edge_at_the_existing_digest_and_checks_it(tmp_path: Path) -> None:
+    assert RETAG_JOB["needs"] == "resolve"
+    assert workflow_steps.step(RETAG_JOB, "Re-point edge")["env"] == {
+        "DIGEST": "${{ needs.resolve.outputs.existing_digest }}"
+    }
+    ok = retag(tmp_path / "ok", RETAG_STEP, DIGEST)
+    assert ok.rc == 0, ok.output
+    assert ok.called("docker", "buildx", "imagetools", "create") == [
+        ["docker", "buildx", "imagetools", "create", "-t", f"{IMAGE}:edge", f"{IMAGE}@{DIGEST}"],
+    ]
+    assert ok.called("docker", "buildx", "imagetools", "inspect")[0][4] == f"{IMAGE}:edge"
+    # Nothing is built or run on this path: it only moves a tag.
+    assert [c[:3] for c in ok.calls] == [["docker", "buildx", "imagetools"]] * 2
+    wrong = retag(tmp_path / "wrong", RETAG_STEP, OTHER_DIGEST)
+    assert wrong.rc == 1
+    assert f"edge resolves to {OTHER_DIGEST}, not {DIGEST}" in wrong.output
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        ('[ "$got" = "$DIGEST" ] ||', "true ||"),
+        ('"$IMAGE@$DIGEST"', '"$IMAGE:sha-latest"'),
+        ('-t "$IMAGE:edge"', '-t "$IMAGE:latest"'),
+    ],
+)
+def test_retag_rule_bites(tmp_path: Path, mutation: tuple[str, str]) -> None:
+    old, new = mutation
+    assert RETAG_STEP.count(old) == 1
+    mutated = RETAG_STEP.replace(old, new)
+    ok = retag(tmp_path / "ok", mutated, DIGEST)
+    wrong = retag(tmp_path / "wrong", mutated, OTHER_DIGEST)
+    expected = ["docker", "buildx", "imagetools", "create", "-t", f"{IMAGE}:edge",
+                f"{IMAGE}@{DIGEST}"]  # fmt: skip
+    assert wrong.rc == 0 or ok.called("docker", "buildx", "imagetools", "create") != [expected]
+
+
+SUMMARY_JOB = jobs(load(PUBLISH_EDGE))["summary"]
+SUMMARY_STEP: str = SUMMARY_JOB["steps"][0]["run"]
+SUMMARY_TAIL = 'retag=$RETAG)." >> "$GITHUB_STEP_SUMMARY"'
+SHA = "c" * 40
+# needs.*.result per outcome: (RESOLVE, CI, PUBLISH, RETAG, publish's STAGE output).
+SUMMARY_CASES = {
+    "retag": ("success", "skipped", "skipped", "success", ""),
+    "publish": ("success", "success", "success", "skipped", "done"),
+    "resolve failed": ("failure", "skipped", "skipped", "skipped", ""),
+    "gate failed": ("success", "failure", "skipped", "skipped", ""),
+    "build failed": ("success", "success", "failure", "skipped", "build"),
+    "smoke failed": ("success", "success", "failure", "skipped", "smoke"),
+    "tag failed": ("success", "success", "failure", "skipped", "tag"),
+    "publish cancelled": ("success", "success", "cancelled", "skipped", ""),
+    "retag failed": ("success", "skipped", "skipped", "failure", ""),
+}
+FAILED_STAGE = {
+    "resolve failed": "resolve (ref/ancestry)",
+    "gate failed": "gate (ci.yml)",
+    "build failed": "publish: build",
+    "smoke failed": "publish: smoke",
+    "tag failed": "publish: tag",
+    "publish cancelled": "publish: not started",
+    "retag failed": "retag",
+}
+
+
+def summary(tmp_path: Path, script: str, case: str) -> StepRun:
+    resolve, ci, publish, retag_result, stage = SUMMARY_CASES[case]
+    env = {
+        "RESOLVE": resolve, "CI": ci, "PUBLISH": publish, "RETAG": retag_result,
+        "STAGE": stage, "SHA": SHA if resolve == "success" else "",
+        "DIGEST": DIGEST if publish == "success" else "",
+        "EXISTING": OTHER_DIGEST if retag_result != "skipped" else "",
+    }  # fmt: skip
+    return run_step(script, tmp_path / case.replace(" ", "-"), env=env)
+
+
+def test_summary_job_always_runs_after_every_job() -> None:
+    assert SUMMARY_JOB["if"] == "always()"
+    assert SUMMARY_JOB["needs"] == ["resolve", "ci", "publish", "retag"]
+    assert SUMMARY_JOB["steps"][0]["env"] == {
+        "RESOLVE": "${{ needs.resolve.result }}",
+        "CI": "${{ needs.ci.result }}",
+        "PUBLISH": "${{ needs.publish.result }}",
+        "RETAG": "${{ needs.retag.result }}",
+        "STAGE": "${{ needs.publish.outputs.stage }}",
+        "DIGEST": "${{ needs.publish.outputs.digest }}",
+        "EXISTING": "${{ needs.resolve.outputs.existing_digest }}",
+        "SHA": "${{ needs.resolve.outputs.sha }}",
+    }
+
+
+def test_summary_names_the_digest_published(tmp_path: Path) -> None:
+    retagged = summary(tmp_path, SUMMARY_STEP, "retag")
+    assert retagged.rc == 0, retagged.output
+    assert retagged.summary.splitlines() == [
+        "## edge re-pointed (re-tag path, no build)", "", "| | |", "|---|---|",
+        f"| commit | `{SHA}` |", f"| digest | `{OTHER_DIGEST}` |",
+    ]  # fmt: skip
+    published = summary(tmp_path, SUMMARY_STEP, "publish")
+    assert published.rc == 0, published.output
+    assert published.summary.splitlines() == [
+        "## edge published (gate-and-build path)", "", "| | |", "|---|---|",
+        f"| commit | `{SHA}` |", f"| digest | `{DIGEST}` |",
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize("case", list(FAILED_STAGE))
+def test_summary_names_the_stage_that_failed(tmp_path: Path, case: str) -> None:
+    result = summary(tmp_path, SUMMARY_STEP, case)
+    assert result.rc == 1
+    lines = result.summary.splitlines()
+    assert lines[0] == "## Nothing published"
+    resolve, ci, publish, retag_result, _ = SUMMARY_CASES[case]
+    assert lines[2] == (
+        f"Stage that failed: **{FAILED_STAGE[case]}** "
+        f"(resolve={resolve} ci={ci} publish={publish} retag={retag_result})."
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        (f"{SUMMARY_TAIL}\nexit 1", f"{SUMMARY_TAIL}\nexit 0"),
+        ('"| digest | \\`$EXISTING\\` |"', '"| digest | n/a |"'),
+        ('"| digest | \\`$DIGEST\\` |"', '"| digest | n/a |"'),
+        ('stage="gate (ci.yml)"', 'stage="publish: ${STAGE:-not started}"'),
+        ('stage="retag"', 'stage="gate (ci.yml)"'),
+        ('stage="resolve (ref/ancestry)"', 'stage="retag"'),
+    ],
+)  # fmt: skip
+def test_summary_rule_bites(tmp_path: Path, mutation: tuple[str, str]) -> None:
+    old, new = mutation
+    assert SUMMARY_STEP.count(old) == 1
+    mutated = SUMMARY_STEP.replace(old, new)
+    survived = True
+    for case in SUMMARY_CASES:
+        good, bad = summary(tmp_path / "good", SUMMARY_STEP, case), summary(tmp_path, mutated, case)
+        survived &= (good.rc, good.summary) == (bad.rc, bad.summary)
+    assert not survived
+
+
+@pytest.mark.parametrize("workflow", PUBLISHERS)
+def test_publish_cache_cleanup_and_smoke_engine(tmp_path: Path, workflow: Path) -> None:
+    publish = jobs(load(workflow))["publish"]
+    build = workflow_steps.step(publish, "build")["with"]
+    assert build["cache-from"] == "type=gha,scope=publish"
+    assert build["cache-to"] == "type=gha,mode=max,scope=publish"
+    cleanup = workflow_steps.step(publish, "Remove the smoke container")
+    assert cleanup["if"] == "always()"
+    assert cleanup["run"].strip() == "docker rm -f console-smoke || true"
+    # An unreachable Engine: /health still answers 200 (#30), and the smoke never needs one up.
+    ran = smoke(tmp_path, publish_step(workflow, "smoke"), healthy=True)
+    assert ran.called("docker", "run") == [
+        ["docker", "run", "-d", "--name", "console-smoke", "--platform", "linux/amd64",
+         "-p", "127.0.0.1:7739:7739", "-e", "CONSOLE_ENGINE_URL=http://127.0.0.1:9",
+         f"{IMAGE}@{DIGEST}"],
+    ]  # fmt: skip
 
 
 def test_publish_edge_tags_name_and_label_the_built_commit() -> None:
