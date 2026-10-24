@@ -4,7 +4,7 @@ import pytest
 
 from tests.fakes.engine import FakeEngine
 
-pytest_plugins = ["pytester", "tests.plugins.require_docker"]
+pytest_plugins = ["pytester", "tests.plugins.require_docker", "tests.plugins.engine_live"]
 
 
 @pytest.fixture(autouse=True)

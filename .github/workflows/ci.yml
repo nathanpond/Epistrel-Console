@@ -12,6 +12,23 @@ on:
         type: string
         required: false
         default: ""
+      live_smoke:
+        description: Run engine-smoke (edge publishing and edge rollback pass false, #37)
+        type: boolean
+        required: false
+        default: true
+      engine_image:
+        description: The Engine image engine-smoke starts (releases pass the matching version, #38)
+        type: string
+        required: false
+        default: ghcr.io/nathanpond/epistrel:edge
+    outputs:
+      engine_digest:
+        description: The Engine image digest the smoke ran against (empty when skipped)
+        value: ${{ jobs.engine-smoke.outputs.engine_digest }}
+      engine_version:
+        description: The live Engine's /openapi.json info.version (empty when skipped)
+        value: ${{ jobs.engine-smoke.outputs.engine_version }}
 
 permissions:
   contents: read
@@ -22,6 +39,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # On a PR `inputs` is empty, and GitHub compares null == false as true, so "live smoke on" is
+  # spelled as "a PR, or a caller that asked for it" (never `inputs.live_smoke != false`).
+  LIVE_SMOKE: ${{ (github.event_name == 'pull_request' || inputs.live_smoke) && 'true' || 'false' }}
   # Exact uv release, resolved 2026-10-24; equal to the Dockerfile's pin (tests/test_workflows.py).
   UV_VERSION: "0.13.5"
 
@@ -103,30 +123,88 @@ jobs:
           python-version: "3.14"
           enable-cache: true
       - run: uv sync --frozen
+      # Without the live smoke (#37: edge publish and rollback), tests that need the live Engine
+      # edge (marker engine_edge, #32's compose run) are left out, so an Engine outage cannot stop
+      # the Console's edge from publishing. PRs and releases run all of them.
       - name: pytest -m docker
         env:
           REQUIRE_DOCKER_TESTS: "1"
-        run: uv run pytest -m docker
+          MARKERS: ${{ env.LIVE_SMOKE == 'true' && 'docker' || 'docker and not engine_edge' }}
+        run: uv run pytest -m "$MARKERS"
+
+  engine-smoke:
+    # The Console against the live Engine (#36): a broken or unpublished Engine edge blocks merges.
+    if: ${{ github.event_name == 'pull_request' || inputs.live_smoke }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: epistrel
+          POSTGRES_PASSWORD: epistrel-dev  # the Engine compose's dev-only value, as docker-compose.yml
+          POSTGRES_DB: epistrel
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ENGINE_IMAGE: ${{ inputs.engine_image || 'ghcr.io/nathanpond/epistrel:edge' }}
+      ENGINE_LIVE_URL: http://127.0.0.1:8000
+    outputs:
+      engine_digest: ${{ steps.identify.outputs.engine_digest }}
+      engine_version: ${{ steps.identify.outputs.engine_version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      # A step after the health-checked Postgres service, not a service itself (see the script).
+      - name: start the Engine
+        env:
+          NETWORK: ${{ job.services.postgres.network }}
+        run: .github/scripts/engine-up.sh start
+      - id: wait
+        run: .github/scripts/engine-up.sh wait
+      - id: identify
+        run: .github/scripts/engine-up.sh identify
+      - run: uv run pytest -m engine_live
+      - name: summary
+        if: always()
+        env:
+          ENGINE_DIGEST: ${{ steps.identify.outputs.engine_digest }}
+          ENGINE_VERSION: ${{ steps.identify.outputs.engine_version }}
+        run: .github/scripts/engine-up.sh summary
+      - name: logs
+        if: failure()
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: .github/scripts/engine-up.sh logs
 
   gate:
-    # One context for the ruleset to require: red if any job above did not succeed.
+    # One context for the ruleset to require: red unless every job above succeeded (engine-smoke
+    # may be skipped only when the caller turned the live smoke off).
     name: gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [lint, types, test, docker]
+    needs: [lint, types, test, docker, engine-smoke]
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
       - name: Summarise
         env:
           LINT: ${{ needs.lint.result }}
           TYPES: ${{ needs.types.result }}
           TEST: ${{ needs.test.result }}
           DOCKER: ${{ needs.docker.result }}
-        run: |
-          printf '%s\n' '| job | result |' '|---|---|' \
-            "| lint | $LINT |" "| types | $TYPES |" "| test | $TEST |" \
-            "| docker | $DOCKER |" >> "$GITHUB_STEP_SUMMARY"
-          for r in "$LINT" "$TYPES" "$TEST" "$DOCKER"; do
-            [ "$r" = "success" ] || { echo "gate: a job did not succeed ($LINT/$TYPES/$TEST/$DOCKER)"; exit 1; }
-          done
-          echo "gate: all jobs succeeded"
+          ENGINE_SMOKE: ${{ needs.engine-smoke.result }}
+        run: .github/scripts/gate.sh

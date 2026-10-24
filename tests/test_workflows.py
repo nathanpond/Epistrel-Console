@@ -328,3 +328,77 @@ def test_engine_url_guard_bites(where: str) -> None:
     else:
         job["env"] = {"CONSOLE_ENGINE_URL": ""}
     assert sets_engine_url(doc, "b")
+
+
+# --- the live Engine smoke (#36) ------------------------------------------------------------
+
+ENGINE_UP = REPO_ROOT / ".github" / "scripts" / "engine-up.sh"
+LIVE_ON = "github.event_name == 'pull_request' || inputs.live_smoke"
+
+
+def engine_env_vars(script: str) -> set[str]:
+    return set(re.findall(r"-e (EPISTREL_[A-Z_]+)=", script))
+
+
+def test_ci_workflow_call_inputs_and_outputs() -> None:
+    call = triggers(load(CI))["workflow_call"]
+    assert call["inputs"]["live_smoke"] == {
+        "description": call["inputs"]["live_smoke"]["description"],
+        "type": "boolean",
+        "required": False,
+        "default": True,
+    }
+    assert call["inputs"]["engine_image"]["default"] == "ghcr.io/nathanpond/epistrel:edge"
+    assert call["outputs"]["engine_digest"]["value"] == (
+        "${{ jobs.engine-smoke.outputs.engine_digest }}"
+    )
+    assert call["outputs"]["engine_version"]["value"] == (
+        "${{ jobs.engine-smoke.outputs.engine_version }}"
+    )
+
+
+def test_engine_smoke_runs_on_every_pr_and_is_gated() -> None:
+    doc = load(CI)
+    smoke = jobs(doc)["engine-smoke"]
+    # Never `inputs.live_smoke != false`: on a PR inputs is null, and null == false in Actions.
+    assert LIVE_ON in smoke["if"]
+    assert LIVE_ON in doc["env"]["LIVE_SMOKE"]
+    assert "engine-smoke" in jobs(doc)["gate"]["needs"]
+    runs = [str(s.get("run", "")) for s in smoke["steps"]]
+    assert "uv run pytest -m engine_live" in runs
+    assert runs.index(".github/scripts/engine-up.sh wait") < runs.index(
+        "uv run pytest -m engine_live"
+    )
+    assert smoke["env"]["ENGINE_LIVE_URL"] == "http://127.0.0.1:8000"
+    assert smoke["services"]["postgres"]["image"] == "pgvector/pgvector:pg16"
+    assert "pg_isready" in smoke["services"]["postgres"]["options"]
+
+
+def test_gate_uses_the_script_with_every_result() -> None:
+    gate = jobs(load(CI))["gate"]
+    step = gate["steps"][-1]
+    assert step["run"] == ".github/scripts/gate.sh"
+    assert set(step["env"]) == {"LINT", "TYPES", "TEST", "DOCKER", "ENGINE_SMOKE"}
+
+
+def test_docker_job_drops_engine_edge_only_without_live_smoke() -> None:
+    docker = jobs(load(CI))["docker"]
+    step = next(s for s in docker["steps"] if "pytest -m" in str(s.get("run", "")))
+    assert step["env"]["MARKERS"] == (
+        "${{ env.LIVE_SMOKE == 'true' && 'docker' || 'docker and not engine_edge' }}"
+    )
+    assert step["run"] == 'uv run pytest -m "$MARKERS"'
+
+
+def test_engine_gets_exactly_its_four_variables() -> None:
+    assert engine_env_vars(ENGINE_UP.read_text()) == {
+        "EPISTREL_DATABASE_URL",
+        "EPISTREL_LOG_LEVEL",
+        "EPISTREL_SERVICE_CREDENTIALS",
+        "EPISTREL_CONFIG_KEY",
+    }
+
+
+def test_engine_variable_rule_bites() -> None:
+    script = ENGINE_UP.read_text() + "\n    -e EPISTREL_MODEL=x \\\n"
+    assert "EPISTREL_MODEL" in engine_env_vars(script)

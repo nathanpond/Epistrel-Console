@@ -217,11 +217,11 @@ def test_stack_lifecycle(stack_file: Path) -> None:
 
 def test_pull_matches_the_registry(stack_file: Path) -> None:
     pull = compose("pull", file=stack_file)
-    # Compose lists the local console tag as "Skipped"; it must never try to pull it.
+    # Compose must never try to pull the local console tag. Some Compose versions list it as
+    # "Skipped", others (GitHub's runners) print nothing for it; either way, no other verb.
     lines = (pull.stdout + pull.stderr).splitlines()
     console_lines = [line for line in lines if "epistrel-console:" in line]
-    assert console_lines
-    assert all("Skipped" in line for line in console_lines)
+    assert all("Skipped" in line for line in console_lines), console_lines
     assert any("ghcr.io/nathanpond/epistrel:edge" in line and "Pulled" in line for line in lines)
     remote = subprocess.run(
         ["docker", "buildx", "imagetools", "inspect", "ghcr.io/nathanpond/epistrel:edge"],  # noqa: S607

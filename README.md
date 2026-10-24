@@ -66,6 +66,17 @@ REQUIRE_DOCKER_TESTS=1 uv run pytest -m docker     # image + compose tests; need
 
 The docker tests build the image themselves and pull the Engine `edge` image. With `REQUIRE_DOCKER_TESTS=1` (as in CI), a docker test that would skip (no Docker CLI or daemon, pull failed) fails instead. Without it, those tests skip.
 
+### Live Engine smoke
+
+Every PR also runs a smoke suite (`tests/engine_live/`, marker `engine_live`) against the published Engine `edge` image, and a broken Engine `edge` blocks the merge. To run it locally against the real `edge`, publish this stack's Engine on `127.0.0.1:8000` with the `compose.smoke.yml` override. Stop the Engine repo's own stack first: both use port 8000.
+
+```bash
+docker compose -f docker-compose.yml -f compose.smoke.yml up -d --wait engine db
+ENGINE_LIVE_URL=http://127.0.0.1:8000 uv run pytest -m engine_live
+```
+
+Selecting `engine_live` without `ENGINE_LIVE_URL` is an error, never a silent skip.
+
 ## Run with Docker
 
 `docker-compose.yml` runs the Console, the Engine's published `edge` image and the Postgres it needs. No `.env` or setup is needed.

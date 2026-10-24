@@ -51,5 +51,9 @@ django_settings_module = "epistrel_console.settings"
 DJANGO_SETTINGS_MODULE = "epistrel_console.settings"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra --strict-markers -m 'not docker'"
-markers = ["docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`"]
+addopts = "-ra --strict-markers -m 'not docker and not engine_live'"
+markers = [
+    "docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`",
+    "engine_live: needs a live Engine at ENGINE_LIVE_URL; run with `uv run pytest -m engine_live`",
+    "engine_edge: docker test that runs the live Engine edge image",
+]
