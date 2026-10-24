@@ -48,6 +48,27 @@ All settings come from the process environment.
 
 Any other variable starting with `CONSOLE_` is treated as a typo and refuses start.
 
+## Run with Docker
+
+`docker-compose.yml` runs the Console, the Engine's published `edge` image and the Postgres it needs. No `.env` or setup is needed.
+
+```bash
+docker compose up --build -d --wait --wait-timeout 120   # three healthy services
+open http://127.0.0.1:7739/                              # Engine http://engine:8000 — Healthy
+docker compose exec console python manage.py createsuperuser   # an admin login
+docker compose pull engine && docker compose up -d --wait      # pick up a newer Engine edge
+docker compose stop                                      # stop, keeping everything
+docker compose down                                      # remove containers, keep data
+docker compose down -v                                   # remove containers and wipe all data
+```
+
+- Only the Console is published, on `127.0.0.1:7739`; the Engine and Postgres are reachable only inside the stack. Nothing is reachable from other machines.
+- The stack runs alongside the Engine repo's own compose stack (ports 8000 and 5432) without clashing.
+- Nothing restarts by itself: the stack comes up only when you run `up`.
+- Console data (its SQLite database and generated secret key) lives in the `console-data` volume and survives `down`; `down -v` wipes it, along with the Engine's database and media.
+- `up --wait` exits non-zero if the Engine is unhealthy, even though the Console itself is up; the Console page then says why.
+- The Engine runs with its compose's dev-only service credential and config key. They are fine for this localhost-only stack and nothing else.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
