@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Guardrail policies — Epistrel Console{% endblock %}
+{% block heading %}Guardrail policies{% endblock %}
+{% block content %}
+<p><a href="{% url 'policies:new' %}">New policy</a> · <a class="rejections" href="{{ rejections_url }}">Guardrail rejections →</a> · <a href="/guardrails/ratings/">Content ratings</a></p>
+
+<form method="get" action="" class="filters">
+  <label>Scope
+    <select name="scope">
+      {% for value, label in filters.fields.scope.choices %}<option value="{{ value }}"{% if value == scope %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label><input type="checkbox" name="retired" value="1"{% if include_retired %} checked{% endif %}> Show retired</label>
+  <button type="submit">Filter</button>
+</form>
+{% if ratings_failed %}<p class="note">The content ratings could not be read: rating policies show their rating's id.</p>{% endif %}
+
+{% if rows %}
+<table class="policies">
+  <thead>
+    <tr><th>Name</th><th>Id</th><th>Scope</th><th>Kind</th><th>Applies to</th><th>Age condition</th><th>Effect</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="policy-{{ row.policy.id }}">
+      <td><a href="{% url 'policies:detail' row.policy.id %}">{{ row.policy.name }}</a>{% if row.policy.seeded %} <span class="seeded">seeded</span>{% endif %}</td>
+      <td><code>{{ row.policy.id }}</code></td>
+      <td>{{ row.scope_label }}</td>
+      <td>{{ row.policy.kind }}</td>
+      <td>{{ row.targets|join:", " }}</td>
+      <td>{{ row.policy.age_condition|default:"none" }}</td>
+      <td>{{ row.policy.effect }}</td>
+      <td class="status">{% if row.policy.retired %}retired {{ row.policy.retired_at|engine_time }}{% else %}live{% endif %}</td>
+      <td>{% include "console/policies/_actions.html" %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if page.has_other_pages %}
+<p class="paging">
+  {% if page.has_previous %}<a href="?{% if filter_query %}{{ filter_query }}&amp;{% endif %}page={{ page.previous_page_number }}">Previous</a>{% endif %}
+  Page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}<a href="?{% if filter_query %}{{ filter_query }}&amp;{% endif %}page={{ page.next_page_number }}">Next</a>{% endif %}
+</p>
+{% endif %}
+{% else %}
+<p class="empty">No policies{% if scope %} at {{ scope }} scope{% endif %}.</p>
+{% endif %}
+{% endblock %}

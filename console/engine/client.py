@@ -31,6 +31,10 @@ from console.engine.models import (
     ModelConfigItem,
     ModelConfigMutation,
     OperationRecord,
+    Policy,
+    PolicyList,
+    PolicyMutation,
+    PolicyScope,
     Story,
     StoryCreated,
     StoryList,
@@ -434,6 +438,67 @@ class EngineClient:
         )
         _raise_for_envelope(response)
 
+    @operation("GET", "/admin/policies", response_model=PolicyList)
+    def list_policies(
+        self, scope: PolicyScope | None = None, *, include_retired: bool = False
+    ) -> list[Policy]:
+        """``GET /admin/policies``: global first, then by scope id and name (#47). ``scope``
+        filters; retired policies only on request (sent as ``include_retired=1``)."""
+        params: dict[str, str] = {}
+        if scope is not None:
+            params["scope"] = scope
+        if include_retired:
+            params["include_retired"] = "1"
+        response = self._request("GET", "/admin/policies", params=params or None)
+        return _parse(response, PolicyList).items
+
+    @operation("GET", "/admin/policies/{policy_id}", response_model=Policy)
+    def get_policy(self, policy_id: str) -> Policy:
+        """``GET /admin/policies/{id}``: one policy, retired or not."""
+        return _parse(self._request("GET", _policy_path(policy_id)), Policy)
+
+    @operation("POST", "/admin/policies", response_model=PolicyMutation)
+    def create_policy(self, fields: Mapping[str, Any], *, idempotency_key: str) -> PolicyMutation:
+        """``POST /admin/policies`` with a ``PolicyFields`` body: a global or rating policy
+        (201). A repeated key returns the first result."""
+        response = self._request(
+            "POST",
+            "/admin/policies",
+            json=dict(fields),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PolicyMutation)
+
+    @operation("PUT", "/admin/policies/{policy_id}", response_model=PolicyMutation)
+    def update_policy(
+        self, policy_id: str, replacement: Mapping[str, Any], *, idempotency_key: str
+    ) -> PolicyMutation:
+        """``PUT /admin/policies/{id}`` with a ``PolicyReplacement`` body: the whole content,
+        replaced (scope, id and kind never change). A retired policy is 409."""
+        response = self._request(
+            "PUT",
+            _policy_path(policy_id),
+            json=dict(replacement),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PolicyMutation)
+
+    @operation("DELETE", "/admin/policies/{policy_id}", response_model=PolicyMutation)
+    def retire_policy(self, policy_id: str, *, idempotency_key: str) -> PolicyMutation | None:
+        """``DELETE /admin/policies/{id}``: retire the policy (it stays readable). ``None`` when
+        it was already retired (204)."""
+        response = self._request(
+            "DELETE",
+            _policy_path(policy_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 204:
+            return None
+        return _parse(response, PolicyMutation)
+
     @operation("GET", "/operations/{operation_id}", response_model=OperationRecord)
     def get_operation(self, operation_id: str, viewpoint: str | None = None) -> OperationRecord:
         """``GET /operations/{id}``: the Engine's record of one operation.
@@ -454,6 +519,11 @@ def _story_path(story_id: str) -> str:
 def _purpose_path(purpose: str) -> str:
     """``/admin/model-config/<purpose>``, the name percent-encoded."""
     return f"/admin/model-config/{quote(purpose, safe='')}"
+
+
+def _policy_path(policy_id: str) -> str:
+    """``/admin/policies/<id>``, the id percent-encoded."""
+    return f"/admin/policies/{quote(policy_id, safe='')}"
 
 
 def _parse[M: Model](response: httpx.Response, model: type[M]) -> M:

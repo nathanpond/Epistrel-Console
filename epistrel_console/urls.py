@@ -5,7 +5,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from console.auth import OperatorAuthenticationForm
-from console.views import models, operations, status, stories
+from console.views import models, operations, policies, status, stories
 from console.views.placeholders import placeholder
 
 operation_patterns = (
@@ -39,6 +39,17 @@ model_patterns = (
     "models",
 )
 
+policy_patterns = (
+    [
+        path("", policies.policy_list, name="list"),
+        path("new/", policies.policy_new, name="new"),
+        path("<str:policy_id>/", policies.policy_detail, name="detail"),
+        path("<str:policy_id>/edit/", policies.policy_edit, name="edit"),
+        path("<str:policy_id>/retire/", policies.policy_retire, name="retire"),
+    ],
+    "policies",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -52,7 +63,12 @@ urlpatterns = [
     path("stories/", include(story_patterns)),
     path("models/", include(model_patterns)),
     # Placeholders: each owning M2 story replaces its own.
-    path("guardrails/ratings/", placeholder("Guardrail ratings"), name="guardrail-ratings"),
+    path("guardrails/policies/", include(policy_patterns)),
+    path(
+        "guardrails/ratings/",
+        placeholder("Guardrail ratings", links=(("Guardrail policies", "/guardrails/policies/"),)),
+        name="guardrail-ratings",
+    ),
     path("engine/", placeholder("Engine"), name="engine"),
     path("admin/", admin.site.urls),
 ]

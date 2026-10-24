@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}New policy — Guardrail policies — Epistrel Console{% endblock %}
+{% block heading %}New guardrail policy{% endblock %}
+{% block content %}
+<p><a href="{% url 'policies:list' %}">All policies</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if ratings_note %}<p class="note">{{ ratings_note }}</p>{% endif %}
+<form method="post" action="{% url 'policies:new' %}" class="policy-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="ratings" value="{{ ratings }}">
+  {{ form.non_field_errors }}
+  {% include "console/policies/_content_fields.html" %}
+  <p><button type="submit">Create policy</button></p>
+</form>
+{% endblock %}

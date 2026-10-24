@@ -652,6 +652,78 @@ class ModelConfigMutation(ModelConfigItem):
     idempotency_key: str | None = None
 
 
+# --- Guardrail policies (#47; #54 adds story and character policies) ---------------------------
+
+# ``Scope-Output`` (the ``scope`` property's ``$ref``; the component was renamed once, #47).
+PolicyScope = Literal["global", "rating", "story", "character"]
+PolicyKind = Literal["deterministic", "model_assisted"]
+# ``Target``: what a policy applies to. ``image_*`` targets are used from M8.
+PolicyTarget = Literal["text_input", "text_output", "image_prompt", "image_output"]
+# ``PolicyFields.age_condition``'s one non-null value (bodies return it as a plain string).
+AgeCondition = Literal["minor_involved_or_present"]
+POLICY_SCOPES: tuple[PolicyScope, ...] = typing.get_args(PolicyScope)
+POLICY_TARGETS: tuple[PolicyTarget, ...] = typing.get_args(PolicyTarget)
+AGE_CONDITIONS: tuple[AgeCondition, ...] = typing.get_args(AgeCondition)
+
+
+@dataclass(frozen=True)
+class Policy(Model):
+    """``PolicyBody``: a policy at its current version.
+
+    ``rule`` is the raw rule object (``type`` plus ``words`` / ``patterns`` / ``names`` /
+    ``prompt`` and ``on_uncertain``); the form layer parses it per type. ``scope_id`` is the
+    rating (rating scope), the story or the character; ``None`` for a global policy.
+    """
+
+    id: str
+    scope: PolicyScope
+    scope_id: str | None
+    story_id: str | None
+    name: str
+    applies_to: list[PolicyTarget]
+    kind: PolicyKind
+    effect: str
+    rule: dict[str, Any]
+    age_condition: str | None
+    message: str
+    version: int
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    retired_at: str | None
+
+    @property
+    def rule_type(self) -> str:
+        """The rule's ``type`` (``wordlist``, ``regex``, ``entity_list``, ``model_assisted``)."""
+        value = self.rule.get("type")
+        return value if isinstance(value, str) else ""
+
+    @property
+    def retired(self) -> bool:
+        return self.retired_at is not None
+
+    @property
+    def seeded(self) -> bool:
+        """Created by the Engine itself (a seed migration), not by an operator."""
+        return self.created_by == "system"
+
+
+@dataclass(frozen=True)
+class PolicyList(Model):
+    """``PolicyList``: the policies a ``GET /admin/policies`` asked for."""
+
+    items: list[Policy]
+
+
+@dataclass(frozen=True)
+class PolicyMutation(Policy):
+    """``PolicyMutation``: a policy after a write, with the deployment's ``config_revision``."""
+
+    config_revision: int
+    idempotency_key: str | None = None
+
+
 @dataclass(frozen=True)
 class HealthResult:
     """What ``GET /health`` returned, for any HTTP status.

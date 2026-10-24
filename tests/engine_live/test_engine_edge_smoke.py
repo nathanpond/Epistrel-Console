@@ -211,3 +211,51 @@ def test_model_purpose_edit_key_and_drop_live(
         row = _model_row(operator_client.get("/models/").content.decode(), purpose)
         assert "console-smoke" not in row
         assert "not set" in row
+
+
+@pytest.mark.engine_auth
+def test_policy_create_edit_retire_and_retired_refusal_live(
+    url: str, key: str, operator_client: Client, operator: object
+) -> None:
+    """#47's demo against the real Engine: create a global wordlist policy, edit it, retire it,
+    then an edit shows the Engine's retired refusal."""
+    slug = f"console-smoke-{new_ulid().lower()}"
+    form = {
+        "id": slug,
+        "scope": "global",
+        "name": f"no ferries {slug[-6:]}",
+        "applies_to": ["text_output"],
+        "rule_type": "wordlist",
+        "words": "ferry",
+        "on_uncertain": "violation",
+        "age_condition": "",
+        "message": "Ferries are off-limits",
+    }
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        created = operator_client.post(
+            "/guardrails/policies/new/", {**form, "idempotency_key": new_ulid()}
+        )
+        assert created.status_code == 302, created.content.decode()
+        assert created["Location"] == f"/guardrails/policies/{slug}/"
+        try:
+            content = {k: v for k, v in form.items() if k not in ("id", "scope")}
+            saved = operator_client.post(
+                f"/guardrails/policies/{slug}/edit/",
+                {**content, "words": "ferry\nferries", "idempotency_key": new_ulid()},
+            )
+            assert saved.status_code == 302, saved.content.decode()
+            detail = operator_client.get(f"/guardrails/policies/{slug}/").content.decode()
+            assert "<li><code>ferries</code></li>" in detail
+            assert "<dt>Version</dt><dd>2</dd>" in detail
+            listing = operator_client.get("/guardrails/policies/").content.decode()
+            assert 'id="policy-minors_no_sexual_content"' in listing
+        finally:
+            retired = operator_client.post(
+                f"/guardrails/policies/{slug}/retire/", {"idempotency_key": new_ulid()}
+            )
+        assert retired.status_code == 302, retired.content.decode()
+        refused = operator_client.post(
+            f"/guardrails/policies/{slug}/edit/", {**content, "idempotency_key": new_ulid()}
+        )
+        assert refused.status_code == 200
+        assert "Retired policies cannot be changed" in refused.content.decode()

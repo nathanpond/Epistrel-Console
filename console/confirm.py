@@ -25,6 +25,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlencode
 
 from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import render
@@ -46,6 +47,19 @@ def safe_next(request: HttpRequest, fallback: str) -> str:
         candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
     )
     return candidate if candidate and allowed else fallback
+
+
+def confirm_query(name: str | None, next_url: str) -> str:
+    """The query string an action link carries to its confirm page: the display-only ``name``
+    and ``next`` (where Cancel and the action return)."""
+    return urlencode({"name": name or "", "next": next_url})
+
+
+def shown_name(request: HttpRequest) -> str:
+    """The display-only ``name`` (query string on GET, hidden field on POST); never trusted
+    for the action, which acts on the URL's id."""
+    posted = request.POST.get("name") if request.method == "POST" else None
+    return posted or request.GET.get("name", "")
 
 
 def posted_idempotency_key(request: HttpRequest) -> str:

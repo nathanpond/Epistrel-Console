@@ -8,10 +8,15 @@ from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
 
-def placeholder(title: str) -> Callable[[HttpRequest], HttpResponse]:
+def placeholder(
+    title: str, links: tuple[tuple[str, str], ...] = ()
+) -> Callable[[HttpRequest], HttpResponse]:
+    """``links``: ``(label, url)`` pairs to sections that are built (e.g. Guardrails →
+    Policies while Ratings is still a placeholder)."""
+
     @require_safe
     def view(request: HttpRequest) -> HttpResponse:
-        return render(request, "console/placeholder.html", {"title": title})
+        return render(request, "console/placeholder.html", {"title": title, "links": links})
 
     view.__name__ = f"placeholder_{title.lower().replace(' ', '_')}"
     return view

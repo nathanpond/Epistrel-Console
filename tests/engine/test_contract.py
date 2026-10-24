@@ -12,6 +12,7 @@ import pytest
 
 from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
+    AgeCondition,
     CatalogSource,
     ChainRef,
     ConfigSources,
@@ -32,6 +33,12 @@ from console.engine.models import (
     OmniscientStoryCharacter,
     OperationRecord,
     OperationStage,
+    Policy,
+    PolicyKind,
+    PolicyList,
+    PolicyMutation,
+    PolicyScope,
+    PolicyTarget,
     ProfileVersionRef,
     QualityStatus,
     ScenarioOrigin,
@@ -145,6 +152,9 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (ModelConfigItem, "ModelConfigItem"),
         (ModelConfigMutation, "ModelConfigMutation"),
         (ConfigSources, "Sources"),
+        (Policy, "PolicyBody"),
+        (PolicyList, "PolicyList"),
+        (PolicyMutation, "PolicyMutation"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -191,3 +201,33 @@ def test_raw_json_fields_accept_any_schema() -> None:
         body: Any
 
     assert compare_model(DOC, Raw, {"$ref": "#/components/schemas/StoredResultBody"}, "R") == []
+
+
+def _property(component: str, name: str) -> dict[str, Any]:
+    node: dict[str, Any] = DOC["components"]["schemas"][component]["properties"][name]
+    return node
+
+
+def test_policy_scope_is_the_enum_the_scope_property_references() -> None:
+    """Found by the ``scope`` property's ``$ref``, not by component name (the Engine renamed
+    the component once, #47)."""
+    for component in ("PolicyBody", "PolicyMutation"):
+        ref = _property(component, "scope")
+        assert compare_type(DOC, PolicyScope, ref, f"{component}.scope") == []
+    query = DOC["paths"]["/admin/policies"]["get"]["parameters"]
+    (scope,) = [p for p in query if p["name"] == "scope"]
+    assert compare_type(DOC, PolicyScope | None, scope["schema"], "query scope") == []
+
+
+def test_policy_kind_and_targets_match_the_schema_enums() -> None:
+    assert compare_type(DOC, PolicyKind, _property("PolicyBody", "kind"), "kind") == []
+    targets = _property("PolicyReplacement", "applies_to")
+    assert compare_type(DOC, list[PolicyTarget], targets, "applies_to") == []
+
+
+@pytest.mark.parametrize("component", ["PolicyFields", "PolicyReplacement", "StoryPolicyItem"])
+def test_age_condition_is_the_bodies_one_value(component: str) -> None:
+    options = _property(component, "age_condition")["anyOf"]
+    consts = {o["const"] for o in options if "const" in o}
+    assert consts == set(typing.get_args(AgeCondition))
+    assert {"type": "null"} in options

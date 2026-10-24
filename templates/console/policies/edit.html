@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ policy.name }} — Guardrail policies — Epistrel Console{% endblock %}
+{% block heading %}Edit policy: {{ policy.name }}{% if policy.seeded %} <span class="seeded">seeded</span>{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'policies:detail' policy.id %}">Back to the policy</a> · <a href="{% url 'policies:list' %}">All policies</a></p>
+{% if row.minors %}<p class="warning">{{ minors_warning }}</p>{% endif %}
+{% if policy.retired %}<p class="note">This policy is retired.</p>{% endif %}
+<dl class="policy-fixed">
+  <dt>Id</dt><dd><code>{{ policy.id }}</code></dd>
+  <dt>Scope</dt><dd>{{ row.scope_label }}</dd>
+  <dt>Kind</dt><dd>{{ policy.kind }}</dd>
+  <dt>Version</dt><dd>{{ policy.version }}</dd>
+</dl>
+<p><small>Id, scope, rating and kind are fixed once created: to change them, retire this policy and create another. Saving replaces the whole policy.</small></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{% url 'policies:edit' policy.id %}" class="policy-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <input type="hidden" name="ratings" value="{{ ratings }}">
+  {{ form.non_field_errors }}
+  {% include "console/policies/_content_fields.html" %}
+  <p><button type="submit">Save</button></p>
+</form>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{{ policy.name }} — Guardrail policies — Epistrel Console{% endblock %}
+{% block heading %}Policy: {{ policy.name }}{% if policy.seeded %} <span class="seeded">seeded</span>{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'policies:list' %}">All policies</a></p>
+{% if row.minors and row.retirable %}<p class="warning">{{ minors_warning }}</p>{% endif %}
+<dl class="policy">
+  <dt>Id</dt><dd><code>{{ policy.id }}</code></dd>
+  <dt>Scope</dt><dd>{{ row.scope_label }}</dd>
+  {% if policy.story_id %}<dt>Story</dt><dd><code>{{ policy.story_id }}</code></dd>{% endif %}
+  <dt>Kind</dt><dd>{{ policy.kind }}</dd>
+  <dt>Applies to</dt><dd>{{ row.targets|join:", " }}</dd>
+  <dt>Rule</dt><dd>{% include "console/policies/_rule.html" %}</dd>
+  <dt>Age condition</dt><dd>{{ policy.age_condition|default:"none" }}</dd>
+  <dt>Message</dt><dd>{{ policy.message }}</dd>
+  <dt>Effect</dt><dd>{{ policy.effect }}</dd>
+  <dt>Status</dt><dd class="status">{% if policy.retired %}retired {{ policy.retired_at|engine_time }}{% else %}live{% endif %}</dd>
+  <dt>Version</dt><dd>{{ policy.version }}</dd>
+  <dt>Created</dt><dd>{{ policy.created_at|engine_time }} by {{ policy.created_by }}</dd>
+  <dt>Updated</dt><dd>{{ policy.updated_at|engine_time }} by {{ policy.updated_by }}</dd>
+</dl>
+<p>{% include "console/policies/_actions.html" %}</p>
+{% endblock %}

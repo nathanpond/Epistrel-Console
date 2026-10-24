@@ -7,7 +7,6 @@ actions); #48 builds the play view on it.
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core import signing
@@ -16,7 +15,14 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
-from console.confirm import ConfirmPage, confirm_action, posted_idempotency_key, safe_next
+from console.confirm import (
+    ConfirmPage,
+    confirm_action,
+    confirm_query,
+    posted_idempotency_key,
+    safe_next,
+    shown_name,
+)
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import Story, StorySummary
 from console.engine_access import engine_client_for
@@ -69,10 +75,6 @@ def _cast_size(client: EngineClient, request: HttpRequest, story_id: str) -> int
         return None
 
 
-def actions_query(name: str | None, next_url: str) -> str:
-    return urlencode({"name": name or "", "next": next_url})
-
-
 @require_safe
 def story_list(request: HttpRequest) -> HttpResponse:
     """Every story ``GET /stories`` returns, archived included, in the Engine's order. The list
@@ -83,7 +85,7 @@ def story_list(request: HttpRequest) -> HttpResponse:
     stories = client.list_stories(status=status)
     here = request.get_full_path()
     rows = [
-        StoryRow(story, _cast_size(client, request, story.id), actions_query(story.name, here))
+        StoryRow(story, _cast_size(client, request, story.id), confirm_query(story.name, here))
         for story in stories
     ]
     empty_text = f"No {status} stories." if status else "No stories yet"
@@ -106,7 +108,7 @@ def story_detail(request: HttpRequest, story_id: str) -> HttpResponse:
         {
             "story": story,
             "cast": story.cast,
-            "actions_query": actions_query(story.name, request.get_full_path()),
+            "actions_query": confirm_query(story.name, request.get_full_path()),
         },
     )
 
@@ -275,17 +277,9 @@ def _list_url() -> str:
     return reverse("stories:list")
 
 
-def _shown_name(request: HttpRequest) -> str:
-    """The display-only ``name`` (query string on GET, hidden field on POST); never trusted
-    for the action, which acts on the URL's id."""
-    return (request.POST.get("name") if request.method == "POST" else None) or request.GET.get(
-        "name", ""
-    )
-
-
 @require_http_methods(["GET", "HEAD", "POST"])
 def story_archive(request: HttpRequest, story_id: str) -> HttpResponse:
-    name = _shown_name(request)
+    name = shown_name(request)
     label = story_label(name, story_id)
     back = safe_next(request, _list_url())
     page = ConfirmPage(
@@ -312,7 +306,7 @@ def story_archive(request: HttpRequest, story_id: str) -> HttpResponse:
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def story_unarchive(request: HttpRequest, story_id: str) -> HttpResponse:
-    name = _shown_name(request)
+    name = shown_name(request)
     label = story_label(name, story_id)
     back = safe_next(request, _list_url())
     page = ConfirmPage(
@@ -339,7 +333,7 @@ def story_unarchive(request: HttpRequest, story_id: str) -> HttpResponse:
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def story_delete(request: HttpRequest, story_id: str) -> HttpResponse:
-    name = _shown_name(request)
+    name = shown_name(request)
     label = story_label(name, story_id)
     page = ConfirmPage(
         title="Delete story",
