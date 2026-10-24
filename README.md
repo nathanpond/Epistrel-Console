@@ -6,7 +6,8 @@ A Django web app that serves as the human-facing test harness for the [Epistrel 
 
 ## Build and test
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.14 (pinned in `.python-version`; CI and
+the image use the same version).
 
 ```bash
 uv sync                              # create .venv and install dependencies

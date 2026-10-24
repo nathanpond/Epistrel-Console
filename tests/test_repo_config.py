@@ -93,3 +93,28 @@ def test_ruleset_without_gate_fails() -> None:
             rule["parameters"]["required_status_checks"] = [{"context": "lint"}]
             rule["parameters"]["strict_required_status_checks_policy"] = False
     assert ruleset_problems(doc) == ["not strict", "gate (GitHub Actions, 15368) is not required"]
+
+
+def test_ruleset_without_pull_request_rule_fails() -> None:
+    doc = copy.deepcopy(load_ruleset())
+    doc["rules"] = [rule for rule in doc["rules"] if rule["type"] != "pull_request"]
+    assert ruleset_problems(doc) == ["no pull_request rule"]
+
+
+def test_inactive_ruleset_fails() -> None:
+    for enforcement in ("evaluate", "disabled"):
+        doc = copy.deepcopy(load_ruleset())
+        doc["enforcement"] = enforcement
+        assert ruleset_problems(doc) == ["not active"]
+
+
+def test_ruleset_without_status_checks_fails() -> None:
+    doc = copy.deepcopy(load_ruleset())
+    doc["rules"] = [r for r in doc["rules"] if r["type"] != "required_status_checks"]
+    assert ruleset_problems(doc) == ["no required_status_checks rule"]
+
+
+def test_readme_names_the_pinned_python() -> None:
+    python = (REPO_ROOT / ".python-version").read_text().strip()
+    readme = (REPO_ROOT / "README.md").read_text()
+    assert f"Python {python} (pinned in `.python-version`" in readme
