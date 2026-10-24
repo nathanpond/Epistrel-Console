@@ -21,17 +21,24 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    ContentRatingList,
+    ContentRatingSummary,
+    DeploymentSettings,
     HealthResponse,
     HealthResult,
     Model,
     OperationRecord,
+    Story,
+    StoryCreated,
     StoryList,
+    StoryStatusChange,
     StorySummary,
 )
 from console.version import VERSION
 
 USER_AGENT = f"epistrel-console/{VERSION}"
-DEFAULT_TIMEOUT_S = 3.0
+DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
+MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
 # Routes the Engine serves without auth (Engine #44): never sent the service key.
 EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/redoc"})
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -287,6 +294,78 @@ class EngineClient:
         response = self._request("GET", "/stories", params=params)
         return _parse(response, StoryList).items
 
+    @operation("POST", "/stories", response_model=StoryCreated)
+    def create_story(self, spec: Mapping[str, Any], *, idempotency_key: str) -> StoryCreated:
+        """``POST /stories`` with a blank story's ``StorySpec`` (#45).
+
+        A blank story is created (201) or refused. A 200 (a scenario creation's ``applied:
+        false``) or an answer without a story id is :class:`EngineError` ``bad_response``.
+        """
+        response = self._request(
+            "POST",
+            "/stories",
+            json=dict(spec),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        created = _parse(response, StoryCreated)
+        if response.status_code != 201 or created.story_id is None:
+            raise EngineError(
+                "bad_response",
+                "the Engine did not create the story (no story id)",
+                {},
+                response.status_code,
+            )
+        return created
+
+    @operation("GET", "/stories/{story_id}", response_model=Story)
+    def get_story(self, story_id: str) -> Story:
+        """``GET /stories/{id}``: one story with its cast and settings."""
+        return _parse(self._request("GET", _story_path(story_id)), Story)
+
+    @operation("POST", "/stories/{story_id}/archive", response_model=StoryStatusChange)
+    def archive_story(self, story_id: str, *, idempotency_key: str) -> StoryStatusChange:
+        """``POST /stories/{id}/archive``: turns are refused until it is unarchived."""
+        return self._status_change(f"{_story_path(story_id)}/archive", idempotency_key)
+
+    @operation("POST", "/stories/{story_id}/unarchive", response_model=StoryStatusChange)
+    def unarchive_story(self, story_id: str, *, idempotency_key: str) -> StoryStatusChange:
+        """``POST /stories/{id}/unarchive``: turns are accepted again."""
+        return self._status_change(f"{_story_path(story_id)}/unarchive", idempotency_key)
+
+    def _status_change(self, path: str, idempotency_key: str) -> StoryStatusChange:
+        response = self._request(
+            "POST",
+            path,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, StoryStatusChange)
+
+    @operation("DELETE", "/stories/{story_id}")
+    def delete_story(self, story_id: str, *, idempotency_key: str) -> None:
+        """``DELETE /stories/{id}``: the story and all its history, permanently (204)."""
+        response = self._request(
+            "DELETE",
+            _story_path(story_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
+    @operation("GET", "/admin/content-ratings", response_model=ContentRatingList)
+    def list_content_ratings(self, include_retired: bool = False) -> list[ContentRatingSummary]:
+        """``GET /admin/content-ratings``: the ratings in display order (retired ones only on
+        request, sent as ``include_retired=1``)."""
+        params = {"include_retired": "1"} if include_retired else None
+        response = self._request("GET", "/admin/content-ratings", params=params)
+        return _parse(response, ContentRatingList).items
+
+    @operation("GET", "/admin/settings", response_model=DeploymentSettings)
+    def get_deployment_settings(self) -> DeploymentSettings:
+        """``GET /admin/settings``: every deployment setting and its ``config_revision``."""
+        return _parse(self._request("GET", "/admin/settings"), DeploymentSettings)
+
     @operation("GET", "/operations/{operation_id}", response_model=OperationRecord)
     def get_operation(self, operation_id: str, viewpoint: str | None = None) -> OperationRecord:
         """``GET /operations/{id}``: the Engine's record of one operation.
@@ -297,6 +376,11 @@ class EngineClient:
         params = {"viewpoint": viewpoint} if viewpoint else None
         path = f"/operations/{quote(operation_id, safe='')}"
         return _parse(self._request("GET", path, params=params), OperationRecord)
+
+
+def _story_path(story_id: str) -> str:
+    """``/stories/<id>``, the id percent-encoded (an unknown id still reaches the Engine)."""
+    return f"/stories/{quote(story_id, safe='')}"
 
 
 def _parse[M: Model](response: httpx.Response, model: type[M]) -> M:

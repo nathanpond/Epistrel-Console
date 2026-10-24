@@ -409,3 +409,39 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The operator filter matches `operator_username` (the snapshot), so rows of a deleted user stay filterable. The guardrail readers treat the input side as `error.details.violations` and the output side as the turn report's `guardrail.violations`; the policy select lists ids from both.
   **Why:** Attribution must survive user deletion; the AC's policy filter covers both kinds of rejection.
   **Issue:** #44
+- **Decision (drift):** No schema re-record for #45. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, torn down after) reports a match; every endpoint #45 needs (`POST /stories`, `GET /stories/{id}`, archive/unarchive, `DELETE /stories/{id}`, `GET /admin/content-ratings`, `GET /admin/settings`) is in the recording.
+  **Why:** The conventions re-record only when the live document differs.
+  **Issue:** #45
+- **Decision:** New models mirror their components in full: `Story` (`StoryBody`), `StoryCharacter` / `OmniscientStoryCharacter`, `CatalogSource`, `StoryPause` / `StoryPauseProgress`, `DormantChain`, `VariantChain`, `ChainRef`, `ScenarioOrigin`, `StoryCreated`, `CreatedCharacter`, `StoryStatusChange` (`StatusBody`), `ContentRatingSummary` (`RatingBody`, #49's name), `ContentRatingList` (`RatingList`), `DeploymentSettings` (`SettingsBody`). Raw JSON (`Any`) where the contract test cannot express the schema: `Story.characters` (a union of two character bodies; `Story.cast` parses them as `StoryCharacter`), `StoryCreated.report`/`impact` (scenario-only), `DeploymentSettings.profile_defaults` (nested profile document, #50 renders it) and `feedback_retention` (enum-or-integer union).
+  **Why:** The contract test supports only `X | None` unions; everything else is typed so #48/#50 can reuse the models.
+  **Issue:** #45
+- **Decision:** `create_story(spec, *, idempotency_key)` treats any non-201 success or a null `story_id` as `bad_response`; mutations (`create_story`, `archive_story`, `unarchive_story`, `delete_story`) use `MUTATION_TIMEOUT_S = 10.0` (new constant in `console/engine/client.py`). `list_content_ratings(include_retired=True)` sends `include_retired=1` (checked live: the Engine accepts `1`).
+  **Why:** #43's timeouts and paging conventions; the planner's "a 200 or null id is bad_response".
+  **Issue:** #45
+- **Decision:** `apply_engine_errors` (`console/engine_form_errors.py`) strips the Engine's `body.` prefix (paths look like `body.characters[1].name`, checked live and in Engine `core/errors.py:field_path`), takes `formsets` as name → the forms **in the order sent** (so dropped blank rows do not shift indexes), puts a row path with no matching field on that row's non-field errors, and an unmatched path on the form's non-field errors prefixed `<path>: `. `aliases` keys may be a path, a `details` key or an error code (the latter two only when the error carries no field path). It returns how many errors it placed.
+  **Why:** The convention fixes the mapping but not these edges; prefixing unmatched errors with the path tells the operator what they refer to.
+  **Issue:** #45
+- **Decision:** The shared confirm pattern is `console/confirm.py`: `ConfirmPage(title, question, confirm_label, cancel_url, emphasis, lines, facts, hidden, danger, fields_template)`, `confirm_action(request, page, perform)` (GET renders with zero Engine calls, POST calls `perform(idempotency_key)`, other methods 405), `render_confirm`, `safe_next(request, fallback)` and `posted_idempotency_key(request)` (the posted key, or a fresh ULID when missing or not matching the Engine's key rule). Templates: `console/confirm_page.html` around the shared `console/_confirm.html`; `{name}` in the question is replaced by the italic `emphasis`.
+  **Why:** #53/#54/#46/#49 reuse it; `fields_template` covers #53's regenerate parameters without another template layer.
+  **Issue:** #45
+- **Decision:** The new-story page carries its rating options in a signed hidden field (`rating_choices`, `django.core.signing`), so a POST (create, add, remove, or a Console validation failure) makes no Engine read; a missing or tampered value is re-fetched. The GET reads `list_content_ratings()` and `get_deployment_settings()` and preselects `default_content_rating_id`.
+  **Why:** The test plan asserts zero Engine requests for input the form refuses; the select still needs its options to re-render.
+  **Issue:** #45
+- **Decision:** Add/remove re-render a bound formset built from the posted rows (renumbered, `INITIAL_FORMS=0`) with errors hidden, so the new blank row is not flagged; a crafted add at 20 rows does nothing. A visually hidden "Create story" submit comes first in the form so Enter creates rather than removes row 1. `is_player` is always sent (explicit `false`); blank safe-fallback and deflection texts, name and viewpoint are omitted.
+  **Why:** No JS (AC); Enter's default button is the first submit in the form.
+  **Issue:** #45
+- **Decision:** Any `EngineClientError` from the create POST re-renders the form with input kept: a 422 other than `guardrail_violation` places errors inline plus `The Engine rejected the story: <message>`; a guardrail violation and every other error show the shared panel above the form. Confirm-page POST errors escape to the middleware panel.
+  **Why:** #43: form views that catch the error re-render their form; the planner's 422/guardrail split.
+  **Issue:** #45
+- **Decision:** A story without a name is named by its id in confirm wording and flashes ("Archive *<id>*?", "Deleted <id>"); the list and detail show "—". Flashes: `Created|Archived|Unarchived <label> — … revision N, idempotency key K` and `Deleted <label>`. Delete always returns to `/stories/` (its `next` may be the deleted story's page); Cancel uses `next`.
+  **Why:** A flash of "—" names nothing; the Engine's answers carry revision and key (#43 flash convention), delete's 204 carries neither.
+  **Issue:** #45
+- **Decision:** The list's cast size comes from one `GET /stories/{id}` per row (sequential, per the planner); a failed per-row read shows "—" for that row only and logs the usual WARNING line. A held (`blocked_by_erasure`) row shows Delete only.
+  **Why:** `StorySummaryBody` has no cast; per-section degradation (#43).
+  **Issue:** #45
+- **Decision:** URLs are `/stories/new/` (trailing slash, #43's "URLs end with `/`") and `/stories/<id>/{archive,unarchive,delete}/` in namespace `stories` (`list`, `new`, `detail`, `archive`, `unarchive`, `delete`). `tests/test_shell.py`'s placeholder test drops `/stories/`, which is no longer a placeholder.
+  **Why:** Conventions; the placeholder was replaced as #43 planned.
+  **Issue:** #45
+- **Decision:** Two live smokes (`engine_live` + `engine_auth`): create → archive → list (archived present, cast 2) → delete in `try/finally`, and demo step 3's duplicate-name refusal placed on row 2 (creates nothing).
+  **Why:** The planner's pass-2 smoke, plus the one 422 path a fake cannot prove matches the real Engine.
+  **Issue:** #45

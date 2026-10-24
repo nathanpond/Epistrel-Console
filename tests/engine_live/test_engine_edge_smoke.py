@@ -4,12 +4,15 @@ its real client and pages.
 Run by ci.yml's engine-smoke job against the Engine ``edge`` image; locally, see the README.
 """
 
+import re
+
 import pytest
 from django.test import Client, override_settings
 
 from console.engine.client import EngineClient
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
+from console.ids import new_ulid
 from tests.plugins.engine_live import live_key, live_url
 
 pytestmark = pytest.mark.engine_live
@@ -85,3 +88,84 @@ def test_keyed_call_is_accepted(url: str, key: str) -> None:
     # The Engine enforces service auth on every route but the exempt ones (Engine #44).
     response = EngineClient(url, key)._request("GET", "/stories")
     assert response.status_code == 200, response.text
+
+
+@pytest.mark.engine_auth
+def test_story_create_archive_list_delete_live(
+    url: str, key: str, operator_client: Client, operator: object
+) -> None:
+    """#45: create a story in the browser, archive it, see it listed, delete it."""
+    ratings = EngineClient(url, key).list_content_ratings()
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        form = operator_client.get("/stories/new/").content.decode()
+        signed = re.search(r'name="rating_choices" value="([^"]+)"', form)
+        assert signed is not None, form
+        response = operator_client.post(
+            "/stories/new/",
+            {
+                "name": "Console smoke harbour",
+                "content_rating_id": ratings[0].id,
+                "viewpoint": "",
+                "idempotency_key": new_ulid(),
+                "rating_choices": signed.group(1),
+                "characters-TOTAL_FORMS": "2",
+                "characters-INITIAL_FORMS": "0",
+                "characters-0-name": "Mara",
+                "characters-0-definition": "A harbour pilot.",
+                "characters-0-true_age": "34",
+                "characters-0-is_player": "on",
+                "characters-1-name": "Tobin",
+                "characters-1-definition": "Her brother.",
+                "characters-1-true_age": "41",
+            },
+        )
+        assert response.status_code == 302, response.content.decode()
+        story_id = response["Location"].strip("/").rsplit("/", 1)[-1]
+        try:
+            archived = operator_client.post(
+                f"/stories/{story_id}/archive/", {"idempotency_key": new_ulid()}
+            )
+            assert archived.status_code == 302, archived.content.decode()
+            listing = operator_client.get("/stories/").content.decode()
+            assert f"<code>{story_id}</code>" in listing  # archived stories are listed
+            row = listing[listing.index(f"<code>{story_id}</code>") :]
+            assert '<td class="status">archived</td>' in row[: row.index("</tr>")]
+            assert "<td>2</td>" in row[: row.index("</tr>")]  # the cast
+        finally:
+            deleted = operator_client.post(
+                f"/stories/{story_id}/delete/", {"idempotency_key": new_ulid()}
+            )
+        assert deleted.status_code == 302, deleted.content.decode()
+        assert f"<code>{story_id}</code>" not in operator_client.get("/stories/").content.decode()
+
+
+@pytest.mark.engine_auth
+def test_story_refusal_is_placed_beside_the_row_live(
+    url: str, key: str, operator_client: Client
+) -> None:
+    """#45 demo step 3: two characters named "Mara" — the Engine's refusal sits on row 2."""
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        form = operator_client.get("/stories/new/").content.decode()
+        signed = re.search(r'name="rating_choices" value="([^"]+)"', form)
+        default = re.search(r'<option value="([^"]+)" selected>', form)
+        assert signed is not None, form
+        assert default is not None, form
+        page = operator_client.post(
+            "/stories/new/",
+            {
+                "content_rating_id": default.group(1),
+                "idempotency_key": new_ulid(),
+                "rating_choices": signed.group(1),
+                "characters-TOTAL_FORMS": "2",
+                "characters-INITIAL_FORMS": "0",
+                "characters-0-name": "Mara",
+                "characters-0-definition": "A harbour pilot.",
+                "characters-0-true_age": "34",
+                "characters-1-name": "mara",
+                "characters-1-definition": "Another Mara.",
+                "characters-1-true_age": "30",
+            },
+        ).content.decode()
+    second = page[page.index('id="character-1"') :]
+    assert "same name" in second[: second.index("</fieldset>")], page
+    assert "The Engine rejected the story:" in page

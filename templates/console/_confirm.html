@@ -1,0 +1,19 @@
+<div class="confirm">
+  <p class="question">{% if has_emphasis %}{{ question_before }}<em>{{ page.emphasis }}</em>{{ question_after }}{% else %}{{ page.question }}{% endif %}</p>
+  {% for line in page.lines %}<p>{{ line }}</p>{% endfor %}
+  {% if page.facts %}
+  <dl>
+    {% for label, value in page.facts %}<dt>{{ label }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}
+  </dl>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {% for name, value in page.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    {% if page.fields_template %}{% include page.fields_template %}{% endif %}
+    <button type="submit"{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>
+    <a href="{{ next_url }}">Cancel</a>
+  </form>
+</div>

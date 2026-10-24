@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{{ story.name|default:story.id }} — Epistrel Console{% endblock %}
+{% block heading %}{{ story.name|default:"—" }}{% endblock %}
+{% block content %}
+<dl class="story-header">
+  <dt>Id</dt><dd><code>{{ story.id }}</code></dd>
+  <dt>Status</dt><dd class="status">{{ story.status }}</dd>
+  <dt>Timeline revision</dt><dd>{{ story.timeline_revision }}</dd>
+  <dt>Content rating</dt><dd>{{ story.content_rating.name|default:"—" }}</dd>
+  <dt>Cast</dt>
+  <dd>{% if cast %}<ul class="cast">{% for character in cast %}<li>{{ character.name }}{% if character.is_player %} (player){% endif %}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
+  <dt>Created</dt><dd>{{ story.created_at|engine_time }}</dd>
+</dl>
+<p>{% include "console/stories/_actions.html" with story=story query=actions_query %}</p>
+<p><a href="{% url 'stories:list' %}">All stories</a></p>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Stories — Epistrel Console{% endblock %}
+{% block heading %}Stories{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:new' %}">New story</a></p>
+
+<form method="get" action="" class="filters">
+  <label>Status
+    <select name="status">
+      {% for value, label in filters.fields.status.choices %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+{% if rows %}
+<table class="stories">
+  <thead>
+    <tr><th>Name</th><th>Id</th><th>Status</th><th>Revision</th><th>Content rating</th><th>Cast</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="{% url 'stories:detail' row.story.id %}">{{ row.story.name|default:"—" }}</a></td>
+      <td><code>{{ row.story.id }}</code></td>
+      <td class="status">{{ row.story.status }}</td>
+      <td>{{ row.story.timeline_revision }}</td>
+      <td>{{ row.story.content_rating.name|default:"—" }}</td>
+      <td>{% if row.cast_size is None %}—{% else %}{{ row.cast_size }}{% endif %}</td>
+      <td>{% include "console/stories/_actions.html" with story=row.story query=row.actions_query %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ empty_text }}</p>
+{% endif %}
+{% endblock %}
