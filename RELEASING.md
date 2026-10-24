@@ -58,3 +58,31 @@ What results:
 | any, with no matching Engine image | — | nothing | none: `validate` fails |
 
 `latest` is never moved by a pre-release, and never by a version lower than the highest stable version already published. Re-running the workflow for an existing tag rebuilds and re-pushes the version's image, then rewrites only the release's `Image:` and `Tested with Engine` lines (naming the newly tested Engine) and leaves the generated notes alone.
+
+## Production rollback
+
+A bad release is undone without rebuilding. `rollback.yml` re-tags the known-good multi-arch image as `latest` and demotes the bad GitHub release:
+
+```bash
+gh workflow run rollback.yml -f good_version=0.1.0 -f bad_version=0.1.1
+```
+
+Afterwards:
+
+- `docker buildx imagetools inspect ghcr.io/nathanpond/epistrel-console:latest` reports `0.1.0`'s digest. So do `0.1` and `0`, if they pointed at the bad digest and `0.1.0` belongs to their line. Both architectures move together.
+- The Releases page shows `v0.1.0` badged **Latest** and `v0.1.1` badged **Pre-release**, with `Rolled back on <date>; use v0.1.0.` appended to its notes. A re-run replaces that line rather than adding a second.
+- The run's summary lists every tag with its before and after digest.
+
+The run refuses, changing nothing, when any of these hold:
+
+- an input is not a bare `X.Y.Z` (pre-releases can't be a `good_version`);
+- `good_version == bad_version`;
+- the good version's image tag or GitHub release doesn't exist;
+- the bad version's release doesn't exist (when one is given);
+- a `release.yml` run isn't finished (in progress, queued, waiting, pending or requested).
+
+It runs only from `main`, and it shares the `release-latest` concurrency group with `release.yml`'s publish job, so a release and a rollback never interleave. `good_version` may be a release that was demoted earlier (it is promoted again) or one newer than `bad_version` (a roll forward).
+
+Anyone who already pulled `latest` keeps the bad image until they pull again.
+
+To remove a bad release entirely instead, delete its GitHub release and its version tag by hand (`gh release delete vX.Y.Z --cleanup-tag`, as an admin; the `release-tags` ruleset otherwise refuses tag deletion), then run the rollback for the good version. Prefer demoting: the bad image stays addressable for comparison.

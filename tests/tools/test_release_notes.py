@@ -1,6 +1,6 @@
 """tools.release.notes: the release's Image/Tested-with lines are appended once, then replaced."""
 
-from tools.release.notes import merge
+from tools.release.notes import merge, with_rollback_note
 
 LINES = ["Image: `img:0.1.1@sha256:aa`", "Tested with Engine 0.1.1 (`eng@sha256:bb`)"]
 NEW = ["Image: `img:0.1.1@sha256:cc`", "Tested with Engine 0.1.1 (`eng@sha256:dd`)"]
@@ -33,3 +33,22 @@ def test_one_missing_line_is_appended() -> None:
     assert out.count("Image: ") == 1
     assert out.endswith(LINES[1] + "\n")
     assert "Image: `img:0.1.1@sha256:aa`" in out
+
+
+ROLLED = "Rolled back on 2026-10-24; use v0.1.0."
+
+
+def test_rollback_note_is_appended() -> None:
+    assert with_rollback_note(NOTES, ROLLED) == NOTES + "\n" + ROLLED + "\n"
+
+
+def test_rollback_note_is_replaced_not_duplicated() -> None:
+    once = with_rollback_note(NOTES, "Rolled back on 2026-10-01; use v0.0.9.")
+    twice = with_rollback_note(once + "\n\n", ROLLED)
+    assert twice.count("Rolled back on ") == 1
+    assert twice.endswith("\n" + ROLLED + "\n")
+    assert twice.startswith(NOTES.rstrip("\n"))
+
+
+def test_rollback_note_on_empty_notes() -> None:
+    assert with_rollback_note("", ROLLED) == ROLLED + "\n"

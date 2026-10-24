@@ -1,16 +1,18 @@
-"""Put the release's two identity lines into its notes (release.yml, #38).
+"""Edit release notes in place, keeping everything else (stdlib only: no uv needed).
 
-    python3 -m tools.release.notes NOTES LINES > BODY      (stdlib only: no uv needed)
+    python3 -m tools.release.notes NOTES LINES > BODY              (release.yml, #38)
+    python3 -m tools.release.notes --rollback-note NOTE NOTES > BODY   (rollback.yml, #39)
 
 LINES holds `Image: …` and `Tested with Engine …`. A line in NOTES starting the same way is
-replaced in place; one that is missing is appended after a blank line. Everything else in NOTES is
-kept, so a re-run rewrites only these two lines.
+replaced in place; one that is missing is appended after a blank line, so a re-run rewrites only
+these two lines. A rollback note replaces every earlier `Rolled back on …` line and goes last.
 """
 
 import sys
 from pathlib import Path
 
 PREFIXES = ("Image: ", "Tested with Engine ")
+ROLLBACK_PREFIX = "Rolled back on "
 
 
 def merge(notes: str, lines: list[str]) -> str:
@@ -31,7 +33,21 @@ def merge(notes: str, lines: list[str]) -> str:
     return "\n".join(out) + "\n"
 
 
+def with_rollback_note(notes: str, note: str) -> str:
+    """``notes`` without any earlier rollback line, then a blank line and ``note``."""
+    out = [line for line in notes.split("\n") if not line.startswith(ROLLBACK_PREFIX)]
+    while out and not out[-1].strip():
+        out.pop()
+    return "\n".join([*out, "", note] if out else [note]) + "\n"
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 4 and argv[1] == "--rollback-note":
+        if not argv[2].startswith(ROLLBACK_PREFIX):
+            print(f"error: the note must start with {ROLLBACK_PREFIX!r}", file=sys.stderr)
+            return 2
+        sys.stdout.write(with_rollback_note(Path(argv[3]).read_text(encoding="utf-8"), argv[2]))
+        return 0
     notes = Path(argv[1]).read_text(encoding="utf-8")
     lines = [ln for ln in Path(argv[2]).read_text(encoding="utf-8").splitlines() if ln.strip()]
     if len(lines) != 2 or not all(ln.startswith(p) for ln, p in zip(lines, PREFIXES, strict=True)):

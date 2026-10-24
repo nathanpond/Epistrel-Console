@@ -208,3 +208,5 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #38
 - **Decision:** `release.yml` reuses #37's pattern: push by digest, smoke, then `imagetools create` for every tag with a post-condition. That replaces the Engine's push-with-tags, so a failed smoke moves no tag (the AC). The release body goes through `--notes-file`.
   **Issue:** #38
+- **Decision:** `rollback.yml` folds input validation and the running-release check into the one `id: pre` step, ahead of all existence checks. The Engine has them as three steps, one after its login. The guard test then checks a single, simple fact: nothing that runs `imagetools create` or `gh release edit` comes at or before `pre`. The job checks out the repo so it can run `python3 -m tools.release.notes --rollback-note`, which replaces an earlier note rather than skipping when one exists (the Engine's `grep -qF … ||` skips).
+  **Issue:** #39
