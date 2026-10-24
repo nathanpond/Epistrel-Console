@@ -65,7 +65,8 @@ jobs:
           set -eu
           ref="${REQUESTED:-$PUSHED}"
           if [ "$EVENT" = "push" ]; then ref="$PUSHED"; fi
-          if printf '%s' "$ref" | grep -Eq '^[0-9a-f]{7,39}$'; then
+          # Any case, and with a ~/^ suffix too: git resolves `031B52A` and `abc1234~0` as well.
+          if printf '%s' "$ref" | grep -Eiq '^[0-9a-f]{7,39}([~^].*)?$'; then
             echo "::error::'$ref' looks like a short SHA; pass a branch, a tag, or the full 40-hex SHA"; exit 1
           fi
           # A full-depth checkout has local refs only for the checked-out branch: try the remote branch too.
