@@ -178,6 +178,8 @@ def test_mutating_call_without_principal_sends_nothing(
         ("x" * 257, "at most 256"),
         # 200 characters, 1208 once encoded: the Engine checks what it receives (#108).
         ("console:" + "é" * 200, "at most 256"),
+        # 11 + 41 * 6 = 257 encoded, but 93 UTF-8 bytes and 52 characters (#117).
+        ("console:aaa" + "é" * 41, r"at most 256 characters once encoded \(257\)"),
         ("console:a\r\nX-Evil: 1", "control"),
         ("a\nb", "control"),
         ("a\x00b", "control"),
@@ -199,7 +201,14 @@ def test_bad_principal_refused_before_sending(
 
 @pytest.mark.parametrize(
     "principal",
-    ["x" * 256, "console:" + "é" * 41, "console:" + "é" * 41 + "  ", "console:\x80", "systems"],
+    [
+        "x" * 256,
+        "console:" + "é" * 41,
+        "console:aa" + "é" * 41,  # exactly 256 once encoded (#117)
+        "console:" + "é" * 41 + "  ",
+        "console:\x80",
+        "systems",
+    ],
 )
 def test_principal_the_engine_accepts_is_sent(thing_engine: FakeEngine, principal: str) -> None:
     # "console:" plus 41 "é" is 8 + 246 = 254 characters encoded; C1 controls go percent-encoded.
@@ -208,6 +217,9 @@ def test_principal_the_engine_accepts_is_sent(thing_engine: FakeEngine, principa
     sent = thing_engine.requests[0].headers["x-epistrel-principal"]
     assert 1 <= len(sent.strip(" ")) <= 256
     assert not any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in sent)
+    if principal == "console:aa" + "é" * 41:
+        assert sent == "console:aa" + "%C3%A9" * 41
+        assert len(sent) == 256
 
 
 def test_error_envelope_raises_engine_error(thing_engine: FakeEngine) -> None:

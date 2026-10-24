@@ -161,9 +161,14 @@ def test_demote_rule_bites(tmp_path: Path) -> None:
 RETAG = "Re-point floating tags"
 
 
-def docker_stub(tags: dict[str, str]) -> str:
-    """``docker buildx imagetools``: ``inspect`` answers from ``tags``; ``create`` succeeds."""
-    cases = "".join(f'    "$IMAGE:{t}") echo "{d}"; exit 0 ;;\n' for t, d in tags.items())
+DENIED = "ERROR: unexpected status from HEAD request: 401 Unauthorized"
+
+
+def docker_stub(tags: dict[str, str], denied: tuple[str, ...] = ()) -> str:
+    """``docker buildx imagetools``: ``inspect`` answers from ``tags``, refuses the ``denied``
+    tags with a 401 and any other with "not found"; ``create`` succeeds."""
+    cases = "".join(f'    "$IMAGE:{t}") echo "{DENIED}" >&2; exit 1 ;;\n' for t in denied)
+    cases += "".join(f'    "$IMAGE:{t}") echo "{d}"; exit 0 ;;\n' for t, d in tags.items())
     return f"""
 if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
   case "$4" in
@@ -174,11 +179,17 @@ fi
 """
 
 
+def run_retag(
+    tmp_path: Path, good: str, bad: str, tags: dict[str, str], denied: tuple[str, ...] = ()
+) -> StepRun:
+    env = {"GOOD": good, "BAD": bad, "GOOD_DIGEST": GOOD_DIGEST, "BAD_DIGEST": BAD_DIGEST}
+    return run_step(step(rollback_job(), RETAG)["run"], tmp_path, env=env,
+                    stubs={"docker": docker_stub(tags, denied)})  # fmt: skip
+
+
 def retag(tmp_path: Path, good: str, bad: str, tags: dict[str, str]) -> list[str]:
     """The tags the step re-pointed at the good digest."""
-    env = {"GOOD": good, "BAD": bad, "GOOD_DIGEST": GOOD_DIGEST, "BAD_DIGEST": BAD_DIGEST}
-    result = run_step(step(rollback_job(), RETAG)["run"], tmp_path, env=env,
-                      stubs={"docker": docker_stub(tags)})  # fmt: skip
+    result = run_retag(tmp_path, good, bad, tags)
     assert result.rc == 0, result.output
     moved = []
     for call in result.called("docker", "buildx", "imagetools", "create"):
@@ -214,16 +225,23 @@ def test_floating_tags_move_only_within_the_good_line(
     assert retag(tmp_path, good, bad, tags) == moved
 
 
-PRE_GH = """
+def pre_gh(running: int = 0, missing: str = "") -> str:
+    """``gh``: ``running`` release runs unfinished; every release exists except ``missing``."""
+    return f"""
 case "$1 $2" in
-  "run list") echo 0; exit 0 ;;
-  "release view") exit 0 ;;
+  "run list") echo {running}; exit 0 ;;
+  "release view") [ "$3" = "{missing or "-"}" ] && exit 1; exit 0 ;;
 esac
 """
 
 
-def precheck(tmp_path: Path, good: str, bad: str = "", docker: str | None = None) -> StepRun:
-    stubs = {"gh": PRE_GH, "docker": docker or docker_stub({good: GOOD_DIGEST, bad: BAD_DIGEST})}
+PRE_GH = pre_gh()
+
+
+def precheck(
+    tmp_path: Path, good: str, bad: str = "", docker: str | None = None, gh: str = PRE_GH
+) -> StepRun:
+    stubs = {"gh": gh, "docker": docker or docker_stub({good: GOOD_DIGEST, bad: BAD_DIGEST})}
     pre = step(rollback_job(), "pre")["run"]
     return run_step(pre, tmp_path, env={"GOOD": good, "BAD": bad}, stubs=stubs)
 
@@ -261,3 +279,109 @@ def test_an_inspect_failure_reports_the_registrys_message(tmp_path: Path) -> Non
     assert result.rc == 1
     assert "401 Unauthorized" in result.output
     assert result.called("gh", "release", "edit") == []
+
+
+# --- every pre-check refusal, the bad image's inspect, the post-condition (#114, #115) -------
+
+READS = (
+    ("gh", "run", "list"),
+    ("gh", "release", "view"),
+    ("docker", "buildx", "imagetools", "inspect"),
+)
+
+
+def only_reads(result: StepRun) -> list[list[str]]:
+    """The calls that are not one of the pre-check's reads (a refusal must make none)."""
+    return [c for c in result.calls if not any(c[: len(r)] == list(r) for r in READS)]
+
+
+@pytest.mark.parametrize(
+    ("gh", "why", "last"),
+    [
+        (pre_gh(running=1), "a release run is not finished yet (1)", ["gh", "run", "list"]),
+        (pre_gh(missing="v0.1.0"), "release v0.1.0 does not exist", ["gh", "release", "view"]),
+        (pre_gh(missing="v0.1.1"), "release v0.1.1 does not exist", ["gh", "release", "view"]),
+    ],
+    ids=["release run in progress", "good release missing", "bad release missing"],
+)
+def test_prechecks_refuse_and_stop(tmp_path: Path, gh: str, why: str, last: list[str]) -> None:
+    result = precheck(tmp_path, "0.1.0", "0.1.1", gh=gh)
+    assert result.rc == 1
+    assert why in result.output
+    assert "nothing changed" in result.output
+    assert result.outputs == {}
+    assert only_reads(result) == []
+    # The refusing call is the last one: nothing further was asked.
+    assert result.calls[-1][: len(last)] == last
+
+
+def test_a_missing_bad_image_has_nothing_to_unfloat(tmp_path: Path) -> None:
+    result = precheck(tmp_path, "0.1.0", "0.1.1", docker=docker_stub({"0.1.0": GOOD_DIGEST}))
+    assert result.rc == 0, result.output
+    assert result.outputs == {"good_digest": GOOD_DIGEST, "bad_digest": ""}
+
+
+def test_a_refused_inspect_of_the_bad_image_stops_the_rollback(tmp_path: Path) -> None:
+    docker = docker_stub({"0.1.0": GOOD_DIGEST}, denied=("0.1.1",))
+    result = precheck(tmp_path, "0.1.0", "0.1.1", docker=docker)
+    assert result.rc == 1
+    assert "cannot inspect ghcr.io/nathanpond/epistrel-console:0.1.1" in result.output
+    assert "401 Unauthorized" in result.output
+    assert result.outputs == {}
+
+
+def test_a_refused_inspect_of_a_floating_tag_moves_nothing(tmp_path: Path) -> None:
+    result = run_retag(tmp_path, "1.2.4", "1.2.5", {"latest": BAD_DIGEST, "1": BAD_DIGEST},
+                       denied=("1.2",))  # fmt: skip
+    assert result.rc == 1
+    assert "cannot inspect ghcr.io/nathanpond/epistrel-console:1.2" in result.output
+    assert "401 Unauthorized" in result.output
+    assert result.called("docker", "buildx", "imagetools", "create") == []
+
+
+def test_a_missing_floating_tag_reads_as_none(tmp_path: Path) -> None:
+    result = run_retag(tmp_path, "1.2.4", "1.2.5", {"latest": BAD_DIGEST, "1": BAD_DIGEST})
+    assert result.rc == 0, result.output
+    assert result.outputs["moved"].split() == ["latest", "1"]
+    assert result.summary == (
+        "## Image tags\n\n| tag | before | after |\n|---|---|---|\n"
+        f"| `latest` | `{BAD_DIGEST}` | `{GOOD_DIGEST}` |\n"
+        "| `1.2` | `(none)` | unchanged |\n"
+        f"| `1` | `{BAD_DIGEST}` | `{GOOD_DIGEST}` |\n"
+    )
+
+
+def test_the_bad_release_is_demoted_with_exactly_these_flags(tmp_path: Path) -> None:
+    result = promote(tmp_path, step(rollback_job(), PROMOTE)["run"])
+    assert result.rc == 0, result.output
+    assert result.called("gh", "release", "edit", "v0.1.1") == [
+        ["gh", "release", "edit", "v0.1.1", "--repo", "nathanpond/Epistrel-Console",
+         "--prerelease", "--latest=false", "--notes-file", "bad-body.md"],
+    ]  # fmt: skip
+    assert result.summary == "- v0.1.0 marked latest\n- v0.1.1 demoted to pre-release\n"
+
+
+POST = "Post-condition"
+
+
+def post_condition(tmp_path: Path, tags: dict[str, str], script: str | None = None) -> StepRun:
+    env = {"GOOD_DIGEST": GOOD_DIGEST, "MOVED": " latest 1"}
+    script = script or step(rollback_job(), POST)["run"]
+    return run_step(script, tmp_path, env=env, stubs={"docker": docker_stub(tags)})
+
+
+def test_the_post_condition_checks_every_moved_tag(tmp_path: Path) -> None:
+    ok = post_condition(tmp_path / "ok", {"latest": GOOD_DIGEST, "1": GOOD_DIGEST})
+    assert ok.rc == 0, ok.output
+    assert ok.summary == f"- every re-pointed tag resolves to {GOOD_DIGEST}\n"
+    wrong = post_condition(tmp_path / "wrong", {"latest": GOOD_DIGEST, "1": BAD_DIGEST})
+    assert wrong.rc == 1
+    assert f"epistrel-console:1 resolves to {BAD_DIGEST}, expected {GOOD_DIGEST}" in wrong.output
+
+
+def test_post_condition_rule_bites(tmp_path: Path) -> None:
+    script = step(rollback_job(), POST)["run"]
+    old = '[ "$now" = "$GOOD_DIGEST" ] ||'
+    assert script.count(old) == 1
+    tags = {"latest": GOOD_DIGEST, "1": BAD_DIGEST}
+    assert post_condition(tmp_path, tags, script.replace(old, "true ||")).rc == 0

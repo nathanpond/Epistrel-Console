@@ -207,19 +207,41 @@ def test_ci_jobs_run_the_planned_checks() -> None:
     assert any(r.startswith("uv run pytest -m") for r in runs["docker"])
 
 
-# A mypy flag that turns a strict check off, or points mypy at other settings.
+# A mypy flag that turns a strict check off, or points mypy at other settings or files.
 MYPY_WEAKENING_FLAG = re.compile(
-    r"--(?:no-(?:strict|warn|check|disallow)\S*|allow-\S+|disable-error-code\S*"
-    r"|ignore-missing-imports|follow-imports\S*|config-file\S*)"
+    r"--(?:no-(?:strict|warn|check|disallow|extra|local)\S*|allow-\S+|implicit-\S+"
+    r"|disable-error-code\S*|ignore-missing-imports|follow-\S+|config-file\S*|exclude\S*)"
 )
+# What `[tool.mypy]` may hold (#116): anything else, or another value, is a weakening. A check
+# that is part of --strict or stricter still may be set, but only to true.
+MYPY_FILES = ("epistrel_console", "console", "tools", "tests", "manage.py")
+MYPY_STRICTER = re.compile(
+    r"(?:disallow|warn|check|strict)_\w+|extra_checks|local_partial_types|strict"
+)
+# An inline config comment, or a whole-line `# type: ignore` (above the code, it skips the file).
+MYPY_INLINE = re.compile(r"^\s*#\s*(?:mypy\s*:|type\s*:\s*ignore\s*$)", re.MULTILINE)
+
+
+def mypy_setting_problem(key: str, value: Any, top: bool) -> str | None:
+    if MYPY_STRICTER.fullmatch(key):
+        return None if value is True else "must be true"
+    if top and key == "files":
+        missing = [f for f in MYPY_FILES if f not in (value or [])]
+        return f"misses {missing}" if missing else None
+    if top and key == "plugins":
+        return None if value == ["mypy_django_plugin.main"] else "is not the django plugin"
+    if key == "enable_error_code" or (not top and key == "module"):
+        return None
+    return "is not an allowed setting"
 
 
 def mypy_weakenings(ci: dict[str, Any], pyproject: dict[str, Any]) -> list[str]:
-    """How the gate's mypy is less than ``strict = true`` with every check on (#110).
+    """How the gate's mypy is less than ``strict = true`` with every check on (#110, #116).
 
     In the workflow: any mypy command carrying a weakening flag. In ``[tool.mypy]`` and each
-    ``[[tool.mypy.overrides]]``: ``strict`` off, an ``ignore_*``/``allow_*`` turned on,
-    ``disable_error_code``, or a ``disallow_*``/``warn_*``/``check_*``/``strict_*`` turned off.
+    ``[[tool.mypy.overrides]]``: ``strict`` not true, or any setting outside the allow-list
+    (stricter checks set to true, the full ``files`` list, the django plugin,
+    ``enable_error_code``).
     """
     found = []
     for _, step in steps(ci):
@@ -229,15 +251,30 @@ def mypy_weakenings(ci: dict[str, Any], pyproject: dict[str, Any]) -> list[str]:
     mypy = (pyproject.get("tool") or {}).get("mypy") or {}
     if mypy.get("strict") is not True:
         found.append("pyproject: strict is not true")
-    sections = [("[tool.mypy]", mypy)]
-    sections += [(f"override {o.get('module')}", o) for o in mypy.get("overrides") or []]
-    for where, section in sections:
+    sections = [("[tool.mypy]", {k: v for k, v in mypy.items() if k != "overrides"}, True)]
+    sections += [(f"override {o.get('module')}", o, False) for o in mypy.get("overrides") or []]
+    for where, section, top in sections:
         for key, value in section.items():
-            on = key.startswith(("ignore_", "allow_")) and value is True
-            off = key.startswith(("disallow_", "warn_", "check_", "strict_")) and value is False
-            if on or off or key == "disable_error_code":
-                found.append(f"pyproject {where}: {key} = {value!r}")
+            problem = mypy_setting_problem(key, value, top)
+            if problem and not (top and key == "strict"):
+                found.append(f"pyproject {where}: {key} = {value!r} {problem}")
     return found
+
+
+def mypy_inline_weakenings(sources: dict[str, str]) -> list[str]:
+    """``path:line`` of each inline mypy config comment or whole-line ``# type: ignore``."""
+    return [
+        f"{path}:{text.count(chr(10), 0, m.start()) + 1}"
+        for path, text in sources.items()
+        for m in MYPY_INLINE.finditer(text)
+    ]
+
+
+def mypy_sources() -> dict[str, str]:
+    paths = [REPO_ROOT / f for f in MYPY_FILES]
+    files = [p for p in paths if p.is_file()]
+    files += [f for p in paths if p.is_dir() for f in sorted(p.rglob("*.py"))]
+    return {str(f.relative_to(REPO_ROOT)): f.read_text(encoding="utf-8") for f in files}
 
 
 def load_pyproject() -> dict[str, Any]:
@@ -246,6 +283,19 @@ def load_pyproject() -> dict[str, Any]:
 
 def test_mypy_is_not_weakened() -> None:
     assert mypy_weakenings(load(CI), load_pyproject()) == []
+    assert mypy_inline_weakenings(mypy_sources()) == []
+    assert len(mypy_sources()) > 20
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["# mypy: ignore-errors", "#mypy: disable-error-code=attr-defined", "# type: ignore"],
+)
+def test_inline_mypy_weakening_bites(line: str) -> None:
+    sources = {"console/x.py": f'"""Doc."""\n{line}\nimport os\n', "console/y.py": "x = 1\n"}
+    assert mypy_inline_weakenings(sources) == ["console/x.py:2"]
+    # A `# type: ignore[code]` on a line of code is a normal, checked (warn_unused_ignores) ignore.
+    assert mypy_inline_weakenings({"a.py": "x: int = y  # type: ignore[name-defined]\n"}) == []
 
 
 @pytest.mark.parametrize(
@@ -257,6 +307,10 @@ def test_mypy_is_not_weakened() -> None:
         "--no-warn-unused-ignores",
         "--ignore-missing-imports",
         "--follow-imports=skip",
+        "--follow-untyped-imports",
+        "--implicit-reexport",
+        "--no-extra-checks",
+        "--exclude=console/",
         "--config-file=lax.toml",
     ],
 )
@@ -284,6 +338,19 @@ def test_mypy_flag_weakening_bites(flag: str) -> None:
             {"overrides": [{"module": "y", "ignore_missing_imports": True}]},
             "ignore_missing_imports = True",
         ),
+        ({"follow_imports": "skip"}, "follow_imports = 'skip' is not an allowed setting"),
+        ({"follow_untyped_imports": True}, "follow_untyped_imports = True is not an allowed"),
+        ({"implicit_reexport": True}, "implicit_reexport = True is not an allowed setting"),
+        ({"implicit_optional": True}, "implicit_optional = True is not an allowed setting"),
+        ({"extra_checks": False}, "extra_checks = False must be true"),
+        ({"local_partial_types": False}, "local_partial_types = False must be true"),
+        ({"exclude": ["console/"]}, "exclude = ['console/'] is not an allowed setting"),
+        ({"files": ["epistrel_console", "tests"]}, "misses ['console', 'tools', 'manage.py']"),
+        ({"plugins": []}, "plugins = [] is not the django plugin"),
+        (
+            {"overrides": [{"module": "z", "follow_imports": "skip"}]},
+            "override z: follow_imports = 'skip' is not an allowed setting",
+        ),
     ],
 )
 def test_pyproject_mypy_weakening_bites(change: dict[str, Any], expected: str) -> None:
@@ -304,10 +371,22 @@ def test_uv_and_python_versions_match_the_image() -> None:
     doc = load(CI)
     assert doc["env"]["UV_VERSION"] == dockerfile_uv_version()
     python = (REPO_ROOT / ".python-version").read_text().strip()
-    for _, step in steps(doc):
-        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@"):
-            assert step["with"]["python-version"] == python
-            assert step["with"]["version"] == "${{ env.UV_VERSION }}"
+    for path in workflow_files():
+        for _, step in steps(load(path)):
+            if str(step.get("uses", "")).startswith("astral-sh/setup-uv@"):
+                assert step["with"]["python-version"] == python, path.name
+                assert step["with"]["version"] == "${{ env.UV_VERSION }}", path.name
+                assert load(path)["env"]["UV_VERSION"] == dockerfile_uv_version(), path.name
+
+
+def test_requires_python_and_the_image_match_the_pin() -> None:
+    # One Python everywhere (#116): .python-version, pyproject, the Dockerfile's stages.
+    python = (REPO_ROOT / ".python-version").read_text().strip()
+    assert load_pyproject()["project"]["requires-python"] == f">={python}"
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    bases = re.findall(r"^FROM\s+python:(\S+?)-slim\b", dockerfile, re.MULTILINE)
+    assert bases, dockerfile
+    assert set(bases) == {python}, bases
 
 
 def test_no_workflow_sets_the_engine_url_for_ci_tests() -> None:
@@ -662,7 +741,13 @@ def resolve_ref(script: str, repo: Path, event: str, requested: str, pushed: str
 def edge_ref_refusals(script: str, edge_repo: dict[str, Any]) -> dict[str, str]:
     """For each dispatch the ref step must refuse, the refusal it printed ('' if it ran on)."""
     main, feature, repo = edge_repo["main"], edge_repo["feature"], edge_repo["repo"]
-    cases = {"off-main sha": feature, "off-main branch": "feature", "short sha": main[:7]}
+    cases = {
+        "off-main sha": feature,
+        "off-main branch": "feature",
+        "short sha": main[:7],
+        "upper-case short sha": main[:7].upper(),
+        "short sha with a suffix": main[:7] + "~0",
+    }
     found = {}
     for case, requested in cases.items():
         result = resolve_ref(script, repo, "workflow_dispatch", requested, main)
@@ -675,6 +760,8 @@ def test_edge_is_built_only_from_mains_history(edge_repo: dict[str, Any]) -> Non
     assert "not reachable from origin/main" in refusals["off-main sha"]
     assert "not reachable from origin/main" in refusals["off-main branch"]
     assert "looks like a short SHA" in refusals["short sha"]
+    assert "looks like a short SHA" in refusals["upper-case short sha"]
+    assert "looks like a short SHA" in refusals["short sha with a suffix"]
 
 
 @pytest.mark.parametrize(
@@ -699,7 +786,7 @@ def test_edge_ref_resolves_main(edge_repo: dict[str, Any], event: str, requested
     ("check", "disabled", "case"),
     [
         ('git merge-base --is-ancestor "$sha" origin/main', "true", "off-main sha"),
-        ("'^[0-9a-f]{7,39}$'", "'^never$'", "short sha"),
+        ("'^[0-9a-f]{7,39}([~^].*)?$'", "'^never$'", "short sha"),
     ],
 )
 def test_edge_ref_refusals_bite(
@@ -709,6 +796,169 @@ def test_edge_ref_refusals_bite(
     assert REF_STEP.count(check) == 1
     mutated = REF_STEP.replace(check, disabled)
     assert edge_ref_refusals(mutated, edge_repo)[case] == ""
+
+
+# --- what the publish steps do (#112, #113) ------------------------------------------------
+
+RELEASE = WORKFLOWS / "release.yml"
+PUBLISHERS = [pytest.param(PUBLISH_EDGE, id="publish-edge"), pytest.param(RELEASE, id="release")]
+DIGEST, OTHER_DIGEST = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+IMAGE = "ghcr.io/nathanpond/epistrel-console"
+
+
+def publish_step(workflow: Path, key: str) -> str:
+    script: str = workflow_steps.step(jobs(load(workflow))["publish"], key)["run"]
+    return script
+
+
+def manifest_stub(manifests: dict[str, str]) -> str:
+    """``docker``: ``imagetools inspect <ref>`` prints ``{{json .Manifest}}`` for the refs in
+    ``manifests`` and "not found" for any other; ``imagetools create``, ``run`` and ``logs``
+    succeed.
+    """
+    cases = "".join(
+        f"""    '{r}') echo '{{"digest": "{d}"}}'; exit 0 ;;\n""" for r, d in manifests.items()
+    )
+    return f"""
+if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
+  case "$4" in
+{cases}  esac
+  echo "ERROR: $4: not found" >&2; exit 1
+fi
+[ "$1 $2 $3" = "buildx imagetools create" ] && exit 0
+case "$1" in run|logs) exit 0 ;; esac
+"""
+
+
+def smoke(tmp_path: Path, script: str, healthy: bool) -> StepRun:
+    curl = "echo ok; exit 0" if healthy else "echo 'curl: (7) refused' >&2; exit 7"
+    stubs = {"docker": manifest_stub({}), "curl": curl, "sleep": "exit 0"}
+    return run_step(script, tmp_path, env={"DIGEST": DIGEST}, stubs=stubs)
+
+
+@pytest.mark.parametrize("workflow", PUBLISHERS)
+def test_smoke_fails_closed_on_the_built_digest(tmp_path: Path, workflow: Path) -> None:
+    script = publish_step(workflow, "smoke")
+    failed = smoke(tmp_path / "down", script, healthy=False)
+    assert failed.rc != 0
+    assert "did not answer /health with 200 in 60 s" in failed.output
+    assert len(failed.called("curl")) == 30
+    assert failed.called("docker", "logs") == [["docker", "logs", "console-smoke"]]
+    passed = smoke(tmp_path / "up", script, healthy=True)
+    assert passed.rc == 0, passed.output
+    # The image that ran is the one just built, by digest: never a tag that may hold another.
+    for result in (failed, passed):
+        assert [c[-1] for c in result.called("docker", "run")] == [f"{IMAGE}@{DIGEST}"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        ('in 60 s"\nexit 1', 'in 60 s"\nexit 0'),
+        ("if curl -fsS", "if true || curl -fsS"),
+        ('"$IMAGE@$DIGEST"', '"$IMAGE:edge"'),
+    ],
+)
+def test_smoke_rule_bites(tmp_path: Path, mutation: tuple[str, str]) -> None:
+    script = publish_step(PUBLISH_EDGE, "smoke")
+    old, new = mutation
+    assert script.count(old) == 1
+    mutated = script.replace(old, new)
+    failed = smoke(tmp_path / "down", mutated, healthy=False)
+    ran = [c[-1] for c in failed.called("docker", "run")]
+    assert failed.rc == 0 or ran != [f"{IMAGE}@{DIGEST}"]
+
+
+def tag(tmp_path: Path, script: str, manifests: dict[str, str]) -> StepRun:
+    env = {"DIGEST": DIGEST, "TAGS": f"{IMAGE}:edge\n{IMAGE}:sha-abc1234\n"}
+    return run_step(script, tmp_path, env=env, stubs={"docker": manifest_stub(manifests)})
+
+
+@pytest.mark.parametrize("workflow", PUBLISHERS)
+def test_tag_moves_every_tag_and_checks_each_one(tmp_path: Path, workflow: Path) -> None:
+    script = publish_step(workflow, "tag")
+    tags = {f"{IMAGE}:edge": DIGEST, f"{IMAGE}:sha-abc1234": DIGEST}
+    result = tag(tmp_path / "ok", script, tags)
+    assert result.rc == 0, result.output
+    assert result.called("docker", "buildx", "imagetools", "create") == [
+        ["docker", "buildx", "imagetools", "create", "-t", f"{IMAGE}:edge",
+         "-t", f"{IMAGE}:sha-abc1234", f"{IMAGE}@{DIGEST}"],
+    ]  # fmt: skip
+    wrong = tag(tmp_path / "wrong", script, {**tags, f"{IMAGE}:sha-abc1234": OTHER_DIGEST})
+    assert wrong.rc == 1
+    assert f"sha-abc1234 resolves to {OTHER_DIGEST}, not {DIGEST}" in wrong.output
+
+
+def test_tag_post_condition_bites(tmp_path: Path) -> None:
+    script = publish_step(PUBLISH_EDGE, "tag")
+    old = '[ "$got" = "$DIGEST" ] ||'
+    assert script.count(old) == 1
+    tags = {f"{IMAGE}:edge": DIGEST, f"{IMAGE}:sha-abc1234": OTHER_DIGEST}
+    assert tag(tmp_path, script.replace(old, "true ||"), tags).rc == 0
+
+
+EXISTING_STEP = workflow_steps.step(jobs(load(PUBLISH_EDGE))["resolve"], "existing")["run"]
+
+
+def existing(tmp_path: Path, script: str, manifests: dict[str, str]) -> StepRun:
+    stubs = {"docker": manifest_stub(manifests)}
+    return run_step(script, tmp_path, env={"SHORT": "abc1234"}, stubs=stubs)
+
+
+def test_rollback_to_a_published_commit_takes_the_retag_path(tmp_path: Path) -> None:
+    found = existing(tmp_path / "found", EXISTING_STEP, {f"{IMAGE}:sha-abc1234": DIGEST})
+    assert found.rc == 0, found.output
+    assert found.outputs == {"digest": DIGEST}
+    missing = existing(tmp_path / "missing", EXISTING_STEP, {})
+    assert missing.rc == 0, missing.output
+    assert missing.outputs == {}
+    assert "gate-and-build path" in missing.output
+
+
+def test_existing_digest_rule_bites(tmp_path: Path) -> None:
+    old = 'echo "digest=$digest" >> "$GITHUB_OUTPUT"'
+    assert EXISTING_STEP.count(old) == 1
+    mutated = EXISTING_STEP.replace(old, "true")
+    result = existing(tmp_path, mutated, {f"{IMAGE}:sha-abc1234": DIGEST})
+    assert result.outputs != {"digest": DIGEST}
+
+
+def test_publish_edge_tags_name_and_label_the_built_commit() -> None:
+    doc = load(PUBLISH_EDGE)
+    meta = workflow_steps.step(jobs(doc)["publish"], "meta")["with"]
+    assert meta["tags"].splitlines() == [
+        "type=raw,value=edge",
+        "type=raw,value=sha-${{ needs.resolve.outputs.short }},"
+        "enable=${{ github.event_name == 'push' }}",
+    ]  # fmt: skip
+    revision = "org.opencontainers.image.revision=${{ needs.resolve.outputs.sha }}"
+    assert meta["labels"] == revision
+    assert meta["annotations"] == revision
+    build = workflow_steps.step(jobs(doc)["publish"], "build")["with"]
+    assert build["labels"] == "${{ steps.meta.outputs.labels }}"
+    assert build["annotations"] == "${{ steps.meta.outputs.annotations }}"
+
+
+@pytest.mark.parametrize("workflow", PUBLISHERS)
+def test_binfmt_and_buildkit_are_pinned_exactly(workflow: Path) -> None:
+    doc = load(workflow)
+    assert re.fullmatch(
+        r"docker\.io/tonistiigi/binfmt:qemu-v\d+\.\d+\.\d+-\d+", doc["env"]["BINFMT_IMAGE"]
+    )
+    assert re.fullmatch(r"moby/buildkit:v\d+\.\d+\.\d+", doc["env"]["BUILDKIT_IMAGE"])
+    by_uses = {str(s.get("uses", "")).split("@")[0]: s for s in jobs(doc)["publish"]["steps"]}
+    assert by_uses["docker/setup-qemu-action"]["with"]["image"] == "${{ env.BINFMT_IMAGE }}"
+    assert by_uses["docker/setup-buildx-action"]["with"]["driver-opts"] == (
+        "image=${{ env.BUILDKIT_IMAGE }}"
+    )
+
+
+def test_publish_edge_permissions_per_job() -> None:
+    doc = load(PUBLISH_EDGE)
+    assert jobs(doc)["resolve"]["permissions"] == {"contents": "read", "packages": "read"}
+    assert jobs(doc)["publish"]["permissions"] == {"contents": "read", "packages": "write"}
+    assert jobs(doc)["retag"]["permissions"] == {"contents": "read", "packages": "write"}
+    assert "permissions" not in jobs(doc)["summary"]
 
 
 # --- the daily drift check (#40) ------------------------------------------------------------

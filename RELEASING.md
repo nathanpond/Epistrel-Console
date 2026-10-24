@@ -79,7 +79,8 @@ The run refuses, changing nothing, when any of these hold:
 - `good_version == bad_version`;
 - the good version's image tag or GitHub release doesn't exist;
 - the bad version's release doesn't exist (when one is given);
-- a `release.yml` run isn't finished (in progress, queued, waiting, pending or requested).
+- a `release.yml` run isn't finished (in progress, queued, waiting, pending or requested);
+- the registry refuses an image lookup for any other reason than a missing tag (an auth or network error), quoting its message. A bad version with no image is fine: nothing floats on it.
 
 It runs only from `main`, and it shares the `release-latest` concurrency group with `release.yml`'s publish job, so a release and a rollback never interleave. `good_version` may be a release that was demoted earlier (it is promoted again) or one newer than `bad_version` (a roll forward).
 
@@ -89,4 +90,4 @@ To remove a bad release entirely instead, delete its GitHub release and its vers
 
 ## Engine API drift check
 
-`engine-drift.yml` runs daily (06:17 UTC) and on dispatch. It starts the Engine `edge`, compares its `/openapi.json` with `console/engine/openapi.json` (`manage.py engine_schema --check`), and keeps a single **Engine API drift** issue open while the two differ. It comments only when the difference changes, and closes the issue itself once they match again. It never blocks a PR. GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it with `gh workflow enable engine-drift.yml`.
+`engine-drift.yml` runs daily (06:17 UTC) and on dispatch. It starts the Engine `edge`, compares its `/openapi.json` with `console/engine/openapi.json` (`manage.py engine_schema --check`), and keeps a single **Engine API drift** issue open while the two differ. It comments only when the difference changes, and closes the issue itself once they match again. If the Engine can't be read, or the check fails before it compares anything (it exits 1 with an empty difference), the run goes red and no issue is touched. It never blocks a PR. GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it with `gh workflow enable engine-drift.yml`.
