@@ -12,8 +12,8 @@ from console.cast import (
     viewpoint_for,
     viewpoint_label,
 )
-from console.engine.client import EngineClient, EngineError, turn_timeout
-from console.engine.models import QueuedTurn, RespondResponse
+from console.engine.client import EngineClient, EngineError, ingest_timeout, turn_timeout
+from console.engine.models import IngestResponse, QueuedTurn, RespondResponse
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.play.helpers import MARA, QUEUED_OP, RESPOND, STORY, TOBIN, error_json
@@ -166,3 +166,40 @@ def test_cast_helpers() -> None:
     assert viewpoint_label(viewpoint_for(TOBIN), cast) == "Tobin"
     assert viewpoint_label("omniscient", cast) == "omniscient"
     assert viewpoint_label(None, cast) == "—"
+
+
+# --- ingest (#51) -------------------------------------------------------------------------------
+
+INGEST = "/stories/{story_id}/ingest"
+EVENTS = [{"client_event_id": "evt-1", "kind": "narration", "text": "Fog rolls in."}]
+
+
+def test_ingest_sends_the_events_and_key_and_parses_the_results(
+    client: EngineClient, fake_engine: FakeEngine
+) -> None:
+    fake_engine.respond("POST", INGEST, 201, json=engine_fixture("ingest"))
+    result = client.ingest(STORY, EVENTS, idempotency_key="K1", timeout=ingest_timeout(20.0, 1))
+    assert isinstance(result, IngestResponse)
+    assert [(r.client_event_id, r.turn, r.replayed) for r in result.results] == [
+        ("evt-1", 1, False),
+        ("evt-2", 2, False),
+    ]
+    assert result.timeline_revision == 3
+    assert result.elapsed_ms == 71
+    (request,) = fake_engine.requests
+    assert request.url.path == f"/stories/{STORY}/ingest"
+    assert json.loads(request.content) == {"events": EVENTS}
+    assert request.headers["Idempotency-Key"] == "K1"
+    assert "Prefer" not in request.headers
+    assert request.extensions["timeout"]["read"] == 36.0
+
+
+def test_ingest_202_is_a_queued_turn(client: EngineClient, fake_engine: FakeEngine) -> None:
+    fake_engine.respond("POST", INGEST, 202, json={"operation_id": QUEUED_OP, "position": 2})
+    result = client.ingest(STORY, EVENTS, idempotency_key="K1")
+    assert result == QueuedTurn(QUEUED_OP, 2)
+
+
+def test_ingest_timeout_is_the_turn_timeout_plus_a_second_per_event() -> None:
+    assert ingest_timeout(None, 50) == 45.0 + 15.0 + 50
+    assert ingest_timeout(10.0, 3) == 28.0

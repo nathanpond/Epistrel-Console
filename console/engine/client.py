@@ -10,7 +10,7 @@ test can check it against the recorded schema. The client never logs; callers do
 import functools
 import json
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -30,6 +30,7 @@ from console.engine.models import (
     HealthResponse,
     HealthResult,
     History,
+    IngestResponse,
     Model,
     ModelConfig,
     ModelConfigItem,
@@ -59,6 +60,7 @@ DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
 MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
+INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event (#51)
 LONG_MUTATION_TIMEOUT_S = 30.0  # fork and rebuild (#43's timeouts)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 # Routes the Engine serves without auth (Engine #44): never sent the service key.
@@ -680,6 +682,39 @@ class EngineClient:
             return _parse(response, QueuedTurn)
         return _parse(response, RespondResponse)
 
+    @operation(
+        "POST",
+        "/stories/{story_id}/ingest",
+        response_model=IngestResponse,
+        status_models={202: QueuedTurn},
+    )
+    def ingest(
+        self,
+        story_id: str,
+        events: Sequence[Mapping[str, Any]],
+        *,
+        idempotency_key: str,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
+    ) -> IngestResponse | QueuedTurn:
+        """``POST /stories/{id}/ingest``: record player turns and narration without a reply
+        (#51). ``events`` are ``IngestEvent`` bodies, 1-50, each with its own
+        ``client_event_id`` (the Engine's per-event dedup; a resent id answers ``replayed``).
+
+        No ``Prefer: respond-async``: the call waits. The Engine still answers
+        :class:`QueuedTurn` (202) when a queued story's batch outwaits its turn deadline.
+        ``timeout``: :func:`ingest_timeout`.
+        """
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/ingest",
+            json={"events": [dict(event) for event in events]},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=timeout,
+        )
+        if response.status_code == 202:
+            return _parse(response, QueuedTurn)
+        return _parse(response, IngestResponse)
+
     @operation("GET", "/stories/{story_id}/history", response_model=History)
     def get_history(
         self,
@@ -725,6 +760,12 @@ def turn_timeout(deadline_s: float | None) -> float:
     effective deadline (the request's ``budget.deadline_s``, else the story's
     ``effective_budget.turn_deadline``, else 45 s) plus 15 s."""
     return (deadline_s if deadline_s is not None else DEFAULT_TURN_DEADLINE_S) + TURN_GRACE_S
+
+
+def ingest_timeout(deadline_s: float | None, events: int) -> float:
+    """The HTTP timeout for an ingest of ``events`` events: :func:`turn_timeout` of the story's
+    turn deadline plus 1 s per event (#51)."""
+    return turn_timeout(deadline_s) + INGEST_PER_EVENT_S * events
 
 
 def _config_change_params(

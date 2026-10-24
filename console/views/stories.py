@@ -10,7 +10,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.core import signing
-from django.http import HttpRequest, HttpResponse, QueryDict
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
@@ -37,6 +37,7 @@ from console.forms import (
     StoryForm,
     story_spec,
 )
+from console.formset_rows import edit_rows, wants_edit
 from console.ids import new_ulid
 
 EMPTY = "—"
@@ -124,45 +125,6 @@ def _posted_ratings(request: HttpRequest) -> Choices | None:
     return [(str(rating_id), str(name)) for rating_id, name in pairs]
 
 
-def _total_forms(data: QueryDict) -> int:
-    try:
-        total = int(data.get(f"{CHARACTERS_PREFIX}-TOTAL_FORMS", "1"))
-    except ValueError:
-        total = 1
-    return max(0, min(total, CAST_MAX + 1))
-
-
-def _edit_rows(data: QueryDict) -> QueryDict:
-    """The posted form with one row added ("add") or removed ("remove" = its index), rows
-    renumbered. Adding stops at 20 rows; the last row is never removed."""
-    total = _total_forms(data)
-    rows = []
-    for index in range(total):
-        prefix = f"{CHARACTERS_PREFIX}-{index}-"
-        rows.append({k[len(prefix) :]: data.getlist(k) for k in data if k.startswith(prefix)})
-    if "add" in data and total < CAST_MAX:
-        rows.append({})
-    elif "remove" in data and total > 1:
-        try:
-            removed = int(data.get("remove", ""))
-        except ValueError:
-            removed = -1
-        if 0 <= removed < total:
-            del rows[removed]
-    edited = QueryDict(mutable=True)
-    for key in data:
-        if not key.startswith(f"{CHARACTERS_PREFIX}-") and key not in ("add", "remove"):
-            edited.setlist(key, data.getlist(key))
-    for index, row in enumerate(rows):
-        for name, values in row.items():
-            edited.setlist(f"{CHARACTERS_PREFIX}-{index}-{name}", values)
-    edited[f"{CHARACTERS_PREFIX}-TOTAL_FORMS"] = str(len(rows))
-    edited[f"{CHARACTERS_PREFIX}-INITIAL_FORMS"] = "0"
-    edited[f"{CHARACTERS_PREFIX}-MIN_NUM_FORMS"] = "1"
-    edited[f"{CHARACTERS_PREFIX}-MAX_NUM_FORMS"] = str(CAST_MAX)
-    return edited
-
-
 def _cast_names(characters: BaseCharacterFormSet) -> list[str]:
     names = []
     for form in characters.forms:
@@ -208,8 +170,8 @@ def story_new(request: HttpRequest) -> HttpResponse:
 
     posted = _posted_ratings(request)
     ratings = posted if posted is not None else _rating_choices(request)[0]
-    if "add" in request.POST or "remove" in request.POST:
-        data = _edit_rows(request.POST)
+    if wants_edit(request.POST):
+        data = edit_rows(request.POST, CHARACTERS_PREFIX, max_rows=CAST_MAX)
         story = StoryForm(data, ratings=ratings)
         characters = CharacterFormSet(data, prefix=CHARACTERS_PREFIX)
         return _render_new(request, story, characters, ratings, show_errors=False)

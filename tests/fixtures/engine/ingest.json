@@ -1,0 +1,10 @@
+{
+  "timeline_revision": 3,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KY1",
+  "results": [
+    {"client_event_id": "evt-1", "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0IN1", "turn": 1, "replayed": false},
+    {"client_event_id": "evt-2", "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0IN2", "turn": 2, "replayed": false}
+  ],
+  "model_calls": [],
+  "elapsed_ms": 71
+}

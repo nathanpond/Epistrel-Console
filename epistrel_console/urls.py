@@ -31,6 +31,7 @@ story_patterns = (
         path("new/", stories.story_new, name="new"),
         path("<str:story_id>/", play.play, name="detail"),
         path("<str:story_id>/turn/", play.turn, name="turn"),
+        path("<str:story_id>/ingest/", play.ingest, name="ingest"),
         path("<str:story_id>/operations/<str:operation_id>/poll/", play.poll, name="poll"),
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),

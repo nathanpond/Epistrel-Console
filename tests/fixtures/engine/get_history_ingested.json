@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Morning.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0IN1",
+      "message_id": "01M5R4YN5SC6F6DGXEWQ9ZXK1Y",
+      "origin": "ingested"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [],
+      "channel": "narration",
+      "text": "Fog rolls in.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0IN2",
+      "message_id": "01M5R4YN668VPYTWS9EYAGTJ7W",
+      "origin": "ingested"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": null
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R4YN668VPYTWS9EYAGTJ7W",
+        "text": "Fog rolls in."
+      }
+    }
+  ],
+  "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+  "audience_filter": "none",
+  "as_of": 2,
+  "timeline_revision": 3,
+  "next_before_turn": null
+}

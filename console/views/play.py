@@ -15,6 +15,12 @@ turns' reports come from the operation log (#44).
 Endpoints: ``POST <id>/turn/``, ``GET <id>/operations/<op>/poll/``, ``GET <id>/inspector/``
 (``?operation=``) and ``GET <id>/transcript/`` (``?viewpoint=``); each answers a full page
 to a request without HTMX.
+
+The left column's form area has two tabs (#51): "Turn" and "Ingest" (``?tab=ingest``; with HTMX
+the tab link swaps only the form area). The ingest tab posts its event rows to
+:func:`ingest` (``POST <id>/ingest/``), which answers the tab again (the results table above the
+same rows, or the refusal placed on them) plus the transcript re-fetched out-of-band at the turn
+form's viewpoint. Its add/remove-row buttons post to the same endpoint (``console.formset_rows``).
 """
 
 from dataclasses import dataclass, field, replace
@@ -38,11 +44,13 @@ from console.engine.client import (
     EngineClientError,
     EngineError,
     EngineUnreachable,
+    ingest_timeout,
     turn_timeout,
 )
 from console.engine.models import (
     History,
     HistoryItem,
+    IngestResponse,
     OperationRecord,
     QueuedTurn,
     RespondResponse,
@@ -52,8 +60,27 @@ from console.engine.models import (
 from console.engine_access import complete_queued, engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
+from console.forms.ingest import (
+    EVENTS_MAX,
+    INGEST_PREFIX,
+    BaseIngestFormSet,
+    ingest_formset,
+    new_row,
+)
 from console.forms.play import DEADLINE_MAX, ERROR_PATHS, STORY_DEFAULT, TurnForm
+from console.formset_rows import edit_rows, wants_edit
 from console.ids import new_ulid
+from console.ingest import (
+    ERASED_EVENT,
+    GUARDRAIL_REFUSAL,
+    INGEST_ARCHIVED_NOTE,
+    ON_ROWS,
+    BatchErrors,
+    IngestView,
+    gate_line,
+    place_ingest_error,
+    result_rows,
+)
 from console.models import EngineOperation
 from console.operation_log import input_violations, turn_report_json
 from console.turn_reports import ViolationRow, stored_turn_report, violation_rows
@@ -72,6 +99,18 @@ PLACED_CODES = frozenset(
     {"validation_error", "viewpoint_unresolved", "budget_below_safety_minimum"}
 )
 FORM_ALIASES = {**ERROR_PATHS, "minimum_required": "max_calls"}
+INGEST_KIND = "ingest"  # the operation-log kind of an ingest batch (the client method's name)
+TURN_TAB, INGEST_TAB = "turn", "ingest"
+# Ingest errors whose placement on the rows is tried first (console.ingest).
+INGEST_PLACED = frozenset(
+    {
+        "client_event_conflict",
+        "validation_error",
+        "unsupported_event_kind",
+        "erased_subject_referenced",
+        "guardrail_violation",
+    }
+)
 
 
 # --- The story as the play view carries it ------------------------------------------------------
@@ -407,7 +446,9 @@ def row_inspector(row: EngineOperation) -> Inspector:
 
 def _latest_inspector(story_id: str) -> Inspector:
     """First load: the newest logged turn of this story with a report, else "select a turn"."""
-    rows = EngineOperation.objects.filter(story_id=story_id, response__isnull=False)
+    rows = EngineOperation.objects.filter(story_id=story_id, response__isnull=False).exclude(
+        kind__startswith=INGEST_KIND
+    )
     for row in rows[:REPORT_SCAN]:
         if turn_report_json(row.response) is not None:
             return row_inspector(row)
@@ -418,9 +459,10 @@ def selected_inspector(operation_id: str, origin: str = "") -> Inspector:
     """The inspector for a clicked history item, by the operation that recorded it."""
     rows = list(EngineOperation.objects.filter(engine_operation_id=operation_id)[:REPORT_SCAN])
     for row in rows:
-        if turn_report_json(row.response) is not None:
+        # An ingest's answer carries the input gate's model calls, not a turn report.
+        if not row.kind.startswith(INGEST_KIND) and turn_report_json(row.response) is not None:
             return row_inspector(row)
-    ingested = origin == "ingested" or any(row.kind.startswith("ingest") for row in rows)
+    ingested = origin == "ingested" or any(row.kind.startswith(INGEST_KIND) for row in rows)
     return Inspector(
         title=f"Operation {operation_id}",
         notice=INGESTED if ingested else NOT_PLAYED_HERE,
@@ -510,11 +552,15 @@ class PlayPage:
     form_view: FormView
     transcript: Transcript
     inspector: Inspector
+    ingest_view: IngestView
     cards: list[WaitingCard] = field(default_factory=list)
     status_note: str = ""
+    tab: str = TURN_TAB
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "tab": self.tab,
+            "iv": self.ingest_view,
             "story": self.story,
             "cast": self.story.cast,
             "actions_query": confirm_query(
@@ -537,22 +583,27 @@ def _page(
     cards: list[WaitingCard] | None = None,
     status_note: str = "",
     viewpoint: str | None = None,
+    tab: str = TURN_TAB,
+    ingest_view: IngestView | None = None,
 ) -> HttpResponse:
     story, play = _read_story(request, story_id)
     restored = _restored_cards(play) if cards is None else cards
     if form is None:
         form = _form(play, initial=_initial(play, viewpoint))
-    chosen = viewpoint or play.resolve(
+    form_viewpoint = (
         form["output_viewpoint"].value() if form.is_bound else form.initial.get("output_viewpoint")
     )
+    chosen = viewpoint or play.resolve(form_viewpoint)
     page = PlayPage(
         story,
         play,
         _form_view(play, form, waiting=bool(restored)),
         _transcript(request, story_id, chosen, play.cast),
         inspector if inspector is not None else _latest_inspector(story_id),
+        ingest_view or _ingest_view(play, ingest_formset(play.cast), str(form_viewpoint or "")),
         restored,
         status_note,
+        INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
     )
     return render(request, "console/play/play.html", page.context(request))
 
@@ -560,12 +611,34 @@ def _page(
 @require_safe
 def play(request: HttpRequest, story_id: str) -> HttpResponse:
     """The play view. ``?viewpoint=`` picks the transcript's viewpoint, ``?operation=`` the
-    inspector's turn (the no-JavaScript forms of the HTMX controls)."""
+    inspector's turn (the no-JavaScript forms of the HTMX controls), ``?tab=ingest`` the form
+    area's tab. An HTMX request with ``?tab=`` (a tab link) gets the form area alone."""
+    tab = request.GET.get("tab", TURN_TAB)
+    if "tab" in request.GET and is_htmx(request):
+        return _form_area(request, story_id, tab)
     operation = request.GET.get("operation", "")
     inspector = selected_inspector(operation, request.GET.get("origin", "")) if operation else None
     return _page(
-        request, story_id, inspector=inspector, viewpoint=request.GET.get("viewpoint") or None
+        request,
+        story_id,
+        inspector=inspector,
+        viewpoint=request.GET.get("viewpoint") or None,
+        tab=tab,
     )
+
+
+def _form_area(request: HttpRequest, story_id: str, tab: str) -> HttpResponse:
+    """The form area with ``tab`` chosen; the turn form's viewpoint carries across (the tab
+    links include it, and the snapshot, so no Engine read is needed)."""
+    play_story = _snapshot(request, story_id, request.GET.get(SNAPSHOT_FIELD))
+    viewpoint = request.GET.get("output_viewpoint", "")
+    form = _form(play_story, initial=_initial(play_story, viewpoint))
+    context = {
+        "tab": INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
+        "fv": _form_view(play_story, form, waiting=bool(_restored_cards(play_story))),
+        "iv": _ingest_view(play_story, ingest_formset(play_story.cast), viewpoint),
+    }
+    return render(request, "console/play/_form_area.html", context)
 
 
 @require_safe
@@ -690,6 +763,150 @@ def _turn_answer(
     return render(request, "console/play/_turn_response.html", context)
 
 
+# --- Ingest (#51) -------------------------------------------------------------------------------
+
+
+def _ingest_view(
+    play_story: PlayStory, formset: BaseIngestFormSet, viewpoint: str, **changes: Any
+) -> IngestView:
+    """The ingest tab for ``formset``: a fresh key, disabled while the story is archived."""
+    archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE} if play_story.archived else {}
+    return IngestView(
+        play_story.id,
+        formset,
+        play_story.signed(),
+        new_ulid(),
+        viewpoint,
+        FormView.timeout_s + EVENTS_MAX,
+        **{**archived, **changes},
+    )
+
+
+def _ingest_outcome(exc: EngineClientError, key: str, placed: int, batch: BatchErrors) -> Inspector:
+    """What the tab shows about a refused batch, in #48's inspector wording."""
+    title = "Ingest refused"
+    if not isinstance(exc, EngineError):
+        return Inspector(title="Ingest not sent", error=panel_for(exc), idempotency_key=key)
+    line = f"HTTP {exc.http_status} {exc.code}: {exc.message}"
+    if exc.code == "guardrail_violation":
+        found = error_inspector(exc, key)
+        return replace(found, title=title, notice=GUARDRAIL_REFUSAL, revisions=False)
+    if exc.code == "erased_subject_referenced":
+        found = error_inspector(exc, key)
+        if placed:
+            return Inspector(title=title, notice=ON_ROWS, error_line=line, revisions=False)
+        return replace(found, title=title, notice=ERASED_EVENT, revisions=False)
+    if exc.code in INGEST_PLACED and (placed or batch.non_field_errors()):
+        notice = ON_ROWS if placed else ""
+        return Inspector(title=title, notice=notice, error_line=line, revisions=False)
+    found = error_inspector(exc, key)
+    return replace(found, title=title, revisions=False)
+
+
+@require_POST
+def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
+    """Ingest the posted rows (or add/remove a row). Answers the ingest tab, plus the transcript
+    out-of-band after a recorded batch, to HTMX; the whole page otherwise (no redirect)."""
+    play_story = _snapshot(request, story_id, request.POST.get(SNAPSHOT_FIELD))
+    viewpoint = request.POST.get("output_viewpoint", "")
+    if wants_edit(request.POST):
+        data = edit_rows(
+            request.POST, INGEST_PREFIX, max_rows=EVENTS_MAX, new_row=new_row(play_story.cast)
+        )
+        edited = ingest_formset(play_story.cast, data)
+        view = _ingest_view(play_story, edited, viewpoint, show_errors=False)
+        return _ingest_answer(request, play_story, view)
+    formset = ingest_formset(play_story.cast, request.POST)
+    if not formset.is_valid():
+        return _ingest_answer(request, play_story, _ingest_view(play_story, formset, viewpoint))
+    events = formset.events()
+    key = posted_idempotency_key(request)
+    timeout = ingest_timeout(play_story.turn_deadline, len(events))
+    try:
+        result = engine_client_for(request).ingest(
+            story_id, events, idempotency_key=key, timeout=timeout
+        )
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        batch = BatchErrors()
+        placed = (
+            place_ingest_error(exc, formset.sent_forms(), batch)
+            if isinstance(exc, EngineError) and exc.code in INGEST_PLACED
+            else 0
+        )
+        view = _ingest_view(
+            play_story,
+            formset,
+            viewpoint,
+            batch_errors=tuple(str(e) for e in batch.non_field_errors()),
+            outcome=_ingest_outcome(exc, key, placed, batch),
+        )
+        return _ingest_answer(request, play_story, view)
+    transcript_viewpoint = play_story.resolve(viewpoint)
+    if isinstance(result, QueuedTurn):
+        card = WaitingCard(
+            story_id,
+            result.operation_id,
+            "queued",
+            result.position,
+            transcript_viewpoint or "",
+            play_story.turn_deadline or DEFAULT_TURN_DEADLINE_S,
+        )
+        queued = Inspector(
+            title="Ingest queued",
+            notice="The batch waits behind the running turn; the transcript refreshes when it is "
+            "recorded.",
+            idempotency_key=key,
+            operation_id=result.operation_id,
+            log_pk=_log_pk(result.operation_id),
+            revisions=False,
+        )
+        view = _ingest_view(play_story, formset, viewpoint, outcome=queued)
+        return _ingest_answer(request, play_story, view, cards=[card])
+    view = _ingest_view(
+        play_story,
+        formset,
+        viewpoint,
+        results=result_rows(result, events, play_story.cast),
+        timeline_revision=result.timeline_revision,
+        gate=gate_line(result),
+    )
+    return _ingest_answer(request, play_story, view, viewpoint=transcript_viewpoint or "")
+
+
+def _ingest_answer(
+    request: HttpRequest,
+    play_story: PlayStory,
+    view: IngestView,
+    *,
+    cards: list[WaitingCard] | None = None,
+    viewpoint: str | None = None,
+) -> HttpResponse:
+    """The answer to an ingest POST. ``viewpoint`` set means a batch was recorded (replayed
+    events included): the transcript is re-fetched at it, never appended to."""
+    if not is_htmx(request):
+        return _page(
+            request,
+            play_story.id,
+            cards=cards,
+            viewpoint=viewpoint or None,
+            tab=INGEST_TAB,
+            ingest_view=view,
+            form=_form(play_story, initial=_initial(play_story, view.viewpoint)),
+        )
+    context: dict[str, Any] = {
+        "iv": view,
+        "cards": cards or [],
+        "status_note": "",
+        "transcript": (
+            _transcript(request, play_story.id, viewpoint, play_story.cast)
+            if viewpoint is not None
+            else None
+        ),
+    }
+    return render(request, "console/play/_ingest_response.html", context)
+
+
 # --- Polling a queued turn ----------------------------------------------------------------------
 
 
@@ -798,6 +1015,17 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
             found = result_inspector(result, key, operation_id)
             note = f"Turn {result.turn} committed."
             return _poll_end(request, card, found, note, result.output_viewpoint)
+        batch = IngestResponse.from_json(op.result.body) if op.result else None
+        if batch is not None:  # a queued ingest (#51)
+            found = Inspector(
+                title="Ingest recorded",
+                notice=f"{len(batch.results)} event(s) recorded. {gate_line(batch)}.",
+                timeline_revision=batch.timeline_revision,
+                idempotency_key=key,
+                operation_id=operation_id,
+                log_pk=_log_pk(operation_id),
+            )
+            return _poll_end(request, card, found, "Ingest recorded.", viewpoint)
         stored = _stored_error(op)
         if stored is None:
             found = Inspector(

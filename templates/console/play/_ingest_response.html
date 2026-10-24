@@ -1,0 +1,4 @@
+{# The answer to an ingest POST (#51): the ingest tab, then out-of-band the waiting area (a queued batch) and, after a recorded batch, the transcript re-fetched from history. #}
+{% include "console/play/_ingest.html" %}
+{% if cards %}{% include "console/play/_status.html" with oob=True %}{% endif %}
+{% if transcript %}{% include "console/play/_transcript.html" with oob=True %}{% endif %}

@@ -490,6 +490,30 @@ class QueuedTurn(Model):
 
 
 @dataclass(frozen=True)
+class IngestResult(Model):
+    """``IngestedEventBody``: what one ingested event became (its operation and turn), and
+    whether the story had recorded it before (``replayed``)."""
+
+    client_event_id: str
+    operation_id: str
+    turn: int
+    replayed: bool
+
+
+@dataclass(frozen=True)
+class IngestResponse(Model):
+    """``IngestResponse`` (``POST /stories/{id}/ingest``'s 201, or 200 when any event was
+    replayed): one result per event in request order, the story's revision after the call and
+    what the input gate spent."""
+
+    timeline_revision: int
+    results: list[IngestResult]
+    model_calls: list[ModelCall]
+    elapsed_ms: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
 class EffectiveBudget(Model):
     """``EffectiveBudgetBody``: a story's per-turn model-call cap and deadline (seconds), the
     guardrail calls a turn reserves and the smallest cap a request may ask for."""

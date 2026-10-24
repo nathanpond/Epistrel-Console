@@ -604,3 +604,33 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Several "(planner, pass 2)" headings in #50 (Story select:, Rebuild outcomes:, Settings form:, Health page:) have no sub-bullets; those parts were built from the AC and the round-one planner lines. Two live tests were added (`tests/engine_live/test_engine_panel_live.py`, `engine_auth`): rebuild through the panel, and change a setting then see it in Config changes by `console:nate` (restored afterwards).
   **Why:** As #49 noted, some pass-2 sub-bullets were lost in planning.
   **Issue:** #50
+- **Decision (drift):** No schema re-record for #51. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, stub adapter, torn down after) reports a match; `POST /stories/{id}/ingest`, `IngestRequest`/`IngestEvent`/`IngestResponse`/`IngestedEventBody` are in the recording. The fixtures `ingest.json` and `get_history_ingested.json` were captured live and re-keyed to the test ids.
+  **Why:** #43's schema convention.
+  **Issue:** #51
+- **Decision (drift):** The client event id allows 1-255 characters, not the planned 1-128. The pattern stays `^[A-Za-z0-9._:-]+$`.
+  **Why:** The planner said to re-check against the schema. `IngestEvent.client_event_id` is `maxLength 255` with that pattern.
+  **Issue:** #51
+- **Decision (drift):** `client_event_conflict` reads `details.client_event_ids[]` (`{client_event_id, index}` each), and falls back to a flat `client_event_id` / `index`. It does not read only a flat `details.client_event_id`.
+  **Why:** That is the shape both live `edge` and Engine `ClientEventConflict` send. A batch can conflict on several rows.
+  **Issue:** #51
+- **Decision:** Ingest refusals are placed on the rows as sent: `events[i].<field>` goes to that field (the form fields are named after `IngestEvent`, so `actor_character_id` rather than `actor`), `details.unknown_actor` (`{"events[i]": id}`) goes to that row's actor, `unsupported_event_kind`'s `details.locator` goes to the kind, and erased-subject and located guardrail violations go to the row's own errors. Anything naming no row goes to a batch error list above the rows. Refusals placed nowhere use #48's `error_inspector` wording (busy, budget minimum, model unavailable), shown inside the tab.
+  **Why:** The AC needs row placement, and #48's inspector already words those codes. Live `edge` sends `unknown_actor` with `field: "body"`, which `apply_engine_errors` alone would only place as a batch error.
+  **Issue:** #51
+- **Decision:** The ingest POST is `stories:ingest` in `console/views/play.py`. Its non-view parts are in new modules: `console/ingest.py` (IngestView, ResultRow, error placement) and `console/forms/ingest.py` (the event form and formset). The tab switch is `GET /stories/<id>/?tab=` (with HTMX it returns only `_form_area.html`, built from the snapshot without an Engine read).
+  **Why:** play.py would otherwise import a module that imports play.py. Keeping the tab partial on the play URL matches the planner's routes.
+  **Issue:** #51
+- **Decision (drift):** The tab swap replaces the turn form, so its viewpoint select is not in the DOM while the ingest tab is open. The ingest tab therefore carries the turn form's viewpoint in a hidden `output_viewpoint` field, which the tab link's `hx-include` copies across in both directions. This replaces an `hx-include` of the select from the ingest form.
+  **Why:** It keeps the planner's intent (the transcript is re-fetched at the turn form's viewpoint) while only one form is in the DOM.
+  **Issue:** #51
+- **Decision:** #45's no-JS add/remove row editing moved to `console/formset_rows.py` (`edit_rows`, `wants_edit`, `rows`, `total_forms`). The new-story page now uses it too. The buttons keep #45's `name="add"` / `name="remove" value=<i>` instead of the planned `remove-<i>`.
+  **Why:** #45's notes said to lift it once it was reused, and one convention across the Console is simpler.
+  **Issue:** #51
+- **Decision (Rule 1):** The play inspector no longer reads an ingest's operation-log row as a turn report. `_latest_inspector` excludes `kind=ingest`, and `selected_inspector` skips those rows, so clicking an ingested turn shows "No report — this turn was ingested, not generated".
+  **Why:** An ingest answer carries the input gate's `model_calls` and `elapsed_ms`, which `turn_report_json` took for a turn report. That broke the planner's ingested-turn rule. A test covers it.
+  **Issue:** #51
+- **Decision:** A queued ingest (202, only when the queue wait outlasts the deadline) shows #48's waiting card. On `committed`, `poll` parses the stored body as `IngestResponse` and shows "Ingest recorded" with the transcript refreshed, not the turn wording.
+  **Why:** The planner reuses the card and poll. Without this branch a committed ingest would read "Turn committed — result not available".
+  **Issue:** #51
+- **Decision:** I filed #129 (needs-triage): the recorded schema declares no 200 response for ingest, though the Engine answers 200 for replays. The fake-Engine tests model a replay as a 201 with the replay flags and the `Idempotent-Replay` header.
+  **Why:** The schema gap is out of scope here. The fake only serves declared statuses.
+  **Issue:** #51
