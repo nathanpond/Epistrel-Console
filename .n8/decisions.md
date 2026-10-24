@@ -214,3 +214,7 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #40
 - **Decision:** `RELEASING.md` gains a short **Engine API drift check** section, with the `gh workflow enable` note for GitHub's 60-day schedule pause, and `.n8/config.yml` `ci.triggers` gains `schedule (daily) → Engine API drift issue` (both planned).
   **Issue:** #40
+- **Decision:** The status views' test seam is `views.engine_state()`, which builds one client (or `None`) and calls `engine_status.probe_engine()`. It replaces the `views.probe` patch point #30's view tests used, so those tests changed only that line. The API check reads the probe's last state through a new `engine_probe.last_state()` and suppresses `unknown` while the probe says unreachable (planned). Its own log state sits behind a lock, because the two calls run on worker threads.
+  **Issue:** #41
+- **Decision:** The concurrency test was checked against a mutant (`max_workers=1`): it failed at 2.07 s against the 1.8 s bound, then the file was restored. Against the live Engine `edge`, the `xfail(strict=False)` API-match smoke test XPASSes.
+  **Issue:** #41

@@ -7,6 +7,7 @@ import pytest
 from django.test import Client, override_settings
 
 from console.engine.client import EngineClient
+from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from tests.plugins.engine_live import live_url
 
@@ -42,3 +43,11 @@ def test_status_page_and_health(url: str, client: Client) -> None:
     engine = health.json()["engine"]
     assert engine["state"] == "healthy"
     assert engine["checks"]["database"] == "ok"
+
+
+@pytest.mark.xfail(
+    strict=False,
+    reason="Engine edge API drift is reported by the daily drift check (#40), not the PR gate",
+)
+def test_live_engine_api_matches_the_recording(url: str) -> None:
+    assert check_engine_api(EngineClient(url, None)).verdict == "matches"

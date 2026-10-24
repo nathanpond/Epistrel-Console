@@ -123,3 +123,8 @@ def _log(url: str | None, result: ProbeResult) -> None:
         return
     _last_state = result.state
     _last_logged = now
+
+
+def last_state() -> State | None:
+    """The state the probe last saw (None before the first probe)."""
+    return _last_state

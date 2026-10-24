@@ -6,9 +6,23 @@
 <dl>
   <dt>URL</dt>
   <dd>{% if engine_url %}{{ engine_url }}{% else %}not configured{% endif %}</dd>
+  {% if api.engine_version %}
+  <dt>Engine version</dt>
+  <dd>Engine version: {{ api.engine_version }}</dd>
+  {% endif %}
   <dt>State</dt>
   <dd class="state-{{ result.state }}">
     <strong>{{ state_word }}</strong>{% if result.reason %} — {{ result.reason }}{% endif %}
+  </dd>
+  <dt>API</dt>
+  <dd class="api-{{ api.verdict }}">
+    API: {{ api.verdict }}{% if api.summary %} — {{ api.summary }}{% elif api.reason %} — {{ api.reason }}{% endif %}
+    {% if api_changes %}
+    <ul>
+      {% for change in api_changes %}<li>{{ change }}</li>{% endfor %}
+      {% if api_more %}<li>…and {{ api_more }} more</li>{% endif %}
+    </ul>
+    {% endif %}
   </dd>
   {% if result.checks %}
   <dt>Checks</dt>
