@@ -1,5 +1,5 @@
 # Edge environment: the Console, the Engine's published `edge` image and the Postgres it needs.
-# `docker compose up --build -d --wait`, then http://127.0.0.1:7739/. Every value is a literal (no
+# `docker compose up -d --wait`, then http://127.0.0.1:7739/. Every value is a literal (no
 # variable interpolation), so a stray .env cannot change any setting. The one exception is Compose's
 # own COMPOSE_PROJECT_NAME: set in the environment or a .env, it overrides `name:` below and so
 # renames the containers, network and volumes (a fresh, empty stack). Only the Console's port is
@@ -45,9 +45,9 @@ services:
       start_period: 10s
 
   console:
-    build: .
-    image: epistrel-console:dev
-    pull_policy: build  # `docker compose pull` pulls engine and db, never this local tag
+    # The Console's published edge image (built from main). For a local build of this checkout:
+    #   docker compose -f docker-compose.yml -f compose.build.yml up --build
+    image: ghcr.io/nathanpond/epistrel-console:edge
     depends_on:
       engine:
         condition: service_started  # a broken Engine never stops the Console starting

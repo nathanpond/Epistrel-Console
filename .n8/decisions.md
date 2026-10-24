@@ -194,3 +194,11 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #36
 - **Decision:** `compose.smoke.yml` publishes the Engine on 127.0.0.1:8000 as planned. The README says to stop the Engine repo's own stack first, because both use 8000. Otherwise the "runs alongside the Engine repo's stack" note would be untrue for this override.
   **Issue:** #36
+- **Decision (Rule 3):** M0's `test_pull_matches_the_registry` also required a "Pulled" line for the Engine image. The runner's Compose prints none (PR #101, run 40110611891). The test now relies on its existing proof, that the local image's digest equals the registry's after the pull. The "never pull the console tag" check still fails on any line naming the console tag that isn't "Skipped".
+  **Issue:** #37, #32
+- **Decision:** The "base-file pull names all three images" check uses `docker compose config --images`, not the planned `docker compose pull --dry-run`. The dry run still contacts the registry and fails (403) until `epistrel-console:edge` exists, so it couldn't pass on this milestone's own PR.
+  **Issue:** #37
+- **Decision:** `publish-edge.yml` pins buildx's BuildKit image (`driver-opts: image=moby/buildkit:v0.34.1`, resolved 2026-10-24). setup-buildx's `docker-container` driver otherwise pulls a floating BuildKit at run time (the reference's floating-download rule; the Engine leaves it unpinned). `resolve` gets `packages: read` and logs in on dispatches, so the `sha-<7>` lookup works even while the package is private. Its result picks the path: the `retag` job, or `ci` → `publish`.
+  **Issue:** #37
+- **Decision:** On a failure, the `summary` job exits 1 after naming the stage, so a run that published nothing is red even when the failing job was skipped by a condition.
+  **Issue:** #37

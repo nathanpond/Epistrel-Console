@@ -79,18 +79,19 @@ Selecting `engine_live` without `ENGINE_LIVE_URL` is an error, never a silent sk
 
 ## Run with Docker
 
-`docker-compose.yml` runs the Console, the Engine's published `edge` image and the Postgres it needs. No `.env` or setup is needed.
+`docker-compose.yml` runs the Console's published `edge` image, the Engine's published `edge` image and the Postgres it needs. Nothing is built locally, and no `.env` or setup is needed.
 
 ```bash
-docker compose up --build -d --wait --wait-timeout 120   # three healthy services
+docker compose pull && docker compose up -d --wait --wait-timeout 120   # three healthy services
 open http://127.0.0.1:7739/                              # Engine http://engine:8000 — Healthy
 docker compose exec console python manage.py createsuperuser   # an admin login
-docker compose pull engine && docker compose up -d --wait      # pick up a newer Engine edge
+docker compose pull && docker compose up -d --wait       # pick up a newer Console and Engine edge
 docker compose stop                                      # stop, keeping everything
 docker compose down                                      # remove containers, keep data
 docker compose down -v                                   # remove containers and wipe all data
 ```
 
+- To run this checkout's code instead of the published image, add the build override: `docker compose -f docker-compose.yml -f compose.build.yml up --build -d --wait`. `edge` is rebuilt from every merge to `main`; see [RELEASING.md](RELEASING.md) for its channels and rollback.
 - Only the Console is published, on `127.0.0.1:7739`; the Engine and Postgres are reachable only inside the stack. Nothing is reachable from other machines.
 - The stack runs alongside the Engine repo's own compose stack (ports 8000 and 5432) without clashing.
 - Nothing restarts by itself: the stack comes up only when you run `up`.

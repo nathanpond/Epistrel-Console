@@ -1,0 +1,8 @@
+# Build the Console from this checkout instead of running the published edge image:
+#   docker compose -f docker-compose.yml -f compose.build.yml up --build -d --wait
+# `pull_policy: build` keeps `docker compose pull` from ever looking for this local tag.
+services:
+  console:
+    build: .
+    image: epistrel-console:dev
+    pull_policy: build

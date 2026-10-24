@@ -40,8 +40,11 @@ def compose(
     )
 
 
-def real_config() -> dict[str, Any]:
-    config: dict[str, Any] = json.loads(compose("config", "--format", "json").stdout)
+def real_config(*overrides: str) -> dict[str, Any]:
+    files = ["-f", "docker-compose.yml"] if overrides else []
+    for override in overrides:
+        files += ["-f", override]
+    config: dict[str, Any] = json.loads(compose(*files, "config", "--format", "json").stdout)
     return config
 
 
@@ -66,7 +69,30 @@ def test_no_restart_policy_and_no_console_secrets() -> None:
     console_env = services["console"]["environment"]
     assert "CONSOLE_ENGINE_SERVICE_KEY" not in console_env
     assert "DJANGO_SECRET_KEY" not in console_env
-    assert services["console"]["pull_policy"] == "build"
+
+
+def test_console_runs_the_published_edge_image() -> None:
+    console = real_config()["services"]["console"]
+    assert console["image"] == "ghcr.io/nathanpond/epistrel-console:edge"
+    assert "build" not in console
+    assert "pull_policy" not in console
+
+
+def test_build_override_restores_the_local_build() -> None:
+    console = real_config("compose.build.yml")["services"]["console"]
+    assert console["image"] == "epistrel-console:dev"
+    assert console["pull_policy"] == "build"
+    assert Path(console["build"]["context"]) == REPO
+
+
+def test_whole_stack_pull_names_all_three_images() -> None:
+    # `docker compose pull` pulls exactly the images `config --images` lists (no build-only tag).
+    images = set(compose("config", "--images").stdout.split())
+    assert images == {
+        "ghcr.io/nathanpond/epistrel-console:edge",
+        "ghcr.io/nathanpond/epistrel:edge",
+        "pgvector/pgvector:pg16",
+    }
 
 
 def test_no_interpolation_in_the_file() -> None:
@@ -103,7 +129,8 @@ def stack_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
         pytest.skip(f"port {TEST_PORT} is in use")
     if subprocess.run(["docker", "info"], capture_output=True, check=False).returncode:  # noqa: S607
         pytest.skip("docker daemon is not answering")
-    config = real_config()
+    # The PR's own code, not the last published edge: the local-build override.
+    config = real_config("compose.build.yml")
     console = config["services"]["console"]
     console["ports"] = [
         {"target": 7739, "published": str(TEST_PORT), "host_ip": "127.0.0.1", "protocol": "tcp"}
@@ -171,6 +198,7 @@ def key(path: Path) -> str:
     return compose("exec", "-T", "console", "cat", "/data/secret_key", file=path).stdout.strip()
 
 
+@pytest.mark.engine_edge
 def test_stack_lifecycle(stack_file: Path) -> None:
     up(stack_file)
     body = wait_state("healthy", 60)
@@ -215,14 +243,15 @@ def test_stack_lifecycle(stack_file: Path) -> None:
     assert key(stack_file) != before
 
 
+@pytest.mark.engine_edge
 def test_pull_matches_the_registry(stack_file: Path) -> None:
     pull = compose("pull", file=stack_file)
     # Compose must never try to pull the local console tag. Some Compose versions list it as
-    # "Skipped", others (GitHub's runners) print nothing for it; either way, no other verb.
+    # "Skipped", others (GitHub's runners) print nothing per image; either way, no other verb.
+    # The proof that the Engine was pulled is the digest comparison below, not Compose's output.
     lines = (pull.stdout + pull.stderr).splitlines()
     console_lines = [line for line in lines if "epistrel-console:" in line]
     assert all("Skipped" in line for line in console_lines), console_lines
-    assert any("ghcr.io/nathanpond/epistrel:edge" in line and "Pulled" in line for line in lines)
     remote = subprocess.run(
         ["docker", "buildx", "imagetools", "inspect", "ghcr.io/nathanpond/epistrel:edge"],  # noqa: S607
         capture_output=True,

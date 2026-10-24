@@ -1,0 +1,272 @@
+# Every merge to main publishes ghcr.io/nathanpond/epistrel-console:edge (and :sha-<7>) for
+# linux/amd64 and linux/arm64, after the same gate PRs pass (ci.yml) and after the image itself
+# answers /health. Mirrors the Engine's publish-edge.yml.
+#
+# Edge rollback (RELEASING.md): `gh workflow run publish-edge.yml -f ref=<full sha>`. The ref must be
+# on main's history. When that commit already has a `sha-<7>` image (it passed the gate when it was
+# published), `edge` is re-pointed at it without a rebuild; otherwise the full gate-and-build runs.
+name: Publish edge
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or full 40-hex SHA reachable from main (short SHAs are rejected)
+        type: string
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+# Publishes are never cancelled mid-flight; a second push queues behind the first.
+concurrency:
+  group: publish-edge
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/nathanpond/epistrel-console
+  # Exact binfmt image, pinned as the Engine pins it: setup-qemu's default floats to :latest.
+  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68
+  # Exact BuildKit for buildx's container driver (resolved 2026-10-24): its default floats.
+  BUILDKIT_IMAGE: moby/buildkit:v0.34.1
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      sha: ${{ steps.ref.outputs.sha }}
+      short: ${{ steps.ref.outputs.short }}
+      existing_digest: ${{ steps.existing.outputs.digest }}
+    steps:
+      - name: Dispatch only from main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "::error::dispatch only from main (this run used the workflow from $REF)"
+          exit 1
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: ref
+        env:
+          REQUESTED: ${{ inputs.ref }}
+          EVENT: ${{ github.event_name }}
+          PUSHED: ${{ github.sha }}
+        run: |
+          set -eu
+          ref="${REQUESTED:-$PUSHED}"
+          if [ "$EVENT" = "push" ]; then ref="$PUSHED"; fi
+          if printf '%s' "$ref" | grep -Eq '^[0-9a-f]{7,39}$'; then
+            echo "::error::'$ref' looks like a short SHA; pass a branch, a tag, or the full 40-hex SHA"; exit 1
+          fi
+          # A full-depth checkout has local refs only for the checked-out branch: try the remote branch too.
+          sha=$(git rev-parse --verify --quiet "${ref}^{commit}" || git rev-parse --verify --quiet "origin/${ref}^{commit}") \
+            || { echo "::error::ref '$ref' not found (branch, tag, or full SHA)"; exit 1; }
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # Nobody publishes edge from a branch that never passed the gate into main.
+            git merge-base --is-ancestor "$sha" origin/main \
+              || { echo "::error::$sha is not reachable from origin/main; edge is built only from main's history"; exit 1; }
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short=7 "$sha")" >> "$GITHUB_OUTPUT"
+          echo "Resolved $ref → $sha"
+      - uses: docker/login-action@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # A rollback to a commit that was already published re-tags its image instead of rebuilding.
+      - id: existing
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SHORT: ${{ steps.ref.outputs.short }}
+        run: |
+          set -u
+          if digest=$(docker buildx imagetools inspect "$IMAGE:sha-$SHORT" --format '{{json .Manifest}}' 2>/dev/null \
+               | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])'); then
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "sha-$SHORT exists at $digest: re-tag path"
+          else
+            echo "no sha-$SHORT image: gate-and-build path"
+          fi
+
+  ci:
+    needs: resolve
+    if: needs.resolve.outputs.existing_digest == ''
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      # Owner decision (#37): an Engine outage must not stop the Console's edge publishing.
+      live_smoke: false
+
+  publish:
+    needs: [resolve, ci]
+    if: needs.resolve.outputs.existing_digest == '' && needs.ci.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      stage: ${{ steps.stage.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v4
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # A dispatch moves only `edge`; the sha tag already exists from the original push.
+          tags: |
+            type=raw,value=edge
+            type=raw,value=sha-${{ needs.resolve.outputs.short }},enable=${{ github.event_name == 'push' }}
+          # metadata-action would use github.sha (main's HEAD on a dispatch): name the built commit.
+          labels: org.opencontainers.image.revision=${{ needs.resolve.outputs.sha }}
+          annotations: org.opencontainers.image.revision=${{ needs.resolve.outputs.sha }}
+      # Pushed by digest only: no tag moves until the image has passed its own smoke below.
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: false
+          cache-from: type=gha,scope=publish
+          cache-to: type=gha,mode=max,scope=publish
+      # /health answers 200 while the Engine is down (#30), so an unreachable Engine is enough.
+      - name: Smoke (amd64, by digest)
+        id: smoke
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -u
+          docker run -d --name console-smoke --platform linux/amd64 -p 127.0.0.1:7739:7739 \
+            -e CONSOLE_ENGINE_URL=http://127.0.0.1:9 "$IMAGE@$DIGEST"
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:7739/health; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs console-smoke
+          echo "::error::the image did not answer /health with 200 in 60 s"
+          exit 1
+      - name: Remove the smoke container
+        if: always()
+        run: docker rm -f console-smoke || true
+      - name: Tag
+        id: tag
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -eu
+          args=()
+          while read -r tag; do [ -n "$tag" ] && args+=(-t "$tag"); done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
+          # Post-condition: every tag now resolves to the image that passed the smoke.
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            got=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+            [ "$got" = "$DIGEST" ] || { echo "::error::$tag resolves to $got, not $DIGEST"; exit 1; }
+            echo "$tag → $got"
+          done <<< "$TAGS"
+      - name: Stage
+        id: stage
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          TAG: ${{ steps.tag.outcome }}
+        run: |
+          stage=done
+          [ "$TAG" = "success" ] || stage=tag
+          [ "$SMOKE" = "success" ] || stage=smoke
+          [ "$BUILD" = "success" ] || stage=build
+          echo "stage=$stage" >> "$GITHUB_OUTPUT"
+
+  retag:
+    # Edge rollback to a commit whose sha-<7> image exists: point edge at it, no gate, no build.
+    needs: resolve
+    if: needs.resolve.outputs.existing_digest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Re-point edge
+        env:
+          DIGEST: ${{ needs.resolve.outputs.existing_digest }}
+        run: |
+          set -eu
+          docker buildx imagetools create -t "$IMAGE:edge" "$IMAGE@$DIGEST"
+          got=$(docker buildx imagetools inspect "$IMAGE:edge" --format '{{json .Manifest}}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+          [ "$got" = "$DIGEST" ] || { echo "::error::edge resolves to $got, not $DIGEST"; exit 1; }
+          echo "edge → $got"
+
+  summary:
+    if: always()
+    needs: [resolve, ci, publish, retag]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESOLVE: ${{ needs.resolve.result }}
+          CI: ${{ needs.ci.result }}
+          PUBLISH: ${{ needs.publish.result }}
+          RETAG: ${{ needs.retag.result }}
+          STAGE: ${{ needs.publish.outputs.stage }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+          EXISTING: ${{ needs.resolve.outputs.existing_digest }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          if [ "$RETAG" = "success" ]; then
+            printf '%s\n' "## edge re-pointed (re-tag path, no build)" "" \
+              "| | |" "|---|---|" "| commit | \`$SHA\` |" "| digest | \`$EXISTING\` |" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$PUBLISH" = "success" ]; then
+            printf '%s\n' "## edge published (gate-and-build path)" "" \
+              "| | |" "|---|---|" "| commit | \`$SHA\` |" "| digest | \`$DIGEST\` |" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          stage="publish: ${STAGE:-not started}"
+          [ "$CI" = "success" ] || [ "$CI" = "skipped" ] || stage="gate (ci.yml)"
+          [ "$RETAG" = "skipped" ] || [ "$RETAG" = "success" ] || stage="retag"
+          [ "$RESOLVE" = "success" ] || stage="resolve (ref/ancestry)"
+          printf '%s\n' "## Nothing published" "" \
+            "Stage that failed: **$stage** (resolve=$RESOLVE ci=$CI publish=$PUBLISH retag=$RETAG)." >> "$GITHUB_STEP_SUMMARY"
+          exit 1

@@ -402,3 +402,77 @@ def test_engine_gets_exactly_its_four_variables() -> None:
 def test_engine_variable_rule_bites() -> None:
     script = ENGINE_UP.read_text() + "\n    -e EPISTREL_MODEL=x \\\n"
     assert "EPISTREL_MODEL" in engine_env_vars(script)
+
+
+# --- publishing edge (#37) ------------------------------------------------------------------
+
+PUBLISH_EDGE = WORKFLOWS / "publish-edge.yml"
+
+
+def gate_bypasses(doc: dict[str, Any], gated: str = "publish") -> list[str]:
+    """Problems if ``gated`` could run without ``ci`` (= ci.yml) succeeding first."""
+    problems = []
+    ci = jobs(doc).get("ci") or {}
+    if ci.get("uses") != "./.github/workflows/ci.yml":
+        problems.append("ci does not use ci.yml")
+    job = jobs(doc).get(gated) or {}
+    needs = job.get("needs") or []
+    needs = [needs] if isinstance(needs, str) else needs
+    if "ci" not in needs:
+        problems.append(f"{gated} does not need ci")
+    if "needs.ci.result == 'success'" not in str(job.get("if", "")):
+        problems.append(f"{gated} does not require ci to succeed")
+    return problems
+
+
+def test_publish_edge_triggers_and_concurrency() -> None:
+    doc = load(PUBLISH_EDGE)
+    on = triggers(doc)
+    assert on["push"] == {"branches": ["main"]}
+    assert on["workflow_dispatch"]["inputs"]["ref"]["default"] == "main"
+    assert doc["concurrency"] == {"group": "publish-edge", "cancel-in-progress": False}
+    assert doc["permissions"] == {"contents": "read"}
+
+
+def test_publish_edge_runs_the_gate_without_live_smoke() -> None:
+    doc = load(PUBLISH_EDGE)
+    assert gate_bypasses(doc) == []
+    assert jobs(doc)["ci"]["with"]["live_smoke"] is False
+    assert jobs(doc)["ci"]["with"]["ref"] == "${{ needs.resolve.outputs.sha }}"
+
+
+def test_publishing_without_the_gate_fails_the_rule() -> None:
+    doc = copy.deepcopy(load(PUBLISH_EDGE))
+    doc["jobs"]["ci"]["uses"] = "./.github/workflows/other.yml"
+    doc["jobs"]["publish"]["needs"] = ["resolve"]
+    doc["jobs"]["publish"]["if"] = "always()"
+    assert gate_bypasses(doc) == [
+        "ci does not use ci.yml",
+        "publish does not need ci",
+        "publish does not require ci to succeed",
+    ]
+
+
+def test_publish_edge_dispatch_only_from_main() -> None:
+    first = jobs(load(PUBLISH_EDGE))["resolve"]["steps"][0]
+    assert first["if"] == (
+        "github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'"
+    )
+    assert "exit 1" in first["run"]
+
+
+def test_publish_edge_pushes_by_digest_and_tags_after_the_smoke() -> None:
+    publish = jobs(load(PUBLISH_EDGE))["publish"]
+    names = [s.get("id") or s.get("name") or s.get("uses") for s in publish["steps"]]
+    assert names.index("build") < names.index("smoke") < names.index("tag")
+    build = next(s for s in publish["steps"] if s.get("id") == "build")
+    assert "push-by-digest=true" in build["with"]["outputs"]
+    assert "tags" not in build["with"]
+    assert build["with"]["platforms"] == "linux/amd64,linux/arm64"
+    assert build["with"]["provenance"] is False
+
+
+def test_publish_edge_retags_only_existing_images() -> None:
+    doc = load(PUBLISH_EDGE)
+    assert jobs(doc)["retag"]["if"] == "needs.resolve.outputs.existing_digest != ''"
+    assert jobs(doc)["ci"]["if"] == "needs.resolve.outputs.existing_digest == ''"
