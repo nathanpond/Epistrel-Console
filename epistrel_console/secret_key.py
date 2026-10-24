@@ -7,6 +7,8 @@ anything, and no secret is ever baked into the image.
 """
 
 import os
+import tempfile
+import time
 from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
@@ -14,6 +16,9 @@ from django.core.management.utils import get_random_secret_key
 DEV_FALLBACK = "django-insecure-dev-only-not-a-secret"
 FILE_NAME = "secret_key"
 MIN_LENGTH = 50
+TOO_SHORT = "secret key file is too short — delete it to regenerate"
+RACE_RETRIES = 20
+RACE_WAIT_S = 0.05
 
 
 class StartupError(Exception):
@@ -36,17 +41,43 @@ def resolve(env_value: str | None, data_dir: Path, debug: bool) -> str:
         return _read(path)
     except FileNotFoundError:
         pass
+    key = get_random_secret_key()
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        _publish(path, key)
     except FileExistsError:
         # A concurrent first start won the race: use its key.
-        return _read(path)
+        return _read_winner(path)
     except OSError as exc:
         raise StartupError(str(path), exc.strerror or str(exc)) from exc
-    key = get_random_secret_key()
-    with os.fdopen(fd, "w") as handle:
-        handle.write(key + "\n")
     return key
+
+
+def _publish(path: Path, key: str) -> None:
+    """Write the key to a private temp file, then link it into place.
+
+    The link is atomic and fails if the file exists, so ``path`` only ever appears complete and a
+    concurrent first start can never read a half-written key.
+    """
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{FILE_NAME}.")  # 0600
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(key + "\n")
+        os.link(tmp, path)
+    finally:
+        os.unlink(tmp)
+
+
+def _read_winner(path: Path) -> str:
+    # Retry briefly on a short file: a winner that wrote in place (an older Console) may be
+    # mid-write.
+    for _ in range(RACE_RETRIES):
+        try:
+            return _read(path)
+        except StartupError as exc:
+            if exc.reason != TOO_SHORT:
+                raise
+        time.sleep(RACE_WAIT_S)
+    return _read(path)
 
 
 def _read(path: Path) -> str:
@@ -58,7 +89,7 @@ def _read(path: Path) -> str:
     except OSError as exc:
         raise StartupError(str(path), exc.strerror or str(exc)) from exc
     if len(key) < MIN_LENGTH:
-        raise StartupError(str(path), "secret key file is too short — delete it to regenerate")
+        raise StartupError(str(path), TOO_SHORT)
     return key
 
 
