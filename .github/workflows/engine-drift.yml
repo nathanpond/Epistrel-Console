@@ -1,0 +1,94 @@
+# Once a day, compare the live Engine edge's API description with the Console's recorded copy
+# (console/engine/openapi.json) and keep ONE issue saying what changed, closed again once the
+# Console catches up (#40). Never triggered by a PR or a push: drift is flagged, it never blocks a
+# merge; the live smoke in ci.yml is what gates. An Engine that cannot be read is not drift: the
+# run fails and no issue is touched.
+#
+# GitHub pauses scheduled workflows after 60 days without repository activity; re-enable this one
+# with `gh workflow enable engine-drift.yml` (RELEASING.md).
+name: Engine API drift
+
+on:
+  schedule:
+    - cron: "17 6 * * *"  # daily, 06:17 UTC (off the hour)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-drift
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.13.5"  # as ci.yml
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: epistrel
+          POSTGRES_PASSWORD: epistrel-dev  # the Engine compose's dev-only value, as docker-compose.yml
+          POSTGRES_DB: epistrel
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ENGINE_IMAGE: ghcr.io/nathanpond/epistrel:edge
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      # Started exactly as ci.yml's engine-smoke (#36).
+      - name: start the Engine
+        env:
+          NETWORK: ${{ job.services.postgres.network }}
+        run: .github/scripts/engine-up.sh start
+      - id: wait
+        run: .github/scripts/engine-up.sh wait
+      - id: identify
+        continue-on-error: true  # an unresolvable digest is reported as `unknown`, not a failure
+        run: .github/scripts/engine-up.sh identify
+      # Exit code to GITHUB_OUTPUT, stdout (the difference) to diff.txt; stderr stays in the log.
+      - id: check
+        run: |
+          set +e
+          uv run python manage.py engine_schema --check --url http://127.0.0.1:8000 > diff.txt
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          cat diff.txt
+          echo "engine_schema --check exited $code"
+      - uses: actions/upload-artifact@v7
+        if: steps.check.outputs.code == '1'
+        with:
+          name: engine-drift-diff
+          path: diff.txt
+          retention-days: 30
+      - name: Open, update or close the drift issue
+        if: always() && steps.wait.outcome == 'success' && steps.check.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.check.outputs.code }}
+          ENGINE_DIGEST: ${{ steps.identify.outputs.engine_digest || 'unknown' }}
+          ENGINE_VERSION: ${{ steps.identify.outputs.engine_version || 'unknown' }}
+        run: |
+          uv run python -m tools.drift_issue --exit-code "$CODE" --diff-file diff.txt \
+            --engine-digest "$ENGINE_DIGEST" --engine-version "$ENGINE_VERSION"
+      - name: logs
+        if: failure()
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: .github/scripts/engine-up.sh logs

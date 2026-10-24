@@ -1,0 +1,55 @@
+"""The status page asks /health and /openapi.json concurrently, once each, with no retries."""
+
+import time
+from typing import Any
+
+import httpx
+import pytest
+from django.test import Client, override_settings
+
+from console.engine.client import EngineClient
+from tests.fakes.engine import FakeEngine, recorded_schema
+
+OK = {"status": "ok", "checks": {"database": "ok"}}
+
+
+def use(fake: FakeEngine, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = EngineClient("http://engine.test", None, transport=fake.transport)
+    monkeypatch.setattr(EngineClient, "from_settings", classmethod(lambda cls: client))
+
+
+@override_settings(ENGINE_URL="http://engine.test")
+def test_page_waits_for_the_slower_call_not_the_sum(
+    client: Client, fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_engine.respond("GET", "/health", 200, json=OK, delay=1.0)
+    fake_engine.serve("GET", "/openapi.json", 200, json=recorded_schema(), delay=1.0)
+    use(fake_engine, monkeypatch)
+    started = time.monotonic()
+    html = client.get("/").content.decode()
+    elapsed = time.monotonic() - started
+    assert "Healthy" in html
+    assert "API: matches" in html
+    assert elapsed < 1.8, f"took {elapsed:.2f} s: the two calls ran one after the other"
+
+
+@override_settings(ENGINE_URL="http://engine.test")
+@pytest.mark.parametrize("path", ["/", "/health"])
+def test_unreachable_engine_gets_one_request_per_endpoint(
+    client: Client, fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    fake_engine.fail("GET", "/health", httpx.ConnectError("refused"))
+    fake_engine.fail("GET", "/openapi.json", httpx.ConnectError("refused"))
+    use(fake_engine, monkeypatch)
+    response = client.get(path)
+    assert response.status_code == 200
+    paths = sorted(r.url.path for r in fake_engine.requests)
+    # Complement: no retries.
+    assert paths == ["/health", "/openapi.json"]
+
+
+@override_settings(ENGINE_URL=None)
+def test_not_configured_makes_no_requests(client: Client) -> None:
+    body: dict[str, Any] = client.get("/health").json()
+    assert body["engine"]["state"] == "unreachable"
+    assert body["engine"]["api"]["reason"] == "not configured"

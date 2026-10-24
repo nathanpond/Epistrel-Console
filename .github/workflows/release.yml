@@ -1,0 +1,214 @@
+# Pushing vX.Y.Z (or vX.Y.Z-rc.N) runs the full gate against the matching Engine release image
+# (the live smoke included), publishes the versioned Console image and creates the GitHub release,
+# whose notes name the Engine build it was tested with. `latest`, `X.Y` and `X` move only when the
+# new version is the highest in their line; a pre-release gets only its own tag. The image is pushed
+# by digest and tagged only after it answers /health, so a failed run moves nothing. Mirrors the
+# Engine's release.yml. See RELEASING.md → Cutting a release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/nathanpond/epistrel-console
+  # As in publish-edge.yml: exact binfmt and BuildKit images, and ci.yml's uv.
+  BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68
+  BUILDKIT_IMAGE: moby/buildkit:v0.34.1
+  UV_VERSION: "0.13.5"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      prerelease: ${{ steps.validate.outputs.prerelease }}
+      highest: ${{ steps.validate.outputs.highest }}
+      highest_minor: ${{ steps.validate.outputs.highest_minor }}
+      highest_major: ${{ steps.validate.outputs.highest_major }}
+      already_released: ${{ steps.validate.outputs.already_released }}
+      engine_image: ${{ steps.validate.outputs.engine_image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag must be reachable from main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main"; exit 1; }
+      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Released tags so far
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName' > released.txt
+      # Tag shape, pyproject version, rc of a released stable, then the matching Engine image
+      # (looked up anonymously; the Engine's images are public). Written to a file first: a pipe
+      # into tee would hide a refusal under the default shell, which has no pipefail.
+      - id: validate
+        run: |
+          if ! uv run python -m tools.release validate --tag "$GITHUB_REF_NAME" --released-file released.txt > validate.txt; then
+            echo "::error::$(cat validate.txt)"
+            exit 1
+          fi
+          cat validate.txt
+          cat validate.txt >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.sha }}
+      # The live smoke runs against the Engine release this Console version tracks (#36, #38).
+      engine_image: ${{ needs.validate.outputs.engine_image }}
+
+  publish:
+    needs: [validate, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Shared with rollback.yml (#39): a release and a rollback never move `latest` at once.
+    concurrency:
+      group: release-latest
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: The gate named the Engine it tested
+        env:
+          ENGINE_DIGEST: ${{ needs.ci.outputs.engine_digest }}
+          ENGINE_VERSION: ${{ needs.ci.outputs.engine_version }}
+        run: |
+          [ -n "$ENGINE_DIGEST" ] && [ -n "$ENGINE_VERSION" ] \
+            || { echo "::error::ci returned no engine_digest/engine_version; nothing is published"; exit 1; }
+          echo "Tested with Engine $ENGINE_VERSION ($ENGINE_DIGEST)"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v4
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # {{version}} always; X.Y and X only when highest in their line; latest only for the
+          # highest stable (latest=auto already withholds it from pre-releases).
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.validate.outputs.highest_minor }}
+            type=semver,pattern={{major}},enable=${{ needs.validate.outputs.highest_major }}
+          flavor: |
+            ${{ needs.validate.outputs.highest == 'true' && 'latest=auto' || 'latest=false' }}
+      # Pushed by digest only: no tag moves until the image has passed its own smoke below.
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: false
+          cache-from: type=gha,scope=publish
+          cache-to: type=gha,mode=max,scope=publish
+      - name: Smoke (amd64, by digest)
+        id: smoke
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -u
+          docker run -d --name console-smoke --platform linux/amd64 -p 127.0.0.1:7739:7739 \
+            -e CONSOLE_ENGINE_URL=http://127.0.0.1:9 "$IMAGE@$DIGEST"
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:7739/health; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs console-smoke
+          echo "::error::the image did not answer /health with 200 in 60 s"
+          exit 1
+      - name: Remove the smoke container
+        if: always()
+        run: docker rm -f console-smoke || true
+      - name: Tag
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -eu
+          args=()
+          while read -r tag; do [ -n "$tag" ] && args+=(-t "$tag"); done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            got=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+            [ "$got" = "$DIGEST" ] || { echo "::error::$tag resolves to $got, not $DIGEST"; exit 1; }
+            echo "$tag → $got"
+          done <<< "$TAGS"
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          HIGHEST: ${{ needs.validate.outputs.highest }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ENGINE_DIGEST: ${{ needs.ci.outputs.engine_digest }}
+          ENGINE_VERSION: ${{ needs.ci.outputs.engine_version }}
+        run: |
+          set -eu
+          printf '%s\n' "Image: \`$IMAGE:$VERSION@$DIGEST\`" \
+            "Tested with Engine $ENGINE_VERSION (\`$ENGINE_DIGEST\`)" > lines.txt
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            # A re-run rewrites only the two lines (the newly tested Engine) and keeps the notes.
+            gh release view "$TAG" --json body --jq .body > notes.md
+            python3 -m tools.release.notes notes.md lines.txt > body.md
+            gh release edit "$TAG" --notes-file body.md
+            echo "release $TAG updated"
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" --jq .body > notes.md
+            python3 -m tools.release.notes notes.md lines.txt > body.md
+            flags=()
+            [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+            [ "$HIGHEST" = "true" ] || flags+=(--latest=false)
+            gh release create "$TAG" --verify-tag --title "$TAG" "${flags[@]}" --notes-file body.md
+            echo "release $TAG created"
+          fi
+      - name: Summary
+        if: always()
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ENGINE_IMAGE: ${{ needs.validate.outputs.engine_image }}
+          ENGINE_DIGEST: ${{ needs.ci.outputs.engine_digest }}
+          ENGINE_VERSION: ${{ needs.ci.outputs.engine_version }}
+        run: |
+          {
+            printf '%s\n' "## Release ${{ github.ref_name }}" "" "digest: \`${DIGEST:-not built}\`" \
+              "Engine: \`$ENGINE_IMAGE\` → $ENGINE_VERSION (\`$ENGINE_DIGEST\`)" ""
+            printf '%s\n' "$TAGS" | sed 's/^/- `/; s/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"

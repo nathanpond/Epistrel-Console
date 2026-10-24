@@ -15,10 +15,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "django-stubs[compatible-mypy]>=5.2",
+    "jsonschema>=4.23",
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-django>=4.9",
+    "pyyaml>=6",
     "ruff>=0.8",
+    "types-jsonschema>=4.26.0.20261006",
+    "types-pyyaml>=6.0.12",
 ]
 
 [tool.uv]
@@ -34,10 +38,12 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "DJ", "PT"]
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest's plain `assert` is the assertion mechanism in tests.
 "tests/**" = ["S101"]
+# S603/S607: release tooling runs `docker`/`gh` with a fixed, non-user-controlled argv.
+"tools/**" = ["S603", "S607"]
 
 [tool.mypy]
 strict = true
-files = ["epistrel_console", "console", "tests", "manage.py"]
+files = ["epistrel_console", "console", "tools", "tests", "manage.py"]
 plugins = ["mypy_django_plugin.main"]
 
 [tool.django-stubs]
@@ -46,5 +52,10 @@ django_settings_module = "epistrel_console.settings"
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "epistrel_console.settings"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers -m 'not docker'"
-markers = ["docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers -m 'not docker and not engine_live'"
+markers = [
+    "docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`",
+    "engine_live: needs a live Engine at ENGINE_LIVE_URL; run with `uv run pytest -m engine_live`",
+    "engine_edge: docker test that runs the live Engine edge image",
+]

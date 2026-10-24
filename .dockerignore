@@ -13,3 +13,4 @@ db.sqlite3
 secret_key
 .env*
 docker-compose.yml
+compose.build.yml

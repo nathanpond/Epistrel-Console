@@ -160,3 +160,61 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #96
 - **Decision:** #97 is fixed in the docs, not the stack. Compose's `COMPOSE_PROJECT_NAME` override of `name:` can't be disabled from the file. The compose comment and README now say a `.env` can't change any *setting* but can rename the project. A docker-marked test pins this: other variables leave `docker compose config` unchanged, and `COMPOSE_PROJECT_NAME` renames the project.
   **Issue:** #97
+
+## /n8-exec M1 — 2026-10-24
+
+- **Decision (drift, implementation detail):** The typed `HealthResponse` follows the live schema, not the planned `status: Literal["ok", "unavailable"], checks: dict[str, str]`. Engine `edge` (`info.version` m3) declares `status: ok|degraded|unavailable`, `checks: $ref HealthChecks` (a nested object with a `WorkersCheck`) and `content_logging: bool = false`. The planned model would fail the contract test the same story requires. The models are `HealthResponse`, `HealthChecks` and `WorkersCheck`.
+  **Issue:** #34
+- **Decision (drift, implementation detail):** The recorded schema is the whole Engine `edge` API (173 operations, 458 components), not "`/health` and `HealthResponse` only" as planned. Captured from `ghcr.io/nathanpond/epistrel@sha256:cf26dc0bf18c4184cd4c785bbd9962a36cb06db952a149922f5a428e374415ca` via the compose stack published on 127.0.0.1:18000. Port 8000 was in use by the owner's own Engine dev stack, which was left running untouched.
+  **Issue:** #34
+- **Decision:** `tests/engine/` and `tests/fakes/` have `__init__.py`, against the planned "no `__init__`". Every other test directory here (`tests/`, `tests/container/`) is a package, and `tests.fakes.engine` is imported from `tests/conftest.py`.
+  **Why:** Matches the repo's convention and avoids pytest/mypy basename collisions. Low cost if wrong.
+  **Issue:** #34
+- **Decision:** The contract comparison lives in `tests/engine/contract.py`, and models parse through one generic, annotation-driven `from_json` in `console/engine/models.py`. Both read the same annotations, so a new model needs no parser of its own.
+  **Issue:** #34
+- **Decision:** `EngineUnreachable` carries `unexpected=True` when the cause wasn't an httpx transport error. The probe logs that cause's traceback at WARNING, keeping #30's "unexpected errors are logged with a traceback" now that the client itself never logs.
+  **Issue:** #34
+- **Decision:** `engine_schema` exits through `sys.exit` from `handle()`. Django's `CommandError` can't express exit 1 versus 3 without printing its own prefix. `--write` fails with exit 2 on a fetch failure, as `--check` does.
+  **Issue:** #34
+- **Decision:** The client still treats all five planned routes as exempt from the key (`/health`, `/metrics`, `/openapi.json`, `/docs`, `/redoc`). The live schema marks only `/health` and `/metrics` without `security`, because FastAPI doesn't list its own doc routes.
+  **Issue:** #34
+- **Decision:** The `REQUIRE_DOCKER_TESTS` skip→fail hook lives in `tests/plugins/require_docker.py`, loaded from `tests/conftest.py` through `pytest_plugins`, not inline in `conftest.py`. A separate module is what `pytester` can load (`-p tests.plugins.require_docker`) to prove both directions. A `skipif` mark skips during setup, so under the hook it reports as an error, not a failure. Either way the run exits non-zero.
+  **Issue:** #35
+- **Decision:** Actions resolved 2026-10-24: `actions/checkout@v7` (v7.0.1), `astral-sh/setup-uv@v10.3.2` (exact, since there is no `v10` tag), uv `0.13.5` (= Dockerfile). `.github/rulesets/main-pr-required.json` is the Engine's file verbatim, because its `pull_request` parameters equal this repo's live ruleset.
+  **Issue:** #35
+- **Decision:** The `test` and `lint` jobs run their later checks with `if: always()`, so one failure doesn't hide the next. `manage.py check` and `makemigrations --check` run even if pytest fails.
+  **Issue:** #35
+- **Decision (Rule 3):** M0's `test_pull_matches_the_registry` required a "Skipped" line for the console's `pull_policy: build` image. Compose on GitHub's runners prints no line for that image, so the first CI run of the new gate failed on it (PR #101, run 40110247141). The test now accepts either output and still fails if Compose prints any other verb for the console tag.
+  **Issue:** #35 (the gate it blocked), #32 (the test)
+- **Decision (drift, Rule 3):** The engine-smoke Engine gets four `EPISTREL_*` variables, not two. Engine `edge` refuses to start without `EPISTREL_SERVICE_CREDENTIALS`, reproduced 2026-10-24 with the planned two-variable `docker run` (`ConfigError: at least one credential of 32+ characters is required`). It also gets `EPISTREL_CONFIG_KEY`. Both are the Engine compose's dev-only literals already in `docker-compose.yml` (M0 made the same call for #32). The smoke still calls only unauthenticated routes and sends no key. #42 (M2) still owns the Console sending one.
+  **Issue:** #36, #42
+- **Decision (Rule 1):** "Live smoke on" is `github.event_name == 'pull_request' || inputs.live_smoke`, not the planned `inputs.live_smoke == false && 'false' || 'true'`. On a PR `inputs` is empty, and Actions compares `null == false` as true, so the planned expression would have skipped the smoke, and accepted the skip, on every PR. The workflow test pins the form used.
+  **Issue:** #36
+- **Decision:** The `engine_live` usage error fires for a blank `ENGINE_LIVE_URL` too. `tests/engine_live/` has an `__init__.py` (repo convention, as for #34). `gate.sh` treats a missing job result as a failure.
+  **Issue:** #36
+- **Decision:** `compose.smoke.yml` publishes the Engine on 127.0.0.1:8000 as planned. The README says to stop the Engine repo's own stack first, because both use 8000. Otherwise the "runs alongside the Engine repo's stack" note would be untrue for this override.
+  **Issue:** #36
+- **Decision (Rule 3):** M0's `test_pull_matches_the_registry` also required a "Pulled" line for the Engine image. The runner's Compose prints none (PR #101, run 40110611891). The test now relies on its existing proof, that the local image's digest equals the registry's after the pull. The "never pull the console tag" check still fails on any line naming the console tag that isn't "Skipped".
+  **Issue:** #37, #32
+- **Decision:** The "base-file pull names all three images" check uses `docker compose config --images`, not the planned `docker compose pull --dry-run`. The dry run still contacts the registry and fails (403) until `epistrel-console:edge` exists, so it couldn't pass on this milestone's own PR.
+  **Issue:** #37
+- **Decision:** `publish-edge.yml` pins buildx's BuildKit image (`driver-opts: image=moby/buildkit:v0.34.1`, resolved 2026-10-24). setup-buildx's `docker-container` driver otherwise pulls a floating BuildKit at run time (the reference's floating-download rule; the Engine leaves it unpinned). `resolve` gets `packages: read` and logs in on dispatches, so the `sha-<7>` lookup works even while the package is private. Its result picks the path: the `retag` job, or `ci` → `publish`.
+  **Issue:** #37
+- **Decision:** On a failure, the `summary` job exits 1 after naming the stage, so a run that published nothing is red even when the failing job was skipped by a condition.
+  **Issue:** #37
+- **Decision (Rule 1):** The `validate` step in `release.yml` writes `tools.release validate` output to a file and fails with an `::error::` carrying the refusal. The Engine's version pipes it into `tee` under GitHub's default shell (`bash -e`, no `pipefail`), where a refused tag would pass the step. The Engine's own `release.yml` has the same pipe, and I didn't touch it; that's another repo, so it's out of scope here.
+  **Issue:** #38
+- **Decision:** The notes edit (append, or replace in place, the `Image:` and `Tested with Engine` lines) is `tools/release/notes.py`, run with plain `python3 -m` (stdlib only), not inline shell. That keeps it typed and unit-tested (`tests/tools/test_release_notes.py`). The CLI's Engine-image test puts a fake `docker` on `PATH`, so the code has no test-only lookup mode. `--engine-image-lookup` accepts only `docker`.
+  **Issue:** #38
+- **Decision:** `release.yml` reuses #37's pattern: push by digest, smoke, then `imagetools create` for every tag with a post-condition. That replaces the Engine's push-with-tags, so a failed smoke moves no tag (the AC). The release body goes through `--notes-file`.
+  **Issue:** #38
+- **Decision:** `rollback.yml` folds input validation and the running-release check into the one `id: pre` step, ahead of all existence checks. The Engine has them as three steps, one after its login. The guard test then checks a single, simple fact: nothing that runs `imagetools create` or `gh release edit` comes at or before `pre`. The job checks out the repo so it can run `python3 -m tools.release.notes --rollback-note`, which replaces an earlier note rather than skipping when one exists (the Engine's `grep -qF … ||` skips).
+  **Issue:** #39
+- **Decision:** `tools/drift_issue.py` accepts the bot author as any of `github-actions[bot]` (REST), `app/github-actions` (what `gh … --json author` returns for an app) or `github-actions`. The identify step in `engine-drift.yml` is `continue-on-error`, so an unresolvable digest is reported as `unknown` (planned) instead of failing a drift verdict. The tool reads the diff file only for exit code 1.
+  **Issue:** #40
+- **Decision:** `RELEASING.md` gains a short **Engine API drift check** section, with the `gh workflow enable` note for GitHub's 60-day schedule pause, and `.n8/config.yml` `ci.triggers` gains `schedule (daily) → Engine API drift issue` (both planned).
+  **Issue:** #40
+- **Decision:** The status views' test seam is `views.engine_state()`, which builds one client (or `None`) and calls `engine_status.probe_engine()`. It replaces the `views.probe` patch point #30's view tests used, so those tests changed only that line. The API check reads the probe's last state through a new `engine_probe.last_state()` and suppresses `unknown` while the probe says unreachable (planned). Its own log state sits behind a lock, because the two calls run on worker threads.
+  **Issue:** #41
+- **Decision:** The concurrency test was checked against a mutant (`max_workers=1`): it failed at 2.07 s against the 1.8 s bound, then the file was restored. Against the live Engine `edge`, the `xfail(strict=False)` API-match smoke test XPASSes.
+  **Issue:** #41

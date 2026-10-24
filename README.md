@@ -48,20 +48,50 @@ All settings come from the process environment.
 
 Any other variable starting with `CONSOLE_` is treated as a typo and refuses start.
 
-## Run with Docker
+### The PR gate
 
-`docker-compose.yml` runs the Console, the Engine's published `edge` image and the Postgres it needs. No `.env` or setup is needed.
+Every pull request runs `.github/workflows/ci.yml`, and `main` accepts a merge only when its `gate` check is green. These are its commands, in order, so you can run the same checks locally. Leave `CONSOLE_ENGINE_URL` unset for the test commands: the tests and tooling must not need an Engine.
 
 ```bash
-docker compose up --build -d --wait --wait-timeout 120   # three healthy services
+uv lock --check                                    # uv.lock matches pyproject.toml
+uv sync --frozen
+uv run ruff check .                                # lint
+uv run ruff format --check .                       # formatting
+uv run mypy                                        # types (strict)
+uv run pytest                                      # tests (docker tests deselected)
+uv run python manage.py check                      # Django's system checks
+uv run python manage.py makemigrations --check --dry-run   # no missing migrations
+REQUIRE_DOCKER_TESTS=1 uv run pytest -m docker     # image + compose tests; needs Docker
+```
+
+The docker tests build the image themselves and pull the Engine `edge` image. With `REQUIRE_DOCKER_TESTS=1` (as in CI), a docker test that would skip (no Docker CLI or daemon, pull failed) fails instead. Without it, those tests skip.
+
+### Live Engine smoke
+
+Every PR also runs a smoke suite (`tests/engine_live/`, marker `engine_live`) against the published Engine `edge` image, and a broken Engine `edge` blocks the merge. To run it locally against the real `edge`, publish this stack's Engine on `127.0.0.1:8000` with the `compose.smoke.yml` override. Stop the Engine repo's own stack first: both use port 8000.
+
+```bash
+docker compose -f docker-compose.yml -f compose.smoke.yml up -d --wait engine db
+ENGINE_LIVE_URL=http://127.0.0.1:8000 uv run pytest -m engine_live
+```
+
+Selecting `engine_live` without `ENGINE_LIVE_URL` is an error, never a silent skip.
+
+## Run with Docker
+
+`docker-compose.yml` runs the Console's published `edge` image, the Engine's published `edge` image and the Postgres it needs. Nothing is built locally, and no `.env` or setup is needed.
+
+```bash
+docker compose pull && docker compose up -d --wait --wait-timeout 120   # three healthy services
 open http://127.0.0.1:7739/                              # Engine http://engine:8000 — Healthy
 docker compose exec console python manage.py createsuperuser   # an admin login
-docker compose pull engine && docker compose up -d --wait      # pick up a newer Engine edge
+docker compose pull && docker compose up -d --wait       # pick up a newer Console and Engine edge
 docker compose stop                                      # stop, keeping everything
 docker compose down                                      # remove containers, keep data
 docker compose down -v                                   # remove containers and wipe all data
 ```
 
+- To run this checkout's code instead of the published image, add the build override: `docker compose -f docker-compose.yml -f compose.build.yml up --build -d --wait`. `edge` is rebuilt from every merge to `main`; see [RELEASING.md](RELEASING.md) for its channels and rollback.
 - Only the Console is published, on `127.0.0.1:7739`; the Engine and Postgres are reachable only inside the stack. Nothing is reachable from other machines.
 - The stack runs alongside the Engine repo's own compose stack (ports 8000 and 5432) without clashing.
 - Nothing restarts by itself: the stack comes up only when you run `up`.

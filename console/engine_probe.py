@@ -2,8 +2,8 @@
 
 Healthy: 200 with a valid body and ``status == "ok"``. Unhealthy: the Engine answered but reported
 a problem (or answered with something that is not a health body). Unreachable: no HTTP answer.
-The probe never sends the service key and never raises, so /health cannot 500 because of the
-Engine.
+The probe goes through the Engine client, never sends the service key (``/health`` is an exempt
+route) and never raises, so /health cannot 500 because of the Engine.
 """
 
 import logging
@@ -11,17 +11,15 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
-import httpx
-from django.conf import settings
-
-from console.version import VERSION
+from console.engine.client import (
+    EngineClient,
+    EngineNotConfigured,
+    EngineUnreachable,
+)
+from console.engine.models import HealthResult
 
 log = logging.getLogger(__name__)
 
-# 3 s, not 2: the Engine's own database check takes up to 2 s, so a 2 s limit would turn
-# "Engine database down" into "Engine unreachable".
-TIMEOUT_S = 3.0
-USER_AGENT = f"epistrel-console/{VERSION}"
 REPEAT_LOG_S = 60.0
 # Check values that do not mark a check as failing ("missing" is ffmpeg/ffprobe, which the Engine
 # says never changes its status).
@@ -41,16 +39,12 @@ class ProbeResult:
     latency_ms: int | None
 
 
-def _valid_body(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        body = response.json()
-    except ValueError:
+def _valid_body(raw: object) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
         return None
-    if not isinstance(body, dict):
+    if not isinstance(raw.get("status"), str) or not isinstance(raw.get("checks"), dict):
         return None
-    if not isinstance(body.get("status"), str) or not isinstance(body.get("checks"), dict):
-        return None
-    return body
+    return raw
 
 
 def _failing_reason(status: str, checks: dict[str, Any]) -> str:
@@ -62,9 +56,9 @@ def _failing_reason(status: str, checks: dict[str, Any]) -> str:
     return ", ".join(failing) if failing else f"status {status}"
 
 
-def classify(response: httpx.Response, latency_ms: int) -> ProbeResult:
-    code = response.status_code
-    body = _valid_body(response)
+def classify(health: HealthResult) -> ProbeResult:
+    code, latency_ms = health.http_status, health.latency_ms
+    body = _valid_body(health.raw)
     if body is None:
         return ProbeResult(
             "unhealthy", True, code, None, None, f"bad response (HTTP {code})", latency_ms
@@ -81,36 +75,32 @@ def _unreachable(reason: str) -> ProbeResult:
     return ProbeResult("unreachable", False, None, None, None, reason, None)
 
 
-def probe(transport: httpx.BaseTransport | None = None) -> ProbeResult:
-    """GET <ENGINE_URL>/health once and classify the answer."""
-    url: str | None = settings.ENGINE_URL
-    if url is None:
-        result = _unreachable("not configured")
-        _log(url, result)
-        return result
-    started = time.monotonic()
+def probe(client: EngineClient | None = None) -> ProbeResult:
+    """GET <ENGINE_URL>/health once, through the Engine client, and classify the answer.
+
+    ``client`` defaults to one built from settings; tests pass one on a fake transport.
+    """
+    if client is None:
+        try:
+            client = EngineClient.from_settings()
+        except EngineNotConfigured:
+            result = _unreachable("not configured")
+            _log(None, result)
+            return result
     try:
-        with httpx.Client(
-            timeout=httpx.Timeout(TIMEOUT_S),
-            follow_redirects=False,
-            verify=True,
-            trust_env=False,
-            headers={"User-Agent": USER_AGENT},
-            transport=transport,
-        ) as client:
-            response = client.get(f"{url}/health")
-        latency_ms = round((time.monotonic() - started) * 1000)
-        result = classify(response, latency_ms)
-    except httpx.TimeoutException:
-        result = _unreachable("timeout")
-    except httpx.ConnectError:
-        result = _unreachable("connection failed")
-    except httpx.TransportError:
-        result = _unreachable("transport error")
+        result = classify(client.health())
+    except EngineUnreachable as exc:
+        if exc.unexpected:
+            log.warning(
+                "unexpected error probing the Engine at %s", client.base_url, exc_info=exc.__cause__
+            )
+        result = _unreachable(exc.reason)
+    except AssertionError:
+        raise  # the fake Engine's signals reach the test
     except Exception:
-        log.exception("unexpected error probing the Engine at %s", url)
+        log.exception("unexpected error probing the Engine at %s", client.base_url)
         result = _unreachable("transport error")
-    _log(url, result)
+    _log(client.base_url, result)
     return result
 
 
@@ -133,3 +123,8 @@ def _log(url: str | None, result: ProbeResult) -> None:
         return
     _last_state = result.state
     _last_logged = now
+
+
+def last_state() -> State | None:
+    """The state the probe last saw (None before the first probe)."""
+    return _last_state

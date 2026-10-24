@@ -6,6 +6,7 @@ import pytest
 from django.test import override_settings
 
 from console import engine_probe
+from console.engine.client import EngineClient
 from console.engine_probe import probe
 
 URL = "http://engine.test:8000"
@@ -34,7 +35,7 @@ def run(handler: Handler) -> tuple[engine_probe.ProbeResult, list[httpx.Request]
         return handler(request)
 
     with override_settings(ENGINE_URL=URL, ENGINE_SERVICE_KEY="sekrit-123"):
-        result = probe(transport=httpx.MockTransport(record))
+        result = probe(EngineClient.from_settings(transport=httpx.MockTransport(record)))
     return result, seen
 
 
@@ -116,5 +117,5 @@ def test_unreachable(exc: Exception, reason: str) -> None:
 
 def test_not_configured() -> None:
     with override_settings(ENGINE_URL=None):
-        result = probe(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+        result = probe()
     assert (result.state, result.reason) == ("unreachable", "not configured")
