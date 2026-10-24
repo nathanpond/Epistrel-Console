@@ -273,3 +273,16 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #116
 - **Decision:** `tools.drift_issue` returns 4 ("no verdict", engine_schema's own code) for exit 1 with an empty or whitespace-only diff. The workflow's check step is unchanged. Fixing it in the tool keeps one place that decides what counts as drift.
   **Issue:** #117
+
+## /n8-exec M1 (third verification fixes) — 2026-10-24
+
+- **Decision:** M1's PRs #101, #111 and #118 had already merged, so this run executed the two bugs the third `/n8-verify M1` filed (#119, #120) on a new branch, `milestone/m1-verify-fixes-3`. Both are test-only: neither workflow nor config changed. Every mutation in #119, plus one for each minor item, was applied to the real `publish-edge.yml`, the suite was run, and the file was restored and checked byte for byte. Each mutation is killed by the test written for it.
+  **Issue:** #119, #120
+- **Decision:** The summary step is tested by running it under nine `needs.*.result` combinations: re-tag, publish, failed resolve, gate, build, smoke and tag, a cancelled publish, and a failed retag. The tests assert the exact summary lines and the exit code. The bite test counts a mutation as killed when any combination's (rc, summary) differs from the original's. It also mutates the stage precedence (gate/retag/resolve), beyond the issue's D3.
+  **Issue:** #119
+- **Decision:** The gha cache scope, the cleanup step's `if: always()`, and the smoke's exact `docker run` argv (including `-e CONSOLE_ENGINE_URL=http://127.0.0.1:9`) are asserted for both `publish-edge.yml` and `release.yml`, because the two jobs are identical.
+  **Issue:** #119
+- **Decision:** `MYPY_INLINE` now also matches a whole-line `# type: ignore` followed by `# …`. mypy 2.4.0 was checked to skip a file under both `# type: ignore  # legacy` and `#type:ignore#x`, but not under `# type: ignore[operator]` (that stays allowed). A new `mypy_config_shadows` refuses `mypy.ini`, `.mypy.ini`, and a `setup.cfg` with any `[mypy…` section. That covers the per-module `[mypy-pkg.*]` form too. User-level configs (`~/.mypy.ini`, `~/.config/mypy/config`) are outside the repo and not checked: the CI runner has none.
+  **Issue:** #120
+- **Decision:** #119 and #120 share one commit, because both edit `tests/test_workflows.py`.
+  **Issue:** #119, #120
