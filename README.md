@@ -68,6 +68,7 @@ docker compose down -v                                   # remove containers and
 - Console data (its SQLite database and generated secret key) lives in the `console-data` volume and survives `down`; `down -v` wipes it, along with the Engine's database and media.
 - `up --wait` exits non-zero if the Engine is unhealthy, even though the Console itself is up; the Console page then says why.
 - The Engine runs with its compose's dev-only service credential and config key. They are fine for this localhost-only stack and nothing else.
+- Every value in `docker-compose.yml` is a literal, so a `.env` cannot change any setting. The exception is the project name: the file's `name: epistrel-console` fixes it, but a `COMPOSE_PROJECT_NAME` in the environment or a `.env` overrides it, and then the volume names change too, so the stack comes up empty. Leave it unset to keep your data.
 
 ## License
 

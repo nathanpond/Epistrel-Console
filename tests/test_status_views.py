@@ -98,3 +98,25 @@ def test_service_key_not_set(client: Client, state: str) -> None:
 @override_settings(ENGINE_URL=None)
 def test_unconfigured_url_shown(client: Client, state: str) -> None:
     assert "not configured" in client.get("/").content.decode()
+
+
+def test_status_page_renders_nested_checks_readably(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shape Engine main returns: an object, numbers and null among the string checks (#96).
+    checks = {
+        "database": "ok",
+        "workers": {"alive": 2, "last_heartbeat_s": 2.2},
+        "oldest_overdue_timer_s": None,
+        "erasure_pending": 0,
+    }
+    result = ProbeResult("healthy", True, 200, "ok", checks, None, 9)
+    monkeypatch.setattr(views, "probe", lambda: result)
+    html = client.get("/").content.decode()
+    assert "database: ok" in html
+    assert "workers: alive 2, last heartbeat 2.2 s" in html
+    assert "oldest_overdue_timer_s: —" in html
+    assert "erasure_pending: 0" in html
+    # Complement: no Python reprs.
+    for repr_text in ("{", "&#x27;", "None"):
+        assert repr_text not in html.split("<dt>Checks</dt>")[1].split("</ul>")[0]

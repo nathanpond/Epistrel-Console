@@ -1,5 +1,6 @@
 import os
 import stat
+import time
 from pathlib import Path
 
 import pytest
@@ -58,20 +59,65 @@ def test_short_file_refuses(tmp_path: Path) -> None:
     assert "too short" in exc.value.reason
 
 
+def lose_race(monkeypatch: pytest.MonkeyPatch, path: Path, content: str) -> None:
+    """The other process links its key file into place just before this one tries to."""
+    real_link = os.link
+
+    def racing_link(src: str | Path, dst: str | Path) -> None:
+        if Path(dst) == path:
+            path.write_text(content)
+            raise FileExistsError(str(path))
+        real_link(src, dst)
+
+    monkeypatch.setattr(os, "link", racing_link)
+
+
 def test_lost_race_rereads_winner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "secret_key"
     winner = "w" * 50
-    real_open = os.open
-
-    def racing_open(file: str | Path, flags: int, mode: int = 0o777) -> int:
-        if Path(file) == path and flags & os.O_EXCL:
-            path.write_text(winner)  # the other process created it first
-            raise FileExistsError(str(path))
-        return real_open(file, flags, mode)
-
-    monkeypatch.setattr(os, "open", racing_open)
+    lose_race(monkeypatch, path, winner)
     assert resolve(None, tmp_path, debug=False) == winner
     assert path.read_text() == winner
+    assert list(tmp_path.iterdir()) == [path]  # the loser's temp file is gone
+
+
+def test_lost_race_waits_for_a_winner_still_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The winner created the file but has not written the key yet (#95).
+    path = tmp_path / "secret_key"
+    winner = "w" * 50
+    lose_race(monkeypatch, path, "")
+    waits: list[float] = []
+
+    def winner_finishes(seconds: float) -> None:
+        waits.append(seconds)
+        if len(waits) == 2:
+            path.write_text(winner + "\n")
+
+    monkeypatch.setattr(time, "sleep", winner_finishes)
+    assert resolve(None, tmp_path, debug=False) == winner
+    assert len(waits) == 2
+
+
+def test_lost_race_to_a_short_file_still_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "secret_key"
+    lose_race(monkeypatch, path, "x" * 10)
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    with pytest.raises(StartupError) as exc:
+        resolve(None, tmp_path, debug=False)
+    assert "too short" in exc.value.reason
+    # Complement: the wait is bounded.
+    assert len(waits) == secret_key.RACE_RETRIES
+    assert sum(waits) <= 2
+
+
+def test_generation_leaves_only_the_key_file(tmp_path: Path) -> None:
+    resolve(None, tmp_path, debug=False)
+    assert [p.name for p in tmp_path.iterdir()] == ["secret_key"]
 
 
 def test_data_dir_rules(tmp_path: Path) -> None:

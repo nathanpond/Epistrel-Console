@@ -34,6 +34,19 @@ def test_runserver_refuses_and_exits(env: dict[str, str], line: str) -> None:
     assert "development server at" not in result.stdout + result.stderr
 
 
+@pytest.mark.parametrize(
+    ("env", "line"),
+    [({}, REQUIRED_LINE), ({"CONSOLE_ENGINE_URL": "localhost:8000"}, BAD_LINE)],
+)
+def test_runserver_refuses_before_the_autoreloader(env: dict[str, str], line: str) -> None:
+    # No --noreload: a refusal placed after the reloader starts would hang here (TimeoutExpired)
+    # or print the server banner.
+    result = run(["manage.py", "runserver"], **env)
+    assert result.returncode == 1
+    assert line in result.stderr
+    assert "development server at" not in result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("module", ["epistrel_console.wsgi", "epistrel_console.asgi"])
 @pytest.mark.parametrize(
     ("env", "line"),
@@ -51,13 +64,20 @@ def test_entry_point_import_starts_with_valid_url(module: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("module", ["epistrel_console.wsgi", "epistrel_console.asgi"])
-def test_misspelled_variable_names_itself(module: str) -> None:
-    result = run(
-        ["-c", f"import {module}"], CONSOLE_ENGINE_URL="http://127.0.0.1:9", CONSOLE_ENGINE_ULR="x"
-    )
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["-c", "import epistrel_console.wsgi"],
+        ["-c", "import epistrel_console.asgi"],
+        ["manage.py", "runserver", "--noreload"],
+    ],
+    ids=["wsgi", "asgi", "runserver"],
+)
+def test_misspelled_variable_names_itself(args: list[str]) -> None:
+    result = run(args, CONSOLE_ENGINE_URL="http://127.0.0.1:9", CONSOLE_ENGINE_ULR="x")
     assert result.returncode == 1
     assert "error: CONSOLE_ENGINE_ULR: unknown setting" in result.stderr
+    assert "development server at" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(

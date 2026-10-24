@@ -73,6 +73,25 @@ def test_no_interpolation_in_the_file() -> None:
     assert "${" not in (REPO / "docker-compose.yml").read_text()
 
 
+def test_env_file_changes_nothing_but_compose_project_name(tmp_path: Path) -> None:
+    # The README's claim: a .env cannot change any setting; only COMPOSE_PROJECT_NAME renames the
+    # stack (Compose's own override of `name:`).
+    settings = tmp_path / "settings.env"
+    settings.write_text(
+        "CONSOLE_ENGINE_URL=http://elsewhere\nDJANGO_DEBUG=1\nPOSTGRES_PASSWORD=x\n"
+    )
+    renamed = tmp_path / "renamed.env"
+    renamed.write_text("COMPOSE_PROJECT_NAME=renamed\n")
+    config = real_config()
+    assert config["name"] == "epistrel-console"
+    with_settings = json.loads(
+        compose("--env-file", str(settings), "config", "--format", "json").stdout
+    )
+    assert with_settings == config
+    with_name = json.loads(compose("--env-file", str(renamed), "config", "--format", "json").stdout)
+    assert with_name["name"] == "renamed"
+
+
 def port_free(port: int) -> bool:
     with socket.socket() as sock:
         return sock.connect_ex(("127.0.0.1", port)) != 0
