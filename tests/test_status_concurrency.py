@@ -1,5 +1,6 @@
 """The status page asks /health and /openapi.json concurrently, once each, with no retries."""
 
+import logging
 import time
 from typing import Any
 
@@ -7,6 +8,7 @@ import httpx
 import pytest
 from django.test import Client, override_settings
 
+from console import engine_status
 from console.engine.client import EngineClient
 from tests.fakes.engine import FakeEngine, recorded_schema
 
@@ -53,3 +55,37 @@ def test_not_configured_makes_no_requests(client: Client) -> None:
     body: dict[str, Any] = client.get("/health").json()
     assert body["engine"]["state"] == "unreachable"
     assert body["engine"]["api"]["reason"] == "not configured"
+
+
+@pytest.mark.parametrize("slow", ["/health", "/openapi.json"])
+def test_a_call_past_the_deadline_reports_timeout(
+    fake_engine: FakeEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    slow: str,
+) -> None:
+    # The two FutureTimeout fallbacks (#109): the page gives up at the deadline, not the call.
+    monkeypatch.setattr(engine_status, "DEADLINE_S", 0.3)
+    delay = {"/health": 0.0, "/openapi.json": 0.0, slow: 1.0}
+    fake_engine.respond("GET", "/health", 200, json=OK, delay=delay["/health"])
+    fake_engine.serve(
+        "GET", "/openapi.json", 200, json=recorded_schema(), delay=delay["/openapi.json"]
+    )
+    client = EngineClient("http://engine.test", None, transport=fake_engine.transport)
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="console.engine"):
+        probed, checked = engine_status.probe_engine(client)
+    elapsed = time.monotonic() - started
+    assert elapsed < 0.8, f"took {elapsed:.2f} s: waited for the slow call"
+    if slow == "/health":
+        assert (probed.state, probed.reason) == ("unreachable", "timeout")
+        assert checked.verdict == "matches"
+    else:
+        assert probed.state == "healthy"
+        assert (checked.verdict, checked.reason) == ("unknown", "timeout")
+    deadline_lines = [
+        r.getMessage() for r in caplog.records if "reported as timeout" in r.getMessage()
+    ]
+    assert deadline_lines == [
+        f"Engine at http://engine.test: no answer from {slow} within 0.3 s; reported as timeout"
+    ]

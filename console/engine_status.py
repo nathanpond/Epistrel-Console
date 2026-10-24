@@ -2,9 +2,11 @@
 
 Each makes exactly one request (``/health``, ``/openapi.json``) with no retries. Run side by side,
 a page waits for the slower of the two (about 3 s at worst), not their sum, and never more than
-the shared deadline.
+the shared deadline. A call still running at the deadline is reported as ``timeout`` and left to
+finish on its own; its later log line (whatever its outcome) follows the one logged here.
 """
 
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -12,6 +14,8 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from console.engine.client import EngineClient
 from console.engine_api_check import ApiCheck, check_engine_api
 from console.engine_probe import ProbeResult, probe
+
+log = logging.getLogger("console.engine")
 
 DEADLINE_S = 4.0
 
@@ -26,11 +30,20 @@ def probe_engine(client: EngineClient | None) -> tuple[ProbeResult, ApiCheck]:
         try:
             probed = health.result(timeout=max(0.0, deadline - time.monotonic()))
         except FutureTimeout:
+            _log_deadline(client, "/health")
             probed = ProbeResult("unreachable", False, None, None, None, "timeout", None)
         try:
             checked = api.result(timeout=max(0.0, deadline - time.monotonic()))
         except FutureTimeout:
+            _log_deadline(client, "/openapi.json")
             checked = ApiCheck("unknown", None, "timeout", None)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
     return probed, checked
+
+
+def _log_deadline(client: EngineClient | None, path: str) -> None:
+    url = client.base_url if client else None
+    log.warning(
+        "Engine at %s: no answer from %s within %.1f s; reported as timeout", url, path, DEADLINE_S
+    )
