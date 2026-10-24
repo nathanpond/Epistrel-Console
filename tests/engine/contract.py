@@ -3,7 +3,9 @@
 Type mapping: ``str``/``int``/``float``/``bool`` ↔ ``string``/``integer``/``number``/``boolean``;
 ``Literal`` ↔ ``enum`` (as a set, plus its ``type``); ``dict[str, X]`` ↔ object with
 ``additionalProperties``; ``list[X]`` ↔ array with ``items``; ``X | None`` ↔ ``anyOf`` with null
-(or ``nullable``); a nested dataclass ↔ a ``$ref`` to the component of the same shape. Compared:
+(or ``nullable``); a nested dataclass ↔ a ``$ref`` to the component of the same shape; ``Any``
+(raw JSON) ↔ any schema, and ``dict[str, Any]`` ↔ an object with ``additionalProperties: true``
+(#44). Compared:
 type, enum, properties, required (a field is required when it has no default). Ignored: title,
 description, examples, default.
 """
@@ -31,6 +33,8 @@ def resolve(doc: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
 
 
 def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str) -> list[str]:
+    if tp is Any:
+        return []  # raw JSON: the model keeps whatever the Engine sends
     node = resolve(doc, node)
     origin = typing.get_origin(tp)
     if origin in (Union, types.UnionType):
@@ -73,6 +77,10 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
     if origin is dict:
         _, item_tp = typing.get_args(tp)
         extra = node.get("additionalProperties")
+        if item_tp is Any and extra is True:
+            if node.get("type") != "object" or node.get("properties"):
+                return [f"{where}: model is a dict but the schema is not a map"]
+            return []
         if node.get("type") != "object" or not isinstance(extra, dict) or node.get("properties"):
             return [f"{where}: model is a dict but the schema is not a map"]
         return compare_type(doc, item_tp, extra, f"{where}[*]")

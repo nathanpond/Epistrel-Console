@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Operations — Epistrel Console{% endblock %}
+{% block heading %}Operations{% endblock %}
+{% block content %}
+<p class="scope">Operations performed by this Console. Other Engine clients' operations are not shown.</p>
+
+<form method="get" action="" class="filters">
+  <label>Story
+    <select name="story">
+      <option value="">all</option>
+      {% for value in stories %}<option value="{{ value }}"{% if value == filters.story %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Kind
+    <select name="kind">
+      <option value="">all</option>
+      {% for value in kinds %}<option value="{{ value }}"{% if value == filters.kind %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Outcome
+    <select name="outcome">
+      <option value="">all</option>
+      {% for value in outcomes %}<option value="{{ value }}"{% if value == filters.outcome %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Operator
+    <select name="operator">
+      <option value="">all</option>
+      {% for value in operators %}<option value="{{ value }}"{% if value == filters.operator %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Policy
+    <select name="policy">
+      <option value="">all</option>
+      {% for value in policies %}<option value="{{ value }}"{% if value == filters.policy %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label><input type="checkbox" name="guardrail" value="1"{% if filters.guardrail %} checked{% endif %}> Guardrail rejections only</label>
+  <button type="submit">Filter</button>
+  <a href="{% url 'operations:list' %}">Clear</a>
+</form>
+
+{% if page.object_list %}
+<table class="operations">
+  <thead>
+    <tr>
+      <th>Time</th><th>Operator</th><th>Principal</th><th>Kind</th><th>Story</th>
+      <th>Outcome / error code</th><th>Timeline revision</th><th>Idempotency key</th>
+      <th>Config revision</th><th>Engine operation id</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in page.object_list %}
+    <tr class="operation outcome-{{ row.outcome }}">
+      <td><a href="{% url 'operations:detail' row.pk %}">{{ row.created_at|engine_time }}</a></td>
+      <td>{{ row.operator_username|default:"—" }}</td>
+      <td><code>{{ row.principal }}</code></td>
+      <td><code>{{ row.kind }}</code>{% if row.replayed %} (replayed){% endif %}</td>
+      <td>{% if row.story_id %}<a href="/stories/{{ row.story_id }}/"><code>{{ row.story_id }}</code></a>{% else %}—{% endif %}</td>
+      <td>{% if row.outcome == "queued" %}queued (unconfirmed){% else %}{{ row.outcome }}{% endif %}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}</td>
+      <td>{{ row.timeline_revision|default_if_none:"—" }}</td>
+      <td>{% if row.idempotency_key %}<code>{{ row.idempotency_key }}</code>{% else %}—{% endif %}</td>
+      <td>{{ row.config_revision|default_if_none:"—" }}</td>
+      <td>{% if row.engine_operation_id %}<a href="{% url 'operations:detail' row.pk %}"><code>{{ row.engine_operation_id }}</code></a>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if page.has_other_pages %}
+<p class="pager">
+  {% if page.has_previous %}<a href="{% querystring page=page.previous_page_number %}">← Newer</a>{% endif %}
+  Page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}<a href="{% querystring page=page.next_page_number %}">Older →</a>{% endif %}
+</p>
+{% endif %}
+{% else %}
+<p>No operations recorded{% if request.GET %} matching these filters{% endif %}.</p>
+{% endif %}
+{% endblock %}

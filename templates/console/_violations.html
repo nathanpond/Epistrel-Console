@@ -1,0 +1,12 @@
+{% comment %}Guardrail violations (#44). Context: `violations`, a list of ViolationRow.{% endcomment %}
+<table class="violations">
+  <thead><tr><th>Policy</th><th>Name</th><th>Message</th><th>Locator</th></tr></thead>
+  <tbody>
+    {% for v in violations %}
+    <tr>
+      <td><code>{{ v.policy_id }}</code></td><td>{{ v.name }}</td><td>{{ v.message }}</td>
+      <td>{% for locator in v.locators %}<code>{{ locator }}</code>{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

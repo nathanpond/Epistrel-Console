@@ -3,21 +3,35 @@
 The two "bites" tests run first and prove the check fails on a known-bad registry or model.
 """
 
-from dataclasses import dataclass
-from typing import Literal
+import types
+import typing
+from dataclasses import dataclass, fields
+from typing import Any, Literal
 
 import pytest
 
 from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
+    DegradationStep,
+    GuardrailViolation,
     HealthChecks,
     HealthResponse,
+    ModelCall,
+    OperationRecord,
+    OperationStage,
+    ProfileVersionRef,
+    QualityStatus,
+    StoredResult,
     StoryList,
     StoryRating,
     StorySummary,
+    TurnBudget,
+    TurnGuardrail,
+    TurnReport,
+    TurnWarning,
     WorkersCheck,
 )
-from tests.engine.contract import check_operation, compare_model
+from tests.engine.contract import check_operation, compare_model, compare_type
 from tests.fakes.engine import recorded_schema
 
 DOC = recorded_schema()
@@ -78,6 +92,17 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (StoryList, "StoryList"),
         (StorySummary, "StorySummaryBody"),
         (StoryRating, "StoryRatingBody"),
+        (OperationRecord, "OperationBody"),
+        (StoredResult, "StoredResultBody"),
+        (OperationStage, "StageBody"),
+        (ModelCall, "ModelCall"),
+        (TurnBudget, "BudgetBody"),
+        (DegradationStep, "DegradationBody"),
+        (GuardrailViolation, "GuardrailViolationBody"),
+        (TurnGuardrail, "GuardrailBody"),
+        (QualityStatus, "QualityStatus"),
+        (ProfileVersionRef, "ProfileVersionRef"),
+        (TurnWarning, "WarningBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -88,3 +113,39 @@ def test_models_match_their_components(model: type, component: str) -> None:
 def test_health_checks_both_declared_statuses() -> None:
     responses = DOC["paths"]["/health"]["get"]["responses"]
     assert {"200", "503"} <= set(responses)
+
+
+@pytest.mark.parametrize("component", ["RespondResponse", "RegeneratedBody"])
+def test_turn_report_fields_match_the_turn_responses(component: str) -> None:
+    """``TurnReport`` has no component of its own: each of its fields is one of the turn
+    response's, with the same type (only its required set is looser, by design)."""
+    node = DOC["components"]["schemas"][component]
+    properties = node["properties"]
+    hints = typing.get_type_hints(TurnReport)
+    problems = []
+    for f in fields(TurnReport):
+        if f.name not in properties:
+            problems.append(f"{f.name}: not a {component} property")
+            continue
+        tp = hints[f.name]
+        schema = properties[f.name]
+        required = f.name in node["required"]
+        if not required or typing.get_origin(tp) is not types.UnionType:
+            problems.extend(compare_type(DOC, tp, schema, f"{component}.{f.name}"))
+        else:  # required in the schema but optional here: compare the non-null part
+            (inner,) = [a for a in typing.get_args(tp) if a is not type(None)]
+            nullable = any(o.get("type") == "null" for o in schema.get("anyOf", []))
+            if nullable:
+                problems.extend(compare_type(DOC, tp, schema, f"{component}.{f.name}"))
+            else:
+                problems.extend(compare_type(DOC, inner, schema, f"{component}.{f.name}"))
+    assert problems == []
+
+
+def test_raw_json_fields_accept_any_schema() -> None:
+    @dataclass(frozen=True)
+    class Raw:
+        status: int
+        body: Any
+
+    assert compare_model(DOC, Raw, {"$ref": "#/components/schemas/StoredResultBody"}, "R") == []

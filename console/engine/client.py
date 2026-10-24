@@ -7,11 +7,14 @@ anything is sent. Each public method is registered with its ``(method, path)`` s
 test can check it against the recorded schema. The client never logs; callers do.
 """
 
+import functools
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, ParamSpec, Self, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -21,6 +24,7 @@ from console.engine.models import (
     HealthResponse,
     HealthResult,
     Model,
+    OperationRecord,
     StoryList,
     StorySummary,
 )
@@ -34,6 +38,12 @@ MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 PRINCIPAL_HEADER = "X-Epistrel-Principal"
 PRINCIPAL_MAX = 256
 RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
+# The headers ``_request`` sets itself; a caller's ``headers=`` never replaces them.
+OWN_HEADERS = frozenset({"user-agent", "accept", "authorization", PRINCIPAL_HEADER.lower()})
+
+# What ``_request`` returns. Code outside this module names the type through this alias, so
+# only this module imports httpx.
+EngineResponse = httpx.Response
 
 
 class EngineClientError(Exception):
@@ -78,11 +88,37 @@ class Operation:
     schema_exempt: bool
 
 
+@dataclass(frozen=True)
+class Call:
+    """The public client method running now: its name (the operation log's ``kind``, #44) and
+    its registration."""
+
+    kind: str
+    operation: Operation
+
+
 # "GET /health" -> Operation; filled by @operation, read by the contract test.
 OPERATIONS: dict[str, Operation] = {}
 
+_CURRENT_CALL: ContextVar[Call | None] = ContextVar("engine_call", default=None)
+
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+def current_call() -> Call | None:
+    """The registered client method whose request is being sent, if any."""
+    return _CURRENT_CALL.get()
+
+
+@contextmanager
+def calling(call: Call) -> Iterator[None]:
+    """Mark the requests sent inside this block as ``call``'s (what ``@operation`` does)."""
+    token = _CURRENT_CALL.set(call)
+    try:
+        yield
+    finally:
+        _CURRENT_CALL.reset(token)
 
 
 def operation(
@@ -91,11 +127,24 @@ def operation(
     response_model: type[Model] | None = None,
     schema_exempt: bool = False,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Register a client method as the Engine operation ``method path``."""
+    """Register a client method as the Engine operation ``method path``.
+
+    While the method runs, :func:`current_call` names it, so a subclass overriding
+    ``_request`` (the operation log's recorder, #44) knows which method and registration a
+    request belongs to.
+    """
 
     def register(func: Callable[P, R]) -> Callable[P, R]:
-        OPERATIONS[f"{method} {path}"] = Operation(method, path, response_model, schema_exempt)
-        return func
+        op = Operation(method, path, response_model, schema_exempt)
+        OPERATIONS[f"{method} {path}"] = op
+        call = Call(func.__name__, op)
+
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            with calling(call):
+                return func(*args, **kwargs)
+
+        return wrapper
 
     return register
 
@@ -151,7 +200,7 @@ class EngineClient:
         self.principal = principal
 
     @classmethod
-    def from_settings(cls, *, transport: httpx.BaseTransport | None = None) -> EngineClient:
+    def from_settings(cls, *, transport: httpx.BaseTransport | None = None) -> Self:
         url: str | None = settings.ENGINE_URL
         if url is None:
             raise EngineNotConfigured("no Engine URL is configured")
@@ -169,18 +218,25 @@ class EngineClient:
         principal: str | None = None,
         timeout: float | None = None,
         params: dict[str, str] | None = None,
-    ) -> httpx.Response:
-        """Send one request and return the raw response, whatever its status."""
+        json: object | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> EngineResponse:
+        """Send one request and return the raw response, whatever its status.
+
+        ``json`` is the request body; ``headers`` adds request headers (``Idempotency-Key``,
+        ``X-Epistrel-Expected-Revision``, ``Prefer``) but never replaces the client's own.
+        """
         method = method.upper()
-        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        extra = {k: v for k, v in (headers or {}).items() if k.lower() not in OWN_HEADERS}
+        sent = {**extra, "User-Agent": USER_AGENT, "Accept": "application/json"}
         if principal is None:
             principal = self.principal
         if principal is not None:
-            headers[PRINCIPAL_HEADER] = _principal_header(principal)
+            sent[PRINCIPAL_HEADER] = _principal_header(principal)
         elif method in MUTATING:
             raise ValueError(f"{method} {path} needs a requesting principal")
         if self._service_key and path.split("?", 1)[0] not in EXEMPT_PATHS:
-            headers["Authorization"] = f"Bearer {self._service_key}"
+            sent["Authorization"] = f"Bearer {self._service_key}"
         try:
             with httpx.Client(
                 timeout=httpx.Timeout(timeout if timeout is not None else self.timeout),
@@ -190,7 +246,7 @@ class EngineClient:
                 transport=self._transport,
             ) as client:
                 return client.request(
-                    method, f"{self.base_url}{path}", headers=headers, params=params
+                    method, f"{self.base_url}{path}", headers=sent, params=params, json=json
                 )
         except AssertionError:
             raise  # the fake Engine's signals reach the test
@@ -230,6 +286,17 @@ class EngineClient:
         params = {"status": status} if status is not None else None
         response = self._request("GET", "/stories", params=params)
         return _parse(response, StoryList).items
+
+    @operation("GET", "/operations/{operation_id}", response_model=OperationRecord)
+    def get_operation(self, operation_id: str, viewpoint: str | None = None) -> OperationRecord:
+        """``GET /operations/{id}``: the Engine's record of one operation.
+
+        ``viewpoint`` is needed to see a turn's stored ``result`` (the output viewpoint it was
+        produced for); another named viewpoint is 409 ``idempotency_conflict``.
+        """
+        params = {"viewpoint": viewpoint} if viewpoint else None
+        path = f"/operations/{quote(operation_id, safe='')}"
+        return _parse(self._request("GET", path, params=params), OperationRecord)
 
 
 def _parse[M: Model](response: httpx.Response, model: type[M]) -> M:

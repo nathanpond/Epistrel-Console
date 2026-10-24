@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Operation {{ row.pk }} — Epistrel Console{% endblock %}
+{% block heading %}Operation {{ row.pk }}: <code>{{ row.kind }}</code>{% endblock %}
+{% block content %}
+<p class="scope">Operations performed by this Console. Other Engine clients' operations are not shown.
+  <a href="{% url 'operations:list' %}">← All operations</a></p>
+
+<dl class="operation">
+  <dt>Time</dt><dd>{{ row.created_at|engine_time }}</dd>
+  <dt>Operator</dt><dd>{{ row.operator_username|default:"—" }}</dd>
+  <dt>Principal</dt><dd><code>{{ row.principal }}</code></dd>
+  <dt>Request</dt><dd><code>{{ row.http_method }} {{ row.path }}</code></dd>
+  <dt>Story</dt><dd>{% if row.story_id %}<a href="/stories/{{ row.story_id }}/"><code>{{ row.story_id }}</code></a>{% else %}—{% endif %}</dd>
+  <dt>Outcome</dt><dd>{% if row.outcome == "queued" %}queued (unconfirmed){% else %}{{ row.outcome }}{% endif %}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}{% if row.replayed %} (replayed){% endif %}</dd>
+  <dt>HTTP status</dt><dd>{{ row.http_status|default_if_none:"—" }}</dd>
+  <dt>Engine operation id</dt><dd>{% if row.engine_operation_id %}<code>{{ row.engine_operation_id }}</code>{% else %}—{% endif %}</dd>
+  <dt>Timeline revision</dt><dd>{{ row.timeline_revision|default_if_none:"—" }}</dd>
+  <dt>Config revision</dt><dd>{{ row.config_revision|default_if_none:"—" }}</dd>
+  <dt>Idempotency key</dt><dd>{% if row.idempotency_key %}<code>{{ row.idempotency_key }}</code>{% else %}—{% endif %}</dd>
+  <dt>Elapsed (Console)</dt><dd>{% if row.elapsed_ms is not None %}{{ row.elapsed_ms }} ms{% else %}—{% endif %}</dd>
+</dl>
+
+{% if input_violations %}
+<section class="guardrail-input">
+  <h2>Input rejected</h2>
+  {% include "console/_violations.html" with violations=input_violations %}
+</section>
+{% endif %}
+{% if output_violations %}
+<section class="guardrail-output">
+  <h2>Output</h2>
+  {% include "console/_violations.html" with violations=output_violations %}
+</section>
+{% endif %}
+
+{% if is_turn %}
+{% if report %}{% include "console/_turn_report.html" with report=report %}{% else %}<p>The turn report could not be read; see the response below.</p>{% endif %}
+{% endif %}
+
+<h2>Request</h2>
+<pre>{{ row.request|pretty_json }}</pre>
+<h2>Response</h2>
+{% if row.response is not None %}<pre>{{ row.response|pretty_json }}</pre>{% else %}<p>—</p>{% endif %}
+
+{% if row.engine_operation_id %}
+<h2>Engine's view</h2>
+<form method="get" action="">
+  <input type="hidden" name="fetch" value="1">
+  <button type="submit">Fetch from Engine</button>
+</form>
+{% if fetch_error %}
+{% include "console/_engine_error.html" with engine_error=fetch_error %}
+{% elif fetched %}
+<section class="engine-operation">
+  <dl>
+    <dt>Status</dt><dd>{{ fetched.status }}</dd>
+    <dt>Kind</dt><dd><code>{{ fetched.kind }}</code></dd>
+    <dt>Principal</dt><dd><code>{{ fetched.principal }}</code></dd>
+    <dt>Timeline revision</dt><dd>{{ fetched.timeline_revision|default_if_none:"—" }}</dd>
+    <dt>Started</dt><dd>{{ fetched.started_at|engine_time }}</dd>
+    <dt>Committed</dt><dd>{{ fetched.committed_at|engine_time }}</dd>
+    <dt>Config revisions</dt><dd>{% if fetched.config_revisions %}<pre>{{ fetched.config_revisions|pretty_json }}</pre>{% else %}—{% endif %}</dd>
+    <dt>Result</dt>
+    <dd>
+      {% if fetched.result %}
+      HTTP {{ fetched.result.status }}
+      {% if fetched_report %}{% include "console/_turn_report.html" with report=fetched_report %}{% else %}<pre>{{ fetched_body|pretty_json }}</pre>{% endif %}
+      {% else %}not available (outside the Engine's result window){% endif %}
+    </dd>
+  </dl>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

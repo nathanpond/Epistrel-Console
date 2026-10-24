@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import httpx
@@ -5,11 +6,13 @@ import pytest
 
 from console.engine.client import (
     OPERATIONS,
+    Call,
     EngineClient,
     EngineError,
     EngineNotConfigured,
     EngineUnreachable,
     _raise_for_envelope,
+    current_call,
 )
 from console.engine.models import HealthChecks, HealthResponse, StoryList, WorkersCheck
 from tests.fakes.engine import FakeEngine, recorded_schema, with_test_thing
@@ -411,3 +414,79 @@ def test_bad_default_principal_is_refused_before_sending(thing_engine: FakeEngin
     with pytest.raises(ValueError, match="reserved"):
         engine._request("POST", "/_test/thing")
     assert thing_engine.requests == []
+
+
+# --- #44: request bodies and headers, get_operation, the call context --------------------------
+
+
+def test_request_sends_a_json_body_and_extra_headers(thing_engine: FakeEngine) -> None:
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    client(thing_engine)._request(
+        "POST",
+        "/_test/thing",
+        principal="console:nate",
+        json={"to_turn": 2},
+        headers={"Idempotency-Key": "k1", "Prefer": "respond-async"},
+    )
+    (sent,) = thing_engine.requests
+    assert json.loads(sent.content) == {"to_turn": 2}
+    assert sent.headers["idempotency-key"] == "k1"
+    assert sent.headers["prefer"] == "respond-async"
+
+
+def test_extra_headers_never_replace_the_clients_own(thing_engine: FakeEngine) -> None:
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    client(thing_engine)._request(
+        "POST",
+        "/_test/thing",
+        principal="console:nate",
+        headers={
+            "Authorization": "Bearer forged",
+            "X-Epistrel-Principal": "console:mallory",
+            "user-agent": "forged",
+        },
+    )
+    (sent,) = thing_engine.requests
+    assert sent.headers["authorization"] == f"Bearer {KEY}"
+    assert sent.headers["x-epistrel-principal"] == "console:nate"
+    assert sent.headers["user-agent"].startswith("epistrel-console/")
+
+
+def test_get_operation_parses_the_record(fake_engine: FakeEngine) -> None:
+    fake_engine.respond(
+        "GET", "/operations/{operation_id}", 200, json=engine_fixture("get_operation")
+    )
+    record = client(fake_engine).get_operation("01JA0000000000000000000OP3", viewpoint="omniscient")
+    assert record.id == "01JA0000000000000000000OP3"
+    assert record.status == "committed"
+    assert record.principal == "console:nate"
+    assert record.config_revisions == {"story": 4}
+    assert record.result is not None
+    assert record.result.status == 200
+    assert record.result.body["timeline_revision"] == 7
+    assert fake_engine.requests[0].url.params["viewpoint"] == "omniscient"
+
+
+def test_get_operation_404_is_an_engine_error(fake_engine: FakeEngine) -> None:
+    error = {"error": {"code": "not_found", "message": "no such operation", "details": {}}}
+    fake_engine.respond("GET", "/operations/{operation_id}", 404, json=error)
+    with pytest.raises(EngineError) as caught:
+        client(fake_engine).get_operation("01JA0000000000000000000OP9")
+    assert (caught.value.http_status, caught.value.code) == (404, "not_found")
+
+
+def test_a_registered_method_names_its_call(fake_engine: FakeEngine) -> None:
+    seen: list[Call | None] = []
+
+    class Spy(EngineClient):
+        def _request(self, *args: Any, **kwargs: Any) -> httpx.Response:
+            seen.append(current_call())
+            return super()._request(*args, **kwargs)
+
+    fake_engine.respond("GET", "/stories", 200, json={"items": []})
+    Spy(URL, KEY, transport=fake_engine.transport).list_stories()
+    (call,) = seen
+    assert call is not None
+    assert call.kind == "list_stories"
+    assert call.operation == OPERATIONS["GET /stories"]
+    assert current_call() is None  # reset once the method returns

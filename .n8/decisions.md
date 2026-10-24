@@ -373,3 +373,39 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (drift):** #43 lands as two commits. A staging error (a pathspec for the already-moved `console/views.py`) made the first commit, `ed195bd`, carry only the `console/views.py` → `console/views/status.py` rename under the full story message; the second commit carries the rest. History was not rewritten (the brief forbids it); the pair is the story.
   **Why:** Amending would rewrite history, which the run's rules forbid even before a push.
   **Issue:** #43
+- **Decision:** The `EngineOperation` table (`console/models.py`, migration `0001_engine_operation`) is planned scope, not a Rule 4 surprise: #44's AC and must-haves prescribe it, and its discretion classes it as the "saved debug session" data CLAUDE.md allows.
+  **Why:** The plan names the model, its columns and the migration explicitly.
+  **Issue:** #44
+- **Decision (drift):** Four pass-2 discretion lines in #44 ("Column types:", "Error and failure rows:", "Queued turns:", "List page:") are empty headings; their sub-bullets are missing from every revision of the issue and from the planner's notes. The executor filled those areas from the round-one lines and the AC, as logged below.
+  **Why:** No source holds the lost text; the remaining lines cover each area.
+  **Issue:** #44
+- **Decision:** `@operation` now wraps each client method so `console.engine.client.current_call()` returns a `Call(kind=<method name>, operation=<registration>)` while it runs (`calling(call)` sets it by hand). `RecordingEngineClient(EngineClient)` in `console/engine_access.py` overrides only `_request`, reads that context, and records when the registration's method is POST/PUT/PATCH/DELETE. A bare `_request` call outside any registered method goes by its own HTTP method and gets kind `"<METHOD> <path>"`.
+  **Why:** The planner's "override the single internal request method" needs the method name and registration there; a context var gives both without a hand-kept list, so a new `@operation` method is recorded with no extra code.
+  **Issue:** #44
+- **Decision:** `_request` gains `json=` (the body) and `headers=` (extra request headers; `User-Agent`, `Accept`, `Authorization` and `X-Epistrel-Principal` can never be overridden through it). `EngineClient.from_settings()` returns `Self`. `console.engine.client.EngineResponse` aliases `httpx.Response`, so the recorder names the type without importing httpx (boundary rule).
+  **Why:** Mutating methods (#45 on) need a body and the idempotency/revision/Prefer headers; the recorder needs the response type.
+  **Issue:** #44
+- **Decision:** Row logic lives in `console/operation_log.py` (`Observed`, `row_fields`, `record`, `complete_queued`, plus the readers `turn_report_json`, `is_turn`, `input_violations`, `output_violations`, `policy_ids`, `is_guardrail_rejection`). `console.engine_access.complete_queued(engine_operation_id, op_record)` is #48's entry point.
+  **Why:** Keeps the recorder small and the guardrail readers shared by the views and #48.
+  **Issue:** #44
+- **Decision:** Outcome rules: 202 with a JSON object → `queued`; other 2xx → `ok` when it is a replay (`Idempotent-Replay: true` or a body with `reference`), a 204, a call with no response model, or a body that parses as the registration's response model; else `error`/`bad_response`. Non-2xx → `error` with the envelope's code, else `http_<status>`. The model check is skipped for 202, because a method's response model describes its 200.
+  **Why:** The planner's "parse failure is bad_response" applied inside `_request`, where the registration's model is known.
+  **Issue:** #44
+- **Decision (drift):** A turn's `RespondResponse` has no top-level `operation_id`, so the generic extractor also takes the first `beats[].operation_id` (after top-level `operation_id` and the ingest batch's `results[0].operation_id`). Without it no turn row could offer "Fetch from Engine" (demo step 4).
+  **Why:** The recorded schema puts the turn's operation id only on its beats.
+  **Issue:** #44
+- **Decision (drift):** Absent text values (`story_id`, `engine_operation_id`, `idempotency_key`, `error_code`) are stored as `""`, not `NULL`. Numbers and JSON stay nullable (`http_status`, `response`, revisions, `elapsed_ms`). `story_id` and `engine_operation_id` are kept only when they fit 26 characters.
+  **Why:** ruff's DJ001 (enabled in this repo) forbids `null=True` on CharFields and the brief forbids suppressing it; `""` is Django's convention for "no value" in text columns. An over-long path id (unknown ids pass through to the Engine) is not a ULID and stays visible in `path`.
+  **Issue:** #44
+- **Decision:** Every `queued` row lists as "queued (unconfirmed)", and `complete_queued` settles a row only on `committed` (→ `ok`, response replaced by the stored result, redacted, when present) or `failed`/`abandoned` (→ `error`, code from the stored result's error envelope, else the status).
+  **Why:** The Console cannot tell a cutoff-hit row from one still polling without another column; the AC's label fits both.
+  **Issue:** #44
+- **Decision:** `OperationRecord` mirrors `OperationBody` in full; `result.body`, `creation_report`, `eval_hooks` and `read_set` are raw JSON (`Any`). The contract mapping (`tests/engine/contract.py`) learns `Any` ↔ any schema and `dict[str, Any]` ↔ `additionalProperties: true`. `TurnReport` has no component of its own; a new contract test checks each of its fields against `RespondResponse` and `RegeneratedBody`. Only `model_calls` and `elapsed_ms` are required, so it also reads a 422/503 `details`.
+  **Why:** The planner keeps `result` raw; the contract test needs every `OperationBody` property typed.
+  **Issue:** #44
+- **Decision:** The "Fetch from Engine" result is shown redacted (the same `redact()` as stored rows), and the Fetch panel also shows kind, timeline revision and start/commit times beside the AC's status, principal, `config_revisions` and `result`.
+  **Why:** A stored result could echo a secret; the extra fields cost nothing.
+  **Issue:** #44
+- **Decision:** The operator filter matches `operator_username` (the snapshot), so rows of a deleted user stay filterable. The guardrail readers treat the input side as `error.details.violations` and the output side as the turn report's `guardrail.violations`; the policy select lists ids from both.
+  **Why:** Attribution must survive user deletion; the AC's policy filter covers both kinds of rejection.
+  **Issue:** #44
