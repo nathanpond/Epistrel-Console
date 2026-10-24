@@ -219,8 +219,16 @@ MYPY_STRICTER = re.compile(
     r"(?:disallow|warn|check|strict)_\w+|extra_checks|local_partial_types|strict"
 )
 # An inline config comment, or a whole-line `# type: ignore` (above the code, it skips the file),
-# with or without a trailing `# reason` (#120). A whole-line `# type: ignore[code]` is an error.
-MYPY_INLINE = re.compile(r"^\s*#\s*(?:mypy\s*:|type\s*:\s*ignore\s*(?:#.*)?$)", re.MULTILINE)
+# with or without a trailing `# reason` (#120) or an empty code list (`[]`, `[ , ]`: mypy 2.4 drops
+# empty codes, leaving a whole-file ignore, #122). A whole-line `# type: ignore[code]` is an error.
+MYPY_INLINE = re.compile(
+    r"^\s*#\s*(?:mypy\s*:|type\s*:\s*ignore\s*(?:\[[\s,]*\]\s*)?(?:#.*)?$)", re.MULTILINE
+)
+# typing's no-type-check decorator turns checking off for a function or class (#122). Its name
+# is spelled in pieces here so this file, which is scanned too, holds no match.
+MYPY_NO_CHECK = re.compile("no_type" + "_check")
+# Directories the source scan skips: dot-dirs (.venv, .git, caches), bytecode, node packages.
+MYPY_SCAN_SKIP = re.compile(r"^(?:\..*|__pycache__|node_modules)$")
 # Config files mypy reads in place of `[tool.mypy]` when present (#120).
 MYPY_SHADOWING_FILES = ("mypy.ini", ".mypy.ini")
 
@@ -265,11 +273,15 @@ def mypy_weakenings(ci: dict[str, Any], pyproject: dict[str, Any]) -> list[str]:
 
 
 def mypy_inline_weakenings(sources: dict[str, str]) -> list[str]:
-    """``path:line`` of each inline mypy config comment or whole-line ``# type: ignore``."""
-    return [
+    """``path:line`` of each inline mypy config comment, whole-line ``# type: ignore`` or use of
+    the no-type-check decorator, plus every ``.pyi`` (mypy checks a stub in place of its module,
+    #122)."""
+    found = [f"{path}: stub" for path in sources if path.endswith(".pyi")]
+    return found + [
         f"{path}:{text.count(chr(10), 0, m.start()) + 1}"
         for path, text in sources.items()
-        for m in MYPY_INLINE.finditer(text)
+        for pattern in (MYPY_INLINE, MYPY_NO_CHECK)
+        for m in pattern.finditer(text)
     ]
 
 
@@ -284,11 +296,14 @@ def mypy_config_shadows(root: Path) -> list[str]:
     return found
 
 
-def mypy_sources() -> dict[str, str]:
-    paths = [REPO_ROOT / f for f in MYPY_FILES]
-    files = [p for p in paths if p.is_file()]
-    files += [f for p in paths if p.is_dir() for f in sorted(p.rglob("*.py"))]
-    return {str(f.relative_to(REPO_ROOT)): f.read_text(encoding="utf-8") for f in files}
+def mypy_sources(root: Path = REPO_ROOT) -> dict[str, str]:
+    """Every first-party ``.py`` and ``.pyi`` under ``root``, not only ``MYPY_FILES``: mypy follows
+    imports into any package here (#122). Read as utf-8-sig, so a BOM cannot hide line 1."""
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not MYPY_SCAN_SKIP.match(d))
+        files += [Path(dirpath) / n for n in sorted(filenames) if n.endswith((".py", ".pyi"))]
+    return {str(f.relative_to(root)): f.read_text(encoding="utf-8-sig") for f in files}
 
 
 def load_pyproject() -> dict[str, Any]:
@@ -299,6 +314,7 @@ def test_mypy_is_not_weakened() -> None:
     assert mypy_weakenings(load(CI), load_pyproject()) == []
     assert mypy_inline_weakenings(mypy_sources()) == []
     assert len(mypy_sources()) > 20
+    assert "tests/test_workflows.py" in mypy_sources()
     assert mypy_config_shadows(REPO_ROOT) == []
 
 
@@ -328,6 +344,19 @@ def test_mypy_config_shadow_bites(
         "# type: ignore",
         "# type: ignore  # legacy",
         "#type:ignore#x",
+        # Each of these was checked to skip the whole file under mypy 2.4 (#122).
+        "# type: ignore[]",
+        "# type: ignore[ , ]",
+        "# type: ignore[,]",
+        "# type: ignore[,,]",
+        "# type: ignore[ ]",
+        "# type: ignore[\t]",
+        "# type: ignore []",
+        "#type:ignore[]",
+        "\t# type: ignore[]",
+        "# type: ignore[]  # why",
+        "@typing." + "no_type" + "_check",
+        "from typing import " + "no_type" + "_check",
     ],
 )
 def test_inline_mypy_weakening_bites(line: str) -> None:
@@ -335,6 +364,44 @@ def test_inline_mypy_weakening_bites(line: str) -> None:
     assert mypy_inline_weakenings(sources) == ["console/x.py:2"]
     # A `# type: ignore[code]` on a line of code is a normal, checked (warn_unused_ignores) ignore.
     assert mypy_inline_weakenings({"a.py": "x: int = y  # type: ignore[name-defined]\n"}) == []
+
+
+@pytest.mark.parametrize("line", ["# type: ignore[misc]", "# type: ignore [misc]"])
+def test_whole_line_ignore_with_a_code_is_allowed(line: str) -> None:
+    # mypy reports a module-level `ignore[code]` as an error rather than skipping the file.
+    assert mypy_inline_weakenings({"console/x.py": f"{line}\nimport os\n"}) == []
+
+
+def write_source(root: Path, rel: str, data: bytes) -> None:
+    (root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (root / rel).write_bytes(data)
+
+
+def test_bom_does_not_hide_a_line_one_ignore(tmp_path: Path) -> None:
+    write_source(tmp_path, "console/x.py", b"\xef\xbb\xbf# type: ignore\nimport os\n")
+    assert mypy_inline_weakenings(mypy_sources(tmp_path)) == ["console/x.py:1"]
+
+
+def test_a_stub_is_refused(tmp_path: Path) -> None:
+    write_source(tmp_path, "console/apps.py", b"x = 1\n")
+    write_source(tmp_path, "console/apps.pyi", b"x: int\n")
+    assert mypy_inline_weakenings(mypy_sources(tmp_path)) == ["console/apps.pyi: stub"]
+
+
+def test_packages_outside_mypy_files_are_scanned(tmp_path: Path) -> None:
+    write_source(tmp_path, "helperpkg/__init__.py", b"# type: ignore\n")
+    write_source(tmp_path, "top.py", b"# mypy: ignore-errors\n")
+    assert sorted(mypy_inline_weakenings(mypy_sources(tmp_path))) == [
+        "helperpkg/__init__.py:1",
+        "top.py:1",
+    ]
+
+
+def test_scan_skips_virtualenvs_caches_and_node_packages(tmp_path: Path) -> None:
+    for skipped in (".venv/lib/x.py", ".git/x.py", "a/__pycache__/x.py", "node_modules/x.py"):
+        write_source(tmp_path, skipped, b"# type: ignore\n")
+    write_source(tmp_path, "console/x.py", b"x = 1\n")
+    assert list(mypy_sources(tmp_path)) == ["console/x.py"]
 
 
 @pytest.mark.parametrize(
