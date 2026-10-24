@@ -124,3 +124,25 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Why:** Engine M3 moved engine dials into profiles and added paused/held states and erasure error codes; Console M2 runs against `main`.
 - **Decision:** Deployment `profile_defaults` are shown read-only in #50; M3 #84 edits them with its schema-generated form (owner: "recs").
 - **Decision:** The `embedding` model is read-only in #46; editing it waits for M4 (#59), because a change re-embeds every story (owner: "recs").
+
+## /n8-exec M0 — 2026-10-24
+
+- **Decision:** `httpx` was added as a runtime dependency in #29 rather than #30, because #29's dev-server test drives the running server with it.
+  **Issue:** #29
+- **Decision:** The test asserting that runserver never starts checks that `development server at` is absent, not the planned literal "Starting development server". Django 6.1 prints "Starting WSGI development server", so the planned check would have passed vacuously.
+  **Issue:** #29
+- **Decision:** `CONSOLE_DATA_DIR` is in `engine_config.KNOWN_VARS` from #29 on, since #31 in the same milestone uses it.
+  **Issue:** #29, #31
+- **Decision (drift, implementation detail):** The probe accepts any JSON object as `checks`, not only string values. Only string checks other than `ok`, `skipped` and `missing` count as failing.
+  **Why:** Engine `main`'s health checks contain objects (`workers`), numbers and null (timers, `erasure_pending`). Under the planned "all values are strings" rule a healthy Engine would read "bad response". `missing` is ffmpeg/ffprobe, which the Engine says never changes its status. A 200 `degraded` reads Unhealthy with reason `status degraded` until M2's #43 adds the Degraded state.
+  **Issue:** #30
+- **Decision:** gunicorn 26 starts a control socket under `/app/.gunicorn`, which the non-root user can't write. The entrypoint passes `--no-control-socket`.
+  **Why:** The Console doesn't use the control interface, and making `/app` writable would weaken the image.
+  **Issue:** #31
+- **Decision:** uv pinned at 0.13.5 in the Dockerfile (`gh api repos/astral-sh/uv/releases/latest`, 2026-10-24).
+  **Issue:** #31
+- **Decision (drift, Rule 3):** The compose `engine` service sets the Engine compose's dev-only `EPISTREL_SERVICE_CREDENTIALS` and `EPISTREL_CONFIG_KEY` and mounts `engine-media` and `engine-erasure-ledger` volumes. All of this was planned for M2's #42.
+  **Why:** Engine `edge` refuses to start without a service credential, so #32's "three healthy services" was impossible otherwise. The Console still sends no key; #42 adds that. No `command` is set, because the Engine image already defaults to `serve --mode all`.
+  **Issue:** #32, #42
+- **Decision:** The compose pull test accepts the console tag listed as "Skipped" (Compose's output for `pull_policy: build`) and asserts the Engine `edge` image is pulled.
+  **Issue:** #32
