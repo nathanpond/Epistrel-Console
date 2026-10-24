@@ -8,7 +8,7 @@ import httpx
 import pytest
 from django.test import Client, override_settings
 
-from console import engine_status
+from console import engine_api_check, engine_probe, engine_status
 from console.engine.client import EngineClient
 from tests.fakes.engine import FakeEngine, recorded_schema
 
@@ -88,4 +88,31 @@ def test_a_call_past_the_deadline_reports_timeout(
     ]
     assert deadline_lines == [
         f"Engine at http://engine.test: no answer from {slow} within 0.3 s; reported as timeout"
+    ]
+
+
+def test_an_abandoned_call_still_logs_its_own_outcome_later(
+    fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Documented in engine_status (#117): the page says `timeout` at the deadline; the call is
+    # not cancelled, and its own line (here `unknown: bad response`) follows when it finishes.
+    monkeypatch.setattr(engine_status, "DEADLINE_S", 0.3)
+    monkeypatch.setattr(engine_api_check, "_last_verdict", None)
+    monkeypatch.setattr(engine_api_check, "_last_logged", 0.0)
+    monkeypatch.setattr(engine_probe, "_last_state", None)
+    fake_engine.respond("GET", "/health", 200, json=OK)
+    fake_engine.serve("GET", "/openapi.json", 200, json=["not", "a", "schema"], delay=0.8)
+    client = EngineClient("http://engine.test", None, transport=fake_engine.transport)
+    late = "Engine API at http://engine.test unknown: bad response"
+    with caplog.at_level(logging.WARNING, logger="console.engine"):
+        _, checked = engine_status.probe_engine(client)
+        assert (checked.verdict, checked.reason) == ("unknown", "timeout")
+        assert late not in caplog.messages
+        give_up = time.monotonic() + 5.0
+        while late not in caplog.messages and time.monotonic() < give_up:
+            time.sleep(0.05)
+    assert caplog.messages == [
+        "Engine at http://engine.test: no answer from /openapi.json within 0.3 s; "
+        "reported as timeout",
+        late,
     ]

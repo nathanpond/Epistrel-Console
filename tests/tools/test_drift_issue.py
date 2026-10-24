@@ -1,6 +1,9 @@
 """tools.drift_issue against a fake `gh`: one issue, no spam, self-closing, outages ignored."""
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +23,7 @@ from tools.drift_issue import (
 )
 
 CTX = Context("nathanpond/Epistrel-Console", "https://gh/run/1", "eng@sha256:aa", "m3")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DIFF = "Components changed:\n  schemas/HealthResponse\n"
 WRITES = ("create", "comment", "close", "edit")
 
@@ -172,3 +176,30 @@ def test_main_reads_the_diff_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert "schemas/HealthResponse" in body
     assert "Run:" not in body
     assert "-R" not in create
+
+
+@pytest.mark.parametrize("diff", ["", "\n", "  \n\t\n"])
+def test_drift_with_an_empty_diff_is_no_verdict(
+    diff: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gh = FakeGh([bot_issue()])
+    assert run(1, diff, CTX, gh) == 4
+    assert gh.calls == []
+    assert "empty diff is no verdict" in capsys.readouterr().err
+
+
+def test_a_crash_before_the_command_opens_no_issue(tmp_path: Path) -> None:
+    # #117's repro: Django can't start, so Python exits 1 with nothing on stdout.
+    diff_file = tmp_path / "diff.txt"
+    env = {**os.environ, "DJANGO_SETTINGS_MODULE": "nope"}
+    with diff_file.open("w") as out:
+        done = subprocess.run(
+            [sys.executable, "manage.py", "engine_schema", "--check", "--url", "http://127.0.0.1:1"],
+            cwd=REPO_ROOT, env=env, stdout=out, stderr=subprocess.DEVNULL, timeout=60, check=False,
+        )  # fmt: skip
+    assert done.returncode == 1
+    assert diff_file.read_text() == ""
+    gh = FakeGh()
+    code = drift_issue.main(["--exit-code", "1", "--diff-file", str(diff_file)], gh=gh)
+    assert code == 4
+    assert gh.calls == []

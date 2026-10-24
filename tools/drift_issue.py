@@ -6,7 +6,9 @@
 ``N`` is ``manage.py engine_schema --check``'s exit code. 1 (drift): create the issue, or comment
 on the open one when the diff changed since it was last reported; exit 1 so the run is red.
 0 (in sync): close an open drift issue with a note; exit 0. Anything else (the Engine could not be
-read, a usage error) is not drift: no issue is touched and the code is passed through.
+read, a usage error) is not drift: no issue is touched and the code is passed through. So is 1 with
+an empty diff (#117): a crash before the command ran (Django startup, a settings import) also exits
+1, with nothing on stdout. That exits 4 (no verdict), touching nothing.
 
 The issue is found by three things together: opened by github-actions, the exact title, and the
 fingerprint as the body's last line, so the story issue that describes this tool never matches.
@@ -36,6 +38,7 @@ BOTS = frozenset({"github-actions[bot]", "app/github-actions", "github-actions"}
 LABELS = ("needs-triage", "area:client")
 MAX_DIFF = 60_000
 TRUNCATED = "… (truncated — full diff in the run's engine-drift-diff artifact)"
+NO_VERDICT = 4  # as engine_schema's own "no verdict"
 
 Runner = Callable[[list[str]], str]
 
@@ -133,6 +136,13 @@ def _repo_args(ctx: Context) -> list[str]:
 def run(exit_code: int, diff: str, ctx: Context, gh: Runner) -> int:
     if exit_code not in (0, 1):
         return exit_code  # unavailability is not drift: touch nothing
+    if exit_code == 1 and not diff.strip():
+        print(
+            "drift_issue: exit 1 with an empty diff is no verdict (the check failed before it "
+            "compared anything); no issue touched",
+            file=sys.stderr,
+        )
+        return NO_VERDICT
     listing = gh(
         [
             "issue",
