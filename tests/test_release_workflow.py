@@ -10,13 +10,14 @@ import pytest
 from tests.test_workflows import (
     WORKFLOWS,
     gate_bypasses,
+    git,
     jobs,
     load,
     tagging_bypasses,
     triggers,
     write_permissions,
 )
-from tests.workflow_steps import run_step, step
+from tests.workflow_steps import StepRun, run_step, step
 
 RELEASE = WORKFLOWS / "release.yml"
 
@@ -235,3 +236,89 @@ def test_a_rerun_edits_the_existing_release_and_creates_nothing(tmp_path: Path) 
     (edit,) = result.called("gh", "release", "edit")
     assert edit == ["gh", "release", "edit", "v0.2.0", "--notes-file", "body.md"]
     assert "Earlier notes" in (tmp_path / "body.md").read_text()
+
+
+# --- the workflow acts on validate's refusal and on main-reachability (#113) ----------------
+
+VALIDATE = step(jobs(load(RELEASE))["validate"], "validate")["run"]
+REACHABLE = step(jobs(load(RELEASE))["validate"], "Tag must be reachable from main")["run"]
+ACCEPTS = """
+printf 'version=0.2.0\\nprerelease=false\\nengine_image=ghcr.io/nathanpond/epistrel:0.2.0\\n'
+exit 0
+"""
+REFUSES = 'echo "v9.9.9: no Engine image ghcr.io/nathanpond/epistrel:9.9.9"; exit 1'
+
+
+def validate(tmp_path: Path, uv: str, script: str = VALIDATE) -> StepRun:
+    (tmp_path / "released.txt").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "released.txt").write_text("", encoding="utf-8")
+    env = {"GITHUB_REF_NAME": "v9.9.9"}
+    return run_step(script, tmp_path, env=env, stubs={"uv": uv})
+
+
+def test_validate_publishes_its_verdict_as_outputs(tmp_path: Path) -> None:
+    result = validate(tmp_path, ACCEPTS)
+    assert result.rc == 0, result.output
+    assert result.outputs["engine_image"] == "ghcr.io/nathanpond/epistrel:0.2.0"
+    (call,) = result.called("uv")
+    assert call[:6] == ["uv", "run", "python", "-m", "tools.release", "validate"]
+
+
+def test_a_refused_validate_fails_the_job_with_no_outputs(tmp_path: Path) -> None:
+    result = validate(tmp_path, REFUSES)
+    assert result.rc != 0
+    assert "::error::v9.9.9: no Engine image" in result.output
+    # Nothing reaches $GITHUB_OUTPUT: an empty engine_image can't fall through to `edge`.
+    assert (tmp_path / ".output").read_text(encoding="utf-8") == ""
+
+
+def test_validate_refusal_rule_bites(tmp_path: Path) -> None:
+    # The pipe the step's comment warns about: tee's status hides the refusal.
+    piped = (
+        'uv run python -m tools.release validate --tag "$GITHUB_REF_NAME" '
+        '--released-file released.txt | tee -a "$GITHUB_OUTPUT"\n'
+    )
+    assert validate(tmp_path / "piped", REFUSES, piped).rc == 0
+    assert VALIDATE.count("exit 1") == 1
+    assert validate(tmp_path / "exit0", REFUSES, VALIDATE.replace("exit 1", "exit 0")).rc == 0
+
+
+def test_ci_and_publish_run_only_on_success() -> None:
+    # No `if:` is the implicit success(): an always() would run them after a refused validate.
+    for name in ("ci", "publish"):
+        assert "if" not in jobs(load(RELEASE))[name], name
+
+
+@pytest.fixture(scope="module")
+def tag_repo(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """An ``origin`` with ``main`` at A and ``feature`` at B, and a full clone of it."""
+    root = tmp_path_factory.mktemp("release-repo")
+    origin, clone = root / "origin", root / "clone"
+    origin.mkdir()
+    git(origin, "init", "-q", "-b", "main")
+    git(origin, "commit", "-q", "--allow-empty", "-m", "A")
+    main = git(origin, "rev-parse", "HEAD")
+    git(origin, "switch", "-q", "-c", "feature")
+    git(origin, "commit", "-q", "--allow-empty", "-m", "B")
+    feature = git(origin, "rev-parse", "HEAD")
+    git(origin, "switch", "-q", "main")
+    git(root, "clone", "-q", str(origin), str(clone))
+    return {"clone": clone, "main": main, "feature": feature}
+
+
+def reachable(tag_repo: dict[str, Any], sha: str, script: str = REACHABLE) -> StepRun:
+    env = {"GITHUB_SHA": sha, "GITHUB_REF_NAME": "v0.2.0"}
+    return run_step(script, tag_repo["clone"], env=env)
+
+
+def test_a_tag_off_main_is_refused(tag_repo: dict[str, Any]) -> None:
+    on_main = reachable(tag_repo, tag_repo["main"])
+    assert on_main.rc == 0, on_main.output
+    off_main = reachable(tag_repo, tag_repo["feature"])
+    assert off_main.rc == 1
+    assert f"v0.2.0 points at {tag_repo['feature']}, which is not on main" in off_main.output
+
+
+def test_main_reachability_rule_bites(tag_repo: dict[str, Any]) -> None:
+    assert REACHABLE.count("exit 1") == 1
+    assert reachable(tag_repo, tag_repo["feature"], REACHABLE.replace("exit 1", "true")).rc == 0
