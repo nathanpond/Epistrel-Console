@@ -15,10 +15,12 @@ dependencies = [
 [dependency-groups]
 dev = [
     "django-stubs[compatible-mypy]>=5.2",
+    "jsonschema>=4.23",
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-django>=4.9",
     "ruff>=0.8",
+    "types-jsonschema>=4.26.0.20261006",
 ]
 
 [tool.uv]
