@@ -10,7 +10,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from tests.helpers import REPO, free_port
+from tests.helpers import REPO, SERVICE_KEY, free_port
 
 pytestmark = [
     pytest.mark.docker,
@@ -84,12 +84,13 @@ def read_key(container: str) -> str:
 
 
 ENGINE = "CONSOLE_ENGINE_URL=http://127.0.0.1:9"
+KEY = f"CONSOLE_ENGINE_SERVICE_KEY={SERVICE_KEY}"
 
 
 def test_runs_healthy_with_static_and_a_persistent_key(image: str, run: Run) -> None:
     volume = run.volume()
     port = free_port()
-    container = run.start(image, volume, ENGINE, port=port)
+    container = run.start(image, volume, ENGINE, KEY, port=port)
     wait_healthy(container)
     health = httpx.get(f"http://127.0.0.1:{port}/health", timeout=10)
     assert health.status_code == 200
@@ -102,13 +103,23 @@ def test_runs_healthy_with_static_and_a_persistent_key(image: str, run: Run) -> 
     docker("restart", container)
     wait_healthy(container)
     assert read_key(container) == key
-    other = run.start(image, run.volume(), ENGINE)
+    other = run.start(image, run.volume(), ENGINE, KEY)
     wait_healthy(other)
     assert read_key(other) != key
 
 
-def test_refuses_without_engine_url(image: str, run: Run) -> None:
-    container = run.start(image, run.volume())
+@pytest.mark.parametrize(
+    ("env", "line"),
+    [
+        ((KEY,), "error: CONSOLE_ENGINE_URL: is required"),
+        ((ENGINE,), "error: CONSOLE_ENGINE_SERVICE_KEY: is required"),
+    ],
+    ids=["no-url", "no-key"],
+)
+def test_refuses_without_engine_url_or_key(
+    image: str, run: Run, env: tuple[str, ...], line: str
+) -> None:
+    container = run.start(image, run.volume(), *env)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         status = json.loads(docker("inspect", container).stdout)[0]["State"]
@@ -118,7 +129,7 @@ def test_refuses_without_engine_url(image: str, run: Run) -> None:
     assert status["Status"] == "exited"
     assert status["ExitCode"] != 0
     logs = docker("logs", container).stderr + docker("logs", container).stdout
-    assert "error: CONSOLE_ENGINE_URL: is required" in logs
+    assert line in logs
 
 
 def test_image_contents(image: str) -> None:

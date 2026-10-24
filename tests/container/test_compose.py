@@ -19,6 +19,9 @@ pytestmark = [
     pytest.mark.docker,
     pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available"),
 ]
+DEV_CREDENTIAL = "dev-only-credential-change-me-00000000"
+DEV_CONFIG_KEY = "ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA="
+DEV_ONLY_COMMENT = "# dev-only default — override for anything but local use"
 PROJECT = "epistrel-console-test"
 TEST_PORT = 7740
 BASE = f"http://127.0.0.1:{TEST_PORT}"
@@ -63,12 +66,37 @@ def test_only_console_publishes_a_port_on_localhost() -> None:
     assert "ports" not in services["db"]
 
 
-def test_no_restart_policy_and_no_console_secrets() -> None:
+def test_no_restart_policy_and_no_console_secret_key() -> None:
     services = real_config()["services"]
     assert all("restart" not in service for service in services.values())
+    assert "DJANGO_SECRET_KEY" not in services["console"]["environment"]
+
+
+def test_engine_and_console_share_the_dev_only_credential() -> None:
+    services = real_config()["services"]
+    engine_env = services["engine"]["environment"]
     console_env = services["console"]["environment"]
-    assert "CONSOLE_ENGINE_SERVICE_KEY" not in console_env
-    assert "DJANGO_SECRET_KEY" not in console_env
+    assert engine_env["EPISTREL_SERVICE_CREDENTIALS"] == DEV_CREDENTIAL
+    assert console_env["CONSOLE_ENGINE_SERVICE_KEY"] == DEV_CREDENTIAL
+    # Copied from the Engine compose at the `edge` commit (3d4c7f4), never invented.
+    assert engine_env["EPISTREL_CONFIG_KEY"] == DEV_CONFIG_KEY
+    text = (REPO / "docker-compose.yml").read_text()
+    for literal in (DEV_CREDENTIAL, DEV_CONFIG_KEY):
+        lines = [line for line in text.splitlines() if literal in line]
+        assert lines
+        assert all(line.endswith(f"  {DEV_ONLY_COMMENT}") for line in lines), lines
+
+
+def test_engine_mounts_media_and_erasure_ledger_volumes() -> None:
+    config = real_config()
+    mounts = {
+        (m["type"], m["source"], m["target"]) for m in config["services"]["engine"]["volumes"]
+    }
+    assert mounts == {
+        ("volume", "engine-media", "/var/lib/epistrel/media"),
+        ("volume", "engine-erasure-ledger", "/var/lib/epistrel/erasure-ledger"),
+    }
+    assert {"engine-media", "engine-erasure-ledger"} <= set(config["volumes"])
 
 
 def test_console_runs_the_published_edge_image() -> None:
@@ -194,6 +222,28 @@ def login(username: str, password: str) -> bool:
         return client.get("/admin/").status_code == 200
 
 
+# Run inside the console container: no Engine port is published. Prints [status, error code].
+ENGINE_CALL = """
+import json
+from console.engine.client import EngineClient
+response = EngineClient("http://engine:8000", {key!r})._request("GET", "/stories")
+try:
+    code = response.json().get("error", {{}}).get("code")
+except ValueError:
+    code = None
+print(json.dumps([response.status_code, code]))
+"""
+
+
+def engine_call(path: Path, service_key: str) -> list[Any]:
+    out = compose(
+        "exec", "-T", "console", "python", "manage.py", "shell", "-c",
+        ENGINE_CALL.format(key=service_key), file=path,
+    ).stdout  # fmt: skip
+    result: list[Any] = json.loads(out.strip().splitlines()[-1])
+    return result
+
+
 def key(path: Path) -> str:
     return compose("exec", "-T", "console", "cat", "/data/secret_key", file=path).stdout.strip()
 
@@ -206,6 +256,9 @@ def test_stack_lifecycle(stack_file: Path) -> None:
     page = httpx.get(f"{BASE}/", timeout=10)
     assert page.status_code == 200
     assert "Healthy" in page.text
+    # The Engine enforces the credential (#42): the Console's key is accepted, a wrong one is not.
+    assert engine_call(stack_file, DEV_CREDENTIAL) == [200, None]
+    assert engine_call(stack_file, "wrong-key-" + "0" * 32) == [401, "unauthenticated"]
 
     compose("stop", "engine", file=stack_file)
     wait_state("unreachable", 30)

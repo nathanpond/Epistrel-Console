@@ -2,7 +2,8 @@
 # Start the Engine image next to a Postgres service container, wait for it, and say which build it
 # is. Used by ci.yml's engine-smoke job (#36) and engine-drift.yml (#40).
 #
-#   engine-up.sh start      pull ENGINE_IMAGE (one retry) and `docker run` it as `engine` on NETWORK
+#   engine-up.sh start      pull ENGINE_IMAGE (one retry), `docker run` it as `engine` on NETWORK, and
+#                           write ENGINE_LIVE_SERVICE_KEY (the Engine's credential) to $GITHUB_ENV
 #   engine-up.sh wait       poll http://127.0.0.1:8000/health every 2 s, up to 120 s
 #   engine-up.sh identify   write engine_digest / engine_version to $GITHUB_OUTPUT
 #   engine-up.sh summary    a two-row table in $GITHUB_STEP_SUMMARY (ENGINE_DIGEST, ENGINE_VERSION)
@@ -14,20 +15,22 @@
 # Engines know fewer settings than `edge` (0.1.x has no SERVICE_CREDENTIALS or CONFIG_KEY, #124).
 # So `start` asks the image which settings it has (the Settings model, via the image's own Python)
 # and passes only those of ENGINE_SETTINGS. It refuses to guess when the probe fails or the image
-# lacks DATABASE_URL. The credential and config key are the Engine compose's dev-only literals (as
-# in docker-compose.yml); the smoke calls only unauthenticated routes.
+# lacks DATABASE_URL. The credential and config key are CI-only literals, not secrets: the Engine
+# runs on the runner and is gone after the job (#42). The smoke sends the same credential as its
+# service key; one source, so the two cannot drift.
 set -euo pipefail
 
 ENGINE_URL=http://127.0.0.1:8000
 ENGINE_REPO=ghcr.io/nathanpond/epistrel
 WAIT_S=120
 
+SERVICE_KEY=ci-only-credential-not-a-secret-0000  # CI-only, not a secret (32+ characters)
 # Every setting the smoke may pass; `start` drops the ones the image does not know.
 ENGINE_SETTINGS=(
   "EPISTREL_DATABASE_URL=postgresql+psycopg://epistrel:epistrel-dev@postgres:5432/epistrel"
   "EPISTREL_LOG_LEVEL=INFO"
-  "EPISTREL_SERVICE_CREDENTIALS=dev-only-credential-change-me-00000000"
-  "EPISTREL_CONFIG_KEY=ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA="
+  "EPISTREL_SERVICE_CREDENTIALS=$SERVICE_KEY"
+  "EPISTREL_CONFIG_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="  # CI-only, not a secret: 32 zero bytes
 )
 PROBE='from epistrel.config import ENV_PREFIX, Settings
 print("\n".join(ENV_PREFIX + name.upper() for name in Settings.model_fields))'
@@ -57,6 +60,7 @@ start() {
     fi
   done
   docker run -d --name engine --network "$NETWORK" -p 127.0.0.1:8000:8000 "${args[@]}" "$ENGINE_IMAGE"
+  echo "ENGINE_LIVE_SERVICE_KEY=$SERVICE_KEY" >> "${GITHUB_ENV:-/dev/null}"
 }
 
 wait_healthy() {

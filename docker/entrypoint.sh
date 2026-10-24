@@ -1,7 +1,8 @@
 #!/bin/sh
 # Container entrypoint. No arguments or `serve`: migrate the Console's own database, then exec
 # gunicorn as PID 1 (it handles SIGTERM). --preload loads the WSGI module in the master, so a
-# missing or invalid CONSOLE_ENGINE_URL stops the container instead of looping workers.
+# missing or invalid CONSOLE_ENGINE_URL or a missing CONSOLE_ENGINE_SERVICE_KEY stops the container
+# instead of looping workers.
 # --no-control-socket: gunicorn 26's control interface is unused, and /app is not writable.
 # Anything else is executed as given, so `docker run epistrel-console python manage.py ...` works.
 set -eu

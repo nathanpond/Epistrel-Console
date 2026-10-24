@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 
-from tests.helpers import PYTHON, free_port, scrubbed_env, working_copy
+from tests.helpers import PYTHON, SERVICE_KEY, free_port, scrubbed_env, working_copy
 from tests.stub_engine import base_url, stub_engine
 
 
@@ -25,7 +25,9 @@ def test_status_follows_the_engine(tmp_path: Path) -> None:
     copy_dir = working_copy(tmp_path)
     port = free_port()
     with stub_engine() as engine:
-        env = scrubbed_env(CONSOLE_ENGINE_URL=base_url(engine))
+        env = scrubbed_env(
+            CONSOLE_ENGINE_URL=base_url(engine), CONSOLE_ENGINE_SERVICE_KEY=SERVICE_KEY
+        )
         proc = subprocess.Popen(  # noqa: S603
             [PYTHON, "manage.py", "runserver", "--noreload", f"127.0.0.1:{port}"],
             cwd=copy_dir,

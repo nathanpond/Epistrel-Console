@@ -32,9 +32,10 @@ services:
       EPISTREL_DATABASE_URL: postgresql+psycopg://epistrel:epistrel-dev@db:5432/epistrel
       EPISTREL_LOG_LEVEL: INFO
       # The Engine refuses to start without a service credential. These are the Engine compose's
-      # dev-only literals; the Console does not send a key yet (#42).
-      EPISTREL_SERVICE_CREDENTIALS: dev-only-credential-change-me-00000000
-      EPISTREL_CONFIG_KEY: ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA=
+      # dev-only literals; the console service sends the same credential as its service key (#42).
+      # Override both together, editing this file (no interpolation).
+      EPISTREL_SERVICE_CREDENTIALS: dev-only-credential-change-me-00000000  # dev-only default — override for anything but local use
+      EPISTREL_CONFIG_KEY: ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA=  # dev-only default — override for anything but local use
     volumes:
       - engine-media:/var/lib/epistrel/media  # uploaded media survives recreating the container
       - engine-erasure-ledger:/var/lib/epistrel/erasure-ledger
@@ -53,6 +54,7 @@ services:
         condition: service_started  # a broken Engine never stops the Console starting
     environment:
       CONSOLE_ENGINE_URL: http://engine:8000
+      CONSOLE_ENGINE_SERVICE_KEY: dev-only-credential-change-me-00000000  # dev-only default — override for anything but local use
       CONSOLE_DATA_DIR: /data
       DJANGO_DEBUG: "0"
     ports:

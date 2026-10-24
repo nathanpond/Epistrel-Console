@@ -1,4 +1,4 @@
-"""runserver on the Console's own port, refusing to start without a valid Engine URL."""
+"""runserver on the Console's own port, refusing to start without an Engine URL and service key."""
 
 from typing import Any
 

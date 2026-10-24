@@ -301,3 +301,36 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The mypy guard now scans every first-party `*.py`/`*.pyi` under the repo, pruning dot-directories, `__pycache__` and `node_modules`, instead of only `MYPY_FILES`. It refuses any `.pyi` file and any occurrence of the no-type-check decorator's name, a plain text match that catches every import spelling. The guard spells that name in two pieces so its own file passes the scan. A `getattr(typing, …)` alias would still get past it; deliberate obfuscation like that is out of scope.
   **Why:** #122. Every empty-code form (`[]`, `[ ]`, `[,]`, `[ , ]`, `[,,]`, `[\t]`, `ignore []`, with a trailing `# why`) and the BOM case were checked against real mypy 2.4 to skip the file. `[misc]` and `[-]` do not skip it and stay allowed.
   **Issue:** #122
+
+## /n8-exec M2 — 2026-10-24
+
+- **Decision (drift, dependency graph):** #42's native `blocked_by` edge to Console #44 is ignored. #42's body says the dependency is on **Engine** nathanpond/Epistrel#44 (the service credential, long on `edge`); the native edge points at the same number in this repo, which would make #42 → #44 → #43 → #42 a cycle. Execution order: #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #54.
+  **Why:** The body is explicit; the edge is a cross-repo number copied into the wrong repo.
+  **Issue:** #42
+- **Decision:** Each story is implemented by a fresh subagent working sequentially on `milestone/m2-lite-core-console`, from a shared brief; the orchestrator re-checks each story's tests, commit and issue comments before starting the next.
+  **Why:** Thirteen stories with 9–24 KB plans each; a fresh context per story keeps every plan line in view.
+  **Issue:** M2
+- **Decision (drift):** The engine-wide guard check ran once (Engine `edge` = 3d4c7f4, digest `sha256:cf26dc0b…`). A bare `docker run --rm ghcr.io/nathanpond/epistrel:edge` exits 1, but it names `EPISTREL_DATABASE_URL: is required`, the first setting the Engine checks, not the credential. With only a DB URL set it exits 1 with `EPISTREL_SERVICE_CREDENTIALS: at least one credential of 32+ characters is required`. So Engine #44 is enforced on `edge`. The compose `EPISTREL_CONFIG_KEY` literal matches the Engine compose at that commit.
+  **Why:** The planned guard assumed the credential is the first error; the second run isolates it.
+  **Issue:** #42
+- **Decision (drift):** Compose already had the Engine credential, config key and both volumes (M1 Rule 3 fix). #42 adds the console's `CONSOLE_ENGINE_SERVICE_KEY` and the `# dev-only default — override for anything but local use` comment on all three literal lines. The story's test files map as named: `tests/test_workflows.py`, `tests/test_startup_refusal.py`, `tests/test_engine_config.py`, `tests/container/test_compose.py`. The CI credential's own tests are in `tests/test_engine_up_script.py`, where #124 put engine-up.sh's fake-docker tests.
+  **Why:** The files exist under those names; nothing was renamed.
+  **Issue:** #42
+- **Decision:** Error order stays as the code had it: `CONSOLE_ENGINE_URL`, then `CONSOLE_ENGINE_SERVICE_KEY`, then unknown `CONSOLE_*` variables. The planner wrote "unknown first (#29's existing order)", but the existing code and test put the URL first. The parenthetical's intent (keep #29's order) wins, and the key goes straight after the URL.
+  **Why:** The two parts of the planner line contradict each other. Keeping the shipped order changes no existing behaviour.
+  **Issue:** #42
+- **Decision:** The shared serving-test key `test-service-key-not-a-secret-000000000` is `SERVICE_KEY` in `tests/helpers.py`, not a conftest constant.
+  **Why:** Tests already import their subprocess helpers (`scrubbed_env`, `REPO`) from there; importing from a conftest is discouraged by pytest.
+  **Issue:** #42
+- **Decision (Rule 3):** The image smokes in `publish-edge.yml` and `release.yml` now `docker run` the Console with `-e CONSOLE_ENGINE_SERVICE_KEY=smoke-only-key-not-a-secret`. `tests/container/test_image.py` passes the shared test key and gains a no-key refusal case.
+  **Why:** With the key required, gunicorn `--preload` refuses to start and every publish would fail its smoke. The key is never used: those smokes reach no Engine.
+  **Issue:** #42
+- **Decision (Rule 3):** The new keyed `GET /stories` live smoke is marked `engine_auth` (a new marker). `engine-release-smoke` runs `pytest -m "engine_live and not engine_auth"`, and the edge `engine-smoke` still runs every live test.
+  **Why:** The newest Engine release, v0.1.1, has only `/health` (checked in the image) and no service auth, so the test would fail the PR gate there. A release whose tracked Engine lacks it still runs `engine_auth` through ci.yml's engine-smoke, which is correct: an M2 Console needs those routes. Later stories adding M2-route live tests should use the same marker.
+  **Issue:** #42
+- **Decision:** `engine-up.sh start` writes `ENGINE_LIVE_SERVICE_KEY` to `$GITHUB_ENV` after a successful `docker run` even for a released Engine that does not accept `EPISTREL_SERVICE_CREDENTIALS`. An empty `ENGINE_LIVE_SERVICE_KEY` is a usage error, but a whitespace-only one is not trimmed, matching the Console key.
+  **Why:** The release smoke must not hit a UsageError, and an Engine without auth ignores the header.
+  **Issue:** #42
+- **Decision:** Login comes from #43, which is not built yet. The compose and live tests load `/` without signing in, and the planner's "sign in first" note applies once #43 lands.
+  **Why:** #42 runs before #43 (execution order above).
+  **Issue:** #42
