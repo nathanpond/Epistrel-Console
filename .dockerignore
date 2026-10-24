@@ -1,0 +1,15 @@
+.git
+.venv
+.mypy_cache
+.ruff_cache
+.pytest_cache
+**/__pycache__
+.idea
+tests
+.n8
+.github
+staticfiles
+db.sqlite3
+secret_key
+.env*
+docker-compose.yml

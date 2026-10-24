@@ -13,3 +13,4 @@ htmlcov/
 .DS_Store
 db.sqlite3
 staticfiles/
+/secret_key

@@ -41,7 +41,9 @@ All settings come from the process environment.
 | `CONSOLE_ENGINE_URL` | — (required to serve) | The Engine's base URL: `http://` or `https://` with a host, no credentials, query or fragment. Trailing slashes are dropped. |
 | `CONSOLE_ENGINE_SERVICE_KEY` | unset | The Engine service credential. Optional until the Engine enforces service auth; never logged or shown. |
 | `DJANGO_DEBUG` | `1` | `1` for development; anything else turns debug off. |
-| `DJANGO_SECRET_KEY` | dev fallback while debug is on | Required when debug is off. |
+| `CONSOLE_DATA_DIR` | the repo directory | Where the Console keeps its own data: `db.sqlite3` and, with debug off, the generated `secret_key`. A relative path resolves against the repo; created if missing. The image sets `/data`. |
+| `DJANGO_SECRET_KEY` | dev fallback while debug is on; with debug off, generated on first start into `<CONSOLE_DATA_DIR>/secret_key` and reused | Set it to override the key in either mode. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | `http://127.0.0.1:7739,http://localhost:7739` | Comma-separated origins allowed to POST. |
 | `DJANGO_ALLOWED_HOSTS` | empty | Comma-separated host names. |
 
 Any other variable starting with `CONSOLE_` is treated as a typo and refuses start.
