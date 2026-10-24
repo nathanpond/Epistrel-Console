@@ -10,7 +10,7 @@ import pytest
 from tests.helpers import REPO
 
 GATE = REPO / ".github" / "scripts" / "gate.sh"
-JOBS = ("LINT", "TYPES", "TEST", "DOCKER", "ENGINE_SMOKE")
+JOBS = ("LINT", "TYPES", "TEST", "DOCKER", "ENGINE_SMOKE", "ENGINE_RELEASE_SMOKE")
 
 
 def gate(tmp_path: Path, live_smoke: str | None = None, **results: str) -> tuple[int, str, str]:
@@ -34,6 +34,7 @@ def test_all_success_passes(tmp_path: Path) -> None:
     assert code == 0
     assert "gate: all jobs succeeded" in out
     assert "| engine-smoke | success |" in summary
+    assert "| engine-release-smoke | success |" in summary
 
 
 @pytest.mark.parametrize("job", JOBS)
@@ -46,10 +47,18 @@ def test_any_job_not_succeeding_fails_with_live_smoke(
     assert "did not succeed" in out
 
 
-def test_skipped_smoke_passes_only_when_live_smoke_is_off(tmp_path: Path) -> None:
-    assert gate(tmp_path, "false", ENGINE_SMOKE="skipped")[0] == 0
+SMOKES = ("ENGINE_SMOKE", "ENGINE_RELEASE_SMOKE")
+
+
+@pytest.mark.parametrize("smoke", SMOKES)
+def test_skipped_smoke_passes_only_when_live_smoke_is_off(tmp_path: Path, smoke: str) -> None:
+    assert gate(tmp_path, "false", **{smoke: "skipped"})[0] == 0
     # Complement: by default (a PR) the smoke may not be skipped.
-    assert gate(tmp_path, None, ENGINE_SMOKE="skipped")[0] == 1
+    assert gate(tmp_path, None, **{smoke: "skipped"})[0] == 1
+
+
+def test_both_smokes_skipped_pass_when_live_smoke_is_off(tmp_path: Path) -> None:
+    assert gate(tmp_path, "false", **dict.fromkeys(SMOKES, "skipped"))[0] == 0
 
 
 @pytest.mark.parametrize("job", ["LINT", "TYPES", "TEST", "DOCKER"])
@@ -57,8 +66,13 @@ def test_live_smoke_off_does_not_excuse_other_skips(tmp_path: Path, job: str) ->
     assert gate(tmp_path, "false", **{job: "skipped"})[0] == 1
 
 
-def test_failed_smoke_fails_even_with_live_smoke_off(tmp_path: Path) -> None:
-    assert gate(tmp_path, "false", ENGINE_SMOKE="failure")[0] == 1
+@pytest.mark.parametrize("smoke", SMOKES)
+def test_failed_smoke_fails_even_with_live_smoke_off(tmp_path: Path, smoke: str) -> None:
+    assert gate(tmp_path, "false", **{smoke: "failure"})[0] == 1
+
+
+def test_missing_release_smoke_result_fails(tmp_path: Path) -> None:
+    assert gate(tmp_path, "false", ENGINE_RELEASE_SMOKE="")[0] == 1
 
 
 def test_missing_result_fails(tmp_path: Path) -> None:
