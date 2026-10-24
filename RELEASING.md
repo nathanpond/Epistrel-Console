@@ -79,7 +79,8 @@ The run refuses, changing nothing, when any of these hold:
 - `good_version == bad_version`;
 - the good version's image tag or GitHub release doesn't exist;
 - the bad version's release doesn't exist (when one is given);
-- a `release.yml` run isn't finished (in progress, queued, waiting, pending or requested).
+- a `release.yml` run isn't finished (in progress, queued, waiting, pending or requested);
+- the registry refuses an image lookup for any other reason than a missing tag (an auth or network error), quoting its message. A bad version with no image is fine: nothing floats on it.
 
 It runs only from `main`, and it shares the `release-latest` concurrency group with `release.yml`'s publish job, so a release and a rollback never interleave. `good_version` may be a release that was demoted earlier (it is promoted again) or one newer than `bad_version` (a roll forward).
 
