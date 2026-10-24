@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load console_format %}
 {% block title %}Status — Epistrel Console{% endblock %}
 {% block content %}
 <h2>Engine</h2>
@@ -13,7 +14,7 @@
   <dt>Checks</dt>
   <dd>
     <ul>
-      {% for name, value in result.checks.items %}<li>{{ name }}: {{ value }}</li>{% endfor %}
+      {% for name, value in result.checks.items %}<li>{{ name }}: {{ value|check_value }}</li>{% endfor %}
     </ul>
   </dd>
   {% endif %}
