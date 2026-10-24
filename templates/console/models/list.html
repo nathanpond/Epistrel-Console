@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Models — Epistrel Console{% endblock %}
+{% block heading %}Models{% endblock %}
+{% block content %}
+<p>Config revision <strong>{{ config.config_revision }}</strong> · adapter <code>{{ config.adapter }}</code> · <a href="{{ guide.url }}">{{ guide.label }}</a></p>
+<p class="note">A story's engine profile may route a purpose to a different model; see the story's Config (#85).</p>
+
+<table class="models">
+  <thead>
+    <tr>
+      <th>Purpose</th><th>Base URL</th><th>Model</th>
+      {% for label in param_labels %}<th>{{ label }}</th>{% endfor %}
+      <th>Other params</th><th>API key</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="purpose-{{ row.name }}">
+      <td><code>{{ row.name }}</code></td>
+      <td>{% include "console/models/_value.html" with value=row.base_url %}</td>
+      <td>{% include "console/models/_value.html" with value=row.model %}</td>
+      {% for name, value in row.params %}<td class="param-{{ name }}">{% include "console/models/_value.html" with value=value %}</td>{% endfor %}
+      <td>{% for name, text in row.other_params %}<code>{{ name }}</code>: {{ text }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+      <td class="api-key">{% if row.api_key_set %}set (fingerprint <code>{{ row.api_key_fingerprint|default:"—" }}</code>){% else %}not set{% endif %}</td>
+      <td class="actions">
+        {% if row.read_only %}{{ row.read_only_note }}{% else %}
+        <a class="button" href="{% url 'models:edit' row.name %}">Edit</a>
+        {% if not row.is_default %}<a class="button" href="{% url 'models:drop' row.name %}{{ next_query }}">Drop override</a>{% endif %}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

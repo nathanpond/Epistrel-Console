@@ -5,7 +5,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from console.auth import OperatorAuthenticationForm
-from console.views import operations, status, stories
+from console.views import models, operations, status, stories
 from console.views.placeholders import placeholder
 
 operation_patterns = (
@@ -28,6 +28,17 @@ story_patterns = (
     "stories",
 )
 
+model_patterns = (
+    [
+        path("", models.model_list, name="list"),
+        path("<str:purpose>/edit/", models.model_edit, name="edit"),
+        path("<str:purpose>/drop/", models.model_drop, name="drop"),
+        path("<str:purpose>/api-key/", models.model_api_key, name="api-key"),
+        path("<str:purpose>/api-key/clear/", models.model_api_key_clear, name="api-key-clear"),
+    ],
+    "models",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -39,8 +50,8 @@ urlpatterns = [
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("operations/", include(operation_patterns)),
     path("stories/", include(story_patterns)),
+    path("models/", include(model_patterns)),
     # Placeholders: each owning M2 story replaces its own.
-    path("models/", placeholder("Models"), name="models"),
     path("guardrails/ratings/", placeholder("Guardrail ratings"), name="guardrail-ratings"),
     path("engine/", placeholder("Engine"), name="engine"),
     path("admin/", admin.site.urls),

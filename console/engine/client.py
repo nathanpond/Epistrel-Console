@@ -27,6 +27,9 @@ from console.engine.models import (
     HealthResponse,
     HealthResult,
     Model,
+    ModelConfig,
+    ModelConfigItem,
+    ModelConfigMutation,
     OperationRecord,
     Story,
     StoryCreated,
@@ -366,6 +369,71 @@ class EngineClient:
         """``GET /admin/settings``: every deployment setting and its ``config_revision``."""
         return _parse(self._request("GET", "/admin/settings"), DeploymentSettings)
 
+    @operation("GET", "/admin/model-config", response_model=ModelConfig)
+    def list_model_config(self) -> ModelConfig:
+        """``GET /admin/model-config``: every purpose's effective configuration (#46)."""
+        return _parse(self._request("GET", "/admin/model-config"), ModelConfig)
+
+    @operation("GET", "/admin/model-config/{purpose}", response_model=ModelConfigItem)
+    def get_model_config(self, purpose: str) -> ModelConfigItem:
+        """``GET /admin/model-config/{purpose}``: one purpose and the revision it was read at."""
+        return _parse(self._request("GET", _purpose_path(purpose)), ModelConfigItem)
+
+    @operation("PUT", "/admin/model-config/{purpose}", response_model=ModelConfigMutation)
+    def put_model_config(
+        self, purpose: str, config: Mapping[str, Any], *, idempotency_key: str
+    ) -> ModelConfigMutation:
+        """``PUT /admin/model-config/{purpose}``: the purpose's own ``base_url``, ``model`` and
+        ``params``, replaced in full (an absent or ``null`` field inherits)."""
+        response = self._request(
+            "PUT",
+            _purpose_path(purpose),
+            json=dict(config),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ModelConfigMutation)
+
+    @operation("DELETE", "/admin/model-config/{purpose}", response_model=ModelConfigMutation)
+    def delete_model_config(
+        self, purpose: str, *, idempotency_key: str
+    ) -> ModelConfigMutation | None:
+        """``DELETE /admin/model-config/{purpose}``: drop the purpose's own row (its own key
+        too). The now-inherited entry, or ``None`` when there was nothing to drop (204)."""
+        response = self._request(
+            "DELETE",
+            _purpose_path(purpose),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 204:
+            return None
+        return _parse(response, ModelConfigMutation)
+
+    @operation("PUT", "/admin/model-config/{purpose}/api-key")
+    def put_model_api_key(self, purpose: str, api_key: str, *, idempotency_key: str) -> None:
+        """``PUT /admin/model-config/{purpose}/api-key`` (204). The operation log redacts the
+        body's ``api_key`` (#44); nothing here keeps or logs it."""
+        response = self._request(
+            "PUT",
+            f"{_purpose_path(purpose)}/api-key",
+            json={"api_key": api_key},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
+    @operation("DELETE", "/admin/model-config/{purpose}/api-key")
+    def delete_model_api_key(self, purpose: str, *, idempotency_key: str) -> None:
+        """``DELETE /admin/model-config/{purpose}/api-key`` (204)."""
+        response = self._request(
+            "DELETE",
+            f"{_purpose_path(purpose)}/api-key",
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
     @operation("GET", "/operations/{operation_id}", response_model=OperationRecord)
     def get_operation(self, operation_id: str, viewpoint: str | None = None) -> OperationRecord:
         """``GET /operations/{id}``: the Engine's record of one operation.
@@ -381,6 +449,11 @@ class EngineClient:
 def _story_path(story_id: str) -> str:
     """``/stories/<id>``, the id percent-encoded (an unknown id still reaches the Engine)."""
     return f"/stories/{quote(story_id, safe='')}"
+
+
+def _purpose_path(purpose: str) -> str:
+    """``/admin/model-config/<purpose>``, the name percent-encoded."""
+    return f"/admin/model-config/{quote(purpose, safe='')}"
 
 
 def _parse[M: Model](response: httpx.Response, model: type[M]) -> M:

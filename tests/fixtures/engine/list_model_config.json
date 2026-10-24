@@ -1,0 +1,279 @@
+{
+    "adapter": "openai",
+    "config_revision": 5,
+    "purposes": {
+        "default": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "own",
+                "model": "own",
+                "api_key": "own",
+                "params": {
+                    "temperature": "own",
+                    "stop": "own"
+                }
+            }
+        },
+        "generation": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": "***",
+            "api_key_fingerprint": "082f20f3",
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "own",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "guardrail_check": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "consolidation": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "m-cons",
+            "params": {
+                "temperature": 0.7,
+                "max_tokens": 100,
+                "stop": [
+                    "a"
+                ],
+                "seed": 5
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "own",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "max_tokens": "own",
+                    "stop": "default",
+                    "seed": "own"
+                }
+            }
+        },
+        "lite_summary": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "m-cons",
+            "params": {
+                "temperature": 0.7,
+                "max_tokens": 100,
+                "stop": [
+                    "a"
+                ],
+                "seed": 5
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "inherited",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "max_tokens": "inherited",
+                    "stop": "default",
+                    "seed": "inherited"
+                }
+            }
+        },
+        "rating_suggestion": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "quality_judge": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "importance_scoring": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "entailment": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "salience_detection": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "extraction_backstop": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "default",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "regeneration": {
+            "base_url": "http://host.docker.internal:11434/v1",
+            "model": "llama3.1",
+            "params": {
+                "temperature": 0.7,
+                "stop": [
+                    "a"
+                ]
+            },
+            "api_key": "***",
+            "api_key_fingerprint": "082f20f3",
+            "sources": {
+                "base_url": "default",
+                "model": "default",
+                "api_key": "inherited",
+                "params": {
+                    "temperature": "default",
+                    "stop": "default"
+                }
+            }
+        },
+        "embedding": {
+            "base_url": null,
+            "model": null,
+            "params": {},
+            "api_key": null,
+            "api_key_fingerprint": null,
+            "sources": {
+                "base_url": "own",
+                "model": "own",
+                "api_key": "own",
+                "params": {}
+            }
+        }
+    }
+}

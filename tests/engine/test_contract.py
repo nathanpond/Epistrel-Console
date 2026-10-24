@@ -14,6 +14,7 @@ from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
     CatalogSource,
     ChainRef,
+    ConfigSources,
     ContentRatingList,
     ContentRatingSummary,
     CreatedCharacter,
@@ -24,6 +25,10 @@ from console.engine.models import (
     HealthChecks,
     HealthResponse,
     ModelCall,
+    ModelConfig,
+    ModelConfigEntry,
+    ModelConfigItem,
+    ModelConfigMutation,
     OmniscientStoryCharacter,
     OperationRecord,
     OperationStage,
@@ -135,6 +140,11 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (ContentRatingSummary, "RatingBody"),
         (ContentRatingList, "RatingList"),
         (DeploymentSettings, "SettingsBody"),
+        (ModelConfig, "ModelConfigBody"),
+        (ModelConfigEntry, "ModelConfigEntry"),
+        (ModelConfigItem, "ModelConfigItem"),
+        (ModelConfigMutation, "ModelConfigMutation"),
+        (ConfigSources, "Sources"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

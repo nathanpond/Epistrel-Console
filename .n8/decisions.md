@@ -445,3 +445,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Two live smokes (`engine_live` + `engine_auth`): create → archive → list (archived present, cast 2) → delete in `try/finally`, and demo step 3's duplicate-name refusal placed on row 2 (creates nothing).
   **Why:** The planner's pass-2 smoke, plus the one 422 path a fake cannot prove matches the real Engine.
   **Issue:** #45
+- **Decision (drift):** No schema re-record for #46. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, torn down after; `info.version` "m3") reports a match, and every model-config endpoint is in the recording. The parent map (`lite_summary` → `consolidation`, `rating_suggestion` → `guardrail_check`, `regeneration` → `generation`) was confirmed from the edge image's `parent_of`.
+  **Why:** The conventions re-record only when the live document differs; the GET does not name the parent, so the Console mirrors the Engine's map (`console/model_config.py:PARENTS`).
+  **Issue:** #46
+- **Decision (drift):** Wire models mirror the schema components (`ModelConfig` = `ModelConfigBody`, `ModelConfigEntry`, `ModelConfigItem`, `ModelConfigMutation`, `ConfigSources` = `Sources`), not the planner's `ModelConfigList`/`PurposeConfig(Sourced…)` shape; that shape lives view-side in `console/model_config.py` (`PurposeConfig`, `Sourced`, built by `purpose_config`/`purposes`). `api_key` stays `str | None` (the mask) with an `api_key_set` property; `params` is `dict[str, Any]`.
+  **Why:** The contract test compares each response model field-for-field with its component; the schema's `const "***"` is not an enum, so a `Literal` would not compare.
+  **Issue:** #46
+- **Decision:** A param no row sets (absent from `sources.params`) shows "— (not set)" marked `default`; its edit placeholder reads "default: — (not set)". Values on the list are shown as returned (`stop` comma-joined); the `default` row has no markers.
+  **Why:** The Engine sends only keys some row sets; planner's "an inherited null shows default: — (not set)".
+  **Issue:** #46
+- **Decision:** The edit and key forms carry the purpose as read in a signed hidden `snapshot` (`django.core.signing`), so a re-render after a Console refusal or an Engine error needs no Engine read; a missing, tampered or other-purpose snapshot is re-read with the single-item GET. Clear-key's `config_key_missing` re-reads the purpose to render the edit page with the message.
+  **Why:** #45's signed-hidden pattern; the planner's "input they reject makes zero Engine calls".
+  **Issue:** #46
+- **Decision:** `PUT` body: on a non-default purpose a blank field is absent and `params` is sent only when one param is given (all blank → `{}`); on `default` `base_url`/`model` and all six params are always sent, blank as `null`. `base_url` is validated with `epistrel_console.engine_config.parse_url` (#29's parser) but sent as typed (trimmed), not normalised.
+  **Why:** AC "blank fields absent", planner "on default a blank field is sent as null"; normalising would change what the operator entered.
+  **Issue:** #46
+- **Decision:** Wording where the planner left gaps: drop confirm "Drop *p*'s override? Every field falls back to its parent purpose (parent) or default." (or "… falls back to default." with no parent) plus the per-purpose-key line; drop flash "<p> now uses default — config revision N, idempotency key K" (or "now uses <parent> or default"); 204 flashes "Nothing to drop — <p> has no override"; save flash "Saved <p> — config revision N, idempotency key K"; clear-key on `default` says "Purposes without a key of their own will have none.", on a child purpose names its parent's key. The api-key URL answers 405 to GET.
+  **Why:** The confirm helper italicises one name; a child purpose falls back to its parent first; #43's flash names the revision and key.
+  **Issue:** #46
+- **Decision:** A key-PUT 422 is placed on the key field (re-rendered empty: `PasswordInput(render_value=False)`); `config_key_missing` (set or clear) renders the message inline above the key form; any other key error shows the shared panel above the key form; a config-PUT 422 places field errors (`params.<name>` and `params.stop[i]` aliased to the fields) plus "The Engine rejected the configuration: <message>", other errors show the panel above the form. Drop/clear confirm POST errors (e.g. `default`'s 409) go to the middleware panel.
+  **Why:** #43's form-error and panel conventions; the planner's inline `config_key_missing`.
+  **Issue:** #46
+- **Decision:** Added an `engine_live` + `engine_auth` smoke (`test_model_purpose_edit_key_and_drop_live`): edit `quality_judge`, set its key, see "own" and the fingerprint without the key on the page, drop the override in `finally`.
+  **Why:** Proves the PUT/key/drop bodies against the real Engine, which a fake cannot.
+  **Issue:** #46

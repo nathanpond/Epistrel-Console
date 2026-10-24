@@ -1,0 +1,24 @@
+{
+    "config_revision": 7,
+    "idempotency_key": "01M5QYP7TAZJTVWMAK4ZA9E4ZY",
+    "base_url": "http://host.docker.internal:11434/v1",
+    "model": "llama3.1",
+    "params": {
+        "temperature": 0.7,
+        "stop": [
+            "a"
+        ]
+    },
+    "api_key": null,
+    "api_key_fingerprint": null,
+    "sources": {
+        "base_url": "default",
+        "model": "default",
+        "api_key": "default",
+        "params": {
+            "temperature": "default",
+            "stop": "default"
+        }
+    },
+    "purpose": "guardrail_check"
+}

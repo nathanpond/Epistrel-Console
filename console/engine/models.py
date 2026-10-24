@@ -589,6 +589,69 @@ class DeploymentSettings(Model):
     worker_heartbeat_timeout: float = 60.0
 
 
+# --- Model configuration (#46) -----------------------------------------------------------------
+
+ConfigSource = Literal["own", "inherited", "default"]
+
+
+@dataclass(frozen=True)
+class ConfigSources(Model):
+    """``Sources``: where each effective value came from (``params`` per key). ``inherited``
+    is the purpose's parent row (``lite_summary`` → ``consolidation``), ``default`` the
+    ``default`` row; a param no row sets has no key."""
+
+    base_url: ConfigSource
+    model: ConfigSource
+    api_key: ConfigSource
+    params: dict[str, ConfigSource]
+
+
+@dataclass(frozen=True)
+class ModelConfigEntry(Model):
+    """``ModelConfigEntry``: one purpose's effective configuration.
+
+    ``api_key`` is the Engine's mask (``"***"``) when a key applies, else ``None``; the key
+    itself is never returned. ``params`` holds the effective values as JSON (the Engine sends
+    only the keys some row sets).
+    """
+
+    base_url: str | None
+    model: str | None
+    params: dict[str, Any]
+    api_key: str | None
+    api_key_fingerprint: str | None
+    sources: ConfigSources
+
+    @property
+    def api_key_set(self) -> bool:
+        return self.api_key is not None
+
+
+@dataclass(frozen=True)
+class ModelConfig(Model):
+    """``ModelConfigBody``: the adapter, ``config_revision`` and every purpose in the
+    Engine's order (``default`` included)."""
+
+    adapter: Literal["openai", "stub"]
+    config_revision: int
+    purposes: dict[str, ModelConfigEntry]
+
+
+@dataclass(frozen=True)
+class ModelConfigItem(ModelConfigEntry):
+    """``ModelConfigItem``: one purpose with the ``config_revision`` it was read at."""
+
+    purpose: str
+    config_revision: int
+
+
+@dataclass(frozen=True)
+class ModelConfigMutation(ModelConfigItem):
+    """``ModelConfigMutation``: one purpose after a write, with the revision it produced."""
+
+    idempotency_key: str | None = None
+
+
 @dataclass(frozen=True)
 class HealthResult:
     """What ``GET /health`` returned, for any HTTP status.

@@ -169,3 +169,45 @@ def test_story_refusal_is_placed_beside_the_row_live(
     second = page[page.index('id="character-1"') :]
     assert "same name" in second[: second.index("</fieldset>")], page
     assert "The Engine rejected the story:" in page
+
+
+def _model_row(html: str, purpose: str) -> str:
+    match = re.search(rf'<tr id="purpose-{purpose}">(.*?)</tr>', html, re.S)
+    assert match is not None, html
+    return match.group(1)
+
+
+@pytest.mark.engine_auth
+def test_model_purpose_edit_key_and_drop_live(
+    url: str, key: str, operator_client: Client, operator: object
+) -> None:
+    """#46: edit a purpose, give it a key (never shown again), drop its override."""
+    secret = f"sk-console-smoke-{new_ulid()}"
+    purpose = "quality_judge"
+    blank = dict.fromkeys(("base_url", "temperature", "top_p", "max_tokens", "timeout", "stop"), "")
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        try:
+            saved = operator_client.post(
+                f"/models/{purpose}/edit/",
+                {**blank, "model": "console-smoke", "seed": "7", "idempotency_key": new_ulid()},
+            )
+            assert saved.status_code == 302, saved.content.decode()
+            keyed = operator_client.post(
+                f"/models/{purpose}/api-key/", {"api_key": secret, "idempotency_key": new_ulid()}
+            )
+            assert keyed.status_code == 302, keyed.content.decode()
+            listing = operator_client.get("/models/").content.decode()
+            row = _model_row(listing, purpose)
+            assert "console-smoke" in row
+            assert "own" in row
+            assert "set (fingerprint" in row
+            assert secret not in listing
+            assert "Configured in M4 (#59)" in _model_row(listing, "embedding")
+        finally:
+            dropped = operator_client.post(
+                f"/models/{purpose}/drop/", {"idempotency_key": new_ulid()}
+            )
+        assert dropped.status_code == 302, dropped.content.decode()
+        row = _model_row(operator_client.get("/models/").content.decode(), purpose)
+        assert "console-smoke" not in row
+        assert "not set" in row

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ purpose.name }} — Models — Epistrel Console{% endblock %}
+{% block heading %}Model purpose: {{ purpose.name }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'models:list' %}">All purposes</a>{% if config_revision is not None %} · config revision <strong>{{ config_revision }}</strong>{% endif %}</p>
+{% if purpose.is_default %}
+<p>Every other purpose inherits each field it leaves blank from <code>default</code>. A blank field here is unset.</p>
+{% else %}
+<p>A blank field inherits from {% if purpose.parent %}<code>{{ purpose.parent }}</code>, then {% endif %}<code>default</code> (shown as the field's placeholder).
+  <a class="button" href="{% url 'models:drop' purpose.name %}{{ edit_query }}">Drop override</a></p>
+{% endif %}
+
+<h2>Configuration</h2>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{% url 'models:edit' purpose.name %}" class="model-config">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <p>
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {{ field.errors }}
+  </p>
+  {% endfor %}
+  <p><button type="submit">Save</button></p>
+</form>
+
+<h2>API key</h2>
+<p class="api-key">{% if purpose.api_key_set %}set (fingerprint <code>{{ purpose.api_key_fingerprint|default:"—" }}</code>){% else %}not set{% endif %}
+  {% if purpose.api_key_fingerprint %}<a class="button" href="{% url 'models:api-key-clear' purpose.name %}{{ edit_query }}">Clear key</a>{% endif %}</p>
+{% if key_missing %}<div class="engine-error key-missing"><p>The Engine has no <code>EPISTREL_CONFIG_KEY</code> — it cannot store API keys</p></div>{% endif %}
+{% if key_engine_error %}{% include "console/_engine_error.html" with engine_error=key_engine_error %}{% endif %}
+<form method="post" action="{% url 'models:api-key' purpose.name %}" class="api-key-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ key_idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ key_form.non_field_errors }}
+  <p>
+    <label for="{{ key_form.api_key.id_for_label }}">{{ key_form.api_key.label }}</label>
+    {{ key_form.api_key }}
+    {{ key_form.api_key.errors }}
+  </p>
+  <p><button type="submit">Set key</button></p>
+</form>
+{% endblock %}
