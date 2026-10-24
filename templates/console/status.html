@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% load console_format %}
 {% block title %}Status — Epistrel Console{% endblock %}
+{% block heading %}Status{% endblock %}
 {% block content %}
 <h2>Engine</h2>
 <dl>
@@ -24,6 +25,14 @@
     </ul>
     {% endif %}
   </dd>
+  {% for label, text in health_rows %}
+  <dt>{{ label }}</dt>
+  <dd>{{ label }}: {{ text }}</dd>
+  {% endfor %}
+  {% if result.content_logging %}
+  <dt>Content logging</dt>
+  <dd>content logging: on</dd>
+  {% endif %}
   {% if result.checks %}
   <dt>Checks</dt>
   <dd>
@@ -37,7 +46,7 @@
   <dd>{{ result.latency_ms }} ms</dd>
   {% endif %}
   <dt>Service key</dt>
-  <dd>{% if key_set %}Service key: set{% else %}Service key: not set{% endif %}</dd>
+  <dd class="key-{{ key_check.verdict }}">{{ key_check.line }}{% if not key_set %} (no service key configured){% endif %}</dd>
 </dl>
 <p>Console version {{ version }} · <a href="/health">/health</a> · <a href="/admin/">admin</a></p>
 {% endblock %}

@@ -1,0 +1,22 @@
+<div class="engine-error" role="alert">
+  <p><strong>{{ engine_error.headline }}</strong></p>
+  {% if engine_error.code %}
+  <dl>
+    <dt>HTTP status</dt><dd>{{ engine_error.http_status }}</dd>
+    <dt>Code</dt><dd><code>{{ engine_error.code }}</code></dd>
+    <dt>Message</dt><dd>{{ engine_error.message }}</dd>
+    <dt>Details</dt>
+    <dd>
+      {% if engine_error.details %}
+      <dl class="details">
+        {% for detail in engine_error.details %}
+        <dt>{{ detail.key }}</dt>
+        <dd>{% if detail.block %}<pre>{{ detail.text }}</pre>{% else %}{{ detail.text }}{% endif %}</dd>
+        {% endfor %}
+      </dl>
+      {% elif engine_error.details_raw %}<pre>{{ engine_error.details_raw }}</pre>
+      {% else %}—{% endif %}
+    </dd>
+  </dl>
+  {% endif %}
+</div>

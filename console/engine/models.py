@@ -115,6 +115,42 @@ class HealthResponse(Model):
     content_logging: bool = False
 
 
+StoryStatus = Literal["active", "archived", "paused", "blocked_by_erasure"]
+
+
+@dataclass(frozen=True)
+class StoryRating(Model):
+    """``StoryRatingBody``: the story's content rating, its current version and its name."""
+
+    id: str
+    version_id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class StorySummary(Model):
+    """``StorySummaryBody``: a story as ``GET /stories`` lists it.
+
+    ``name`` is ``None`` for a story held ``blocked_by_erasure``. Times are the Engine's ISO
+    strings (render them with the ``engine_time`` filter).
+    """
+
+    id: str
+    name: str | None
+    owner_principal: str
+    status: StoryStatus
+    timeline_revision: int
+    next_turn_index: int
+    content_rating: StoryRating
+    created_at: str
+    archived_at: str | None
+
+
+@dataclass(frozen=True)
+class StoryList(Model):
+    items: list[StorySummary]
+
+
 @dataclass(frozen=True)
 class HealthResult:
     """What ``GET /health`` returned, for any HTTP status.

@@ -38,17 +38,38 @@ def test_probe_says_healthy(url: str, key: str) -> None:
     assert result.state == "healthy", result.reason
 
 
-def test_status_page_and_health(url: str, key: str, client: Client) -> None:
+def test_status_page_and_health(url: str, key: str, operator_client: Client) -> None:
     with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
-        page = client.get("/").content.decode()
-        health = client.get("/health")
+        page = operator_client.get("/").content.decode()
+        health = operator_client.get("/health")
     assert "Healthy" in page
+    assert "Engine: Healthy" in page  # the shell's badge
     assert "Unhealthy" not in page
     assert "Unreachable" not in page
     assert health.status_code == 200
     engine = health.json()["engine"]
     assert engine["state"] == "healthy"
     assert engine["checks"]["database"] == "ok"
+
+
+@pytest.mark.engine_auth
+def test_status_page_service_key_accepted(url: str, key: str, operator_client: Client) -> None:
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        page = operator_client.get("/").content.decode()
+    assert "Service key: accepted" in page
+
+
+@pytest.mark.engine_auth
+def test_list_stories_live(url: str, key: str) -> None:
+    stories = EngineClient(url, key).list_stories()
+    assert isinstance(stories, list)
+
+
+@pytest.mark.engine_auth
+def test_wrong_key_is_rejected_on_the_status_page(url: str, operator_client: Client) -> None:
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY="wrong-key-" + "0" * 32):
+        page = operator_client.get("/").content.decode()
+    assert "Service key: rejected (401)" in page
 
 
 @pytest.mark.xfail(

@@ -9,7 +9,14 @@ from typing import Literal
 import pytest
 
 from console.engine.client import OPERATIONS, Operation
-from console.engine.models import HealthChecks, HealthResponse, WorkersCheck
+from console.engine.models import (
+    HealthChecks,
+    HealthResponse,
+    StoryList,
+    StoryRating,
+    StorySummary,
+    WorkersCheck,
+)
 from tests.engine.contract import check_operation, compare_model
 from tests.fakes.engine import recorded_schema
 
@@ -68,6 +75,9 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (HealthResponse, "HealthResponse"),
         (HealthChecks, "HealthChecks"),
         (WorkersCheck, "WorkersCheck"),
+        (StoryList, "StoryList"),
+        (StorySummary, "StorySummaryBody"),
+        (StoryRating, "StoryRatingBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

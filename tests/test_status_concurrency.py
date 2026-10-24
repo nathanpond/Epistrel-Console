@@ -1,4 +1,5 @@
-"""The status page asks /health and /openapi.json concurrently, once each, with no retries."""
+"""The status page asks /health, /openapi.json and /stories (the service-key check) concurrently,
+once each, with no retries; /health asks only the first two."""
 
 import logging
 import time
@@ -22,32 +23,44 @@ def use(fake: FakeEngine, monkeypatch: pytest.MonkeyPatch) -> None:
 
 @override_settings(ENGINE_URL="http://engine.test")
 def test_page_waits_for_the_slower_call_not_the_sum(
-    client: Client, fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+    operator_client: Client, fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_engine.respond("GET", "/health", 200, json=OK, delay=1.0)
     fake_engine.serve("GET", "/openapi.json", 200, json=recorded_schema(), delay=1.0)
+    fake_engine.respond("GET", "/stories", 200, json={"items": []}, delay=1.0)
     use(fake_engine, monkeypatch)
     started = time.monotonic()
-    html = client.get("/").content.decode()
+    html = operator_client.get("/").content.decode()
     elapsed = time.monotonic() - started
     assert "Healthy" in html
     assert "API: matches" in html
-    assert elapsed < 1.8, f"took {elapsed:.2f} s: the two calls ran one after the other"
+    assert "Service key: accepted" in html
+    assert elapsed < 1.8, f"took {elapsed:.2f} s: the calls ran one after the other"
+    # The badge reused the page's probe: one /health request in all.
+    assert sorted(r.url.path for r in fake_engine.requests) == [
+        "/health",
+        "/openapi.json",
+        "/stories",
+    ]
 
 
 @override_settings(ENGINE_URL="http://engine.test")
 @pytest.mark.parametrize("path", ["/", "/health"])
 def test_unreachable_engine_gets_one_request_per_endpoint(
-    client: Client, fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch, path: str
+    operator_client: Client, fake_engine: FakeEngine, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
-    fake_engine.fail("GET", "/health", httpx.ConnectError("refused"))
-    fake_engine.fail("GET", "/openapi.json", httpx.ConnectError("refused"))
+    for endpoint in ("/health", "/openapi.json", "/stories"):
+        fake_engine.fail("GET", endpoint, httpx.ConnectError("refused"))
     use(fake_engine, monkeypatch)
-    response = client.get(path)
+    response = operator_client.get(path)
     assert response.status_code == 200
     paths = sorted(r.url.path for r in fake_engine.requests)
-    # Complement: no retries.
-    assert paths == ["/health", "/openapi.json"]
+    # Complement: no retries; only the status page checks the key.
+    if path == "/":
+        assert paths == ["/health", "/openapi.json", "/stories"]
+        assert "Service key: not checked — Engine unreachable" in response.content.decode()
+    else:
+        assert paths == ["/health", "/openapi.json"]
 
 
 @override_settings(ENGINE_URL=None)

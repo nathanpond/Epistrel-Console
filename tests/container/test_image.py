@@ -98,6 +98,15 @@ def test_runs_healthy_with_static_and_a_persistent_key(image: str, run: Run) -> 
     css = httpx.get(f"http://127.0.0.1:{port}/static/admin/css/base.css", timeout=10)
     assert css.status_code == 200
     assert len(css.content) > 1000
+    # The vendored htmx is collected into the image and served without signing in (#43) …
+    htmx = httpx.get(f"http://127.0.0.1:{port}/static/console/htmx.min.js", timeout=10)
+    assert htmx.status_code == 200
+    assert htmx.content.startswith(b"var htmx=")
+    # … while every page is behind the operator login.
+    page = httpx.get(f"http://127.0.0.1:{port}/", timeout=10)
+    assert page.status_code == 302
+    assert page.headers["location"] == "/accounts/login/?next=/"
+    assert httpx.get(f"http://127.0.0.1:{port}/accounts/login/", timeout=10).status_code == 200
     key = read_key(container)
     assert len(key) >= 50
     docker("restart", container)

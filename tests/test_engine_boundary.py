@@ -81,3 +81,77 @@ def test_a_new_module_importing_httpx_fails(tmp_path: Path) -> None:
         (tmp_path / package).mkdir()
     (tmp_path / "console" / "sneaky.py").write_text("import httpx\n")
     assert offenders(tmp_path) == ["console/sneaky.py imports httpx"]
+
+
+# --- #43: only the access helper builds clients -------------------------------------------------
+
+# Modules that may build an EngineClient (``EngineClient(...)`` or ``.from_settings(...)``).
+CONSTRUCT_ALLOWED = (
+    REPO / "console" / "engine",
+    REPO / "console" / "engine_access.py",
+    REPO / "console" / "engine_status.py",
+    REPO / "console" / "management" / "commands" / "engine_schema.py",
+)
+
+
+def client_constructions(source: str) -> list[str]:
+    """Every ``EngineClient(...)`` / ``<x>.EngineClient(...)`` / ``<x>.from_settings(...)`` call."""
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "EngineClient":
+            found.append("EngineClient(")
+        elif isinstance(func, ast.Attribute) and func.attr in ("EngineClient", "from_settings"):
+            found.append(f".{func.attr}(" if func.attr == "from_settings" else "EngineClient(")
+    return found
+
+
+def _allowed(path: Path, root: Path) -> bool:
+    relative = path.resolve().relative_to(root.resolve())
+    for allowed in CONSTRUCT_ALLOWED:
+        allowed_rel = allowed.relative_to(REPO)
+        if relative == allowed_rel or allowed_rel in relative.parents:
+            return True
+    return False
+
+
+def construction_offenders(root: Path = REPO) -> list[str]:
+    problems = []
+    for package in SCANNED:
+        for path in sorted((root / package).rglob("*.py")):
+            if _allowed(path, root):
+                continue
+            for call in client_constructions(path.read_text(encoding="utf-8")):
+                problems.append(f"{path.relative_to(root)} calls {call}")
+    return problems
+
+
+def test_only_the_access_helper_builds_engine_clients() -> None:
+    assert construction_offenders() == []
+
+
+def test_construction_rule_detects_each_form() -> None:
+    source = "\n".join(
+        [
+            "from console.engine.client import EngineClient",
+            "from console.engine import client as c",
+            "a = EngineClient('http://x', None)",
+            "b = EngineClient.from_settings()",
+            "d = c.EngineClient('http://x', None)",
+            "e = engine_client_for(request)",
+        ]
+    )
+    assert client_constructions(source) == ["EngineClient(", ".from_settings(", "EngineClient("]
+
+
+def test_a_view_building_its_own_client_fails(tmp_path: Path) -> None:
+    for package in SCANNED:
+        (tmp_path / package).mkdir()
+    (tmp_path / "console" / "views").mkdir()
+    (tmp_path / "console" / "views" / "sneaky.py").write_text(
+        "from console.engine.client import EngineClient\nEngineClient.from_settings()\n"
+    )
+    (tmp_path / "console" / "engine_access.py").write_text("EngineClient.from_settings()\n")
+    assert construction_offenders(tmp_path) == ["console/views/sneaky.py calls .from_settings("]

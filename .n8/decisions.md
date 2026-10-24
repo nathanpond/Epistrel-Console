@@ -334,3 +334,42 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Login comes from #43, which is not built yet. The compose and live tests load `/` without signing in, and the planner's "sign in first" note applies once #43 lands.
   **Why:** #42 runs before #43 (execution order above).
   **Issue:** #42
+- **Decision (drift):** No schema re-record for #43. `engine_schema --check` against a fresh Engine `edge` (published on 127.0.0.1:18000, torn down after) reports a match, and the recorded `HealthResponse` / `HealthChecks` / `WorkersCheck` already carry the M2+ fields. The models stay as the schema says (`content_logging: bool = False`, `database` and `ffmpeg`/`ffprobe` as enums, `workers` defaulting to `{}`), not the planner's looser `bool | None` / `str | None`; the probe reads `content_logging` from the raw body, so `/health` JSON still carries `null` when an M0 Engine omits it.
+  **Why:** The planner line says the fields must match the re-recorded schema, and the contract test enforces it.
+  **Issue:** #43
+- **Decision (drift):** `StorySummary` mirrors `StorySummaryBody` in full (id, name `str | None`, owner_principal, status as the four `StoryStatus` values, timeline_revision, next_turn_index, content_rating as `StoryRating`, created_at, archived_at). It has no `characters`: the schema's list item has none. `list_stories(status=None)` returns `list[StorySummary]` through a new `StoryList` model.
+  **Why:** The contract test requires a model's fields to equal the component's properties; #45 gets characters from `GET /stories/{id}`.
+  **Issue:** #43
+- **Decision (Rule 3):** `tests/engine/contract.py` `check_operation` no longer compares the response model with responses that reference the shared `Error` envelope (401/422/503 on `/stories`). Those become `EngineError`, not the model. `/health`'s 503 still references `HealthResponse` and is still checked.
+  **Why:** `GET /stories` is the first registered operation with error responses; without this every Engine route would fail the contract.
+  **Issue:** #43
+- **Decision:** Operators are active superusers everywhere: the login form, the admin (`OperatorAdminSite.has_permission` and its `login_form`, installed via `console.admin_config.OperatorAdminConfig`), and `engine_client_for` (`console/operators.py:is_operator`). The planner's `is_staff` check for `engine_client_for` is tightened to match the round-two "only superuser" convention.
+  **Why:** One rule in one place; a staff-only account must not reach the Engine by any route.
+  **Issue:** #43
+- **Decision (drift):** Anonymous `/admin/` redirects to `/admin/login/?next=/admin/`, not `/accounts/login/`. Django's admin views are exempt from `LoginRequiredMiddleware` and send visitors to their own login, which now uses the operator form and refuses staff-only accounts with the same message.
+  **Why:** That is Django 6.1's behaviour; the security property (no staff-only bypass) holds and is tested.
+  **Issue:** #43
+- **Decision:** The status page's three reads run in `console/engine_status.py:status_reads(client)` on #41's pool under the one 4 s deadline; `/health` keeps `probe_engine(client)` (two reads, no key check). The key line is `Service key: accepted` / `rejected (401)` / `not checked — Engine unreachable` / `not checked — Engine not configured`, and any other answer (e.g. 503, bad body, deadline) reads `unknown — …` rather than claiming the key is wrong. When no key is configured the line adds `(no service key configured)`.
+  **Why:** Only a 401 proves the key wrong; the old "Service key: set / not set" line is replaced by the verdict.
+  **Issue:** #43
+- **Decision:** Degraded reasons: `no worker alive` when `alive == 0`, else `no worker heartbeat` when `last_heartbeat_s` is null; `worker heartbeat N s ago` whenever the heartbeat is above 60 s (so `alive 0` with a 75 s heartbeat gives both); overdue values and the heartbeat are compared strictly above their thresholds; `erasure_pending` only above zero.
+  **Why:** The planner's order lists the two worker reasons as alternatives and the heartbeat age as its own reason.
+  **Issue:** #43
+- **Decision:** The badge is `console/context_processors.py:engine_badge` (a `SimpleLazyObject` over `badge_probe(request)`); views hand their own probe over with `remember_probe(request, result)`. A second processor, `shell`, supplies the nav items (active by path prefix) and `console_version` for the footer. Tests get an autouse `badge_probe_calls` fixture that stubs the badge's own probe (no test reaches a real Engine from the shell) and records its calls.
+  **Why:** Keeps the nav and version out of every view; the stub keeps tests offline whatever the developer exports.
+  **Issue:** #43
+- **Decision (drift):** htmx 4.0.0 (latest release, 2026-08-28; sha256 `e484d917…593f`, identical to npm's `htmx.org@4.0.0`) is vendored at `console/static/console/htmx.min.js`. In htmx 4, `hx-disabled-elt` is renamed `hx-disable` (htmx 2's `hx-disable` is now `hx-ignore`), attribute inheritance needs the `:inherited` suffix, and every non-204/304 response is swapped. Later stories use `hx-disable="this"` with `hx-sync="this:drop"`. `base.html` sets `hx-headers:inherited` with the CSRF token on `<body>`.
+  **Why:** Checked with context7 against the v4.0.0 docs; the planner's `hx-disabled-elt` is the htmx 2 name.
+  **Issue:** #43
+- **Decision:** Error-panel log line for non-HTTP errors: `engine error - unreachable (<reason>) <method> <path>` and `engine error - not_configured <method> <path>`; the method and path are the Console request's. Detail keys matching #44's redaction names (`api_key`, `key`, `secret`, `password`, `credential`, `service_key`, `authorization`, case-insensitive, any depth) show `***`; the list and `redact()` live in `console/redaction.py` for #44 to reuse.
+  **Why:** `EngineError` carries no Engine path; one redaction list serves both stories.
+  **Issue:** #43
+- **Decision:** `apply_engine_errors` (`console/engine_form_errors.py`) is not built in #43; the first story with an Engine-backed form builds it (expected #45's new-story form or #46).
+  **Why:** No form exists yet to test it against, and the `details.errors[]` shape is best fixed against that story's real 422 fixture.
+  **Issue:** #43
+- **Decision:** `python-ulid>=4.0.1` (latest on PyPI, 2026-07-20) is the ULID library; `console/ids.py:new_ulid()` returns `str(ULID())`.
+  **Why:** The convention names python-ulid; version resolved at authoring time.
+  **Issue:** #43
+- **Decision (drift):** #43 lands as two commits. A staging error (a pathspec for the already-moved `console/views.py`) made the first commit, `ed195bd`, carry only the `console/views.py` → `console/views/status.py` rename under the full story message; the second commit carries the rest. History was not rewritten (the brief forbids it); the pair is the story.
+  **Why:** Amending would rewrite history, which the run's rules forbid even before a push.
+  **Issue:** #43

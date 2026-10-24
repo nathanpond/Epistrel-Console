@@ -9,6 +9,7 @@ dependencies = [
     "django>=6.1",
     "gunicorn>=26",
     "httpx>=0.28",
+    "python-ulid>=4.0.1",
     "whitenoise>=6.12",
 ]
 

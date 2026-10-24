@@ -28,10 +28,11 @@ docker compose up -d                 # Engine on http://127.0.0.1:8000
 
 # in this repo
 uv run python manage.py migrate      # create the local SQLite database
+uv run python manage.py createsuperuser   # an operator account (the only way to sign in)
 CONSOLE_ENGINE_URL=http://127.0.0.1:8000 CONSOLE_ENGINE_SERVICE_KEY=dev-only-credential-change-me-00000000 uv run python manage.py runserver
 ```
 
-Open http://127.0.0.1:7739/. The Console runs on port 7739 so it never collides with the Engine (8000); `runserver <addr:port>` still overrides it. Without a valid `CONSOLE_ENGINE_URL` and a `CONSOLE_ENGINE_SERVICE_KEY`, `runserver` (and the WSGI/ASGI entry points) refuse to start and name each problem. The key is the Engine compose's dev-only credential; use whatever your Engine's `EPISTREL_SERVICE_CREDENTIALS` holds.
+Open http://127.0.0.1:7739/ and sign in as that operator: every page except `/health` is behind the login, and only active superusers may sign in (there is no sign-up). The Console runs on port 7739 so it never collides with the Engine (8000); `runserver <addr:port>` still overrides it. Without a valid `CONSOLE_ENGINE_URL` and a `CONSOLE_ENGINE_SERVICE_KEY`, `runserver` (and the WSGI/ASGI entry points) refuse to start and name each problem. The key is the Engine compose's dev-only credential; use whatever your Engine's `EPISTREL_SERVICE_CREDENTIALS` holds.
 
 ### Settings
 
@@ -84,8 +85,8 @@ Selecting `engine_live` without `ENGINE_LIVE_URL` or `ENGINE_LIVE_SERVICE_KEY` i
 
 ```bash
 docker compose pull && docker compose up -d --wait --wait-timeout 120   # three healthy services
-open http://127.0.0.1:7739/                              # Engine http://engine:8000 — Healthy
-docker compose exec console python manage.py createsuperuser   # an admin login
+docker compose exec console python manage.py createsuperuser   # an operator login
+open http://127.0.0.1:7739/                              # sign in: Engine http://engine:8000 — Healthy
 docker compose pull && docker compose up -d --wait       # pick up a newer Console and Engine edge
 docker compose stop                                      # stop, keeping everything
 docker compose down                                      # remove containers, keep data

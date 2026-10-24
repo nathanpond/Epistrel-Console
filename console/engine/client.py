@@ -17,7 +17,13 @@ from urllib.parse import quote
 import httpx
 from django.conf import settings
 
-from console.engine.models import HealthResponse, HealthResult, Model
+from console.engine.models import (
+    HealthResponse,
+    HealthResult,
+    Model,
+    StoryList,
+    StorySummary,
+)
 from console.version import VERSION
 
 USER_AGENT = f"epistrel-console/{VERSION}"
@@ -135,11 +141,14 @@ class EngineClient:
         *,
         transport: httpx.BaseTransport | None = None,
         timeout: float = DEFAULT_TIMEOUT_S,
+        principal: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._service_key = service_key or None
         self._transport = transport
         self.timeout = timeout
+        # Sent on every call that does not pass its own (``engine_client_for`` sets it, #43).
+        self.principal = principal
 
     @classmethod
     def from_settings(cls, *, transport: httpx.BaseTransport | None = None) -> EngineClient:
@@ -159,10 +168,13 @@ class EngineClient:
         *,
         principal: str | None = None,
         timeout: float | None = None,
+        params: dict[str, str] | None = None,
     ) -> httpx.Response:
         """Send one request and return the raw response, whatever its status."""
         method = method.upper()
         headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        if principal is None:
+            principal = self.principal
         if principal is not None:
             headers[PRINCIPAL_HEADER] = _principal_header(principal)
         elif method in MUTATING:
@@ -177,7 +189,9 @@ class EngineClient:
                 trust_env=False,
                 transport=self._transport,
             ) as client:
-                return client.request(method, f"{self.base_url}{path}", headers=headers)
+                return client.request(
+                    method, f"{self.base_url}{path}", headers=headers, params=params
+                )
         except AssertionError:
             raise  # the fake Engine's signals reach the test
         except httpx.TimeoutException as exc:
@@ -209,6 +223,27 @@ class EngineClient:
         if not isinstance(doc, dict):
             raise EngineError("bad_response", "the OpenAPI document is not a JSON object", {}, code)
         return doc
+
+    @operation("GET", "/stories", response_model=StoryList)
+    def list_stories(self, status: str | None = None) -> list[StorySummary]:
+        """``GET /stories``: every story, newest first (optionally only one ``status``)."""
+        params = {"status": status} if status is not None else None
+        response = self._request("GET", "/stories", params=params)
+        return _parse(response, StoryList).items
+
+
+def _parse[M: Model](response: httpx.Response, model: type[M]) -> M:
+    """The typed body of a success, else :class:`EngineError` (envelope or ``bad_response``)."""
+    _raise_for_envelope(response)
+    parsed = model.from_json(_json_or_none(response))
+    if parsed is None:
+        raise EngineError(
+            "bad_response",
+            f"the Engine's answer is not a {model.__name__}",
+            {},
+            response.status_code,
+        )
+    return parsed
 
 
 def _json_or_none(response: httpx.Response) -> object | None:

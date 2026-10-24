@@ -222,6 +222,47 @@ def login(username: str, password: str) -> bool:
         return client.get("/admin/").status_code == 200
 
 
+def create_operator(path: Path, password: str) -> None:
+    """``createsuperuser --noinput`` inside the console container: the operator ``console-test``."""
+    compose(
+        "exec",
+        "-T",
+        "-e",
+        "DJANGO_SUPERUSER_USERNAME=console-test",
+        "-e",
+        f"DJANGO_SUPERUSER_PASSWORD={password}",
+        "-e",
+        "DJANGO_SUPERUSER_EMAIL=t@example.invalid",
+        "console",
+        "python",
+        "manage.py",
+        "createsuperuser",
+        "--noinput",
+        file=path,
+    )
+
+
+def operator_page(username: str, password: str, path: str) -> str:
+    """``path`` as a signed-in operator, through the operator login form (#43)."""
+    with httpx.Client(base_url=BASE, timeout=10) as client:
+        page = client.get("/accounts/login/")
+        match = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', page.text)
+        assert match, "no CSRF token on the login page"
+        response = client.post(
+            "/accounts/login/",
+            data={
+                "csrfmiddlewaretoken": match.group(1),
+                "username": username,
+                "password": password,
+            },
+            headers={"Referer": f"{BASE}/accounts/login/"},
+        )
+        assert response.status_code == 302, response.text
+        result = client.get(path)
+        assert result.status_code == 200
+        return result.text
+
+
 # Run inside the console container: no Engine port is published. Prints [status, error code].
 ENGINE_CALL = """
 import json
@@ -253,9 +294,15 @@ def test_stack_lifecycle(stack_file: Path) -> None:
     up(stack_file)
     body = wait_state("healthy", 60)
     assert body["engine"]["checks"]["database"] == "ok"
-    page = httpx.get(f"{BASE}/", timeout=10)
-    assert page.status_code == 200
-    assert "Healthy" in page.text
+    # Signed out, / is behind the operator login (#43); /health (above) stays public.
+    anonymous = httpx.get(f"{BASE}/", timeout=10)
+    assert anonymous.status_code == 302
+    assert anonymous.headers["location"] == "/accounts/login/?next=/"
+    password = "console-test-password-0000"  # noqa: S105 - throwaway test account
+    create_operator(stack_file, password)
+    page = operator_page("console-test", password, "/")
+    assert "Healthy" in page
+    assert "Service key: accepted" in page
     # The Engine enforces the credential (#42): the Console's key is accepted, a wrong one is not.
     assert engine_call(stack_file, DEV_CREDENTIAL) == [200, None]
     assert engine_call(stack_file, "wrong-key-" + "0" * 32) == [401, "unauthenticated"]
@@ -267,23 +314,6 @@ def test_stack_lifecycle(stack_file: Path) -> None:
     compose("start", "engine", file=stack_file)
     wait_state("healthy", 60)
 
-    password = "console-test-password-0000"  # noqa: S105 - throwaway test account
-    compose(
-        "exec",
-        "-T",
-        "-e",
-        "DJANGO_SUPERUSER_USERNAME=console-test",
-        "-e",
-        f"DJANGO_SUPERUSER_PASSWORD={password}",
-        "-e",
-        "DJANGO_SUPERUSER_EMAIL=t@example.invalid",
-        "console",
-        "python",
-        "manage.py",
-        "createsuperuser",
-        "--noinput",
-        file=stack_file,
-    )
     before = key(stack_file)
     compose("down", file=stack_file)
     up(stack_file)

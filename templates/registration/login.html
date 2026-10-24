@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Epistrel Console{% endblock %}
+{% block heading %}Epistrel Console — sign in{% endblock %}
+{% block content %}
+<form method="post" action="{% url 'login' %}">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <p>{{ form.username.label_tag }} {{ form.username }} {{ form.username.errors }}</p>
+  <p>{{ form.password.label_tag }} {{ form.password }} {{ form.password.errors }}</p>
+  <input type="hidden" name="next" value="{{ next }}">
+  <button type="submit">Sign in</button>
+</form>
+<p>Operator accounts are created with <code>manage.py createsuperuser</code>.</p>
+{% endblock %}

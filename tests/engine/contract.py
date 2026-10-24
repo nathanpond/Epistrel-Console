@@ -112,6 +112,9 @@ def compare_model(doc: dict[str, Any], model: type, node: dict[str, Any], where:
     return problems
 
 
+ERROR_REF = "#/components/schemas/Error"
+
+
 def check_operation(doc: dict[str, Any], op: Operation) -> list[str]:
     name = f"{op.method} {op.path}"
     if op.schema_exempt:
@@ -127,6 +130,8 @@ def check_operation(doc: dict[str, Any], op: Operation) -> list[str]:
         content = resolve(doc, response).get("content", {}).get("application/json", {})
         schema = content.get("schema")
         if isinstance(schema, dict) and "$ref" in schema:
+            if schema["$ref"] == ERROR_REF:
+                continue  # the error envelope: EngineError, not the response model
             checked += 1
             problems.extend(compare_model(doc, op.response_model, schema, f"{name} {status}"))
     if checked == 0:

@@ -52,7 +52,8 @@ ENGINE_SERVICE_KEY: str | None = _ENGINE.service_key
 # Application definition
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # The admin with the operator-only site: superusers only (#43).
+    "console.admin_config.OperatorAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -70,9 +71,17 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Every page except /health, the login pages and static files needs a signed-in operator.
+    "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # An Engine error a view lets escape renders the shared error panel, never a 500.
+    "console.middleware.EngineErrorMiddleware",
 ]
+
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
 
 ROOT_URLCONF = "epistrel_console.urls"
 
@@ -86,6 +95,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "console.context_processors.shell",
+                "console.context_processors.engine_badge",
             ],
         },
     },
