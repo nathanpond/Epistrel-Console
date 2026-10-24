@@ -286,3 +286,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #120
 - **Decision:** #119 and #120 share one commit, because both edit `tests/test_workflows.py`.
   **Issue:** #119, #120
+
+## /n8-exec M1 (fourth verification fixes) — 2026-10-24
+
+- **Decision:** M1's PRs #101, #111, #118 and #121 had already merged, so this run executed the two bugs still open in M1 (#124, #122) on a new branch, `milestone/m1-verify-fixes-4`.
+  **Issue:** #124, #122
+- **Decision:** `engine-up.sh start` asks the image which settings it accepts. It runs `docker run --rm --entrypoint python IMAGE -c …`, which lists `epistrel.config.Settings.model_fields`, and passes only the entries of a fixed four-setting `ENGINE_SETTINGS` table that the image knows. The alternative was a version-keyed table in the script. I chose the probe because a table goes stale with each Engine release, and `edge` has no version to key on. A failed probe, or an image without `EPISTREL_DATABASE_URL`, stops the start; it never guesses. The cost is that the CI script now depends on the Engine's internal module path (`epistrel.config`, `ENV_PREFIX`, `Settings`). This is CI startup, not Console runtime, so it doesn't break the "public REST API only" rule. If the Engine moves that module, the smoke fails loudly with "could not read the settings".
+  **Why:** #124. Engine 0.1.0/0.1.1 have only DATABASE_URL, LOG_LEVEL, HOST, PORT and DEBUG (checked in the Engine's tags and by probing the images). `edge` adds SERVICE_CREDENTIALS and CONFIG_KEY.
+  **Issue:** #124
+- **Decision:** I added a separate `engine-release-smoke` job in `ci.yml` rather than a matrix leg of `engine-smoke`. With a matrix, both legs would write the job outputs that `release.yml` reads to name the tested Engine, and the last leg to finish would win. The new job resolves the newest Engine release with `gh release view --repo nathanpond/Epistrel` (a public repo, so `github.token` is enough) and has no outputs. It runs under the same live-smoke condition as `engine-smoke`, so the gate treats both the same way: either may be skipped only when `LIVE_SMOKE=false`.
+  **Issue:** #124
+- **Decision:** Re-tagging `v0.1.0` at the fix commit is left to the owner. Deleting and re-pushing a release tag is outside this run's authority; the only irreversible step it may take is the merge.
+  **Issue:** #124
+- **Decision:** The mypy guard now scans every first-party `*.py`/`*.pyi` under the repo, pruning dot-directories, `__pycache__` and `node_modules`, instead of only `MYPY_FILES`. It refuses any `.pyi` file and any occurrence of the no-type-check decorator's name, a plain text match that catches every import spelling. The guard spells that name in two pieces so its own file passes the scan. A `getattr(typing, …)` alias would still get past it; deliberate obfuscation like that is out of scope.
+  **Why:** #122. Every empty-code form (`[]`, `[ ]`, `[,]`, `[ , ]`, `[,,]`, `[\t]`, `ignore []`, with a trailing `# why`) and the BOM case were checked against real mypy 2.4 to skip the file. `[misc]` and `[-]` do not skip it and stay allowed.
+  **Issue:** #122
