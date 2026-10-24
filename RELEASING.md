@@ -86,3 +86,7 @@ It runs only from `main`, and it shares the `release-latest` concurrency group w
 Anyone who already pulled `latest` keeps the bad image until they pull again.
 
 To remove a bad release entirely instead, delete its GitHub release and its version tag by hand (`gh release delete vX.Y.Z --cleanup-tag`, as an admin; the `release-tags` ruleset otherwise refuses tag deletion), then run the rollback for the good version. Prefer demoting: the bad image stays addressable for comparison.
+
+## Engine API drift check
+
+`engine-drift.yml` runs daily (06:17 UTC) and on dispatch. It starts the Engine `edge`, compares its `/openapi.json` with `console/engine/openapi.json` (`manage.py engine_schema --check`), and keeps a single **Engine API drift** issue open while the two differ. It comments only when the difference changes, and closes the issue itself once they match again. It never blocks a PR. GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it with `gh workflow enable engine-drift.yml`.

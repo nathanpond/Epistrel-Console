@@ -477,3 +477,49 @@ def test_publish_edge_retags_only_existing_images() -> None:
     doc = load(PUBLISH_EDGE)
     assert jobs(doc)["retag"]["if"] == "needs.resolve.outputs.existing_digest != ''"
     assert jobs(doc)["ci"]["if"] == "needs.resolve.outputs.existing_digest == ''"
+
+
+# --- the daily drift check (#40) ------------------------------------------------------------
+
+ENGINE_DRIFT = WORKFLOWS / "engine-drift.yml"
+
+
+def blocking_triggers(doc: dict[str, Any]) -> list[str]:
+    return sorted(set(triggers(doc)) & {"pull_request", "pull_request_target", "push"})
+
+
+def runs_schema_check(doc: dict[str, Any]) -> bool:
+    return any("engine_schema --check" in str(step.get("run", "")) for _, step in steps(doc))
+
+
+def test_drift_check_never_runs_on_prs_or_pushes() -> None:
+    doc = load(ENGINE_DRIFT)
+    assert blocking_triggers(doc) == []
+    assert triggers(doc)["schedule"] == [{"cron": "17 6 * * *"}]
+    assert "workflow_dispatch" in triggers(doc)
+    assert doc["permissions"] == {"contents": "read"}
+    assert jobs(doc)["drift"]["permissions"] == {"contents": "read", "issues": "write"}
+    assert doc["concurrency"] == {"group": "engine-drift", "cancel-in-progress": False}
+
+
+def test_the_pr_gate_never_checks_drift() -> None:
+    assert not runs_schema_check(load(CI))
+    assert runs_schema_check(load(ENGINE_DRIFT))
+
+
+def test_drift_rules_bite() -> None:
+    doc = copy.deepcopy(load(ENGINE_DRIFT))
+    doc["on"] = {"pull_request": None, "push": {"branches": ["main"]}}
+    assert blocking_triggers(doc) == ["pull_request", "push"]
+    ci = copy.deepcopy(load(CI))
+    ci["jobs"]["test"]["steps"].append({"run": "uv run python manage.py engine_schema --check"})
+    assert runs_schema_check(ci)
+
+
+def test_drift_issue_step_runs_only_with_a_verdict() -> None:
+    drift = jobs(load(ENGINE_DRIFT))["drift"]
+    step = next(s for s in drift["steps"] if "tools.drift_issue" in str(s.get("run", "")))
+    assert step["if"] == (
+        "always() && steps.wait.outcome == 'success' && steps.check.outcome == 'success'"
+    )
+    assert step["env"]["CODE"] == "${{ steps.check.outputs.code }}"

@@ -24,4 +24,5 @@ ci:
     - "pull request → full PR gate (fake Engine from OpenAPI schema; one job runs a smoke suite against the Engine `edge` service container)"
     - "push main → ghcr :edge image"
     - "push tag v* → versioned ghcr image + GitHub release"
+    - "schedule (daily) → Engine API drift issue"
 engine_repo: nathanpond/Epistrel   # each Console milestone M<n> mirrors and depends on Engine M<n>
