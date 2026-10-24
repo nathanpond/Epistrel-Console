@@ -154,6 +154,7 @@ jobs:
         if: always()
         run: docker rm -f console-smoke || true
       - name: Tag
+        id: tag
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -195,7 +196,8 @@ jobs:
             flags=()
             [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
             [ "$HIGHEST" = "true" ] || flags+=(--latest=false)
-            gh release create "$TAG" --verify-tag --title "$TAG" "${flags[@]}" --notes-file body.md
+            # ${flags[@]+...}: an empty array under `set -u` is an error in bash before 4.4.
+            gh release create "$TAG" --verify-tag --title "$TAG" ${flags[@]+"${flags[@]}"} --notes-file body.md
             echo "release $TAG created"
           fi
       - name: Summary

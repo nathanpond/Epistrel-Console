@@ -87,6 +87,26 @@ def test_serve_routes_outside_the_schema(fake_engine: FakeEngine) -> None:
     assert get(fake_engine, "/openapi.json").json() == {"anything": True}
 
 
+@pytest.mark.parametrize(
+    ("method", "path"), [("GET", "/health"), ("get", "/health"), ("GET", "/stories/01J9Z8")]
+)
+def test_serve_refuses_declared_routes(fake_engine: FakeEngine, method: str, path: str) -> None:
+    # A declared route is answered through respond(), which validates the body (#109).
+    with pytest.raises(ValueError, match="use respond"):
+        fake_engine.serve(method, path, 200, json={"bogus": 1})
+    with pytest.raises(UnconfiguredEngineCall):
+        get(fake_engine, path)
+
+
+def test_respond_requires_the_declared_body(fake_engine: FakeEngine) -> None:
+    with pytest.raises(ValueError, match="declares a JSON body"):
+        fake_engine.respond("GET", "/health", 200)
+    with pytest.raises(ValueError, match="declares a JSON body"):
+        fake_engine.respond("GET", "/health", 200, json=None)
+    with pytest.raises(UnconfiguredEngineCall):
+        get(fake_engine, "/health")
+
+
 def test_fail_raises_transport_error(fake_engine: FakeEngine) -> None:
     fake_engine.fail("GET", "/health", httpx.ConnectError("refused"))
     with pytest.raises(httpx.ConnectError):

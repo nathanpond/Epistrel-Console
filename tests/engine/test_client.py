@@ -170,11 +170,44 @@ def test_mutating_call_without_principal_sends_nothing(
     assert thing_engine.requests == []
 
 
-@pytest.mark.parametrize("principal", ["", "x" * 257, "console:a\r\nX-Evil: 1", "a\nb"])
-def test_bad_principal_refused_before_sending(thing_engine: FakeEngine, principal: str) -> None:
-    with pytest.raises(ValueError, match="principal"):
+@pytest.mark.parametrize(
+    ("principal", "why"),
+    [
+        ("", "blank"),
+        ("   ", "blank"),
+        ("x" * 257, "at most 256"),
+        # 200 characters, 1208 once encoded: the Engine checks what it receives (#108).
+        ("console:" + "é" * 200, "at most 256"),
+        ("console:a\r\nX-Evil: 1", "control"),
+        ("a\nb", "control"),
+        ("a\x00b", "control"),
+        ("a\tb", "control"),
+        ("\tconsole:nate", "control"),
+        ("a\x1bb", "control"),
+        ("a\x7fb", "control"),
+        ("system", "reserved"),
+        (" system ", "reserved"),
+    ],
+)
+def test_bad_principal_refused_before_sending(
+    thing_engine: FakeEngine, principal: str, why: str
+) -> None:
+    with pytest.raises(ValueError, match=f"principal.*{why}"):
         client(thing_engine)._request("POST", "/_test/thing", principal=principal)
     assert thing_engine.requests == []
+
+
+@pytest.mark.parametrize(
+    "principal",
+    ["x" * 256, "console:" + "é" * 41, "console:" + "é" * 41 + "  ", "console:\x80", "systems"],
+)
+def test_principal_the_engine_accepts_is_sent(thing_engine: FakeEngine, principal: str) -> None:
+    # "console:" plus 41 "é" is 8 + 246 = 254 characters encoded; C1 controls go percent-encoded.
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    client(thing_engine)._request("POST", "/_test/thing", principal=principal)
+    sent = thing_engine.requests[0].headers["x-epistrel-principal"]
+    assert 1 <= len(sent.strip(" ")) <= 256
+    assert not any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in sent)
 
 
 def test_error_envelope_raises_engine_error(thing_engine: FakeEngine) -> None:

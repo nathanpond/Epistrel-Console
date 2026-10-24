@@ -6,13 +6,20 @@ are current is Dependabot's job, not this file's.
 """
 
 import copy
+import os
 import re
+import shutil
+import subprocess
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
+
+from tests import workflow_steps
+from tests.workflow_steps import StepRun, run_step
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -200,12 +207,91 @@ def test_ci_jobs_run_the_planned_checks() -> None:
     assert any(r.startswith("uv run pytest -m") for r in runs["docker"])
 
 
-def test_mypy_is_not_weakened_in_ci() -> None:
-    weakening = ("--no-strict", "--allow-untyped", "--no-warn", "--ignore-missing-imports")
-    for _, step in steps(load(CI)):
+# A mypy flag that turns a strict check off, or points mypy at other settings.
+MYPY_WEAKENING_FLAG = re.compile(
+    r"--(?:no-(?:strict|warn|check|disallow)\S*|allow-\S+|disable-error-code\S*"
+    r"|ignore-missing-imports|follow-imports\S*|config-file\S*)"
+)
+
+
+def mypy_weakenings(ci: dict[str, Any], pyproject: dict[str, Any]) -> list[str]:
+    """How the gate's mypy is less than ``strict = true`` with every check on (#110).
+
+    In the workflow: any mypy command carrying a weakening flag. In ``[tool.mypy]`` and each
+    ``[[tool.mypy.overrides]]``: ``strict`` off, an ``ignore_*``/``allow_*`` turned on,
+    ``disable_error_code``, or a ``disallow_*``/``warn_*``/``check_*``/``strict_*`` turned off.
+    """
+    found = []
+    for _, step in steps(ci):
         run = str(step.get("run", ""))
         if "mypy" in run:
-            assert not any(flag in run for flag in weakening), run
+            found += [f"ci: {flag}" for flag in MYPY_WEAKENING_FLAG.findall(run)]
+    mypy = (pyproject.get("tool") or {}).get("mypy") or {}
+    if mypy.get("strict") is not True:
+        found.append("pyproject: strict is not true")
+    sections = [("[tool.mypy]", mypy)]
+    sections += [(f"override {o.get('module')}", o) for o in mypy.get("overrides") or []]
+    for where, section in sections:
+        for key, value in section.items():
+            on = key.startswith(("ignore_", "allow_")) and value is True
+            off = key.startswith(("disallow_", "warn_", "check_", "strict_")) and value is False
+            if on or off or key == "disable_error_code":
+                found.append(f"pyproject {where}: {key} = {value!r}")
+    return found
+
+
+def load_pyproject() -> dict[str, Any]:
+    return tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+
+def test_mypy_is_not_weakened() -> None:
+    assert mypy_weakenings(load(CI), load_pyproject()) == []
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--disable-error-code=no-untyped-def",
+        "--allow-untyped-defs",
+        "--no-strict-optional",
+        "--no-warn-unused-ignores",
+        "--ignore-missing-imports",
+        "--follow-imports=skip",
+        "--config-file=lax.toml",
+    ],
+)
+def test_mypy_flag_weakening_bites(flag: str) -> None:
+    ci = copy.deepcopy(load(CI))
+    types = jobs(ci)["types"]["steps"]
+    index = next(i for i, s in enumerate(types) if s.get("run") == "uv run mypy")
+    types[index]["run"] = f"uv run mypy {flag}"
+    assert mypy_weakenings(ci, load_pyproject()) == [f"ci: {flag}"]
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"strict": False}, "pyproject: strict is not true"),
+        ({"disable_error_code": ["no-untyped-def"]}, "disable_error_code"),
+        ({"warn_unused_ignores": False}, "warn_unused_ignores = False"),
+        ({"allow_untyped_defs": True}, "allow_untyped_defs = True"),
+        ({"overrides": [{"module": "tests.*", "ignore_errors": True}]}, "ignore_errors = True"),
+        (
+            {"overrides": [{"module": "x", "disable_error_code": ["attr-defined"]}]},
+            "override x: disable_error_code",
+        ),
+        (
+            {"overrides": [{"module": "y", "ignore_missing_imports": True}]},
+            "ignore_missing_imports = True",
+        ),
+    ],
+)
+def test_pyproject_mypy_weakening_bites(change: dict[str, Any], expected: str) -> None:
+    pyproject = copy.deepcopy(load_pyproject())
+    pyproject["tool"]["mypy"].update(change)
+    found = mypy_weakenings(load(CI), pyproject)
+    assert len(found) == 1, found
+    assert expected in found[0]
 
 
 def test_docker_job_requires_docker_tests() -> None:
@@ -477,6 +563,152 @@ def test_publish_edge_retags_only_existing_images() -> None:
     doc = load(PUBLISH_EDGE)
     assert jobs(doc)["retag"]["if"] == "needs.resolve.outputs.existing_digest != ''"
     assert jobs(doc)["ci"]["if"] == "needs.resolve.outputs.existing_digest == ''"
+
+
+TAGGING_STEPS = ("build", "smoke", "tag")
+
+
+def tagging_bypasses(job: dict[str, Any]) -> list[str]:
+    """Ways a tag could move without the image being built and passing its smoke first (#105).
+
+    The ``tag`` step runs on the implicit ``success()``, so the build and smoke steps must exist
+    in that order, never be skipped (no ``if``), and never swallow a failure
+    (``continue-on-error``). The build pushes by digest only, so a failure before the tag moves
+    nothing.
+    """
+    problems = []
+    ids = [s.get("id") for s in job.get("steps") or []]
+    by_id = {s["id"]: s for s in job.get("steps") or [] if s.get("id") in TAGGING_STEPS}
+    missing = [i for i in TAGGING_STEPS if i not in by_id]
+    if missing:
+        return [f"no {i} step" for i in missing]
+    if not ids.index("build") < ids.index("smoke") < ids.index("tag"):
+        problems.append("steps are not build, then smoke, then tag")
+    build = by_id["build"].get("with") or {}
+    if "tags" in build or "push-by-digest=true" not in str(build.get("outputs", "")):
+        problems.append("build does not push by digest only")
+    for i in TAGGING_STEPS:
+        if "if" in by_id[i]:
+            problems.append(f"{i} has an if")
+        if by_id[i].get("continue-on-error", False) is not False:
+            problems.append(f"{i} continues on error")
+    if job.get("continue-on-error", False) is not False:
+        problems.append("the job continues on error")
+    return problems
+
+
+def test_publish_edge_tags_only_after_a_passing_smoke() -> None:
+    assert tagging_bypasses(jobs(load(PUBLISH_EDGE))["publish"]) == []
+
+
+def test_tagging_rule_bites() -> None:
+    doc = copy.deepcopy(load(PUBLISH_EDGE))
+    job = doc["jobs"]["publish"]
+    steps_by_id = {s.get("id"): s for s in job["steps"]}
+    steps_by_id["tag"]["if"] = "always()"
+    steps_by_id["smoke"]["continue-on-error"] = True
+    steps_by_id["build"]["with"]["tags"] = "${{ steps.meta.outputs.tags }}"
+    assert tagging_bypasses(job) == [
+        "build does not push by digest only",
+        "smoke continues on error",
+        "tag has an if",
+    ]
+    tag = job["steps"].pop(job["steps"].index(steps_by_id["tag"]))
+    job["steps"].insert(0, tag)
+    assert "steps are not build, then smoke, then tag" in tagging_bypasses(job)
+    del job["steps"][0]
+    assert tagging_bypasses(job) == ["no tag step"]
+
+
+# The `ref` step resolves what edge is built from: only main's history, never a short SHA.
+
+REF_STEP = workflow_steps.step(jobs(load(PUBLISH_EDGE))["resolve"], "ref")["run"]
+
+
+def git(repo: Path, *args: str) -> str:
+    git_bin = shutil.which("git")
+    assert git_bin is not None
+    done = subprocess.run(  # noqa: S603
+        [git_bin, "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"},
+    )
+    return done.stdout.strip()
+
+
+@pytest.fixture(scope="module")
+def edge_repo(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """A clone-like repo: ``main`` (= ``origin/main``) at A, and ``feature`` at B off main."""
+    repo = tmp_path_factory.mktemp("edge-repo")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "A")
+    main = git(repo, "rev-parse", "HEAD")
+    git(repo, "update-ref", "refs/remotes/origin/main", main)
+    git(repo, "switch", "-q", "-c", "feature")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "B")
+    feature = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-q", "main")
+    return {"repo": repo, "main": main, "feature": feature}
+
+
+def resolve_ref(script: str, repo: Path, event: str, requested: str, pushed: str) -> StepRun:
+    env = {"EVENT": event, "REQUESTED": requested, "PUSHED": pushed}
+    return run_step(script, repo, env=env)
+
+
+def edge_ref_refusals(script: str, edge_repo: dict[str, Any]) -> dict[str, str]:
+    """For each dispatch the ref step must refuse, the refusal it printed ('' if it ran on)."""
+    main, feature, repo = edge_repo["main"], edge_repo["feature"], edge_repo["repo"]
+    cases = {"off-main sha": feature, "off-main branch": "feature", "short sha": main[:7]}
+    found = {}
+    for case, requested in cases.items():
+        result = resolve_ref(script, repo, "workflow_dispatch", requested, main)
+        found[case] = result.output if result.rc != 0 else ""
+    return found
+
+
+def test_edge_is_built_only_from_mains_history(edge_repo: dict[str, Any]) -> None:
+    refusals = edge_ref_refusals(REF_STEP, edge_repo)
+    assert "not reachable from origin/main" in refusals["off-main sha"]
+    assert "not reachable from origin/main" in refusals["off-main branch"]
+    assert "looks like a short SHA" in refusals["short sha"]
+
+
+@pytest.mark.parametrize(
+    ("event", "requested"),
+    [
+        ("workflow_dispatch", "main"),
+        ("workflow_dispatch", "<full>"),
+        ("push", ""),
+        ("push", "feature"),
+    ],
+)
+def test_edge_ref_resolves_main(edge_repo: dict[str, Any], event: str, requested: str) -> None:
+    main = edge_repo["main"]
+    requested = main if requested == "<full>" else requested
+    result = resolve_ref(REF_STEP, edge_repo["repo"], event, requested, main)
+    assert result.rc == 0, result.output
+    # A push always builds the pushed commit, whatever `inputs.ref` holds.
+    assert result.outputs == {"sha": main, "short": main[:7]}
+
+
+@pytest.mark.parametrize(
+    ("check", "disabled", "case"),
+    [
+        ('git merge-base --is-ancestor "$sha" origin/main', "true", "off-main sha"),
+        ("'^[0-9a-f]{7,39}$'", "'^never$'", "short sha"),
+    ],
+)
+def test_edge_ref_refusals_bite(
+    edge_repo: dict[str, Any], check: str, disabled: str, case: str
+) -> None:
+    # Disable one check in the step and the refusal it owns goes away.
+    assert REF_STEP.count(check) == 1
+    mutated = REF_STEP.replace(check, disabled)
+    assert edge_ref_refusals(mutated, edge_repo)[case] == ""
 
 
 # --- the daily drift check (#40) ------------------------------------------------------------

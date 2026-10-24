@@ -156,3 +156,20 @@ def test_never_calls_require(monkeypatch: pytest.MonkeyPatch, recorded: Path) ->
     monkeypatch.setattr(engine_config, "require", boom)
     with serving(recorded_schema()) as url:
         assert run("--check", "--url", url, "--schema-path", str(recorded))[0] == 0
+
+
+def test_a_crash_in_check_is_no_verdict_not_drift(
+    monkeypatch: pytest.MonkeyPatch, recorded: Path
+) -> None:
+    # Python's own uncaught exit is 1, which engine-drift.yml would file as drift (#109).
+    def boom(*args: object) -> None:
+        raise RuntimeError("diff exploded")
+
+    monkeypatch.setattr(schema, "diff", boom)
+    with serving(recorded_schema()) as url:
+        code, out, err = run("--check", "--url", url, "--schema-path", str(recorded))
+    assert code == 4
+    assert out == ""
+    assert "Traceback" in err
+    assert "RuntimeError: diff exploded" in err
+    assert "no verdict" in err

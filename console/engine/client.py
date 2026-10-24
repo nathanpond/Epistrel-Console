@@ -27,6 +27,7 @@ EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/red
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 PRINCIPAL_HEADER = "X-Epistrel-Principal"
 PRINCIPAL_MAX = 256
+RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
 
 
 class EngineClientError(Exception):
@@ -104,12 +105,26 @@ def principal_for(user: Any) -> str:
 
 
 def _principal_header(principal: str) -> str:
-    if not 1 <= len(principal) <= PRINCIPAL_MAX:
-        raise ValueError(f"principal must be 1-{PRINCIPAL_MAX} characters")
-    if "\r" in principal or "\n" in principal:
-        raise ValueError("principal must not contain CR or LF")
+    """The header value for ``principal``, refused here if the Engine would refuse it.
+
+    The Engine checks the value it receives (``requesting_principal``): spaces and tabs around it
+    trimmed, then not blank, at most 256 characters, no control characters, not ``system``.
+    """
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in principal):
+        raise ValueError("principal must not contain control characters")
     # Headers are ASCII: non-ASCII characters go as percent-encoded UTF-8, ASCII unchanged.
-    return "".join(ch if ord(ch) < 128 else quote(ch, safe="") for ch in principal)
+    encoded = "".join(ch if ord(ch) < 128 else quote(ch, safe="") for ch in principal)
+    # Length is the encoded value's: one "é" is six characters ("%C3%A9") on the wire.
+    value = encoded.strip(" ")
+    if not value:
+        raise ValueError("principal must not be blank")
+    if len(value) > PRINCIPAL_MAX:
+        raise ValueError(
+            f"principal must be at most {PRINCIPAL_MAX} characters once encoded ({len(value)})"
+        )
+    if value == RESERVED_PRINCIPAL:
+        raise ValueError(f"principal {RESERVED_PRINCIPAL!r} is reserved for the Engine")
+    return encoded
 
 
 class EngineClient:

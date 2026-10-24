@@ -3,7 +3,8 @@
     manage.py engine_schema --write [--url URL]   fetch <URL>/openapi.json and record it
     manage.py engine_schema --check [--url URL]   compare; print the difference
 
-Exit codes: 0 match (or written), 1 drift, 2 fetch failure, 3 no usable URL or recorded file.
+Exit codes: 0 match (or written), 1 drift, 2 fetch failure, 3 no usable URL or recorded file,
+4 an unexpected error (traceback on stderr; never 1, so a crash never reads as drift).
 Django's own bad-argument exit is also 2, so callers treat anything but 0/1 as "no verdict".
 Never calls ``engine_config.require()``: this is tooling, not a serving entry point.
 """
@@ -13,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from console.engine.client import EngineClient, EngineError, EngineUnreachable
 from epistrel_console.engine_config import parse_url
 
 FETCH_TIMEOUT_S = 10.0
+CRASHED = 4
 MATCH = "Engine API matches the recorded schema."
 
 
@@ -38,7 +41,14 @@ class Command(BaseCommand):
         parser.add_argument("--schema-path", default=None, help=argparse.SUPPRESS)
 
     def handle(self, *args: Any, **options: Any) -> None:
-        sys.exit(self.run(options))
+        try:
+            code = self.run(options)
+        except Exception:
+            # Python's own uncaught-exception exit is 1, which the drift check would read as drift.
+            self.stderr.write(traceback.format_exc(), ending="")
+            self._error("engine_schema crashed; no verdict")
+            code = CRASHED
+        sys.exit(code)
 
     def _error(self, message: str) -> None:
         self.stderr.write(f"error: {message}")

@@ -227,3 +227,28 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #37
 - **Incident:** While preparing the `n8/drift-probe` branch, `git commit -am` also committed the owner's uncommitted `.idea/epistrel-console.iml` edit, and that commit was pushed. Fixes: the owner's edit was restored to the working tree byte for byte (checked with `cmp`), the probe branch was force-pushed with only `console/engine/openapi.json`, and the branch was deleted after the proof. The IDE file's content sat on the remote for about a minute in a now-unreferenced commit.
   **Issue:** #40
+
+## /n8-exec M1 (verification fixes) — 2026-10-24
+
+- **Decision:** M1's PR #101 had already merged, so this run executed the six bugs `/n8-verify M1` filed (#105–#110) on a new branch, `milestone/m1-verify-fixes`, as was done for M0.
+  **Issue:** #105–#110
+- **Decision:** Workflow behaviour is now tested by running each step's `run:` script under `bash -e`, GitHub's default shell, via a new `tests/workflow_steps.py`. `gh` and `docker` are always stubbed, and an unanswered stub exits 99, so a test can never reach a real registry or release. Static rules (`tagging_bypasses`, `rebuild_steps`, the Engine-guard rule) cover what can't be run: step order, `if`, `continue-on-error`. Each rule and each behaviour test has a mutation shown to fail.
+  **Why:** The issues asked for tests of what the steps *do* (refuse an off-main ref, demote with `--latest=false`, leave `X.Y` alone). Text checks against the YAML only prove the text is there.
+  **Issue:** #105, #106, #107
+- **Decision (Rule 3):** In `release.yml`, `"${flags[@]}"` became `${flags[@]+"${flags[@]}"}`. Under `set -u`, bash before 4.4 treats an empty array as unbound. The runner's bash 5 is fine, but macOS's `/bin/bash` 3.2 is too old, so the new stubbed-step test failed locally for a stable, highest release (no flags). Behaviour on the runner doesn't change. The Tag step also gained `id: tag`, so it shares edge's tagging rule.
+  **Issue:** #106
+- **Decision:** Rollback's good-image inspect now names the registry's own error ("cannot inspect … (image tag not found, or the registry refused): <stderr>") instead of always saying "image tag not found". The bad image's inspect still tolerates failure (`|| true`): a demoted version may legitimately have no image, so its tags just aren't moved.
+  **Issue:** #107
+- **Decision (Rule 2):** `_principal_header` mirrors the Engine's whole `requesting_principal` rule on the encoded value. It refuses whitespace-only principals and the reserved `system` as well as the over-length and control-character cases the issue named. C1 controls (U+0080–U+009F) are allowed: they're percent-encoded, so the Engine receives ASCII.
+  **Why:** All of these are headers the Engine would refuse with 400 `principal_required`. A local `ValueError` is the issue's stated goal.
+  **Issue:** #108
+- **Decision:** The deadline fallback in `engine_status.probe_engine` now logs one WARNING per call that misses the 4 s deadline ("no answer from /openapi.json within 4.0 s; reported as timeout"). The abandoned call isn't cancelled, and its own later line (e.g. `transport error`) still follows. A real cancel would need an overall deadline inside the client, which is a bigger change than this low-severity finding warrants.
+  **Issue:** #109
+- **Decision:** `engine_schema` exits **4** on an unexpected exception, printing the traceback and "no verdict" on stderr. `tools.drift_issue` already passes any code other than 0/1 through without touching an issue, and its tests already include 4.
+  **Issue:** #109
+- **Decision:** The mypy guard is now `mypy_weakenings(ci, pyproject)` in `tests/test_workflows.py`, replacing `test_mypy_is_not_weakened_in_ci`. Beyond the issue's `--disable-error-code` and overrides with `ignore_errors`, it flags `--follow-imports…`, `--config-file…`, any `allow_*`/`ignore_*` turned on, and any `disallow_*`/`warn_*`/`check_*`/`strict_*` turned off.
+  **Issue:** #110
+- **Decision:** The README now says "Python 3.14 (pinned in `.python-version`…)". `pyproject.toml`'s `requires-python = ">=3.12"` is unchanged, because narrowing it changes the lockfile's resolution and the finding was about the README only. A test pins the README to `.python-version`.
+  **Issue:** #110
+- **Decision:** #105 and #110 share one commit (7f03c0f), because both edit `tests/test_workflows.py`.
+  **Issue:** #105, #110

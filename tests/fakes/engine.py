@@ -4,7 +4,8 @@ Built from the recorded schema (``console/engine/openapi.json``) or one passed i
 schema does not declare raises :class:`UndeclaredEngineCall`; a declared one with no canned answer
 raises :class:`UnconfiguredEngineCall`. Both subclass ``AssertionError``, which the client and the
 probe always re-raise, so a test fails instead of receiving a made-up answer. Every canned JSON
-body is validated against the schema's response schema for that status before it is served.
+body is validated against the schema's response schema for that status before it is served, and
+a status whose schema declares a body must be given one.
 """
 
 import copy
@@ -133,21 +134,29 @@ class FakeEngine:
         key = self._response_key(responses, status)
         if key is None:
             raise ValueError(f"{method} {path} declares no {status} response")
-        if json is not None:
-            content = responses[key].get("content", {}).get("application/json")
-            if content is not None and "schema" in content:
-                pointer = "/".join(
-                    _escape(t) for t in ("paths", path, method.lower(), "responses", key, "content")
-                )
-                ref = {"$ref": f"{DOC_URI}#/{pointer}/application~1json/schema"}
-                Draft202012Validator(ref, registry=self._registry).validate(json)
+        content = responses[key].get("content", {}).get("application/json")
+        if content is not None and "schema" in content:
+            if json is None:
+                raise ValueError(f"{method} {path} {status} declares a JSON body: pass json=")
+            pointer = "/".join(
+                _escape(t) for t in ("paths", path, method.lower(), "responses", key, "content")
+            )
+            ref = {"$ref": f"{DOC_URI}#/{pointer}/application~1json/schema"}
+            Draft202012Validator(ref, registry=self._registry).validate(json)
         self._canned[(method, path)] = _Canned(status, json, headers or {}, delay)
 
     def serve(
         self, method: str, path: str, status: int, json: object | None = None, delay: float = 0.0
     ) -> None:
-        """Answer a route the schema does not list (e.g. ``/openapi.json``), unvalidated."""
-        self._served[(method.upper(), path)] = _Canned(status, json, {}, delay)
+        """Answer a route the schema does not list (e.g. ``/openapi.json``), unvalidated.
+
+        Refused for a route the schema declares: that one is answered through :meth:`respond`,
+        which validates the body.
+        """
+        method = method.upper()
+        if self._match(method, path) is not None:
+            raise ValueError(f"{method} {path} is in the Engine's schema: use respond()")
+        self._served[(method, path)] = _Canned(status, json, {}, delay)
 
     def fail(self, method: str, path: str, exc: Exception) -> None:
         """Raise ``exc`` (an httpx transport error) for ``method path``."""

@@ -53,17 +53,19 @@ jobs:
           BAD: ${{ inputs.bad_version }}
         run: |
           set -eu
+          # [[ =~ ]] matches the whole value; grep would accept one good line of a multi-line input.
           re='^[0-9]+\.[0-9]+\.[0-9]+$'
-          printf '%s' "$GOOD" | grep -Eq "$re" || { echo "::error::good_version must be bare X.Y.Z (no v, no pre-release) — nothing changed"; exit 1; }
+          [[ $GOOD =~ $re ]] || { echo "::error::good_version must be bare X.Y.Z (no v, no pre-release) — nothing changed"; exit 1; }
           if [ -n "$BAD" ]; then
-            printf '%s' "$BAD" | grep -Eq "$re" || { echo "::error::bad_version must be bare X.Y.Z — nothing changed"; exit 1; }
+            [[ $BAD =~ $re ]] || { echo "::error::bad_version must be bare X.Y.Z — nothing changed"; exit 1; }
             [ "$GOOD" != "$BAD" ] || { echo "::error::good_version and bad_version are the same — nothing changed"; exit 1; }
           fi
           running=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --limit 50 --json status \
             --jq '[.[] | select(.status | test("^(in_progress|queued|waiting|pending|requested)$"))] | length')
           [ "$running" = "0" ] || { echo "::error::a release run is not finished yet ($running); retry when it is — nothing changed"; exit 1; }
-          good_digest=$(docker buildx imagetools inspect "$IMAGE:$GOOD" --format '{{.Manifest.Digest}}' 2>/dev/null) \
-            || { echo "::error::image tag not found: $IMAGE:$GOOD — nothing changed"; exit 1; }
+          # The registry's own message is kept: a missing tag and an auth or network failure differ.
+          good_digest=$(docker buildx imagetools inspect "$IMAGE:$GOOD" --format '{{.Manifest.Digest}}' 2>inspect.err) \
+            || { echo "::error::cannot inspect $IMAGE:$GOOD (image tag not found, or the registry refused): $(tr '\n' ' ' < inspect.err)— nothing changed"; exit 1; }
           gh release view "v$GOOD" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null \
             || { echo "::error::release v$GOOD does not exist — nothing changed"; exit 1; }
           bad_digest=""
