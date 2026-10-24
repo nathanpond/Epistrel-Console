@@ -146,3 +146,17 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #32, #42
 - **Decision:** The compose pull test accepts the console tag listed as "Skipped" (Compose's output for `pull_policy: build`) and asserts the Engine `edge` image is pulled.
   **Issue:** #32
+
+## /n8-exec M0 (verification fixes) — 2026-10-24
+
+- **Decision:** M0's PR #90 had already merged, so this run executed the six bugs `/n8-verify M0` filed (#92–#97) on a new branch, `milestone/m0-verify-fixes`.
+  **Issue:** #92–#97
+- **Decision:** #92 and #93 share one commit, because both edit `tests/test_startup_refusal.py`. The reloader-on test was checked against a mutant that calls `require()` after `super().handle()`: both cases fail (timeout).
+  **Issue:** #92, #93
+- **Decision:** The secret key is now written to a private temp file in the data dir and hard-linked into place (`os.link` fails if the file exists, so the first start still wins). A rename was rejected because it silently replaces a winner's key. The losing process also retries a short file 20 × 50 ms before refusing, which covers a file written in place by an older Console.
+  **Why:** The issue offered "retry" or "atomic write". Linking removes the race at its source, and the retry costs nothing.
+  **Issue:** #95
+- **Decision:** Nested check values render through a new `check_value` template filter: `null` and empty objects/lists as "—", booleans as yes/no, objects as `key value` pairs with underscores turned into spaces, and nested numeric keys ending `_s`/`_ms` shown with the unit (`last heartbeat 2.2 s`). Top-level check names stay verbatim.
+  **Issue:** #96
+- **Decision:** #97 is fixed in the docs, not the stack. Compose's `COMPOSE_PROJECT_NAME` override of `name:` can't be disabled from the file. The compose comment and README now say a `.env` can't change any *setting* but can rename the project. A docker-marked test pins this: other variables leave `docker compose config` unchanged, and `COMPOSE_PROJECT_NAME` renames the project.
+  **Issue:** #97
