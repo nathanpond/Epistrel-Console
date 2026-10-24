@@ -1,6 +1,6 @@
 [project]
 name = "epistrel-console"
-version = "0.1.0"
+version = "0.1.1"
 description = "Human-facing test harness for the Epistrel Engine"
 readme = "README.md"
 license = "Apache-2.0"
