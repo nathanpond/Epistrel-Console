@@ -144,14 +144,28 @@ def error_details(response: object) -> dict[str, Any]:
 
 def turn_report_json(response: object) -> dict[str, Any] | None:
     """The turn report in a stored response: the response itself when it has ``model_calls``
-    (a turn), else a 422/503's ``error.details`` when those carry ``model_calls``."""
+    (a turn), else a 503's ``error.details`` when those carry a ``model_calls`` list. A 422
+    ``guardrail_violation``'s ``model_calls`` is the input gate's count, not a report
+    (``input_gate_spend``)."""
     top = _dict(response)
     if "model_calls" in top:
         return top
     details = error_details(response)
-    if "model_calls" in details:
+    if isinstance(details.get("model_calls"), list):
         return details
     return None
+
+
+def _count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def input_gate_spend(response: object) -> tuple[int, int] | None:
+    """What a refused input's gate spent: a 422 ``guardrail_violation``'s ``error.details``
+    ``model_calls`` (a count) and ``elapsed_ms``, or None when either is absent."""
+    details = error_details(response)
+    calls, elapsed = _count(details.get("model_calls")), _count(details.get("elapsed_ms"))
+    return None if calls is None or elapsed is None else (calls, elapsed)
 
 
 def is_turn(response: object) -> bool:

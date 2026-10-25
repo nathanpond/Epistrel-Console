@@ -87,7 +87,7 @@ def test_a_rejected_input_shows_its_violations(operator_client: Client) -> None:
                 **engine_fixture("respond_guardrail_violation")["error"],
                 "details": {
                     **engine_fixture("respond_guardrail_violation")["error"]["details"],
-                    "model_calls": [],
+                    "model_calls": 2,
                     "elapsed_ms": 10,
                 },
             }
@@ -96,6 +96,8 @@ def test_a_rejected_input_shows_its_violations(operator_client: Client) -> None:
     html = inspect(operator_client, TURN_OP)
     assert "Input rejected by a guardrail" in html
     assert "<td><code>minors_no_sexual_content</code></td>" in html
+    assert "<dt>Input gate</dt><dd>2 model calls, 10 ms</dd>" in html  # #130
+    assert "Turn report" not in html
 
 
 def test_first_load_shows_the_latest_report(operator_client: Client, engine: FakeEngine) -> None:

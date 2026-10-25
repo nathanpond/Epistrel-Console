@@ -407,7 +407,7 @@ def guardrail(*violations: dict[str, Any]) -> dict[str, Any]:
         "guardrail_violation",
         "the input violates a guardrail policy",
         violations=list(violations),
-        model_calls=[],
+        model_calls=1,  # the input gate's count, as the Engine sends it (#130)
         elapsed_ms=3,
     )
 
@@ -425,7 +425,7 @@ def test_a_located_guardrail_violation_lands_on_its_row(
     html = post_ingest(operator_client, player(), narration(text="A dragon lands."))
     assert "Guardrail no-dragons: No dragons." in row(html, 1)
     assert "Input rejected by a guardrail — nothing was written." in html
-    assert "<h3>Turn report</h3>" in html  # the gate's model calls (shared partial)
+    assert "<dt>Input gate</dt><dd>1 model call, 3 ms</dd>" in html  # the gate's model calls
 
 
 def test_an_unlocated_guardrail_violation_is_listed_in_the_tab(

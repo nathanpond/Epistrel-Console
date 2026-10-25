@@ -10,7 +10,9 @@
           "message": "No sexual content involving minors.",
           "locator": "player_input.text"
         }
-      ]
+      ],
+      "model_calls": 1,
+      "elapsed_ms": 3
     }
   }
 }

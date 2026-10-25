@@ -24,7 +24,7 @@ from console.operation_log import (
     rebuild_job_text,
 )
 from console.redaction import redact
-from console.turn_reports import stored_turn_report, violation_rows
+from console.turn_reports import input_gate_text, stored_turn_report, violation_rows
 
 PAGE_SIZE = 50
 EMPTY = "—"
@@ -121,6 +121,7 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "is_turn": is_turn(row.response),
         "report": stored_turn_report(row.response),
         "input_violations": violation_rows(input_violations(row.response)),
+        "input_gate": input_gate_text(row.response),
         "output_violations": violation_rows(output_violations(row.response)),
         "job_text": _rebuild_job_text(row),
     }

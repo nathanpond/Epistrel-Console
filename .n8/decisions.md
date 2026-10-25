@@ -712,3 +712,26 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (Rule 3):** CodeQL failed the milestone PR on `py/incomplete-url-substring-sanitization` at `tests/test_status_views.py:87`, an M0 test assertion (`"http://engine.test:8000" in html`) flagged because #43 changed the file. It is a false positive in a test, but rather than dismiss it the assertion now checks the view's `engine_url` context value and the exact `<dd>` the status page renders, which is also the stricter test.
   **Why:** The merge gate requires CodeQL; dismissing an alert is the owner's call, tightening a test is not.
   **Issue:** #43
+
+## /n8-exec M2 (verification fixes) — 2026-10-24
+
+- **Decision:** Re-ran `/n8-exec M2` as a fix pass for the bugs `/n8-verify M2` filed (#130, #131, #132). PR #128 had already merged M2's stories. Branch `milestone/m2-verification-fixes`, like M1's earlier verification-fix PRs.
+  **Why:** M2's only open non-epic issues are those three bugs. M1 set the precedent for running verification fixes through `/n8-exec`.
+  **Issue:** #130, #131, #132
+- **Decision (Rule 1):** `turn_report_json()` reads a 422/503's `error.details` as a turn report only when its `model_calls` is a **list**. The new `input_gate_spend()` reads a 422 `guardrail_violation`'s integer `model_calls` and `elapsed_ms` (Engine `orchestrator/policies/input_gate.py:118` sends `extra={"model_calls": <int>, "elapsed_ms": <int>}`). The play inspector (live refusal and logged row) and the operation detail page now show "Input gate: N model call(s), M ms", the ingest tab's wording, shared as `turn_reports.spend_text`. The inspector shows it as a fact; the operation detail page shows it as a line in "Input rejected". The guardrail refusal no longer builds a `TurnReport`.
+  **Why:** One root cause. The integer count was dropped (#130), and it also made `is_turn` true, which produced the false "could not be read" notice (#131).
+  **Issue:** #130, #131
+- **Decision:** The play view's first-load and clicked-item lookups (`_latest_inspector`, `selected_inspector`) now pick a row when it has a turn report **or** an input gate spend (`_inspectable`).
+  **Why:** With live data, those lookups used to select rejected-input rows because their `details` carried `model_calls`. Keeping that explicit means the root-cause fix does not quietly change which row the play view shows.
+  **Issue:** #130
+- **Decision:** These tests now use the live integer shape instead of hand-built `model_calls` lists:
+  - `respond_guardrail_violation.json` gained `model_calls: 1, elapsed_ms: 3`.
+  - `test_turn_outcomes`, `test_inspector` and `test_ingest`'s `guardrail()` helper now send an integer count.
+  - `test_a_422_with_model_calls_in_details_is_a_turn_row` became `test_a_503_…`: a `model_unavailable` 503, the case where details carry a list (Engine `lite/pipeline.py:862`).
+
+  `test_ingest` was not named in #130. It had the same false green on the same shared refusal path, so it was fixed here.
+  **Why:** #130's evidence: these tests stayed green on a shape the Engine never sends.
+  **Issue:** #130
+- **Decision:** The story-settings pinned/instructions guardrail refusal (`views/story_settings.py`) still lists only the violations, without the gate spend.
+  **Why:** That AC (#54) does not ask for the spend, and no bug was filed against it. It is out of scope for this pass.
+  **Issue:** #130
