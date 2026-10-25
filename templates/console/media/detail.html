@@ -38,6 +38,7 @@
   <dt>Created by</dt><dd>{{ asset.created_by|principal_link }}</dd>
   <dt>Created</dt><dd>{{ asset.created_at|engine_time }}</dd>
 </dl>
+{% include "console/_ownership.html" %}
 {% if asset.generation_metadata %}
 <details class="more"><summary>More</summary>
   <h3>Generation metadata</h3>

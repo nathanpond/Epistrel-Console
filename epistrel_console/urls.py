@@ -19,6 +19,7 @@ from console.views import (
     models,
     offboarding,
     operations,
+    ownership,
     personas,
     play,
     policies,
@@ -271,6 +272,26 @@ offboarding_patterns = (
     "offboarding",
 )
 
+# Owners and relations (#79): the shared panel's writes, for every owned type (``<entity_type>`` is
+# the Engine's ``EntityType``; any other is 404). The removed relation and principal travel in the
+# query string and the POST body, never a path segment (a principal may hold "/").
+ownership_patterns = (
+    [
+        path("<str:entity_type>/<str:entity_id>/owner/", ownership.transfer_owner, name="owner"),
+        path(
+            "<str:entity_type>/<str:entity_id>/relations/add/",
+            ownership.add_relation,
+            name="add",
+        ),
+        path(
+            "<str:entity_type>/<str:entity_id>/relations/remove/",
+            ownership.remove_relation,
+            name="remove",
+        ),
+    ],
+    "ownership",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -294,5 +315,6 @@ urlpatterns = [
     path("profiles/", include(profile_patterns)),
     path("principals/", include(principal_patterns)),
     path("offboarding/", include(offboarding_patterns)),
+    path("ownership/", include(ownership_patterns)),
     path("admin/", admin.site.urls),
 ]

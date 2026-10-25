@@ -93,6 +93,7 @@ from console.turn_reports import (
     stored_turn_report,
     violation_rows,
 )
+from console.views.ownership import OwnershipPanel, ownership_context
 
 TRANSCRIPT_LIMIT = 50
 POLL_GRACE_S = 30.0  # polling stops this long after the turn's deadline (planner)
@@ -634,6 +635,7 @@ class PlayPage:
     header: TimelineHeader | None = None
     fork_banner: ForkBanner | None = None
     cast_panel: CastPanel | None = None  # #72: Add character, Promote
+    ownership: OwnershipPanel | None = None  # #79: owner and relations
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
@@ -644,6 +646,7 @@ class PlayPage:
             "story": self.story,
             "cast": self.story.cast,
             "cast_panel": self.cast_panel,
+            "ownership": self.ownership,
             "actions_query": confirm_query(
                 self.story.name, reverse("stories:detail", args=[self.story.id])
             ),
@@ -765,8 +768,28 @@ def _page(
         _timeline_header(story, play),
         _fork_banner(request, story_id),
         cast_panel(engine_client_for(request), story),
+        _ownership(request, story),
     )
     return render(request, "console/play/play.html", page.context(request))
+
+
+def _ownership(request: HttpRequest, story: Story) -> OwnershipPanel:
+    """#79's panel, its writes returning to the play view (this page when it was a GET; a POST
+    that re-renders the page, a turn, returns to the play view itself)."""
+    next_url = (
+        request.get_full_path()
+        if request.method in ("GET", "HEAD")
+        else reverse("stories:detail", args=[story.id])
+    )
+    return ownership_context(
+        request,
+        engine_client_for(request),
+        "story",
+        story.id,
+        name=story.name,
+        owner=story.owner_principal,
+        next_url=next_url,
+    )
 
 
 @require_safe

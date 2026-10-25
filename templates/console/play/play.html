@@ -24,6 +24,7 @@
   <dt>Created</dt><dd>{{ story.created_at|engine_time }}</dd>
 </dl>
 <p>{% include "console/stories/_actions.html" with story=story query=actions_query %} <a class="button" href="{% url 'engine:rebuild' story.id %}?{{ actions_query }}">Rebuild projections</a> <a class="history-link" href="{% url 'stories:history' story.id %}">History</a> <a class="settings-link" href="{% url 'stories:settings' story.id %}">Settings</a>{% if creation_report_url %} <a class="creation-report-link" href="{{ creation_report_url }}">Creation report</a>{% endif %} <a href="{% url 'stories:list' %}">All stories</a></p>
+{% include "console/_ownership.html" %}
 <div class="play">
   <section class="play-left">
     {% include "console/play/_transcript.html" %}

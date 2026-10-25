@@ -15,5 +15,6 @@
   <dt>Created</dt><dd>{{ persona.created_at|engine_time }}</dd>
   <dt>Updated</dt><dd>{{ persona.updated_at|engine_time }}</dd>
 </dl>
+{% include "console/_ownership.html" %}
 <p><a class="button edit" href="{{ edit_url }}">Edit</a> <a class="button danger delete" href="{{ delete_url }}">Delete</a></p>
 {% endblock %}

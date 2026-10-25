@@ -105,6 +105,7 @@ from console.engine.models import (
     OutcomeCounts,
     OwnedItem,
     OwnedPage,
+    OwnerTransfer,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -134,6 +135,9 @@ from console.engine.models import (
     RegenerateResult,
     RelatedItem,
     RelatedPage,
+    RelationItem,
+    RelationRecord,
+    Relations,
     ReplyMessage,
     RespondResponse,
     RoleCharacter,
@@ -202,13 +206,19 @@ HEALTH_REF = {"$ref": "#/components/schemas/HealthResponse"}
 # #78: ``EngineProfile.settings`` is raw JSON the profile schema describes (whatever modules
 # this deployment delivers), not the modules the recorded schema spells out.
 SETTINGS_ANY = {"type": "object", "additionalProperties": True}
+# #79: one model reads the story and the non-story owner and relation bodies; each carries one
+# revision (the story's ``timeline_revision`` or the deployment's ``config_revision``), so the
+# model has both, optional. The widening gives each body both, nullable and not required.
+REVISIONS = ("config_revision", "timeline_revision")
+NULLABLE_INT = {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+OWNERSHIP_BODIES = ("OwnerBody", "StoryOwnerBody", "RelationBody", "StoryRelationBody")
 
 
 def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     """``doc`` with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s ``media_id``:
     the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
     publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
-    any object (#78)."""
+    any object (#78). The owner and relation bodies carry both revisions, optional (#79)."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -217,6 +227,10 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
         "media_id"
     ]
     schemas["EngineProfile"]["properties"]["settings"] = SETTINGS_ANY
+    for name in OWNERSHIP_BODIES:
+        body = schemas[name]
+        body["properties"].update(dict.fromkeys(REVISIONS, NULLABLE_INT))
+        body["required"] = [r for r in body["required"] if r not in REVISIONS]
     return widened
 
 
@@ -465,6 +479,13 @@ def test_the_widening_only_adds_media_id() -> None:
         (ProfileVersionList, "ProfileVersionsBody"),
         (SettingTags, "SettingTagsBody"),
         (ProfileSchema, "ProfileSchemaBody"),
+        # #79: owners and relations.
+        (OwnerTransfer, "OwnerBody"),
+        (OwnerTransfer, "StoryOwnerBody"),
+        (RelationRecord, "RelationBody"),
+        (RelationRecord, "StoryRelationBody"),
+        (RelationItem, "RelationItem"),
+        (Relations, "RelationsBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -706,3 +727,18 @@ def test_the_principal_lookup_types_match_the_schema() -> None:
     for key, entity_type in ENGINE_LOOKUP_KEYS.items():
         assert BY_LOOKUP_KEY[key].type == entity_type
     assert OPERATIONS["GET /principals/{principal_id}"].response_model is None
+
+
+@pytest.mark.parametrize("component", OWNERSHIP_BODIES)
+def test_the_ownership_bodies_widen_only_their_revisions(component: str) -> None:
+    """#79: each widened body differs from the recorded one by the revisions alone: the one it
+    carries (required, an integer) becomes optional and nullable, and the other is added."""
+    recorded = DOC["components"]["schemas"][component]
+    widened = WIDENED["components"]["schemas"][component]
+    (carried,) = [r for r in REVISIONS if r in recorded["properties"]]
+    assert carried in recorded["required"]
+    assert recorded["properties"][carried]["type"] == "integer"
+    assert set(widened["properties"]) - set(recorded["properties"]) == set(REVISIONS) - {carried}
+    same = set(recorded["properties"]) - {carried}
+    assert all(recorded["properties"][k] == widened["properties"][k] for k in same)
+    assert set(recorded["required"]) - set(widened["required"]) == {carried}

@@ -39,6 +39,7 @@ from tests.catalog.helpers import (
     text,
 )
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_one_relation, shows_panel
 from tests.fixtures import engine_fixture
 
 pytestmark = pytest.mark.django_db
@@ -554,3 +555,23 @@ def test_fixture_list_item_is_valid(engine: FakeEngine) -> None:
     engine.respond("GET", LIST, 200, json=listing(list_item(rank=None)))
     engine.respond("GET", ITEM, 200, json=full())
     engine.respond("GET", ITEM, 200, json=card())
+
+
+def test_the_detail_includes_the_ownership_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#79: the panel on the full view (a character with a companion says it moves along)."""
+    answer_detail(engine, full(), draft())
+    answer_one_relation(engine, "character", CHAR)
+    html = operator_client.get(DETAIL).content.decode()
+    assert shows_panel(html, "character", CHAR)
+    assert '<input type="hidden" name="has_companion" value="1">' in html
+
+
+def test_the_public_card_view_has_no_ownership_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", ITEM, 200, json=engine_fixture("get_catalog_character_card"))
+    html = operator_client.get(f"{DETAIL}?projection=card").content.decode()
+    assert 'id="ownership"' not in html
+    assert not [r for r in engine.requests if r.url.path.endswith("/relations")]

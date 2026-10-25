@@ -24,6 +24,7 @@ from console.templatetags.console_format import human_bytes
 from console.views import media
 from console.views.media import duration
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_one_relation, answer_relations, shows_panel
 from tests.fixtures import engine_fixture
 from tests.ratings.helpers import TEEN, answer_ratings, calls, error, hidden, text
 
@@ -56,6 +57,7 @@ RETIRE = f"/media/{MED1}/retire/"
 def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngine]:
     """The fake Engine the media views talk to, through the real recording client."""
     fake = FakeEngine()
+    answer_relations(fake)  # #79: every owned entity's page reads its relations
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)
@@ -820,3 +822,13 @@ def test_human_bytes(value: int, shown: str) -> None:
 @pytest.mark.parametrize(("ms", "shown"), [(None, "—"), (0, "0:00.0"), (65_300, "1:05.3")])
 def test_duration(ms: int | None, shown: str) -> None:
     assert duration(ms) == shown
+
+
+def test_detail_includes_the_ownership_panel(operator_client: Client, engine: FakeEngine) -> None:
+    """#79: the owner and relations panel, named by the caption."""
+    engine.respond("GET", ITEM, 200, json=asset(depicted_subjects=[], caption="Harbour at dusk"))
+    answer_ratings(engine)
+    answer_one_relation(engine, "media", MED1)
+    html = operator_client.get(DETAIL).content.decode()
+    assert shows_panel(html, "media", MED1)
+    assert 'name="name" value="Harbour at dusk"' in html

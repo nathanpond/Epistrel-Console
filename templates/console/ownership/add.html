@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Add relation — {{ name }} — Epistrel Console{% endblock %}
+{% block heading %}Add relation{% endblock %}
+{% block content %}
+{% include "console/ownership/_refusal.html" %}
+<p>{{ type_name }} <em>{{ name }}</em> (<code>{{ entity_id }}</code>)</p>
+<form class="add-relation" method="post" action="{{ action_url }}">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="name" value="{{ raw_name }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  {{ form.principal.errors }}
+  <label for="{{ form.principal.id_for_label }}">Principal</label> {{ form.principal }}
+  {{ form.relation.errors }}
+  <label for="{{ form.relation.id_for_label }}">Relation</label> {{ form.relation }}
+  {% include "console/ownership/_suggestions.html" %}
+  <button type="submit">Add relation</button>
+  <a class="cancel" href="{{ cancel_url }}">Cancel</a>
+</form>
+{% endblock %}

@@ -20,6 +20,7 @@ from console.views import (
 from tests.catalog.helpers import COMPANION, companion_reads
 from tests.catalog.media_helpers import answer_media
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_relations
 from tests.fixtures import engine_fixture
 from tests.ratings.helpers import answer_settings
 
@@ -34,6 +35,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     look up each attached asset), and ``GET /catalog/characters`` the list fixture (#73: the
     scenario editor's role character select reads the published characters)."""
     fake = FakeEngine()
+    answer_relations(fake)  # #79: every owned entity's page reads its relations
     fake.side_effect("GET", COMPANION, companion_reads())
     answer_settings(fake)
     answer_media(fake)

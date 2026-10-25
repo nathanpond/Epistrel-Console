@@ -26,6 +26,7 @@ from tests.catalog.scenario_helpers import (
     listing,
 )
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_one_relation, shows_panel
 from tests.fixtures import engine_fixture
 
 pytestmark = pytest.mark.django_db
@@ -355,3 +356,34 @@ def test_never_published_versions(operator_client: Client, engine: FakeEngine) -
     engine.respond("GET", S_ITEM, 422, json=error("not_published"))
     html = operator_client.get(f"{DETAIL}versions/").content.decode()
     assert "Never published." in html
+
+
+def test_the_detail_includes_the_ownership_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#79: the panel, after the main sections and before "Deferred"."""
+    engine.respond("GET", S_ITEM, 200, json=detail())
+    answer_one_relation(engine, "scenario", SCN)
+    html = detail_page(operator_client, engine)
+    assert shows_panel(html, "scenario", SCN)
+    assert html.index('<section id="drivers">') < html.index('id="ownership"')
+    assert html.index('id="ownership"') < html.index('<section id="deferred">')
+
+
+def test_a_companions_ownership_panel_is_read_only(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#79: a companion's owner and relations follow its character: shown, never offered."""
+    engine.respond("GET", S_ITEM, 200, json=detail(id=COMPANION_SCN, companion_of=CHAR))
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    answer_ratings(engine)
+    answer_profiles(engine)
+    answer_one_relation(engine, "scenario", COMPANION_SCN)
+    html = operator_client.get(f"/catalog/scenarios/{COMPANION_SCN}/").content.decode()
+    panel = html.split('id="ownership"', 1)[1].split("</section>", 1)[0]
+    assert f'Follows <a href="/catalog/characters/{CHAR}/">Sir Aldric</a>' in panel
+    assert "<code>editor</code>" in panel
+    assert "<form" not in panel
+    assert "/ownership/" not in panel
+    card_reads = [r for r in engine.requests if r.url.path == f"/catalog/characters/{CHAR}"]
+    assert len(card_reads) == 1  # the panel shares the page's one card read

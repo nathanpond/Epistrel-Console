@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Remove relation — {{ name }} — Epistrel Console{% endblock %}
+{% block heading %}Remove relation{% endblock %}
+{% block content %}
+{% include "console/ownership/_refusal.html" %}
+<div class="confirm">
+  <p class="question">Remove <code>{{ principal }}</code> as <code>{{ relation }}</code> on <em>{{ name }}</em>?</p>
+  <form method="post" action="{{ action_url }}">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="relation" value="{{ relation }}">
+    <input type="hidden" name="principal" value="{{ principal }}">
+    <input type="hidden" name="name" value="{{ raw_name }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <button type="submit" class="danger">Remove</button>
+    <a class="cancel" href="{{ cancel_url }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

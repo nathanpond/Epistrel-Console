@@ -1,0 +1,34 @@
+{# The owner and relations panel (#79). Context: ownership (console.views.ownership.OwnershipPanel). #}
+{% load console_format principals %}{% with p=ownership %}{% if p %}
+{% if p.collapsible %}<details id="ownership" class="ownership"{% if p.open %} open{% endif %}><summary>Owner &amp; relations</summary>{% else %}<section id="ownership" class="ownership"><h2>Owner &amp; relations</h2>{% endif %}
+<dl class="owner"><dt>Owner</dt><dd class="owner-principal">{{ p.owner|principal_link }}</dd></dl>
+{% if p.follows %}<p class="follows">Follows <a href="{{ p.follows.url }}">{{ p.follows.text }}</a> — its owner and relations are the character's; change them there.</p>{% endif %}
+{% if p.error %}<div class="relations-error">{% include "console/_engine_error.html" with engine_error=p.error %}</div>
+{% elif p.rows %}
+<table class="relations">
+  <thead><tr><th>Principal</th><th>Relation</th><th>Added by</th><th>Added at</th>{% if not p.read_only %}<th></th>{% endif %}</tr></thead>
+  <tbody>{% for row in p.rows %}<tr><td>{{ row.item.principal|principal_link }}</td><td><code>{{ row.item.relation }}</code></td><td>{{ row.item.created_by|principal_link }}</td><td>{{ row.item.created_at|engine_time }}</td>{% if not p.read_only %}<td><a class="button remove-relation" href="{{ row.remove_url }}">Remove</a></td>{% endif %}</tr>{% endfor %}</tbody>
+</table>
+{% else %}<p class="no-relations">No relations.</p>{% endif %}
+{% if not p.read_only %}
+<form class="transfer-owner" method="get" action="{{ p.transfer_url }}">
+  <input type="hidden" name="current" value="{{ p.owner }}">
+  <input type="hidden" name="name" value="{{ p.name }}">
+  {% if p.has_companion %}<input type="hidden" name="has_companion" value="1">{% endif %}
+  <input type="hidden" name="next" value="{{ p.next_url }}">
+  <label for="{{ p.transfer_form.principal.id_for_label }}">New owner</label> {{ p.transfer_form.principal }}
+  <button type="submit">Transfer…</button>
+</form>
+<form class="add-relation" method="post" action="{{ p.add_url }}">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ p.idempotency_key }}">
+  <input type="hidden" name="name" value="{{ p.name }}">
+  <input type="hidden" name="next" value="{{ p.next_url }}">
+  <label for="{{ p.add_form.principal.id_for_label }}">Principal</label> {{ p.add_form.principal }}
+  <label for="{{ p.add_form.relation.id_for_label }}">Relation</label> {{ p.add_form.relation }}
+  {% include "console/ownership/_suggestions.html" with datalist=p.datalist suggestions=p.suggestions %}
+  <button type="submit">Add relation</button>
+</form>
+{% endif %}
+{% if p.collapsible %}</details>{% else %}</section>{% endif %}
+{% endif %}{% endwith %}

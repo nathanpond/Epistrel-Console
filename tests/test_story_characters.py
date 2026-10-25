@@ -23,6 +23,7 @@ from console.views.story_characters import StoryHeader, warning_line
 from tests.catalog.helpers import COMPANION, ITEM, companion, draft
 from tests.catalog.media_helpers import answer_media
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_relations
 from tests.fixtures import engine_fixture
 from tests.play.helpers import MARA, STORY, TOBIN, answer_page, story_json
 from tests.ratings.helpers import TEEN, answer_ratings, answer_settings, rating
@@ -45,6 +46,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     """The fake Engine the play view, the story-character pages and the character edit page
     talk to, through the real recording client."""
     fake = FakeEngine()
+    answer_relations(fake)  # #79: every owned entity's page reads its relations
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

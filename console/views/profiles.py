@@ -32,6 +32,7 @@ from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.forms.profiles import ProfileFilterForm
 from console.profile_schema import get_profile_schema_cached, settings_view
+from console.views.ownership import ownership_context
 
 DEFAULT_UNREAD = "Couldn't read the deployment default"
 SCHEMA_UNREAD = "Couldn't read the profile schema — settings shown raw"
@@ -182,6 +183,15 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
             f"{urlencode({VIEWED_PARAM: profile.version})}"
         ),
         "stories_url": stories_url(profile.id),
+        # #79: the owner and relations panel, its relations read on its own.
+        "ownership": ownership_context(
+            request,
+            client,
+            "engine_profile",
+            profile.id,
+            name=profile.name,
+            owner=profile.owner_principal,
+        ),
     }
     return render(request, "console/profiles/detail.html", context)
 

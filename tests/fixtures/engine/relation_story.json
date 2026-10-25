@@ -1,0 +1,10 @@
+{
+  "entity_type": "story",
+  "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "principal": "team/alice",
+  "relation": "player",
+  "created_at": "2026-10-25T08:00:00Z",
+  "created_by": "console:nate",
+  "timeline_revision": 12,
+  "idempotency_key": "01JK0000000000000000000KEY"
+}

@@ -134,6 +134,8 @@ def test_one_render_posted_twice_sends_the_same_key(
     """A double-click: both posts carry the render's key, so the Engine replays the second."""
     answer_page(engine)
     page = operator_client.get(f"/stories/{STORY}/").content.decode()
+    # The owner and relations panel's add form (#79) carries a key of its own.
+    page = re.sub(r'<details id="ownership".*?</details>', "", page, flags=re.S)
     (key,) = re.findall(r'name="idempotency_key" value="([^"]+)"', page)
     engine.respond("POST", RESPOND, 200, json=respond_json())
     post_turn(operator_client, idempotency_key=key)

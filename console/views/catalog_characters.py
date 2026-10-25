@@ -79,6 +79,7 @@ from console.media_slots import (
 from console.reports import LabelledReport, publish_reports
 from console.views.catalog_lifecycle import CHARACTER as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import lifecycle_for
+from console.views.ownership import ownership_context
 
 LIST_URL = "/catalog/characters/"
 NOT_PUBLISHED = "not_published"
@@ -432,6 +433,16 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
             name=entry.name,
             status=entry.status,
             listing_status=entry.listing_status,
+            has_companion=entry.companion_id is not None,
+        )
+        # #79: the owner and relations panel (not on the public card view).
+        context["ownership"] = ownership_context(
+            request,
+            client,
+            "character",
+            character_id,
+            name=entry.name,
+            owner=entry.owner_principal,
             has_companion=entry.companion_id is not None,
         )
     return render(request, "console/catalog/characters/detail.html", context)

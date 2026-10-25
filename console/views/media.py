@@ -48,6 +48,7 @@ from console.forms.media import MediaFilterForm, MediaUploadForm
 from console.forms.principal import remember_principals
 from console.ids import new_ulid
 from console.templatetags.console_format import human_bytes, mib
+from console.views.ownership import media_name, ownership_context
 
 LIST_URL = "/media/"
 UPLOAD_TEMPLATE = "console/media/upload.html"
@@ -257,6 +258,15 @@ def media_detail(request: HttpRequest, media_id: str) -> HttpResponse:
         "duration": duration(asset.duration_ms),
         "retired": asset.state == "retired",
         "retire_url": f"{reverse('media:retire', args=[asset.id])}{retire_query}",
+        # #79: the owner and relations panel (writable whatever the asset's state).
+        "ownership": ownership_context(
+            request,
+            client,
+            "media",
+            asset.id,
+            name=media_name(asset.caption, asset.alt_text, asset.id),
+            owner=asset.owner_principal,
+        ),
     }
     return render(request, "console/media/detail.html", context)
 

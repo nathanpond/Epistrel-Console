@@ -1,0 +1,8 @@
+{
+  "entity_type": "story",
+  "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "owner_principal": "bob",
+  "previous_owner": "alice",
+  "timeline_revision": 12,
+  "idempotency_key": "01JK0000000000000000000KEY"
+}

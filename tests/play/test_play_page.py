@@ -9,6 +9,7 @@ from django.urls import reverse
 
 from console.models import EngineOperation
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_one_relation
 from tests.play.helpers import (
     HTMX,
     MARA,
@@ -142,3 +143,18 @@ def test_a_failed_settings_read_uses_45_s(operator_client: Client, engine: FakeE
     response = operator_client.get(f"/stories/{STORY}/")
     assert response.status_code == 200
     assert '<div id="turn-form">' in response.content.decode()
+
+
+def test_the_ownership_panel_sits_collapsed_under_the_header(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#79: a collapsed ``<details>``, opened by ``?panel=ownership`` (where writes return)."""
+    answer_page(engine)
+    answer_one_relation(engine, "story", STORY, principal="team/alice", relation="player")
+    html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    assert '<details id="ownership" class="ownership">' in html
+    assert html.index('class="story-header"') < html.index('id="ownership"')
+    assert html.index('id="ownership"') < html.index('<div class="play">')
+    assert "relation=player&amp;principal=team%2Falice" in html
+    opened = operator_client.get(f"/stories/{STORY}/?panel=ownership").content.decode()
+    assert '<details id="ownership" class="ownership" open>' in opened

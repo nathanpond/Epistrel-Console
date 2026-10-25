@@ -98,6 +98,7 @@ from console.media_slots import (
 )
 from console.views.catalog_lifecycle import SCENARIO as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import Follows, follows_label, lifecycle_for
+from console.views.ownership import ownership_context
 
 LIST_URL = "/catalog/scenarios/"
 NOT_PUBLISHED = "not_published"
@@ -515,6 +516,17 @@ def _detail_page(
             name=entry.public_card.name,
             status=entry.status,
             listing_status=entry.listing_status,
+            follows=follows,
+        )
+        # #79: the owner and relations panel, read-only on a companion (its "Follows" line
+        # reuses the companion label read above).
+        context["ownership"] = ownership_context(
+            request,
+            client,
+            "scenario",
+            scenario_id,
+            name=entry.public_card.name,
+            owner=entry.owner_principal,
             follows=follows,
         )
         if companion is not None:

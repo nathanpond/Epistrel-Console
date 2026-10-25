@@ -12,7 +12,7 @@ import inspect
 import json
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import IO, Any, ParamSpec, Self, TypeVar
@@ -60,6 +60,7 @@ from console.engine.models import (
     OffboardingPlan,
     OffboardingQueued,
     OperationRecord,
+    OwnerTransfer,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -81,6 +82,8 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     RegenerateResult,
+    RelationRecord,
+    Relations,
     RespondResponse,
     Scenario,
     ScenarioCard,
@@ -112,7 +115,7 @@ from console.engine.timeouts import (
     STORY_CHARACTER_ADD,
     UPLOAD,
 )
-from console.entities import RecordedEntity
+from console.entities import REGISTRY, EntityType, RecordedEntity
 from console.version import VERSION
 
 USER_AGENT = f"epistrel-console/{VERSION}"
@@ -1708,6 +1711,81 @@ class EngineClient:
         )
         _raise_for_envelope(response)
 
+    # --- owners and relations (#79) --------------------------------------------------------------
+    #
+    # One method per operation for all six owned types: the entity type picks the Engine root
+    # and the registration (:data:`OWNERSHIP_OPERATIONS`), so the operation log records each
+    # write with its own entity (#44) and the contract test checks every route.
+
+    def get_relations(self, entity_type: EntityType, entity_id: str) -> Relations:
+        """``GET /{type}/{id}/relations``: the entity's owner and its relations (allowed on a
+        companion scenario, whose writes the Engine refuses)."""
+        with _ownership_call("get_relations", entity_type, entity_id):
+            response = self._request("GET", f"{_ownership_path(entity_type, entity_id)}/relations")
+            return _parse(response, Relations)
+
+    def transfer_owner(
+        self, entity_type: EntityType, entity_id: str, principal: str, *, idempotency_key: str
+    ) -> OwnerTransfer:
+        """``PUT /{type}/{id}/owner {principal}``. A transfer to the current owner changes
+        nothing (``previous_owner == owner_principal``); a character's companion scenario moves
+        with it. The Engine refuses ``system`` (422)."""
+        with _ownership_call("transfer_owner", entity_type, entity_id):
+            response = self._request(
+                "PUT",
+                f"{_ownership_path(entity_type, entity_id)}/owner",
+                json={"principal": principal},
+                headers={"Idempotency-Key": idempotency_key},
+                timeout=MUTATION_TIMEOUT_S,
+            )
+            return _parse(response, OwnerTransfer)
+
+    def add_relation(
+        self,
+        entity_type: EntityType,
+        entity_id: str,
+        principal: str,
+        relation: str,
+        *,
+        idempotency_key: str,
+    ) -> tuple[RelationRecord, bool]:
+        """``POST /{type}/{id}/relations {principal, relation}``: the relation and whether it
+        was added (201, ``True``) or already there (200, ``False``: nothing recorded)."""
+        with _ownership_call("add_relation", entity_type, entity_id):
+            response = self._request(
+                "POST",
+                f"{_ownership_path(entity_type, entity_id)}/relations",
+                json={"principal": principal, "relation": relation},
+                headers={"Idempotency-Key": idempotency_key},
+                timeout=MUTATION_TIMEOUT_S,
+            )
+            return _parse(response, RelationRecord), response.status_code == 201
+
+    def remove_relation(
+        self,
+        entity_type: EntityType,
+        entity_id: str,
+        relation: str,
+        principal: str,
+        *,
+        idempotency_key: str,
+    ) -> None:
+        """``DELETE /{type}/{id}/relations/{relation}/{principal}`` (204), both segments
+        percent-encoded with nothing safe: a principal may hold ``/``. An absent relation (or
+        entity) is :class:`EngineError` 404 ``not_found``."""
+        path = (
+            f"{_ownership_path(entity_type, entity_id)}/relations/"
+            f"{quote(relation, safe='')}/{quote(principal, safe='')}"
+        )
+        with _ownership_call("remove_relation", entity_type, entity_id):
+            response = self._request(
+                "DELETE",
+                path,
+                headers={"Idempotency-Key": idempotency_key},
+                timeout=MUTATION_TIMEOUT_S,
+            )
+            _raise_for_envelope(response)
+
     # --- principal lookup (#76) -----------------------------------------------------------------
 
     @operation("GET", "/principals/{principal_id}")
@@ -2252,6 +2330,55 @@ class EngineClient:
                 response.close()
         finally:
             http.close()
+
+
+# --- owners and relations (#79) -------------------------------------------------------------------
+
+# Each owned type's id parameter, as the Engine's paths name it.
+OWNERSHIP_ID_PARAMS: dict[EntityType, str] = {
+    "story": "story_id",
+    "character": "character_id",
+    "scenario": "scenario_id",
+    "persona": "persona_id",
+    "media": "media_id",
+    "engine_profile": "profile_id",
+}
+# The ownership client methods: their HTTP method, path suffix and answer model.
+_OWNERSHIP_ROUTES: dict[str, tuple[str, str, type[Model] | None]] = {
+    "get_relations": ("GET", "/relations", Relations),
+    "transfer_owner": ("PUT", "/owner", OwnerTransfer),
+    "add_relation": ("POST", "/relations", RelationRecord),
+    "remove_relation": ("DELETE", "/relations/{relation}/{principal}", None),
+}
+
+
+def _ownership_operations() -> dict[tuple[str, EntityType], Operation]:
+    """One registration per method and type (24), each listed in :data:`OPERATIONS` and naming
+    its entity, whose id the call's ``entity_id`` argument holds."""
+    found: dict[tuple[str, EntityType], Operation] = {}
+    for kind, (method, suffix, model) in _OWNERSHIP_ROUTES.items():
+        for entity_type, param in OWNERSHIP_ID_PARAMS.items():
+            path = f"{REGISTRY[entity_type].engine_root}/{{{param}}}{suffix}"
+            op = Operation(method, path, model, False, entity=entity_type, entity_id="entity_id")
+            OPERATIONS[f"{method} {path}"] = op
+            found[(kind, entity_type)] = op
+    return found
+
+
+OWNERSHIP_OPERATIONS = _ownership_operations()
+
+
+def _ownership_call(
+    kind: str, entity_type: EntityType, entity_id: str
+) -> AbstractContextManager[None]:
+    """Mark the request as ``kind`` on that type's registration (what ``@operation`` does)."""
+    op = OWNERSHIP_OPERATIONS[(kind, entity_type)]
+    return calling(Call(kind, op, {"entity_type": entity_type, "entity_id": entity_id}))
+
+
+def _ownership_path(entity_type: EntityType, entity_id: str) -> str:
+    """``<type's Engine root>/<id>``, the id percent-encoded."""
+    return f"{REGISTRY[entity_type].engine_root}/{quote(entity_id, safe='')}"
 
 
 def _character_read_params(

@@ -45,6 +45,7 @@ from console.forms.persona import (
 from console.forms.principal import clean_principal, remember_principals
 from console.ids import new_ulid
 from console.twostage import MAX_AGE_S
+from console.views.ownership import ownership_context
 
 LIST_URL = "/personas/"
 NAME_TAKEN = "persona_name_taken"
@@ -141,7 +142,8 @@ def persona_list(request: HttpRequest) -> HttpResponse:
 @require_safe
 def persona_detail(request: HttpRequest, persona_id: str) -> HttpResponse:
     """The persona (an Engine error escapes to the shared panel, #43)."""
-    persona = engine_client_for(request).get_persona(persona_id)
+    client = engine_client_for(request)
+    persona = client.get_persona(persona_id)
     back = _local(request, request.GET.get(BACK))
     delete_query = urlencode({"name": persona.name, "owner": persona.owner_principal, "next": back})
     context = {
@@ -150,6 +152,15 @@ def persona_detail(request: HttpRequest, persona_id: str) -> HttpResponse:
         "keep_copy": KEEP_COPY,
         "edit_url": reverse("personas:edit", args=[persona_id]),
         "delete_url": f"{reverse('personas:delete', args=[persona_id])}?{delete_query}",
+        # #79: the owner and relations panel.
+        "ownership": ownership_context(
+            request,
+            client,
+            "persona",
+            persona.id,
+            name=persona.name,
+            owner=persona.owner_principal,
+        ),
     }
     return render(request, "console/personas/detail.html", context)
 

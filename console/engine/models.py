@@ -18,6 +18,8 @@ import typing
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from typing import Any, Literal, Self, Union
 
+from console.entities import EntityType
+
 
 def _parse(tp: Any, value: object) -> tuple[bool, object]:
     """``(True, parsed)`` when ``value`` fits the annotation ``tp``, else ``(False, None)``."""
@@ -2654,3 +2656,63 @@ class OffboardingJob(Model):
     created_by: str
     created_at: str
     finished_at: str | None
+
+
+# --- owners and relations (#79) -------------------------------------------------------------------
+#
+# One model each for the story and the non-story bodies: a story's answer carries the story's
+# ``timeline_revision`` (``StoryOwnerBody``, ``StoryRelationBody``), any other entity's the
+# deployment's ``config_revision`` (``OwnerBody``, ``RelationBody``); both are unchanged by the
+# write, and the one the body does not carry is ``None``.
+
+
+@dataclass(frozen=True)
+class OwnerTransfer(Model):
+    """``OwnerBody`` / ``StoryOwnerBody``: the entity's owner after a transfer and before it.
+    Equal when the request named the current owner: nothing was recorded then."""
+
+    entity_type: EntityType
+    entity_id: str
+    owner_principal: str
+    previous_owner: str
+    idempotency_key: str | None = None
+    config_revision: int | None = None
+    timeline_revision: int | None = None
+
+    @property
+    def changed(self) -> bool:
+        return self.owner_principal != self.previous_owner
+
+
+@dataclass(frozen=True)
+class RelationItem(Model):
+    """``RelationItem``: one relation, the related principal, the relation's name (free text,
+    never interpreted), and who added it and when."""
+
+    principal: str
+    relation: str
+    created_at: str
+    created_by: str
+
+
+@dataclass(frozen=True)
+class RelationRecord(RelationItem):
+    """``RelationBody`` / ``StoryRelationBody``: the relation an add answered with, added (201)
+    or already there (200, nothing recorded)."""
+
+    entity_type: EntityType
+    entity_id: str
+    idempotency_key: str | None = None
+    config_revision: int | None = None
+    timeline_revision: int | None = None
+
+
+@dataclass(frozen=True)
+class Relations(Model):
+    """``RelationsBody``: the entity's owner and its relations, ordered by relation name, then
+    principal."""
+
+    entity_type: EntityType
+    entity_id: str
+    owner_principal: str
+    items: list[RelationItem]

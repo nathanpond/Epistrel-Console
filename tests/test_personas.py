@@ -17,6 +17,7 @@ from console.engine_access import engine_client_for
 from console.models import ActingPrincipal, EngineOperation, KnownPrincipal
 from console.views import personas
 from tests.fakes.engine import FakeEngine
+from tests.fakes.ownership import answer_one_relation, answer_relations, shows_panel
 from tests.fixtures import engine_fixture
 from tests.ratings.helpers import calls, error, hidden, text
 
@@ -38,6 +39,7 @@ KEY = "01JP00000000000000000KEY01"
 def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngine]:
     """The fake Engine the persona views talk to, through the real recording client."""
     fake = FakeEngine()
+    answer_relations(fake)  # #79: every owned entity's page reads its relations
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)
@@ -508,3 +510,26 @@ def test_a_404_on_delete_shows_the_panel(operator_client: Client, engine: FakeEn
     engine.respond("DELETE", ITEM, 404, json=error("not_found", "gone"))
     response = operator_client.post(DELETE, {"name": "Ari"})
     assert "not_found" in response.content.decode()
+
+
+def test_detail_includes_the_ownership_panel(operator_client: Client, engine: FakeEngine) -> None:
+    """#79: the owner and relations panel, with the persona's own relations."""
+    engine.respond("GET", ITEM, 200, json=persona())
+    answer_one_relation(engine, "persona", PID)
+    html = operator_client.get(DETAIL).content.decode()
+    assert shows_panel(html, "persona", PID)
+    assert html.index('id="ownership"') < html.index('class="button edit"')
+
+
+def test_a_failed_relations_read_degrades_only_the_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#79: the persona still renders; the panel shows the error and the detail's owner."""
+    engine.respond("GET", ITEM, 200, json=persona())
+    engine.respond("GET", "/personas/{persona_id}/relations", 503, json=error("unavailable"))
+    response = operator_client.get(DETAIL)
+    assert response.status_code == 200
+    panel = response.content.decode().split('id="ownership"', 1)[1].split("</section>", 1)[0]
+    assert 'class="engine-error"' in panel
+    assert "alice" in panel
+    assert "Stories that used this persona keep their copy." in text(response.content.decode())

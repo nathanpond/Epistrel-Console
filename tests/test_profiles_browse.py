@@ -22,6 +22,7 @@ from console.profile_schema import ABSENT, settings_view
 from console.views import profiles as profile_views
 from console.views import stories as story_views
 from tests.fakes.engine import FakeEngine, recorded_schema
+from tests.fakes.ownership import answer_one_relation, answer_relations, shows_panel
 from tests.fixtures import engine_fixture
 from tests.ratings.helpers import calls, error, text
 
@@ -94,6 +95,7 @@ def make_engine(
 
     def make(doc: dict[str, Any] | None = None) -> FakeEngine:
         fake = FakeEngine(doc)
+        answer_relations(fake)  # #79: the profile page reads its relations
 
         def client_with_fake(request: HttpRequest) -> EngineClient:
             client = engine_client_for(request)
@@ -594,3 +596,15 @@ def test_unwalked_tags_go_to_more() -> None:
 def test_absent_is_not_none() -> None:
     assert ABSENT is not None
     assert repr(ABSENT) == "ABSENT"
+
+
+def test_the_detail_page_includes_the_ownership_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#79 fills #78's slot: the panel sits between the stories link and the settings."""
+    engine.respond("GET", ITEM, 200, json=profile())
+    answer_one_relation(engine, "engine_profile", LITE)
+    html = get(operator_client, DETAIL)
+    assert shows_panel(html, "engine_profile", LITE)
+    assert html.index('class="stories-using"') < html.index('id="ownership"')
+    assert html.index('id="ownership"') < html.index("<h2>Settings</h2>")

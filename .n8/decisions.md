@@ -999,3 +999,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `/stories/?profile=` reuses the per-story reads for the cast column, so it makes no second sequential read. Its "couldn't be checked" note is singular for one story. The unfiltered list is unchanged.
   **Why:** Reading every story once on the pool is what the filter needs anyway.
   **Issue:** #78
+- **Decision (drift):** `OwnerTransfer` and `RelationRecord` match both the story and the non-story bodies. They do this through the contract test's widening (`_widened`): each of the four bodies gets both revisions, nullable and not required. A test checks that the widening touches only the revisions. `Relations` and `RelationItem` carry every `RelationsBody`/`RelationItem` field, including `entity_type`/`entity_id`.
+  **Why:** The schema has separate bodies with one required revision each. The plan wants one model per shape with optional revisions. The widening keeps every route under the contract check, as #64 and #78 already do for their shared models.
+  **Issue:** #79
+- **Decision:** The four ownership client methods take `(entity_type, entity_id, …)` and are not `@operation`-decorated. Instead, `console/engine/client.py` registers all 24 routes (6 types × 4) in `OPERATIONS`, each naming its own entity, and marks each call with the matching registration (`OWNERSHIP_OPERATIONS`, `_ownership_call`). The #44 row's kind is the method name; its entity is the type and id.
+  **Why:** `@operation` registers one route per method. One method serving six routes needs one registration per route so the contract test checks each one and the log records the right entity.
+  **Issue:** #79
+- **Decision:** For a stale-form 422 `companion_follows_character`, the character id comes from the error's `details.character_id`. The Engine always sends it. The scenario is re-read only when that id is missing. The message is #69's `companion_message`.
+  **Why:** This saves a read on the common path. The fallback still follows the plan.
+  **Issue:** #79
+- **Decision:** The panel's refusal dataclass (`console.views.ownership.Refusal`) has the same shape as `console.views.story_settings.Refusal`, minus violations. It is rendered with the same `settings/_refusal.html`. Importing the original would create an import cycle: play view → ownership → story_settings → play view.
+  **Why:** Avoids the cycle while keeping one template.
+  **Issue:** #79
+- **Decision:** The play view's panel sits after the story header's action links, before the play columns. Writes return to the GET URL of the play view (`stories:detail` when the page was rendered by a POST, such as a turn). The story's 423 line adds the `Operation` fact (from `details.operation_id`) under the Engine's error line.
+  **Why:** A `next` pointing at a POST-only URL would 405.
+  **Issue:** #79
+- **Decision:** The transfer target is remembered in `KnownPrincipal` on the confirming POST, not on the GET that renders the confirm page. The relation principal is remembered on the add POST.
+  **Why:** #64 says principals are remembered from valid POST forms. A GET that only checks the input should have no side effects.
+  **Issue:** #79
+- **Decision:** Every test fixture that renders an owned entity's page (catalog, play, timeline, history, stories, engine panel, personas, media, profiles, story characters, story-from-scenario) answers every relations read by default (`tests/fakes/ownership.py answer_relations`). One existing test (`test_one_render_posted_twice_sends_the_same_key`) drops the panel before picking the turn form's idempotency key, because the panel's add form carries its own key.
+  **Why:** Every owned page now reads its relations. Without a default answer, the fake Engine fails every older page test.
+  **Issue:** #79
