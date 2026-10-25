@@ -356,6 +356,34 @@ def test_media_retired_is_placed_at_its_slot(operator_client: Client, engine: Fa
     assert "This asset is retired — choose another" in refused.content.decode()
 
 
+def test_an_unknown_media_id_is_not_called_retired(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#164: the Engine answers an unknown id as ``media_retired`` with ``reason: unknown``."""
+    unknown = media("error_media_retired")
+    unknown["error"]["details"]["reason"] = "unknown"
+    response = character_page(operator_client, engine)
+    engine.respond("PATCH", ITEM, 422, json=unknown)
+    data = set_rows(character_post(response), GALLERY, [{"media_id": MED2}, {"media_id": PHT2}])
+    refused = post(operator_client, EDIT, data)
+    rows = refused.context["media"]["public_card_images"].lists[0].rows
+    assert rows[1].errors == ("No such asset — choose another",)
+    assert "This asset is retired" not in refused.content.decode()
+
+
+def test_a_pathless_unknown_media_id_marks_its_slots_as_unknown(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    unknown = media("error_media_retired")
+    unknown["error"]["details"] = {"media_id": PHT2, "reason": "unknown"}
+    response = character_page(operator_client, engine)
+    engine.respond("PATCH", ITEM, 422, json=unknown)
+    data = set_rows(character_post(response), GALLERY, [{"media_id": MED2}, {"media_id": PHT2}])
+    refused = post(operator_client, EDIT, data)
+    rows = refused.context["media"]["public_card_images"].lists[0].rows
+    assert rows[1].errors == ("No such asset — choose another",)
+
+
 def test_publish_invalid_report_entries_are_placed_at_their_rows(
     operator_client: Client, engine: FakeEngine
 ) -> None:
