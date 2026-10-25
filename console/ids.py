@@ -17,3 +17,16 @@ def new_ulid() -> str:
 def is_ulid(value: str) -> bool:
     """Whether ``value`` is an id the Engine's ULID pattern accepts (case-sensitive)."""
     return bool(ULID_PATTERN.match(value))
+
+
+class UlidConverter:
+    """The ``<ulid:…>`` path converter (#77): an Engine id, so any other value is a Django 404
+    before the view (and the Engine) is reached."""
+
+    regex = "[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}"
+
+    def to_python(self, value: str) -> str:
+        return value
+
+    def to_url(self, value: str) -> str:
+        return value

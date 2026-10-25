@@ -2486,3 +2486,121 @@ class PrincipalLinks(Model):
         if owned is None or related is None:
             return None
         return cls(obj["principal"], owned, related, more)
+
+
+# --- offboarding (#77) ---------------------------------------------------------------------------
+
+OwnedAction = Literal["delete", "transfer", "keep"]
+RelationAction = Literal["remove", "keep"]
+OWNED_ACTIONS: tuple[OwnedAction, ...] = typing.get_args(OwnedAction)
+RELATION_ACTIONS: tuple[RelationAction, ...] = typing.get_args(RelationAction)
+# The types ``actions`` names besides ``relations``, in the Engine's (and the Console's) order.
+OFFBOARDING_TYPES = LOOKUP_TYPES
+
+
+@dataclass(frozen=True)
+class OffboardingActions(Model):
+    """``OffboardingActions``: what ``POST /admin/offboarding`` does per type it owns, and to
+    the relations naming it on entities it does not own."""
+
+    stories: OwnedAction = "keep"
+    characters: OwnedAction = "keep"
+    scenarios: OwnedAction = "keep"
+    personas: OwnedAction = "keep"
+    media: OwnedAction = "keep"
+    engine_profiles: OwnedAction = "keep"
+    relations: RelationAction = "keep"
+
+    def to_json(self) -> dict[str, str]:
+        """All seven keys, ``keep`` included (#77: the Console always sends every one)."""
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    @property
+    def transfers(self) -> bool:
+        return any(getattr(self, t) == "transfer" for t in OFFBOARDING_TYPES)
+
+    @property
+    def all_keep(self) -> bool:
+        return all(value == "keep" for value in self.to_json().values())
+
+
+@dataclass(frozen=True)
+class OffboardingWarning(Model):
+    """``OffboardingWarningBody``: something the offboarding would do that touches other
+    principals (``shared_story``, ``profile_in_use``, ``media_referenced``,
+    ``default_profile``), the entity and the other principals."""
+
+    kind: str
+    entity_type: str
+    entity_id: str
+    principals: list[str]
+
+
+@dataclass(frozen=True)
+class OffboardingPlan(Model):
+    """``OffboardingPlanBody``: a dry run, or a start its warnings held (``applied`` false):
+    the counts per type (count key → number) and the warnings. Nothing was written."""
+
+    config_revision: int
+    applied: bool
+    counts: dict[str, dict[str, int]]
+    warnings: list[OffboardingWarning]
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class OffboardingQueued(Model):
+    """``OffboardingQueuedBody`` (202): the job a worker carries out, and the counts and
+    warnings it was confirmed over."""
+
+    config_revision: int
+    applied: bool
+    job_id: str
+    counts: dict[str, dict[str, int]]
+    warnings: list[OffboardingWarning]
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class OffboardingProgress(Model):
+    """``OffboardingProgress``: entities done of the snapshot's total."""
+
+    done: int
+    total: int
+
+
+@dataclass(frozen=True)
+class CurrentEntity(Model):
+    """``CurrentEntity``: the entity a job is working on now (``type`` as the Engine names it)."""
+
+    type: str
+    id: str
+
+
+@dataclass(frozen=True)
+class OffboardingError(Model):
+    """``OffboardingError``: why a failed job stopped (exception class, contentless message)."""
+
+    error_class: str = field(metadata={JSON_NAME: "class"})
+    message: str
+
+
+@dataclass(frozen=True)
+class OffboardingJob(Model):
+    """``OffboardingView``: an offboarding job's ``status`` (``queued``, ``running``, ``done``,
+    ``failed``), ``progress``, ``current`` entity, and once it ends its ``report`` (with the
+    ``error`` of a failed one). ``report``, ``request`` and ``counts`` stay raw (#77 renders
+    the report generically, so a key the Console does not know still shows)."""
+
+    job_id: str
+    principal: str
+    status: str = field(metadata={OPEN_ENUM: True})
+    progress: OffboardingProgress
+    current: CurrentEntity | None
+    counts: dict[str, dict[str, int]]
+    report: dict[str, Any] | None
+    error: OffboardingError | None
+    request: dict[str, Any]
+    created_by: str
+    created_at: str
+    finished_at: str | None

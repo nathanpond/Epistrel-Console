@@ -1,0 +1,11 @@
+{% comment %}
+A polled job block (#64 convention 10, console/job_poll.py; build the context with
+job_poll.poll_context). Context: poll_url (the block's own partial), poll_trigger ("every 2s"),
+polling (true until the job is terminal: only then does it carry hx-trigger), retrying (show
+retrying_text, "Engine unavailable — retrying"), refresh_url (the full page, for no-JS) and
+body_template (the job's own partial, rendered with the same context).
+{% endcomment %}<div id="job-poll" class="job-poll"{% if polling %} hx-get="{{ poll_url }}" hx-trigger="{{ poll_trigger }}" hx-swap="outerHTML"{% endif %}>
+  {% if retrying %}<p class="notice retrying" role="status">{{ retrying_text }}</p>{% endif %}
+  {% include body_template %}
+  {% if polling %}<p class="refresh"><a href="{{ refresh_url }}">Refresh</a></p>{% endif %}
+</div>

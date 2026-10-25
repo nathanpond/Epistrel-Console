@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Offboarding — Epistrel Console{% endblock %}
+{% block heading %}Offboarding{% endblock %}
+{% block content %}
+<p><a class="new" href="{{ new_url }}">New offboarding</a> · <a href="{% url 'principals:index' %}">Principals</a></p>
+{% if rows %}
+<table class="offboardings">
+  <thead><tr><th>Created</th><th>Operator</th><th>Principal</th><th>Actions</th><th>Status</th><th>Job</th></tr></thead>
+  <tbody>
+    {% for item in rows %}
+    <tr id="job-{{ item.row.job_id }}">
+      <td>{{ item.row.created_at|engine_time }}</td>
+      <td>{{ item.row.operator_username }}</td>
+      <td>{% if item.principal %}{{ item.principal|principal_link }}{% else %}—{% endif %}</td>
+      <td>{{ item.actions }}</td>
+      <td>{{ item.row.outcome }}</td>
+      <td><a href="{{ item.url }}"><code>{{ item.row.job_id }}</code></a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No offboardings started from this Console.</p>
+{% endif %}
+{% if page.has_other_pages %}
+<p class="pager">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">← Previous</a>{% endif %}
+  Page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

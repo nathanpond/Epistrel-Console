@@ -966,3 +966,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The fake Engine matches a request's raw (percent-encoded) path as well as the decoded one. A principal with `/` travels as `%2F`, and the decoded path then has an extra segment. Owned items whose type has no Console page yet (engine profiles) show the name plus the id in `<code>`, unlinked.
   **Why:** The Engine routes `{principal_id:path}`, but the fake's `[^/]+` template did not. With no page to link, the id is still identifying.
   **Issue:** #76
+- **Decision:** `@operation(entity=…)` now also takes `"principal"` (`console.entities.RecordedEntity` = `EntityType | "principal"`, `PRINCIPAL_ENTITY`). `offboard` is recorded with `entity_type="principal"`, `entity_id=<principal>`. The registry itself is unchanged, so the operations log shows a principal entity's id as `<code>`.
+  **Why:** The plan records offboarding (and #86's erasure) on the principal, but `EntityType` named only the six Engine entity types.
+  **Issue:** #77
+- **Decision:** The start's signed payload is `twostage.sign("offboard", principal, body, base)`. `body` is the full request with `dry_run: false` and `ignore_warnings`. `base` holds `config_revision`, `operator`, `acting`, `key`, and the preview's `counts` and `warnings`. The start reads only this payload. The partial's hidden `idempotency_key` is ignored. The counts and warnings let a failed start (409 in progress, 503 retry, other panels) re-render the preview without another Engine call.
+  **Why:** `twostage.sign` takes kind, target, body and base. The plan's extra fields fit in `base`, and the preview needs the plan to re-render.
+  **Issue:** #77
+- **Decision:** A field refusal on the start (`principal_reserved`, `transfer_target_*`) returns to the form, rebuilt from the signed body with the error at its field. The preview has no fields to place it on. An unreachable Engine on start is treated like a 503 retry: the same payload and key are re-offered as "Retry".
+  **Why:** The plan places these codes "at their fields". A replay under the same key is safe and writes nothing new.
+  **Issue:** #77
+- **Decision:** The terminal poll settles the #44 row through `job_poll.settle_job` with `response=None`, so the row keeps the 202's answer. The job page reads its "Started over these warnings" from that row. A `failed` job's error code is `error.class`. Shared polling lives in `console/job_poll.py` (`poll_failure`, `poll_context`, `settle_job`) and `templates/console/_job_poll.html`, for #80 and #86.
+  **Why:** Replacing the stored response with the job body would lose the confirmed warnings. No M3 polling helper existed yet.
+  **Issue:** #77
+- **Decision:** In report lines, an object entry's `id` links by its own `entity_type` when it has one (relations entries carry it). Otherwise it links by the section's type key. `relations` name lists show as text. `remaining` renders the Engine's `{owned, owned_counts, related, related_counts}` as "Still owned" / "Still related" per type, with ids linked. The job page answers 404 with the "expired" text when the Engine has no such job. A `<ulid:…>` path converter (`console.ids.UlidConverter`) makes any other id a Django 404 with zero calls.
+  **Why:** The Engine's actual report shapes (src/epistrel/core/offboarding.py, principals.Remaining) are more specific than the plan's generic wording.
+  **Issue:** #77

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load principals %}
+{% block title %}Offboarding {{ job_id }} — Epistrel Console{% endblock %}
+{% block heading %}{% if job %}Offboarding {{ job.principal|principal_link }}{% else %}Offboarding <code>{{ job_id }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ index_url }}">All offboardings</a>{% if principal_url %} · <a class="principal-page" href="{{ principal_url }}">Principal page</a>{% endif %}</p>
+{% if job %}<p class="job-header">Job <code>{{ job_id }}</code>{% if transfer_to %} · transfer to {{ transfer_to|principal_link }}{% endif %}</p>{% endif %}
+{% if confirmed_warnings %}
+<h2>Started over these warnings</h2>
+{% include "console/offboarding/_warnings.html" with warnings=confirmed_warnings %}
+{% endif %}
+{% include "console/_job_poll.html" %}
+{% endblock %}

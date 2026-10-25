@@ -3,6 +3,7 @@
 {% block title %}Principals — Epistrel Console{% endblock %}
 {% block heading %}Principals{% endblock %}
 {% block content %}
+{% if offboarding_url %}<p><a class="offboarding" href="{{ offboarding_url }}">Offboarding</a></p>{% endif %}
 {% include "console/principals/_lookup_form.html" %}
 <h2>Known principals</h2>
 <table class="known-principals">

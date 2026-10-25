@@ -439,7 +439,8 @@ def test_offboard_is_hidden_while_its_page_does_not_exist(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     engine.respond("GET", LOOKUP, 200, json=lookup())
-    html = operator_client.get(ALICE).content.decode()
+    with override_settings(ROOT_URLCONF="tests.urls_no_offboarding"):
+        html = operator_client.get(ALICE).content.decode()
     assert "Act as this principal" in html
     assert "Offboard…" not in html
 

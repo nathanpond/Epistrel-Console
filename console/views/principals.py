@@ -163,7 +163,12 @@ def _known_rows(request: HttpRequest) -> tuple[list[KnownRow], Any]:
 
 def _render_index(request: HttpRequest, form: LookupForm) -> HttpResponse:
     rows, page = _known_rows(request)
-    context = {"form": form, "known": rows, "page": page}
+    context = {
+        "form": form,
+        "known": rows,
+        "page": page,
+        "offboarding_url": _optional_url("offboarding:index"),
+    }
     return render(request, "console/principals/index.html", context)
 
 

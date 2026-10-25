@@ -55,6 +55,10 @@ from console.engine.models import (
     ModelConfig,
     ModelConfigItem,
     ModelConfigMutation,
+    OffboardingActions,
+    OffboardingJob,
+    OffboardingPlan,
+    OffboardingQueued,
     OperationRecord,
     Persona,
     PersonaPage,
@@ -100,11 +104,12 @@ from console.engine.models import (
 )
 from console.engine.timeouts import (
     CATALOG_PUBLISH,
+    OFFBOARDING,
     SCENARIO_CREATE,
     STORY_CHARACTER_ADD,
     UPLOAD,
 )
-from console.entities import EntityType
+from console.entities import RecordedEntity
 from console.version import VERSION
 
 USER_AGENT = f"epistrel-console/{VERSION}"
@@ -251,7 +256,7 @@ class Operation:
     recorded: bool | None = None
     # The entity the call is about (#64 convention 9): an Engine ``EntityType`` and where its
     # id comes from, the name of a method argument or ``"response:<key>"`` for a create.
-    entity: EntityType | None = None
+    entity: RecordedEntity | None = None
     entity_id: str | None = None
     # What the operation log stores as the request body, built from the call's arguments by
     # name (#70: an upload's metadata and its files' names, sizes and types, never the bytes);
@@ -273,7 +278,7 @@ class Call:
     operation: Operation
     arguments: Mapping[str, Any] = field(default_factory=dict)
 
-    def entity_ref(self, response_body: object = None) -> tuple[EntityType, str] | None:
+    def entity_ref(self, response_body: object = None) -> tuple[RecordedEntity, str] | None:
         """``(entity type, id)`` for the registration's ``entity``/``entity_id``: the named
         argument's value, or for ``"response:<key>"`` that key of the (JSON object) response.
         ``None`` when the registration names no entity or the id is not a non-blank string."""
@@ -320,7 +325,7 @@ def operation(
     status_models: Mapping[int, type[Model]] | None = None,
     *,
     recorded: bool | None = None,
-    entity: EntityType | None = None,
+    entity: RecordedEntity | None = None,
     entity_id: str | None = None,
     record_body: Callable[[Mapping[str, Any]], object] | None = None,
     listed: bool = True,
@@ -1720,6 +1725,56 @@ class EngineClient:
                 params.append((f"cursor[{key}]", value))
         response = self._request("GET", f"/principals/{quote(principal, safe='')}", params=params)
         return _parse(response, PrincipalLinks)
+
+    # --- offboarding (#77) -----------------------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/admin/offboarding",
+        response_model=OffboardingPlan,
+        status_models={202: OffboardingQueued},
+        entity="principal",
+        entity_id="principal",
+    )
+    def offboard(
+        self,
+        principal: str,
+        actions: OffboardingActions,
+        transfer_to: str | None,
+        *,
+        dry_run: bool,
+        ignore_warnings: bool,
+        idempotency_key: str,
+    ) -> OffboardingPlan | OffboardingQueued:
+        """``POST /admin/offboarding``: a dry run, or the start of an offboarding job.
+
+        ``actions`` is sent whole (all seven keys); ``transfer_to`` only when given. A dry run,
+        or a start its warnings held (no ``ignore_warnings``), is :class:`OffboardingPlan` (200,
+        ``applied`` false); a started job is :class:`OffboardingQueued` (202, the operation log
+        records it ``queued`` with its ``job_id``). Recorded on the principal (``entity_type
+        "principal"``). Waits :data:`~console.engine.timeouts.OFFBOARDING`."""
+        body: dict[str, Any] = {"principal": principal, "actions": actions.to_json()}
+        if transfer_to is not None:
+            body["transfer_to"] = transfer_to
+        body["dry_run"] = dry_run
+        body["ignore_warnings"] = ignore_warnings
+        response = self._request(
+            "POST",
+            "/admin/offboarding",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=OFFBOARDING,
+        )
+        if response.status_code == 202:
+            return _parse(response, OffboardingQueued)
+        return _parse(response, OffboardingPlan)
+
+    @operation("GET", "/admin/offboarding/{job_id}", response_model=OffboardingJob)
+    def get_offboarding(self, job_id: str) -> OffboardingJob:
+        """``GET /admin/offboarding/{job_id}``: the job's status, progress and (once it ends)
+        report; 404 ``not_found`` once the report's 90 days are up. Unrecorded."""
+        response = self._request("GET", f"/admin/offboarding/{quote(job_id, safe='')}")
+        return _parse(response, OffboardingJob)
 
     # --- catalog scenarios (#68) ----------------------------------------------------------------
 

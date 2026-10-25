@@ -13,6 +13,7 @@ CATALOG_PUBLISH = 30.0  # publishing a catalog character or scenario
 SCENARIO_CREATE = 30.0  # creating a story from a scenario
 ERASURE = 60.0  # an erasure (or its dry run)
 UPLOAD = 60.0  # a media upload (each part, and completing it)
+OFFBOARDING = 30.0  # an offboarding: its dry run and its start (#77)
 STORY_CHARACTER_ADD = 30.0  # adding a character to a story (#72: input-gate model calls)
 RATING_SUGGESTION_PER_RATING = 20.0
 RATING_SUGGESTION_BASE = 10.0

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load principals %}
+{% block title %}New offboarding — Offboarding — Epistrel Console{% endblock %}
+{% block heading %}New offboarding{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ index_url }}">All offboardings</a></p>
+<p class="muted">The Console always runs a dry run first: nothing changes until you start it from the preview.</p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{% url 'offboarding:new' %}" class="offboarding-form">
+  {% csrf_token %}
+  {% if in_progress %}<ul class="errorlist nonfield in-progress" role="alert"><li>{{ in_progress.text }}{% if in_progress.job_url %} — <a href="{{ in_progress.job_url }}">view it</a>{% endif %}</li></ul>{% endif %}
+  {{ form.non_field_errors }}
+  <p id="f-principal">
+    <label for="{{ form.principal.id_for_label }}">{{ form.principal.label }}</label> {{ form.principal }}
+    {{ form.principal.errors }}
+  </p>
+  <table class="offboarding-actions">
+    <thead><tr><th>Type</th><th>Action</th><th>Notes</th></tr></thead>
+    <tbody>
+      {% for field in form.action_fields %}
+      <tr id="f-{{ field.html_name }}">
+        <td><label for="{{ field.id_for_label }}">{{ field.label }}</label></td>
+        <td>{{ field }}{{ field.errors }}</td>
+        <td><small class="muted rule-note">{{ field.help_text }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p id="f-transfer_to">
+    <label for="{{ form.transfer_to.id_for_label }}">{{ form.transfer_to.label }}</label> {{ form.transfer_to }}
+    <small class="muted">{{ form.transfer_to.help_text }}</small>
+    {{ form.transfer_to.errors }}
+  </p>
+  <p><button type="submit">Preview (dry run)</button> <a href="{{ index_url }}">Cancel</a></p>
+</form>
+{% endblock %}

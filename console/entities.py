@@ -25,6 +25,11 @@ from django.utils.safestring import SafeString
 
 EntityType = Literal["story", "character", "scenario", "persona", "media", "engine_profile"]
 ENTITY_TYPES: tuple[EntityType, ...] = get_args(EntityType)
+# What an operation-log row may name besides the registry's types (#77): offboarding (and #86's
+# erasure) act on a principal, recorded as ``entity_type="principal"``, ``entity_id=<principal>``.
+# A principal has no registry entry: the log shows its id as ``<code>``.
+PRINCIPAL_ENTITY: Literal["principal"] = "principal"
+type RecordedEntity = EntityType | Literal["principal"]
 
 
 @dataclass(frozen=True)

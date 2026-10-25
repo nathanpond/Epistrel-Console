@@ -1,0 +1,10 @@
+<table class="offboarding-counts">
+  <thead><tr><th>Type</th>{% for title in counts.titles %}<th>{{ title }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for title, cells in counts.rows %}
+    <tr><td>{{ title }}</td>{% for cell in cells %}<td>{{ cell }}</td>{% endfor %}</tr>
+    {% empty %}
+    <tr><td colspan="{{ counts.titles|length|add:1 }}">No counts.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

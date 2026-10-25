@@ -2,9 +2,10 @@
 
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import URLPattern, include, path
+from django.urls import URLPattern, include, path, register_converter
 
 from console.auth import OperatorAuthenticationForm
+from console.ids import UlidConverter
 from console.views import (
     acting,
     catalog_characters,
@@ -16,6 +17,7 @@ from console.views import (
     media_picker,
     media_proxy,
     models,
+    offboarding,
     operations,
     personas,
     play,
@@ -29,6 +31,8 @@ from console.views import (
     story_settings,
     timeline,
 )
+
+register_converter(UlidConverter, "ulid")
 
 operation_patterns = (
     [
@@ -242,6 +246,19 @@ principal_patterns = (
     "principals",
 )
 
+# Offboarding (#77): the plan form (its POST is the dry run), the start (POST only, from the
+# preview's signed payload), the job page and its polled partial, and the list.
+offboarding_patterns = (
+    [
+        path("", offboarding.offboarding_index, name="index"),
+        path("new/", offboarding.offboarding_new, name="new"),
+        path("start/", offboarding.offboarding_start, name="start"),
+        path("<ulid:job_id>/", offboarding.offboarding_job, name="job"),
+        path("<ulid:job_id>/progress/", offboarding.offboarding_progress, name="progress"),
+    ],
+    "offboarding",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -263,5 +280,6 @@ urlpatterns = [
     path("personas/", include(persona_patterns)),
     path("media/", include(media_patterns)),
     path("principals/", include(principal_patterns)),
+    path("offboarding/", include(offboarding_patterns)),
     path("admin/", admin.site.urls),
 ]

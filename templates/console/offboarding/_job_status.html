@@ -1,0 +1,17 @@
+{% load console_format principals %}{% if not_found %}<p class="not-found" role="alert">{{ not_found_text }}</p>
+{% elif engine_error %}{% include "console/_engine_error.html" %}
+{% elif view %}{% with job=view.job %}
+<dl class="job-status">
+  <dt>Status</dt><dd class="status status-{{ job.status }}">{{ job.status }}{% if job.status == "queued" %} — {{ waiting_text }}{% endif %}</dd>
+  <dt>Progress</dt><dd>{% if view.progress_value is None %}<progress></progress>{% else %}<progress value="{{ view.progress_value }}" max="{{ job.progress.total }}"></progress>{% endif %} <span class="progress-text">{{ view.progress_text }}</span></dd>
+  {% if view.current %}<dt>Current</dt><dd class="current">{{ view.current }}</dd>{% endif %}
+  <dt>Actions</dt><dd>{{ view.actions }}</dd>
+  <dt>Started by</dt><dd>{{ job.created_by|principal_link }}</dd>
+  <dt>Created</dt><dd>{{ job.created_at|engine_time }}</dd>
+  <dt>Finished</dt><dd>{{ job.finished_at|engine_time }}</dd>
+</dl>
+{% if job.status == "failed" and job.error %}<p class="job-error" role="alert"><code>{{ job.error.error_class }}</code>: {{ job.error.message }}</p>{% endif %}
+<h2>Counts</h2>
+{% include "console/offboarding/_counts.html" with counts=view.counts %}
+{% if view.report %}{% include "console/offboarding/_report.html" with report=view.report %}{% endif %}
+{% endwith %}{% endif %}

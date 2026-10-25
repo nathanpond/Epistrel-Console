@@ -1,0 +1,28 @@
+{% load principals %}<section class="offboarding-report">
+<h2>Report</h2>
+{% if report.empty %}<p class="nothing-changed">{{ nothing_changed }}</p>{% endif %}
+{% for section in report.sections %}
+<h3 id="report-{{ section.key }}">{{ section.title }}</h3>
+{% for type in section.types %}
+<h4 class="report-type" id="report-{{ section.key }}-{{ type.key }}">{{ type.title }} ({{ type.entries|length }})</h4>
+<ul class="report-entries">
+  {% for entry in type.entries %}
+  <li>{{ entry.id }}{% for label, value in entry.details %} · {{ label }}: {{ value }}{% endfor %}{% if entry.more %} · More: {% for key, value in entry.more %}{{ key }}={{ value }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endfor %}
+{% endfor %}
+{% if report.remaining or report.remaining_raw %}
+<h3 id="report-remaining">Remaining</h3>
+{% for group in report.remaining %}
+<h4>{{ group.title }}</h4>
+<ul class="report-remaining">
+  {% for title, count, ids in group.types %}
+  <li>{{ title }} ({{ count }}): {% for id in ids %}{{ id }}{% if not forloop.last %}, {% endif %}{% endfor %}</li>
+  {% endfor %}
+</ul>
+{% endfor %}
+{% if report.remaining_raw %}<pre>{{ report.remaining_raw }}</pre>{% endif %}
+{% endif %}
+{% if report.more %}<h3>More</h3><pre>{{ report.more }}</pre>{% endif %}
+</section>
