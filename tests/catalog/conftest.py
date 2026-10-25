@@ -16,6 +16,7 @@ from console.views import (
     catalog_scenarios,
     media_picker,
     media_proxy,
+    rating_suggestion,
 )
 from tests.catalog.helpers import COMPANION, companion_reads
 from tests.catalog.media_helpers import answer_media
@@ -51,5 +52,6 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     monkeypatch.setattr(catalog_scenarios, "engine_client_for", client_with_fake)
     monkeypatch.setattr(catalog_lifecycle, "engine_client_for", client_with_fake)
     monkeypatch.setattr(media_picker, "engine_client_for", client_with_fake)
+    monkeypatch.setattr(rating_suggestion, "engine_client_for", client_with_fake)
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake

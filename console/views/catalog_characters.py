@@ -80,6 +80,7 @@ from console.reports import LabelledReport, publish_reports
 from console.views.catalog_lifecycle import CHARACTER as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import lifecycle_for
 from console.views.ownership import ownership_context
+from console.views.rating_suggestion import suggest_box
 
 LIST_URL = "/catalog/characters/"
 NOT_PUBLISHED = "not_published"
@@ -434,6 +435,14 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
             status=entry.status,
             listing_status=entry.listing_status,
             has_companion=entry.companion_id is not None,
+        )
+        # #82: the rating suggestion's trigger, at the version shown.
+        context["suggestion"] = suggest_box(
+            "character",
+            character_id,
+            name=entry.name,
+            current_version=entry.current_version,
+            shown=None if shown_draft else entry.version,
         )
         # #79: the owner and relations panel (not on the public card view).
         context["ownership"] = ownership_context(

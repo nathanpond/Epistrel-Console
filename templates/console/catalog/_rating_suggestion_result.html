@@ -1,0 +1,40 @@
+{% comment %}#82: a rating suggestion's answer, swapped into #rating-suggestion (HTMX) or shown on its own page. Context: problem (inline text) or engine_error (#43's panel), else result (ShownSuggestion); rerun (url, hidden, wait_text), browser_timeout_s; operation_url on an error.{% endcomment %}{% if problem %}<p class="errornote suggestion-problem" role="alert">{{ problem }}</p>{% endif %}{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}{% if problem or engine_error %}{% if operation_url %}<p><a href="{{ operation_url }}">View in operations log</a></p>{% endif %}{% endif %}{% if result %}
+<div class="rating-suggestion">
+  <h3>{{ result.heading }}</h3>
+  <p class="warning advisory"><strong>Advisory — the Engine does not apply this</strong></p>
+  {% if result.lookup_note %}<p class="muted lookup-note">{{ result.lookup_note }}</p>{% endif %}
+  <table class="suggestion-rows">
+    <thead><tr><th>Rating</th><th>Version</th><th>Appropriate</th><th>Concerns</th></tr></thead>
+    <tbody>
+      {% for row in result.rows %}
+      <tr id="suggestion-{{ row.rating_id }}">
+        <td><a href="{{ row.rating_url }}">{{ row.rating_name }}</a>{% if row.retired %} <small class="retired">(retired)</small>{% endif %}</td>
+        <td>{{ row.version }}</td>
+        <td class="appropriate">{% if row.appropriate is True %}✓<span class="visually-hidden"> appropriate</span>{% elif row.appropriate is False %}✗<span class="visually-hidden"> not appropriate</span>{% else %}unknown{% endif %}</td>
+        <td>{% if row.concerns or row.notes %}{% if row.concerns %}<table class="concerns"><thead><tr><th>Policy or clause</th><th>Element</th><th>Explanation</th></tr></thead><tbody>{% for concern in row.concerns %}<tr><td>{{ concern.breaks }}</td><td>{{ concern.element }}</td><td>{{ concern.explanation|linebreaksbr }}</td></tr>{% endfor %}</tbody></table>{% endif %}{% for note in row.notes %}<span class="report-note row-note">{{ note }}</span>{% endfor %}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if result.unavailable %}<ul class="suggestion-unavailable">{% for line in result.unavailable %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
+  <p class="suggestion-footer muted">{{ result.footer }}{% if result.operation_url %} · <a href="{{ result.operation_url }}">View in operations log</a>{% endif %}</p>
+  {% if result.calls %}<details class="suggestion-calls"><summary>Model calls</summary>
+    <table class="model-calls"><thead><tr><th>Purpose</th><th>Model</th><th>Attempt</th><th>Outcome</th><th>Latency ms</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th></tr></thead><tbody>
+      {% for call in result.calls %}<tr><td>{{ call.purpose }}</td><td>{{ call.model }}</td><td>{{ call.attempt }}</td><td>{{ call.outcome }}</td><td>{{ call.latency_ms }}</td><td>{{ call.tokens_in }}</td><td>{{ call.tokens_out }}</td><td>{{ call.cost }}</td></tr>{% endfor %}
+    </tbody></table>
+  </details>{% endif %}
+  <details class="suggestion-more"><summary>More</summary>
+    <h4>Evaluated</h4>
+    {% if result.evaluated %}<table class="suggestion-evaluated"><thead><tr><th>Rating</th><th>Version</th></tr></thead><tbody>{% for item in result.evaluated %}<tr><td>{{ item.rating }}</td><td>{{ item.version }}</td></tr>{% endfor %}</tbody></table>{% else %}<p>—</p>{% endif %}
+  </details>
+</div>
+{% endif %}{% if rerun %}
+<form method="post" action="{{ rerun.url }}" class="rating-suggestion-rerun"
+      hx-post="{{ rerun.url }}" hx-target="#rating-suggestion" hx-swap="innerHTML"
+      hx-disable="find button" hx-sync="this:drop" hx-indicator="find .htmx-indicator"
+      hx-config="timeout:{{ browser_timeout_s }}s">
+  {% csrf_token %}
+  {% for hidden_name, hidden_value in rerun.hidden %}<input type="hidden" name="{{ hidden_name }}" value="{{ hidden_value }}">{% endfor %}
+  <button type="submit">Run again</button> <span class="htmx-indicator">{{ rerun.wait_text }}</span>
+</form>
+{% endif %}

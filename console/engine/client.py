@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import IO, Any, ParamSpec, Self, TypeVar
+from typing import IO, Any, Literal, ParamSpec, Self, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -79,6 +79,7 @@ from console.engine.models import (
     RatingApplied,
     RatingCheck,
     RatingCheckStarted,
+    RatingSuggestion,
     RatingVersion,
     RatingVersionList,
     ReactivationCheck,
@@ -104,6 +105,7 @@ from console.engine.models import (
     StoryStatusChange,
     StorySummary,
     SubjectRef,
+    SuggestionVersion,
     SwapResult,
     TruncateResult,
     UntruncateResult,
@@ -1844,6 +1846,36 @@ class EngineClient:
             )
             _raise_for_envelope(response)
 
+    # --- rating suggestions (#82) ---------------------------------------------------------------
+
+    def suggest_ratings(
+        self,
+        entry_type: SuggestionEntity,
+        entry_id: str,
+        *,
+        version: SuggestionVersion,
+        include_retired: bool = False,
+        timeout: float,
+    ) -> RatingSuggestion:
+        """``POST /catalog/{characters|scenarios}/{id}/rating-suggestion {version}``: the
+        advisory table, one row per rating (``include_retired``: retired ones too, sent as
+        ``?include_retired=true``). It writes nothing and makes a model call per rating, so the
+        caller passes ``timeout`` (``timeouts.rating_suggestion(n)``); no ``Idempotency-Key`` and
+        no ``projection`` (the Engine refuses one, 422). Recorded in the operation log as
+        ``rating_suggestion`` (it requires a principal), under the entry. An unknown entry or
+        version is :class:`EngineError` 404."""
+        op = SUGGESTION_OPERATIONS[entry_type]
+        path = f"{REGISTRY[entry_type].engine_root}/{quote(entry_id, safe='')}/rating-suggestion"
+        with calling(Call(SUGGESTION_KIND, op, {"entry_id": entry_id})):
+            response = self._request(
+                "POST",
+                path,
+                params={"include_retired": "true"} if include_retired else None,
+                json={"version": version},
+                timeout=timeout,
+            )
+            return _parse(response, RatingSuggestion)
+
     # --- principal lookup (#76) -----------------------------------------------------------------
 
     @operation("GET", "/principals/{principal_id}")
@@ -2424,6 +2456,37 @@ def _ownership_operations() -> dict[tuple[str, EntityType], Operation]:
 
 
 OWNERSHIP_OPERATIONS = _ownership_operations()
+
+
+# #82: the rating suggestion's two registrations (one per catalog entry type), each recorded
+# (a principal-requiring POST that writes nothing) under its entry, as kind ``rating_suggestion``.
+SuggestionEntity = Literal["character", "scenario"]
+SUGGESTION_KIND = "rating_suggestion"
+SUGGESTION_PARAMS: dict[SuggestionEntity, str] = {
+    "character": "character_id",
+    "scenario": "scenario_id",
+}
+
+
+def _suggestion_operations() -> dict[SuggestionEntity, Operation]:
+    found: dict[SuggestionEntity, Operation] = {}
+    for entity_type, param in SUGGESTION_PARAMS.items():
+        path = f"{REGISTRY[entity_type].engine_root}/{{{param}}}/rating-suggestion"
+        op = Operation(
+            "POST",
+            path,
+            RatingSuggestion,
+            False,
+            recorded=True,
+            entity=entity_type,
+            entity_id="entry_id",
+        )
+        OPERATIONS[f"POST {path}"] = op
+        found[entity_type] = op
+    return found
+
+
+SUGGESTION_OPERATIONS = _suggestion_operations()
 
 
 def _ownership_call(

@@ -1056,3 +1056,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** I moved #80's violations table and #53's "Forked from" banner into partials (`stories/_check_violations.html`, `play/_fork_banner.html`), so the reactivation page reuses them. The reactivated result fields render from a `ResultRow` list. #53 has no result partials, because its results are flash lines.
   **Why:** The reactivation page shows the same violations table and the same banner. Reusing the partials avoids keeping two copies.
   **Issue:** #81
+- **Decision:** `suggest_ratings(entry_type, entry_id, *, version, include_retired, timeout)` is one client method with two registrations (`SUGGESTION_OPERATIONS`, built the way #79 builds its ownership operations), each recorded under its entry with kind `rating_suggestion`. The method name differs from the recorded kind, so the method sets the kind on its `Call`.
+  **Why:** The story asks for one method that takes the entry type, and for the kind `rating_suggestion` in the operation log. `@operation` registers one path and uses the method name as the kind.
+  **Issue:** #82
+- **Decision (drift):** The turn's `ModelCall` model already exists, so the suggestion's model calls parse into `SuggestionModelCall`, with every field optional. `RatingSuggestion.model_calls` stays raw (`list[dict[str, Any]]`, as the schema types it), and `.calls()` reads it. `Element.location` reuses #64's `EntryLocation`, which already parses `ElementLocation`. `SuggestionRow.error` and `Element.kind` are open enums, so a new code renders raw and doesn't fail the answer.
+  **Why:** Two classes can't share a name. The schema types `model_calls` items as free-form objects.
+  **Issue:** #82
+- **Decision (drift):** The trigger and "Run again" use `hx-disable="find button"` (the htmx 4 name for the planner's `hx-disabled-elt`) with `hx-sync="this:drop"`. They also set `hx-config="timeout:3600s"`, so the browser waits longer than any Console timeout.
+  **Why:** htmx 4's default request timeout is 60 s. A suggestion's Console timeout is 20 s per rating plus 10 s (90 s for the four seeded ratings), and the page can't know the rating count before the POST.
+  **Issue:** #82
+- **Decision:** The concern's element is worded and linked in Python (`element_html`), following the planner's per-kind wording. It doesn't use #64's `_location.html`, whose "entry X vN · field …" wording doesn't match. A kind the Console doesn't know renders as "<Kind> in `entry`", linked to the entry. A known policy shows its name, linked. An unknown policy shows its id, linked. When the policies read failed, the id shows unlinked.
+  **Why:** The story's AC fixes the per-kind wording. `_location.html` keeps its shape for the validation reports.
+  **Issue:** #82

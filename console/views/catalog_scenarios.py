@@ -99,6 +99,7 @@ from console.media_slots import (
 from console.views.catalog_lifecycle import SCENARIO as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import Follows, follows_label, lifecycle_for
 from console.views.ownership import ownership_context
+from console.views.rating_suggestion import suggest_box
 
 LIST_URL = "/catalog/scenarios/"
 NOT_PUBLISHED = "not_published"
@@ -517,6 +518,14 @@ def _detail_page(
             status=entry.status,
             listing_status=entry.listing_status,
             follows=follows,
+        )
+        # #82: the rating suggestion's trigger, at the version shown.
+        context["suggestion"] = suggest_box(
+            "scenario",
+            scenario_id,
+            name=entry.public_card.name,
+            current_version=entry.current_version,
+            shown=None if shown_draft else entry.version,
         )
         # #79: the owner and relations panel, read-only on a companion (its "Follows" line
         # reuses the companion label read above).

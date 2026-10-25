@@ -2790,3 +2790,135 @@ class Relations(Model):
     entity_id: str
     owner_principal: str
     items: list[RelationItem]
+
+
+# --- #82: rating suggestions -----------------------------------------------------------------
+
+SuggestionVersion = int | Literal["draft"]
+
+
+@dataclass(frozen=True)
+class EntryRef(Model):
+    """``EntryRef``: the catalog entry a rating suggestion reviewed, its type, id and version
+    (``"draft"`` for the draft)."""
+
+    type: Literal["character", "scenario"]
+    id: str
+    version: SuggestionVersion
+
+
+@dataclass(frozen=True)
+class Element(Model):
+    """``Element``: the part of the entry a concern names, its ``kind`` (``field``, ``seed``,
+    ``role``, ``reveal``, ``cast_character`` or ``media_caption``) and where it sits (the
+    Engine's ``ElementLocation``, parsed into #64's :class:`EntryLocation`)."""
+
+    location: EntryLocation
+    kind: str = open_enum()
+
+
+@dataclass(frozen=True)
+class Concern(Model):
+    """``Concern``: one conflict between the entry and a rating, the ``policy_id`` or the quoted
+    rating-description ``clause`` it breaks (exactly one), the element and why."""
+
+    element: Element
+    explanation: str
+    policy_id: str | None = None
+    clause: str | None = None
+
+
+@dataclass(frozen=True)
+class SuggestionRow(Model):
+    """``SuggestionRow``: one rating's row. ``appropriate`` is ``None`` when its model call
+    failed (``error``) and nothing deterministic was found; ``truncated``: the model saw only
+    part of the entry; ``dropped_concerns``: concerns naming something the model wasn't given."""
+
+    rating_id: str
+    rating_name: str
+    rating_version: str
+    appropriate: bool | None
+    concerns: list[Concern]
+    error: str | None = open_enum(default=None)
+    truncated: bool = False
+    dropped_concerns: int = 0
+
+
+@dataclass(frozen=True)
+class EvaluatedRating(Model):
+    """``EvaluatedRating``: a rating the table evaluated, at the version (id) it used."""
+
+    rating_id: str
+    rating_version: str
+
+
+@dataclass(frozen=True)
+class UnavailableCharacter(Model):
+    """``UnavailableCharacter``: a default or locked role's character a scenario review could
+    not read (missing, unpublished or archived) and skipped; ``version`` ``None``: the latest."""
+
+    role: str
+    entry: str
+    version: int | None
+    reason: str = "character_unavailable"
+
+
+@dataclass(frozen=True)
+class SuggestionModelCall:
+    """One of a rating suggestion's ``model_calls`` (free-form objects in the schema): every
+    field optional (``None`` when missing or of another type), unknown keys ignored."""
+
+    purpose: str | None = None
+    model: str | None = None
+    attempt: int | None = None
+    outcome: str | None = None
+    latency_ms: int | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost: float | None = None
+
+    @classmethod
+    def from_raw(cls, raw: object) -> Self:
+        found = raw if isinstance(raw, dict) else {}
+
+        def text(key: str) -> str | None:
+            value = found.get(key)
+            return value if isinstance(value, str) else None
+
+        def whole(key: str) -> int | None:
+            value = found.get(key)
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+        cost = found.get("cost")
+        return cls(
+            purpose=text("purpose"),
+            model=text("model"),
+            attempt=whole("attempt"),
+            outcome=text("outcome"),
+            latency_ms=whole("latency_ms"),
+            tokens_in=whole("tokens_in"),
+            tokens_out=whole("tokens_out"),
+            cost=(
+                float(cost)
+                if isinstance(cost, int | float) and not isinstance(cost, bool)
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class RatingSuggestion(Model):
+    """``RatingSuggestion`` (#82): the advisory table, one row per rating in display order, the
+    rating versions evaluated, the entry, the cast characters skipped and the model calls made
+    (raw objects: :meth:`calls` reads them). It writes nothing and the Engine never applies it."""
+
+    entry: EntryRef
+    rows: list[SuggestionRow]
+    evaluated: list[EvaluatedRating]
+    advisory: Literal[True] = True
+    unavailable: list[UnavailableCharacter] = field(default_factory=list)
+    model_calls: list[dict[str, Any]] = field(default_factory=list)
+    elapsed_ms: int = 0
+
+    def calls(self) -> list[SuggestionModelCall]:
+        return [SuggestionModelCall.from_raw(raw) for raw in self.model_calls]

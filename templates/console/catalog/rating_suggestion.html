@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Rating suggestion — {{ name }} — Epistrel Console{% endblock %}
+{% block heading %}Rating suggestion — {{ name }}{% endblock %}
+{% block content %}
+{% comment %}#82: a rating suggestion without JS: the answer (or why there is none) and a link back. Context: name, back_url, and _rating_suggestion_result.html's.{% endcomment %}
+<p><a class="back" href="{{ back_url }}">Back to {{ name }}</a></p>
+<div id="rating-suggestion">{% include "console/catalog/_rating_suggestion_result.html" %}</div>
+{% endblock %}

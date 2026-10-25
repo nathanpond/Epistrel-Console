@@ -88,6 +88,8 @@
   </dl>
 </section>
 
+{% if suggestion and not card %}{% include "console/catalog/_rating_suggestion.html" %}{% endif %}
+
 {% if full %}
 <section id="visual-identity">
   <h2>Visual identity</h2>

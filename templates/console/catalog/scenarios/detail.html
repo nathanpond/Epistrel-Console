@@ -77,6 +77,8 @@
   </dl>
 </section>
 
+{% if suggestion and not card %}{% include "console/catalog/_rating_suggestion.html" %}{% endif %}
+
 {% with w=entry.world %}
 <section id="world">
   <h2>World</h2>

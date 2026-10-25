@@ -25,6 +25,7 @@ from console.views import (
     policies,
     principals,
     profiles,
+    rating_suggestion,
     ratings,
     status,
     stories,
@@ -191,6 +192,13 @@ catalog_character_patterns = (
             name="versions",
         ),
         *lifecycle_patterns(catalog_lifecycle.CHARACTER),
+        # #82: the advisory rating suggestion (GET goes back to the detail page).
+        path(
+            "<str:entry_id>/rating-suggestion/",
+            rating_suggestion.suggest,
+            {"entry": "character"},
+            name="rating-suggestion",
+        ),
     ],
     "catalog_characters",
 )
@@ -218,6 +226,12 @@ scenario_patterns = (
             name="versions",
         ),
         *lifecycle_patterns(catalog_lifecycle.SCENARIO),
+        path(
+            "<str:entry_id>/rating-suggestion/",
+            rating_suggestion.suggest,
+            {"entry": "scenario"},
+            name="rating-suggestion",
+        ),
     ],
     "scenarios",
 )
