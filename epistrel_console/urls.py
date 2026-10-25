@@ -8,6 +8,7 @@ from console.auth import OperatorAuthenticationForm
 from console.views import (
     acting,
     catalog_characters,
+    catalog_scenarios,
     engine_panel,
     history,
     media_proxy,
@@ -137,6 +138,21 @@ catalog_character_patterns = (
     "catalog_characters",
 )
 
+scenario_patterns = (
+    [
+        path("", catalog_scenarios.scenario_list, name="index"),
+        path("new/", catalog_scenarios.scenario_new, name="new"),
+        path("<str:scenario_id>/", catalog_scenarios.scenario_detail, name="detail"),
+        path("<str:scenario_id>/edit/", catalog_scenarios.scenario_edit, name="edit"),
+        path(
+            "<str:scenario_id>/versions/",
+            catalog_scenarios.scenario_versions,
+            name="versions",
+        ),
+    ],
+    "scenarios",
+)
+
 persona_patterns = (
     [
         path("", personas.persona_list, name="index"),
@@ -173,6 +189,7 @@ urlpatterns = [
     path("guardrails/ratings/", include(rating_patterns)),
     path("engine/", include(engine_patterns)),
     path("catalog/characters/", include(catalog_character_patterns)),
+    path("catalog/scenarios/", include(scenario_patterns)),
     path("personas/", include(persona_patterns)),
     path("media/", include(media_patterns)),
     path("admin/", admin.site.urls),

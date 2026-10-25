@@ -3,6 +3,8 @@
 - :func:`rating_choices` is the one content-rating select every M3 form uses (rating ids come
   only from it; a "default" option omits the field). One ``GET /admin/content-ratings`` per call;
   read it at most once per request and never cache it across requests.
+- :func:`engine_profile_choices` is the engine-profile select (#68's recommendation): every
+  non-deleted profile, labelled by name, following cursors up to :data:`PROFILES_MAX`.
 - :func:`story_labels` names the stories a page mentions by id (at most ``cap`` reads, on the
   shared fan-out pool, ``console.engine.pool``).
 """
@@ -11,12 +13,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from console.engine.client import EngineClient, EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import ContentRatingSummary
+from console.engine.models import ContentRatingSummary, EngineProfileSummary
 from console.engine.pool import fan_out
 from console.entities import label
 
 RETIRED_SUFFIX = " (retired)"
 MISSING_SUFFIX = " (missing)"
+DELETED_SUFFIX = " (deleted)"
+PROFILES_MAX = 500  # "All X" selects stop here (#64 convention 6)
+TOO_MANY = "Too many to list — enter the id"
 STORY_LABEL_CAP = 25
 ERASURE_PENDING = "erasure_pending"
 
@@ -75,6 +80,57 @@ def rating_choices(
     if current and current not in {rating_id for rating_id, _ in choices}:
         choices.append((current, f"{current}{MISSING_SUFFIX}"))
     return RatingChoices(choices)
+
+
+@dataclass(frozen=True)
+class ProfileChoices:
+    """An engine-profile select's options, ``(profile id, label)``, or why there is no select:
+    the read's ``error``, or ``too_many`` (more than :data:`PROFILES_MAX` profiles). Either way
+    the form offers a free-text id input with :attr:`unavailable_text` beside it. ``note``
+    carries that text across a signed snapshot (the read is not repeated)."""
+
+    choices: list[tuple[str, str]]
+    error: EngineClientError | None = None
+    too_many: bool = False
+    note: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None and not self.too_many and not self.note
+
+    @property
+    def unavailable_text(self) -> str:
+        if self.note:
+            return self.note
+        if self.error is not None:
+            return f"Engine profiles unavailable: {error_text(self.error)} — enter the id"
+        return TOO_MANY if self.too_many else ""
+
+
+def engine_profile_choices(client: EngineClient, *, current: str | None = None) -> ProfileChoices:
+    """The engine-profile select's options: every non-deleted profile, by name (then id), as
+    the Engine lists them; ``current`` (the saved id) is kept as "<name> (deleted)" or "<id>
+    (missing)". Reads ``GET /engine-profiles`` (deleted included, so a deleted ``current``
+    keeps its name) page by page, stopping after :data:`PROFILES_MAX` profiles (``too_many``).
+    Never raises."""
+    found: list[EngineProfileSummary] = []
+    cursor: str | None = None
+    try:
+        while True:
+            items, cursor = client.list_engine_profiles(include_deleted=True, cursor=cursor)
+            found.extend(items)
+            if len(found) > PROFILES_MAX:
+                return ProfileChoices([], too_many=True)
+            if not cursor:
+                break
+    except EngineClientError as exc:
+        return ProfileChoices([], exc)
+    choices = [(p.id, p.name) for p in found if p.deleted_at is None]
+    if current and current not in {profile_id for profile_id, _ in choices}:
+        deleted = next((p for p in found if p.id == current), None)
+        shown = f"{deleted.name}{DELETED_SUFFIX}" if deleted else f"{current}{MISSING_SUFFIX}"
+        choices.append((current, shown))
+    return ProfileChoices(choices)
 
 
 @dataclass(frozen=True)

@@ -39,6 +39,7 @@ from console.engine.models import (
     ContentRatingMutation,
     ContentRatingSummary,
     CreatedCharacter,
+    CreationRules,
     CustomInstructions,
     CustomInstructionsWritten,
     DegradationStep,
@@ -46,9 +47,12 @@ from console.engine.models import (
     Disposition,
     Dispositions,
     DormantChain,
+    Drivers,
     EffectiveBudget,
     EffectiveGuardrail,
     EffectivePolicy,
+    EngineProfileSummary,
+    Entity,
     ForkCharacter,
     ForkedFrom,
     ForkResult,
@@ -60,12 +64,14 @@ from console.engine.models import (
     HistoryItem,
     InteractionStyle,
     LikesDislikes,
+    Location,
     ModelCall,
     ModelConfig,
     ModelConfigEntry,
     ModelConfigItem,
     ModelConfigMutation,
     OmniscientStoryCharacter,
+    Opening,
     OperationRecord,
     OperationStage,
     Persona,
@@ -88,11 +94,24 @@ from console.engine.models import (
     ReactivationCheck,
     RebuildQueued,
     RebuildResult,
+    Recommendation,
     ReferenceImage,
     RegenerateResult,
     ReplyMessage,
     RespondResponse,
+    Scenario,
+    ScenarioCard,
+    ScenarioCardMedia,
+    ScenarioCardMediaSet,
+    ScenarioCardRole,
+    ScenarioDraft,
+    ScenarioListItem,
+    ScenarioMetadata,
     ScenarioOrigin,
+    ScenarioPage,
+    ScenarioPolicy,
+    ScenarioPublicCard,
+    StartingState,
     StoredResult,
     Story,
     StoryCharacter,
@@ -102,6 +121,7 @@ from console.engine.models import (
     StoryPauseProgress,
     StoryRating,
     StorySettings,
+    StorySettingsDefaults,
     StorySettingsWrite,
     StoryStatusChange,
     StorySummary,
@@ -118,7 +138,9 @@ from console.engine.models import (
     VariantChain,
     Variants,
     VisualIdentity,
+    VisualStyle,
     WorkersCheck,
+    World,
 )
 from tests.engine.contract import check_operation, compare_model, compare_type
 from tests.fakes.engine import recorded_schema
@@ -307,6 +329,29 @@ def test_the_widening_only_adds_media_id() -> None:
         (Persona, "Persona"),
         (PersonaWritten, "PersonaBody"),
         (PersonaPage, "PersonaListBody"),
+        (ScenarioCardMedia, "ScenarioCardMedia"),
+        (ScenarioCardMediaSet, "ScenarioCardMediaSet"),
+        (ScenarioCardRole, "ScenarioCardRole"),
+        (ScenarioCard, "ScenarioCard"),
+        (ScenarioListItem, "ScenarioListItem"),
+        (ScenarioPage, "ScenarioListBody"),
+        (ScenarioPublicCard, "ScenarioPublicCard"),
+        (ScenarioMetadata, "ScenarioMetadata"),
+        (Location, "ScenarioLocation"),
+        (Entity, "ScenarioEntity"),
+        (World, "ScenarioWorld"),
+        (Opening, "ScenarioOpening"),
+        (StartingState, "ScenarioStartingState"),
+        (Drivers, "ScenarioDrivers"),
+        (ScenarioPolicy, "ScenarioPolicy"),
+        (StorySettingsDefaults, "StorySettingsDefaults"),
+        (Recommendation, "ScenarioRecommendation"),
+        (VisualStyle, "VisualStyle"),
+        (CreationRules, "CreationRules"),
+        (Scenario, "ScenarioFull"),
+        (ScenarioDraft, "ScenarioDraftBody"),
+        (CatalogVersion, "ScenarioVersionBody"),
+        (CatalogVersionList, "ScenarioVersionsBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -333,6 +378,49 @@ def test_companion_draft_reads_fields_of_scenario_full() -> None:
     assert problems == []
     op = OPERATIONS["GET /catalog/characters/{character_id}/companion"]
     assert op.response_model is None
+
+
+def test_engine_profile_summary_reads_fields_of_engine_profile() -> None:
+    """#68: ``EngineProfileSummary`` reads a few ``EngineProfile`` fields (#78 owns the whole
+    model): each is a property of the same type, required here only when required there."""
+    node = DOC["components"]["schemas"]["EngineProfile"]
+    hints = typing.get_type_hints(EngineProfileSummary)
+    problems = []
+    for f in fields(EngineProfileSummary):
+        if f.name not in node["properties"]:
+            problems.append(f"{f.name}: not an EngineProfile property")
+            continue
+        problems.extend(compare_type(DOC, hints[f.name], node["properties"][f.name], f.name))
+        has_default = f.default is not MISSING or f.default_factory is not MISSING
+        if not has_default and f.name not in node["required"]:
+            problems.append(f"{f.name}: required here but optional in EngineProfile")
+    assert problems == []
+    assert OPERATIONS["GET /engine-profiles"].response_model is None
+
+
+def test_a_scenario_card_read_matches_the_card_component() -> None:
+    """``get_scenario`` holds the route's registration (``Scenario``, the full projection);
+    the card read's model is checked against ``ScenarioCard`` above."""
+    op = OPERATIONS["GET /catalog/scenarios/{scenario_id}"]
+    assert op.response_model is Scenario
+    assert check_operation(DOC, op) == []
+
+
+def test_scenario_form_enums_match_the_schema() -> None:
+    """#68's selects offer exactly the schema's values."""
+    from console.forms.scenario import ENTITY_KINDS, SETTING_ENUMS
+
+    schemas = DOC["components"]["schemas"]
+
+    def enum(node: dict[str, typing.Any]) -> list[str]:
+        options = node.get("anyOf") or [node]
+        (values,) = [o["enum"] for o in options if "enum" in o]
+        return list(values)
+
+    assert enum(schemas["ScenarioEntity"]["properties"]["kind"]) == list(ENTITY_KINDS)
+    settings = schemas["StorySettingsDefaults"]["properties"]
+    for name, values in SETTING_ENUMS.items():
+        assert enum(settings[name]) == list(values), name
 
 
 def test_health_checks_both_declared_statuses() -> None:

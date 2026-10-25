@@ -1653,3 +1653,279 @@ class PersonaPage(Model):
 
     items: list[Persona]
     next_cursor: str | None
+
+
+# --- catalog scenarios (#68) ----------------------------------------------------------------------
+#
+# A card (``ScenarioCard``) is what lists and ``projection=card`` answer; ``Scenario`` is
+# ``ScenarioFull``. The groups #68 edits are typed; the cast (#73), the card's media (#71), the
+# world seeds (#73) and the sections Lite stores but does not use yet (``starting_state``'s
+# states, clock, scheduled events, predicates, closed sets and rules; planned reveals) stay raw
+# JSON, which the pages show and edit as JSON.
+
+ScenarioRoleKind = Literal["npc", "player"]
+
+
+@dataclass(frozen=True)
+class ScenarioCardMedia(Model):
+    """``ScenarioCardMedia``: one public image or video of a scenario card."""
+
+    media_id: str
+    alt_text: str | None
+    caption: str | None
+
+
+@dataclass(frozen=True)
+class ScenarioCardMediaSet(Model):
+    """``ScenarioCardMediaSet``: the card's cover, gallery and videos."""
+
+    cover: ScenarioCardMedia | None
+    gallery: list[ScenarioCardMedia]
+    videos: list[ScenarioCardMedia]
+
+
+@dataclass(frozen=True)
+class ScenarioCardRole(Model):
+    """``ScenarioCardRole``: a role as the public card shows it."""
+
+    id: str
+    public_label: str
+    setup_description: str
+    kind: str = open_enum()
+    fill: str = open_enum()
+
+
+@dataclass(frozen=True)
+class ScenarioCard(Model):
+    """``ScenarioCard``: a scenario's public card. ``version`` is ``None`` on a never-published
+    draft; ``companion_of`` names the catalog character a companion scenario belongs to."""
+
+    id: str
+    version: int | None
+    listing_status: str
+    status: EntryStatus
+    companion_of: str | None
+    name: str | None
+    public_description: str | None
+    media: ScenarioCardMediaSet
+    labels: list[str]
+    content_rating: CardRating | None
+    roles: list[ScenarioCardRole]
+
+
+@dataclass(frozen=True)
+class ScenarioListItem(ScenarioCard):
+    """``ScenarioListItem``: a card as ``GET /catalog/scenarios`` lists it, with its owner, its
+    last change and (when searching) its ``rank``."""
+
+    owner_principal: str
+    updated_at: str
+    rank: float | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioPage(Model):
+    """``ScenarioListBody``: one page of cards; ``next_cursor`` reads the next."""
+
+    items: list[ScenarioListItem]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class ScenarioPublicCard(Model):
+    """``ScenarioPublicCard``: name, public description and (raw; #71's) media ids."""
+
+    name: str | None = None
+    public_description: str | None = None
+    media: Any = None
+
+
+@dataclass(frozen=True)
+class ScenarioMetadata(Model):
+    labels: list[str] = field(default_factory=list)
+    content_rating_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Location(Model):
+    """``ScenarioLocation``: a named place roles and the opening start at."""
+
+    id: str
+    name: str
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class Entity(Model):
+    """``ScenarioEntity``: a named entity with its aliases and, optionally, its ``kind``
+    (without one it is ``other``)."""
+
+    id: str
+    name: str
+    kind: str | None = open_enum(default=None)
+    aliases: list[str] = field(default_factory=list)
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class World(Model):
+    """``ScenarioWorld``: the world's description (setting and lore), named locations, named
+    entities and the story's own event types."""
+
+    description: str | None = None
+    locations: list[Location] = field(default_factory=list)
+    entities: list[Entity] = field(default_factory=list)
+    event_types: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class Opening(Model):
+    """``ScenarioOpening``: the opening narration, starting location and roles present."""
+
+    narration: str | None = None
+    starting_location: str | None = None
+    roles_present: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StartingState(Model):
+    """``ScenarioStartingState``: the opening, the world seeds (#73's) and the sections Lite
+    stores but does not use yet, raw."""
+
+    opening: Opening = field(default_factory=Opening)
+    seeded_memories: list[Any] = field(default_factory=list)
+    states: list[dict[str, Any]] = field(default_factory=list)
+    clock: dict[str, Any] | None = None
+    scheduled_events: list[dict[str, Any]] = field(default_factory=list)
+    predicates: list[dict[str, Any]] = field(default_factory=list)
+    closed_sets: list[dict[str, Any]] = field(default_factory=list)
+    rules: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Drivers(Model):
+    """``ScenarioDrivers``: what Lite puts in the prompt as author notes, and the planned reveals
+    (raw)."""
+
+    director_guidance: str | None = None
+    plot_hooks: list[str] = field(default_factory=list)
+    objectives: list[str] = field(default_factory=list)
+    milestones: list[str] = field(default_factory=list)
+    endings: list[str] = field(default_factory=list)
+    planned_reveals: list[Any] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ScenarioPolicy(Model):
+    """``ScenarioPolicy``: a story policy a story made from the scenario starts with (no id,
+    scope or kind). ``rule`` is the raw rule object (``type`` plus its entries)."""
+
+    name: str
+    rule: Any
+    message: str
+    applies_to: list[PolicyTarget] | None = None
+    age_condition: AgeCondition | None = None
+
+
+@dataclass(frozen=True)
+class StorySettingsDefaults(Model):
+    """``StorySettingsDefaults``: the settings a story made from the scenario starts with
+    (``None``: the deployment's default), its policies and the providers it requires."""
+
+    allow_new_arrivals: bool | None = None
+    ambiguous_retcon_timing: str | None = open_enum(default=None)
+    audit_retention_days: int | None = None
+    backfill_conflict_policy: str | None = open_enum(default=None)
+    default_output_viewpoint: str | None = None
+    interaction_mode: str | None = open_enum(default=None)
+    player_authority: str | None = open_enum(default=None)
+    turn_concurrency: str | None = open_enum(default=None)
+    policies: list[ScenarioPolicy] = field(default_factory=list)
+    required_providers: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Recommendation(Model):
+    """``ScenarioRecommendation``: the engine profile and capabilities the scenario
+    recommends."""
+
+    engine_profile_id: str | None = None
+    capabilities: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class VisualStyle(Model):
+    """``VisualStyle``: the art-style prompts every image of the scenario uses."""
+
+    prompt: str | None = None
+    negative_prompt: str | None = None
+
+
+@dataclass(frozen=True)
+class CreationRules(Model):
+    """``CreationRules``: the dotted paths a story creator may override, and ``bounds`` (raw)."""
+
+    overridable: list[str] = field(default_factory=list)
+    bounds: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class Scenario(Model):
+    """``ScenarioFull``: a scenario as ``projection=full`` gives it. ``version`` is the version
+    read (``None`` for a draft), ``current_version`` the latest published one;
+    ``draft_revision`` is the draft's save counter (on a draft read). ``cast`` is #73's, raw."""
+
+    id: str
+    status: EntryStatus
+    listing_status: str
+    owner_principal: str
+    version: int | None
+    current_version: int | None
+    created_at: str
+    updated_at: str
+    published_at: str | None
+    companion_of: str | None
+    pinned_character_version: int | None
+    schema_version: Literal[1]
+    public_card: ScenarioPublicCard
+    metadata: ScenarioMetadata
+    world: World
+    cast: Any
+    starting_state: StartingState
+    drivers: Drivers
+    story_settings_defaults: StorySettingsDefaults
+    recommendation: Recommendation
+    visual_style: VisualStyle
+    creation_rules: CreationRules
+    draft_revision: int | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioDraft(Scenario):
+    """``ScenarioDraftBody``: the draft after a create or a save, in ``full``;
+    ``draft_revision`` is what the next save sends."""
+
+    draft_revision: int = field()  # required here, and never null
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class EngineProfileSummary(Model):
+    """The part of ``EngineProfile`` a select needs (``GET /engine-profiles``): id, name, owner,
+    whether it is a preset, its version and whether it is deleted. The profile pages' full model
+    is #78's; the contract test compares each field with ``EngineProfile``."""
+
+    id: str
+    name: str
+    owner_principal: str
+    preset: bool
+    version: int
+    current_version: int
+    deleted_at: str | None
+
+
+@dataclass(frozen=True)
+class EngineProfileSummaryPage(Model):
+    items: list[EngineProfileSummary]
+    next_cursor: str | None

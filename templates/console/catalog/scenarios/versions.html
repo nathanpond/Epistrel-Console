@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Versions: {% if name %}{{ name }}{% else %}{{ scenario_id }}{% endif %} — Scenarios — Epistrel Console{% endblock %}
+{% block heading %}Versions: {% if name %}{{ name }}{% else %}<code>{{ scenario_id }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{{ detail_url }}">Back to the scenario</a> · <a href="{{ detail_url }}?view=draft">View the draft</a> · <a href="{% url 'scenarios:index' %}">All scenarios</a></p>
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% else %}
+{% if card_error %}{% include "console/_engine_error.html" with engine_error=card_error %}{% endif %}
+{% if versions %}
+<table class="versions">
+  <thead><tr><th>Version</th><th>Published at</th><th>Published by</th></tr></thead>
+  <tbody>
+    {% for entry in versions %}<tr id="version-{{ entry.version }}"><td><a href="{{ detail_url }}?version={{ entry.version }}">Version {{ entry.version }}</a>{% if entry.version == latest %} (latest){% endif %}</td><td>{{ entry.published_at|engine_time }}</td><td>{{ entry.published_by|principal_link }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Never published.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

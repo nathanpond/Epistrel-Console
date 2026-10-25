@@ -1,4 +1,5 @@
-"""The catalog lists' GET filter form (#65 characters; the scenario list, #68, reuses it).
+"""The catalog lists' GET filter form (#65 characters; the scenario list, #68, adds "Include
+companions" in :class:`ScenarioFilterForm`).
 
 Every filter is checked against the Engine's own rules before any call (#43): a value the Engine
 would refuse is a field error and no list is read. Labels are comma-separated (#64 convention 6)
@@ -149,4 +150,18 @@ class CatalogFilterForm(forms.Form):
             "relations": [f"{relation}:{data.get('relation_principal') or ''}"] if relation else [],
             "status": None if status == PUBLISHED else status,
             "cursor": data.get("cursor") or None,
+        }
+
+
+class ScenarioFilterForm(CatalogFilterForm):
+    """The scenario list's filters (#68): the catalog filters plus "Include companions" (off by
+    default; sent as ``include_companions=true``)."""
+
+    include_companions = forms.BooleanField(required=False, label="Include companions")
+
+    def query(self) -> dict[str, Any]:
+        """``list_scenarios``' keyword arguments for a valid form."""
+        return {
+            **super().query(),
+            "include_companions": bool(self.cleaned_data.get("include_companions")),
         }

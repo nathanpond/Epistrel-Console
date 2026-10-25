@@ -1,0 +1,1 @@
+{% comment %}#68: a long text, truncated at 200 characters with the whole text in a <details>. Context: text.{% endcomment %}{% if text %}{% if text|length > 200 %}<span class="truncated">{{ text|truncatechars:200 }}</span><details class="full-text"><summary>Full text</summary>{{ text|linebreaksbr }}</details>{% else %}{{ text|linebreaksbr }}{% endif %}{% else %}—{% endif %}

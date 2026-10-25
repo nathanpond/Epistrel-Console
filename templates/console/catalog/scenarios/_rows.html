@@ -1,0 +1,20 @@
+{% comment %}#68: one row formset, edited without JavaScript: each row's Remove and the Add button
+submit the form with op=remove:<prefix>-<n> / op=add:<prefix> and re-render it (no Engine call).
+Context: rows (console.forms.scenario.Rows), archived_note.{% endcomment %}
+<fieldset class="rows rows-{{ rows.prefix }}" id="{{ rows.anchor }}">
+  <legend>{{ rows.title }}</legend>
+  {{ rows.formset.management_form }}
+  {{ rows.formset.non_form_errors }}
+  {% for row in rows.formset.forms %}
+  <div class="row" id="{{ rows.prefix }}-{{ forloop.counter0 }}">
+    {{ row.non_field_errors }}
+    {% for field in row %}
+    <span class="field">{% if field.field.widget.input_type == "checkbox" and field.field.widget.allow_multiple_selected %}<span class="label">{{ field.label }}</span> {% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label> {% endif %}{{ field }}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{{ field.errors }}</span>
+    {% endfor %}
+    <button type="submit" name="op" value="remove:{{ rows.prefix }}-{{ forloop.counter0 }}" formnovalidate{% if archived_note %} disabled{% endif %}>Remove</button>
+  </div>
+  {% empty %}
+  <p class="empty">None.</p>
+  {% endfor %}
+  {% if rows.can_add %}<button type="submit" name="op" value="add:{{ rows.prefix }}" formnovalidate{% if archived_note %} disabled{% endif %}>Add</button>{% else %}<small class="muted">At the limit.</small>{% endif %}
+</fieldset>

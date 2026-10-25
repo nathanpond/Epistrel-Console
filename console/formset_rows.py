@@ -4,9 +4,15 @@ A row is added or removed by a submit button on the same form: ``add`` appends a
 ``remove`` (its value the row's index) deletes one; ``up`` and ``down`` (their value the row's
 index) swap it with its neighbour (#54's pinned memories). The view re-binds the formset to
 :func:`edit_rows`'s answer and re-renders it without validating.
+
+A page with several formsets (#68's scenario editor; #64 convention 6) uses one ``op`` button
+name instead: ``op=add:<prefix>``, ``op=remove:<prefix>-<n>`` and ``op=refresh`` ("Update
+form": re-render from the posted state). :func:`parse_op` reads it and :func:`apply_op` edits
+the named formset's rows the same way.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from django.http import QueryDict
 
@@ -82,4 +88,71 @@ def edit_rows(
     edited[f"{prefix}-INITIAL_FORMS"] = "0"
     edited[f"{prefix}-MIN_NUM_FORMS"] = str(min_rows)
     edited[f"{prefix}-MAX_NUM_FORMS"] = str(max_rows)
+    return edited
+
+
+OP = "op"
+OP_ADD = "add"
+OP_REMOVE = "remove"
+OP_REFRESH = "refresh"
+
+
+@dataclass(frozen=True)
+class Op:
+    """A posted ``op`` button: ``kind`` (``add``, ``remove``, ``refresh`` or any other value, such
+    as ``save``), the formset ``prefix`` it names and the row ``index`` (``remove`` only)."""
+
+    kind: str
+    prefix: str = ""
+    index: int | None = None
+
+    @property
+    def edits_rows(self) -> bool:
+        return self.kind in (OP_ADD, OP_REMOVE, OP_REFRESH)
+
+
+def parse_op(value: str | None, default: str = "save") -> Op:
+    """``add:<prefix>`` / ``remove:<prefix>-<n>`` / any other value as a plain kind."""
+    value = value or default
+    kind, _, target = value.partition(":")
+    if kind == OP_ADD and target:
+        return Op(OP_ADD, target)
+    if kind == OP_REMOVE and target:
+        prefix, _, index = target.rpartition("-")
+        if prefix and index.isdecimal():
+            return Op(OP_REMOVE, prefix, int(index))
+        return Op(OP_REFRESH)  # a malformed remove changes nothing
+    if kind in (OP_ADD, OP_REMOVE):
+        return Op(OP_REFRESH)
+    return Op(kind)
+
+
+def apply_op(
+    data: QueryDict,
+    op: Op,
+    *,
+    max_rows: Mapping[str, int],
+    new_rows: Mapping[str, Mapping[str, Sequence[str]]] | None = None,
+) -> QueryDict:
+    """The posted form after ``op``: a row added to or removed from the formset ``op.prefix``
+    names (at most ``max_rows[prefix]`` rows; none is kept), or unchanged for ``refresh`` or an
+    unknown prefix. The ``op`` key itself is dropped."""
+    edited: QueryDict
+    if op.prefix in max_rows and op.kind in (OP_ADD, OP_REMOVE):
+        request = data.copy()
+        request.pop(OP, None)
+        if op.kind == OP_ADD:
+            request[ADD] = "1"
+        else:
+            request[REMOVE] = str(op.index)
+        edited = edit_rows(
+            request,
+            op.prefix,
+            max_rows=max_rows[op.prefix],
+            min_rows=0,
+            new_row=(new_rows or {}).get(op.prefix),
+        )
+    else:
+        edited = data.copy()
+        edited.pop(OP, None)
     return edited

@@ -1,0 +1,72 @@
+{
+  "items": [
+    {
+      "id": "01JC000000000000000000SCN2",
+      "version": 2,
+      "listing_status": "public",
+      "status": "published",
+      "companion_of": null,
+      "name": "Harvest Weekend",
+      "public_description": "A story.",
+      "media": {
+        "cover": null,
+        "gallery": [],
+        "videos": []
+      },
+      "labels": [
+        "family",
+        "drama"
+      ],
+      "content_rating": {
+        "id": "00000000000000000000RAT002",
+        "version_id": "01M5R0RTV00000000000000002",
+        "name": "Teen"
+      },
+      "roles": [
+        {
+          "id": "mother",
+          "public_label": "Mother",
+          "setup_description": "Her children are home.",
+          "kind": "npc",
+          "fill": "open"
+        }
+      ],
+      "owner_principal": "console:nate",
+      "updated_at": "2026-10-20T10:00:00.000000Z",
+      "rank": null
+    },
+    {
+      "id": "01JC000000000000000000SCN1",
+      "version": 2,
+      "listing_status": "public",
+      "status": "published",
+      "companion_of": "01JC00000000000000000CHAR1",
+      "name": "Mira's story",
+      "public_description": "A story.",
+      "media": {
+        "cover": null,
+        "gallery": [],
+        "videos": []
+      },
+      "labels": [],
+      "content_rating": {
+        "id": "00000000000000000000RAT002",
+        "version_id": "01M5R0RTV00000000000000002",
+        "name": "Teen"
+      },
+      "roles": [
+        {
+          "id": "mother",
+          "public_label": "Mother",
+          "setup_description": "Her children are home.",
+          "kind": "npc",
+          "fill": "open"
+        }
+      ],
+      "owner_principal": "console:nate",
+      "updated_at": "2026-10-20T10:00:00.000000Z",
+      "rank": null
+    }
+  ],
+  "next_cursor": null
+}

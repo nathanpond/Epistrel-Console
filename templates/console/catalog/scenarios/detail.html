@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{% if name %}{{ name }}{% else %}{{ scenario_id }}{% endif %} — Scenarios — Epistrel Console{% endblock %}
+{% block heading %}{% if name %}{{ name }}{% else %}Scenario <code>{{ scenario_id }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ back_url }}">Back to list</a></p>
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% else %}
+<h2 class="version-heading">{{ heading }} · <a href="{{ versions_url }}">Versions</a> · {% if archived %}<span class="edit-disabled" title="{{ archived_note }}">Edit</span> <small class="muted">({{ archived_note }})</small>{% else %}<a class="edit" href="{{ edit_url }}">Edit</a>{% endif %}</h2>
+{% if companion %}<p class="companion-of">Companion of <a href="{{ companion.url }}">{{ companion.text }}</a>{% if companion.error %} <span class="lookup-failed">(name unavailable: {{ companion.error }})</span>{% endif %}</p>{% endif %}
+{% if card %}
+<p class="view-mode"><strong>Public card view</strong> · <a href="{{ full_query }}">Back to full view</a></p>
+{% else %}
+<p class="view-mode"><a href="{{ card_query }}">View as public card</a>{% if not is_draft %} · <a href="{{ draft_query }}">View the draft</a>{% endif %}</p>
+{% endif %}
+{% if differs %}
+<p class="warning draft-differs">The draft differs from this published version — <a href="{{ draft_query }}">view the draft</a></p>
+{% endif %}
+
+{% if not full %}
+{# --- the public card ----------------------------------------------------------------------- #}
+<section id="card">
+  <h2>Card</h2>
+  <dl>
+    <dt>Name</dt><dd>{{ entry.name|default_if_none:"—" }}</dd>
+    <dt>Public description</dt><dd>{% if entry.public_description %}{{ entry.public_description|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Labels</dt><dd>{{ entry.labels|join:", "|default:"—" }}</dd>
+    <dt>Content rating</dt><dd>{% if entry.content_rating %}<a href="{% url 'ratings:detail' entry.content_rating.id %}" title="{{ entry.content_rating.version_id }}">{{ entry.content_rating.name }}</a>{% else %}—{% endif %}</dd>
+    <dt>Status</dt><dd>{{ entry.status|humanise }}</dd>
+    <dt>Listing status</dt><dd>{{ entry.listing_status|humanise }}</dd>
+  </dl>
+  <h3>Roles</h3>
+  {% if entry.roles %}
+  <table class="card-roles">
+    <thead><tr><th>Id</th><th>Public label</th><th>Kind</th><th>Fill</th><th>Setup description</th></tr></thead>
+    <tbody>
+      {% for role in entry.roles %}<tr id="card-role-{{ role.id }}"><td><code>{{ role.id }}</code></td><td>{{ role.public_label }}</td><td>{{ role.kind|humanise }}</td><td>{{ role.fill|humanise }}</td><td>{{ role.setup_description|linebreaksbr }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+  <details class="media"><summary>Media</summary><pre>{{ card_media|pretty_json }}</pre></details>
+</section>
+{% else %}
+{# --- the full projection -------------------------------------------------------------------- #}
+<section id="card">
+  <h2>Card</h2>
+  <dl>
+    <dt>Name</dt><dd>{{ entry.public_card.name|default_if_none:"—" }}</dd>
+    <dt>Public description</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=entry.public_card.public_description %}</dd>
+    <dt>Labels</dt><dd>{{ entry.metadata.labels|join:", "|default:"—" }}</dd>
+    <dt>Content rating</dt><dd>{% if rating %}{% if rating.name %}<a href="{% url 'ratings:detail' rating.id %}">{{ rating.name }}</a>{% else %}<code>{{ rating.id }}</code>{% endif %}{% else %}—{% endif %}</dd>
+  </dl>
+  <details class="media"><summary>Media</summary><pre>{{ entry.public_card.media|pretty_json }}</pre></details>
+</section>
+
+<section id="metadata">
+  <h2>Metadata</h2>
+  <dl>
+    <dt>Id</dt><dd><code>{{ entry.id }}</code></dd>
+    <dt>Status</dt><dd>{{ entry.status|humanise }}</dd>
+    <dt>Listing status</dt><dd>{{ entry.listing_status|humanise }}</dd>
+    <dt>Owner</dt><dd>{{ entry.owner_principal|principal_link }}</dd>
+    <dt>Version</dt><dd>{{ entry.version|default_if_none:"—" }} (current version: {{ entry.current_version|default_if_none:"—" }})</dd>
+    {% if is_draft %}<dt>Draft revision</dt><dd>{{ entry.draft_revision|default_if_none:"—" }}</dd>{% endif %}
+    <dt>Created</dt><dd>{{ entry.created_at|engine_time }}</dd>
+    <dt>Updated</dt><dd>{{ entry.updated_at|engine_time }}</dd>
+    <dt>Published</dt><dd>{{ entry.published_at|engine_time }}</dd>
+    <dt>Companion of</dt><dd>{% if companion %}<a href="{{ companion.url }}">{{ companion.text }}</a>{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+
+{% with w=entry.world %}
+<section id="world">
+  <h2>World</h2>
+  <dl><dt>Description</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=w.description %}</dd></dl>
+  <h3>Locations</h3>
+  {% if w.locations %}
+  <table class="locations">
+    <thead><tr><th>Id</th><th>Name</th><th>Description</th></tr></thead>
+    <tbody>{% for loc in w.locations %}<tr id="location-{{ loc.id }}"><td><code>{{ loc.id }}</code></td><td>{{ loc.name }}</td><td>{% include "console/catalog/scenarios/_long_text.html" with text=loc.description %}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+  <h3>Entities</h3>
+  {% if w.entities %}
+  <table class="entities">
+    <thead><tr><th>Id</th><th>Name</th><th>Kind</th><th>Aliases</th><th>Description</th></tr></thead>
+    <tbody>{% for ent in w.entities %}<tr id="entity-{{ ent.id }}"><td><code>{{ ent.id }}</code></td><td>{{ ent.name }}</td><td>{% if ent.kind %}{{ ent.kind|humanise }}{% else %}other (default){% endif %}</td><td>{{ ent.aliases|join:", "|default:"—" }}</td><td>{% include "console/catalog/scenarios/_long_text.html" with text=ent.description %}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+  <h3>Event types</h3>
+  {% if w.event_types %}<details class="event-types"><summary>{{ w.event_types|length }} event type{{ w.event_types|length|pluralize }}</summary><pre>{{ w.event_types|pretty_json }}</pre></details>{% else %}<p>—</p>{% endif %}
+</section>
+{% endwith %}
+
+<section id="cast">
+  <h2>Cast</h2>
+  <details><summary>Cast (JSON)</summary><pre>{{ entry.cast|pretty_json }}</pre></details>
+</section>
+
+{% with o=entry.starting_state.opening %}
+<section id="opening">
+  <h2>Opening</h2>
+  <dl>
+    <dt>Narration</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=o.narration %}</dd>
+    <dt>Starting location</dt><dd>{% if o.starting_location %}<code>{{ o.starting_location }}</code>{% else %}—{% endif %}</dd>
+    <dt>Roles present</dt><dd>{% if o.roles_present %}{% for role in o.roles_present %}<code>{{ role }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+{% endwith %}
+
+<section id="world-seeds">
+  <h2>World seeds</h2>
+  {% if entry.starting_state.seeded_memories %}<details><summary>{{ entry.starting_state.seeded_memories|length }} seed{{ entry.starting_state.seeded_memories|length|pluralize }} (JSON)</summary><pre>{{ entry.starting_state.seeded_memories|pretty_json }}</pre></details>{% else %}<p>—</p>{% endif %}
+</section>
+
+{% with s=entry.story_settings_defaults %}
+<section id="story-settings-defaults">
+  <h2>Story-setting defaults</h2>
+  <dl>
+    <dt>Allow new arrivals</dt><dd>{% if s.allow_new_arrivals is None %}— (deployment default){% elif s.allow_new_arrivals %}Yes{% else %}No{% endif %}</dd>
+    <dt>Interaction mode</dt><dd>{{ s.interaction_mode|humanise }}</dd>
+    <dt>Player authority</dt><dd>{{ s.player_authority|humanise }}</dd>
+    <dt>Turn concurrency</dt><dd>{{ s.turn_concurrency|humanise }}</dd>
+    <dt>Ambiguous retcon timing</dt><dd>{{ s.ambiguous_retcon_timing|humanise }}</dd>
+    <dt>Backfill conflict policy</dt><dd>{{ s.backfill_conflict_policy|humanise }}</dd>
+    <dt>Audit retention (days)</dt><dd>{{ s.audit_retention_days|default_if_none:"—" }}</dd>
+    <dt>Default output viewpoint</dt><dd>{% if s.default_output_viewpoint %}<code>{{ s.default_output_viewpoint }}</code>{% else %}—{% endif %}</dd>
+    <dt>Required providers</dt><dd>{{ s.required_providers|join:", "|default:"—" }}</dd>
+  </dl>
+  <h3>Policies</h3>
+  {% if s.policies %}
+  <table class="policies">
+    <thead><tr><th>Name</th><th>Applies to</th><th>Rule type</th><th>Rule</th><th>Age condition</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for p in s.policies %}
+      <tr id="policy-{{ forloop.counter0 }}">
+        <td>{{ p.name }}</td>
+        <td>{% if p.applies_to is None %}Text output (default){% else %}{{ p.applies_to|join:", " }}{% endif %}</td>
+        <td>{{ p.rule.type|humanise }}</td>
+        <td><details><summary>Rule</summary><pre>{{ p.rule|pretty_json }}</pre></details></td>
+        <td>{% if p.age_condition %}Only when a minor is involved or present{% else %}Always{% endif %}</td>
+        <td>{{ p.message|linebreaksbr }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+</section>
+{% endwith %}
+
+<section id="recommendation">
+  <h2>Recommendation</h2>
+  <dl>
+    <dt>Engine profile</dt><dd>{% if profile %}{% if profile_url %}<a href="{{ profile_url }}">{% endif %}{% if profile.name %}{{ profile.name }}{% else %}<code>{{ profile.id }}</code>{% endif %}{% if profile_url %}</a>{% endif %}{% else %}—{% endif %}</dd>
+    <dt>Capabilities</dt><dd>{{ entry.recommendation.capabilities|join:", "|default:"—" }}</dd>
+  </dl>
+</section>
+
+<section id="visual-style">
+  <h2>Visual style</h2>
+  <dl>
+    <dt>Prompt</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=entry.visual_style.prompt %}</dd>
+    <dt>Negative prompt</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=entry.visual_style.negative_prompt %}</dd>
+  </dl>
+</section>
+
+<section id="creation-rules">
+  <h2>Creation rules</h2>
+  <dl>
+    <dt>Overridable paths</dt><dd>{% if entry.creation_rules.overridable %}{% for path in entry.creation_rules.overridable %}<code>{{ path }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</dd>
+    <dt>Bounds</dt><dd>{% if entry.creation_rules.bounds is not None %}<details><summary>Bounds (JSON)</summary><pre>{{ entry.creation_rules.bounds|pretty_json }}</pre></details>{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+
+{% with d=entry.drivers %}
+<section id="drivers">
+  <h2>Drivers</h2>
+  <dl>
+    <dt>Director guidance</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=d.director_guidance %}</dd>
+    <dt>Plot hooks</dt><dd>{% include "console/catalog/scenarios/_items.html" with items=d.plot_hooks %}</dd>
+    <dt>Objectives</dt><dd>{% include "console/catalog/scenarios/_items.html" with items=d.objectives %}</dd>
+    <dt>Milestones</dt><dd>{% include "console/catalog/scenarios/_items.html" with items=d.milestones %}</dd>
+    <dt>Endings</dt><dd>{% include "console/catalog/scenarios/_items.html" with items=d.endings %}</dd>
+    <dt>Planned reveals</dt><dd>{% if d.planned_reveals %}<details><summary>{{ d.planned_reveals|length }} planned reveal{{ d.planned_reveals|length|pluralize }} (JSON)</summary><pre>{{ d.planned_reveals|pretty_json }}</pre></details>{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+{% endwith %}
+
+{% with st=entry.starting_state %}
+<section id="deferred">
+  <h2>Deferred</h2>
+  <details class="deferred"><summary>Stored by Lite but not used until a later Engine milestone</summary>
+  <dl>
+    <dt>States</dt><dd><pre>{{ st.states|pretty_json }}</pre></dd>
+    <dt>Clock</dt><dd><pre>{{ st.clock|pretty_json }}</pre></dd>
+    <dt>Scheduled events</dt><dd><pre>{{ st.scheduled_events|pretty_json }}</pre></dd>
+    <dt>Predicates</dt><dd><pre>{{ st.predicates|pretty_json }}</pre></dd>
+    <dt>Closed sets</dt><dd><pre>{{ st.closed_sets|pretty_json }}</pre></dd>
+    <dt>Rules</dt><dd><pre>{{ st.rules|pretty_json }}</pre></dd>
+  </dl>
+  </details>
+</section>
+{% endwith %}
+{% endif %}
+{% endif %}
+{% endblock %}

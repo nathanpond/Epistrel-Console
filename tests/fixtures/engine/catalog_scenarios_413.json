@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "draft_too_large",
+    "message": "The draft is over 1 MiB",
+    "details": {
+      "limit_bytes": 1048576
+    }
+  }
+}

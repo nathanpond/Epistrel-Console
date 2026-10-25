@@ -1,0 +1,6 @@
+{% comment %}#68: a section's fields. Context: section (console.forms.scenario.Section).{% endcomment %}{% for field in section.fields %}
+<p class="field">
+  {% if field.field.widget.input_type == "checkbox" %}<span class="label">{{ field.label }}</span>{% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{% endif %}<br>
+  {{ field }} <small class="muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</small>
+  {{ field.errors }}
+</p>{% endfor %}

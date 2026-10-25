@@ -38,6 +38,8 @@ from console.engine.models import (
     CustomInstructions,
     CustomInstructionsWritten,
     DeploymentSettings,
+    EngineProfileSummary,
+    EngineProfileSummaryPage,
     ForkResult,
     HealthResponse,
     HealthResult,
@@ -65,6 +67,11 @@ from console.engine.models import (
     RebuildResult,
     RegenerateResult,
     RespondResponse,
+    Scenario,
+    ScenarioCard,
+    ScenarioDraft,
+    ScenarioListItem,
+    ScenarioPage,
     Story,
     StoryCreated,
     StoryList,
@@ -91,6 +98,7 @@ INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event
 LONG_MUTATION_TIMEOUT_S = 30.0  # fork and rebuild (#43's timeouts)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 CATALOG_PAGE = 50  # the same for catalog lists (#65)
+ENGINE_PROFILES_PAGE = 200  # the Engine's largest page: a select reads every profile (#68)
 # The media proxy's stream (#65): connect 3 s, then 30 s for each chunk, no total cap.
 MEDIA_CONNECT_TIMEOUT_S = 3.0
 MEDIA_READ_TIMEOUT_S = 30.0
@@ -1464,6 +1472,141 @@ class EngineClient:
         )
         _raise_for_envelope(response)
 
+    # --- catalog scenarios (#68) ----------------------------------------------------------------
+
+    @operation("GET", "/catalog/scenarios", response_model=ScenarioPage)
+    def list_scenarios(
+        self,
+        *,
+        q: str | None = None,
+        labels: Sequence[str] = (),
+        content_rating: str | None = None,
+        listing_status: str | None = None,
+        owner: str | None = None,
+        relations: Sequence[str] = (),
+        status: str | None = None,
+        include_companions: bool = False,
+        cursor: str | None = None,
+        limit: int = CATALOG_PAGE,
+    ) -> tuple[list[ScenarioListItem], str | None]:
+        """``GET /catalog/scenarios``: one page of cards and the next page's cursor (``None`` on
+        the last). Filters as :meth:`list_catalog_characters`; companion scenarios are listed
+        only with ``include_companions`` (sent as ``include_companions=true``)."""
+        params: list[tuple[str, str]] = [("limit", str(limit))]
+        for name, value in (
+            ("q", q),
+            ("content_rating", content_rating),
+            ("listing_status", listing_status),
+            ("owner", owner),
+            ("status", status),
+            ("cursor", cursor),
+        ):
+            if value:
+                params.append((name, value))
+        params.extend(("label", label) for label in labels)
+        params.extend(("relation", relation) for relation in relations)
+        if include_companions:
+            params.append(("include_companions", "true"))
+        page = _parse(self._request("GET", "/catalog/scenarios", params=params), ScenarioPage)
+        return page.items, page.next_cursor
+
+    @operation("GET", "/catalog/scenarios/{scenario_id}", response_model=Scenario)
+    def get_scenario(
+        self, scenario_id: str, *, version: str | int | None = None, draft: bool = False
+    ) -> Scenario:
+        """``GET /catalog/scenarios/{id}`` in ``full``: the latest published version, version
+        ``version`` or (``draft``) the draft. A never-published entry's latest read is 422
+        ``not_published``."""
+        params = _character_read_params("full", version, draft)
+        response = self._request("GET", _scenario_path(scenario_id), params=params)
+        return _parse(response, Scenario)
+
+    def get_scenario_card(
+        self, scenario_id: str, *, version: str | int | None = None, draft: bool = False
+    ) -> ScenarioCard:
+        """The same read in ``card``. Not registered on its own (the registry keys by method and
+        path, which :meth:`get_scenario` holds); the contract test checks :class:`ScenarioCard`
+        against ``ScenarioCard`` directly."""
+        params = _character_read_params("card", version, draft)
+        response = self._request("GET", _scenario_path(scenario_id), params=params)
+        return _parse(response, ScenarioCard)
+
+    @operation(
+        "GET", "/catalog/scenarios/{scenario_id}/versions", response_model=CatalogVersionList
+    )
+    def list_scenario_versions(self, scenario_id: str) -> list[CatalogVersion]:
+        """``GET /catalog/scenarios/{id}/versions``: every published version (oldest first)."""
+        path = f"{_scenario_path(scenario_id)}/versions"
+        return _parse(self._request("GET", path), CatalogVersionList).items
+
+    @operation(
+        "POST",
+        "/catalog/scenarios",
+        response_model=ScenarioDraft,
+        entity="scenario",
+        entity_id="response:id",
+    )
+    def create_scenario(self, body: Mapping[str, Any], *, idempotency_key: str) -> ScenarioDraft:
+        """``POST /catalog/scenarios`` with a ``ScenarioCreate``: a new entry whose draft is at
+        revision 1."""
+        response = self._request(
+            "POST",
+            "/catalog/scenarios",
+            json=dict(body),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ScenarioDraft)
+
+    @operation(
+        "PATCH",
+        "/catalog/scenarios/{scenario_id}",
+        response_model=ScenarioDraft,
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def patch_scenario(
+        self,
+        scenario_id: str,
+        patch: Mapping[str, Any],
+        *,
+        draft_revision: int,
+        idempotency_key: str,
+    ) -> ScenarioDraft:
+        """``PATCH /catalog/scenarios/{id}``: a JSON merge patch over the draft's groups based on
+        ``draft_revision`` (a stale one is 409 ``draft_stale``; an archived entry is 422
+        ``entry_archived``)."""
+        response = self._request(
+            "PATCH",
+            _scenario_path(scenario_id),
+            json={**patch, "draft_revision": draft_revision},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ScenarioDraft)
+
+    # --- engine profiles (a select's options; #78 builds the profile pages) ---------------------
+
+    @operation("GET", "/engine-profiles")
+    def list_engine_profiles(
+        self,
+        *,
+        include_deleted: bool = False,
+        cursor: str | None = None,
+        limit: int = ENGINE_PROFILES_PAGE,
+    ) -> tuple[list[EngineProfileSummary], str | None]:
+        """``GET /engine-profiles``: one page of profiles (newest first) and the next cursor.
+        Registered without a response model: :class:`EngineProfileSummary` reads a few fields of
+        ``EngineProfile`` (the contract test compares each)."""
+        params: list[tuple[str, str]] = [("limit", str(limit))]
+        if include_deleted:
+            params.append(("include_deleted", "true"))
+        if cursor:
+            params.append(("cursor", cursor))
+        response = self._request("GET", "/engine-profiles", params=params)
+        page = _parse(response, EngineProfileSummaryPage)
+        return page.items, page.next_cursor
+
     # --- media content (#65's proxy) -------------------------------------------------------------
 
     @operation("GET", "/media/{media_id}/content")
@@ -1524,6 +1667,11 @@ def _character_read_params(
 def _character_path(character_id: str) -> str:
     """``/catalog/characters/<id>``, the id percent-encoded."""
     return f"/catalog/characters/{quote(character_id, safe='')}"
+
+
+def _scenario_path(scenario_id: str) -> str:
+    """``/catalog/scenarios/<id>``, the id percent-encoded."""
+    return f"/catalog/scenarios/{quote(scenario_id, safe='')}"
 
 
 def _persona_path(persona_id: str) -> str:

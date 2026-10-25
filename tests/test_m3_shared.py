@@ -148,6 +148,8 @@ class JsonForm(forms.Form):
         ("schema", '{"a": Infinity}', "Infinity is not valid JSON"),
         ("rules", "[-Infinity]", "-Infinity is not valid JSON"),
         ("schema", "{oops", "Enter valid JSON"),
+        ("schema", '{"a": 1, "a": 2}', "duplicate key 'a'"),  # #68
+        ("rules", '[{"b": {"c": 1, "c": 1}}]', "duplicate key 'c'"),
     ],
 )
 def test_json_box_refuses_before_any_call(field: str, text: str, error: str) -> None:
@@ -195,7 +197,7 @@ def test_an_unknown_type_renders_as_code() -> None:
 
 
 def test_a_type_without_its_page_yet_renders_as_code() -> None:
-    assert entity_link("scenario", CHAR) == f"<code>{CHAR}</code>"
+    assert entity_link("engine_profile", CHAR) == f"<code>{CHAR}</code>"
 
 
 @override_settings(ROOT_URLCONF="tests.urls_m3")
@@ -203,7 +205,7 @@ def test_a_type_links_once_its_page_exists() -> None:
     assert entity_link("scenario", CHAR) == (
         f'<a href="/catalog/scenarios/{CHAR}/"><code>{CHAR}</code></a>'
     )
-    # #65 built the character pages: they link in the real URLconf too.
+    # #65 built the character pages and #68 the scenario pages: they link in the real URLconf.
     assert entity_link("character", CHAR) == (
         f'<a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>'
     )
@@ -652,10 +654,12 @@ def test_fan_out_reports_a_timeout_and_errors() -> None:
 def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) -> None:
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
-    for label in ("Scenarios", "Principals", "Erasure", "Profiles"):
+    for label in ("Principals", "Erasure", "Profiles"):
         assert label not in nav
-    # #65 built the character list and #67 the personas: the Catalog group shows with them.
+    # #65 built the character list, #67 the personas and #68 the scenarios: the Catalog group
+    # shows with them.
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
+    assert '<a href="/catalog/scenarios/">Scenarios</a>' in nav
     assert '<a href="/personas/">Personas</a>' in nav
     assert nav.index(">Engine<") < nav.index(">Operations<") < nav.index(">Admin<")
 
@@ -663,7 +667,7 @@ def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) 
 @pytest.mark.django_db
 @override_settings(ROOT_URLCONF="tests.urls_m3")
 def test_m3_sections_show_in_order_once_their_urls_exist(operator_client: Client) -> None:
-    html = operator_client.get("/catalog/scenarios/").content.decode()
+    html = operator_client.get("/principals/").content.decode()
     assert html == "placeholder"  # the placeholder page itself has no shell
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]

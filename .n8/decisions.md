@@ -825,3 +825,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A 422 on persona create or edit is placed at its fields (`apply_engine_errors`). The error panel shows only when no field could be placed. Other errors, including a 503 `erasure_pending`, show #43's panel. Detail, edit-read and delete errors escape to the shared panel.
   **Why:** The plan names placement for `persona_name_taken` only. This matches #66's handling of field errors.
   **Issue:** #67
+- **Decision:** The scenario editor's fields follow #64 convention 6's `__` names throughout, including the opening (`starting_state__opening__narration`), so an Engine path maps to its field directly. The plan's extra alias `starting_state.opening.<f>` → `opening_<f>` isn't needed. The rule "an `opening` key typed in a box is refused" was dropped: each deferred sub-key has its own box, so no box can hold the opening.
+  **Why:** One naming rule keeps 422 placement and report anchors uniform. With one box per sub-key, the refusal has nothing to guard.
+  **Issue:** #68
+- **Decision:** `create_scenario` and `patch_scenario` take `idempotency_key` (as #66's character writes do), and `list_scenarios` takes `labels`/`relations` sequences, so `CatalogFilterForm.query()` feeds it unchanged. It returns `(items, next_cursor)` as planned. A narrow `list_engine_profiles` → `EngineProfileSummary` (registered without a response model; a contract test checks each field against `EngineProfile`) backs the new `engine_profile_choices`. That follows cursors over deleted profiles too, so a deleted current profile keeps its name, and degrades to a free-text id above 500 profiles.
+  **Why:** The planned signatures had no idempotency key, but #43's per-render key applies to every M3 write. #78 owns the full profile model.
+  **Issue:** #68
+- **Decision:** `JsonBoxField` (#64) now also refuses a key given twice in one object ("Enter valid JSON: duplicate key 'a'"). The existing NaN/Infinity messages stay as they were, not the plan's single "Must be valid JSON (no NaN, Infinity or duplicate keys)" text.
+  **Why:** Changing the shared message would break #64's pinned tests for no gain; each message already names the problem.
+  **Issue:** #68
+- **Decision:** On an archived scenario the edit page renders every input and Save disabled with "Archived — unarchive to edit". A forced POST is still sent, and the Engine's 422 `entry_archived` shows in the error panel. #66 instead redirects without a call.
+  **Why:** The plan says "a forced POST shows `entry_archived`", and the test plan asks for the Engine refusal to be rendered. The inputs are disabled only in HTML, so a crafted POST still carries its values.
+  **Issue:** #68
+- **Decision:** No-JS row editing for pages with several formsets goes through one `op` button (`console/formset_rows.py` `parse_op`, `apply_op`: `add:<prefix>`, `remove:<prefix>-<n>`, `refresh`). A re-render is "quieted" (`ScenarioEditor.quiet()`: errors set empty, so Django does not validate) instead of carrying a `show_errors` flag into every template. A visually hidden default Save button comes first in the form, so Enter in a text input saves rather than pressing the first row button. Policy rows have their own blankness rule: a rule box that is blank or an untouched template does not count, so a new row left alone is dropped.
+  **Why:** Convention 6 names the `op` buttons, and #73 adds the `role` formset to the same editor. Django's `has_changed` would otherwise treat a pre-filled template as input.
+  **Issue:** #68
+- **Decision:** When the ratings read fails, the content-rating field is left out and the saved rating is kept, as #66 does, instead of a disabled select. The note "Ratings unavailable: … — reload to retry" shows in its place.
+  **Why:** One behaviour across the catalog editors. A disabled field would post nothing and read as "cleared".
+  **Issue:** #68

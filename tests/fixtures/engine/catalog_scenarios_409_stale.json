@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "draft_stale",
+    "message": "The draft was saved since",
+    "details": {
+      "current_draft_revision": 7
+    }
+  }
+}
