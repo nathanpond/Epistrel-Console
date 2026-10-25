@@ -13,6 +13,7 @@
     {% for name, value in page.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
     {% endfor %}
     {% if page.fields_template %}{% include page.fields_template %}{% endif %}
+    {% if page.error %}<p class="errorlist confirm-error">{{ page.error }}</p>{% endif %}
     <button type="submit"{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>
     <a href="{{ next_url }}">Cancel</a>
   </form>

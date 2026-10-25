@@ -1206,3 +1206,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** M3 had already been executed (#155, #165 merged), so this run implemented only the open verify bug #166, on `milestone/m3-catalog-verify-fixes-2`. The tests drive the HTMX poll partial (`?op=swap`) after a held swap. The ended case uses `refused` with `progress {0, 0}`.
   **Why:** The poll partial reads only the check, so it isolates the progress line. `refused` is one of the endings the issue names. A scratch worktree with the #81 half of #165 reverse-applied fails the ended test, so it is a real gate. The starting test passes on both trees: the issue asks for it as the paired assertion, and that behaviour predates #165.
   **Issue:** #166
+
+## /n8-exec M4 — 2026-10-25
+
+- **Decision:** Executed M4 on one branch, `milestone/m4-inspectors`. A fresh agent ran each story in dependency order, sequentially, from a shared brief.
+  **Why:** 22 detailed stories and a 7-minute suite. A fresh context per story keeps each one reading its full spec. Running them one at a time avoids conflicts in the shared `client.py`, `models.py`, `urls.py` and `base.html`.
+  **Issue:** M4
+- **Decision:** The confirm page's error line uses the existing red `errorlist` class (`<p class="errorlist confirm-error">`) rather than a new style rule.
+  **Why:** base.html already styles `.errorlist` red. `.error` is styled only inside `ul.messages`.
+  **Issue:** #134
