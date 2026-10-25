@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "membership": "active",
+      "tip_turn": 3,
+      "turn_count": 3,
+      "membership_tx": "2026-10-25T00:03:43.437050Z",
+      "parent": null,
+      "requires_check": false
+    },
+    {
+      "turn": 3,
+      "variant": 2,
+      "membership": "dormant",
+      "tip_turn": 3,
+      "turn_count": 1,
+      "membership_tx": "2026-10-25T00:05:10.000000Z",
+      "parent": {
+        "turn": 1,
+        "variant": 1
+      },
+      "requires_check": true
+    }
+  ]
+}

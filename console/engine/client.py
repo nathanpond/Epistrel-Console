@@ -52,6 +52,8 @@ from console.engine.models import (
     StorySettings,
     StoryStatusChange,
     StorySummary,
+    VariantChain,
+    Variants,
 )
 from console.version import VERSION
 
@@ -721,21 +723,44 @@ class EngineClient:
         story_id: str,
         *,
         viewpoint: str | None = None,
+        as_of: int | None = None,
         limit: int | None = None,
         before_turn: int | None = None,
+        actor_character_id: str | None = None,
+        variant: str | None = None,
+        include_audit: bool = False,
+        include_summary: bool = False,
     ) -> History:
         """``GET /stories/{id}/history``: one page (whole turns, newest page first, items
         ascending) for ``viewpoint`` (``character:<id>`` or ``omniscient``; else the story's
-        default)."""
+        default), as of turn ``as_of`` (default: head, or the chain's tip), along chain
+        ``variant`` (``T:V``). ``include_audit`` needs ``omniscient`` (403
+        ``omniscient_required``). A ``None`` or ``False`` argument is left out of the query
+        (#52)."""
         params: dict[str, str] = {}
         if viewpoint:
             params["viewpoint"] = viewpoint
+        if as_of is not None:
+            params["as_of"] = str(as_of)
         if limit is not None:
             params["limit"] = str(limit)
         if before_turn is not None:
             params["before_turn"] = str(before_turn)
+        if actor_character_id:
+            params["actor_character_id"] = actor_character_id
+        if variant:
+            params["variant"] = variant
+        if include_audit:
+            params["include_audit"] = "1"
+        if include_summary:
+            params["include_summary"] = "1"
         response = self._request("GET", f"{_story_path(story_id)}/history", params=params or None)
         return _parse(response, History)
+
+    @operation("GET", "/stories/{story_id}/variants", response_model=Variants)
+    def list_variants(self, story_id: str) -> list[VariantChain]:
+        """``GET /stories/{id}/variants``: every chain of the story's variant tree (#52)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/variants"), Variants).items
 
     @operation("GET", "/stories/{story_id}/settings", response_model=StorySettings)
     def get_story_settings(self, story_id: str) -> StorySettings:

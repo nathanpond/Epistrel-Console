@@ -387,12 +387,25 @@ class TurnSummary(Model):
 
 
 @dataclass(frozen=True)
+class SummarySegment(Model):
+    """``SummarySegmentModel``: a Lite rolling-summary segment the prompt includes now
+    (``include_summary=1``, #72): its level and the turns it covers."""
+
+    level: int
+    covers_from: int
+    covers_to: int
+    text: str
+    operation_id: str
+
+
+@dataclass(frozen=True)
 class History(Model):
     """``HistoryResponse``: a page of a story's history for one output viewpoint.
 
     Pages hold whole turns, newest page first; ``items`` are ascending within the page.
     ``items`` (and ``audit``) are raw, because the schema's item is a union (omniscient or
-    not); :attr:`entries` parses them. ``summary`` stays raw JSON.
+    not); :attr:`entries` and :attr:`audit_entries` parse them. #52 reads every field (the
+    issue calls this model ``HistoryResponse``).
     """
 
     items: list[Any]
@@ -403,12 +416,18 @@ class History(Model):
     timeline_revision: int
     next_before_turn: int | None
     audit: list[Any] | None = None
-    summary: Any = None
+    summary: list[SummarySegment] | None = None
 
     @property
     def entries(self) -> list[HistoryItem]:
         """The items, in the Engine's order (an item that does not parse is left out)."""
         return _history_items(self.items)
+
+    @property
+    def audit_entries(self) -> list[HistoryItem] | None:
+        """The audit records (``include_audit=1``), parsed as :attr:`entries`; ``None`` when
+        the answer has no ``audit`` (not asked for)."""
+        return None if self.audit is None else _history_items(self.audit)
 
 
 @dataclass(frozen=True)
@@ -545,6 +564,21 @@ class StorySettings(Model):
     guardrail_calls: GuardrailCalls
     effective_budget: EffectiveBudget
 
+    @property
+    def effective(self) -> list[EffectivePolicy]:
+        """The effective policies, parsed (an item that does not parse is left out)."""
+        return _effective_policies(self.effective_policies)
+
+    @property
+    def inactive(self) -> list[EffectivePolicy]:
+        """The inactive policies (age condition not met yet), parsed."""
+        return _effective_policies(self.inactive_policies)
+
+
+def _effective_policies(raw: list[Any]) -> list[EffectivePolicy]:
+    parsed = (EffectivePolicy.from_json(item) for item in raw)
+    return [policy for policy in parsed if policy is not None]
+
 
 # --- Stories (#45; #48's play view and #50's settings page reuse them) -------------------------
 
@@ -632,6 +666,14 @@ class VariantChain(Model):
     membership_tx: str | None
     parent: ChainRef | None
     requires_check: bool
+
+
+@dataclass(frozen=True)
+class Variants(Model):
+    """``VariantsBody`` (``GET /stories/{id}/variants``): every chain of the story's variant
+    tree (#52)."""
+
+    items: list[VariantChain]
 
 
 @dataclass(frozen=True)
@@ -979,6 +1021,25 @@ class ModelConfigMutation(ModelConfigItem):
 # ``Scope-Output`` (the ``scope`` property's ``$ref``; the component was renamed once, #47).
 PolicyScope = Literal["global", "rating", "story", "character"]
 PolicyKind = Literal["deterministic", "model_assisted"]
+
+
+@dataclass(frozen=True)
+class EffectivePolicy(Model):
+    """``EffectivePolicyBody``: a policy that applies to a story (or would, once its age
+    condition holds), as ``GET /stories/{id}/settings`` lists it (#52's audit names; #54).
+
+    ``name`` is ``None`` while a catalog erasure reaching its text is pending (still
+    enforced, Engine ADR-161). ``scope`` and ``applies_to`` stay raw JSON."""
+
+    id: str
+    name: str | None
+    scope: Any
+    source: str
+    applies_to: list[Any]
+    age_condition: str | None
+    kind: PolicyKind
+
+
 # ``Target``: what a policy applies to. ``image_*`` targets are used from M8.
 PolicyTarget = Literal["text_input", "text_output", "image_prompt", "image_output"]
 # ``PolicyFields.age_condition``'s one non-null value (bodies return it as a plain string).

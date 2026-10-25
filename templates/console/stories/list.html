@@ -27,7 +27,7 @@
       <td>{{ row.story.timeline_revision }}</td>
       <td>{{ row.story.content_rating.name|default:"—" }}</td>
       <td>{% if row.cast_size is None %}—{% else %}{{ row.cast_size }}{% endif %}</td>
-      <td>{% include "console/stories/_actions.html" with story=row.story query=row.actions_query %}</td>
+      <td><a class="history-link" href="{% url 'stories:history' row.story.id %}">History</a> {% include "console/stories/_actions.html" with story=row.story query=row.actions_query %}</td>
     </tr>
     {% endfor %}
   </tbody>

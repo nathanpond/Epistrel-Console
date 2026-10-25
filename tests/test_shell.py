@@ -2,9 +2,11 @@
 
 import pytest
 from django.test import Client, override_settings
+from django.urls import get_resolver, resolve
 
 from console import context_processors
 from console.engine_probe import ProbeResult
+from console.views import history as history_views
 
 BADGES = {
     "healthy": (
@@ -89,13 +91,14 @@ def test_active_section_is_marked(operator_client: Client) -> None:
     assert '<a href="/stories/">Stories</a>' in html
 
 
-@pytest.mark.parametrize("path", ["/stories/01J9Z8Q4N5V6W7X8Y9Z0A1B2C3/history/"])
-def test_placeholders_render_in_the_shell(operator_client: Client, path: str) -> None:
-    response = operator_client.get(path)
-    assert response.status_code == 200
-    html = response.content.decode()
-    assert "Not built yet." in html
-    assert "Log out" in html
+def test_no_placeholder_routes_remain() -> None:
+    """#43's placeholders are all replaced: story history (the last, #52) is the real view."""
+    match = resolve("/stories/01J9Z8Q4N5V6W7X8Y9Z0A1B2C3/history/")
+    assert match.func is history_views.history
+    assert match.url_name == "history"
+    for pattern in get_resolver().url_patterns:
+        callback = getattr(pattern, "callback", None)
+        assert not getattr(callback, "__name__", "").startswith("placeholder_")
 
 
 @override_settings(ROOT_URLCONF="tests.urls_flash")

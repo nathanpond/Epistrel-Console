@@ -634,3 +634,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** I filed #129 (needs-triage): the recorded schema declares no 200 response for ingest, though the Engine answers 200 for replays. The fake-Engine tests model a replay as a 201 with the replay flags and the `Idempotent-Replay` header.
   **Why:** The schema gap is out of scope here. The fake only serves declared statuses.
   **Issue:** #51
+- **Decision (drift):** No schema re-record for #52. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, stub adapter, torn down after) reports a match; `GET /stories/{id}/history` (all eight parameters, `audit`, `summary`) and `GET /stories/{id}/variants` (`VariantsBody`, `requires_check`) are in the recording. `get_history_audit.json` was captured live (a wordlist output policy rejecting the stub's drafts) and re-keyed to the test cast.
+  **Why:** #43's schema convention.
+  **Issue:** #52
+- **Decision (drift):** The history response model keeps #48's name `History` (the issue calls it `HistoryResponse`); `summary` is now typed `list[SummarySegment] | None` and `audit_entries` parses `audit`. The audit record is not an Engine model: `console/history.py:AuditRecord` reads the item's `text`, which the Engine fills with the event payload's canonical JSON (`text`, `reason`, `attempt`, `policy_ids`, `violations[{policy_id, name, message, kind}]`); an erasure marker's non-JSON text shows raw. `get_story_settings` already existed (#48), so #52 adds `EffectivePolicy` and parsed `StorySettings.effective` / `.inactive` instead of a second method.
+  **Why:** Renaming would churn #48/#51's callers; the Engine has no audit-record component.
+  **Issue:** #52
+- **Decision (drift):** The policy message shown in an audit record is the payload violation's `message`, not "the resolved policy's message": `EffectivePolicyBody` carries no message. The name still comes from the settings lookup (unresolved → raw id; `null` → "(name withheld — erasure pending)"), never from the payload's own `name`.
+  **Why:** The settings GET has no message to resolve; the payload holds the message the guardrail applied.
+  **Issue:** #52
+- **Decision:** History controls (`console/forms/history.py:HistoryForm`): viewpoint and actor are choice fields over the cast, so a viewpoint/actor naming no cast member is a form error with no history call; `variant` passes through unchecked (the Engine's 409 `unknown_chain` / 422 shows in the panel). Submitting the controls drops `before_turn` (a new view starts at the newest page); "Older" keeps every current parameter and sets `before_turn`, and a "Newest page" link drops it. "clear" on the chain line drops only `variant`.
+  **Why:** Paging cursor belongs to the view it came from; the planner names only the chain-view link's kept parameters.
+  **Issue:** #52
+- **Decision:** The viewpoint select's HTMX re-render (`hx-get` the same URL, `hx-include="closest form"`, htmx 4 leaves form values out of GETs otherwise) reads the story (cast, head) and, only with a `variant`, the variants (tip); it shows no form errors and makes no history call. A disabled audit box shows "enabled only with the omniscient viewpoint"; the refusal error text stays "Audit records need the omniscient viewpoint".
+  **Why:** The fragment needs the cast for the selects; errors there would flash while the operator is still choosing.
+  **Issue:** #52
+- **Decision:** A turn group is keyed by `(turn, variant)` from both `turns` and the items; an audit record whose `(turn, variant)` has no group falls back to its turn's group, else is dropped. "No reply" = a turn ≥ 1 with no `message_rendered` / `message` / `narration` item, suppressed under an actor filter. The `#44` link lookup takes the newest row by `engine_operation_id`, then scans the story's newest 500 ingest rows' `response.results`.
+  **Why:** The planner's grouping, "no reply" and link rules; the scan bound keeps one page from reading the whole log.
+  **Issue:** #52
+- **Decision:** With story history built, no placeholder routes remain: `console/views/placeholders.py` and `templates/console/placeholder.html` are deleted, and `tests/test_shell.py`'s placeholder test now checks that the history URL resolves to the real view and that no top-level route is a placeholder. Added an `engine_live` + `engine_auth` test (`tests/engine_live/test_history_live.py`) that plays a stub turn and browses it (character, omniscient with audit + summary, as of 0, 422 beyond head).
+  **Why:** #43: the owning story replaces its placeholder; dead code would linger otherwise.
+  **Issue:** #52

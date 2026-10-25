@@ -7,6 +7,7 @@ from django.urls import include, path
 from console.auth import OperatorAuthenticationForm
 from console.views import (
     engine_panel,
+    history,
     models,
     operations,
     play,
@@ -15,7 +16,6 @@ from console.views import (
     status,
     stories,
 )
-from console.views.placeholders import placeholder
 
 operation_patterns = (
     [
@@ -35,12 +35,7 @@ story_patterns = (
         path("<str:story_id>/operations/<str:operation_id>/poll/", play.poll, name="poll"),
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
-        # #52 replaces this placeholder with the full history browser.
-        path(
-            "<str:story_id>/history/",
-            placeholder("Story history", links=(("All stories", "/stories/"),)),
-            name="history",
-        ),
+        path("<str:story_id>/history/", history.history, name="history"),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),

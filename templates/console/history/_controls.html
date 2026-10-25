@@ -1,0 +1,20 @@
+{# The history controls (#52), inside the GET form; the viewpoint select re-renders this fragment with HTMX so the audit box follows it. #}
+{% with form=controls.form %}
+<div id="history-controls">
+  {% if controls.show_errors and form.non_field_errors %}<div class="errors">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{% if controls.show_errors %}{{ form.viewpoint.errors }}{% endif %}</div>
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">blank = head ({{ controls.last }})</small>
+    <datalist id="as-of-turns">{% for turn in controls.options %}<option value="{{ turn }}">{% if turn == 0 %}0 (genesis){% elif turn == controls.last %}{{ turn }} (head){% else %}{{ turn }}{% endif %}</option>{% endfor %}</datalist>
+    {% if controls.show_errors %}{{ form.as_of.errors }}{% endif %}</div>
+  <div class="field field-actor_character_id">{{ form.actor_character_id.label_tag }} {{ form.actor_character_id }}{% if controls.show_errors %}{{ form.actor_character_id.errors }}{% endif %}</div>
+  <div class="field field-include_audit">
+    <label><input type="checkbox" name="include_audit" value="1" id="id_include_audit"{% if controls.audit_disabled %} disabled{% elif form.include_audit.value %} checked{% endif %}> Include audit</label>
+    {% if controls.audit_disabled %}<small class="muted audit-note">enabled only with the omniscient viewpoint</small>{% endif %}
+    {% if controls.show_errors %}{{ form.include_audit.errors }}{% endif %}
+  </div>
+  <div class="field field-include_summary"><label><input type="checkbox" name="include_summary" value="1" id="id_include_summary"{% if form.include_summary.value %} checked{% endif %}> Include summary</label></div>
+  <div class="field field-limit">{{ form.limit.label_tag }} {{ form.limit }}{% if controls.show_errors %}{{ form.limit.errors }}{% endif %}</div>
+  {% if form.variant.value %}<input type="hidden" name="variant" value="{{ form.variant.value }}">{% endif %}
+  {% if controls.show_errors %}{{ form.before_turn.errors }}{{ form.variant.errors }}{% endif %}
+</div>
+{% endwith %}

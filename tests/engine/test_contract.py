@@ -28,6 +28,7 @@ from console.engine.models import (
     DormantChain,
     EffectiveBudget,
     EffectiveGuardrail,
+    EffectivePolicy,
     GuardrailCalls,
     GuardrailViolation,
     HealthChecks,
@@ -69,6 +70,7 @@ from console.engine.models import (
     StorySettings,
     StoryStatusChange,
     StorySummary,
+    SummarySegment,
     TurnBudget,
     TurnGuardrail,
     TurnMessage,
@@ -76,6 +78,7 @@ from console.engine.models import (
     TurnSummary,
     TurnWarning,
     VariantChain,
+    Variants,
     WorkersCheck,
 )
 from tests.engine.contract import check_operation, compare_model, compare_type
@@ -187,6 +190,9 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (TurnSummary, "TurnSummaryModel"),
         (TurnMessage, "TurnMessageModel"),
         (StorySettings, "StorySettingsBody"),
+        (EffectivePolicy, "EffectivePolicyBody"),
+        (SummarySegment, "SummarySegmentModel"),
+        (Variants, "VariantsBody"),
         (EffectiveBudget, "EffectiveBudgetBody"),
         (GuardrailCalls, "GuardrailCallsBody"),
         (RebuildResult, "RebuildResponse"),
