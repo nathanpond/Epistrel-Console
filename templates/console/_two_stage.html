@@ -1,0 +1,11 @@
+{% comment %}
+The confirm step of a two-stage write (#64, M3 convention 3). Context: token (console.twostage.sign),
+confirm_url, confirm_label ("Apply anyway" / "Start" / "Erase now"), cancel_url, idempotency_key (fresh,
+minted when this renders), danger (optional: style the button as destructive). The caller renders the
+report above it.
+{% endcomment %}<form method="post" action="{{ confirm_url }}" class="two-stage">{% csrf_token %}
+  <input type="hidden" name="confirm_token" value="{{ token }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <button type="submit"{% if danger %} class="danger"{% endif %}>{{ confirm_label }}</button>
+  <a class="button" href="{{ cancel_url }}">Cancel</a>
+</form>

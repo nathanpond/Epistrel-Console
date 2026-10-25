@@ -97,6 +97,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "console.context_processors.shell",
                 "console.context_processors.engine_badge",
+                "console.context_processors.acting",
             ],
         },
     },

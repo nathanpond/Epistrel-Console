@@ -316,3 +316,35 @@ def test_a_status_model_for_an_undeclared_status_is_reported() -> None:
     op = OPERATIONS["POST /stories/{story_id}/respond"]
     extra = Operation(op.method, op.path, op.response_model, False, ((201, QueuedTurn),))
     assert "no 201 response in the schema" in " ".join(check_operation(DOC, extra))
+
+
+def test_report_location_matches_element_location() -> None:
+    """#64: ``EntryLocation`` is the Engine's ``ElementLocation`` (``EntryLocation`` plus
+    ``media_id``), so both parse into it."""
+    from console.engine.models import EntryLocation
+
+    ref = {"$ref": "#/components/schemas/ElementLocation"}
+    assert compare_model(DOC, EntryLocation, ref, "ElementLocation") == []
+    element = DOC["components"]["schemas"]["ElementLocation"]["properties"]
+    entry = DOC["components"]["schemas"]["EntryLocation"]["properties"]
+    assert set(element) - set(entry) == {"media_id"}
+
+
+@pytest.mark.parametrize(
+    ("model_name", "component"),
+    [("ReportEntry", "Entry"), ("ValidationReport", "ValidationReport")],
+)
+def test_report_models_match_their_components(model_name: str, component: str) -> None:
+    """Compared with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s
+    ``media_id`` (the one class parses both, #64)."""
+    import copy
+
+    from console.engine import models
+
+    doc = copy.deepcopy(DOC)
+    schemas = doc["components"]["schemas"]
+    schemas["EntryLocation"]["properties"]["media_id"] = schemas["ElementLocation"]["properties"][
+        "media_id"
+    ]
+    ref = {"$ref": f"#/components/schemas/{component}"}
+    assert compare_model(doc, getattr(models, model_name), ref, component) == []

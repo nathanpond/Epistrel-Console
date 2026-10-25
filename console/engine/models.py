@@ -1288,3 +1288,57 @@ class HealthResult:
     body: HealthResponse | None
     raw: object | None
     latency_ms: int
+
+
+# --- Validation reports (#64, M3 convention 4) ---------------------------------------------------
+#
+# Shared by every M3 page that shows what the Engine found: a publish (its 201 body, or a 422
+# ``publish_invalid``'s ``details.report``), a scenario validation and a story creation (#75's
+# ``CreationReport`` is built from :class:`ReportEntry`). Render one with ``{% include
+# "console/_validation_report.html" with report=… label="Companion" anchor_base="" %}``.
+
+EntryOutcome = Literal["ignored", "dropped", "kept", "deferred", "inactive", "rejected"]
+
+
+@dataclass(frozen=True)
+class EntryLocation(Model):
+    """``EntryLocation`` (and ``ElementLocation``, which parses into the same class): the catalog
+    ``entry`` and its ``version`` (``"draft"`` for a draft) and, where they apply, the role id,
+    the dotted ``field`` path (``cast.roles[1].seeded_memories[0].audience``), the seed's id and
+    the media id (``ElementLocation`` only)."""
+
+    entry: str
+    version: int | Literal["draft"]
+    field: str | None = None
+    role: str | None = None
+    seed_id: str | None = None
+    media_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ReportEntry(Model):
+    """The Engine's ``Entry``: one finding, its stable ``code``, ``location``, ``outcome``
+    (``rejected`` for an error) and, when there is one, the ``rule`` applied, the ``source`` it
+    names and the exact ``text`` affected."""
+
+    code: str
+    location: EntryLocation
+    outcome: EntryOutcome
+    rule: str | None = None
+    source: str | None = None
+    text: str | None = None
+
+
+@dataclass(frozen=True)
+class ValidationReport(Model):
+    """``ValidationReport``: ``errors`` (each ``rejected``; any one refuses a publish),
+    ``warnings`` (every other outcome; never blocking) and ``unavailable`` (the checks this
+    deployment cannot run)."""
+
+    errors: list[ReportEntry] = field(default_factory=list)
+    warnings: list[ReportEntry] = field(default_factory=list)
+    unavailable: list[str] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.errors or self.warnings or self.unavailable)

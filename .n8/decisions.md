@@ -756,3 +756,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Why:** API gaps found while planning; owner approved in rounds one and two.
 - **Decision:** M4 is blocked on unbuilt M3 stories (#64, #78, #84, #85, #87) through native blocked-by edges.
   **Why:** The Inspect area reads #85's effective config and follows #64's conventions. M3 must execute first.
+
+## /n8-exec M3 — 2026-10-24
+
+- **Decision (drift):** The client sends `X-Epistrel-Principal` as Latin-1 bytes when the principal fits Latin-1 (`café` arrives as `café`). A principal outside Latin-1 still goes as percent-encoded UTF-8, with its length counted on the encoded value. Only a default `console:<username>` can be outside Latin-1, because the acting selector refuses such values. The client also refuses C1 controls (U+0080–U+009F) now.
+  **Why:** #64 pass 2 says the Engine decodes headers as Latin-1 (Starlette does), which supersedes the M1 decision to percent-encode every non-ASCII principal for Latin-1 values. A raw C1 byte would reach the Engine's `has_control`, so the client refuses it before sending. M1's client tests were updated to match.
+  **Issue:** #64
+- **Decision:** A recorded call with no `@operation(entity=…)` whose row has a `story_id` is recorded as `entity_type="story"`, `entity_id=story_id`. The migration back-fills old rows the same way. The existing story methods are not re-registered with `entity="story"`.
+  **Why:** This is convention 9's "story calls set entity_type=story alongside story_id", applied in one place, and it covers every current and future story call.
+  **Issue:** #64
+- **Decision:** `Operation.recorded` defaults to `None`, meaning "by method" (`is_recorded`). `@operation` captures the bound arguments in `Call.arguments` only when the registration names an `entity_id`. An `entity_id` that names no method parameter fails at import.
+  **Why:** Code that builds `Operation(...)` directly, like #44's tests, keeps recording mutations. Methods without an entity pay nothing per call.
+  **Issue:** #64
+- **Decision:** The nav's M3 links resolve in the `shell` context processor (`reverse`, skipped on `NoReverseMatch`), not with `{% url … as href %}` in the template. Operations moved after the M3 sections and Admin was added last, per the nav order in the issue.
+  **Why:** The behaviour is the same (each link appears once its URL exists), the logic is testable in Python, and the Catalog group label's "at least one child resolves" rule stays in one place.
+  **Issue:** #64
+- **Decision:** Shared helpers added beyond the named blocks: `console/engine/pool.py` `fan_out()` (convention 12's 8-worker / 10 s pool, since no #41 pool existed to reuse), `console/reports.py` (anchors, `report_from_json`, `report_from_row` for `?report=<pk>`), and `console/templatetags/entities.py` (`entity_link`, `entity_display`).
+  **Why:** `story_labels` needs the pool, and the report partials need the anchor rule. Later stories reuse all three.
+  **Issue:** #64
+- **Decision:** `rating_choices` reads `list_content_ratings(include_retired=True)` once and filters retired ratings itself. It returns `RatingChoices(choices, error)` rather than raising.
+  **Why:** One read can name a retired `current` ("<name> (retired)"). The failed-read text ("Ratings unavailable: …") belongs to the form.
+  **Issue:** #64

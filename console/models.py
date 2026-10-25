@@ -1,8 +1,11 @@
-"""The Console's own records (#44).
+"""The Console's own records (#44, #64).
 
 The Engine M2 has no operations-list, event-log or guardrail-log reads, so the Console keeps its
 own log of every mutating Engine call it made (owner decision). This is the "saved debug
 session" data CLAUDE.md allows in the Console's database; story data itself is never stored.
+
+#64 adds the operator's acting principal (:class:`ActingPrincipal`) and the principals the
+operator has typed (:class:`KnownPrincipal`): Console preferences, never Engine data.
 """
 
 from django.conf import settings
@@ -53,10 +56,62 @@ class EngineOperation(models.Model):
     elapsed_ms = models.PositiveIntegerField(null=True, blank=True)
     replayed = models.BooleanField(default=False)
     is_guardrail_rejection = models.BooleanField(default=False, db_index=True)
+    # The entity the call was about (#64): an Engine ``EntityType`` string (``console.entities``)
+    # and its id; ``job_id`` is the Engine job a 202 handed the work to (``complete_job``).
+    # NULL, not "": rows recorded before #64 have none, and the story asks for nullable columns.
+    entity_type = models.CharField(max_length=32, null=True, blank=True)  # noqa: DJ001
+    entity_id = models.CharField(max_length=64, null=True, blank=True)  # noqa: DJ001
+    job_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)  # noqa: DJ001
 
     class Meta:
         ordering = ("-created_at", "-id")
         verbose_name = "Engine operation"
+        indexes = (
+            models.Index(fields=["entity_type", "entity_id"], name="console_op_entity_idx"),
+            models.Index(fields=["principal"], name="console_op_principal_idx"),
+        )
 
     def __str__(self) -> str:
         return f"{self.kind} {self.outcome} #{self.pk}"
+
+
+class ActingPrincipal(models.Model):
+    """The principal an operator acts as (#64), when it is not their own ``console:<username>``.
+
+    A row exists only while acting as someone else: "Back to me", and selecting yourself, delete
+    it. It persists across logout and login (a global setting, not a session value).
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="acting_principal",
+    )
+    principal = models.CharField(max_length=256)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "acting principal"
+
+    def __str__(self) -> str:
+        return f"{self.user} acting as {self.principal}"
+
+
+class KnownPrincipal(models.Model):
+    """A principal the operator has selected or typed into a valid form (#64): the choices the
+    acting selector and every ``PrincipalField`` datalist offer. Starts empty; rows are removed
+    only in Django admin. Principals read from Engine responses are never added."""
+
+    principal = models.CharField(max_length=256, unique=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ("-last_used_at", "principal")
+        indexes = (
+            models.Index(fields=["-last_used_at", "principal"], name="console_known_recent_idx"),
+        )
+
+    def __str__(self) -> str:
+        return self.principal

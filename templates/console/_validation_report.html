@@ -1,0 +1,20 @@
+{% comment %}
+A ValidationReport (#64, M3 convention 4). Context: report (console.engine.models.ValidationReport),
+label (e.g. "Companion"; may be empty), anchor_base (the page URL the field anchors sit on; empty =
+this page), anchors (optional). Each entry links to its field / seed / role anchor via _location.html.
+{% endcomment %}<section class="report">
+  <h3>{% if label %}{{ label }}: {% endif %}validation report</h3>
+  {% if report.errors %}
+  <h4>Errors ({{ report.errors|length }})</h4>
+  <ul class="report-errors">
+    {% for entry in report.errors %}<li class="entry error"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endfor %}
+  </ul>
+  {% else %}<p>No errors.</p>{% endif %}
+  {% if report.warnings %}
+  <h4>Warnings ({{ report.warnings|length }})</h4>
+  <ul class="report-warnings">
+    {% for entry in report.warnings %}<li class="entry warning"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endfor %}
+  </ul>
+  {% else %}<p>No warnings.</p>{% endif %}
+  {% if report.unavailable %}<p class="muted">Checks this deployment cannot run: {% for check in report.unavailable %}<code>{{ check }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+</section>

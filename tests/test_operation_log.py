@@ -382,3 +382,65 @@ def test_the_unauthenticated_client_records_nothing(fake_engine: FakeEngine) -> 
     from console.engine_access import engine_client_unauthenticated
 
     assert type(engine_client_unauthenticated()) is EngineClient
+
+
+# --- #64: the acting principal, and the new nullable columns ----------------------------------
+
+
+def test_a_call_made_while_acting_as_alice_records_both(
+    operator: Any, fake_engine: FakeEngine
+) -> None:
+    from console.models import ActingPrincipal
+
+    ActingPrincipal.objects.create(user=operator, principal="alice")
+    fake_engine.respond("POST", "/stories/{story_id}/respond", 200, json=engine_fixture("respond"))
+    respond(client_for(operator, fake_engine.transport))
+    (row,) = EngineOperation.objects.all()
+    assert (row.operator, row.operator_username, row.principal) == (operator, "nate", "alice")
+    sent = fake_engine.requests[0].headers["x-epistrel-principal"]
+    assert sent == "alice"
+    assert (row.entity_type, row.entity_id) == ("story", STORY)
+
+
+def test_a_per_call_principal_is_the_one_recorded(operator: Any, fake_engine: FakeEngine) -> None:
+    fake_engine.respond(
+        "POST", "/stories/{story_id}/truncate", 200, json=engine_fixture("truncate")
+    )
+    client = client_for(operator, fake_engine.transport)
+    with calling(TRUNCATE):
+        client._request("POST", f"/stories/{STORY}/truncate", principal="bob", json={})
+    assert EngineOperation.objects.get().principal == "bob"
+
+
+def test_the_new_columns_are_nullable(operator: Any) -> None:
+    row = EngineOperation.objects.create(
+        operator_username="nate",
+        principal="console:nate",
+        kind="x",
+        http_method="POST",
+        path="/x",
+        outcome="ok",
+    )
+    row.refresh_from_db()
+    assert (row.entity_type, row.entity_id, row.job_id) == (None, None, None)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_existing_rows_migrate_and_name_their_story() -> None:
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    before = [("console", "0001_engine_operation")]
+    after = [("console", "0002_acting_principal")]
+    executor = MigrationExecutor(connection)
+    executor.migrate(before)
+    old = executor.loader.project_state(before).apps.get_model("console", "EngineOperation")
+    common = {"operator_username": "nate", "principal": "console:nate", "http_method": "POST"}
+    old.objects.create(kind="respond", path="/x", outcome="ok", story_id=STORY, **common)
+    old.objects.create(kind="put_settings", path="/admin/settings", outcome="ok", **common)
+    executor = MigrationExecutor(connection)
+    executor.loader.build_graph()
+    executor.migrate(after)
+    new = executor.loader.project_state(after).apps.get_model("console", "EngineOperation")
+    rows = {r.kind: (r.entity_type, r.entity_id, r.job_id) for r in new.objects.all()}
+    assert rows == {"respond": ("story", STORY, None), "put_settings": (None, None, None)}

@@ -41,6 +41,8 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
     if origin in (Union, types.UnionType):
         args = typing.get_args(tp)
         non_null = [a for a in args if a is not type(None)]
+        if len(non_null) == len(args):
+            return _compare_union(doc, args, node, where)
         if len(non_null) != 1 or len(args) != 2:
             return [f"{where}: only `X | None` unions are supported, got {tp}"]
         if node.get("nullable") is True:
@@ -60,6 +62,8 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
     if origin is Literal:
         values = typing.get_args(tp)
         problems = []
+        if "const" in node and "enum" not in node:
+            node = {**node, "enum": [node["const"]]}
         if set(node.get("enum", [])) != set(values):
             problems.append(f"{where}: enum {sorted(node.get('enum', []))} != {sorted(values)}")
         expected = JSON_TYPES[type(values[0])]
@@ -93,6 +97,23 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
     if isinstance(tp, type) and is_dataclass(tp):
         return compare_model(doc, tp, node, where)
     return [f"{where}: unsupported model type {tp}"]
+
+
+def _compare_union(
+    doc: dict[str, Any], args: tuple[Any, ...], node: dict[str, Any], where: str
+) -> list[str]:
+    """A union without ``None`` (``int | Literal["draft"]``, #64's report version) ↔ an
+    ``anyOf``/``oneOf`` with one matching option per member, in any order."""
+    options = node.get("anyOf") or node.get("oneOf")
+    if not isinstance(options, list) or len(options) != len(args):
+        return [f"{where}: model is a {len(args)}-member union but the schema is not"]
+    unmatched = list(options)
+    for arg in args:
+        match = next((o for o in unmatched if not compare_type(doc, arg, o, where)), None)
+        if match is None:
+            return [f"{where}: no schema option matches {arg}"]
+        unmatched.remove(match)
+    return []
 
 
 def compare_model(doc: dict[str, Any], model: type, node: dict[str, Any], where: str) -> list[str]:

@@ -8,12 +8,13 @@ test can check it against the recorded schema. The client never logs; callers do
 """
 
 import functools
+import inspect
 import json
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ParamSpec, Self, TypeVar
 from urllib.parse import quote
 
@@ -66,6 +67,7 @@ from console.engine.models import (
     VariantChain,
     Variants,
 )
+from console.entities import EntityType
 from console.version import VERSION
 
 USER_AGENT = f"epistrel-console/{VERSION}"
@@ -83,6 +85,7 @@ PRINCIPAL_HEADER = "X-Epistrel-Principal"
 EXPECTED_REVISION_HEADER = "X-Epistrel-Expected-Revision"
 PRINCIPAL_MAX = 256
 RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
+RESPONSE_PREFIX = "response:"  # ``@operation(entity_id="response:id")``: the id is in the answer
 # The headers ``_request`` sets itself; a caller's ``headers=`` never replaces them.
 OWN_HEADERS = frozenset({"user-agent", "accept", "authorization", PRINCIPAL_HEADER.lower()})
 
@@ -142,15 +145,42 @@ class Operation:
     # Success statuses answered with another model than ``response_model`` (respond's 202
     # ``QueuedTurn``), as ``(status, model)`` pairs; the contract test checks each.
     status_models: tuple[tuple[int, type[Model]], ...] = ()
+    # Whether the operation log records the call (#44, #64 convention 9); ``None``: by method,
+    # POST/PUT/PATCH/DELETE (:attr:`is_recorded`).
+    recorded: bool | None = None
+    # The entity the call is about (#64 convention 9): an Engine ``EntityType`` and where its
+    # id comes from, the name of a method argument or ``"response:<key>"`` for a create.
+    entity: EntityType | None = None
+    entity_id: str | None = None
+
+    @property
+    def is_recorded(self) -> bool:
+        return self.method.upper() in MUTATING if self.recorded is None else self.recorded
 
 
 @dataclass(frozen=True)
 class Call:
-    """The public client method running now: its name (the operation log's ``kind``, #44) and
-    its registration."""
+    """The public client method running now: its name (the operation log's ``kind``, #44), its
+    registration and the arguments it was called with, by parameter name (#64: where the
+    recorder reads a registration's ``entity_id`` argument from)."""
 
     kind: str
     operation: Operation
+    arguments: Mapping[str, Any] = field(default_factory=dict)
+
+    def entity_ref(self, response_body: object = None) -> tuple[EntityType, str] | None:
+        """``(entity type, id)`` for the registration's ``entity``/``entity_id``: the named
+        argument's value, or for ``"response:<key>"`` that key of the (JSON object) response.
+        ``None`` when the registration names no entity or the id is not a non-blank string."""
+        op = self.operation
+        if op.entity is None or op.entity_id is None:
+            return None
+        if op.entity_id.startswith(RESPONSE_PREFIX):
+            key = op.entity_id.removeprefix(RESPONSE_PREFIX)
+            value = response_body.get(key) if isinstance(response_body, dict) else None
+        else:
+            value = self.arguments.get(op.entity_id)
+        return (op.entity, value) if isinstance(value, str) and value else None
 
 
 # "GET /health" -> Operation; filled by @operation, read by the contract test.
@@ -183,23 +213,64 @@ def operation(
     response_model: type[Model] | None = None,
     schema_exempt: bool = False,
     status_models: Mapping[int, type[Model]] | None = None,
+    *,
+    recorded: bool | None = None,
+    entity: EntityType | None = None,
+    entity_id: str | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a client method as the Engine operation ``method path``.
 
     While the method runs, :func:`current_call` names it, so a subclass overriding
     ``_request`` (the operation log's recorder, #44) knows which method and registration a
     request belongs to.
-    """
 
+    #64 (M3 convention 9) adds three keyword-only flags:
+
+    - ``recorded``: whether the operation log writes a row for the call. Defaults to ``True``
+      for POST/PUT/PATCH/DELETE and ``False`` otherwise. Set it explicitly to ``True`` on a
+      principal-requiring POST that writes nothing (validate, rating suggestion, impact preview,
+      erasure dry run, reconcile) and on feedback PUT/DELETE; ``recorded=False`` on a POST
+      keeps it out of the log.
+    - ``entity``: the Engine ``EntityType`` the call is about (``console.entities``), stored as
+      the row's ``entity_type``.
+    - ``entity_id``: where its id comes from: the name of one of the method's parameters (the
+      path parameter, e.g. ``"character_id"``), or ``"response:<key>"`` to read it from the
+      JSON answer (a create: ``"response:id"``). Both or neither of ``entity``/``entity_id``.
+
+    Example::
+
+        @operation("PATCH", "/catalog/characters/{character_id}", CharacterDetail,
+                   entity="character", entity_id="character_id")
+        def update_catalog_character(self, character_id: str, patch: ..., *, ...) -> ...: ...
+
+    A story call needs no ``entity``: a row with a ``story_id`` and no entity of its own is
+    recorded as ``entity_type="story"``, ``entity_id=story_id``.
+    """
+    if (entity is None) != (entity_id is None):
+        raise ValueError("@operation: give both entity and entity_id, or neither")
     def register(func: Callable[P, R]) -> Callable[P, R]:
         others = tuple(sorted((status_models or {}).items()))
-        op = Operation(method, path, response_model, schema_exempt, others)
+        op = Operation(
+            method, path, response_model, schema_exempt, others, recorded, entity, entity_id
+        )
         OPERATIONS[f"{method} {path}"] = op
-        call = Call(func.__name__, op)
+        signature = inspect.signature(func)
+        if (
+            entity_id is not None
+            and not entity_id.startswith(RESPONSE_PREFIX)
+            and entity_id not in signature.parameters
+        ):
+            raise ValueError(f"@operation: {func.__name__} has no parameter {entity_id!r}")
 
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            with calling(call):
+            arguments: dict[str, Any] = {}
+            if entity_id is not None:
+                try:
+                    arguments = dict(signature.bind_partial(*args, **kwargs).arguments)
+                except TypeError:
+                    arguments = {}  # the call itself will raise the TypeError
+            with calling(Call(func.__name__, op, arguments)):
                 return func(*args, **kwargs)
 
         return wrapper
@@ -217,17 +288,32 @@ def principal_for(user: Any) -> str:
     return f"console:{username}"
 
 
-def _principal_header(principal: str) -> str:
+def is_control(ch: str) -> bool:
+    """Whether ``ch`` is a control character as the Engine counts them: C0 (U+0000 to U+001F),
+    DEL (U+007F) or C1 (U+0080 to U+009F)."""
+    code = ord(ch)
+    return code < 0x20 or 0x7F <= code <= 0x9F
+
+
+def _principal_header(principal: str) -> bytes:
     """The header value for ``principal``, refused here if the Engine would refuse it.
 
     The Engine checks the value it receives (``requesting_principal``): spaces and tabs around it
-    trimmed, then not blank, at most 256 characters, no control characters, not ``system``.
+    trimmed, then not blank, at most 256 characters, no control characters (C0, DEL, C1), not
+    ``system``. Starlette decodes header bytes as Latin-1, so a principal that fits Latin-1 goes
+    as its Latin-1 bytes and arrives unchanged (#64: ``café`` is ``café`` at the Engine). One
+    that does not (only a default ``console:<username>`` can be such: the acting selector
+    refuses them) goes as percent-encoded UTF-8, ASCII unchanged (#43's rule), and its length
+    is the encoded value's: one "ŝ" is six characters ("%C5%9D") on the wire.
     """
-    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in principal):
+    if any(is_control(ch) for ch in principal):
         raise ValueError("principal must not contain control characters")
-    # Headers are ASCII: non-ASCII characters go as percent-encoded UTF-8, ASCII unchanged.
-    encoded = "".join(ch if ord(ch) < 128 else quote(ch, safe="") for ch in principal)
-    # Length is the encoded value's: one "é" is six characters ("%C3%A9") on the wire.
+    try:
+        raw = principal.encode("latin-1")
+        encoded = principal
+    except UnicodeEncodeError:
+        encoded = "".join(ch if ord(ch) < 128 else quote(ch, safe="") for ch in principal)
+        raw = encoded.encode("ascii")
     value = encoded.strip(" ")
     if not value:
         raise ValueError("principal must not be blank")
@@ -237,7 +323,7 @@ def _principal_header(principal: str) -> str:
         )
     if value == RESERVED_PRINCIPAL:
         raise ValueError(f"principal {RESERVED_PRINCIPAL!r} is reserved for the Engine")
-    return encoded
+    return raw
 
 
 class EngineClient:
@@ -286,7 +372,11 @@ class EngineClient:
         """
         method = method.upper()
         extra = {k: v for k, v in (headers or {}).items() if k.lower() not in OWN_HEADERS}
-        sent = {**extra, "User-Agent": USER_AGENT, "Accept": "application/json"}
+        sent: dict[str, str | bytes] = {
+            **extra,
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+        }
         if principal is None:
             principal = self.principal
         if principal is not None:
@@ -296,6 +386,11 @@ class EngineClient:
         if self._service_key and path.split("?", 1)[0] not in EXEMPT_PATHS:
             sent["Authorization"] = f"Bearer {self._service_key}"
         try:
+            # The principal is already bytes (Latin-1, ``_principal_header``); the rest are ASCII.
+            wire = [
+                (name.encode("ascii"), v if isinstance(v, bytes) else v.encode("ascii"))
+                for name, v in sent.items()
+            ]
             with httpx.Client(
                 timeout=httpx.Timeout(timeout if timeout is not None else self.timeout),
                 follow_redirects=False,
@@ -304,7 +399,7 @@ class EngineClient:
                 transport=self._transport,
             ) as client:
                 return client.request(
-                    method, f"{self.base_url}{path}", headers=sent, params=params, json=json
+                    method, f"{self.base_url}{path}", headers=wire, params=params, json=json
                 )
         except AssertionError:
             raise  # the fake Engine's signals reach the test

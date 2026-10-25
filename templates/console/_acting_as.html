@@ -1,0 +1,28 @@
+{% comment %}
+The acting principal (#64), in base.html only (full shell pages; never HTMX partials or the admin).
+part="selector": the nav's "Acting as" <details> with its form. part="banner": the warning shown under
+the nav while acting as someone other than yourself.
+{% endcomment %}{% if part == "selector" and acting_principal %}
+<details class="acting">
+  <summary>Acting as: <code>{{ acting_principal }}</code></summary>
+  <form method="post" action="{% url 'acting-as' %}" class="acting-form">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <label>Principal
+      <select name="principal">
+        {% for value, label in acting_choices %}<option value="{{ value }}"{% if value == acting_principal %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>or other <input type="text" name="other" maxlength="300" autocomplete="off" spellcheck="false"></label>
+    <button type="submit">Act as</button>
+    {% if not acting_is_self %}<button type="submit" name="action" value="reset">Back to me</button>{% endif %}
+  </form>
+</details>
+{% elif part == "banner" and acting_principal and not acting_is_self %}
+<div class="banner banner-warning" role="status">
+  Acting as <strong><code>{{ acting_principal }}</code></strong> — everything you do in the Engine is recorded as them.
+  <form method="post" action="{% url 'acting-as' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button type="submit" name="action" value="reset">Back to me</button>
+  </form>
+</div>
+{% endif %}

@@ -38,6 +38,9 @@ class Filters:
     operator: str
     policy: str
     guardrail: bool
+    principal: str = ""  # #64: the principal the call was made as
+    entity_type: str = ""  # #64: with or without entity_id
+    entity_id: str = ""
 
     @classmethod
     def from_request(cls, request: HttpRequest) -> Filters:
@@ -50,6 +53,9 @@ class Filters:
             operator=params.get("operator", ""),
             policy=params.get("policy", ""),
             guardrail=params.get("guardrail") == "1",
+            principal=params.get("principal", ""),
+            entity_type=params.get("entity_type", ""),
+            entity_id=params.get("entity_id", "").strip(),
         )
 
     def apply(self, rows: QuerySet[EngineOperation]) -> QuerySet[EngineOperation]:
@@ -61,6 +67,12 @@ class Filters:
             rows = rows.filter(outcome=self.outcome)
         if self.operator:
             rows = rows.filter(operator_username=self.operator)
+        if self.principal:
+            rows = rows.filter(principal=self.principal)
+        if self.entity_type:
+            rows = rows.filter(entity_type=self.entity_type)
+        if self.entity_id:
+            rows = rows.filter(entity_id=self.entity_id)
         if self.guardrail:
             rows = rows.filter(is_guardrail_rejection=True)
         if self.policy:
@@ -74,7 +86,7 @@ class Filters:
 
 def _distinct(field: str) -> list[str]:
     values = EngineOperation.objects.exclude(**{field: ""}).values_list(field, flat=True)
-    return sorted(set(values))
+    return sorted({value for value in values if value is not None})
 
 
 def _seen_policies() -> list[str]:
@@ -95,6 +107,8 @@ def operation_list(request: HttpRequest) -> HttpResponse:
         "stories": _distinct("story_id"),
         "kinds": _distinct("kind"),
         "operators": _distinct("operator_username"),
+        "principals": _distinct("principal"),
+        "entity_types": _distinct("entity_type"),
         "outcomes": EngineOperation.Outcome.values,
         "policies": _seen_policies(),
     }

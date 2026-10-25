@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load console_format %}
+{% load console_format entities principals %}
 {% block title %}Operation {{ row.pk }} — Epistrel Console{% endblock %}
 {% block heading %}Operation {{ row.pk }}: <code>{{ row.kind }}</code>{% endblock %}
 {% block content %}
@@ -9,9 +9,12 @@
 <dl class="operation">
   <dt>Time</dt><dd>{{ row.created_at|engine_time }}</dd>
   <dt>Operator</dt><dd>{{ row.operator_username|default:"—" }}</dd>
-  <dt>Principal</dt><dd><code>{{ row.principal }}</code></dd>
+  <dt>Principal</dt><dd>{{ row.principal|principal_link }}</dd>
   <dt>Request</dt><dd><code>{{ row.http_method }} {{ row.path }}</code></dd>
   <dt>Story</dt><dd>{% if row.story_id %}<a href="/stories/{{ row.story_id }}/"><code>{{ row.story_id }}</code></a>{% else %}—{% endif %}</dd>
+  <dt>Entity type</dt><dd>{% if row.entity_type %}<code>{{ row.entity_type }}</code> ({{ row.entity_type|entity_display }}){% else %}—{% endif %}</dd>
+  <dt>Entity id</dt><dd>{% if row.entity_id %}{{ row.entity_id|entity_link:row.entity_type }}{% else %}—{% endif %}</dd>
+  <dt>Job id</dt><dd>{% if row.job_id %}<code>{{ row.job_id }}</code>{% else %}—{% endif %}</dd>
   <dt>Outcome</dt><dd>{% if row.outcome == "queued" %}queued (unconfirmed){% else %}{{ row.outcome }}{% endif %}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}{% if row.replayed %} (replayed){% endif %}</dd>
   <dt>HTTP status</dt><dd>{{ row.http_status|default_if_none:"—" }}</dd>
   <dt>Engine operation id</dt><dd>{% if row.engine_operation_id %}<code>{{ row.engine_operation_id }}</code>{% else %}—{% endif %}</dd>

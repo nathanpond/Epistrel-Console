@@ -6,6 +6,7 @@ from django.urls import include, path
 
 from console.auth import OperatorAuthenticationForm
 from console.views import (
+    acting,
     engine_panel,
     history,
     models,
@@ -122,6 +123,7 @@ urlpatterns = [
         name="login",
     ),
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("acting-as/", acting.acting_as, name="acting-as"),
     path("operations/", include(operation_patterns)),
     path("stories/", include(story_patterns)),
     path("models/", include(model_patterns)),

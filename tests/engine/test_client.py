@@ -159,10 +159,24 @@ def test_principal_header_sent(thing_engine: FakeEngine) -> None:
     assert "x-epistrel-principal" not in get.headers
 
 
-def test_non_ascii_principal_is_percent_encoded(thing_engine: FakeEngine) -> None:
+def raw_principal(request: httpx.Request) -> bytes:
+    """The principal header's bytes as sent."""
+    return next(v for k, v in request.headers.raw if k.lower() == b"x-epistrel-principal")
+
+
+def test_latin1_principal_is_sent_as_latin1_bytes(thing_engine: FakeEngine) -> None:
+    # #64: the Engine decodes headers as Latin-1, so "José" arrives as "José".
     thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
     client(thing_engine)._request("POST", "/_test/thing", principal="console:José")
-    assert thing_engine.requests[0].headers["x-epistrel-principal"] == "console:Jos%C3%A9"
+    assert raw_principal(thing_engine.requests[0]) == b"console:Jos\xe9"
+    assert raw_principal(thing_engine.requests[0]).decode("latin-1") == "console:José"
+
+
+def test_non_latin1_principal_is_percent_encoded(thing_engine: FakeEngine) -> None:
+    # Only a default ``console:<username>`` can be outside Latin-1 (#43's rule, kept for it).
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    client(thing_engine)._request("POST", "/_test/thing", principal="console:Joŝ")
+    assert raw_principal(thing_engine.requests[0]) == b"console:Jo%C5%9D"
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE", "post"])
@@ -180,10 +194,11 @@ def test_mutating_call_without_principal_sends_nothing(
         ("", "blank"),
         ("   ", "blank"),
         ("x" * 257, "at most 256"),
+        ("console:" + "é" * 249, "at most 256"),  # 257 Latin-1 characters (#64)
         # 200 characters, 1208 once encoded: the Engine checks what it receives (#108).
-        ("console:" + "é" * 200, "at most 256"),
+        ("console:" + "ŝ" * 200, "at most 256"),
         # 11 + 41 * 6 = 257 encoded, but 93 UTF-8 bytes and 52 characters (#117).
-        ("console:aaa" + "é" * 41, r"at most 256 characters once encoded \(257\)"),
+        ("console:aaa" + "ŝ" * 41, r"at most 256 characters once encoded \(257\)"),
         ("console:a\r\nX-Evil: 1", "control"),
         ("a\nb", "control"),
         ("a\x00b", "control"),
@@ -191,6 +206,8 @@ def test_mutating_call_without_principal_sends_nothing(
         ("\tconsole:nate", "control"),
         ("a\x1bb", "control"),
         ("a\x7fb", "control"),
+        ("console:\x80", "control"),  # C1: sent as Latin-1, the Engine refuses it (#64)
+        ("a\x9fb", "control"),
         ("system", "reserved"),
         (" system ", "reserved"),
     ],
@@ -208,22 +225,27 @@ def test_bad_principal_refused_before_sending(
     [
         "x" * 256,
         "console:" + "é" * 41,
-        "console:aa" + "é" * 41,  # exactly 256 once encoded (#117)
+        "console:" + "é" * 248,  # 256 Latin-1 characters (#64)
+        "console:aa" + "ŝ" * 41,  # exactly 256 once encoded (#117)
         "console:" + "é" * 41 + "  ",
-        "console:\x80",
+        "café",
+        "console:\xa0\xff",
         "systems",
     ],
 )
 def test_principal_the_engine_accepts_is_sent(thing_engine: FakeEngine, principal: str) -> None:
-    # "console:" plus 41 "é" is 8 + 246 = 254 characters encoded; C1 controls go percent-encoded.
+    # A Latin-1 principal is sent as its Latin-1 bytes; "console:aa" plus 41 "ŝ" is 10 + 246 =
+    # 256 characters percent-encoded.
     thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
     client(thing_engine)._request("POST", "/_test/thing", principal=principal)
-    sent = thing_engine.requests[0].headers["x-epistrel-principal"]
+    sent = raw_principal(thing_engine.requests[0]).decode("latin-1")
     assert 1 <= len(sent.strip(" ")) <= 256
-    assert not any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in sent)
-    if principal == "console:aa" + "é" * 41:
-        assert sent == "console:aa" + "%C3%A9" * 41
+    assert not any(ord(ch) < 0x20 or 0x7F <= ord(ch) <= 0x9F for ch in sent)
+    if principal == "console:aa" + "ŝ" * 41:
+        assert sent == "console:aa" + "%C5%9D" * 41
         assert len(sent) == 256
+    else:
+        assert sent == principal
 
 
 def test_error_envelope_raises_engine_error(thing_engine: FakeEngine) -> None:

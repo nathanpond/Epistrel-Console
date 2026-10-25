@@ -72,6 +72,17 @@
     ol.pinned-items li { margin: 0.4rem 0; }
     ol.pinned-items textarea { width: 40rem; max-width: 100%; vertical-align: top; }
     section > h2 small.revision { font-weight: 400; color: #57606a; }
+    nav.shell .nav-group-label { color: #57606a; }
+    nav.shell .nav-group.active .nav-group-label { font-weight: 700; color: inherit; }
+    nav.shell details.acting { position: relative; }
+    nav.shell details.acting summary { cursor: pointer; }
+    nav.shell details.acting form.acting-form { display: block; position: absolute; right: 0; z-index: 10; background: #fff; border: 1px solid #d0d7de; padding: 0.6rem; min-width: 20rem; }
+    nav.shell details.acting form.acting-form label { display: block; margin: 0.3rem 0; }
+    .banner { padding: 0.4rem 0.8rem; margin: 0.5rem 0; }
+    .banner-warning { background: #ffd8a8; border: 1px solid #d9822b; }
+    .banner form { display: inline; margin-left: 0.6rem; }
+    .report .entry { margin: 0.3rem 0; }
+    .report .location { color: #57606a; font-size: 0.9em; }
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
   </style>
 </head>
@@ -80,11 +91,16 @@
   <nav class="shell">
     <a class="brand" href="/">Epistrel Console</a>
     {% for item in nav_items %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
+    {% if nav_catalog.items %}<span class="nav-group{% if nav_catalog.active %} active{% endif %}"><span class="nav-group-label">Catalog:</span>{% for item in nav_catalog.items %} <a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}</span>{% endif %}
+    {% for item in nav_sections %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
+    {% for item in nav_last %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
     <span class="spacer"></span>
     <a class="badge state-{{ engine_badge.state }}" href="/" title="Engine status">{{ engine_badge.badge }}</a>
+    {% include "console/_acting_as.html" with part="selector" %}
     <span class="operator">{{ user.get_username }}</span>
     <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit">Log out</button></form>
   </nav>
+  {% include "console/_acting_as.html" with part="banner" %}
   {% endif %}
   {% if messages %}
   <ul class="messages">
