@@ -84,7 +84,8 @@ def test_status_page_shows_state_and_reason(operator_client: Client, state: str)
     assert RESULTS[state].badge in html  # the shell's badge, from the same probe
     if RESULTS[state].reason:
         assert str(RESULTS[state].reason) in html
-    assert "http://engine.test:8000" in html
+    assert response.context["engine_url"] == "http://engine.test:8000"
+    assert "<dt>URL</dt>\n  <dd>http://engine.test:8000</dd>" in html
     assert PYPROJECT_VERSION in html
 
 

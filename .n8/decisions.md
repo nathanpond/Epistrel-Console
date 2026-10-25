@@ -709,3 +709,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The "Moved to engine profile overrides — see Config" note and the budget's "Change in Config" link point at `/stories/<id>/config/`, which 404s until M3 #85 builds it. An archived story's forms render inside a disabled fieldset with "Archived — unarchive to change the settings". Added `tests/engine_live/test_story_settings_live.py` (`engine_auth`), which runs the demo against `edge`.
   **Why:** The test plan names the link; #43's archived convention.
   **Issue:** #54
+- **Decision (Rule 3):** CodeQL failed the milestone PR on `py/incomplete-url-substring-sanitization` at `tests/test_status_views.py:87`, an M0 test assertion (`"http://engine.test:8000" in html`) flagged because #43 changed the file. It is a false positive in a test, but rather than dismiss it the assertion now checks the view's `engine_url` context value and the exact `<dd>` the status page renders, which is also the stricter test.
+  **Why:** The merge gate requires CodeQL; dismissing an alert is the owner's call, tightening a test is not.
+  **Issue:** #43
