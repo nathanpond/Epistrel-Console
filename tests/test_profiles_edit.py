@@ -310,6 +310,38 @@ def test_invalid_validation_blocks_save_with_no_write(
     assert response.status_code == 200
 
 
+def test_warnings_alone_let_create_save_write(operator_client: Client, engine: FakeEngine) -> None:
+    page = new_page(operator_client, engine)
+    engine.respond("POST", VALIDATE, 200, json=validation(warnings=[low_cap_warning()]))
+    engine.respond("POST", LIST, 201, json=written())
+    response = operator_client.post(NEW, posted(page, name="Lite-short", action="save"))
+    assert response.status_code == 302
+    assert response["Location"] == DETAIL
+    validate, create = writes(engine)
+    assert validate.url.path == f"/engine-profiles/{LITE}/validate"
+    assert (create.method, create.url.path) == ("POST", "/engine-profiles")
+    assert "Below safety minimum" in " ".join(flashes(response))
+
+
+def test_warnings_alone_let_edit_save_write(operator_client: Client, engine: FakeEngine) -> None:
+    page = edit_page(operator_client, engine)
+    engine.respond("POST", VALIDATE, 200, json=validation(warnings=[low_cap_warning()]))
+    engine.respond(
+        "PUT",
+        ITEM,
+        200,
+        json=edit_body(True, other_profile(version=4, current_version=4), impact(affected())),
+    )
+    response = operator_client.post(EDIT, posted(page, action="save", **{field(POLISH): "0"}))
+    assert response.status_code == 302
+    assert response["Location"] == DETAIL
+    validate, put = writes(engine)
+    assert (validate.method, validate.url.path) == ("POST", f"{OTHER_PATH}/validate")
+    assert (put.method, put.url.path) == ("PUT", OTHER_PATH)
+    assert body_of(put)["ignore_warnings"] is False
+    assert "Below safety minimum" in " ".join(flashes(response))
+
+
 def test_create_invalid_profile_is_placed_at_its_fields(
     operator_client: Client, engine: FakeEngine
 ) -> None:
