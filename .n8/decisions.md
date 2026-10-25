@@ -735,3 +735,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The story-settings pinned/instructions guardrail refusal (`views/story_settings.py`) still lists only the violations, without the gate spend.
   **Why:** That AC (#54) does not ask for the spend, and no bug was filed against it. It is out of scope for this pass.
   **Issue:** #130
+
+## /n8-plan M4 — 2026-10-24
+
+- **Decision:** M4 is sliced into 22 stories (#57–#59 expanded, #134–#152 new) over epics #15–#18. The surface is the epics' 19 AC items: 18 in scope, all covered (fresh checker), with 10 Engine M4 capabilities pulled in by request (guarantees, scene/profile, embedding and re-embed, author facts, quarantine/sanitize, pins, consolidate, predicate proposals, escalation-yield and shadow reports).
+  **Why:** Owner, round one: "ok" to every recommendation; the Console exists to drive every Engine capability.
+- **Decision:** Listing eval runs (#18's first AC) is descoped from M4. The Engine serves eval runs only as committed reports, not over REST. Requested upstream as nathanpond/Epistrel#532.
+  **Why:** The Console talks to the Engine only through its public REST API (CLAUDE.md).
+- **Decision:** "Browse memory tiers" and "consolidation outputs" are narrowed to the memories one retrieval question returns, labelled "not a full list", until the Engine lists memories (nathanpond/Epistrel#531).
+  **Why:** The Engine has no memory-list route; owner, round two: "recs good".
+- **Decision:** Re-running a past turn's retrieval asks as the acting character, with the turn's input, as of the turn before, behind a banner naming what differs from the turn's own per-render retrieval. Consolidation is offered for the shared scope only.
+  **Why:** The retrieve route accepts only the omniscient viewpoint. In Engine M4, all render memory is shared, so a characters scope writes nothing. Owner, round two: "recs good".
+- **Decision:** M4-wide conventions live in #135 (14 conventions). The opt-in confirm mode (`confirm_action(require_confirmed=True)`) is its own story, #134, and blocks every destructive M4 write.
+  **Why:** 735 + 726 executor-simulation points recurred across stories. Engine-wide calls are routed once.
+- **Decision:** A sanitize keeps no span, surrogate or memory text anywhere in the Console's operation log (request, stored response, detail page). Past-turn explain links are built from history items, never from the logged request.
+  **Why:** Sanitize and erasure exist to remove text. The Console's own log and URLs must not keep it.
+- **Decision:** Engine docs links (capability map, guarantee table) point at the Engine repo's `main`, not the version tag. #46's model-guide link has the same defect, filed as #153 (M9).
+  **Why:** Release tags (v0.1.1) predate these docs.
+- **Decision:** Filed upstream on the Engine: #531 (memory list), #532 (eval runs), #533 (ingest 200 undeclared, Console #129), #534 (eval hooks refused inside the result window), #535 (single-fact read), #536 (`viewpoint_unresolved` undeclared on scene and entity profile). Triage: #129 and #91 moved to M9; #61–#63 wait for M5.
+  **Why:** API gaps found while planning; owner approved in rounds one and two.
+- **Decision:** M4 is blocked on unbuilt M3 stories (#64, #78, #84, #85, #87) through native blocked-by edges.
+  **Why:** The Inspect area reads #85's effective config and follows #64's conventions. M3 must execute first.
