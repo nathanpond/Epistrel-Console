@@ -23,7 +23,9 @@ from console.operation_log import (
     rebuild_job_id,
     rebuild_job_text,
 )
+from console.reactivation import OP_NAMES, OP_PARAM
 from console.redaction import redact
+from console.story_pause import check_url
 from console.turn_reports import input_gate_text, stored_turn_report, violation_rows
 
 PAGE_SIZE = 50
@@ -127,6 +129,20 @@ def _rebuild_job_text(row: EngineOperation) -> str:
     return rebuild_job_text(job_id) if job_id is not None else ""
 
 
+CHECK_KINDS = frozenset({"set_story_content_rating", *OP_NAMES})  # #80, #81
+
+
+def _check_url(row: EngineOperation) -> str:
+    """The rating or reactivation check a story row's 202 started (#80, #81), by its
+    ``job_id``; "" for anything else. A reactivation carries ``?op=``."""
+    if not row.job_id or row.entity_type != "story" or not row.entity_id:
+        return ""
+    if row.kind not in CHECK_KINDS:
+        return ""
+    params = {OP_PARAM: row.kind} if row.kind in OP_NAMES else {}
+    return check_url(row.entity_id, row.job_id, **params)
+
+
 @require_safe
 def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     row = get_object_or_404(EngineOperation, pk=pk)
@@ -138,6 +154,7 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "input_gate": input_gate_text(row.response),
         "output_violations": violation_rows(output_violations(row.response)),
         "job_text": _rebuild_job_text(row),
+        "check_url": _check_url(row),
     }
     if request.GET.get("fetch") == "1" and row.engine_operation_id:
         fetched: OperationRecord | None = None

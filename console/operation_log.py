@@ -243,7 +243,11 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     replayed = response.headers.get(REPLAY_HEADER, "").lower() == "true" or "reference" in obj
     if 200 <= status < 300:
         model = observed.operation.response_model if observed.operation else None
-        if status == 202:  # a queued turn, or a checking job (#64, #80, #81 complete those)
+        if status == 202 and replayed and _str(obj, "job_id"):
+            # A replayed job 202 (#81): the first call's row is the job's ``queued`` one, so a
+            # replay records no second (the same check page follows it).
+            outcome, code = Outcome.OK, ""
+        elif status == 202:  # a queued turn, or a checking job (#64, #80, #81 complete those)
             queued = isinstance(body, dict)
             outcome, code = (Outcome.QUEUED, "") if queued else (Outcome.ERROR, "bad_response")
         elif replayed or status == 204 or model is None or model.from_json(body) is not None:

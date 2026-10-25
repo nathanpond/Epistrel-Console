@@ -22,6 +22,12 @@ policy, never their text) or ``failed``. One URL serves the full page, its poll 
 (``HX-Request``) and the pause banner's partial (``HX-Request`` + ``?banner=1``, which answers
 ``HX-Refresh: true`` once the check ends). The first terminal read settles the PUT's ``queued``
 operation-log row (#44) with the full check body.
+
+The same page follows a reactivation re-check (#81, ``kind: reactivation``): undo rewind, swap or
+fork held back by a 202 redirect here with ``?op=``. It polls only while ``checking`` and shows
+the ending in ``_reactivation_status.html``: the edit's answer parsed from ``outcome`` (#53's
+result fields, the transcript at the restored head, or the new fork), the violations, or the
+error; the #44 row of the 202 takes the reactivated edit's operation id and revision.
 """
 
 import json
@@ -40,12 +46,16 @@ from console import twostage
 from console.confirm import posted_idempotency_key
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import (
+    ChainRef,
     CheckViolation,
     ContentRating,
     ContentRatingSummary,
+    ForkResult,
     RatingCheck,
     RatingCheckStarted,
     Story,
+    SwapResult,
+    UntruncateResult,
 )
 from console.engine.pool import fan_out
 from console.engine_access import complete_job, engine_client_for
@@ -53,6 +63,29 @@ from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_f
 from console.ids import new_ulid
 from console.job_poll import poll_context, poll_failure
 from console.models import EngineOperation
+from console.reactivation import (
+    CHECKING,
+    FAILED_LINE,
+    FORK,
+    NO_FORK,
+    OP_PARAM,
+    REACTIVATED,
+    UNCHANGED,
+    UNEXPECTED_STATUS,
+    UNREADABLE,
+    WAITING_LINE,
+    Outcome,
+    heading,
+    is_reactivation,
+    job_overrides,
+    job_row,
+    parse_outcome,
+    raw_json,
+    requested_fork_name,
+    shown_op,
+    transcript_url,
+    valid_op,
+)
 from console.story_pause import (
     BANNER_PARAM,
     CAUSE_PARAM,
@@ -64,6 +97,8 @@ from console.story_pause import (
     pause_banner,
     progress_text,
 )
+from console.timeline import chain_label
+from console.views.play import FORK_BANNER_KEY, ForkBanner
 
 KIND = "story_rating"  # the two-stage confirm's kind (salt console.twostage.story_rating)
 CONFIRM_QUERY = "t"
@@ -94,6 +129,10 @@ NOT_FOUND = "No such check, or it expired (kept 30 days)"
 NOT_CHANGED = "The rating was not changed"
 NAMES_UNAVAILABLE = "Rating names unavailable"
 STARTED = "Rating check started"
+# #81: a reactivation re-check's 404 (its page was opened from an undo, swap or fork).
+REACTIVATION_NOT_FOUND = (
+    "This check no longer exists (checks are kept 30 days) or isn't one of this story's"
+)
 
 Direction = Literal["relax", "tighten", "unknown", "current"]
 DIRECTION_TEXT: dict[str, str] = {
@@ -637,20 +676,36 @@ def check_view(check: RatingCheck, target: RatingName) -> CheckView:
     return CheckView(check, target, rows)
 
 
+def check_ended(check: RatingCheck) -> bool:
+    """Whether polling stops: a reactivation re-check (#81) ends at any status but
+    ``checking``; #80's check at a :data:`TERMINAL` one (an unknown status keeps polling)."""
+    if is_reactivation(check):
+        return check.status != CHECKING
+    return check.status in TERMINAL
+
+
 def settle_check(check: RatingCheck) -> int:
-    """Settle the ``queued`` #44 row of a check that ended (idempotent): ``applied`` (and
-    #81's ``reactivated``) → ``ok``; ``refused`` → ``error``/``rating_refused``; ``failed`` →
-    ``error``/``error.class``. The full check body is stored as the row's response."""
-    if check.status not in TERMINAL:
+    """Settle the ``queued`` #44 row of a check that ended (idempotent): ``applied`` and
+    ``reactivated`` → ``ok``; ``refused`` → ``error``/``rating_refused``; ``failed`` →
+    ``error``/``error.class``. A reactivation re-check (#81) that ended ``reactivated`` also
+    sets the row's ``engine_operation_id``, ``timeline_revision`` (and a fork's ``story_id``,
+    the new story) from ``outcome.result``; any other ending is ``error``/
+    ``unexpected_status``. The full check body is stored as the row's response."""
+    if not check_ended(check):
         return 0
     outcome, code = EngineOperation.Outcome.OK, ""
+    overrides: dict[str, Any] = {}
     if check.status == "refused":
         outcome, code = EngineOperation.Outcome.ERROR, REFUSED_CODE
     elif check.status == "failed":
         outcome = EngineOperation.Outcome.ERROR
         found = (check.error or {}).get("class")
         code = str(found) if found else "failed"
-    return complete_job(check.job_id, outcome, code, asdict(check))
+    elif check.status == REACTIVATED:
+        overrides = job_overrides(check.outcome)
+    elif check.status not in TERMINAL:
+        outcome, code = EngineOperation.Outcome.ERROR, UNEXPECTED_STATUS
+    return complete_job(check.job_id, outcome, code, asdict(check), overrides=overrides or None)
 
 
 @dataclass(frozen=True)
@@ -667,7 +722,7 @@ class CheckRead:
     def polling(self) -> bool:
         if self.check is None:
             return self.retrying
-        return self.check.status not in TERMINAL  # an unknown status keeps polling
+        return not check_ended(self.check)
 
 
 def read_check(request: HttpRequest, client: EngineClient, story_id: str, job_id: str) -> CheckRead:
@@ -680,13 +735,258 @@ def read_check(request: HttpRequest, client: EngineClient, story_id: str, job_id
     return CheckRead(check)
 
 
+# --- Reactivation re-checks (#81) -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResultRow:
+    """One ``<dt>``/``<dd>`` of a reactivated edit's result (``code``: the value is an id)."""
+
+    label: str
+    value: str
+    code: bool = False
+
+
+@dataclass(frozen=True)
+class ReactivationView:
+    """A reactivation re-check (undo rewind, swap or fork held back, #81), as its status partial
+    shows it. ``op`` is the edit the page names (:func:`console.reactivation.shown_op`);
+    ``outcome`` is parsed once the check ended ``reactivated``; ``row`` is the #44 row whose
+    202 started it (the requested fork name and the idempotency key), when the Console has one."""
+
+    story_id: str
+    check: RatingCheck | None
+    op: str | None
+    outcome: Outcome | None = None
+    violations: tuple[ViolationRow, ...] = ()
+    fork_name: str = ""
+    key: str = ""
+    source_name: str = ""
+
+    @property
+    def status(self) -> str | None:
+        return self.check.status if self.check is not None else None
+
+    @property
+    def heading(self) -> str:
+        return heading(self.status, self.op)
+
+    @property
+    def waiting(self) -> bool:
+        return self.status == CHECKING
+
+    @property
+    def ended(self) -> bool:
+        return self.check is not None and check_ended(self.check)
+
+    @property
+    def unexpected(self) -> bool:
+        return self.ended and self.status not in (REACTIVATED, "refused", "failed")
+
+    @property
+    def unchanged_text(self) -> str:
+        return NO_FORK if self.op == FORK else UNCHANGED
+
+    @property
+    def progress(self) -> str:
+        if self.check is None:
+            return ""
+        return progress_text(self.check.progress.done, self.check.progress.total)
+
+    @property
+    def indeterminate(self) -> bool:
+        return self.check is not None and self.check.progress.total == 0
+
+    @property
+    def error_class(self) -> str:
+        found = ((self.check.error if self.check else None) or {}).get("class")
+        return str(found) if found is not None else "—"
+
+    @property
+    def error_message(self) -> str:
+        found = ((self.check.error if self.check else None) or {}).get("message")
+        return str(found) if found is not None else "—"
+
+    @property
+    def raw_check(self) -> str:
+        return raw_json(asdict(self.check)) if self.check is not None else ""
+
+    @property
+    def result(self) -> UntruncateResult | SwapResult | ForkResult | None:
+        return self.outcome.result if self.outcome is not None else None
+
+    @property
+    def timeline_result(self) -> UntruncateResult | SwapResult | None:
+        found = self.result
+        return found if isinstance(found, UntruncateResult | SwapResult) else None
+
+    @property
+    def fork_result(self) -> ForkResult | None:
+        found = self.result
+        return found if isinstance(found, ForkResult) else None
+
+    @property
+    def head(self) -> int | None:
+        found = self.timeline_result
+        return found.next_turn_index - 1 if found is not None else None
+
+    @property
+    def transcript_url(self) -> str:
+        found = self.timeline_result
+        return transcript_url(self.story_id, found) if found is not None else ""
+
+    @property
+    def shown_key(self) -> str:
+        found = self.result
+        return self.key or (found.idempotency_key if found is not None else None) or "—"
+
+    @property
+    def rows(self) -> tuple[ResultRow, ...]:
+        """#53's result fields: undo shows ``restored_operations``, ``swapped``,
+        ``active_chain``, ``truncate_operation_id`` and ``dormant_operations``; swap shows
+        ``active_chain``, ``activated_operations`` and ``dormant_operations``; a fork where it
+        was forked from and its new story. All show the operation id and the idempotency key."""
+        found = self.result
+        if found is None:
+            return ()
+        rows: list[ResultRow] = []
+        if isinstance(found, UntruncateResult | SwapResult):
+            rows += [
+                ResultRow("Head turn", str(found.next_turn_index - 1)),
+                ResultRow("Timeline revision", str(found.timeline_revision)),
+            ]
+        if isinstance(found, UntruncateResult):
+            rows += [
+                ResultRow("Restored operations", str(found.restored_operations)),
+                ResultRow("Swapped", "yes" if found.swapped else "no"),
+                ResultRow("Active chain", _chain(found.active_chain)),
+                ResultRow("Truncate operation", found.truncate_operation_id, code=True),
+                ResultRow("Dormant operations", str(found.dormant_operations)),
+            ]
+        elif isinstance(found, SwapResult):
+            rows += [
+                ResultRow("Active chain", _chain(found.active_chain)),
+                ResultRow("Activated operations", str(found.activated_operations)),
+                ResultRow("Dormant operations", str(found.dormant_operations)),
+            ]
+        else:
+            rows += [
+                ResultRow("New story", found.name or "—"),
+                ResultRow("New story id", found.story_id, code=True),
+                ResultRow("At turn", str(found.forked_from.at_turn)),
+                ResultRow("Variant chain", _chain(found.forked_from.variant_chain, "active")),
+            ]
+        rows += [
+            ResultRow("Operation", found.operation_id or "—", code=bool(found.operation_id)),
+            ResultRow("Idempotency key", self.shown_key, code=self.shown_key != "—"),
+        ]
+        return tuple(rows)
+
+    @property
+    def more_rows(self) -> tuple[ResultRow, ...]:
+        """A fork's ``counts``, ``forked_from.revision`` and new ``timeline_revision``."""
+        found = self.fork_result
+        if found is None:
+            return ()
+        counts = ", ".join(f"{k}: {v}" for k, v in sorted(found.counts.items())) or "—"
+        return (
+            ResultRow("Counts", counts),
+            ResultRow("Forked from revision", str(found.forked_from.revision)),
+            ResultRow("Timeline revision", str(found.timeline_revision)),
+        )
+
+    @property
+    def new_story_url(self) -> str:
+        found = self.fork_result
+        return reverse("stories:detail", args=[found.story_id]) if found is not None else ""
+
+    @property
+    def fork_banner(self) -> ForkBanner | None:
+        """#53's "Forked from" banner for the new story, shown inline."""
+        found = self.fork_result
+        if found is None:
+            return None
+        return ForkBanner(
+            self.story_id,
+            self.source_name,
+            found.forked_from.at_turn,
+            tuple((c.name, c.source_id, c.id) for c in found.characters),
+        )
+
+
+def _chain(chain: ChainRef | None, missing: str = "—") -> str:
+    return chain_label(chain.turn, chain.variant) if chain is not None else missing
+
+
+def reactivation_view(
+    story_id: str, check: RatingCheck | None, op: str | None, *, source_name: str = ""
+) -> ReactivationView:
+    """The view of a reactivation re-check read as ``check`` (``None``: the read failed) on a
+    page opened with ``?op=op``."""
+    row = job_row(check.job_id if check is not None else None)
+    shown = shown_op(check, op)
+    outcome = None
+    violations: tuple[ViolationRow, ...] = ()
+    if check is not None and check.status == REACTIVATED:
+        outcome = parse_outcome(check.outcome, op)
+    if check is not None:
+        violations = tuple(violation_row(story_id, v) for v in check.violations)
+    return ReactivationView(
+        story_id,
+        check,
+        shown,
+        outcome,
+        violations,
+        fork_name=requested_fork_name(row) if shown == FORK else "",
+        key=(row.idempotency_key or "") if row is not None else "",
+        source_name=source_name,
+    )
+
+
+def _remember_fork(request: HttpRequest, view: ReactivationView) -> None:
+    """A reactivated fork sets #53's session banner key for its new story (every terminal
+    render; the new story's first view pops it), keeping a source name an earlier render set."""
+    banner = view.fork_banner
+    found = view.fork_result
+    if banner is None or found is None:
+        return
+    key = FORK_BANNER_KEY.format(found.story_id)
+    earlier = request.session.get(key)
+    name = banner.source_name
+    if not name and isinstance(earlier, dict):
+        name = str(earlier.get("source_name") or "")
+    request.session[key] = {
+        "source_id": banner.source_id,
+        "source_name": name,
+        "at_turn": banner.at_turn,
+        "revision": found.forked_from.revision,
+        "characters": [list(c) for c in banner.characters],
+    }
+
+
+def _is_reactivation_page(read: CheckRead, op: str | None) -> bool:
+    """A reactivation page: the check is one, or (unread) the page was opened with ``?op=``.
+    A check of any other kind renders #80's page, whatever ``op`` says."""
+    if read.check is not None:
+        return is_reactivation(read.check)
+    return valid_op(op) is not None
+
+
 def _check_context(
-    story_id: str, job_id: str, read: CheckRead, target: RatingName, params: Mapping[str, str]
+    story_id: str,
+    job_id: str,
+    read: CheckRead,
+    target: RatingName,
+    params: Mapping[str, str],
+    rx: ReactivationView | None = None,
 ) -> dict[str, Any]:
+    body = "console/stories/_rating_check_status.html"
+    if rx is not None:
+        body = "console/stories/_reactivation_status.html"
     context = poll_context(
         poll_url=check_url(story_id, job_id, **params),
         refresh_url=check_url(story_id, job_id, **params),
-        body_template="console/stories/_rating_check_status.html",
+        body_template=body,
         polling=read.polling,
         retrying=read.retrying,
     )
@@ -701,6 +1001,14 @@ def _check_context(
             "not_changed": NOT_CHANGED,
             "rating_url": _rating_url(story_id),
             "story_url": reverse("stories:detail", args=[story_id]),
+            "rx": rx,
+            "rx_text": {
+                "not_found": REACTIVATION_NOT_FOUND,
+                "waiting": WAITING_LINE,
+                "unreadable": UNREADABLE,
+                "failed": FAILED_LINE,
+            },
+            "variants_url": reverse("stories:history", args=[story_id]) + "#variants",
         }
     )
     return context
@@ -721,7 +1029,7 @@ def _banner(request: HttpRequest, story_id: str, job_id: str) -> HttpResponse:
     """The pause banner's poll (``?banner=1``): the banner again with the check's progress, or
     ``HX-Refresh: true`` once it ended (the page reloads unpaused)."""
     read = read_check(request, engine_client_for(request), story_id, job_id)
-    if read.check is not None and read.check.status in TERMINAL:
+    if read.check is not None and check_ended(read.check):
         response = HttpResponse("")
         response["HX-Refresh"] = "true"
         return response
@@ -735,6 +1043,7 @@ def _banner(request: HttpRequest, story_id: str, job_id: str) -> HttpResponse:
         unavailable=read.panel,
         not_found=read.not_found,
         retrying=read.retrying,
+        op=valid_op(request.GET.get(OP_PARAM)) or "",
     )
     return render(request, "console/stories/_pause_banner.html", {"pause_banner": banner})
 
@@ -746,12 +1055,17 @@ def rating_check(request: HttpRequest, story_id: str, job_id: str) -> HttpRespon
     if is_htmx(request) and request.GET.get(BANNER_PARAM) == "1":
         return _banner(request, story_id, job_id)
     client = engine_client_for(request)
+    op = request.GET.get(OP_PARAM)
     if is_htmx(request):
         read = read_check(request, client, story_id, job_id)
         target = RatingName.from_query(
             read.check.target.rating_id if read.check is not None else "", request.GET
         )
-        context = _check_context(story_id, job_id, read, target, _poll_params(request, target))
+        rx = None
+        if _is_reactivation_page(read, op):
+            rx = reactivation_view(story_id, read.check, op)
+            _remember_fork(request, rx)
+        context = _check_context(story_id, job_id, read, target, _poll_params(request, target), rx)
         return render(request, "console/_job_poll.html", context)
     story = _story_or_none(request, client, story_id)
     read = read_check(request, client, story_id, job_id)
@@ -761,7 +1075,12 @@ def rating_check(request: HttpRequest, story_id: str, job_id: str) -> HttpRespon
     if read.check is not None:
         target = _named(read.check.target.rating_id, names)
         from_rating = _named(read.check.from_rating_id, names)
-    context = _check_context(story_id, job_id, read, target, _poll_params(request, target))
+    rx = None
+    if _is_reactivation_page(read, op):
+        source = (story.name or "") if story is not None else ""
+        rx = reactivation_view(story_id, read.check, op, source_name=source)
+        _remember_fork(request, rx)
+    context = _check_context(story_id, job_id, read, target, _poll_params(request, target), rx)
     context.update(
         {
             "story": story,

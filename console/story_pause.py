@@ -24,11 +24,14 @@ from console.engine.client import EngineError
 from console.engine.models import Story
 from console.engine_errors import ErrorPanel
 from console.job_poll import POLL_TRIGGER, RETRYING_TEXT
+from console.reactivation import OP_PARAM, REACTIVATION_CHECK, job_op, op_name
 
 RATING_CHECK = "rating_check"  # Engine ``pause.RATING_CHECK``
-# What the banner leads with, by ``pause.cause`` (#81 adds ``reactivation_check``); any other
-# cause shows "Paused: <cause>".
+# What the banner leads with, by ``pause.cause``; ``reactivation_check`` (#81) names the edit
+# held back (:func:`cause_text`); any other cause shows "Paused: <cause>".
 CAUSE_TEXT: dict[str, str] = {RATING_CHECK: "Paused: rating check in progress"}
+REACTIVATION_TEXT = "Paused: guardrail re-check before {op}"
+AN_EDIT = "an edit"  # a reactivation whose op the Console did not record
 UNAVAILABLE_TEXT = "Paused — check status unavailable"
 STARTING = "starting…"
 # Disabled controls while paused (#80's wording).
@@ -51,7 +54,11 @@ def progress_text(done: int, total: int) -> str:
     return STARTING if total == 0 else f"{done}/{total}"
 
 
-def cause_text(cause: str) -> str:
+def cause_text(cause: str, op: str = "") -> str:
+    """The banner's lead for ``cause``; a reactivation re-check names ``op`` (from the #44 row
+    that started it), else "an edit"."""
+    if cause == REACTIVATION_CHECK:
+        return REACTIVATION_TEXT.format(op=op_name(op).lower() or AN_EDIT)
     return CAUSE_TEXT.get(cause, f"Paused: {cause}")
 
 
@@ -60,7 +67,8 @@ class PauseBanner:
     """``console/stories/_pause_banner.html``'s context (``pause_banner``). ``polling``: the
     banner re-reads the check every 2 s (it has a job and its last read did not fail);
     ``unavailable``: the last read failed (404 or another error), so it stopped; ``retrying``:
-    the Engine did not answer, so it keeps polling."""
+    the Engine did not answer, so it keeps polling. ``op`` (#81): the held-back edit of a
+    ``reactivation_check``, carried as ``?op=`` on the check and poll links."""
 
     story_id: str
     cause: str
@@ -70,22 +78,28 @@ class PauseBanner:
     unavailable: ErrorPanel | None = None
     not_found: bool = False
     retrying: bool = False
+    op: str = ""
 
     @property
     def text(self) -> str:
         if self.unavailable is not None or self.not_found:
             return UNAVAILABLE_TEXT
-        return f"{cause_text(self.cause)} ({progress_text(self.done, self.total)})"
+        return f"{cause_text(self.cause, self.op)} ({progress_text(self.done, self.total)})"
+
+    @property
+    def _op_params(self) -> dict[str, str]:
+        return {OP_PARAM: self.op} if self.op else {}
 
     @property
     def check_url(self) -> str:
-        return check_url(self.story_id, self.job_id) if self.job_id else ""
+        return check_url(self.story_id, self.job_id, **self._op_params) if self.job_id else ""
 
     @property
     def poll_url(self) -> str:
         if not self.job_id:
             return ""
-        return check_url(self.story_id, self.job_id, **{BANNER_PARAM: "1", CAUSE_PARAM: self.cause})
+        params = {BANNER_PARAM: "1", CAUSE_PARAM: self.cause, **self._op_params}
+        return check_url(self.story_id, self.job_id, **params)
 
     @property
     def polling(self) -> bool:
@@ -109,12 +123,19 @@ class PauseBanner:
 
 
 def pause_banner(story: Story) -> PauseBanner | None:
-    """The banner for ``story`` while ``GET /stories/{id}`` reports ``pause``, else ``None``."""
+    """The banner for ``story`` while ``GET /stories/{id}`` reports ``pause``, else ``None``.
+    A reactivation re-check's op comes from the #44 row that started it (no Engine call)."""
     pause = story.pause
     if pause is None:
         return None
+    op = job_op(pause.job_id) if pause.cause == REACTIVATION_CHECK else None
     return PauseBanner(
-        story.id, pause.cause, pause.job_id, pause.progress.done, pause.progress.total
+        story.id,
+        pause.cause,
+        pause.job_id,
+        pause.progress.done,
+        pause.progress.total,
+        op=op or "",
     )
 
 

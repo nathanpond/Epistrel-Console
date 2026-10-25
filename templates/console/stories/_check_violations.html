@@ -1,0 +1,17 @@
+{% comment %}
+A check's violations table (#80; #81's refused re-checks too). Context: violations (ViolationRow rows,
+console/views/story_rating.py): each by position and policy, never the text.
+{% endcomment %}<h2>Violations ({{ violations|length }})</h2>
+<table class="check-violations">
+  <thead><tr><th>Position</th><th>Policy</th><th>Name</th><th></th></tr></thead>
+  <tbody>
+    {% for row in violations %}
+    <tr>
+      <td>{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position }}</a>{% elif row.position_id %}{{ row.position }} <code>{{ row.position_id }}</code>{% else %}{{ row.position }}{% endif %}</td>
+      <td>{% if row.policy_id %}{% if row.policy_url %}<a href="{{ row.policy_url }}"><code>{{ row.policy_id }}</code></a>{% else %}<code>{{ row.policy_id }}</code>{% endif %}{% elif row.code %}— (could not be checked: <code>{{ row.code }}</code>){% else %}—{% endif %}</td>
+      <td>{{ row.policy_name|default:"—" }}{% if row.policy_id and row.code %} <small>(<code>{{ row.code }}</code>)</small>{% endif %}</td>
+      <td>{% if row.raw %}<details><summary>More</summary><pre>{{ row.raw }}</pre></details>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

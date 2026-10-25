@@ -1038,3 +1038,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A refused check settles the #44 row with the full check body as its response; the violations model drops every key it does not know, so the stored body never holds violation text either.
   **Why:** The planner says to store the full body. Storing the parsed model keeps the never-the-text guarantee for the operations log too.
   **Issue:** #80
+- **Decision (Rule 2):** A replayed job 202 (`Idempotent-Replay: true` with a `job_id`) is now recorded `ok` (`replayed`), not as a second `queued` row. It still carries its `job_id`, and `complete_job` settles only the first call's `queued` row. This applies to the rating PUT (#80) and offboarding too.
+  **Why:** The plan says a replayed 202 makes no second queued row. Before this change, a replay left a `queued` row that no poll would ever settle.
+  **Issue:** #81
+- **Decision:** The client cannot log, so the 202's `Location` is kept on the client as `last_location`, like `last_operation_id`. The timeline view logs a `Location` that disagrees with the body's `job_id` at WARNING. The redirect always uses the `job_id`.
+  **Why:** `RatingCheckStarted` mirrors the schema component, so adding a header field to it would fail the contract test.
+  **Issue:** #81
+- **Decision:** Untruncate and fork now take `timeout=` (default 60 s, the turn timeout), as swap already did. Fork no longer uses #43's 30 s fork timeout.
+  **Why:** The planner says the three POSTs always use the turn timeout (#64 convention 18).
+  **Issue:** #81
+- **Decision:** The reactivation page's `<h1>` is "Guardrail re-check — <story>". The operation heading ("Undo rewind is waiting for a guardrail re-check", "… applied after re-check", "… refused by re-check", "… could not be completed", "…: re-check ended (`status`)") is an `<h2>` inside the polled partial, so it changes when the check ends. With no op, the waiting heading is the planner's generic one and the terminal headings use "The edit" as their subject. The pause banner writes the op in lowercase ("before undo rewind").
+  **Why:** The poll swaps only the partial, so a heading in the page block would stay "waiting" after the check ended.
+  **Issue:** #81
+- **Decision:** I added a "Check" link to the #44 row detail for story rows that have a `job_id` and are kind `set_story_content_rating`, `untruncate`, `swap` or `fork`. The link targets `entity_id`, so a reactivated fork's row (whose `story_id` is the new story) still links to the source's check. Reactivation rows carry `?op=`.
+  **Why:** The planner's second way back to a running check.
+  **Issue:** #81
+- **Decision:** I moved #80's violations table and #53's "Forked from" banner into partials (`stories/_check_violations.html`, `play/_fork_banner.html`), so the reactivation page reuses them. The reactivated result fields render from a `ResultRow` list. #53 has no result partials, because its results are flash lines.
+  **Why:** The reactivation page shows the same violations table and the same banner. Reusing the partials avoids keeping two copies.
+  **Issue:** #81

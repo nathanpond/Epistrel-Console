@@ -127,7 +127,7 @@ MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
 INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event (#51)
-LONG_MUTATION_TIMEOUT_S = 30.0  # fork and rebuild (#43's timeouts)
+LONG_MUTATION_TIMEOUT_S = 30.0  # rebuild (#43's timeouts; fork uses the turn timeout since #81)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 CATALOG_PAGE = 50  # the same for catalog lists (#65)
 PRINCIPAL_PAGE = 50  # the principal lookup's page, every type (#76)
@@ -540,6 +540,9 @@ class EngineClient:
         self.timeout = timeout
         # Sent on every call that does not pass its own (``engine_client_for`` sets it, #43).
         self.principal = principal
+        # The ``Location`` of the latest held-back edit's 202 (#81; the view compares it with
+        # the body's ``job_id``, since the client never logs).
+        self.last_location: str | None = None
 
     @classmethod
     def from_settings(cls, *, transport: httpx.BaseTransport | None = None) -> Self:
@@ -1216,6 +1219,12 @@ class EngineClient:
             timeout=timeout,
         )
 
+    def _held(self, response: EngineResponse) -> ReactivationCheck:
+        """A held-back edit's 202 (#81): the check started, with its ``Location`` kept as
+        :attr:`last_location`."""
+        self.last_location = response.headers.get("Location")
+        return _parse(response, ReactivationCheck)
+
     @operation("POST", "/stories/{story_id}/regenerate", response_model=RegenerateResult)
     def regenerate(
         self,
@@ -1264,21 +1273,27 @@ class EngineClient:
         status_models={202: ReactivationCheck},
     )
     def untruncate(
-        self, story_id: str, *, expected_revision: int | None, idempotency_key: str
+        self,
+        story_id: str,
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
     ) -> UntruncateResult | ReactivationCheck:
         """``POST /stories/{id}/untruncate`` with no body: undo the most recent rewind. 409
         ``nothing_to_undo`` when there is none; :class:`ReactivationCheck` (202) when the turns
-        it restores must be re-checked first."""
+        it restores must be re-checked first. ``timeout``: :func:`turn_timeout` (the Engine may
+        hold it behind a running turn, #64 convention 18)."""
         response = self._timeline(
             story_id,
             "untruncate",
             body=None,
             expected_revision=expected_revision,
             idempotency_key=idempotency_key,
-            timeout=MUTATION_TIMEOUT_S,
+            timeout=timeout,
         )
         if response.status_code == 202:
-            return _parse(response, ReactivationCheck)
+            return self._held(response)
         return _parse(response, UntruncateResult)
 
     @operation(
@@ -1309,7 +1324,7 @@ class EngineClient:
             timeout=timeout,
         )
         if response.status_code == 202:
-            return _parse(response, ReactivationCheck)
+            return self._held(response)
         return _parse(response, SwapResult)
 
     @operation(
@@ -1327,11 +1342,13 @@ class EngineClient:
         variant_chain: tuple[int, int] | None = None,
         expected_revision: int | None,
         idempotency_key: str,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
     ) -> ForkResult | ReactivationCheck:
         """``POST /stories/{id}/fork``: copy the story through ``at_turn`` into a new one named
         ``name`` (201), along ``variant_chain`` (``(turn, variant)``; default the active chain). An
         archived story can be forked. :class:`ReactivationCheck` (202) when a dormant chain's
-        turns must be re-checked first. Waits 30 s (#43's fork timeout)."""
+        turns must be re-checked first. ``timeout``: :func:`turn_timeout` (#81: the Engine may
+        hold it behind a running turn, #64 convention 18)."""
         body: dict[str, Any] = {"at_turn": at_turn, "name": name}
         if variant_chain is not None:
             body["variant_chain"] = {"turn": variant_chain[0], "variant": variant_chain[1]}
@@ -1341,10 +1358,10 @@ class EngineClient:
             body=body,
             expected_revision=expected_revision,
             idempotency_key=idempotency_key,
-            timeout=LONG_MUTATION_TIMEOUT_S,
+            timeout=timeout,
         )
         if response.status_code == 202:
-            return _parse(response, ReactivationCheck)
+            return self._held(response)
         return _parse(response, ForkResult)
 
     @operation("GET", "/stories/{story_id}/history", response_model=History)

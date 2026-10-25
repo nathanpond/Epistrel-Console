@@ -11,16 +11,20 @@ The link's ``rev``/``head``/``name`` come back as hidden fields (:mod:`console.f
 the page with the error and sends nothing.
 
 After a write: POST/redirect/GET to the play view with a flash naming the operation id, the new
-timeline revision and the idempotency key (#43). A refusal renders ``timeline/refused.html``:
-409 ``revision_conflict`` only the reload line; the rest in #48's inspector wording (busy,
-erased subject, guardrail, model unavailable) or the error panel, plus links where the AC asks
-(``unknown_chain``'s candidates, Variants and Fork after ``nothing_to_undo``).
+timeline revision and the idempotency key (#43). Undo rewind, swap and fork may instead answer
+202, held back for a reactivation re-check (#81): they redirect to #80's check page with
+``?op=untruncate|swap|fork``, which follows the check to the edit's answer. A refusal renders
+``timeline/refused.html``: 409 ``revision_conflict`` only the reload line; the rest in #48's
+inspector wording (busy, erased subject, guardrail, model unavailable) or the error panel, plus
+links where the AC asks (``unknown_chain``'s candidates, Variants and Fork after
+``nothing_to_undo``).
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
@@ -35,7 +39,7 @@ from console.confirm import (
     render_confirm,
     safe_next,
 )
-from console.engine.client import EngineClientError, EngineError, turn_timeout
+from console.engine.client import EngineClient, EngineClientError, EngineError, turn_timeout
 from console.engine.models import ReactivationCheck, RegenerateResult
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error
@@ -51,6 +55,8 @@ from console.forms.timeline import (
     parse_chain,
 )
 from console.ids import new_ulid
+from console.reactivation import FORK, OP_PARAM, SWAP, UNTRUNCATE
+from console.story_pause import check_url
 from console.timeline import Basis, Link, chain_label, reload_message
 from console.views.play import (
     FORK_BANNER_KEY,
@@ -60,6 +66,8 @@ from console.views.play import (
     error_inspector,
     read_story,
 )
+
+log = logging.getLogger(__name__)
 
 FIELDS_TEMPLATE = "console/timeline/_fields.html"
 REGENERATE_FIELDS = "console/timeline/_regenerate_fields.html"
@@ -105,14 +113,32 @@ def _flash(request: HttpRequest, text: str, *, operation: str | None, rev: int, 
     messages.success(request, f"{text} — {op}timeline revision {rev}, idempotency key {key}")
 
 
-def _recheck_flash(request: HttpRequest, check: ReactivationCheck, key: str) -> None:
-    messages.success(
+def _held(
+    request: HttpRequest,
+    story_id: str,
+    check: ReactivationCheck,
+    *,
+    op: str,
+    key: str,
+    client: EngineClient,
+) -> HttpResponse:
+    """A 202 (#81): the edit is held back for a reactivation re-check. Redirect to #80's check
+    page with ``?op=``, built from the body's ``job_id`` (a ``Location`` that disagrees is
+    logged and ignored). The flash names the hold, not #53's success; a fork's revision is the
+    source's, so it is left out."""
+    location = client.last_location
+    expected = f"/content-rating/checks/{check.job_id}"
+    if location and not urlsplit(location).path.endswith(expected):
+        log.warning(
+            "reactivation check: Location %s disagrees with job_id %s", location, check.job_id
+        )
+    revision = "" if op == FORK else f", revision {check.timeline_revision}"
+    messages.info(
         request,
-        f"Guardrail re-check started — the story is paused while check {check.job_id} runs; the "
-        f"change applies only if every turn passes. Operation {check.operation_id}, timeline "
-        f"revision {check.timeline_revision}, config revision {check.config_revision}, "
-        f"idempotency key {check.idempotency_key or key}",
+        f"Held for a guardrail re-check: operation {check.operation_id}, key "
+        f"{check.idempotency_key or key}{revision}",
     )
+    return redirect(check_url(story_id, check.job_id, **{OP_PARAM: op}))
 
 
 # --- Refusals -------------------------------------------------------------------------------------
@@ -353,9 +379,13 @@ def undo_rewind(request: HttpRequest, story_id: str) -> HttpResponse:
     def perform(key: str) -> HttpResponse:
         if not valid:
             return confirm_page(request, page, extra)
+        client = engine_client_for(request)
         try:
-            result = engine_client_for(request).untruncate(
-                story_id, expected_revision=form.cleaned_data["rev"], idempotency_key=key
+            result = client.untruncate(
+                story_id,
+                expected_revision=form.cleaned_data["rev"],
+                idempotency_key=key,
+                timeout=turn_timeout(None),
             )
         except EngineClientError as exc:
             return _refused(
@@ -367,8 +397,7 @@ def undo_rewind(request: HttpRequest, story_id: str) -> HttpResponse:
                 basis=_basis(story_id, form, back),
             )
         if isinstance(result, ReactivationCheck):
-            _recheck_flash(request, result, key)
-            return redirect(_play_url(story_id))
+            return _held(request, story_id, result, op=UNTRUNCATE, key=key, client=client)
         if result.swapped and result.active_chain is not None:
             chain = chain_label(result.active_chain.turn, result.active_chain.variant)
             text = (
@@ -429,8 +458,9 @@ def swap(request: HttpRequest, story_id: str) -> HttpResponse:
         if not valid or chain is None:
             return confirm_page(request, page, extra)
         expected = form.cleaned_data["rev"]
+        client = engine_client_for(request)
         try:
-            result = engine_client_for(request).swap(
+            result = client.swap(
                 story_id,
                 chain[0],
                 chain[1],
@@ -449,8 +479,7 @@ def swap(request: HttpRequest, story_id: str) -> HttpResponse:
                 candidate_link=_swap_link,
             )
         if isinstance(result, ReactivationCheck):
-            _recheck_flash(request, result, key)
-            return redirect(_play_url(story_id))
+            return _held(request, story_id, result, op=SWAP, key=key, client=client)
         active = (result.active_chain.turn, result.active_chain.variant)
         if active == chain and result.timeline_revision == expected:
             messages.info(
@@ -511,14 +540,16 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
     if not form.is_valid():
         return _fork_form_page(request, story_id, turn, form, back)
     key = posted_idempotency_key(request)
+    client = engine_client_for(request)
     try:
-        result = engine_client_for(request).fork(
+        result = client.fork(
             story_id,
             at_turn=turn,
             name=form.cleaned_data["new_name"],
             variant_chain=form.cleaned_data["variant_chain"],
             expected_revision=form.cleaned_data["rev"],
             idempotency_key=key,
+            timeout=turn_timeout(None),
         )
     except EngineClientError as exc:
         if isinstance(exc, EngineError) and exc.code == "validation_error":
@@ -535,8 +566,7 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
             candidate_link=_fork_link,
         )
     if isinstance(result, ReactivationCheck):
-        _recheck_flash(request, result, key)
-        return redirect(_play_url(story_id))
+        return _held(request, story_id, result, op=FORK, key=key, client=client)
     request.session[FORK_BANNER_KEY.format(result.story_id)] = {
         "source_id": story_id,
         "source_name": form.shown_name,

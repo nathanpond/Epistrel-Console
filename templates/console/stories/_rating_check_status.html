@@ -18,20 +18,7 @@ the read failed), not_found/not_found_text, engine_error, not_changed, rating_ur
 </dl>
 {% elif view.check.status == "refused" %}
 <p class="notice check-refused"><strong>{{ not_changed }}</strong></p>
-<h2>Violations ({{ view.violations|length }})</h2>
-<table class="check-violations">
-  <thead><tr><th>Position</th><th>Policy</th><th>Name</th><th></th></tr></thead>
-  <tbody>
-    {% for row in view.violations %}
-    <tr>
-      <td>{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position }}</a>{% elif row.position_id %}{{ row.position }} <code>{{ row.position_id }}</code>{% else %}{{ row.position }}{% endif %}</td>
-      <td>{% if row.policy_id %}{% if row.policy_url %}<a href="{{ row.policy_url }}"><code>{{ row.policy_id }}</code></a>{% else %}<code>{{ row.policy_id }}</code>{% endif %}{% elif row.code %}— (could not be checked: <code>{{ row.code }}</code>){% else %}—{% endif %}</td>
-      <td>{{ row.policy_name|default:"—" }}{% if row.policy_id and row.code %} <small>(<code>{{ row.code }}</code>)</small>{% endif %}</td>
-      <td>{% if row.raw %}<details><summary>More</summary><pre>{{ row.raw }}</pre></details>{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% include "console/stories/_check_violations.html" with violations=view.violations %}
 {% elif view.check.status == "failed" %}
 <p class="notice check-failed"><strong>The check failed — {{ not_changed|lower }}</strong></p>
 <dl class="check-error">

@@ -104,8 +104,10 @@ def test_fork_busy_shows_the_busy_message(operator_client: Client, engine: FakeE
     assert "Story busy — another turn is running" in page
 
 
-def test_fork_recheck_returns_to_the_source(operator_client: Client, engine: FakeEngine) -> None:
+def test_fork_recheck_goes_to_the_source_check(operator_client: Client, engine: FakeEngine) -> None:
+    """#81: a held-back fork follows its re-check on the source story's check page."""
     engine.respond("POST", path("fork"), 202, json=recheck_json())
     response = operator_client.post(url("fork", 2), posted(new_name="F", variant_chain="3:2"))
-    assert response["Location"] == f"/stories/{STORY}/"
-    assert "Guardrail re-check started" in flash(response)[0]
+    job = recheck_json()["job_id"]
+    assert response["Location"] == f"/stories/{STORY}/rating/checks/{job}/?op=fork"
+    assert flash(response)[0].startswith("Held for a guardrail re-check")
