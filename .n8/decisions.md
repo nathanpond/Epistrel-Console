@@ -1215,3 +1215,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The confirm page's error line uses the existing red `errorlist` class (`<p class="errorlist confirm-error">`) rather than a new style rule.
   **Why:** base.html already styles `.errorlist` red. `.error` is styled only inside `ul.messages`.
   **Issue:** #134
+- **Decision:** A 409 `module_off` with no `details.module` on a tab that has no rule (Overview, Predicates) reads "Needs a module that is off under this story's configuration" (`Unavailable("", None, …)`). Ledger's fallback module is `commitment`. `module_off_unavailable` takes an optional `effective`, so a `pipeline` answer can name the level the story runs.
+  **Why:** The plan gives a fallback only for tabs with a rule. Ledger's own route is commitment's, and the rule already names `pipeline` before `build` runs on a Lite story.
+  **Issue:** #135
+- **Decision:** The greyed tab is `<span class="disabled" …>`, following pass 2's markup, not the earlier `class="tab disabled"`.
+  **Why:** The two plan notes disagree. Pass 2 is the later, more detailed one, and its CSS rule is `nav.tabs span.disabled`.
+  **Issue:** #135
+- **Decision:** A 503 `erasure_pending` on the effective-config read returns `render_held` straight away, without the `get_story` read. Every other effective-config failure still runs `get_story`, so the header keeps the name.
+  **Why:** The held wrapper shows only the story id, and the story read would get the same 503.
+  **Issue:** #135
+- **Decision:** The filters are in `console/templatetags/inspect_tags.py` (`code_spans`, `no_backticks`). The library is not named `inspect`.
+  **Why:** `{% load inspect %}` would be a library sharing its name with the stdlib module. `console/inspect.py` keeps the name the plan gives it.
+  **Issue:** #135
+- **Decision:** The shell tests register every tab through a test urlconf (`tests/inspect/urls.py`). Its builds read `GET …/retrieve` and `GET …/inspect/ledger`, so the gate's zero-call rule and the 409 path can be tested before the tabs' own stories land.
+  **Why:** #135 registers only `inspect:overview`. The real urlconf is used to show that unregistered tabs are absent.
+  **Issue:** #135

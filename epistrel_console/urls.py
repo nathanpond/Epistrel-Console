@@ -15,6 +15,7 @@ from console.views import (
     erasure,
     feedback,
     history,
+    inspect,
     media,
     media_picker,
     media_proxy,
@@ -145,6 +146,16 @@ story_patterns = (
         path("<str:story_id>/fork/<int:turn>/", timeline.fork, name="fork"),
     ],
     "stories",
+)
+
+# A story's Inspect area (#135, console/views/inspect.py): Overview at ``inspect/``, each other tab
+# at ``inspect/<tab value>/`` named ``<tab value>`` (console.inspect.Tab). A tab registers here
+# when its story lands; the bar shows only the tabs that resolve.
+inspect_patterns = (
+    [
+        path("", inspect.overview, name="overview"),
+    ],
+    "inspect",
 )
 
 model_patterns = (
@@ -392,6 +403,7 @@ urlpatterns = [
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("acting-as/", acting.acting_as, name="acting-as"),
     path("operations/", include(operation_patterns)),
+    path("stories/<str:story_id>/inspect/", include(inspect_patterns)),
     path("stories/", include(story_patterns)),
     path("models/", include(model_patterns)),
     path("guardrails/policies/", include(policy_patterns)),

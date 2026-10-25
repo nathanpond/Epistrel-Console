@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% comment %}
+A story's Inspect area (#135, console/views/inspect.py's inspect_page): "← Story", the tab bar, and
+the opened tab. A tab template extends this and fills {% block tab_content %}; the greyed panel
+(a tab the story's configuration can't serve, or a 409 module_off) and #43's error panel (the
+effective-config read failed: no tab bar) replace it.
+{% endcomment %}
+{% block title %}Inspect · {{ tab.label }} · {{ story_name }}{% endblock %}
+{% block heading %}Inspect · {{ story_name }}{% endblock %}
+{% block content %}
+<p class="inspect-back"><a href="{{ story_url }}">← Story</a> · <code>{{ story_id }}</code></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}
+{% else %}
+{% include "console/inspect/_tabs.html" %}
+{% if unavailable %}{% include "console/inspect/_unavailable.html" with inline=False %}
+{% else %}{% block tab_content %}{% endblock %}{% endif %}
+{% endif %}
+{% endblock %}

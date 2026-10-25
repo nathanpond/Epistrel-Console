@@ -1,0 +1,176 @@
+"""A story's Inspect area (#135): its tabs, and which of them the story's configuration serves.
+
+Every story has one Inspect area at ``/stories/<id>/inspect/``, with the tabs of :class:`Tab` in
+bar order. A tab whose Engine data needs a module the story's effective configuration switches
+off stays in the bar, greyed, naming the module (the owner's decision: greyed, not hidden). The
+view side is :func:`console.views.inspect.inspect_page`; this module only decides.
+
+**The rules** (:func:`tab_availability`, read from ``GET /stories/{id}/effective-config``'s
+``effective``; a missing switch counts as off). Each matches the Engine's own check:
+
+- Memory, Retrieval: ``memory.episodic.enabled`` on. The Engine's ``require_episodic``
+  (``core/mutation.py``) answers 409 ``module_off`` with ``details.module: "episodic"``.
+- Canon, Scene: ``pipeline == "structured"``. ``require_canon`` (``core/mutation.py``) refuses a
+  Lite story, naming ``details.module: "pipeline"`` (its ``CANON_MODULE``).
+- Ledger: ``pipeline == "structured"`` **and** ``commitment.enabled`` (``commitment_enabled`` in
+  ``core/commit/lifecycle.py`` needs both). A Lite story names ``pipeline``; a structured one with
+  commitment off names ``commitment``.
+- Overview, Predicates: always served (the Engine serves the predicate registry under every
+  profile).
+
+When both the pipeline and episodic memory are off, Memory and Retrieval name ``episodic``.
+
+**The reasons** come from one mapping (:func:`unavailable_for`) shared by the rules and by a
+route's 409 ``module_off`` (:func:`module_off_unavailable`): ``pipeline`` → "Needs the structured
+pipeline (`pipeline: structured`; this story runs `<level>`)"; ``episodic``, ``commitment``,
+``consolidation`` → "Needs the `<module>` module (`<setting>` is off under this story's
+profile)"; any other module → "Needs the `<module>` module (off under this story's
+configuration)". Backtick spans are code: the panel renders them as ``<code>``, a ``title``
+strips them (``console/templatetags/inspect_tags.py``).
+
+``module_off`` is mapped here, inside Inspect only, not in #43's central ``engine_errors``.
+"""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any, TypeGuard
+
+from console.engine.client import EngineError
+
+MODULE_OFF = "module_off"  # the 409's code
+
+PIPELINE = "pipeline"
+EPISODIC = "episodic"
+COMMITMENT = "commitment"
+CONSOLIDATION = "consolidation"
+STRUCTURED = "structured"
+
+# A module's switch in ``effective`` (``pipeline`` is a level, not a switch).
+SETTINGS: Mapping[str, str] = {
+    PIPELINE: "pipeline",
+    EPISODIC: "memory.episodic.enabled",
+    COMMITMENT: "commitment.enabled",
+    CONSOLIDATION: "memory.consolidation.enabled",
+}
+
+
+class Tab(StrEnum):
+    """The Inspect tabs, in bar order. The value is the URL name (``inspect:<value>``) and the
+    path segment (``inspect/<value>/``; Overview is ``inspect/`` itself)."""
+
+    OVERVIEW = "overview"
+    MEMORY = "memory"
+    RETRIEVAL = "retrieval"
+    CANON = "canon"
+    PREDICATES = "predicates"
+    LEDGER = "ledger"
+    SCENE = "scene"
+
+    @property
+    def label(self) -> str:
+        """The tab's name in the bar and the page ``<title>``: "Overview", "Memory", …"""
+        return self.value.capitalize()
+
+    @property
+    def url_name(self) -> str:
+        return f"inspect:{self.value}"
+
+
+@dataclass(frozen=True)
+class Unavailable:
+    """Why a tab can't be served: the Engine ``module`` that is off, its switch in the effective
+    configuration (``None`` for a module the Console doesn't know), and the reason text (backtick
+    spans are code)."""
+
+    module: str
+    setting: str | None
+    reason: str
+
+
+def setting(effective: Mapping[str, Any], path: str) -> Any | None:
+    """The value at dotted ``path`` (``"memory.episodic.enabled"``) in ``effective``, or ``None``
+    when any step is missing or not an object."""
+    value: Any = effective
+    for key in path.split("."):
+        if not isinstance(value, Mapping) or key not in value:
+            return None
+        value = value[key]
+    return value
+
+
+def _on(effective: Mapping[str, Any], module: str) -> bool:
+    return setting(effective, SETTINGS[module]) is True
+
+
+def _structured(effective: Mapping[str, Any]) -> bool:
+    return setting(effective, SETTINGS[PIPELINE]) == STRUCTURED
+
+
+def unavailable_for(module: str, effective: Mapping[str, Any] | None = None) -> Unavailable:
+    """The :class:`Unavailable` naming ``module``. ``effective`` supplies the pipeline level the
+    story runs (left out of the reason when unknown)."""
+    if module == PIPELINE:
+        level = setting(effective, SETTINGS[PIPELINE]) if effective is not None else None
+        runs = f"; this story runs `{level}`" if isinstance(level, str) and level else ""
+        reason = f"Needs the structured pipeline (`pipeline: structured`{runs})"
+        return Unavailable(PIPELINE, SETTINGS[PIPELINE], reason)
+    switch = SETTINGS.get(module)
+    if switch is None:
+        reason = f"Needs the `{module}` module (off under this story's configuration)"
+        return Unavailable(module, None, reason)
+    reason = f"Needs the `{module}` module (`{switch}` is off under this story's profile)"
+    return Unavailable(module, switch, reason)
+
+
+def _ledger(effective: Mapping[str, Any]) -> Unavailable | None:
+    if not _structured(effective):
+        return unavailable_for(PIPELINE, effective)
+    return None if _on(effective, COMMITMENT) else unavailable_for(COMMITMENT, effective)
+
+
+def tab_availability(effective: Mapping[str, Any]) -> dict[Tab, Unavailable | None]:
+    """Every tab, mapped to why it is greyed for ``effective`` (``None``: served). The rules are
+    the module docstring's."""
+    episodic = None if _on(effective, EPISODIC) else unavailable_for(EPISODIC, effective)
+    structured = None if _structured(effective) else unavailable_for(PIPELINE, effective)
+    return {
+        Tab.OVERVIEW: None,
+        Tab.MEMORY: episodic,
+        Tab.RETRIEVAL: episodic,
+        Tab.CANON: structured,
+        Tab.PREDICATES: None,
+        Tab.LEDGER: _ledger(effective),
+        Tab.SCENE: structured,
+    }
+
+
+# The module a tab's rule names, for a 409 ``module_off`` without ``details.module``.
+RULE_MODULES: Mapping[Tab, str] = {
+    Tab.MEMORY: EPISODIC,
+    Tab.RETRIEVAL: EPISODIC,
+    Tab.CANON: PIPELINE,
+    Tab.LEDGER: COMMITMENT,
+    Tab.SCENE: PIPELINE,
+}
+UNNAMED_REASON = "Needs a module that is off under this story's configuration"
+
+
+def is_module_off(exc: object) -> TypeGuard[EngineError]:
+    return isinstance(exc, EngineError) and exc.http_status == 409 and exc.code == MODULE_OFF
+
+
+def module_off_unavailable(
+    error: EngineError, tab: Tab, effective: Mapping[str, Any] | None = None
+) -> Unavailable:
+    """A route's 409 ``module_off`` as the greyed panel's reason: the module
+    ``error.details.module`` names, else the module ``tab``'s rule names (a tab without a rule
+    gets a reason naming no module). ``effective`` supplies the pipeline level, as in
+    :func:`unavailable_for`."""
+    named = error.details.get("module")
+    if isinstance(named, str) and named:
+        return unavailable_for(named, effective)
+    module = RULE_MODULES.get(tab)
+    if module is None:
+        return Unavailable("", None, UNNAMED_REASON)
+    return unavailable_for(module, effective)
