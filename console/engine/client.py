@@ -248,6 +248,7 @@ def operation(
     """
     if (entity is None) != (entity_id is None):
         raise ValueError("@operation: give both entity and entity_id, or neither")
+
     def register(func: Callable[P, R]) -> Callable[P, R]:
         others = tuple(sorted((status_models or {}).items()))
         op = Operation(
