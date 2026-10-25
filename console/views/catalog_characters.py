@@ -192,10 +192,11 @@ def character_list(request: HttpRequest) -> HttpResponse:
 def safe_back(request: HttpRequest) -> str:
     """``?back=`` when it is a local path under the character list, else the list itself."""
     back = request.GET.get("back") or ""
-    allowed = url_has_allowed_host_and_scheme(
+    if back.startswith(LIST_URL) and url_has_allowed_host_and_scheme(
         back, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    )
-    return back if allowed and back.startswith(LIST_URL) else LIST_URL
+    ):
+        return back
+    return LIST_URL
 
 
 def _query(params: QueryDict, **changes: str | None) -> str:

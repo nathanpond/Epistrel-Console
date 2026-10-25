@@ -43,10 +43,11 @@ _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
 def safe_next(request: HttpRequest, fallback: str) -> str:
     """The request's ``next`` (POST first, then GET) when it is a local URL, else ``fallback``."""
     candidate = request.POST.get(NEXT_FIELD) or request.GET.get(NEXT_FIELD) or ""
-    allowed = url_has_allowed_host_and_scheme(
+    if candidate and url_has_allowed_host_and_scheme(
         candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    )
-    return candidate if candidate and allowed else fallback
+    ):
+        return candidate
+    return fallback
 
 
 def confirm_query(name: str | None, next_url: str) -> str:

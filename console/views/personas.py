@@ -62,10 +62,11 @@ EDIT_TEMPLATE = "console/personas/edit.html"
 def _local(request: HttpRequest, candidate: str | None) -> str:
     """``candidate`` when it is a same-origin URL, else the persona list."""
     value = candidate or ""
-    allowed = url_has_allowed_host_and_scheme(
+    if value and url_has_allowed_host_and_scheme(
         value, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    )
-    return value if value and allowed else LIST_URL
+    ):
+        return value
+    return LIST_URL
 
 
 def _detail_url(persona_id: str, back: str | None = None) -> str:

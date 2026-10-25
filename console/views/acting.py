@@ -21,16 +21,13 @@ from console.operators import is_operator
 RESET = "reset"
 
 
-def _safe(request: HttpRequest, candidate: str) -> bool:
-    return bool(candidate) and url_has_allowed_host_and_scheme(
-        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    )
-
-
 def back_to(request: HttpRequest) -> str:
     """``next`` when it is a local URL, else a local ``Referer``, else ``/``."""
     for candidate in (request.POST.get("next", ""), request.headers.get("Referer", "")):
-        if _safe(request, candidate):
+        # The check sits in the ``if`` itself so code scanning sees the redirect guarded.
+        if candidate and url_has_allowed_host_and_scheme(
+            candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
             return candidate
     return "/"
 

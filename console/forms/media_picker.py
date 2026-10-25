@@ -74,7 +74,10 @@ NEEDS_ID_TEXT = "Choose a media asset or remove this row"
 DUPLICATE_TEXT = "Already in this list (row {n})"
 RETIRED_TEXT = "This asset is retired — choose another"
 MEDIA_RETIRED = "media_retired"
-FIELD_NAME = re.compile(r"^[a-z_]+(__[a-z_]+)*$")
+# ``a_b__c_d``: lowercase letters and underscores. One character class, no nested repeat, so
+# matching is linear (the earlier ``[a-z_]+(__[a-z_]+)*`` accepted the same strings but could
+# backtrack exponentially).
+FIELD_NAME = re.compile(r"^[a-z_]+$")
 # ``gallery[3].audience`` and the ``gallery.3.audience`` spelling of a validation error's path.
 _INDEX = re.compile(r"^(?:\[(?P<a>\d+)\]|\.(?P<b>\d+))(?:\.(?P<rest>.+))?$")
 

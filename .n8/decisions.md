@@ -1158,3 +1158,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The health reason now reads "erasure pending: N" (it was "erasure pending N"). It goes last in every state's reasons, healthy and unhealthy included.
   **Why:** The plan sets this wording and says to show it whatever the badge state is. #43's probe tests were updated to match.
   **Issue:** #87
+- **Decision (orchestration):** Each M3 story was implemented by a fresh subagent working sequentially on `milestone/m3-catalog-product-surface`, from a shared brief plus a running list of the shared helpers earlier stories built. The orchestrator re-ran the full suite, ruff, ruff format and mypy after every story and checked the commit, push, ticked boxes and completion comment before starting the next.
+  **Why:** 24 stories with 15–26 KB plans each; a fresh context per story keeps every plan line in view (same shape as M2).
+  **Issue:** M3
+- **Decision (Rule 3):** #64's commit reached the remote with one unformatted blank line in `console/engine/client.py` although the agent reported the format check clean; the orchestrator fixed it in `02a8599` and made a final format/lint/type gate mandatory in the brief for every later story.
+  **Why:** The PR gate runs `ruff format --check`.
+  **Issue:** #64
+- **Decision (Rule 3):** CodeQL failed the milestone PR with 2 high (`py/redos`, `py/polynomial-redos` on `FIELD_NAME` in `console/forms/media_picker.py`) and 10 medium (`py/url-redirection`) alerts. The regex `^[a-z_]+(__[a-z_]+)*$` accepts exactly the strings `^[a-z_]+$` accepts, so it was replaced by the linear form. Every flagged redirect was already validated with `url_has_allowed_host_and_scheme`, but through a stored boolean or a helper (`_safe`), which code scanning does not recognise as a guard; the call now sits in the `if` itself in `confirm.safe_next`, `acting.back_to`, both `safe_back`s, scenarios' `_origin` and personas' `_local`. Behaviour is unchanged.
+  **Why:** The merge gate requires CodeQL; dismissing alerts is the owner's call, restructuring an equivalent check is not.
+  **Issue:** M3 (#64, #66, #68, #69, #71, #74)
+- **Decision (Rule 1):** The live `engine-smoke` test `test_story_refusal_is_placed_beside_the_row_live` read the first `<option … selected>` on the new-story page, which since #64 is the nav's "Acting as" select, so it posted the principal as the rating. The search now starts at the rating select. The live tests are deselected locally, so only CI ran it.
+  **Why:** A test defect introduced by #64's shell change, not a product bug.
+  **Issue:** #64
