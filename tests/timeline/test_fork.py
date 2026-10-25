@@ -18,6 +18,7 @@ from tests.timeline.helpers import (
     calls,
     flash,
     html,
+    logged,
     path,
     posted,
     recheck_json,
@@ -53,6 +54,11 @@ def test_fork_redirects_to_the_new_story_with_the_banner(
     assert response["Location"] == f"/stories/{NEW}/"
     (line,) = flash(response)
     assert "Forked Harbour at turn 2 into Harbour (fork at turn 2)" in line
+    row = logged("fork")  # the operation is recorded (#44, #132)
+    assert (row.http_method, row.http_status, row.outcome) == ("POST", 201, "ok")
+    assert row.path == f"/stories/{STORY}/fork"
+    assert row.request["body"] == {"at_turn": 2, "name": "Harbour (fork at turn 2)"}
+    assert row.idempotency_key == KEY
 
     answer_page(engine, story=story_json(id=NEW, name="Harbour (fork at turn 2)"))
     page = html(operator_client, f"/stories/{NEW}/")
