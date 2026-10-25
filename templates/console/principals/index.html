@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Principals — Epistrel Console{% endblock %}
+{% block heading %}Principals{% endblock %}
+{% block content %}
+{% include "console/principals/_lookup_form.html" %}
+<h2>Known principals</h2>
+<table class="known-principals">
+  <thead><tr><th>Principal</th><th>Last used</th></tr></thead>
+  <tbody>
+    {% for row in known %}
+    <tr{% if row.own %} class="own"{% endif %}>
+      <td><a href="{{ row.url }}"><code>{{ row.principal }}</code></a>{% if row.own %} <small>(me)</small>{% endif %}</td>
+      <td>{{ row.last_used_at|engine_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if page.has_other_pages %}
+<p class="pager">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">← Previous</a>{% endif %}
+  Page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

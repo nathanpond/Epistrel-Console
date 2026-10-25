@@ -1,30 +1,30 @@
 """``{% load principals %}``: every displayed principal renders through ``principal_link``
 (#64, M3 convention 7).
 
-``{{ value|principal_link }}`` links the principal to its page, ``/principals/<p>/``
-(``principals:detail`` with ``quote(p, safe='')``; #76 builds the page). While that URL does not
-resolve, the principal renders as ``<code>p</code>``, unlinked. Blank renders "—".
+``{{ value|principal_link }}`` links the principal to its page, ``/principals/<p>/``, built by
+#76's :func:`console.views.principals.principal_url` (``system`` is linked too). While that URL
+does not resolve, the principal renders as ``<code>p</code>``, unlinked. Blank renders "—".
 """
 
-from urllib.parse import quote
-
 from django import template
-from django.urls import NoReverseMatch, reverse
+from django.urls import NoReverseMatch
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
 register = template.Library()
 
-DETAIL_URL_NAME = "principals:detail"
-
 
 def principal_href(principal: str) -> str | None:
     """The principal's Console page, or ``None`` while ``principals:detail`` does not resolve.
 
-    The argument is ``quote(principal, safe='')``; Django's ``reverse`` percent-encodes it once
-    more, so the view receives the quoted form and unquotes it (#76)."""
+    :func:`~console.views.principals.principal_url` reverses ``quote(principal, safe='')``;
+    Django's ``reverse`` percent-encodes it once more, so the view receives the quoted form and
+    unquotes it."""
+    # Imported lazily, to keep the template-tag module free of an import cycle with the views.
+    from console.views.principals import principal_url
+
     try:
-        return reverse(DETAIL_URL_NAME, args=[quote(principal, safe="")])
+        return principal_url(principal)
     except NoReverseMatch:
         return None
 

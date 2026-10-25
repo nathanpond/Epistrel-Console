@@ -20,6 +20,7 @@ from console.views import (
     personas,
     play,
     policies,
+    principals,
     ratings,
     status,
     stories,
@@ -232,6 +233,15 @@ media_patterns = (
     "media",
 )
 
+principal_patterns = (
+    [
+        path("", principals.principal_index, name="index"),
+        # <path:>: a principal may hold "/" (links quote it, and the view unquotes, #76).
+        path("<path:principal>/", principals.principal_detail, name="detail"),
+    ],
+    "principals",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -252,5 +262,6 @@ urlpatterns = [
     path("catalog/scenarios/", include(scenario_patterns)),
     path("personas/", include(persona_patterns)),
     path("media/", include(media_patterns)),
+    path("principals/", include(principal_patterns)),
     path("admin/", admin.site.urls),
 ]

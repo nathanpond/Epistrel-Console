@@ -503,4 +503,6 @@ def test_the_detail_shows_entity_and_job(
     link = f'<a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>'
     assert f"<dt>Entity id</dt><dd>{link}</dd>" in html
     assert "<dt>Job id</dt><dd><code>01JA0000000000000000000JOB</code></dd>" in html
-    assert "<dt>Principal</dt><dd><code>alice</code></dd>" in html
+    # #76 built the principal pages: the principal links to its page.
+    principal = '<a href="/principals/alice/"><code>alice</code></a>'
+    assert f"<dt>Principal</dt><dd>{principal}</dd>" in html

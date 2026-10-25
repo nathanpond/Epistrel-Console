@@ -215,13 +215,13 @@ def test_unnamed_label() -> None:
     assert unnamed_label(STORY) == "(unnamed) …7R0T2V"
 
 
+@override_settings(ROOT_URLCONF="tests.urls_bare")
 def test_principal_link_falls_back_to_code() -> None:
     assert principal_link("alice") == "<code>alice</code>"
     assert principal_link("<x>") == "<code>&lt;x&gt;</code>"
     assert principal_link("") == "—"
 
 
-@override_settings(ROOT_URLCONF="tests.urls_m3")
 def test_principal_link_links_once_principals_detail_resolves() -> None:
     assert principal_link("alice") == '<a href="/principals/alice/"><code>alice</code></a>'
     # quote(p, safe="") first; reverse encodes the "%" once more (#76's view unquotes).
@@ -654,8 +654,10 @@ def test_fan_out_reports_a_timeout_and_errors() -> None:
 def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) -> None:
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
-    for label in ("Principals", "Erasure", "Profiles"):
+    for label in ("Erasure", "Profiles"):
         assert label not in nav
+    # #76 built the principal pages.
+    assert '<a href="/principals/">Principals</a>' in nav
     # #65 built the character list, #67 the personas, #68 the scenarios and #70 the media
     # library: the Catalog group shows with them.
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
@@ -668,7 +670,7 @@ def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) 
 @pytest.mark.django_db
 @override_settings(ROOT_URLCONF="tests.urls_m3")
 def test_m3_sections_show_in_order_once_their_urls_exist(operator_client: Client) -> None:
-    html = operator_client.get("/principals/").content.decode()
+    html = operator_client.get("/erasure/").content.decode()
     assert html == "placeholder"  # the placeholder page itself has no shell
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]

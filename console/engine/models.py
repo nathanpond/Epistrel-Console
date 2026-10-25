@@ -2372,3 +2372,117 @@ class ImpactReport(Model):
     quality_status_after: QualityStatus | None = None
     fingerprint_before: str | None = None
     fingerprint_after: str | None = None
+
+
+# --- principal lookup (#76) -----------------------------------------------------------------------
+#
+# ``GET /principals/{principal}`` answers ``PrincipalLookup``: ``owned`` and ``related``, each
+# with one page per entity type under the Engine's plural key. :class:`PrincipalLinks` reads it
+# by hand (not field by field) so a missing type stays visible as missing and any key the
+# Console does not know is kept for the page's "More".
+
+LOOKUP_TYPES = ("stories", "characters", "scenarios", "personas", "media", "engine_profiles")
+
+
+@dataclass(frozen=True)
+class CompanionRef(Model):
+    """``CompanionRef``: a character's companion scenario, which follows it (#116)."""
+
+    id: str
+
+
+@dataclass(frozen=True)
+class OwnedItem(Model):
+    """``OwnedItem``: one entity the principal owns. ``name`` is ``None`` while the entity is
+    held for an erasure; ``status``, ``version`` and ``listing_status`` are ``None`` where the
+    type has none. A character names its ``companion``."""
+
+    id: str
+    name: str | None
+    status: str | None
+    version: int | None
+    listing_status: str | None
+    companion: CompanionRef | None = None
+
+
+@dataclass(frozen=True)
+class OwnedPage(Model):
+    """``OwnedPage``: the principal's entities of one type: the count, a page newest first and
+    the next page's cursor (``None`` on the last)."""
+
+    count: int
+    items: list[OwnedItem]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class RelatedItem(Model):
+    """``RelatedItem``: one entity with relations naming the principal, and their names."""
+
+    id: str
+    relations: list[str]
+
+
+@dataclass(frozen=True)
+class RelatedPage(Model):
+    """``RelatedPage``: the related entities of one type, newest relation first."""
+
+    count: int
+    items: list[RelatedItem]
+    next_cursor: str | None
+
+
+def _unknown(obj: dict[str, Any], model: type) -> dict[str, Any]:
+    known = {json_name(f) for f in fields(model)}
+    return {key: value for key, value in obj.items() if key not in known}
+
+
+def _pages[P: (OwnedPage, RelatedPage)](
+    side: str, obj: object, page_model: type[P], item_model: type, more: dict[str, Any]
+) -> dict[str, P] | None:
+    """The side's pages by type key (``None`` when the side or a page is malformed); unknown
+    type, page and item keys go to ``more`` under a dotted name (``owned.stories.<id>``)."""
+    if not isinstance(obj, dict):
+        return None
+    pages: dict[str, P] = {}
+    for key, value in obj.items():
+        if key not in LOOKUP_TYPES:
+            more[f"{side}.{key}"] = value
+            continue
+        page = page_model.from_json(value)
+        if page is None or not isinstance(value, dict):
+            return None
+        pages[key] = page
+        extra = _unknown(value, page_model)
+        if extra:
+            more[f"{side}.{key}"] = extra
+        for raw in value.get("items", []):
+            item_extra = _unknown(raw, item_model) if isinstance(raw, dict) else {}
+            if item_extra:
+                more[f"{side}.{key}.{raw.get('id')}"] = item_extra
+    return pages
+
+
+@dataclass(frozen=True)
+class PrincipalLinks(Model):
+    """``PrincipalLookup``: everything linked to ``principal`` (as the Engine echoes it), the
+    ``owned`` and ``related`` pages keyed by type (:data:`LOOKUP_TYPES`; a type the Engine left
+    out is absent), and ``more``: the keys the Console does not know, by dotted name."""
+
+    principal: str
+    owned: dict[str, OwnedPage]
+    related: dict[str, RelatedPage]
+    more: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        if not isinstance(obj, dict) or not isinstance(obj.get("principal"), str):
+            return None
+        more: dict[str, Any] = {
+            key: value for key, value in obj.items() if key not in ("principal", "owned", "related")
+        }
+        owned = _pages("owned", obj.get("owned"), OwnedPage, OwnedItem, more)
+        related = _pages("related", obj.get("related"), RelatedPage, RelatedItem, more)
+        if owned is None or related is None:
+            return None
+        return cls(obj["principal"], owned, related, more)

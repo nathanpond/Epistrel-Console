@@ -1,0 +1,147 @@
+{
+  "principal": "alice",
+  "owned": {
+    "stories": {
+      "count": 3,
+      "items": [
+        {
+          "id": "01JP0000000000000000STRY01",
+          "name": "The Lighthouse",
+          "status": "active",
+          "version": null,
+          "listing_status": null
+        },
+        {
+          "id": "01JP0000000000000000STRY02",
+          "name": null,
+          "status": "blocked_by_erasure",
+          "version": null,
+          "listing_status": null
+        }
+      ],
+      "next_cursor": "c-stories-2"
+    },
+    "characters": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000CHAR01",
+          "name": "Mara Voss",
+          "status": "published",
+          "version": 2,
+          "listing_status": "listed",
+          "companion": {
+            "id": "01JP0000000000000000SCEN09"
+          }
+        }
+      ],
+      "next_cursor": null
+    },
+    "scenarios": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000SCEN01",
+          "name": "Harbour Night",
+          "status": "draft",
+          "version": null,
+          "listing_status": "unlisted"
+        }
+      ],
+      "next_cursor": null
+    },
+    "personas": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000PERSA1",
+          "name": "Ari",
+          "status": null,
+          "version": null,
+          "listing_status": null
+        }
+      ],
+      "next_cursor": null
+    },
+    "media": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000MEDIA1",
+          "name": "Harbour at dusk",
+          "status": "live",
+          "version": null,
+          "listing_status": null
+        }
+      ],
+      "next_cursor": null
+    },
+    "engine_profiles": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000PROF01",
+          "name": "Fast local",
+          "status": "deleted",
+          "version": null,
+          "listing_status": null
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "related": {
+    "stories": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000STRY05",
+          "relations": [
+            "player",
+            "co_author"
+          ]
+        }
+      ],
+      "next_cursor": null
+    },
+    "characters": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "scenarios": {
+      "count": 1,
+      "items": [
+        {
+          "id": "01JP0000000000000000SCEN02",
+          "relations": [
+            "editor"
+          ]
+        }
+      ],
+      "next_cursor": null
+    },
+    "personas": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "media": {
+      "count": 2,
+      "items": [
+        {
+          "id": "01JP0000000000000000MEDIA2",
+          "relations": [
+            "viewer"
+          ]
+        }
+      ],
+      "next_cursor": "c-rmedia-2"
+    },
+    "engine_profiles": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    }
+  }
+}

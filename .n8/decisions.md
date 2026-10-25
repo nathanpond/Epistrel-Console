@@ -954,3 +954,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `_two_stage.html` takes optional `confirm_op`, `cancel_op`/`cancel_label` and `hidden` pairs. The not-created page uses them: "Create anyway" posts `op=confirm` and "Back" posts `op=back`, both with the token. The partial's existing behaviour is unchanged. A shared `_impact_report.html` partial (context `impact`) is new.
   **Why:** The plan's "Back" posts the signed payload. It is not a Cancel link.
   **Issue:** #75
+- **Decision:** "Offboard…" and the header's Offboarding link render only once `offboarding:new` / `offboarding:index` resolve (#77 builds them). Until then the principal page shows "Act as this principal" alone. Tests use a placeholder `offboarding` namespace in `tests/urls_m3.py`, and the `principals` placeholder there is gone.
+  **Why:** #64's rule is "a link shows only once its URL exists; no stub pages". A button to a 404 would break that.
+  **Issue:** #76
+- **Decision:** `PrincipalLinks` overrides `from_json` and reads `PrincipalLookup` by hand. `lookup_principal` is registered with no response model. `OwnedPage`/`OwnedItem`/`CompanionRef`/`RelatedPage`/`RelatedItem` are contract-tested against their components, and the six type keys are checked against `OwnedEntities`/`RelatedEntities`. Unknown keys (top-level, type, page, item) go to `more` under dotted names (`owned.stories.<id>`).
+  **Why:** The plan wants a type the Engine leaves out shown as "Not returned by the Engine" and unknown keys shown in "More". A field-by-field model would refuse a missing type outright.
+  **Issue:** #76
+- **Decision:** `cursor_invalid` is retried once with every cursor dropped, and only when cursors were sent. With no cursors, the error panel shows straight away.
+  **Why:** Retrying the same request without cursors would only fail the same way again.
+  **Issue:** #76
+- **Decision:** The fake Engine matches a request's raw (percent-encoded) path as well as the decoded one. A principal with `/` travels as `%2F`, and the decoded path then has an extra segment. Owned items whose type has no Console page yet (engine profiles) show the name plus the id in `<code>`, unlinked.
+  **Why:** The Engine routes `{principal_id:path}`, but the fake's `[^/]+` template did not. With no page to link, the id is still identifying.
+  **Issue:** #76

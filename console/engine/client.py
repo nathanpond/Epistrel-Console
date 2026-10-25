@@ -65,6 +65,7 @@ from console.engine.models import (
     PolicyList,
     PolicyMutation,
     PolicyScope,
+    PrincipalLinks,
     Promotion,
     QueuedTurn,
     RatingVersion,
@@ -115,6 +116,7 @@ INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event
 LONG_MUTATION_TIMEOUT_S = 30.0  # fork and rebuild (#43's timeouts)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 CATALOG_PAGE = 50  # the same for catalog lists (#65)
+PRINCIPAL_PAGE = 50  # the principal lookup's page, every type (#76)
 ENGINE_PROFILES_PAGE = 200  # the Engine's largest page: a select reads every profile (#68)
 # The media proxy's stream (#65): connect 3 s, then 30 s for each chunk, no total cap.
 MEDIA_CONNECT_TIMEOUT_S = 3.0
@@ -1697,6 +1699,27 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         _raise_for_envelope(response)
+
+    # --- principal lookup (#76) -----------------------------------------------------------------
+
+    @operation("GET", "/principals/{principal_id}")
+    def lookup_principal(
+        self,
+        principal: str,
+        cursors: Mapping[str, str] | None = None,
+        limit: int = PRINCIPAL_PAGE,
+    ) -> PrincipalLinks:
+        """``GET /principals/{principal}``: everything the principal owns and is related to, one
+        page per type. ``cursors`` continues pages: keys are the Engine's cursor names without
+        ``cursor[...]`` (``stories``, ``related.media``); a blank one is not sent. The principal
+        travels in the path, percent-encoded whole (it may hold ``/``). Registered without a
+        response model: :class:`PrincipalLinks` reads the answer by hand."""
+        params: list[tuple[str, str]] = [("limit", str(limit))]
+        for key, value in (cursors or {}).items():
+            if value:
+                params.append((f"cursor[{key}]", value))
+        response = self._request("GET", f"/principals/{quote(principal, safe='')}", params=params)
+        return _parse(response, PrincipalLinks)
 
     # --- catalog scenarios (#68) ----------------------------------------------------------------
 

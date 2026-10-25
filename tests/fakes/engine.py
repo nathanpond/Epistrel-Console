@@ -226,7 +226,10 @@ class FakeEngine:
         self.requests.append(request)
         method, path = request.method, request.url.path
         served = self._served.get((method, path))
-        template = None if served else self._match(method, path)
+        # A path parameter may hold an encoded "/" (``%2F``, a principal, #76): the decoded
+        # path then has an extra segment, so the raw path is matched too.
+        raw_path = request.url.raw_path.decode("ascii").split("?", 1)[0]
+        template = None if served else self._match(method, path) or self._match(method, raw_path)
         key = (method, path) if served else (method, template or path)
         if key in self._failures:
             raise self._failures[key]

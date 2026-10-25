@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "cursor_invalid",
+    "message": "not a cursor this listing gave; list again without it",
+    "details": {
+      "field": "query.cursor[stories]",
+      "reason": "malformed"
+    }
+  }
+}

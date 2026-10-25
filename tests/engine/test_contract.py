@@ -38,6 +38,7 @@ from console.engine.models import (
     ClassCapabilityCounts,
     CompanionDraft,
     CompanionPublished,
+    CompanionRef,
     ConfigChange,
     ConfigChanges,
     ConfigSources,
@@ -93,6 +94,8 @@ from console.engine.models import (
     OperationRecord,
     OperationStage,
     OutcomeCounts,
+    OwnedItem,
+    OwnedPage,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -117,6 +120,8 @@ from console.engine.models import (
     Recommendation,
     ReferenceImage,
     RegenerateResult,
+    RelatedItem,
+    RelatedPage,
     ReplyMessage,
     RespondResponse,
     RoleCharacter,
@@ -418,6 +423,12 @@ def test_the_widening_only_adds_media_id() -> None:
         (Backfill, "Backfill"),
         (BackfillEstimate, "BackfillEstimate"),
         (UnmetRecommendation, "UnmetRecommendation"),
+        # #76: the principal lookup's pages.
+        (OwnedPage, "OwnedPage"),
+        (OwnedItem, "OwnedItem"),
+        (CompanionRef, "CompanionRef"),
+        (RelatedPage, "RelatedPage"),
+        (RelatedItem, "RelatedItem"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -643,3 +654,22 @@ def test_a_union_response_must_match_one_of_its_options() -> None:
     assert op.response_model is CatalogCharacter
     wrong = Operation(op.method, op.path, CatalogVersion, False)
     assert any("no anyOf option" in p for p in check_operation(DOC, wrong))
+
+
+def test_the_principal_lookup_types_match_the_schema() -> None:
+    """#76: ``PrincipalLinks`` reads ``PrincipalLookup`` by hand; its six type keys (and the
+    page's table order) are the schema's ``OwnedEntities``/``RelatedEntities`` properties, each
+    a registry lookup key, and the lookup is registered without a response model."""
+    from console.engine.models import LOOKUP_TYPES
+    from console.entities import BY_LOOKUP_KEY
+    from console.views.principals import ENGINE_LOOKUP_KEYS
+
+    schemas = DOC["components"]["schemas"]
+    assert set(schemas["PrincipalLookup"]["properties"]) == {"principal", "owned", "related"}
+    for side in ("OwnedEntities", "RelatedEntities"):
+        assert set(schemas[side]["properties"]) == set(LOOKUP_TYPES)
+        assert set(schemas[side]["required"]) == set(LOOKUP_TYPES)
+    assert tuple(ENGINE_LOOKUP_KEYS) == LOOKUP_TYPES
+    for key, entity_type in ENGINE_LOOKUP_KEYS.items():
+        assert BY_LOOKUP_KEY[key].type == entity_type
+    assert OPERATIONS["GET /principals/{principal_id}"].response_model is None
