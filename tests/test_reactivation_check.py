@@ -27,6 +27,7 @@ from console.views import story_rating as rating_views
 from console.views import timeline as timeline_views
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
+from tests.fakes.story_config import answer_effective_config
 from tests.fixtures import reactivation as outcomes
 from tests.play.helpers import STORY, answer_page, story_json
 from tests.ratings.helpers import EVERYONE, TEEN, rating
@@ -50,6 +51,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     real recording client, so the 202 lands in the operation log)."""
     fake = FakeEngine()
     answer_relations(fake)
+    answer_effective_config(fake)  # #85: the play header's fingerprint
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

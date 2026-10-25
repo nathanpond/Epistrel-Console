@@ -25,6 +25,7 @@ from tests.fakes.engine import FakeEngine
 from tests.fakes.feedback import CONTEXT, FEEDBACK, OPERATION, SETTINGS, FeedbackStore
 from tests.fakes.feedback import settings_json as feedback_settings
 from tests.fakes.ownership import answer_relations
+from tests.fakes.story_config import answer_effective_config
 from tests.history import helpers as history_helpers
 from tests.play.helpers import MARA, STORY, TOBIN, answer_page, history_json, story_json
 
@@ -43,6 +44,7 @@ ME = "console:nate"
 def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngine]:
     fake = FakeEngine()
     answer_relations(fake)
+    answer_effective_config(fake)  # #85: the play header's fingerprint
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

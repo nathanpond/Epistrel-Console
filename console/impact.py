@@ -19,6 +19,8 @@ from console.engine.models import AffectedStory, Backfill, ImpactReport
 
 EMPTY = "—"
 FINGERPRINT_SHOWN = 12
+FINGERPRINT_PREFIX = "sha256:"
+QUALITY_CLASSES = {"certified": "quality-certified", "stale": "quality-stale"}
 
 
 def duration_text(seconds: float) -> str:
@@ -44,7 +46,16 @@ def backfill_text(backfill: Backfill) -> str:
 
 
 def short_fingerprint(value: str | None) -> str:
-    return value[:FINGERPRINT_SHOWN] if value else ""
+    """The first 12 hex digits after ``sha256:`` (the Engine's fingerprint form, #85)."""
+    if not value:
+        return ""
+    return value.removeprefix(FINGERPRINT_PREFIX)[:FINGERPRINT_SHOWN]
+
+
+def quality_class(status: str) -> str:
+    """A quality status badge's class (#85): ``certified`` green, ``stale`` amber, anything else
+    (``uncertified``) the plain grey ``quality``."""
+    return QUALITY_CLASSES.get(status, "")
 
 
 def capabilities_text(values: Sequence[str] | None) -> list[str]:

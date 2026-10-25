@@ -15,6 +15,7 @@ from console.views import play as play_views
 from console.views import stories as story_views
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
+from tests.fakes.story_config import answer_effective_config
 
 
 @pytest.fixture
@@ -22,6 +23,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     """The fake Engine the history view talks to (through the real recording client)."""
     fake = FakeEngine()
     answer_relations(fake)  # #79: every owned entity's page reads its relations
+    answer_effective_config(fake)  # #85: the play header's fingerprint
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

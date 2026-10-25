@@ -2610,6 +2610,61 @@ class ProfileDeleted(Model):
     idempotency_key: str | None = None
 
 
+# --- a story's effective configuration (#85) -----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProfileRef(Model):
+    """``ProfileRef``: the profile a story runs under and the version it runs on. ``pinned``:
+    it keeps an earlier version (an upgrade was unavailable); ``deleted``: the profile is
+    deleted and still serves the story."""
+
+    id: str
+    version: int
+    pinned: bool
+    deleted: bool
+
+
+@dataclass(frozen=True)
+class OverridesRef(Model):
+    """``OverridesRef``: the story's overrides of its profile's dials and their ``revision``
+    (0 while it has none). ``settings`` is raw, as on :class:`EngineProfile`."""
+
+    revision: int
+    settings: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class EffectiveConfig(Model):
+    """``EffectiveConfig``: the deployment's defaults, the profile and version, the story's
+    overrides, every delivered setting at its effective value, and the configuration's
+    fingerprint, capabilities and quality status. The settings documents stay raw, so modules
+    a later Engine delivers survive (the contract test widens them)."""
+
+    story_id: str
+    deployment_defaults: dict[str, Any]
+    profile: ProfileRef
+    overrides: OverridesRef
+    effective: dict[str, Any]
+    fingerprint: str
+    capabilities: list[str]
+    quality_status: QualityStatus
+
+
+@dataclass(frozen=True)
+class StoryProfileWrite(Model):
+    """``StoryProfileWriteBody``: an assignment's or an overrides write's two stages.
+    ``applied`` false: the ``impact`` report held it back and nothing was written (``result``
+    ``None``); applied, ``result`` is the story's effective configuration after it."""
+
+    timeline_revision: int
+    applied: bool
+    impact: ImpactReport
+    result: EffectiveConfig | None
+    config_revision: int
+    idempotency_key: str | None = None
+
+
 # --- principal lookup (#76) -----------------------------------------------------------------------
 #
 # ``GET /principals/{principal}`` answers ``PrincipalLookup``: ``owned`` and ``related``, each

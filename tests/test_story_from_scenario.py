@@ -24,6 +24,7 @@ from tests.catalog.helpers import CHAR, CHAR2, card
 from tests.catalog.scenario_helpers import answer_profiles, fixture
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
+from tests.fakes.story_config import answer_effective_config
 from tests.fixtures import engine_fixture
 from tests.play.helpers import answer_page, story_json
 from tests.ratings.helpers import TEEN, answer_ratings, calls, error, text
@@ -292,6 +293,7 @@ def profile_body() -> dict[str, Any]:
 def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngine]:
     fake = FakeEngine()
     answer_relations(fake)  # #79: every owned entity's page reads its relations
+    answer_effective_config(fake)  # #85: the play header's fingerprint
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

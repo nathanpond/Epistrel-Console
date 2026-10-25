@@ -86,6 +86,7 @@ from console.ingest import (
 )
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
+from console.story_config import ConfigBadge, badge_from_report, read_badge
 from console.story_pause import TURN_NOTE, PauseBanner, pause_banner, paused_refusal
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
@@ -673,9 +674,11 @@ class PlayPage:
     cast_panel: CastPanel | None = None  # #72: Add character, Promote
     ownership: OwnershipPanel | None = None  # #79: owner and relations
     pause_banner: PauseBanner | None = None  # #80: a check pauses the story
+    config_badge: ConfigBadge | None = None  # #85: fingerprint and quality status
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "config_badge": self.config_badge,
             "pause_banner": self.pause_banner,
             "rating_url": reverse("stories:rating", args=[self.story.id]),
             "timeline": self.header,
@@ -810,6 +813,7 @@ def _page(
         cast_panel(engine_client_for(request), story),
         _ownership(request, story),
         pause_banner(story),
+        read_badge(engine_client_for(request), story_id),
     )
     return render(request, "console/play/play.html", page.context(request))
 
@@ -955,7 +959,20 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
         fresh,
         result_inspector(result, key, operation_id),
         viewpoint=result.output_viewpoint,
+        config_badge=_badge_after(request, story_id, result),
     )
+
+
+def _badge_after(
+    request: HttpRequest, story_id: str, result: RespondResponse | None
+) -> ConfigBadge | None:
+    """The header's configuration block after a finished turn (#85), for the HTMX answer's
+    out-of-band swap: from the turn's report, else (no fingerprint in it) re-read. A full page
+    reads it itself."""
+    if not is_htmx(request):
+        return None
+    found = badge_from_report(story_id, result.report if result is not None else None)
+    return found or read_badge(engine_client_for(request), story_id)
 
 
 def _turn_answer(
@@ -966,9 +983,10 @@ def _turn_answer(
     *,
     cards: list[WaitingCard] | None = None,
     viewpoint: str | None = None,
+    config_badge: ConfigBadge | None = None,
 ) -> HttpResponse:
     """The answer to a turn POST. ``viewpoint`` set means the turn finished: the transcript is
-    re-fetched at it."""
+    re-fetched at it (and ``config_badge`` refreshes the header, #85)."""
     if not is_htmx(request):
         return _page(
             request,
@@ -984,6 +1002,7 @@ def _turn_answer(
         "cards": cards or [],
         "status_note": "",
         "transcript": (_transcript(request, play_story, viewpoint) if viewpoint else None),
+        "config_badge": config_badge,
     }
     return render(request, "console/play/_turn_response.html", context)
 
@@ -1241,7 +1260,8 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
         if result is not None:
             found = result_inspector(result, key, operation_id)
             note = f"Turn {result.turn} committed."
-            return _poll_end(request, card, found, note, result.output_viewpoint)
+            badge = _badge_after(request, story_id, result)
+            return _poll_end(request, card, found, note, result.output_viewpoint, badge)
         batch = IngestResponse.from_json(op.result.body) if op.result else None
         if batch is not None:  # a queued ingest (#51)
             found = Inspector(
@@ -1266,7 +1286,8 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
                 operation_id=operation_id,
                 log_pk=_log_pk(operation_id),
             )
-            return _poll_end(request, card, found, "Turn committed.", viewpoint or None)
+            badge = _badge_after(request, story_id, None)
+            return _poll_end(request, card, found, "Turn committed.", viewpoint or None, badge)
         return _poll_end(request, card, error_inspector(stored, key), "Turn refused.", None)
     stored = _stored_error(op)
     if stored is not None:
@@ -1292,9 +1313,11 @@ def _poll_end(
     found: Inspector | None,
     note: str,
     viewpoint: str | None,
+    config_badge: ConfigBadge | None = None,
 ) -> HttpResponse:
     """Polling is over: a closing line in the card's place, and out-of-band the inspector (when
-    there is something new to show), the transcript (after a committed turn) and the form."""
+    there is something new to show), the transcript (after a committed turn), the form and
+    (after a committed turn) the header's configuration block (#85)."""
     committed = viewpoint is not None
     play_story, form = _pending_form(
         request, card.story_id, card.operation_id, clear_input=committed
@@ -1307,5 +1330,6 @@ def _poll_end(
         "inspector": found,
         "fv": _form_view(play_story, form),
         "transcript": (_transcript(request, play_story, viewpoint) if committed else None),
+        "config_badge": config_badge,
     }
     return render(request, "console/play/_poll_response.html", context)

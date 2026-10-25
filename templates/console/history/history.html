@@ -2,7 +2,7 @@
 {% block title %}History — {{ story.name|default:story.id }} — Epistrel Console{% endblock %}
 {% block heading %}History — {{ story.name|default:"—" }}{% endblock %}
 {% block content %}
-<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:settings' story.id %}">Settings</a> · <a class="config-tab" href="{% url 'stories:config' story.id %}">Config</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
 <form method="get" action="{% url 'stories:history' story.id %}" class="history-controls">
   {% include "console/history/_controls.html" %}
   <button type="submit">Show</button>

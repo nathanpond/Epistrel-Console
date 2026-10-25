@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% comment %}
+The impact step of a story configuration change (#85): the change, the shared impact report, then
+Apply (or "Apply anyway" once the Engine held it) through #64's two-stage partial; disabled while
+the story is archived.
+{% endcomment %}
+{% block title %}{{ preview.heading }} — Epistrel Console{% endblock %}
+{% block heading %}{{ preview.heading }}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ config_url }}">Back to Config</a> · <code>{{ story_id }}</code></p>
+{% if preview.again %}<p class="banner banner-warning held" role="status">The Engine held this change for confirmation: nothing was written.</p>{% endif %}
+{% for line in preview.lines %}<p class="assign-note">{{ line }}</p>{% endfor %}
+{% if preview.patch_text %}<h3>Change sent</h3><pre class="patch">{{ preview.patch_text }}</pre>{% endif %}
+{% include "console/_impact_report.html" with show_apply=False %}
+{% if archived_note %}
+<p class="apply-disabled"><button type="button" disabled title="{{ archived_note }}">{{ apply_label }}</button> {{ archived_note }} <a class="button" href="{{ cancel_url }}">Cancel</a></p>
+{% else %}
+{% include "console/_two_stage.html" with token=token confirm_url=apply_url confirm_label=apply_label cancel_url=cancel_url idempotency_key=idempotency_key %}
+{% endif %}
+{% endblock %}

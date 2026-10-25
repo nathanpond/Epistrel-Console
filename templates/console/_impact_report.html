@@ -6,8 +6,8 @@ An ImpactReport (#109; #75 owns the partial, #84 extends it; #85 reuses it). Con
 - apply_url, signed_payload, cancel_url, idempotency_key, show_apply (optional: show_apply renders
   #64's two-stage "Apply anyway" form; False/absent = read-only).
 Order: the warnings that hold the change, unmet recommendations, guarantees lost, then the
-per-story table (when affected_stories is non-empty) or the top-level block (when its fields are
-non-null): fingerprint before -> after, capabilities and quality status after.
+per-story table (when affected_stories is non-empty) and the top-level block (when it is empty, or
+always in "story" mode, #85): fingerprint before -> after, capabilities and quality status after.
 {% endcomment %}{% load console_format impact %}<section class="impact">
   <h3>Impact report</h3>
   <h4>Warnings</h4>
@@ -33,8 +33,9 @@ non-null): fingerprint before -> after, capabilities and quality status after.
     </tr>{% endfor %}</tbody>
   </table>
   {% impact_more impact as more %}{% if more %}<p class="impact-more">…and {{ more }} more (the Engine lists the first 1,000)</p>{% endif %}
-  {% else %}
-  {% if mode == "profile" %}<p class="no-followers">No story follows this profile</p>{% endif %}
+  {% elif mode == "profile" %}<p class="no-followers">No story follows this profile</p>
+  {% endif %}
+  {% if not impact.affected_stories or mode == "story" %}
   <dl class="impact-top">
     <dt>Fingerprint before → after</dt><dd class="fingerprints">{% if impact.fingerprint_before %}<code title="{{ impact.fingerprint_before }}">{{ impact.fingerprint_before|short_fp }}</code>{% else %}—{% endif %} → {% if impact.fingerprint_after %}<code title="{{ impact.fingerprint_after }}">{{ impact.fingerprint_after|short_fp }}</code>{% else %}—{% endif %}</dd>
     <dt>Capabilities after</dt><dd class="capabilities-after">{% if impact.capabilities_after is not None %}{% for c in impact.capabilities_after %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</dd>

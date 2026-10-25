@@ -37,6 +37,7 @@ from console.views.story_rating import (
 from tests.engine_panel.helpers import form_data
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
+from tests.fakes.story_config import answer_effective_config
 from tests.history.helpers import HISTORY, VARIANTS, history_json, settings_json, variants_json
 from tests.history.helpers import SETTINGS as STORY_SETTINGS
 from tests.play.helpers import STORY, error_json, story_json, turn_data
@@ -76,6 +77,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     """The fake Engine behind every view a rating change touches (the real recording client)."""
     fake = FakeEngine()
     answer_relations(fake)
+    answer_effective_config(fake)  # #85: the play header's fingerprint
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

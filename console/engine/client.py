@@ -39,12 +39,14 @@ from console.engine.models import (
     CustomInstructions,
     CustomInstructionsWritten,
     DeploymentSettings,
+    EffectiveConfig,
     EngineProfile,
     EngineProfilePage,
     ForkResult,
     HealthResponse,
     HealthResult,
     History,
+    ImpactReport,
     IngestResponse,
     ListingStatus,
     MediaAsset,
@@ -105,6 +107,7 @@ from console.engine.models import (
     StoryCharacterAdded,
     StoryCreated,
     StoryList,
+    StoryProfileWrite,
     StorySettings,
     StorySettingsWrite,
     StoryStatusChange,
@@ -2505,6 +2508,103 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         return _parse(response, ProfileDeleted)
+
+    # --- a story's effective configuration (#85) ------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/effective-config", response_model=EffectiveConfig)
+    def get_effective_config(self, story_id: str) -> EffectiveConfig:
+        """``GET /stories/{id}/effective-config``: the deployment's defaults, the profile and
+        version the story runs on, its overrides, every setting's effective value, the
+        fingerprint, capabilities and quality status."""
+        path = f"{_story_path(story_id)}/effective-config"
+        return _parse(self._request("GET", path), EffectiveConfig)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/impact-preview",
+        response_model=ImpactReport,
+        recorded=True,
+    )
+    def impact_preview(
+        self,
+        story_id: str,
+        *,
+        profile_id: str | None = None,
+        overrides: Mapping[str, Any] | None = None,
+    ) -> ImpactReport:
+        """``POST /stories/{id}/impact-preview``: what assigning ``profile_id`` and/or applying
+        ``overrides`` (a merge patch over the story's overrides) would do, writing nothing.
+        Recorded (#64 convention 9), no idempotency key (convention 19). 422
+        ``profile_deleted``, ``invalid_profile`` or ``validation_error`` as the write would."""
+        body: dict[str, Any] = {}
+        if profile_id is not None:
+            body["profile_id"] = profile_id
+        if overrides is not None:
+            body["overrides"] = dict(overrides)
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/impact-preview",
+            json=body,
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ImpactReport)
+
+    @operation(
+        "PATCH",
+        "/stories/{story_id}/profile-overrides",
+        response_model=StoryProfileWrite,
+    )
+    def patch_profile_overrides(
+        self,
+        story_id: str,
+        settings: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        ignore_warnings: bool,
+        idempotency_key: str,
+    ) -> StoryProfileWrite:
+        """``PATCH /stories/{id}/profile-overrides``: a JSON merge patch over the story's
+        overrides (``null`` removes one). ``expected_revision`` goes in the body (no
+        ``X-Epistrel-Expected-Revision``): another revision is 409 ``revision_conflict``
+        (``details.reason`` ``overrides_revision``). Two stages: ``applied`` false holds the
+        change for ``ignore_warnings``."""
+        body: dict[str, Any] = {"settings": dict(settings), "ignore_warnings": ignore_warnings}
+        if expected_revision is not None:
+            body["expected_revision"] = expected_revision
+        response = self._request(
+            "PATCH",
+            f"{_story_path(story_id)}/profile-overrides",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, StoryProfileWrite)
+
+    @operation(
+        "PUT",
+        "/stories/{story_id}/engine-profile",
+        response_model=StoryProfileWrite,
+    )
+    def assign_engine_profile(
+        self,
+        story_id: str,
+        profile_id: str,
+        *,
+        ignore_warnings: bool,
+        idempotency_key: str,
+    ) -> StoryProfileWrite:
+        """``PUT /stories/{id}/engine-profile``: run the story under ``profile_id`` at its latest
+        version from the next turn, keeping the overrides. 422 ``invalid_profile``
+        (``details.overrides``) or ``profile_deleted``; the story's own profile is a 200 that
+        changes nothing. Two stages, as :meth:`patch_profile_overrides`."""
+        response = self._request(
+            "PUT",
+            f"{_story_path(story_id)}/engine-profile",
+            json={"profile_id": profile_id, "ignore_warnings": ignore_warnings},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, StoryProfileWrite)
 
     # --- media (#70) ----------------------------------------------------------------------------
 

@@ -9,7 +9,7 @@ from django import template
 from django.urls import NoReverseMatch, reverse
 
 from console.engine.models import ImpactReport
-from console.impact import ImpactRow, impact_rows, more_count, short_fingerprint
+from console.impact import ImpactRow, impact_rows, more_count, quality_class, short_fingerprint
 
 register = template.Library()
 
@@ -45,3 +45,9 @@ def scenario_version_url(value: Any) -> str:
     except NoReverseMatch:
         return ""
     return f"{url}?{urlencode({'version': version})}" if version.isdigit() else url
+
+
+@register.filter(name="quality_class")
+def quality_class_filter(value: Any) -> str:
+    """A quality status's badge class (#85): ``certified`` green, ``stale`` amber, else grey."""
+    return quality_class(value if isinstance(value, str) else "")

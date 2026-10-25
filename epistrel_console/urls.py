@@ -33,6 +33,7 @@ from console.views import (
     status,
     stories,
     story_characters,
+    story_config,
     story_from_scenario,
     story_rating,
     story_settings,
@@ -91,6 +92,28 @@ story_patterns = (
             "<str:story_id>/settings/instructions/",
             story_settings.save_instructions,
             name="settings-instructions",
+        ),
+        # #85: the story's effective configuration, its overrides and its profile.
+        path("<str:story_id>/config/", story_config.config_page, name="config"),
+        path(
+            "<str:story_id>/config/overrides/",
+            story_config.overrides_page,
+            name="config-overrides",
+        ),
+        path(
+            "<str:story_id>/config/overrides/apply/",
+            story_config.overrides_apply,
+            name="config-overrides-apply",
+        ),
+        path(
+            "<str:story_id>/config/profile/",
+            story_config.profile_preview,
+            name="config-profile",
+        ),
+        path(
+            "<str:story_id>/config/profile/apply/",
+            story_config.profile_apply,
+            name="config-profile-apply",
         ),
         path(
             "<str:story_id>/characters/new/",

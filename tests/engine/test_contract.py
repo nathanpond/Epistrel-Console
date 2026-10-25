@@ -65,6 +65,7 @@ from console.engine.models import (
     DormantChain,
     Drivers,
     EffectiveBudget,
+    EffectiveConfig,
     EffectiveGuardrail,
     EffectivePolicy,
     Element,
@@ -115,6 +116,7 @@ from console.engine.models import (
     OperationRecord,
     OperationStage,
     OutcomeCounts,
+    OverridesRef,
     OwnedItem,
     OwnedPage,
     OwnerTransfer,
@@ -132,6 +134,7 @@ from console.engine.models import (
     PolicyTarget,
     ProfileDeleted,
     ProfileEdit,
+    ProfileRef,
     ProfileSchema,
     ProfileValidation,
     ProfileValidationWarning,
@@ -194,6 +197,7 @@ from console.engine.models import (
     StoryList,
     StoryPause,
     StoryPauseProgress,
+    StoryProfileWrite,
     StoryRating,
     StorySettings,
     StorySettingsDefaults,
@@ -237,6 +241,7 @@ SETTINGS_ANY = {"type": "object", "additionalProperties": True}
 # model has both, optional. The widening gives each body both, nullable and not required.
 REVISIONS = ("config_revision", "timeline_revision")
 NULLABLE_INT = {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+EFFECTIVE_DOCUMENTS = ("deployment_defaults", "effective")
 OWNERSHIP_BODIES = ("OwnerBody", "StoryOwnerBody", "RelationBody", "StoryRelationBody")
 
 
@@ -254,6 +259,9 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     ]
     schemas["EngineProfile"]["properties"]["settings"] = SETTINGS_ANY
     schemas["ProfileBody"]["properties"]["settings"] = SETTINGS_ANY  # #84: create and copy
+    for key in EFFECTIVE_DOCUMENTS:  # #85: a story's settings documents, raw
+        schemas["EffectiveConfig"]["properties"][key] = SETTINGS_ANY
+    schemas["OverridesRef"]["properties"]["settings"] = SETTINGS_ANY
     for name in OWNERSHIP_BODIES:
         body = schemas[name]
         body["properties"].update(dict.fromkeys(REVISIONS, NULLABLE_INT))
@@ -523,6 +531,11 @@ def test_the_widening_only_adds_media_id() -> None:
         (ProfileEdit, "ProfileEditBody"),
         (ProfileWarning, "ProfileWarning"),
         (ProfileDeleted, "ProfileDeletedBody"),
+        # #85: a story's effective configuration.
+        (ProfileRef, "ProfileRef"),
+        (OverridesRef, "OverridesRef"),
+        (EffectiveConfig, "EffectiveConfig"),
+        (StoryProfileWrite, "StoryProfileWriteBody"),
         # #79: owners and relations.
         (OwnerTransfer, "OwnerBody"),
         (OwnerTransfer, "StoryOwnerBody"),
@@ -591,6 +604,22 @@ def test_profile_body_settings_is_the_only_widening_of_profile_body() -> None:
     recorded = DOC["components"]["schemas"]["ProfileBody"]["properties"]
     widened = WIDENED["components"]["schemas"]["ProfileBody"]["properties"]
     assert [k for k in recorded if recorded[k] != widened[k]] == ["settings"]
+
+
+def test_the_effective_config_widens_only_its_settings_documents() -> None:
+    """#85: ``EffectiveConfig`` differs by its two settings documents and ``OverridesRef`` by
+    ``settings`` alone, each an object in the recorded schema (of the modules it knew)."""
+    schemas = DOC["components"]["schemas"]
+    widened = WIDENED["components"]["schemas"]
+    for component, keys in (
+        ("EffectiveConfig", list(EFFECTIVE_DOCUMENTS)),
+        ("OverridesRef", ["settings"]),
+    ):
+        recorded = schemas[component]["properties"]
+        assert sorted(
+            k for k in recorded if recorded[k] != widened[component]["properties"][k]
+        ) == sorted(keys)
+        assert all(recorded[k]["type"] == "object" for k in keys)
 
 
 def test_a_scenario_card_read_matches_the_card_component() -> None:

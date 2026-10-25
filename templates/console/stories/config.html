@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% comment %}
+A story's effective configuration (#85, console/views/story_config.py): the profile it runs on,
+each setting's three layers with the effective one highlighted, capabilities, fingerprint and
+quality status; the assign-profile select; a link to the overrides form.
+{% endcomment %}
+{% block title %}Config — {{ story_name }} — Epistrel Console{% endblock %}
+{% block heading %}Config — {{ story_name }}{% endblock %}
+{% block content %}
+<p><a href="{{ story_url }}">Play</a> · <a href="{{ history_url }}">History</a> · <a href="{{ settings_url }}">Settings</a> · <strong>Config</strong> · <code>{{ story_id }}</code></p>
+{% if profile_error %}<p class="banner banner-warning profile-unavailable" role="status">{{ profile_error }}</p>{% endif %}
+<dl class="story-config">
+  <dt>Engine profile</dt>
+  <dd class="profile"><a href="{{ profile_url }}">{% if profile %}{{ profile.name }}{% else %}<code>{{ config.profile.id }}</code>{% endif %}</a> v{{ config.profile.version }} — {% if config.profile.pinned %}pinned at v{{ config.profile.version }}{% else %}follows latest{% endif %}{% if config.profile.deleted %} <span class="badge deleted">deleted</span>{% endif %}</dd>
+  <dt>Overrides revision</dt><dd class="overrides-revision">{% if config.overrides.revision == 0 %}0 (no overrides){% else %}{{ config.overrides.revision }}{% endif %} — <a class="overrides-link" href="{{ overrides_url }}">Edit overrides</a></dd>
+  <dt>Fingerprint</dt><dd class="fingerprint"><code>{{ config.fingerprint }}</code></dd>
+  <dt>Quality status</dt><dd><span class="quality {{ quality_class }}">{{ config.quality_status.status }}</span></dd>
+  <dt>Capabilities</dt><dd class="capabilities">{% for c in config.capabilities %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+</dl>
+
+<section class="assign-profile" id="assign">
+  <h2>Assign a profile</h2>
+  {% if assign.refusal %}{% include "console/settings/_refusal.html" with refusal=assign.refusal %}{% endif %}
+  {% if assign.error %}<p class="errorlist assign-error" role="alert">{{ assign.error }}</p>{% endif %}
+  {% if assign.lines %}<ul class="overrides-lines">{% for line in assign.lines %}<li><code>{{ line }}</code></li>{% endfor %}</ul>{% endif %}
+  {% if select.error %}<p class="warning profiles-unavailable">{{ select.error }}</p>
+  {% else %}
+  <form method="post" action="{{ assign_url }}" class="assign-form">{% csrf_token %}
+    {% if select.too_many %}
+    <label for="assign-profile-id">Profile id</label> <input type="text" id="assign-profile-id" name="profile_id" value="{{ assign.chosen }}"> <small class="muted">{{ too_many_text }}</small>
+    {% else %}
+    <label for="assign-profile-id">Profile</label>
+    <select id="assign-profile-id" name="profile_id">
+      <option value="">— pick a profile —</option>
+      {% for option in select.options %}<option value="{{ option.id }}"{% if option.disabled %} disabled{% endif %}{% if option.id == assign.chosen %} selected{% endif %}>{{ option.label }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <button type="submit">Preview</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="effective-settings">
+  <h2>Settings</h2>
+  <p class="muted">Each setting comes from the topmost layer holding it: the story's override, else the profile version, else the deployment default.{% if not layers.schema_ok %} The profile schema could not be read: no tags or schema defaults.{% endif %}</p>
+  {% for block in layers.blocks %}
+  <section class="settings-block" id="block-{{ block.name }}">
+    <h3>{{ block.name }}</h3>
+    {% include "console/stories/_config_rows.html" with rows=block.rows tags=layers.schema_ok %}
+  </section>
+  {% endfor %}
+  {% if layers.other %}
+  <section class="other-settings">
+    <h3>Other settings</h3>
+    {% include "console/stories/_config_rows.html" with rows=layers.other tags=False %}
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1095,3 +1095,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `_impact_report.html` is rewritten to the planned context (`impact`, optional `story_labels`, `mode`, `apply_url`, `signed_payload`, `cancel_url`, `idempotency_key`, `show_apply`), with rows built by `console/impact.py` (`{% load impact %}` `impact_rows`/`impact_more`/`short_fp`/`scenario_version_url`). #75's callers pass only `impact` and still render, read-only.
   **Why:** Planned shared partial for #84/#85; #75's tests only assert the "Impact report" heading.
   **Issue:** #84
+- **Decision (Rule 1):** `console.impact.short_fingerprint` strips the `sha256:` prefix before taking 12 characters (it took the first 12 of the raw value, so a real Engine fingerprint showed as `sha256:xxxxx`). Regression test in `tests/test_story_config.py`.
+  **Why:** #85's discretion fixes the short form as the first 12 hex digits after `sha256:`; #84's tests used bare hex so the bug never showed.
+  **Issue:** #85
+- **Decision:** The overrides form is `console/forms/story_overrides.py` `OverridesForm`, a subclass of #84's `SchemaSettingsForm` (root `overrides`, `other=True`) rather than a third `mode`: it overrides `default_of`/`default_text` ("inherits: X (profile|default)"), `_add_leaf` (tri-state/true-false booleans, a `remove__<field>` box, no `null__` box), `clean` (the "Tick 'remove override'" error) and `_strip` (also strips `settings.` so `body.settings.<path>` from the PATCH lands on the field), and adds `patch()`.
+  **Why:** Keeps #84's two modes untouched; the override rules differ in every hook.
+  **Issue:** #85
+- **Decision:** The recorded `impact-preview` call runs in the request thread; only the reads (profile version, profiles list, schema, story, archived check) run on #41's pool.
+  **Why:** A recorded call made from a pool thread writes its #44 row on another DB connection, which the test transaction (and a request's atomicity) doesn't see.
+  **Issue:** #85
+- **Decision:** `QualityStatus` keeps `status` only (no `extra` dict).
+  **Why:** The recorded schema's `QualityStatus` has only `status`; an extra field fails the contract test, and unknown keys are already ignored by the lenient parser. M7 can add its fields when the Engine has them.
+  **Issue:** #85
+- **Decision:** "No change — the story already runs this configuration" is flashed when the applied result's overrides revision, profile id and version all equal those the preview was signed against; "keeps its previous configuration" when `upgrade_unavailable` and the result's fingerprint equals the write's own impact `fingerprint_before`; otherwise "Applied — fingerprint <short>; takes effect from the next turn".
+  **Why:** The Engine moves no revision for a no-op; the fingerprint alone can't tell a quality-irrelevant change from none.
+  **Issue:** #85
+- **Decision:** The play header reads `GET …/effective-config` on every full play-page render (3 s, failures → "config unavailable"); every test fixture that renders the play page now calls `tests/fakes/story_config.answer_effective_config(fake)` beside #79's `answer_relations`.
+  **Why:** The header block is part of #48's page; the fake Engine refuses unconfigured calls.
+  **Issue:** #85
+- **Decision:** #54's six superseded dials were already never built and its "Moved to engine profile overrides — see Config" note already existed with a hardcoded URL; #85 only makes `console.story_settings.config_url` reverse `stories:config` and adds a test that the link resolves to the Config page.
+  **Why:** Replan 2026-10-24: #54 owns the note; #85 provides the target.
+  **Issue:** #85

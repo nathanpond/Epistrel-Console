@@ -3,3 +3,4 @@
 {% if inspector %}<div id="inspector" hx-swap-oob="true">{% include "console/play/_inspector_body.html" %}</div>{% endif %}
 {% include "console/play/_turn_form.html" with oob=True %}
 {% if transcript %}{% include "console/play/_transcript.html" with oob=True %}{% endif %}
+{% if config_badge %}{% include "console/stories/_config_badge.html" with oob=True %}{% endif %}

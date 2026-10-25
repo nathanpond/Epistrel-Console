@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% comment %}
+A story's overrides form (#85, console/views/story_config.py overrides_page): #84's schema form
+rooted at ``overrides``; Preview posts here and answers the impact page.
+{% endcomment %}
+{% block title %}Edit overrides — {{ story_id }} — Epistrel Console{% endblock %}
+{% block heading %}Edit overrides{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ config_url }}">Back to Config</a> · <code>{{ story_id }}</code></p>
+<p class="muted">Overrides revision {{ revision_text }}. An empty input changes nothing; tick “remove override” to fall back to the profile. Only what you change is sent.</p>
+<form method="post" action="{{ action_url }}" id="overrides-form" class="overrides-form" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {% if shown.profile_error %}<p class="banner banner-warning profile-unavailable" role="status">{{ shown.profile_error }}</p>{% endif %}
+  {% if shown.notice %}<p class="banner nothing-to-preview" role="status">{{ shown.notice }}</p>{% endif %}
+  {% if shown.refusal %}{% include "console/settings/_refusal.html" with refusal=shown.refusal %}{% endif %}
+  {% if shown.engine_error %}{% with engine_error=shown.engine_error %}{% include "console/_engine_error.html" %}{% endwith %}{% endif %}
+  {{ form.non_field_errors }}
+  {% if shown.lines %}<ul class="overrides-lines">{% for line in shown.lines %}<li><code>{{ line }}</code></li>{% endfor %}</ul>{% endif %}
+  {% for w in form.top_warnings %}<p class="warning">{{ w }}</p>{% endfor %}
+  {% include "console/stories/_override_fields.html" with nodes=nodes %}
+  {% with other=form.other_field %}{% if other %}
+  <div class="schema-field other-settings" id="f-other-settings">
+    <label for="{{ other.id_for_label }}">{{ other.label }}</label><br>{{ other }}
+    <br><small class="muted">A JSON object; what you remove from it is removed from the overrides.</small>
+    {% for w in form.other_warnings %}<p class="warning field-warning">{{ w }}</p>{% endfor %}
+    {{ other.errors }}
+  </div>
+  {% endif %}{% endwith %}
+  <p><button type="submit">Preview</button> <a href="{{ config_url }}">Cancel</a></p>
+</form>
+{% endblock %}
