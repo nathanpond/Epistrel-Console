@@ -11,7 +11,9 @@
 - ``/profiles/<id>/versions/``: every version, newest first (the Engine sends oldest first),
   each linking to ``?version=N``; ``?viewed=N`` highlights the one the detail page showed.
 
-The owner and relations panel is #79's: the detail page includes an empty slot for it.
+The owner and relations panel is #79's. #84 adds Edit (hidden on a deleted profile; "Edit latest
+(vM)" on a past version), Copy (at the version viewed) and Delete (disabled for the deployment
+default); its views are ``console.views.profile_edit``.
 """
 
 from collections.abc import Callable
@@ -37,6 +39,8 @@ from console.views.ownership import ownership_context
 DEFAULT_UNREAD = "Couldn't read the deployment default"
 SCHEMA_UNREAD = "Couldn't read the profile schema — settings shown raw"
 INVALID_VERSION = "Ignored invalid version"
+DELETED_NO_EDIT = "Deleted profiles can't be edited — copy it to change it"
+DEFAULT_NO_DELETE = "Deployment default — choose another default first"
 VERSION_PARAM = "version"
 VIEWED_PARAM = "viewed"
 
@@ -183,6 +187,18 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
             f"{urlencode({VIEWED_PARAM: profile.version})}"
         ),
         "stories_url": stories_url(profile.id),
+        # #84: Edit (the latest version), Copy (the version viewed) and Delete.
+        "edit_url": reverse("profiles:edit", args=[profile.id]),
+        "copy_url": (
+            f"{reverse('profiles:copy', args=[profile.id])}?"
+            f"{urlencode({VERSION_PARAM: profile.version})}"
+        ),
+        "delete_url": (
+            f"{reverse('profiles:delete', args=[profile.id])}?"
+            f"{urlencode({'name': profile.name, 'next': detail_url(profile.id)})}"
+        ),
+        "deleted_no_edit": DELETED_NO_EDIT,
+        "default_no_delete": DEFAULT_NO_DELETE,
         # #79: the owner and relations panel, its relations read on its own.
         "ownership": ownership_context(
             request,

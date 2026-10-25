@@ -3,6 +3,7 @@
 {% block title %}Engine profiles — Epistrel Console{% endblock %}
 {% block heading %}Engine profiles{% endblock %}
 {% block content %}
+<p><a class="button new-profile" href="{% url 'profiles:new' %}">New profile</a></p>
 <form method="get" action="{% url 'profiles:index' %}" class="filters">
   {{ form.non_field_errors }}
   <p>

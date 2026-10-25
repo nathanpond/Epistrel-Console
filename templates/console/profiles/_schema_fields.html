@@ -1,0 +1,22 @@
+{% comment %}
+The schema-generated fields (#84), recursive: fieldsets are <details>, open when anything inside
+is set or wrong. Context: nodes (console.forms.profile_schema_form ShownGroup/ShownLeaf).
+{% endcomment %}{% for node in nodes %}{% if node.is_group %}
+<details class="schema-group" id="{{ node.anchor }}"{% if node.open %} open{% endif %}>
+  <summary><code>{{ node.group.dotted }}</code>{% if node.group.title %} — {{ node.group.title }}{% endif %}</summary>
+  {% if node.group.description %}<p class="muted describe">{{ node.group.description }}</p>{% endif %}
+  {% if node.errors %}<ul class="errorlist group-errors">{% for e in node.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  {% include "console/profiles/_schema_fields.html" with nodes=node.children %}
+</details>
+{% else %}
+<div class="schema-field field-{{ node.leaf.kind }}" id="{{ node.anchor }}">
+  <label for="{{ node.field.id_for_label }}"><code>{{ node.leaf.dotted }}</code></label>
+  {{ node.field }}
+  {% if node.null_field %}<label class="null-box">{{ node.null_field }} null</label>{% endif %}
+  {% if node.default_text %}<small class="muted default">{{ node.default_text }}</small>{% endif %}
+  {% include "console/profiles/_tags.html" with badges=node.leaf.badges untagged=node.leaf.untagged %}
+  {% if node.help %}<br><small class="muted help">{{ node.help }}</small>{% endif %}
+  {% for w in node.warnings %}<p class="warning field-warning">{{ w }}</p>{% endfor %}
+  {{ node.field.errors }}{% if node.null_field %}{{ node.null_field.errors }}{% endif %}
+</div>
+{% endif %}{% endfor %}

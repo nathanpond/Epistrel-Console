@@ -72,9 +72,13 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PrincipalLinks,
+    ProfileDeleted,
+    ProfileEdit,
     ProfileSchema,
+    ProfileValidation,
     ProfileVersion,
     ProfileVersionList,
+    ProfileWritten,
     Promotion,
     QueuedTurn,
     RatingApplied,
@@ -117,6 +121,7 @@ from console.engine.models import (
 from console.engine.timeouts import (
     CATALOG_PUBLISH,
     OFFBOARDING,
+    PROFILE_EDIT,
     SCENARIO_CREATE,
     STORY_CHARACTER_ADD,
     UPLOAD,
@@ -134,6 +139,7 @@ LONG_MUTATION_TIMEOUT_S = 30.0  # rebuild (#43's timeouts; fork uses the turn ti
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 CATALOG_PAGE = 50  # the same for catalog lists (#65)
 PRINCIPAL_PAGE = 50  # the principal lookup's page, every type (#76)
+INVALID_PROFILE = "invalid_profile"  # a profile that cannot run (#84's validate answers it)
 ENGINE_PROFILES_PAGE = 200  # the Engine's largest page: a select reads every profile (#68)
 # The media proxy's stream (#65): connect 3 s, then 30 s for each chunk, no total cap.
 MEDIA_CONNECT_TIMEOUT_S = 3.0
@@ -156,6 +162,9 @@ EXPECTED_REVISION_HEADER = "X-Epistrel-Expected-Revision"
 PRINCIPAL_MAX = 256
 RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
 RESPONSE_PREFIX = "response:"  # ``@operation(entity_id="response:id")``: the id is in the answer
+# ``@operation(entity_id="response:id|profile_id")``: the first source holding an id (#84: a
+# copy's row names the new copy, or the source profile when the copy failed).
+ENTITY_FALLBACK = "|"
 # The headers ``_request`` sets itself; a caller's ``headers=`` never replaces them.
 OWN_HEADERS = frozenset({"user-agent", "accept", "authorization", PRINCIPAL_HEADER.lower()})
 
@@ -297,12 +306,15 @@ class Call:
         op = self.operation
         if op.entity is None or op.entity_id is None:
             return None
-        if op.entity_id.startswith(RESPONSE_PREFIX):
-            key = op.entity_id.removeprefix(RESPONSE_PREFIX)
-            value = response_body.get(key) if isinstance(response_body, dict) else None
-        else:
-            value = self.arguments.get(op.entity_id)
-        return (op.entity, value) if isinstance(value, str) and value else None
+        for source in op.entity_id.split(ENTITY_FALLBACK):
+            if source.startswith(RESPONSE_PREFIX):
+                key = source.removeprefix(RESPONSE_PREFIX)
+                value = response_body.get(key) if isinstance(response_body, dict) else None
+            else:
+                value = self.arguments.get(source)
+            if isinstance(value, str) and value:
+                return op.entity, value
+        return None
 
 
 # "GET /health" -> Operation; filled by @operation, read by the contract test.
@@ -360,6 +372,8 @@ def operation(
     - ``entity_id``: where its id comes from: the name of one of the method's parameters (the
       path parameter, e.g. ``"character_id"``), or ``"response:<key>"`` to read it from the
       JSON answer (a create: ``"response:id"``). Both or neither of ``entity``/``entity_id``.
+      Several sources joined with ``|`` are tried in order (#84's copy:
+      ``"response:id|profile_id"``, the new copy's id, else the source's).
 
     #70 adds ``record_body``: the redaction hook for a request whose body is not JSON (a
     multipart upload). It is called with the method's arguments by name and returns what the
@@ -398,12 +412,9 @@ def operation(
         if listed:
             OPERATIONS[f"{method} {path}"] = op
         signature = inspect.signature(func)
-        if (
-            entity_id is not None
-            and not entity_id.startswith(RESPONSE_PREFIX)
-            and entity_id not in signature.parameters
-        ):
-            raise ValueError(f"@operation: {func.__name__} has no parameter {entity_id!r}")
+        for source in (entity_id or "").split(ENTITY_FALLBACK) if entity_id else ():
+            if not source.startswith(RESPONSE_PREFIX) and source not in signature.parameters:
+                raise ValueError(f"@operation: {func.__name__} has no parameter {source!r}")
 
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -2352,6 +2363,148 @@ class EngineClient:
         first)."""
         path = f"{_profile_path(profile_id)}/versions"
         return _parse(self._request("GET", path), ProfileVersionList).items
+
+    @operation(
+        "POST",
+        "/engine-profiles/{profile_id}/validate",
+        response_model=ProfileValidation,
+        recorded=True,
+        entity="engine_profile",
+        entity_id="profile_id",
+    )
+    def validate_engine_profile(
+        self, profile_id: str, settings: Mapping[str, Any]
+    ) -> ProfileValidation:
+        """``POST /engine-profiles/{id}/validate`` with ``settings`` (a dry run of an edit; the
+        Engine validates the body's settings whatever profile the path names, #84 posts a
+        create's to the deployment default). Recorded (#64 convention 9), no idempotency key
+        (convention 19). A 422 ``invalid_profile`` is answered as ``valid=False`` with the
+        ``details`` lists; any other refusal is :class:`EngineError`."""
+        response = self._request(
+            "POST",
+            f"{_profile_path(profile_id)}/validate",
+            json={"settings": dict(settings)},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 422:
+            body = _json_or_none(response)
+            error = body.get("error") if isinstance(body, dict) else None
+            if isinstance(error, dict) and error.get("code") == INVALID_PROFILE:
+                details = error.get("details")
+                details = details if isinstance(details, dict) else {}
+                found = ProfileValidation.from_json(
+                    {
+                        "valid": False,
+                        "missing_dependencies": details.get("missing_dependencies") or [],
+                        "undelivered": details.get("undelivered") or [],
+                        "warnings": [],
+                    }
+                )
+                if found is not None:
+                    return found
+        return _parse(response, ProfileValidation)
+
+    @operation(
+        "POST",
+        "/engine-profiles",
+        response_model=ProfileWritten,
+        entity="engine_profile",
+        entity_id="response:id",
+    )
+    def create_engine_profile(
+        self, *, name: str, settings: Mapping[str, Any], owner: str, idempotency_key: str
+    ) -> ProfileWritten:
+        """``POST /engine-profiles``: a profile owned by ``owner`` (always sent, #64 convention
+        7). Settings that cannot run are 422 ``invalid_profile`` (``details.undelivered``,
+        ``details.missing_dependencies``)."""
+        response = self._request(
+            "POST",
+            "/engine-profiles",
+            json={"name": name, "settings": dict(settings), "owner": owner},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProfileWritten)
+
+    @operation(
+        "PUT",
+        "/engine-profiles/{profile_id}",
+        response_model=ProfileEdit,
+        entity="engine_profile",
+        entity_id="profile_id",
+    )
+    def update_engine_profile(
+        self,
+        profile_id: str,
+        *,
+        name: str,
+        settings: Mapping[str, Any],
+        ignore_warnings: bool,
+        idempotency_key: str,
+    ) -> ProfileEdit:
+        """``PUT /engine-profiles/{id}``: name and settings replaced in full (#84). ``applied``
+        false: the impact report warns and nothing was written; resend with
+        ``ignore_warnings`` to apply. A deleted profile is 422 ``profile_deleted``; settings
+        that cannot run, or would leave a following story's overrides unable to, are 422
+        ``invalid_profile`` (``details.stories``). Waits :data:`PROFILE_EDIT` (the impact covers
+        up to 1,000 stories)."""
+        response = self._request(
+            "PUT",
+            _profile_path(profile_id),
+            json={"name": name, "settings": dict(settings), "ignore_warnings": ignore_warnings},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=PROFILE_EDIT,
+        )
+        return _parse(response, ProfileEdit)
+
+    @operation(
+        "POST",
+        "/engine-profiles/{profile_id}/copy",
+        response_model=ProfileWritten,
+        entity="engine_profile",
+        entity_id="response:id|profile_id",
+    )
+    def copy_engine_profile(
+        self,
+        profile_id: str,
+        *,
+        name: str,
+        owner: str,
+        version: int | None = None,
+        idempotency_key: str,
+    ) -> ProfileWritten:
+        """``POST /engine-profiles/{id}/copy`` (``?version=N``: copy that version, else the
+        latest): a new profile, version 1, owned by ``owner``. A deleted profile can be copied.
+        The operation log names the copy (the source when the copy failed)."""
+        params = {"version": str(version)} if version is not None else None
+        response = self._request(
+            "POST",
+            f"{_profile_path(profile_id)}/copy",
+            params=params,
+            json={"name": name, "owner": owner},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProfileWritten)
+
+    @operation(
+        "DELETE",
+        "/engine-profiles/{profile_id}",
+        response_model=ProfileDeleted,
+        entity="engine_profile",
+        entity_id="profile_id",
+    )
+    def delete_engine_profile(self, profile_id: str, *, idempotency_key: str) -> ProfileDeleted:
+        """``DELETE /engine-profiles/{id}``: the profile leaves listings and assignment; the
+        answer warns of the stories still using it and the scenarios recommending it. The
+        deployment default is 409 (``details.reason`` ``is_default``)."""
+        response = self._request(
+            "DELETE",
+            _profile_path(profile_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProfileDeleted)
 
     # --- media (#70) ----------------------------------------------------------------------------
 

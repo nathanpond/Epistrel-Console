@@ -2500,6 +2500,116 @@ class ImpactReport(Model):
     fingerprint_after: str | None = None
 
 
+# --- engine profile writes (#84) -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RequiredModule(Model):
+    """A module a dependency rule requires, at one of ``levels`` (any level that is on when
+    empty)."""
+
+    module: str
+    levels: list[str]
+
+
+@dataclass(frozen=True)
+class MissingDependency(Model):
+    """A module that is on (at ``level``) without what it ``requires`` (FR-PROF-4)."""
+
+    module: str
+    level: str
+    requires: list[RequiredModule]
+
+
+@dataclass(frozen=True)
+class UndeliveredSetting(Model):
+    """A setting naming a module, or a level of one, this deployment has not delivered:
+    ``setting`` is its dotted path in the settings."""
+
+    module: str
+    level: str | None
+    setting: str
+
+
+@dataclass(frozen=True)
+class ProfileValidationWarning(Model):
+    """A validator warning (``below_safety_minimum``): the setting, its value, the minimum a turn
+    needs and the reservation that makes it up."""
+
+    code: str
+    setting: str
+    model_calls: int
+    minimum_required: int
+    reservation: dict[str, int]
+
+
+@dataclass(frozen=True)
+class ProfileValidation(Model):
+    """``ProfileValidation``: ``valid`` exactly when both lists are empty; ``warnings`` never
+    block. The client also builds one from a 422 ``invalid_profile`` (its ``details`` carry the
+    same two lists)."""
+
+    valid: bool
+    missing_dependencies: list[MissingDependency]
+    undelivered: list[UndeliveredSetting]
+    warnings: list[ProfileValidationWarning] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ProfileWritten(Model):
+    """``ProfileBody``: the profile after a create or a copy, at its latest version, with the
+    deployment's ``config_revision``. ``settings`` is raw, as on :class:`EngineProfile`."""
+
+    config_revision: int
+    id: str
+    name: str
+    owner_principal: str
+    preset: bool
+    version: int
+    current_version: int
+    settings: dict[str, Any]
+    created_at: str
+    updated_at: str
+    deleted_at: str | None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ProfileEdit(Model):
+    """``ProfileEditBody``: an edit's two stages. ``applied`` false: the ``impact`` report held
+    it back and nothing was written (``result`` ``None``)."""
+
+    config_revision: int
+    applied: bool
+    impact: ImpactReport
+    result: EngineProfile | None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ProfileWarning(Model):
+    """What a delete warns of: a story still running under the profile (``profile_in_use``) or
+    a scenario recommending it (``profile_recommended``)."""
+
+    kind: str = open_enum()
+    story_id: str | None = None
+    scenario_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ProfileDeleted(Model):
+    """``ProfileDeletedBody``: when it was deleted, and the stories and scenarios still naming
+    it (at most 1,000 of each; the counts name them all)."""
+
+    config_revision: int
+    id: str
+    deleted_at: str
+    warnings: list[ProfileWarning]
+    stories_using: int
+    scenarios_recommending: int
+    idempotency_key: str | None = None
+
+
 # --- principal lookup (#76) -----------------------------------------------------------------------
 #
 # ``GET /principals/{principal}`` answers ``PrincipalLookup``: ``owned`` and ``related``, each

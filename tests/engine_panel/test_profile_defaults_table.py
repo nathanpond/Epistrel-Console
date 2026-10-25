@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from django.test import Client
+from django.urls import reverse
 
 from console.forms.deployment import profile_default_rows
 from tests.engine_panel.helpers import answer_settings, settings_body
@@ -64,9 +65,9 @@ def test_the_table_shows_every_leaf_read_only(operator_client: Client, engine: F
     assert "<tr><td><code>pins.enabled</code></td><td><code>true</code></td></tr>" in table
     # Engine order.
     assert table.index("<code>pins.enabled</code>") < table.index("<code>memory.hot_set.")
-    # The editor is M3 #84's: plain text, not a link.
-    assert "Edit profile defaults: <code>/engine/profile-defaults/edit/</code>" in table
-    assert "<a " not in table
+    # #84: the table links to the editor, and that URL resolves.
+    assert re.findall(r'<a [^>]*href="([^"]+)"', table) == ["/engine/profile-defaults/edit/"]
+    assert reverse("engine:profile-defaults") == "/engine/profile-defaults/edit/"
 
 
 def test_the_page_offers_no_write_control_for_profile_defaults(

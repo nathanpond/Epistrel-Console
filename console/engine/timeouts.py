@@ -15,6 +15,7 @@ ERASURE = 60.0  # an erasure (or its dry run)
 UPLOAD = 60.0  # a media upload (each part, and completing it)
 OFFBOARDING = 30.0  # an offboarding: its dry run and its start (#77)
 STORY_CHARACTER_ADD = 30.0  # adding a character to a story (#72: input-gate model calls)
+PROFILE_EDIT = 30.0  # an engine profile PUT: its impact over up to 1,000 stories (#84)
 RATING_SUGGESTION_PER_RATING = 20.0
 RATING_SUGGESTION_BASE = 10.0
 

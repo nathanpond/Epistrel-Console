@@ -4,7 +4,12 @@
 {% block heading %}{{ profile.name }}{% endblock %}
 {% block content %}
 <p><a class="back" href="{% url 'profiles:index' %}">All profiles</a></p>
-{% if profile.deleted_at %}<p class="banner banner-warning deleted-banner" role="status">This profile was deleted {{ profile.deleted_at|engine_time }}. It still serves the stories that use it.</p>{% endif %}
+{% if profile.deleted_at %}<p class="banner banner-warning deleted-banner" role="status">This profile was deleted {{ profile.deleted_at|engine_time }}. It still serves the stories that use it. <span class="deleted-no-edit">{{ deleted_no_edit }}</span></p>{% endif %}
+<p class="profile-actions">
+  {% if not profile.deleted_at %}<a class="button edit" href="{{ edit_url }}">{% if is_latest %}Edit{% else %}Edit latest (v{{ profile.current_version }}){% endif %}</a>{% endif %}
+  <a class="button copy" href="{{ copy_url }}">Copy</a>
+  {% if not profile.deleted_at %}{% if is_default %}<button type="button" class="danger delete" disabled>Delete</button> <small class="muted default-no-delete">{{ default_no_delete }}</small>{% else %}<a class="button danger delete" href="{{ delete_url }}">Delete</a>{% endif %}{% endif %}
+</p>
 {% for warning in warnings %}<p class="warning">{{ warning }}</p>{% endfor %}
 <dl class="profile">
   <dt>Id</dt><dd><code>{{ profile.id }}</code></dd>

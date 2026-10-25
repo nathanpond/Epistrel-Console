@@ -6,7 +6,8 @@
   rebuild itself (POST), which redirects to ``/engine/rebuild/<console operation id>/``, the
   result rendered from the operation log's row (#44).
 - ``/engine/settings/``: every deployment setting, editable (merge patch, only changed settings
-  sent), and the deployment's profile defaults, read-only (M3 #84 edits them).
+  sent), and the deployment's profile defaults, read-only (``/engine/profile-defaults/edit/``,
+  #84, edits them).
 - ``/engine/config-changes/``: the deployment's configuration changes, grouped by revision.
 """
 
@@ -61,7 +62,7 @@ NAMES_SALT = "console.engine.story_names"
 SNAPSHOT_FIELD = "snapshot"
 SNAPSHOT_SALT = "console.engine.settings"
 CONFIG_CHANGES_PATH = "/admin/config-changes"
-# M3 #84 builds the profile-defaults editor here; until then the link is plain text.
+# M3 #84's profile-defaults editor (``engine:profile-defaults``).
 PROFILE_DEFAULTS_EDIT_URL = "/engine/profile-defaults/edit/"
 BUSY_HEADING = "Story busy — a turn is running; try again"
 SUPERSEDED = "superseded"

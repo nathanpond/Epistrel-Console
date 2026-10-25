@@ -96,6 +96,7 @@ from console.engine.models import (
     MediaUploaded,
     MemberCastCard,
     MessageFeedback,
+    MissingDependency,
     ModelCall,
     ModelConfig,
     ModelConfigEntry,
@@ -129,10 +130,16 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PolicyTarget,
+    ProfileDeleted,
+    ProfileEdit,
     ProfileSchema,
+    ProfileValidation,
+    ProfileValidationWarning,
     ProfileVersion,
     ProfileVersionList,
     ProfileVersionRef,
+    ProfileWarning,
+    ProfileWritten,
     Promotion,
     QualityStatus,
     QueuedTurn,
@@ -154,6 +161,7 @@ from console.engine.models import (
     RelationRecord,
     Relations,
     ReplyMessage,
+    RequiredModule,
     RespondResponse,
     RoleCharacter,
     RoleEligibility,
@@ -204,6 +212,7 @@ from console.engine.models import (
     TurnSummary,
     TurnWarning,
     UnavailableCharacter,
+    UndeliveredSetting,
     UnmetRecommendation,
     UntruncateResult,
     VariantChain,
@@ -244,6 +253,7 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
         "media_id"
     ]
     schemas["EngineProfile"]["properties"]["settings"] = SETTINGS_ANY
+    schemas["ProfileBody"]["properties"]["settings"] = SETTINGS_ANY  # #84: create and copy
     for name in OWNERSHIP_BODIES:
         body = schemas[name]
         body["properties"].update(dict.fromkeys(REVISIONS, NULLABLE_INT))
@@ -503,6 +513,16 @@ def test_the_widening_only_adds_media_id() -> None:
         (ProfileVersionList, "ProfileVersionsBody"),
         (SettingTags, "SettingTagsBody"),
         (ProfileSchema, "ProfileSchemaBody"),
+        # #84: engine profile writes.
+        (ProfileValidation, "ProfileValidation"),
+        (MissingDependency, "MissingDependency"),
+        (RequiredModule, "epistrel__core__profiles__validate__RequiredModule"),
+        (UndeliveredSetting, "UndeliveredSetting"),
+        (ProfileValidationWarning, "ProfileValidationWarning"),
+        (ProfileWritten, "ProfileBody"),
+        (ProfileEdit, "ProfileEditBody"),
+        (ProfileWarning, "ProfileWarning"),
+        (ProfileDeleted, "ProfileDeletedBody"),
         # #79: owners and relations.
         (OwnerTransfer, "OwnerBody"),
         (OwnerTransfer, "StoryOwnerBody"),
@@ -564,6 +584,13 @@ def test_engine_profile_settings_is_the_only_widening_of_engine_profile() -> Non
     ]
     assert differs == ["settings"]
     assert recorded["properties"]["settings"]["type"] == "object"
+
+
+def test_profile_body_settings_is_the_only_widening_of_profile_body() -> None:
+    """#84: like ``EngineProfile``, the create/copy answer differs by ``settings`` alone."""
+    recorded = DOC["components"]["schemas"]["ProfileBody"]["properties"]
+    widened = WIDENED["components"]["schemas"]["ProfileBody"]["properties"]
+    assert [k for k in recorded if recorded[k] != widened[k]] == ["settings"]
 
 
 def test_a_scenario_card_read_matches_the_card_component() -> None:

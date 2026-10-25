@@ -25,6 +25,8 @@ from console.views import (
     play,
     policies,
     principals,
+    profile_defaults,
+    profile_edit,
     profiles,
     rating_suggestion,
     ratings,
@@ -165,6 +167,12 @@ engine_patterns = (
         path("rebuild/<str:story_id>/", engine_panel.rebuild, name="rebuild"),
         path("settings/", engine_panel.deployment_settings, name="settings"),
         path("config-changes/", engine_panel.config_changes, name="config-changes"),
+        # #84: the deployment's profile defaults, in the schema-generated form.
+        path(
+            "profile-defaults/edit/",
+            profile_defaults.profile_defaults_edit,
+            name="profile-defaults",
+        ),
     ],
     "engine",
 )
@@ -279,8 +287,14 @@ media_patterns = (
 profile_patterns = (
     [
         path("", profiles.profile_list, name="index"),
+        # #84: create, edit (and "Apply anyway"), copy and delete.
+        path("new/", profile_edit.profile_new, name="new"),
         path("<str:profile_id>/", profiles.profile_detail, name="detail"),
         path("<str:profile_id>/versions/", profiles.profile_versions, name="versions"),
+        path("<str:profile_id>/edit/", profile_edit.profile_edit, name="edit"),
+        path("<str:profile_id>/apply/", profile_edit.profile_apply, name="apply"),
+        path("<str:profile_id>/copy/", profile_edit.profile_copy, name="copy"),
+        path("<str:profile_id>/delete/", profile_edit.profile_delete, name="delete"),
     ],
     "profiles",
 )
