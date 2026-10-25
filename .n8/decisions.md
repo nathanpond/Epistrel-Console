@@ -1170,3 +1170,33 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (Rule 1):** The live `engine-smoke` test `test_story_refusal_is_placed_beside_the_row_live` read the first `<option … selected>` on the new-story page, which since #64 is the nav's "Acting as" select, so it posted the principal as the rating. The search now starts at the rating select. The live tests are deselected locally, so only CI ran it.
   **Why:** A test defect introduced by #64's shell change, not a product bug.
   **Issue:** #64
+
+## /n8-exec M3 (verification fixes) — 2026-10-25
+
+- **Decision:** Ran `/n8-exec M3` as the fix pass for the nine bugs `/n8-verify M3` filed (#156–#164) after PR #155 merged, on `milestone/m3-verification-fixes` (same shape as M2's fix PR #133).
+  **Why:** M3's stories were already merged; the open M3 work was the verify bugs. The epics (#9–#13) stay open for `/n8-verify`.
+  **Issue:** #156–#164
+- **Decision:** #156's catalog-group case uses a new `tests/urls_no_catalog.py` (the real routes without the four catalog prefixes), rather than `tests.urls_bare`, so the whole shell still renders.
+  **Why:** `urls_bare` has no login or operations routes, so no signed-in page renders under it.
+  **Issue:** #156
+- **Decision:** #157 forces Django's temporary-file handler by lowering `FILE_UPLOAD_MAX_MEMORY_SIZE` below the fixture PNG's size, not by uploading a file above 2.5 MB. It records each `TemporaryUploadedFile` the request made and asserts each one is gone.
+  **Why:** Same code path, with no multi-megabyte fixture; recording the temp files proves the handler actually ran.
+  **Issue:** #157
+- **Decision:** #158's running turn is a real queued turn (`POST …/respond` answers 202), and the page is then re-rendered from its restored waiting card ("Waiting for the queued turn to finish."). The test does not hand-build an operation row.
+  **Why:** That is the state in which the turn form is disabled, so it is the state the Rate control must survive.
+  **Issue:** #158
+- **Decision:** Scenario reports render through `_validation_report.html` given an optional `scenario_report` (the `ShownReport`), and `templates/console/catalog/scenarios/_report.html` is deleted. With it, the partial shows the heading and headline, leaves out the empty "No errors."/"No warnings." lines (the headline covers them) and keeps the "Checks the Engine could not run: <label> (<code>)" wording. A `report_items` filter gives one entry loop for a `ShownReport`, a `ValidationReport` or a `CreationReport`. The parameter is `scenario_report`, not `shown`, because the creation report's own context already has `shown`, which leaked into the include.
+  **Why:** #160 asks for one partial. The other callers render exactly as before.
+  **Issue:** #160
+- **Decision:** `_location.html` takes an optional `own_entry`. An entry about the page's own scenario shows no entry id or version (with nothing else to show, it reads "this entry"). A draft version reads "draft" everywhere, not "vdraft", so #75's promote warnings now say "entry <id> draft"; their two tests were updated.
+  **Why (Rule 1):** "vdraft" was a shared-partial defect and showed on every caller, not only scenarios.
+  **Issue:** #161
+- **Decision:** A dry-run refusal from the form re-renders with the posted values (`form.choice()`). "Preview again" from a signed payload still uses `choice_of`.
+  **Why:** Only the posted values carry the story a story character was picked from when the scope is catalog.
+  **Issue:** #162
+- **Decision:** `progress_text(..., ended=)`: with total 0, a check still running reads "starting…" under an indeterminate bar, and an ended one reads "nothing to check" with no bar. The same change applies to #81's reactivation check status.
+  **Why (Rule 1):** Both partials share `progress_text` and had the same defect.
+  **Issue:** #163
+- **Decision:** `media_retired` at a slot reads "No such asset — choose another" when `details.reason` is `unknown`, and "This asset is retired — choose another" otherwise. This covers both the path-placed refusal (`place`, via `partial(self.place, reason=…)`) and the media-id-only one. Publish-report entries carry no `reason`, so they keep the retired wording.
+  **Why:** The Engine answers an unknown id as `media_retired` with `reason: unknown`.
+  **Issue:** #164
