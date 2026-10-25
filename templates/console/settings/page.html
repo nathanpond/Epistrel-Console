@@ -2,7 +2,8 @@
 {% block title %}Settings — {{ snap.label }} — Epistrel Console{% endblock %}
 {% block heading %}Settings — {{ story.name|default:"—" }}{% endblock %}
 {% block content %}
-<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:history' story.id %}">History</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:history' story.id %}">History</a> · <a class="config-tab" href="{% url 'stories:config' story.id %}">Config</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+<p class="story-rating">Content rating: {{ story.content_rating.name|default:"—" }} <a class="change-rating" href="{{ rating_url }}">Change rating</a></p>
 {% if archived_note %}<p class="warning">{{ archived_note }}.</p>{% endif %}
 <nav class="settings-toc">
   <a href="#settings">Settings</a> · <a href="#budget">Budget</a> · <a href="#effective-policies">Effective policies</a> · <a href="#story-policies">Story policies</a> · <a href="#pinned">Pinned memories</a> · <a href="#instructions">Custom instructions</a> · <a href="#config-changes">Config changes</a>

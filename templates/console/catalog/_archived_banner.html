@@ -1,0 +1,6 @@
+{% comment %}#69: the archived banner of a catalog entry's full view and edit page. Context: lifecycle (catalog_lifecycle.Lifecycle); renders nothing unless it is archived. A companion has no Unarchive button: it is restored with its character.{% endcomment %}{% if lifecycle.archived %}
+<div class="banner banner-warning archived" role="status">
+{% if lifecycle.follows %}Archived with <a href="{{ lifecycle.follows.url }}">{{ lifecycle.follows.text }}</a> — unarchive the character to restore it.
+{% else %}Archived — this entry can be read but not edited, published or used for new stories. <a class="button unarchive" href="{{ lifecycle.unarchive_url }}">Unarchive</a>
+{% endif %}</div>
+{% endif %}

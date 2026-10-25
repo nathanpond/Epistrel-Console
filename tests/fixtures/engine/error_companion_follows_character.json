@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "companion_follows_character",
+    "message": "This scenario is a character's companion: change its archiving on the character.",
+    "details": {
+      "entity_type": "scenario",
+      "entity_id": "01JC000000000000000000SCN1",
+      "character_id": "01JC00000000000000000CHAR1"
+    }
+  }
+}

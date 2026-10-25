@@ -1,0 +1,46 @@
+{% comment %}
+An ImpactReport (#109; #75 owns the partial, #84 extends it; #85 reuses it). Context:
+- impact (console.engine.models.ImpactReport);
+- story_labels (optional dict story id -> StoryLabel: names in the per-story table);
+- mode (optional: "profile" for a profile change over its following stories, "story" for one story);
+- apply_url, signed_payload, cancel_url, idempotency_key, show_apply (optional: show_apply renders
+  #64's two-stage "Apply anyway" form; False/absent = read-only).
+Order: the warnings that hold the change, unmet recommendations, guarantees lost, then the
+per-story table (when affected_stories is non-empty) and the top-level block (when it is empty, or
+always in "story" mode, #85): fingerprint before -> after, capabilities and quality status after.
+{% endcomment %}{% load console_format impact %}<section class="impact">
+  <h3>Impact report</h3>
+  <h4>Warnings</h4>
+  {% if impact.warnings %}<ul class="impact-warnings">{% for w in impact.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% else %}<p>—</p>{% endif %}
+  <h4>Recommendations unmet</h4>
+  {% if impact.recommendations_unmet %}<ul class="recommendations-unmet">{% for r in impact.recommendations_unmet %}<li><code>{{ r.capability }}</code> — recommended by {% with url=r.recommended_by|scenario_version_url %}{% if url %}<a href="{{ url }}">{% endif %}<code>{{ r.recommended_by }}</code>{% if url %}</a>{% endif %}{% endwith %}</li>{% endfor %}</ul>{% else %}<p>—</p>{% endif %}
+  <dl class="impact-summary">
+    <dt>Guarantees lost</dt><dd class="guarantees-lost">{% for g in impact.guarantees_lost %}<code>{{ g }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+    <dt>Stories affected</dt><dd class="affected-count">{{ impact.affected_count }}</dd>
+  </dl>
+  {% if impact.affected_stories %}
+  {% impact_rows impact story_labels as rows %}
+  <table class="affected-stories">
+    <thead><tr><th>Story</th><th>Gained</th><th>Lost</th><th>Backfill</th><th>Upgrade</th><th>Fingerprint before → after</th><th>Quality after</th></tr></thead>
+    <tbody>{% for row in rows %}<tr id="impact-{{ row.story_id }}"{% if row.upgrade_unavailable %} class="upgrade-unavailable"{% endif %}>
+      <td>{% if row.url %}<a href="{{ row.url }}">{% endif %}{% if row.name %}{{ row.name }} {% endif %}<code>{{ row.story_id }}</code>{% if row.url %}</a>{% endif %}{% if row.note %} <small class="muted">({{ row.note }})</small>{% endif %}</td>
+      <td>{% for c in row.gained %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+      <td>{% for c in row.lost %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+      <td class="backfill">{{ row.backfill }}</td>
+      <td class="upgrade">{% if row.upgrade_unavailable %}<strong>Unavailable</strong> — {{ upgrade_unavailable_text|default:"This story has history and Lite can't backfill — it keeps its current configuration" }}{% else %}—{% endif %}</td>
+      <td class="fingerprints">{% if row.fingerprint_before %}<code title="{{ row.fingerprint_before }}">{{ row.before_short }}</code>{% else %}—{% endif %} → {% if row.fingerprint_after %}<code title="{{ row.fingerprint_after }}">{{ row.after_short }}</code>{% else %}—{% endif %}</td>
+      <td>{{ row.quality_after|humanise|default:"—" }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+  {% impact_more impact as more %}{% if more %}<p class="impact-more">…and {{ more }} more (the Engine lists the first 1,000)</p>{% endif %}
+  {% elif mode == "profile" %}<p class="no-followers">No story follows this profile</p>
+  {% endif %}
+  {% if not impact.affected_stories or mode == "story" %}
+  <dl class="impact-top">
+    <dt>Fingerprint before → after</dt><dd class="fingerprints">{% if impact.fingerprint_before %}<code title="{{ impact.fingerprint_before }}">{{ impact.fingerprint_before|short_fp }}</code>{% else %}—{% endif %} → {% if impact.fingerprint_after %}<code title="{{ impact.fingerprint_after }}">{{ impact.fingerprint_after|short_fp }}</code>{% else %}—{% endif %}</dd>
+    <dt>Capabilities after</dt><dd class="capabilities-after">{% if impact.capabilities_after is not None %}{% for c in impact.capabilities_after %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</dd>
+    <dt>Quality status after</dt><dd class="quality-after">{% if impact.quality_status_after %}{{ impact.quality_status_after.status|humanise }}{% else %}—{% endif %}</dd>
+  </dl>
+  {% endif %}
+  {% if show_apply %}{% include "console/_two_stage.html" with token=signed_payload confirm_url=apply_url confirm_label="Apply anyway" cancel_url=cancel_url idempotency_key=idempotency_key %}{% endif %}
+</section>

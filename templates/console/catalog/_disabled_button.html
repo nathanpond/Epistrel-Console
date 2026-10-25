@@ -1,0 +1,1 @@
+{% comment %}#69: `{% disabled_if_archived entity "edit" %}` — a disabled button standing in for a control an archived entry refuses. Renders nothing unless the entity is archived.{% endcomment %}{% if archived %}<button type="button" class="archived-disabled" disabled title="{{ title }}">{{ text }}</button> <small class="muted">({{ title }})</small>{% endif %}

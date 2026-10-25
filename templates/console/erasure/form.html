@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}New erasure — Erasure — Epistrel Console{% endblock %}
+{% block heading %}New erasure{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ index_url }}">All erasures</a></p>
+<p class="muted">The Console always runs a dry run first: nothing is erased until you erase it from the preview.</p>
+{% if error_text %}<p class="errorlist nonfield erasure-error" role="alert">{{ error_text }}</p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{% url 'erasure:preview' %}" class="erasure-form">
+  {% csrf_token %}
+  {% include "console/erasure/_subject_section.html" %}
+</form>
+{% endblock %}

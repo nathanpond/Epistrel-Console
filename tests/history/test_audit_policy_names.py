@@ -62,7 +62,7 @@ def test_policy_names_take_the_first_effective_entry() -> None:
     assert policy_names(settings) == {"p": "first", "q": None}
 
 
-def test_an_erasure_marker_shows_its_raw_text() -> None:
+def test_an_erasure_marker_is_parsed() -> None:
     marker = HistoryItem.from_json(
         {
             "turn": None,
@@ -80,6 +80,9 @@ def test_an_erasure_marker_shows_its_raw_text() -> None:
     )
     assert marker is not None
     record = audit_record(marker, {})
-    assert record.raw == "[erasure marker: subject-1, story]"
+    # #87: the documented marker text is parsed (raw only when it does not match).
+    assert record.marker is not None
+    assert (record.marker.subject_id, record.marker.scope_label) == ("subject-1", "story scope")
+    assert record.raw == ""
     assert record.draft is None
     assert record.policy_line == "erasure_marker"

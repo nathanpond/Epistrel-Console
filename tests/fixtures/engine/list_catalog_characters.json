@@ -1,0 +1,54 @@
+{
+  "items": [
+    {
+      "id": "01JC00000000000000000CHAR1",
+      "version": 2,
+      "name": "Sir Aldric",
+      "public_description": "A knight errant.",
+      "images": {
+        "primary": {
+          "media_id": "01JC000000000000000000MED1",
+          "alt_text": "Sir Aldric in armour"
+        },
+        "gallery": [
+          {
+            "media_id": "01JC000000000000000000MED2",
+            "alt_text": null
+          }
+        ]
+      },
+      "labels": [
+        "fantasy",
+        "knight"
+      ],
+      "content_rating": {
+        "id": "00000000000000000000RAT002",
+        "version_id": "01M5R0RTV00000000000000002",
+        "name": "Teen"
+      },
+      "listing_status": "public",
+      "status": "published",
+      "owner_principal": "console:nate",
+      "updated_at": "2026-10-20T10:00:00.000000Z",
+      "rank": 0.87654
+    },
+    {
+      "id": "01JC00000000000000000CHAR2",
+      "version": null,
+      "name": null,
+      "public_description": null,
+      "images": {
+        "primary": null,
+        "gallery": []
+      },
+      "labels": [],
+      "content_rating": null,
+      "listing_status": "public",
+      "status": "published",
+      "owner_principal": "alice",
+      "updated_at": "2026-10-20T10:00:00.000000Z",
+      "rank": null
+    }
+  ],
+  "next_cursor": null
+}

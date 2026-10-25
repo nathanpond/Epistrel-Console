@@ -421,3 +421,88 @@ def test_the_admin_shows_the_log_read_only(
     delete = operator_client.post(f"/admin/console/engineoperation/{row.pk}/delete/")
     assert delete.status_code == 403
     assert EngineOperation.objects.filter(pk=row.pk).exists()
+
+
+# --- #64: principal and entity filters, the Entity column ----------------------------------------
+
+CHAR = "01JA0000000000000000000CHR"
+
+
+@pytest.fixture
+def entity_rows(operator: Any) -> dict[str, EngineOperation]:
+    return {
+        "nate_story": make_row(entity_type="story", entity_id=STORY_A),
+        "alice_story": make_row(principal="alice", entity_type="story", entity_id=STORY_A),
+        "alice_character": make_row(
+            principal="alice",
+            kind="publish_catalog_character",
+            path=f"/catalog/characters/{CHAR}/publish",
+            story_id="",
+            entity_type="character",
+            entity_id=CHAR,
+        ),
+        "no_entity": make_row(kind="update_admin_settings", story_id="", path="/admin/settings"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("principal=alice", {"alice_story", "alice_character"}),
+        ("principal=console:nate", {"nate_story", "no_entity"}),
+        ("entity_type=character", {"alice_character"}),
+        ("entity_type=story", {"nate_story", "alice_story"}),
+        (f"entity_id={STORY_A}", {"nate_story", "alice_story"}),
+        (f"entity_type=story&entity_id={CHAR}", set()),
+        (f"entity_type=character&entity_id=+{CHAR}+", {"alice_character"}),
+        ("principal=alice&entity_type=story", {"alice_story"}),
+    ],
+)
+def test_principal_and_entity_filters_narrow(
+    operator_client: Client, entity_rows: dict[str, EngineOperation], query: str, expected: set[str]
+) -> None:
+    html = operator_client.get(f"/operations/?{query}").content.decode()
+    by_pk = {row.pk: name for name, row in entity_rows.items()}
+    assert {by_pk[pk] for pk in listed_ids(html)} == expected
+
+
+def test_the_filter_selects_list_the_distinct_principals_and_entity_types(
+    operator_client: Client, entity_rows: dict[str, EngineOperation]
+) -> None:
+    page = operator_client.get("/operations/?principal=alice").content.decode()
+    html = page[page.index('class="filters"') :]  # not the nav's acting selector
+    principals = html[html.index('<select name="principal">') :]
+    principals = principals[: principals.index("</select>")]
+    assert '<option value="alice" selected>alice</option>' in principals
+    assert '<option value="console:nate">console:nate</option>' in principals
+    types = html[html.index('<select name="entity_type">') :]
+    types = types[: types.index("</select>")]
+    assert '<option value="character">Character</option>' in types
+    assert '<option value="story">Story</option>' in types
+    assert 'name="entity_id" value=""' in html
+
+
+def test_the_entity_column_links_through_the_registry(
+    operator_client: Client, entity_rows: dict[str, EngineOperation]
+) -> None:
+    html = operator_client.get("/operations/").content.decode()
+    assert "<th>Entity</th>" in html
+    assert f'Story <a href="/stories/{STORY_A}/"><code>{STORY_A}</code></a>' in html
+    # #65 built the catalog character page: the id links to it.
+    assert f'Character <a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>' in html
+
+
+def test_the_detail_shows_entity_and_job(
+    operator_client: Client, entity_rows: dict[str, EngineOperation]
+) -> None:
+    row = entity_rows["alice_character"]
+    row.job_id = "01JA0000000000000000000JOB"
+    row.save()
+    html = operator_client.get(f"/operations/{row.pk}/").content.decode()
+    assert "<dt>Entity type</dt><dd><code>character</code> (Character)</dd>" in html
+    link = f'<a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>'
+    assert f"<dt>Entity id</dt><dd>{link}</dd>" in html
+    assert "<dt>Job id</dt><dd><code>01JA0000000000000000000JOB</code></dd>" in html
+    # #76 built the principal pages: the principal links to its page.
+    principal = '<a href="/principals/alice/"><code>alice</code></a>'
+    assert f"<dt>Principal</dt><dd>{principal}</dd>" in html

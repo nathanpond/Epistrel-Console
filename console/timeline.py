@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 from django.urls import reverse
 
 ARCHIVED_NOTE = "Archived — unarchive to change the timeline"
+PAUSED_NOTE = "Paused while the check runs"  # #80: every control, Fork included
 CHECK_FLAG = "1"  # ``&check=1``: the swap target's ``requires_check`` (the confirm page warns)
 
 
@@ -52,6 +53,7 @@ class Basis:
     name: str
     archived: bool
     next_url: str  # where Cancel goes back to
+    paused: bool = False  # #80: a check runs; the Engine refuses every operation
 
     def query(self, **extra: str) -> str:
         params = {
@@ -91,7 +93,8 @@ class Basis:
 class TurnControls:
     """One transcript turn's operations. ``rewind``/``regenerate`` are ``None`` where they do
     not apply (the head turn has no "Rewind to here"; only the head turn's reply regenerates).
-    While archived, everything but Fork renders disabled with :data:`ARCHIVED_NOTE`."""
+    While archived, everything but Fork renders disabled with :data:`ARCHIVED_NOTE`; while
+    paused (#80), everything does, with :data:`PAUSED_NOTE`."""
 
     turn: int
     fork: Link
@@ -99,6 +102,14 @@ class TurnControls:
     regenerate: Link | None = None
     swaps: tuple[Link, ...] = ()
     archived: bool = False
+    paused: bool = False
+
+    @property
+    def disabled_note(self) -> str:
+        """Why Regenerate, Rewind and Swap are disabled ("" when they are not)."""
+        if self.paused:
+            return PAUSED_NOTE
+        return ARCHIVED_NOTE if self.archived else ""
 
 
 def turn_controls(
@@ -125,6 +136,7 @@ def turn_controls(
         ),
         swaps=swaps,
         archived=basis.archived,
+        paused=basis.paused,
     )
 
 

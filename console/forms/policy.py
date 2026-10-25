@@ -20,6 +20,10 @@ Which rule types are offered is the caller's: #47 offers :data:`DEPLOYMENT_RULE_
 of a type not offered (an ``entity_list`` rule on a global policy) is ``kept_rule``: it is shown
 read-only and sent back unchanged.
 
+:class:`ScenarioPolicyForm` (#68) is a row of a scenario's ``story_settings_defaults.policies``:
+the ``ScenarioPolicy`` shape (no id, scope or kind), its rule a JSON box pre-filled with the chosen
+type's template (:data:`RULE_TEMPLATES`).
+
 :class:`PolicyCreateForm` adds the deployment form's optional id and its one combined scope
 select ("Global", "Rating: Teen", …). #54 adds its own scope (story or one character) to a
 :class:`PolicyContentForm` subclass instead.
@@ -29,6 +33,7 @@ Bounds are the recorded schema's (``PolicyFields``, ``WordlistRule``, ``RegexRul
 :data:`POLICY_ERROR_PATHS` places on these fields.
 """
 
+import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
@@ -43,6 +48,7 @@ from console.engine.models import (
     PolicyKind,
     PolicyScope,
 )
+from console.forms.fields import JsonBoxField
 
 NAME_MAX = 80
 MESSAGE_MAX = 500
@@ -436,3 +442,138 @@ class PolicyFilterForm(forms.Form):
         scope = self.cleaned_data["scope"]
         chosen: PolicyScope | None = scope if scope in POLICY_SCOPES else None
         return chosen, bool(self.cleaned_data["retired"])
+
+
+# --- A scenario's story policies (#68) -----------------------------------------------------------
+
+# Each rule type's starting rule object: what a new policy row's rule box holds (#54's
+# per-type templates, as JSON).
+RULE_TEMPLATES: dict[str, dict[str, Any]] = {
+    "wordlist": {"type": "wordlist", "words": []},
+    "regex": {"type": "regex", "patterns": []},
+    "entity_list": {"type": "entity_list", "names": []},
+    "model_assisted": {"type": "model_assisted", "prompt": "", "on_uncertain": "violation"},
+}
+DEFAULT_RULE_TYPE = "wordlist"
+SCENARIO_AGE_CONDITION = "minor_involved_or_present"
+TEXT_OUTPUT_DEFAULT = "none ticked: text output by default"
+
+
+def rule_template_text(rule_type: str) -> str:
+    """``rule_type``'s template as the rule box shows it."""
+    return json.dumps(RULE_TEMPLATES.get(rule_type, {"type": rule_type}), indent=2)
+
+
+def is_template(rule: object) -> bool:
+    """Whether ``rule`` (parsed) is one of the templates, unedited."""
+    return any(rule == template for template in RULE_TEMPLATES.values())
+
+
+def retemplate(text: str, rule_type: str) -> str:
+    """A rule box after "Update form" (#68): blank, or still another type's template, becomes
+    ``rule_type``'s template; an edited box is kept as typed."""
+    if not text.strip():
+        return rule_template_text(rule_type)
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return text
+    if is_template(parsed) and parsed != RULE_TEMPLATES.get(rule_type):
+        return rule_template_text(rule_type)
+    return text
+
+
+class ScenarioPolicyForm(forms.Form):
+    """One ``ScenarioPolicy`` row (``story_settings_defaults.policies[n]``): the shape has no id,
+    scope or kind. ``applies_to`` with nothing ticked is ``null`` (the Engine's default: text
+    output); the rule is a JSON object whose ``type`` the rule-type select sets on save; the age
+    condition is one checkbox. A row left blank (no name or message, no target or condition,
+    a blank or untouched-template rule) is dropped; any other row needs a name, a rule and a
+    message."""
+
+    name = forms.CharField(label="Name", max_length=NAME_MAX, required=False)
+    applies_to = forms.MultipleChoiceField(
+        label="Applies to",
+        choices=[(target, target_label(target)) for target in POLICY_TARGETS],
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        help_text=TEXT_OUTPUT_DEFAULT,
+    )
+    rule_type = forms.ChoiceField(
+        label="Rule type",
+        choices=[(rule_type, RULE_LABELS[rule_type]) for rule_type in STORY_RULE_TYPES],
+        initial=DEFAULT_RULE_TYPE,
+    )
+    rule = JsonBoxField(
+        dict,
+        empty=None,
+        required=False,
+        label="Rule",
+        help_text="A JSON object; its type is set from the rule type on save. "
+        "Update form fills in the chosen type's template.",
+        widget=forms.Textarea(attrs={"rows": 6, "cols": 70, "spellcheck": "false"}),
+    )
+    age_condition = forms.BooleanField(
+        label="Minor involved or present", required=False, help_text="Only then"
+    )
+    message = forms.CharField(
+        label="Message",
+        max_length=MESSAGE_MAX,
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2, "cols": 70}),
+        help_text="What a refusal says when the policy fires.",
+    )
+
+    def is_blank(self) -> bool:
+        """Whether the posted row is blank (see the class docstring)."""
+        data = self.data
+        prefix = self.add_prefix
+
+        def value(name: str) -> str:
+            raw = data.get(prefix(name), "")
+            return raw.strip() if isinstance(raw, str) else ""
+
+        if value("name") or value("message") or value("age_condition"):
+            return False
+        getlist = getattr(data, "getlist", None)
+        targets = getlist(prefix("applies_to")) if getlist else data.get(prefix("applies_to"))
+        if targets:
+            return False
+        rule = value("rule")
+        if not rule:
+            return True
+        try:
+            return is_template(json.loads(rule))
+        except ValueError:
+            return False
+
+    def has_changed(self) -> bool:
+        # An empty-permitted row is skipped (not validated) exactly when it is blank.
+        return not self.is_blank()
+
+    def clean(self) -> dict[str, Any] | None:
+        cleaned = super().clean()
+        assert cleaned is not None  # noqa: S101 - Form.clean returns cleaned_data
+        for name, message in (
+            ("name", "Enter the policy's name."),
+            ("message", "Enter the refusal message."),
+        ):
+            if name not in self.errors and not (cleaned.get(name) or "").strip():
+                self.add_error(name, message)
+        if "rule" not in self.errors and cleaned.get("rule") is None:
+            self.add_error("rule", "Enter the rule as a JSON object.")
+        return cleaned
+
+    def policy(self) -> dict[str, Any]:
+        """The ``ScenarioPolicy`` object: the rule's ``type`` set from the select; ``applies_to``
+        (in the Engine's order) and ``age_condition`` only when set. Call after validation."""
+        data = self.cleaned_data
+        chosen = set(data.get("applies_to") or ())
+        policy: dict[str, Any] = {"name": data["name"].strip()}
+        if chosen:
+            policy["applies_to"] = [target for target in POLICY_TARGETS if target in chosen]
+        policy["rule"] = {**data["rule"], "type": data["rule_type"]}
+        if data.get("age_condition"):
+            policy["age_condition"] = SCENARIO_AGE_CONDITION
+        policy["message"] = data["message"].replace("\r\n", "\n").strip()
+        return policy

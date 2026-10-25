@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "budget_below_safety_minimum",
+    "message": "the story's budget is below the input gate's minimum",
+    "details": {
+      "minimum_required": 2,
+      "max_calls": 1
+    }
+  }
+}

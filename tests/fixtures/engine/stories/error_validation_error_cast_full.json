@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "the story's cast holds at most 20 characters",
+    "details": {
+      "field": "body",
+      "cap": "cast_max",
+      "limit": 20,
+      "actual": 21
+    }
+  }
+}

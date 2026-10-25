@@ -72,3 +72,37 @@ def json_value(value: Any) -> str:
     """A JSON value on one line: ``null``, ``true``, ``"medium"``, ``{"model": null}`` (#50's
     profile-defaults table)."""
     return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), default=str)
+
+
+@register.filter
+def humanise(value: Any) -> str:
+    """An Engine enum value for display (#64 convention 17): ``very_cautious`` → ``very
+    cautious``; ``None`` or blank → ``—``; an unknown value renders the same way, raw."""
+    if value is None or value == "":
+        return EMPTY
+    return str(value).replace("_", " ")
+
+
+MIB = 1024 * 1024
+BYTE_UNITS = ("KiB", "MiB", "GiB", "TiB")
+
+
+@register.filter
+def human_bytes(value: Any) -> str:
+    """A byte count for display (#70): "512 bytes", "1.5 KiB", "12.0 MiB" (one decimal);
+    "—" for anything that is not a count."""
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return EMPTY
+    if value < 1024:
+        return f"{value} bytes"
+    size = float(value)
+    for unit in BYTE_UNITS:
+        size /= 1024
+        if size < 1024 or unit == BYTE_UNITS[-1]:
+            return f"{size:.1f} {unit}"
+    return EMPTY  # unreachable: the loop always returns
+
+
+def mib(value: int) -> str:
+    """A byte count in MiB with one decimal (#70's upload limits): "8.0 MiB"."""
+    return f"{value / MIB:.1f} MiB"

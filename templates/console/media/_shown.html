@@ -1,0 +1,29 @@
+{% comment %}
+#71: one attached asset on a detail page (a ShownMedia), labelled by slot, through the proxy and
+linked to its library page. A primary image or cover is at most 320 px wide, gallery and
+reference images 120 px; a video plays in <video controls> (its poster through the proxy), caption
+below. An id that no longer reads shows "<id> unavailable (<code>)", never a broken image alone.
+{% endcomment %}{% load console_format %}{% with info=item.info %}<figure class="media-shown media-{{ item.size }}{% if info.unavailable %} unavailable{% endif %}" id="media-{{ item.slot|slugify }}-{{ item.media_id }}">
+  <figcaption class="slot-label">{{ item.slot }}{% if info.retired %} <strong class="retired">retired</strong>{% endif %}{% if item.restricted %} <strong class="restricted">restricted</strong>{% endif %}</figcaption>
+  {% if info.unavailable %}
+  <p><code>{{ item.media_id }}</code> {{ info.unavailable_text }}</p>
+  {% elif item.is_video %}
+  <video controls preload="metadata" src="{{ info.content_url }}"{% if info.poster_url %} poster="{{ info.poster_url }}"{% endif %}></video>
+  {% if item.shown_caption %}<p class="caption">{{ item.shown_caption }}</p>{% endif %}
+  <p><a href="{{ info.detail_url }}"><code>{{ item.media_id }}</code></a></p>
+  {% else %}
+  <a href="{{ info.detail_url }}"><img src="{{ info.image_url }}" alt="{{ item.alt }}"></a>
+  {% endif %}
+  {% if item.detail %}
+  <dl>
+    <dt>Media id</dt><dd><code>{{ item.media_id }}</code></dd>
+    <dt>Alt text</dt><dd>{{ item.detail.alt_text|default_if_none:"—" }}</dd>
+    <dt>Caption</dt><dd>{{ item.detail.caption|default_if_none:"—" }}</dd>
+    <dt>MIME type</dt><dd>{{ item.detail.mime_type|default_if_none:"—" }}</dd>
+    <dt>Dimensions</dt><dd>{% if item.detail.width is not None and item.detail.height is not None %}{{ item.detail.width }}×{{ item.detail.height }}{% else %}—{% endif %}</dd>
+  </dl>
+  {% if item.detail.generation_metadata %}<details><summary>Generation metadata</summary><pre>{{ item.detail.generation_metadata|pretty_json }}</pre></details>{% endif %}
+  {% elif not info.unavailable and not item.is_video %}
+  <p><small class="muted"><code>{{ item.media_id }}</code>{% if info.metadata %} · {{ info.metadata }}{% endif %}</small></p>
+  {% endif %}
+</figure>{% endwith %}

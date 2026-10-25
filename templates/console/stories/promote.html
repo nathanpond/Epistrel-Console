@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% comment %}
+#72: promote a story character to a catalog draft. Context: snap (PromoteSnapshot), form
+(PromoteForm, None when the story read failed), snapshot, idempotency_key, action_url, play_url,
+refusal (console.views.story_settings.Refusal), engine_error.
+{% endcomment %}
+{% block title %}Promote {{ snap.character_name|default:snap.character_id }} — Epistrel Console{% endblock %}
+{% block heading %}Promote {% if snap.character_name %}{{ snap.character_name }}{% else %}<code>{{ snap.character_id }}</code>{% endif %} to the catalog{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ play_url }}">Back to the story</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% include "console/settings/_refusal.html" %}
+{% if form %}
+<p class="entry-header">Story {% if snap.story_name %}{{ snap.story_name }}{% else %}<code>{{ snap.story_id }}</code>{% endif %} · character <code>{{ snap.character_id }}</code>. The promotion makes a new draft catalog character; the story is unchanged.</p>
+<form method="post" action="{{ action_url }}" class="promote-form">
+  {% csrf_token %}
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <p class="field" id="{{ field.auto_id }}-row">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label><br>
+    {{ field }}
+    {% if field.name == "content_rating_id" and snap.ratings_note %}<small class="rating-unavailable">{{ snap.ratings_note }}</small>{% endif %}
+    {{ field.errors }}
+  </p>
+  {% endfor %}
+  <p class="actions"><button type="submit">Promote</button> <a href="{{ play_url }}">Cancel</a></p>
+</form>
+{% endif %}
+{% endblock %}

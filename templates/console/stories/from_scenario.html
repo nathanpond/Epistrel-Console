@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load console_format catalog %}
+{% block title %}New story from {{ scenario_name }} — Epistrel Console{% endblock %}
+{% block heading %}New story from <a href="{{ scenario_url }}?version={{ scenario.version }}">{{ scenario_name }}</a> v{{ scenario.version }}{% endblock %}
+{% block content %}
+<p><a href="{{ pick_url }}">Choose another scenario</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if archived %}<p class="archived-tag"><strong>Archived</strong> — unarchive the scenario to start a story from it.</p>{% endif %}
+<form method="post" action="{% url 'stories:from-scenario' %}" class="story-from-scenario" id="f-top">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="scenario" value="{{ scenario.id }}">
+  <input type="hidden" name="version" value="{{ scenario.version }}">
+  {# Enter presses the first submit button: make it Create (or nothing, while archived). #}
+  {% if not archived %}<button type="submit" name="op" value="create" class="default-submit" tabindex="-1" aria-hidden="true">Create story</button>{% endif %}
+  {% if show_errors %}
+  {% if form.top_errors or form.non_field_errors %}<div class="errornote top-errors" role="alert"><ul>{% for e in form.top_errors %}<li>{{ e }}</li>{% endfor %}{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+  {% endif %}
+
+  <h2>Cast</h2>
+  {% for row in rows %}
+  <fieldset class="role role-{{ row.role.fill }}{% if row.is_player %} role-player{% endif %}" id="role-{{ row.role.id }}">
+    <legend>{{ row.role.public_label }} (<code>{{ row.role.id }}</code>){% if row.role.required %} <strong class="required">Required</strong>{% endif %}</legend>
+    <p class="role-facts">{{ row.role.kind|humanise }} · fill {{ row.role.fill|humanise }}{% if row.role.participation %} · {{ row.role.participation|humanise }}{% endif %} · eligibility: {{ row.eligibility }}</p>
+    {% if row.role.setup_description %}<p class="setup">{{ row.setup_short }}{% if row.setup_cut %}… <details><summary>Full setup</summary>{{ row.role.setup_description|linebreaksbr }}</details>{% endif %}</p>{% endif %}
+    {% if show_errors and row.errors %}<ul class="errorlist role-errors">{% for e in row.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    {% if row.is_player %}
+      {% if row.role.fill != "open" %}<p class="note">This player role's fill is {{ row.role.fill|humanise }}; the Engine refuses a fixed player role.</p>{% endif %}
+      {% include "console/stories/_field.html" with f=row.fields.assign %}
+      {% include "console/stories/_field.html" with f=row.fields.principal %}
+      <p><button type="submit" name="op" value="load_personas" formnovalidate>Load personas</button></p>
+      {% include "console/stories/_field.html" with f=row.fields.persona_mode %}
+      {% include "console/stories/_field.html" with f=row.fields.persona_id %}
+      <fieldset class="adhoc-persona"><legend>Ad-hoc persona</legend>
+      {% include "console/stories/_field.html" with f=row.fields.persona_name %}
+      {% include "console/stories/_field.html" with f=row.fields.persona_gender %}
+      {% include "console/stories/_field.html" with f=row.fields.persona_age %}
+      {% include "console/stories/_field.html" with f=row.fields.persona_description %}
+      </fieldset>
+    {% elif row.role.fill == "locked" %}
+      <p class="locked-character">Locked: {% if row.character %}<strong>{{ row.character.text }}</strong>{% if row.character.version %} v{{ row.character.version }}{% else %} (latest){% endif %}{% if row.character.archived %} (archived){% endif %}{% if row.character.error %} <span class="lookup-failed">(name unavailable: {{ row.character.error }})</span>{% endif %}{% else %}—{% endif %}</p>
+    {% else %}
+      {% if row.character %}<p class="default-character">Default: <strong>{{ row.character.text }}</strong>{% if row.character.version %} v{{ row.character.version }}{% endif %}{% if row.character.archived %} (archived){% endif %}{% if row.character.error %} <span class="lookup-failed">(name unavailable: {{ row.character.error }})</span>{% endif %}</p>{% endif %}
+      {% include "console/stories/_field.html" with f=row.fields.mode %}
+      {% include "console/stories/_field.html" with f=row.fields.catalog_id %}
+      {% include "console/stories/_field.html" with f=row.fields.version %}
+      <fieldset class="adhoc-character"><legend>Ad-hoc character</legend>
+      {% include "console/stories/_field.html" with f=row.fields.adhoc_name %}
+      {% include "console/stories/_field.html" with f=row.fields.adhoc_definition %}
+      {% include "console/stories/_field.html" with f=row.fields.adhoc_age %}
+      {% include "console/stories/_field.html" with f=row.fields.adhoc_fallback %}
+      {% include "console/stories/_field.html" with f=row.fields.adhoc_deflection %}
+      </fieldset>
+    {% endif %}
+  </fieldset>
+  {% empty %}<p>This scenario has no roles.</p>
+  {% endfor %}
+
+  <h2>Overrides</h2>
+  {% if bounds %}<details class="bounds"><summary>Creation bounds (not checked here)</summary><pre>{{ bounds|pretty_json }}</pre></details>{% endif %}
+  {% for row, f in overrides %}{% include "console/stories/_field.html" with f=f %}{% empty %}<p>The scenario allows no overrides.</p>{% endfor %}
+
+  <h2>Story</h2>
+  {% if form.fields.content_rating_id %}{% include "console/stories/_field.html" with f=form.content_rating_id %}{% else %}<p class="lookup-failed">{{ ratings_note }}</p>{% endif %}
+  {% include "console/stories/_field.html" with f=form.engine_profile_id %}
+  {% include "console/stories/_field.html" with f=form.max_characters_at_start %}
+  {% include "console/stories/_field.html" with f=form.name %}
+  {% include "console/stories/_field.html" with f=form.owner %}
+  {% include "console/stories/_field.html" with f=form.strict %}
+
+  <p>{% if archived %}{% disabled_if_archived scenario "start a story" "Create story" %}{% else %}<button type="submit" name="op" value="create">Create story</button>{% endif %}</p>
+</form>
+{% if refusal %}<h2>Engine report</h2>{% include "console/stories/_creation_report.html" with shown=refusal %}{% endif %}
+{% endblock %}

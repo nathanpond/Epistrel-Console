@@ -1,0 +1,28 @@
+{% comment %}#69: a catalog entry's lifecycle and listing-status controls (full views only). Context: lifecycle (catalog_lifecycle.Lifecycle). A companion shows "Follows <character>" with its listing status instead: it follows its character in all of these.{% endcomment %}
+<section id="lifecycle" class="lifecycle">
+  {% if lifecycle.follows %}
+  <p class="follows">Follows <a href="{{ lifecycle.follows.url }}">{{ lifecycle.follows.text }}</a> · Listing status: <code>{{ lifecycle.listing_status }}</code></p>
+  {% else %}
+  <p class="lifecycle-actions">
+    {% if lifecycle.archived %}<a class="button unarchive" href="{{ lifecycle.unarchive_url }}">Unarchive</a>{% else %}<a class="button archive" href="{{ lifecycle.archive_url }}">Archive</a>{% endif %}
+    <a class="button danger delete" href="{{ lifecycle.delete_url }}">Delete</a>
+  </p>
+  {% if lifecycle.listing_values is None %}
+  <p class="listing-status">Listing status: <code>{{ lifecycle.listing_status }}</code> <small class="listing-unavailable">{{ lifecycle.listing_error }}</small></p>
+  {% else %}
+  <form method="post" action="{{ lifecycle.listing_url }}" class="listing-status">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ lifecycle.key }}">
+    <input type="hidden" name="current_listing_status" value="{{ lifecycle.listing_status }}">
+    <input type="hidden" name="name" value="{{ lifecycle.name }}">
+    {% if lifecycle.has_companion %}<input type="hidden" name="has_companion" value="1">{% endif %}
+    <input type="hidden" name="next" value="{{ lifecycle.next_url }}">
+    <label for="listing-status-{{ lifecycle.entry_id }}">Listing status</label>
+    <select name="value" id="listing-status-{{ lifecycle.entry_id }}">
+      {% for value, text in lifecycle.listing_values %}<option value="{{ value }}"{% if value == lifecycle.listing_status %} selected{% endif %}>{{ text }}</option>{% endfor %}
+    </select>
+    <button type="submit">Save</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>

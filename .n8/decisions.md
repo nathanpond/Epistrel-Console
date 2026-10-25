@@ -756,3 +756,417 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Why:** API gaps found while planning; owner approved in rounds one and two.
 - **Decision:** M4 is blocked on unbuilt M3 stories (#64, #78, #84, #85, #87) through native blocked-by edges.
   **Why:** The Inspect area reads #85's effective config and follows #64's conventions. M3 must execute first.
+
+## /n8-exec M3 — 2026-10-24
+
+- **Decision (drift):** The client sends `X-Epistrel-Principal` as Latin-1 bytes when the principal fits Latin-1 (`café` arrives as `café`). A principal outside Latin-1 still goes as percent-encoded UTF-8, with its length counted on the encoded value. Only a default `console:<username>` can be outside Latin-1, because the acting selector refuses such values. The client also refuses C1 controls (U+0080–U+009F) now.
+  **Why:** #64 pass 2 says the Engine decodes headers as Latin-1 (Starlette does), which supersedes the M1 decision to percent-encode every non-ASCII principal for Latin-1 values. A raw C1 byte would reach the Engine's `has_control`, so the client refuses it before sending. M1's client tests were updated to match.
+  **Issue:** #64
+- **Decision:** A recorded call with no `@operation(entity=…)` whose row has a `story_id` is recorded as `entity_type="story"`, `entity_id=story_id`. The migration back-fills old rows the same way. The existing story methods are not re-registered with `entity="story"`.
+  **Why:** This is convention 9's "story calls set entity_type=story alongside story_id", applied in one place, and it covers every current and future story call.
+  **Issue:** #64
+- **Decision:** `Operation.recorded` defaults to `None`, meaning "by method" (`is_recorded`). `@operation` captures the bound arguments in `Call.arguments` only when the registration names an `entity_id`. An `entity_id` that names no method parameter fails at import.
+  **Why:** Code that builds `Operation(...)` directly, like #44's tests, keeps recording mutations. Methods without an entity pay nothing per call.
+  **Issue:** #64
+- **Decision:** The nav's M3 links resolve in the `shell` context processor (`reverse`, skipped on `NoReverseMatch`), not with `{% url … as href %}` in the template. Operations moved after the M3 sections and Admin was added last, per the nav order in the issue.
+  **Why:** The behaviour is the same (each link appears once its URL exists), the logic is testable in Python, and the Catalog group label's "at least one child resolves" rule stays in one place.
+  **Issue:** #64
+- **Decision:** Shared helpers added beyond the named blocks: `console/engine/pool.py` `fan_out()` (convention 12's 8-worker / 10 s pool, since no #41 pool existed to reuse), `console/reports.py` (anchors, `report_from_json`, `report_from_row` for `?report=<pk>`), and `console/templatetags/entities.py` (`entity_link`, `entity_display`).
+  **Why:** `story_labels` needs the pool, and the report partials need the anchor rule. Later stories reuse all three.
+  **Issue:** #64
+- **Decision:** `rating_choices` reads `list_content_ratings(include_retired=True)` once and filters retired ratings itself. It returns `RatingChoices(choices, error)` rather than raising.
+  **Why:** One read can name a retired `current` ("<name> (retired)"). The failed-read text ("Ratings unavailable: …") belongs to the form.
+  **Issue:** #64
+- **Decision (drift):** The Engine's `CharacterCard` has no `current_version`. The versions page takes the latest version from the latest card read's `version`. Image "slot" is the image's place in `images` ("primary", "gallery N", "reference N"), because the Engine has no `slot` field.
+  **Why:** The plan names fields the recorded schema does not have. The Engine's schema wins.
+  **Issue:** #65
+- **Decision:** `get_catalog_character_card` is not registered with `@operation`. `get_catalog_character` (full) holds the `GET /catalog/characters/{character_id}` registry key. The contract helper now accepts an `anyOf`-of-components response when the model matches one option, and `CatalogCharacterCard` is checked against `CharacterCard` directly.
+  **Why:** The registry is keyed by method and path, so two methods on one route would overwrite each other. Reads are never recorded, so nothing else depends on the registration.
+  **Issue:** #65
+- **Decision:** Disposition `setting` and reference-image `audience` are `str` fields with `OPEN_ENUM` metadata (`console.engine.models.open_enum()`). The contract test compares them as the schema's enum. A plain `str` against an enum is still reported.
+  **Why:** The plan asks for `str`, so an unknown Engine value renders raw instead of failing the whole read. The contract test still bites on enum drift.
+  **Issue:** #65
+- **Decision:** The proxy tests serve the sample files through a new `FakeEngine.side_effect(method, path, handler)` (declared route; the answered status is checked against the schema), not respx.
+  **Why:** respx is not a dependency, and the fake Engine already holds the schema checks. Adding a library for one test file is not in the plan.
+  **Issue:** #65
+- **Decision:** `_request` accepts a query as a mapping or as `(name, value)` pairs (`QueryParams`), so `label` and `relation` repeat. Header building moved into `_wire_headers` and `_http`, which the streaming media read shares. The relation filter uses two GET fields, `relation` (name) and `relation_principal`.
+  **Why:** Repeated parameters need pairs. The media stream must send the same headers (key, principal, User-Agent) without going through `_request`'s buffered call.
+  **Issue:** #65
+- **Decision:** Django adds `Content-Length: 0` to the proxy's 304. Apart from that, the 304 carries only ETag, Cache-Control and the two security headers. The proxy answers HEAD with 405 (GET only, as planned).
+  **Why:** `CommonMiddleware` sets Content-Length on every non-streaming response. A zero length on an empty 304 is harmless.
+  **Issue:** #65
+- **Decision (drift):** `get_catalog_character_companion` is registered without a response model. It parses a narrow `CompanionDraft` (id, status, versions, `companion_of`, `draft_revision`), and a contract test checks each of those fields against `ScenarioFull`.
+  **Why:** The companion read answers a whole `ScenarioFull`. The contract check needs a model to match the component exactly, and the full scenario model is #68's to build.
+  **Issue:** #66
+- **Decision:** The contract tests compare registered operations and models against the recorded schema with `EntryLocation` widened by `ElementLocation.media_id`. This is the same widening #64's report test already used. A new test proves that `media_id` is the only difference.
+  **Why:** `CharacterPublished` holds the shared `ValidationReport`, whose `EntryLocation` parses both of the Engine's location shapes (#64). Without the widening, the publish registration could not match.
+  **Issue:** #66
+- **Decision:** The edit form carries a signed snapshot. It holds the draft as rendered (the merge-patch original), its revision and header facts, the companion revision (or the read error) and the rating options. A POST validates from it with no Engine read. A missing or tampered snapshot redirects to the edit page, which reads again. The create page signs the rating options the same way.
+  **Why:** The plan requires that an invalid form makes zero calls, including invalid `adapter_params` and a nuance with no setting. The rating select's options are needed to validate, so they travel signed rather than being read again.
+  **Issue:** #66
+- **Decision:** On edit, the visual identity diffs field by field, so each cleared field sends `null`. A draft with no stored visual identity whose fields stay empty sends nothing. An `adapter_params` of `{}` counts as blank. Only "Clear visual identity" sends `visual_identity: null`.
+  **Why:** Sending `visual_identity: null` whenever every text field is cleared would also delete the reference images (#71's). Sending `{}` would make a call with no change.
+  **Issue:** #66
+- **Decision:** If Save & publish saves and the publish then gets a 409, the Console redirects to the edit page. The flash says "Saved as draft revision R, but not published." and the stale banner follows as a second flash. `?companion=1` keeps the box ticked. A 409 with no save first re-renders the page with the banner and the input kept. Errors on index paths in comma-separated labels read "Label N:" rather than "Line N:".
+  **Why:** After a save, the snapshot is stale, so the page has to be read again. The redirect still keeps the checkbox state, as the plan requires. Labels are not one per line.
+  **Issue:** #66
+- **Decision:** New shared helpers: `console/draft_stale.py` `stale_banner(error, *, draft_revision, companion_draft_revision=None)` (#64 convention 2's banner, naming the stale side) and `console/reports.py` `publish_reports(pk, *, entity_id=None) -> list[LabelledReport]` (a publish's character and companion reports read back from the #44 row). `confirm.posted_idempotency_key` gained an optional field name, because a page with two writes carries two keys.
+  **Why:** No earlier story built the draft-stale banner. The scenario editor (#68/#74) needs the same banner and report read-back.
+  **Issue:** #66
+- **Decision:** The detail page shows Publish only on full views of the latest version or the draft, never on the card view. On the latest view it reuses the draft read that "draft differs" already makes, then makes one companion read. The catalog test fixture answers the companion read by default.
+  **Why:** The plan names the latest and draft views. The card view has no draft read. #65's detail tests would otherwise fail on the new read.
+  **Issue:** #66
+- **Decision:** The persona edit snapshot is signed with a one-hour max age (`twostage.MAX_AGE_S`). A tampered or expired snapshot re-reads the persona, keeps the posted input and shows "This form expired — your changes were not saved; check and submit again". It never PATCHes.
+  **Why:** The plan names "tampered or expired". #43's snapshots have no max age, so the one-hour limit M3 already uses for signed confirmations gives "expired" a meaning.
+  **Issue:** #67
+- **Decision:** The delete confirm page posts the list to return to in a hidden `back` field. Cancel (the shared partial's `next`) goes to the detail page. The list links each detail page with `?back=<list URL>`, and the detail page passes it on to Delete as `next`. Every return URL is checked as same-origin, else `/personas/`.
+  **Why:** The plan sends Cancel to the detail page but the delete to the list it came from. The shared confirm partial carries only one `next`.
+  **Issue:** #67
+- **Decision:** A 422 on persona create or edit is placed at its fields (`apply_engine_errors`). The error panel shows only when no field could be placed. Other errors, including a 503 `erasure_pending`, show #43's panel. Detail, edit-read and delete errors escape to the shared panel.
+  **Why:** The plan names placement for `persona_name_taken` only. This matches #66's handling of field errors.
+  **Issue:** #67
+- **Decision:** The scenario editor's fields follow #64 convention 6's `__` names throughout, including the opening (`starting_state__opening__narration`), so an Engine path maps to its field directly. The plan's extra alias `starting_state.opening.<f>` → `opening_<f>` isn't needed. The rule "an `opening` key typed in a box is refused" was dropped: each deferred sub-key has its own box, so no box can hold the opening.
+  **Why:** One naming rule keeps 422 placement and report anchors uniform. With one box per sub-key, the refusal has nothing to guard.
+  **Issue:** #68
+- **Decision:** `create_scenario` and `patch_scenario` take `idempotency_key` (as #66's character writes do), and `list_scenarios` takes `labels`/`relations` sequences, so `CatalogFilterForm.query()` feeds it unchanged. It returns `(items, next_cursor)` as planned. A narrow `list_engine_profiles` → `EngineProfileSummary` (registered without a response model; a contract test checks each field against `EngineProfile`) backs the new `engine_profile_choices`. That follows cursors over deleted profiles too, so a deleted current profile keeps its name, and degrades to a free-text id above 500 profiles.
+  **Why:** The planned signatures had no idempotency key, but #43's per-render key applies to every M3 write. #78 owns the full profile model.
+  **Issue:** #68
+- **Decision:** `JsonBoxField` (#64) now also refuses a key given twice in one object ("Enter valid JSON: duplicate key 'a'"). The existing NaN/Infinity messages stay as they were, not the plan's single "Must be valid JSON (no NaN, Infinity or duplicate keys)" text.
+  **Why:** Changing the shared message would break #64's pinned tests for no gain; each message already names the problem.
+  **Issue:** #68
+- **Decision:** On an archived scenario the edit page renders every input and Save disabled with "Archived — unarchive to edit". A forced POST is still sent, and the Engine's 422 `entry_archived` shows in the error panel. #66 instead redirects without a call.
+  **Why:** The plan says "a forced POST shows `entry_archived`", and the test plan asks for the Engine refusal to be rendered. The inputs are disabled only in HTML, so a crafted POST still carries its values.
+  **Issue:** #68
+- **Decision:** No-JS row editing for pages with several formsets goes through one `op` button (`console/formset_rows.py` `parse_op`, `apply_op`: `add:<prefix>`, `remove:<prefix>-<n>`, `refresh`). A re-render is "quieted" (`ScenarioEditor.quiet()`: errors set empty, so Django does not validate) instead of carrying a `show_errors` flag into every template. A visually hidden default Save button comes first in the form, so Enter in a text input saves rather than pressing the first row button. Policy rows have their own blankness rule: a rule box that is blank or an untouched template does not count, so a new row left alone is dropped.
+  **Why:** Convention 6 names the `op` buttons, and #73 adds the `role` formset to the same editor. Django's `has_changed` would otherwise treat a pre-filled template as input.
+  **Issue:** #68
+- **Decision:** When the ratings read fails, the content-rating field is left out and the saved rating is kept, as #66 does, instead of a disabled select. The note "Ratings unavailable: … — reload to retry" shows in its place.
+  **Why:** One behaviour across the catalog editors. A disabled field would post nothing and read as "cleared".
+  **Issue:** #68
+- **Decision (drift):** Lifecycle routes are named inside the existing namespaces (`catalog_characters:archive|unarchive|delete|listing-status`, `scenarios:…`), not `catalog-<entry>-<action>`, and their path parameter is `entry_id`. The fixtures live in `tests/fixtures/engine/` (`catalog_characters_status.json`, `catalog_scenarios_status.json`, `catalog_listing_status.json`, `error_companion_follows_character.json`, `error_invalid_listing_status.json`), not `tests/fixtures/catalog/`.
+  **Why:** Convention 20 puts each root under its namespace and the repo has one fixture directory, which `engine_fixture()` reads.
+  **Issue:** #69
+- **Decision:** The archive and unarchive flashes add "(its companion follows)" when the response's `companion_id` is set. The delete and listing-status flashes, which get no such field back, use the posted `has_companion`. The suffix goes before the final period: "Archived *Name* (its companion follows)."
+  **Why:** The answer is the truth where there is one. The display data covers only the calls that return nothing about the companion.
+  **Issue:** #69
+- **Decision:** The edit pages make no read for the archived banner. A companion's banner names its character by id there; the detail page names it through the companion-of card read it already makes. The catalog test `engine` fixture now answers `/admin/settings` by default, since every full detail view reads it once for the listing-status select.
+  **Why:** #66 and #68 keep a re-rendered or invalid edit form at zero Engine calls, and the banner renders on those paths too.
+  **Issue:** #69
+- **Decision:** A "Follows" helper type (`catalog_lifecycle.Follows`) is separate from #68's `CompanionLabel`, and the scenario detail converts one into the other. #66's Console-side refusal of a POST from an archived character's edit page (a flash, no call) stays. The forced-POST complement test sends a POST from a page rendered before the entry was archived, so the Engine's `entry_archived` panel shows for both entry types.
+  **Why:** This avoids a circular import between the scenario and lifecycle views. An archived page's disabled character fields post their initial values, which make an empty patch, so only a stale page can reach the Engine.
+  **Issue:** #69
+- **Decision:** `MediaUploadRequest` is a frozen dataclass whose `to_json()` leaves out every field that is `None` except `depicted_subjects`. It is not a pydantic model as planned.
+  **Why:** pydantic is not a dependency of the Console. The models are dataclasses, and adding a library to build one request body is out of scope (Rule 4). The behaviour is the planned `exclude_none=True`.
+  **Issue:** #70
+- **Decision:** `EngineClient._request` gains `files=` (multipart parts, streamed by httpx), and `@operation` gains a `record_body` hook. The recorder stores `hook(arguments)` as the row's request body. `upload_media` uses it to record `{metadata, file: {name, size, content_type}, poster_file}`.
+  **Why:** The recorder sees only `json=` today. A hook on the registration keeps file bytes out of the log without special-casing paths in `operation_log`.
+  **Issue:** #70
+- **Decision (drift):** The 413 *limit* also reads `details.threshold`, after `limit`, `media_max_bytes` and `media_multipart_threshold`. The Engine's `use_multipart` names its threshold `threshold` (`core/media/assets.py _use_multipart`), and `media_too_large` uses `limit`.
+  **Why:** Without it, the `use_multipart` message could never show its size. The Engine is authoritative.
+  **Issue:** #70
+- **Decision (drift):** The 415 "Poster:" prefix follows the plan: it shows when a string in `details` names `poster_file`. At this Engine version, a poster's 415 `details` (`reason`, `mime_type`, `declared`, `allowed`) does not name the part, so the real Engine shows the unprefixed message for a refused poster.
+  **Why:** The Console cannot tell the parts apart until the Engine names one. The rule costs nothing and starts working once the Engine names the part.
+  **Issue:** #70
+- **Decision:** The subject picker's sources and the media lookups are shared helpers in `console/engine/choices.py`: `subject_choices(client)` and `media_lookups(client, ids)`. The 500 cap counts items read, not distinct ids, so a page that repeats itself still ends. The catalog source reads `status=published` and then `status=draft` at 200 per page, and both statuses count toward one cap.
+  **Why:** #71 reuses the per-asset lookup. The picker is the shape #86's subject inputs need. Counting distinct ids looped forever on a repeating cursor.
+  **Issue:** #70
+- **Decision:** The tests answer the Engine through `FakeEngine` (`respond` and `side_effect`), not respx. The sample files are #65's `tests/fixtures/engine/media/sample.{png,mp4}`. New JSON fixtures are `get_media.json` and `upload_media.json`.
+  **Why:** The repo has no respx. FakeEngine validates canned bodies against the schema, and #65's samples are the one shared location (under `fixtures/engine/`).
+  **Issue:** #70
+- **Decision:** When the rating read fails, the upload form refuses a POST with the "Ratings unavailable" text as a non-field error, and no `POST /media` is made. The Upload button is also disabled.
+  **Why:** The rating is required and comes only from the select. A crafted POST would otherwise reach `metadata()` without one.
+  **Issue:** #70
+- **Decision:** On a re-render after a refused form or a media row button, the edit page shows each slot's metadata from the signed snapshot. The snapshot holds the per-slot lookups made when the page was read, so the page makes no new `GET /media/{id}`. An id typed since then shows its thumbnail through the proxy but no metadata until the slot-row partial looks it up. The plan said to re-run the lookups on an error re-render.
+  **Why:** #64/#66 hold that an invalid form makes zero Engine calls, and the AC says an unset audience "makes zero calls". Re-running the lookups would break both.
+  **Issue:** #71
+- **Decision (drift):** Engine paths are read in bracket form (`body.public_card.images.gallery[1]`, `visual_identity.reference_images[1].audience`), and the plan's `.<i>.` spelling is accepted too. Refusals are placed by a `MediaSections.place` hook that `CharacterForm.place_error` and `ScenarioEditor.place_error` offer each failure first (new keyword `extra=`). The plan instead had `apply_engine_errors` gain a `formsets=` argument.
+  **Why:** The Engine's `validation_error`, `media_retired.details.field` and report locations all use brackets. Neither editor uses `apply_engine_errors`; each has its own `place_error`.
+  **Issue:** #71
+- **Decision:** A POST that has no management form for a media list keeps that list's draft value (unchanged, so not sent). A POST without the primary or cover field keeps the draft's primary or cover. Ordering does not use Django's `ordered_forms`: rows sort by `ORDER`, and a blank `ORDER` takes the row's rendered position, ties keeping rendered order. The up/down buttons renumber `ORDER`.
+  **Why:** A POST built without the sections (#66/#68's tests, an old tab) must not clear the images. Django puts blank `ORDER` values last, but the plan says blank keeps the rendered order.
+  **Issue:** #71
+- **Decision:** Duplicate refusal reads "Already in this list (row N)" for the character gallery, the scenario gallery and the videos. N is the rendered row of the first occurrence. The audience select's blank choice is a server-side error only (no HTML `required`), since the blank extra row would otherwise block every submit. The character form gained a hidden default Save button, so Enter never triggers a media row button.
+  **Why:** Pass 2 of the plan overrides pass 1's "Already in this gallery". The other two are needed for the form to work without JS.
+  **Issue:** #71
+- **Decision:** A failed per-slot read shows "<id> unavailable (<status> <code>)" with no `<img>` (the Engine's 404 code is `not_found`). On detail pages, `<img alt>` is the read's alt text, else "". The scenario full read has only ids, so it uses the looked-up asset's alt text. #65's `characters/_image.html` was replaced by the shared `media/_shown.html`, and the generation-metadata `<details>` was kept.
+  **Why:** The AC says never a broken image alone. `ScenarioMedia` has no alt text.
+  **Issue:** #71
+- **Decision (drift):** A full cast is recognised by `details.cap == "cast_max"` as well as `reason: cast_full`, and a duplicate name by `reason: duplicate`. The fixtures `tests/fixtures/engine/stories/error_validation_error_{cast_full,duplicate}.json` record the Engine's real details.
+  **Why:** The Engine (`core.stories._cast_full` / `_name_taken`, b4adb1a) sends `{field: "body", cap: "cast_max", limit, actual}` and `{field: "body.name", reason: "duplicate"}`. There is no `reason: cast_full`, which the plan assumed.
+  **Issue:** #72
+- **Decision (drift):** The readiness banner leaves out "likes & dislikes". It adds the visual identity's preferred image model, base appearance prompt, negative prompt and seed when the draft has a visual identity.
+  **Why:** The Engine's publish check (`PUBLISH_REQUIRED`, `IDENTITY_REQUIRED` in `core.catalog.models`) does not require `likes_dislikes` (lists may be empty), but it does require those four identity fields. The banner promises "Before this can be published", so it follows what the publish actually refuses.
+  **Issue:** #72
+- **Decision:** The routes are named `stories:character-new` and `stories:character-promote`, not the planner's `story_character_new` / `story_character_promote`. The readiness banner is computed on the edit GET and carried in the edit snapshot, so a refused save re-renders it without new reads.
+  **Why:** The names follow the `stories` namespace's existing hyphenated style (`settings-pinned`, `undo-rewind`). Carrying the banner keeps it based on the saved draft, never on re-rendered input.
+  **Issue:** #72
+- **Decision:** The cast panel's omniscient read is one direct call after the play view's own reads, not a call on the #41 pool. If it fails, Promote still shows on every non-player character: `is_player` comes from the play view's normal read. A promote GET for a character not in the cast redirects with "This story has no character <id>".
+  **Why:** #48's reads are not pooled, so a one-key fan-out would only add a thread. The normal read already holds `is_player`, so a failed omniscient read only loses the "Promoted →" links. The plan had no wording for an unknown character id.
+  **Issue:** #72
+- **Decision:** The add form's images use a new `StoryImageFormSet`, which is #71's image-slot formset with the cap message "At most 20 images", plus a `STORY_CHARACTER_SECTIONS` spec (`images`) registered with #71's picker and slot-row endpoints. A 409 `revision_conflict` re-renders with the hidden expected revision moved to `details.current_revision`.
+  **Why:** #71's `ImageSlotFormSet` says "gallery images". Without moving the revision, the "check and submit again" line would conflict again on every submit.
+  **Issue:** #72
+- **Decision (drift):** A blank role-character version is left out of the write. It is not sent as `null`. A companion's role sends `version: null` (its pin) when the draft held none.
+  **Why:** The plan says blank version = `null`. The Engine's save rules refuse an explicit `null` on a non-companion (`role_version_null`: "omit `version`"). Only a companion's locked role may name a `null` pin, and its slots must echo unchanged (`companion_slots_fixed`).
+  **Issue:** #73
+- **Decision:** The role selects #68 built (default output viewpoint, roles present) now offer the role rows' ids in the current form state. `EditSnapshot.roles` is gone. The snapshot gains the published characters and the eligibility ratings.
+  **Why:** The cast is edited on the same form, so a role added or renamed before Save must be offered at once, as the holder and audience choices are.
+  **Issue:** #73
+- **Decision:** The editor reads content ratings once (retired included) and narrows the list twice with `kept_ratings`: non-retired plus the saved rating for the main select, and non-retired plus the saved eligibility ratings for the roles. The detail page reads ratings once for the card rating and the eligibility names.
+  **Why:** Convention 13 allows at most one ratings read per request. Eligibility can keep several retired ratings, which `rating_choices(current=…)` cannot keep.
+  **Issue:** #73
+- **Decision:** `StartingState.seeded_memories` and `ScenarioRole.seeded_memories` are `list[Seed]`, not tuples. `RoleEligibility.age_range` and `ScenarioRole.name_overrides` are raw `Any`.
+  **Why:** The model parser and the contract test support lists only. The schema types `age_range` as a two-item `prefixItems` tuple. `name_overrides` is edited as a JSON box.
+  **Issue:** #73
+- **Decision:** A saved role character that the published list lacks is kept as "<id> (missing)". A posted holder that is not a current role or `world` is kept as "<value> (missing)", so the Engine's `unknown_role` error can land on it.
+  **Why:** Without a read per id, the Console cannot tell an archived character from a never-published or deleted one. Without the kept option, the select would refuse the value before any call.
+  **Issue:** #73
+- **Decision:** #68's companion-name lookup moves to `console/catalog/character_labels.py` (`character_labels`, `CharacterLabel` with a new `archived` flag), and `companion_labels` stays as an alias. The detail page's World seeds section now sits right after Cast, because `_cast_table.html` renders both. The catalog test `engine` fixture answers `GET /catalog/characters` by default.
+  **Why:** The cast table names role characters with the same one-read-per-id lookup, and it needs to know whether each one is archived. #74 reuses the partial whole. Every scenario edit page now reads the published characters.
+  **Issue:** #73
+- **Decision (drift):** The Console treats a companion's `character_not_published` as "Publish *Character* first" in two cases: a top-level 422 code (what the plan names, tested with the generic `Error` envelope), and an error entry inside a 422 `publish_invalid` report. The second is how the Engine actually refuses it.
+  **Why:** `PublishScenarios.publish_alone` validates the repinned draft, so the code arrives as a report entry. The schema's publish 422 enum does not list `character_not_published`.
+  **Issue:** #74
+- **Decision:** On the edit page, Save keeps #68's `name="op" value="save"`. Save & publish is `name="action" value="publish"`. The two idempotency keys are `idempotency_key` (save) and `publish_idempotency_key` (publish, as in #66), not `idem_save`/`idem_publish`. `publish_scenario` takes an `idempotency_key` beyond the planned `(id, *, draft_revision)`.
+  **Why:** Existing editor tests and helpers post `op=save` and `idempotency_key`. The publish endpoint takes `Idempotency-Key` (#43 per-render rule).
+  **Issue:** #74
+- **Decision:** A `publish_invalid` from Save & publish redirects to `edit/?report=<pk>`. That GET reads the draft fresh, places the report's errors at fields (`ScenarioEditor.place_report`) and shows the report in `#report`. Other refusals after a save (`rating_retired`, `entry_archived`, `character_not_published`, any other) re-render from a fresh draft read. Before placing errors, the editor validates quietly, so the Console's own checks of an unedited draft are not shown.
+  **Why:** This is the "fresh draft read" the plan asks for, and the same report-from-row path #66 uses for characters. After a save the posted snapshot is stale, so re-rendering it would make the next save a 409.
+  **Issue:** #74
+- **Decision:** Validate and Publish post a signed `facts` token (scenario name, role → catalog-character map, and a companion's character and name). The Validate page title, the report's role-character links and the "pinned to" flash use it without extra Engine reads. Missing or tampered, it falls back to the id.
+  **Why:** The plan's complement test needs Validate to make no write. Re-reading the scenario only to label the report adds a call per Validate.
+  **Issue:** #74
+- **Decision:** The character detail's companion section (#65 showed the companion's id, full views only) is now "Companion scenario" on every view, card included, from one `?projection=card` companion read. #69's companion edit page now names the character from the editor's single card read, where it showed the id before. Tests changed: `test_characters_browse` (×2), `test_lifecycle` (the edit-page banner) and `test_character_publish` (companion read counts now count `projection=full` only).
+  **Why:** #74's AC and Discretion require it.
+  **Issue:** #74
+- **Decision:** `FakeEngine.respond` now replaces a `side_effect` on the same route. The catalog test fixture answers the companion route by projection (`companion_reads`: card or full draft). `_location.html` takes optional `entry_url`/`entry_label`, and an empty `anchors` collection now leaves locations as plain text (`default_if_none` in place of `default`).
+  **Why:** One route serves both the card and the full companion reads. Version reports must show plain-text locations.
+  **Issue:** #74
+- **Decision:** `@operation` gains `listed=False`. With it, a second client method on an operation another method already lists stays out of `OPERATIONS`, but its calls are still recorded under their own kind. `create_story_from_scenario` uses it beside `create_story` (both `POST /stories`, both answering `StoryCreated`): its #44 rows have kind `create_story_from_scenario`, `entity_type="scenario"` and the scenario id. `StoryCreated.report` and `.impact` are now typed (`CreationReport`, `ImpactReport`), and the contract test covers both.
+  **Why:** The registry is keyed by method and path, and the planned #44 kind is the method name. Without the flag, the new method would replace `create_story`'s registration.
+  **Issue:** #75
+- **Decision:** Scalar override widgets (enum, bool, int, and a text input for the string `default_output_viewpoint`) all send `null` when cleared to "(default)" or blank over a scenario value. A JSON box sends nothing when blank. Values identical to the scenario's are never sent. The plan named the `null` rule for bool only, and named no widget for a plain string.
+  **Why:** One rule for every scalar lets the operator clear any setting back to the deployment default. A JSON box for a single role-id string would be awkward.
+  **Issue:** #75
+- **Decision:** If the pinned scenario cannot be re-read on POST (create, Create anyway, Back), the page shows the #43 panel. Every posted value is carried as hidden inputs with a Retry button: re-render for a create, the same op for confirm/back. The form itself is not shown, and nothing is sent. Persona options read `GET /personas?owner=<principal>` at limit 200, following cursors up to 500. The step-1 version select appears after "Choose" (`?pick=<id>`), and "Continue" goes to step 2.
+  **Why:** Without the scenario's roles the form cannot be rebuilt, and no role list travels in a signed field (plan). Hidden inputs keep the input. Two GET stages need no JavaScript.
+  **Issue:** #75
+- **Decision:** `_two_stage.html` takes optional `confirm_op`, `cancel_op`/`cancel_label` and `hidden` pairs. The not-created page uses them: "Create anyway" posts `op=confirm` and "Back" posts `op=back`, both with the token. The partial's existing behaviour is unchanged. A shared `_impact_report.html` partial (context `impact`) is new.
+  **Why:** The plan's "Back" posts the signed payload. It is not a Cancel link.
+  **Issue:** #75
+- **Decision:** "Offboard…" and the header's Offboarding link render only once `offboarding:new` / `offboarding:index` resolve (#77 builds them). Until then the principal page shows "Act as this principal" alone. Tests use a placeholder `offboarding` namespace in `tests/urls_m3.py`, and the `principals` placeholder there is gone.
+  **Why:** #64's rule is "a link shows only once its URL exists; no stub pages". A button to a 404 would break that.
+  **Issue:** #76
+- **Decision:** `PrincipalLinks` overrides `from_json` and reads `PrincipalLookup` by hand. `lookup_principal` is registered with no response model. `OwnedPage`/`OwnedItem`/`CompanionRef`/`RelatedPage`/`RelatedItem` are contract-tested against their components, and the six type keys are checked against `OwnedEntities`/`RelatedEntities`. Unknown keys (top-level, type, page, item) go to `more` under dotted names (`owned.stories.<id>`).
+  **Why:** The plan wants a type the Engine leaves out shown as "Not returned by the Engine" and unknown keys shown in "More". A field-by-field model would refuse a missing type outright.
+  **Issue:** #76
+- **Decision:** `cursor_invalid` is retried once with every cursor dropped, and only when cursors were sent. With no cursors, the error panel shows straight away.
+  **Why:** Retrying the same request without cursors would only fail the same way again.
+  **Issue:** #76
+- **Decision:** The fake Engine matches a request's raw (percent-encoded) path as well as the decoded one. A principal with `/` travels as `%2F`, and the decoded path then has an extra segment. Owned items whose type has no Console page yet (engine profiles) show the name plus the id in `<code>`, unlinked.
+  **Why:** The Engine routes `{principal_id:path}`, but the fake's `[^/]+` template did not. With no page to link, the id is still identifying.
+  **Issue:** #76
+- **Decision:** `@operation(entity=…)` now also takes `"principal"` (`console.entities.RecordedEntity` = `EntityType | "principal"`, `PRINCIPAL_ENTITY`). `offboard` is recorded with `entity_type="principal"`, `entity_id=<principal>`. The registry itself is unchanged, so the operations log shows a principal entity's id as `<code>`.
+  **Why:** The plan records offboarding (and #86's erasure) on the principal, but `EntityType` named only the six Engine entity types.
+  **Issue:** #77
+- **Decision:** The start's signed payload is `twostage.sign("offboard", principal, body, base)`. `body` is the full request with `dry_run: false` and `ignore_warnings`. `base` holds `config_revision`, `operator`, `acting`, `key`, and the preview's `counts` and `warnings`. The start reads only this payload. The partial's hidden `idempotency_key` is ignored. The counts and warnings let a failed start (409 in progress, 503 retry, other panels) re-render the preview without another Engine call.
+  **Why:** `twostage.sign` takes kind, target, body and base. The plan's extra fields fit in `base`, and the preview needs the plan to re-render.
+  **Issue:** #77
+- **Decision:** A field refusal on the start (`principal_reserved`, `transfer_target_*`) returns to the form, rebuilt from the signed body with the error at its field. The preview has no fields to place it on. An unreachable Engine on start is treated like a 503 retry: the same payload and key are re-offered as "Retry".
+  **Why:** The plan places these codes "at their fields". A replay under the same key is safe and writes nothing new.
+  **Issue:** #77
+- **Decision:** The terminal poll settles the #44 row through `job_poll.settle_job` with `response=None`, so the row keeps the 202's answer. The job page reads its "Started over these warnings" from that row. A `failed` job's error code is `error.class`. Shared polling lives in `console/job_poll.py` (`poll_failure`, `poll_context`, `settle_job`) and `templates/console/_job_poll.html`, for #80 and #86.
+  **Why:** Replacing the stored response with the job body would lose the confirmed warnings. No M3 polling helper existed yet.
+  **Issue:** #77
+- **Decision:** In report lines, an object entry's `id` links by its own `entity_type` when it has one (relations entries carry it). Otherwise it links by the section's type key. `relations` name lists show as text. `remaining` renders the Engine's `{owned, owned_counts, related, related_counts}` as "Still owned" / "Still related" per type, with ids linked. The job page answers 404 with the "expired" text when the Engine has no such job. A `<ulid:…>` path converter (`console.ids.UlidConverter`) makes any other id a Django 404 with zero calls.
+  **Why:** The Engine's actual report shapes (src/epistrel/core/offboarding.py, principals.Remaining) are more specific than the plan's generic wording.
+  **Issue:** #77
+- **Decision:** The profile list's URL name is `profiles:index`, not the plan's `profiles:list` (`profiles:detail` and `profiles:versions` as planned).
+  **Why:** #64 convention 20 makes each root's landing page `<ns>:index`, and the nav (`console/context_processors.py`) already shows "Profiles" once `profiles:index` resolves. #64's conventions take precedence over a story's lines.
+  **Issue:** #78
+- **Decision (drift):** `EngineProfile` replaces #68's `EngineProfileSummary` (the select and #75's creation report use it unchanged). `settings` stays `dict[str, Any]`, and the contract test widens `EngineProfile.settings` to any object, the way it already widens `EntryLocation.media_id`. All four profile reads are registered with response models.
+  **Why:** The recorded schema types `settings` as the modules delivered when it was recorded (`additionalProperties: false`). The Console must show whatever this deployment's `/engine-profiles/schema` describes, so it can't hold the stricter shape.
+  **Issue:** #78
+- **Decision:** `tests/fixtures/profile_schema.json` comes from the Engine source (`epistrel.core.profiles.store.profile_schema` with the Engine's own `Purposes`, Engine @ b4adb1a), serialised through `ProfileSchemaBody`, not from a running deployment. It includes the modules the Engine delivers past M3 (`character_knowledge`, `perception`, `multi_character`).
+  **Why:** No live Engine was available. The function is exactly what the endpoint returns.
+  **Issue:** #78
+- **Decision:** On the list, a deleted deployment default is detected by one extra `GET /engine-profiles/{default}`. This happens only when "Show deleted" is off and the default isn't among the listed rows. A failed read adds no note. "Start over" shows under the error panel only when a cursor was sent.
+  **Why:** With deleted profiles hidden, the list itself can't say whether the default is deleted.
+  **Issue:** #78
+- **Decision:** A map entry and every setting under it take the map path's tags (e.g. `models.purposes.<purpose>.model` shows `models.purposes`' tags). An object node whose value is `null` (a nullable object such as `params`) renders as one leaf showing `null`, without descending.
+  **Why:** The Engine tags only the map path. Descending into a `null` object would show children that this version explicitly cleared as "not set".
+  **Issue:** #78
+- **Decision:** `/stories/?profile=` reuses the per-story reads for the cast column, so it makes no second sequential read. Its "couldn't be checked" note is singular for one story. The unfiltered list is unchanged.
+  **Why:** Reading every story once on the pool is what the filter needs anyway.
+  **Issue:** #78
+- **Decision (drift):** `OwnerTransfer` and `RelationRecord` match both the story and the non-story bodies. They do this through the contract test's widening (`_widened`): each of the four bodies gets both revisions, nullable and not required. A test checks that the widening touches only the revisions. `Relations` and `RelationItem` carry every `RelationsBody`/`RelationItem` field, including `entity_type`/`entity_id`.
+  **Why:** The schema has separate bodies with one required revision each. The plan wants one model per shape with optional revisions. The widening keeps every route under the contract check, as #64 and #78 already do for their shared models.
+  **Issue:** #79
+- **Decision:** The four ownership client methods take `(entity_type, entity_id, …)` and are not `@operation`-decorated. Instead, `console/engine/client.py` registers all 24 routes (6 types × 4) in `OPERATIONS`, each naming its own entity, and marks each call with the matching registration (`OWNERSHIP_OPERATIONS`, `_ownership_call`). The #44 row's kind is the method name; its entity is the type and id.
+  **Why:** `@operation` registers one route per method. One method serving six routes needs one registration per route so the contract test checks each one and the log records the right entity.
+  **Issue:** #79
+- **Decision:** For a stale-form 422 `companion_follows_character`, the character id comes from the error's `details.character_id`. The Engine always sends it. The scenario is re-read only when that id is missing. The message is #69's `companion_message`.
+  **Why:** This saves a read on the common path. The fallback still follows the plan.
+  **Issue:** #79
+- **Decision:** The panel's refusal dataclass (`console.views.ownership.Refusal`) has the same shape as `console.views.story_settings.Refusal`, minus violations. It is rendered with the same `settings/_refusal.html`. Importing the original would create an import cycle: play view → ownership → story_settings → play view.
+  **Why:** Avoids the cycle while keeping one template.
+  **Issue:** #79
+- **Decision:** The play view's panel sits after the story header's action links, before the play columns. Writes return to the GET URL of the play view (`stories:detail` when the page was rendered by a POST, such as a turn). The story's 423 line adds the `Operation` fact (from `details.operation_id`) under the Engine's error line.
+  **Why:** A `next` pointing at a POST-only URL would 405.
+  **Issue:** #79
+- **Decision:** The transfer target is remembered in `KnownPrincipal` on the confirming POST, not on the GET that renders the confirm page. The relation principal is remembered on the add POST.
+  **Why:** #64 says principals are remembered from valid POST forms. A GET that only checks the input should have no side effects.
+  **Issue:** #79
+- **Decision:** Every test fixture that renders an owned entity's page (catalog, play, timeline, history, stories, engine panel, personas, media, profiles, story characters, story-from-scenario) answers every relations read by default (`tests/fakes/ownership.py answer_relations`). One existing test (`test_one_render_posted_twice_sends_the_same_key`) drops the panel before picking the turn form's idempotency key, because the panel's add form carries its own key.
+  **Why:** Every owned page now reads its relations. Without a default answer, the fake Engine fails every older page test.
+  **Issue:** #79
+- **Decision:** #53's `ReactivationCheck` model becomes `RatingCheckStarted` (the Engine's `RatingCheckStartedBody`, which the rating PUT's 202 also answers); `ReactivationCheck` stays as an alias so #53's code is unchanged.
+  **Why:** One schema component, one model; the story names `RatingCheckStarted`.
+  **Issue:** #80
+- **Decision:** The check page's poll partial reads only the check, so the target rating's name and listed version travel as display-only query parameters on the poll URL (`t_name`, `t_vid`, `t_v`, like #43's `name=`). Other query parameters (#81's `op`) are kept on the poll URL. The pause banner's poll URL carries `cause=` for the same reason.
+  **Why:** The applied line ("Rating changed to X", integer version) needs names the check body does not hold, and the planner forbids extra reads per poll.
+  **Issue:** #80
+- **Decision:** Choosing the current rating is detected from a plain hidden `current` field (the rating the page showed), so it makes zero calls; a forged value can only skip a write. A POST naming any other rating re-reads the story, list and details before deciding relax or tighten.
+  **Why:** The test plan asks for zero calls when the current rating is chosen, and a fresh recompute for every real change.
+  **Issue:** #80
+- **Decision:** While paused, the play view also disables the ingest tab (with the turn form's note), and every #53 control, Fork included, on the transcript, the header's Undo rewind and the history page's Variants panel. Add character and Rebuild projections stay enabled (the Engine answers for them). #45's paused note on the story actions now reads "Paused while the check runs" (#80's wording), and its list test follows.
+  **Why:** The AC says the play view's mutation controls are disabled, and ingest changes the story's truth like a turn. The Engine refuses forks of a paused story with `story_paused`.
+  **Issue:** #80
+- **Decision:** A 409 `story_paused` refusal is rendered by one helper (`console.story_pause.paused_refusal`) everywhere: #48's turn inspector (and through it #53's refusal page and the ingest tab) and #54's settings refusals. It takes the story id from the error's `details.story_id` when no other story id is given. Inspector and settings `Refusal` gained a `notice_url` so the line links to the check.
+  **Why:** The Engine's `StoryPaused` details carry `story_id`, `job_id` and `progress`, and the inspector builder has no story id of its own.
+  **Issue:** #80
+- **Decision:** A refused check settles the #44 row with the full check body as its response; the violations model drops every key it does not know, so the stored body never holds violation text either.
+  **Why:** The planner says to store the full body. Storing the parsed model keeps the never-the-text guarantee for the operations log too.
+  **Issue:** #80
+- **Decision (Rule 2):** A replayed job 202 (`Idempotent-Replay: true` with a `job_id`) is now recorded `ok` (`replayed`), not as a second `queued` row. It still carries its `job_id`, and `complete_job` settles only the first call's `queued` row. This applies to the rating PUT (#80) and offboarding too.
+  **Why:** The plan says a replayed 202 makes no second queued row. Before this change, a replay left a `queued` row that no poll would ever settle.
+  **Issue:** #81
+- **Decision:** The client cannot log, so the 202's `Location` is kept on the client as `last_location`, like `last_operation_id`. The timeline view logs a `Location` that disagrees with the body's `job_id` at WARNING. The redirect always uses the `job_id`.
+  **Why:** `RatingCheckStarted` mirrors the schema component, so adding a header field to it would fail the contract test.
+  **Issue:** #81
+- **Decision:** Untruncate and fork now take `timeout=` (default 60 s, the turn timeout), as swap already did. Fork no longer uses #43's 30 s fork timeout.
+  **Why:** The planner says the three POSTs always use the turn timeout (#64 convention 18).
+  **Issue:** #81
+- **Decision:** The reactivation page's `<h1>` is "Guardrail re-check — <story>". The operation heading ("Undo rewind is waiting for a guardrail re-check", "… applied after re-check", "… refused by re-check", "… could not be completed", "…: re-check ended (`status`)") is an `<h2>` inside the polled partial, so it changes when the check ends. With no op, the waiting heading is the planner's generic one and the terminal headings use "The edit" as their subject. The pause banner writes the op in lowercase ("before undo rewind").
+  **Why:** The poll swaps only the partial, so a heading in the page block would stay "waiting" after the check ended.
+  **Issue:** #81
+- **Decision:** I added a "Check" link to the #44 row detail for story rows that have a `job_id` and are kind `set_story_content_rating`, `untruncate`, `swap` or `fork`. The link targets `entity_id`, so a reactivated fork's row (whose `story_id` is the new story) still links to the source's check. Reactivation rows carry `?op=`.
+  **Why:** The planner's second way back to a running check.
+  **Issue:** #81
+- **Decision:** I moved #80's violations table and #53's "Forked from" banner into partials (`stories/_check_violations.html`, `play/_fork_banner.html`), so the reactivation page reuses them. The reactivated result fields render from a `ResultRow` list. #53 has no result partials, because its results are flash lines.
+  **Why:** The reactivation page shows the same violations table and the same banner. Reusing the partials avoids keeping two copies.
+  **Issue:** #81
+- **Decision:** `suggest_ratings(entry_type, entry_id, *, version, include_retired, timeout)` is one client method with two registrations (`SUGGESTION_OPERATIONS`, built the way #79 builds its ownership operations), each recorded under its entry with kind `rating_suggestion`. The method name differs from the recorded kind, so the method sets the kind on its `Call`.
+  **Why:** The story asks for one method that takes the entry type, and for the kind `rating_suggestion` in the operation log. `@operation` registers one path and uses the method name as the kind.
+  **Issue:** #82
+- **Decision (drift):** The turn's `ModelCall` model already exists, so the suggestion's model calls parse into `SuggestionModelCall`, with every field optional. `RatingSuggestion.model_calls` stays raw (`list[dict[str, Any]]`, as the schema types it), and `.calls()` reads it. `Element.location` reuses #64's `EntryLocation`, which already parses `ElementLocation`. `SuggestionRow.error` and `Element.kind` are open enums, so a new code renders raw and doesn't fail the answer.
+  **Why:** Two classes can't share a name. The schema types `model_calls` items as free-form objects.
+  **Issue:** #82
+- **Decision (drift):** The trigger and "Run again" use `hx-disable="find button"` (the htmx 4 name for the planner's `hx-disabled-elt`) with `hx-sync="this:drop"`. They also set `hx-config="timeout:3600s"`, so the browser waits longer than any Console timeout.
+  **Why:** htmx 4's default request timeout is 60 s. A suggestion's Console timeout is 20 s per rating plus 10 s (90 s for the four seeded ratings), and the page can't know the rating count before the POST.
+  **Issue:** #82
+- **Decision:** The concern's element is worded and linked in Python (`element_html`), following the planner's per-kind wording. It doesn't use #64's `_location.html`, whose "entry X vN · field …" wording doesn't match. A kind the Console doesn't know renders as "<Kind> in `entry`", linked to the entry. A known policy shows its name, linked. An unknown policy shows its id, linked. When the policies read failed, the id shows unlinked.
+  **Why:** The story's AC fixes the per-kind wording. `_location.html` keeps its shape for the validation reports.
+  **Issue:** #82
+- **Decision:** Retract also requires the open form's signed pre-fill (bound to story, message and acting principal); without a valid one it answers "This form expired — open it again" with zero Engine calls, like save. Under HTMX an expired form re-collapses the widget with that line; without JS it flashes and redirects to `next`. Without JS a successful retract redirects to the open form's page (flash "Rating retracted"), so the operator lands on the re-read history as the HTMX path shows it.
+  **Why:** Retract sits only in the open form, which always carries the token, and the kept-form error path needs the pre-fill to re-render. The plan named the expired rule for save only.
+  **Issue:** #83
+- **Decision:** The signed pre-fill carries the whole rating read (history and context included) plus the tag list, text cap and whether the settings read worked, compressed. An invalid form, a 422 or a panel re-renders the kept form from it with zero extra reads.
+  **Why:** The planner fixed "invalid form = zero Engine calls"; re-rendering the history and tag boxes needs those values.
+  **Issue:** #83
+- **Decision:** The feedback fake is a stateful helper, `tests/fakes/feedback.py` `FeedbackStore` (side effects on the three routes plus a `GET /admin/settings` answer), not new code in `FakeEngine` itself; every answer it serves is validated against the schema. Test tags follow the Engine's `feedback_tags` item pattern `^[a-z0-9_]{1,40}$`.
+  **Why:** Same pattern as #79's `tests/fakes/ownership.py`; the generic fake stays schema-driven.
+  **Issue:** #83
+- **Decision:** In #52's history the colspan `<tr class="feedback-row">` is rendered under each item that carries a control (not under every item); the context block shows as its own list below the History `<details>`, only while a rating exists.
+  **Why:** Rows without a control would be empty. The plan hid the context without a rating but didn't place it; keeping it outside the closed History keeps "the configuration it was given under" visible.
+  **Issue:** #83
+- **Decision (drift):** #44 has no "summary" column, so the planned summaries ("held for confirmation" on a 200 `applied:false` PUT; the source id and version on a copy) aren't written anywhere. The row's stored response (`applied: false`) and request path (with `?version=`) carry the same facts. A copy's row names the new copy, or the source profile when the copy failed, through a new `@operation(entity_id="response:id|profile_id")` fallback syntax (`|` tries each source in order).
+  **Why:** Adding a column is a #44 schema change the story doesn't plan. The fallback is the smallest extension of #64's entity rule that gives the planned entity ids.
+  **Issue:** #84
+- **Decision:** The write views live in a new `console/views/profile_edit.py` (new, edit, apply, copy, delete) and `console/views/profile_defaults.py`, beside #78's browse views in `console/views/profiles.py`. The schema-generated form is `console/forms/profile_schema_form.py` `SchemaSettingsForm(data, *, schema, root, stored, defaults, mode)`, rooted at the body key so that #85 can use `root="overrides"`. Field names are `<root>__<path…>`, and the "null" checkbox is `null__<field name>`.
+  **Why:** `profiles.py` would have more than doubled. Rooting field names at the body key keeps settings fields from colliding with `name`/`owner`/`action`, and turns `body.<root>.x.y` paths into a prefix strip.
+  **Issue:** #84
+- **Decision:** Validate on create/edit and the impact page's "Apply anyway" reuse #64's `twostage.sign` for both the page facts (kind `profile-form`: loaded version, name, settings, the deployment's `profile_defaults` and default id, schema digest) and the confirmation (kind `profile-apply`: body, the page facts, the posted form data). That way a 422 after "Apply anyway" rebuilds the edit form with the input in place. The deployment `profile_defaults` used for the "default: X" labels travel in the facts, so an unchanged or invalid POST makes zero Engine calls once the schema is cached.
+  **Why:** The plan fixes "no change → zero calls" and "invalid → zero calls". Re-reading `/admin/settings` on every POST would break both.
+  **Issue:** #84
+- **Decision:** Choices the plan left open: (a) in `defaults` mode a JSON subtree (`models.purposes`) sends only its changed leaves, and removing a key from it is a form error ("Keys can't be removed from profile defaults"), because merge semantics there can't express removal (`null` is a value); (b) a non-nullable field cleared in `defaults` mode says "Enter a value (profile defaults can't be left unset)", and a nullable one says the planned "Tick “null” to set null"; (c) an object node that is itself nullable maps to a JSON textarea; (d) a 422 `invalid_profile` naming only stories shows the stories panel with no "Not valid" banner; (e) number inputs carry `min`/`max`, and the form is `novalidate` so the Console's own rules (an unchanged out-of-bounds stored value only warns) aren't pre-empted by the browser.
+  **Why:** Each follows the plan's stated intent where it was silent.
+  **Issue:** #84
+- **Decision:** `_impact_report.html` is rewritten to the planned context (`impact`, optional `story_labels`, `mode`, `apply_url`, `signed_payload`, `cancel_url`, `idempotency_key`, `show_apply`), with rows built by `console/impact.py` (`{% load impact %}` `impact_rows`/`impact_more`/`short_fp`/`scenario_version_url`). #75's callers pass only `impact` and still render, read-only.
+  **Why:** Planned shared partial for #84/#85; #75's tests only assert the "Impact report" heading.
+  **Issue:** #84
+- **Decision (Rule 1):** `console.impact.short_fingerprint` strips the `sha256:` prefix before taking 12 characters (it took the first 12 of the raw value, so a real Engine fingerprint showed as `sha256:xxxxx`). Regression test in `tests/test_story_config.py`.
+  **Why:** #85's discretion fixes the short form as the first 12 hex digits after `sha256:`; #84's tests used bare hex so the bug never showed.
+  **Issue:** #85
+- **Decision:** The overrides form is `console/forms/story_overrides.py` `OverridesForm`, a subclass of #84's `SchemaSettingsForm` (root `overrides`, `other=True`) rather than a third `mode`: it overrides `default_of`/`default_text` ("inherits: X (profile|default)"), `_add_leaf` (tri-state/true-false booleans, a `remove__<field>` box, no `null__` box), `clean` (the "Tick 'remove override'" error) and `_strip` (also strips `settings.` so `body.settings.<path>` from the PATCH lands on the field), and adds `patch()`.
+  **Why:** Keeps #84's two modes untouched; the override rules differ in every hook.
+  **Issue:** #85
+- **Decision:** The recorded `impact-preview` call runs in the request thread; only the reads (profile version, profiles list, schema, story, archived check) run on #41's pool.
+  **Why:** A recorded call made from a pool thread writes its #44 row on another DB connection, which the test transaction (and a request's atomicity) doesn't see.
+  **Issue:** #85
+- **Decision:** `QualityStatus` keeps `status` only (no `extra` dict).
+  **Why:** The recorded schema's `QualityStatus` has only `status`; an extra field fails the contract test, and unknown keys are already ignored by the lenient parser. M7 can add its fields when the Engine has them.
+  **Issue:** #85
+- **Decision:** "No change — the story already runs this configuration" is flashed when the applied result's overrides revision, profile id and version all equal those the preview was signed against; "keeps its previous configuration" when `upgrade_unavailable` and the result's fingerprint equals the write's own impact `fingerprint_before`; otherwise "Applied — fingerprint <short>; takes effect from the next turn".
+  **Why:** The Engine moves no revision for a no-op; the fingerprint alone can't tell a quality-irrelevant change from none.
+  **Issue:** #85
+- **Decision:** The play header reads `GET …/effective-config` on every full play-page render (3 s, failures → "config unavailable"); every test fixture that renders the play page now calls `tests/fakes/story_config.answer_effective_config(fake)` beside #79's `answer_relations`.
+  **Why:** The header block is part of #48's page; the fake Engine refuses unconfigured calls.
+  **Issue:** #85
+- **Decision:** #54's six superseded dials were already never built and its "Moved to engine profile overrides — see Config" note already existed with a hardcoded URL; #85 only makes `console.story_settings.config_url` reverse `stories:config` and adds a test that the link resolves to the Config page.
+  **Why:** Replan 2026-10-24: #54 owns the note; #85 provides the target.
+  **Issue:** #85
+- **Decision (drift):** `ErasureResult.subject` is the Engine's `dict[str, str]` (`ErasureBody.subject` is an object of strings, not a `$ref` to `SubjectRef`), with a `subject_ref` property parsing it; `StoryScope`/`CatalogScope` are plain request dataclasses with `to_json()` (not response models).
+  **Why:** The plan typed `subject: SubjectRef`; the contract test compares models with the recorded schema, and the schema says an untyped object.
+  **Issue:** #86
+- **Decision:** `@operation` gains `record_response` (the redacted JSON answer → what the row stores) and `record_about` (arguments → `RecordedAbout(entity_type, entity_id, story_id)`). `erase` uses them: every `candidates[].snippet` is stored as `"***"`, the entity is the subject (`catalog_character` → `character`, `persona` → `persona`, a story `character` → `story_character`, shown as `<code>`), and `story_id` is the scope's story only.
+  **Why:** The plan asked for a per-method response override and the subject as entity. A story character stored as raw `character` would collide with the registry's catalog-character type and link to the wrong page.
+  **Issue:** #86
+- **Decision:** The signed erasure payload's `base` carries the offered ids, the real-run key, the operator and acting principal (as #77's start does), and the dry run's whole answer, snippets included, so a >1,000-ticked refusal re-renders the preview with its ticks and makes zero Engine calls.
+  **Why:** The plan asked for zero calls on that refusal, and the snippets are never stored server-side, so the signed (not stored) token is the only place to keep them. It reaches only the operator's own browser, on the page that already shows them.
+  **Issue:** #86
+- **Decision:** `DATA_UPLOAD_MAX_NUMBER_FIELDS = 20_000` in settings.
+  **Why (Rule 3):** Django's default of 1,000 fields refuses an erase POST with more than about 996 ticked candidates as a bare 400. Without the raise, the planned "At most 1,000 candidates per run" message could never show.
+  **Issue:** #86
+- **Decision:** "Zero calls" on a failed Console check means zero `POST /admin/erasure`. The form re-renders with its option lists, which takes reads. A refused real run (no payload, expired or tampered, ticked id not offered, more than 1,000) makes no Engine call at all.
+  **Why:** Re-rendering the selects needs the lists. No erasure is reachable.
+  **Issue:** #86
+- **Decision:** Persona options read "<name> — <owner> · <id[:8]>" (no status). The story select is shown for every kind, labelled "(for 'This story')" unless it is required. `/erasure/` lists this Console's real runs from the operation log (the nav's `erasure:index`).
+  **Why:** A persona has no status field. A catalog character or persona may also scope to a story, and only the kind and story selects re-render the section. The nav needs an index page, and the Engine has no read-back.
+  **Issue:** #86
+- **Decision:** 503 `erasure_pending` shows #43's generic panel.
+  **Why:** #64's held-records wrapper (convention 16) is #87's to build; until then the generic panel is the convention.
+  **Issue:** #86
+- **Decision (drift):** The transcript changes live in `templates/console/history/_items.html` (and the play view's `play/_transcript.html`), not `templates/console/stories/_history_item.html`.
+  **Why:** #52 never built a `_history_item.html`; its items partial is `history/_items.html`. `mark_erased` and the "erased" badge also go on the play transcript, so erased text reads the same on both.
+  **Issue:** #87
+- **Decision:** `ErasureStatus`, `ErasureBoundary` and `ReconcileResult` keep unknown keys in an `extra` property (`KeepsExtra.from_json`), not a dataclass field.
+  **Why:** The contract test compares a model's dataclass fields with the schema's properties; an `extra` field would fail it. The property keeps the lenient "More" behaviour without widening the schema.
+  **Issue:** #87
+- **Decision:** `@operation(..., ended=True)` records a 202 as `ok` at once; `reconcile_erasures` sets it.
+  **Why:** The operation log records every 202 as `queued` until a job poll settles it; reconcile answers 202 only when its run has ended and has no job, so its row would stay `queued` forever.
+  **Issue:** #87
+- **Decision:** The stories status filter's "Held" option sends `status=blocked_by_erasure`, and the empty list reads "No held stories.".
+  **Why:** The Engine filters by its own status value; the option's label is the Console's wording. `?status=blocked_by_erasure` used to be ignored as unknown, so #45's fallback test now uses a truly unknown value.
+  **Issue:** #87
+- **Decision:** `HeldStoryMiddleware` covers every URL with a `story_id` kwarg, the Engine panel's rebuild (`/engine/rebuild/<story_id>/`) included.
+  **Why:** The plan names any view with a `story_id`, and a held story's rebuild is the same held condition. #50's rebuild test now uses `database_unavailable` for its "other refusal" case.
+  **Issue:** #87
+- **Decision:** Erasure markers are dropped unless the history read asked for audit. A marker with no turn goes under turn 0, which is created on the oldest page (`next_before_turn` null) when the page has no turn-0 group.
+  **Why:** Without this, the fallback router (audit-channel items in `items` when the answer has no `audit`) would show markers without omniscient audit. Turn 0 has no history row of its own when the opening has no items.
+  **Issue:** #87
+- **Decision:** The health reason now reads "erasure pending: N" (it was "erasure pending N"). It goes last in every state's reasons, healthy and unhealthy included.
+  **Why:** The plan sets this wording and says to show it whatever the badge state is. #43's probe tests were updated to match.
+  **Issue:** #87
+- **Decision (orchestration):** Each M3 story was implemented by a fresh subagent working sequentially on `milestone/m3-catalog-product-surface`, from a shared brief plus a running list of the shared helpers earlier stories built. The orchestrator re-ran the full suite, ruff, ruff format and mypy after every story and checked the commit, push, ticked boxes and completion comment before starting the next.
+  **Why:** 24 stories with 15–26 KB plans each; a fresh context per story keeps every plan line in view (same shape as M2).
+  **Issue:** M3
+- **Decision (Rule 3):** #64's commit reached the remote with one unformatted blank line in `console/engine/client.py` although the agent reported the format check clean; the orchestrator fixed it in `02a8599` and made a final format/lint/type gate mandatory in the brief for every later story.
+  **Why:** The PR gate runs `ruff format --check`.
+  **Issue:** #64
+- **Decision (Rule 3):** CodeQL failed the milestone PR with 2 high (`py/redos`, `py/polynomial-redos` on `FIELD_NAME` in `console/forms/media_picker.py`) and 10 medium (`py/url-redirection`) alerts. The regex `^[a-z_]+(__[a-z_]+)*$` accepts exactly the strings `^[a-z_]+$` accepts, so it was replaced by the linear form. Every flagged redirect was already validated with `url_has_allowed_host_and_scheme`, but through a stored boolean or a helper (`_safe`), which code scanning does not recognise as a guard; the call now sits in the `if` itself in `confirm.safe_next`, `acting.back_to`, both `safe_back`s, scenarios' `_origin` and personas' `_local`. Behaviour is unchanged.
+  **Why:** The merge gate requires CodeQL; dismissing alerts is the owner's call, restructuring an equivalent check is not.
+  **Issue:** M3 (#64, #66, #68, #69, #71, #74)
+- **Decision (Rule 1):** The live `engine-smoke` test `test_story_refusal_is_placed_beside_the_row_live` read the first `<option … selected>` on the new-story page, which since #64 is the nav's "Acting as" select, so it posted the principal as the rating. The search now starts at the rating select. The live tests are deselected locally, so only CI ran it.
+  **Why:** A test defect introduced by #64's shell change, not a product bug.
+  **Issue:** #64

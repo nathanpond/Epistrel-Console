@@ -1,7 +1,9 @@
 {% comment %}
-The turn-report panel (#44; reused by #48's inspector). Context: `report`, a TurnReport.
+The turn-report panel (#44; reused by #48's inspector). Context: `report`, a TurnReport. #85: the
+configuration it ran under (short fingerprint, quality status, profile id@version, config revision;
+"—" for a turn from before the Engine reported them), capabilities under "More".
 {% endcomment %}
-{% load console_format %}
+{% load console_format impact %}
 <section class="turn-report">
   <h3>Turn report</h3>
   <dl>
@@ -31,12 +33,12 @@ The turn-report panel (#44; reused by #48's inspector). Context: `report`, a Tur
       {% else %}; no violations{% endif %}
       {% else %}—{% endif %}
     </dd>
-    {% if report.config_revision is not None %}<dt>Config revision</dt><dd>{{ report.config_revision }}</dd>{% endif %}
-    {% if report.profile %}<dt>Engine profile</dt><dd><code>{{ report.profile.id }}</code> v{{ report.profile.version }}</dd>{% endif %}
-    {% if report.fingerprint %}<dt>Fingerprint</dt><dd><code>{{ report.fingerprint }}</code></dd>{% endif %}
-    {% if report.quality_status %}<dt>Quality status</dt><dd>{{ report.quality_status.status }}</dd>{% endif %}
-    {% if report.capabilities %}<dt>Capabilities</dt><dd>{{ report.capabilities|join:", " }}</dd>{% endif %}
+    <dt>Fingerprint</dt><dd class="turn-fingerprint">{% if report.fingerprint %}<code title="{{ report.fingerprint }}">{{ report.fingerprint|short_fp }}</code>{% else %}—{% endif %}</dd>
+    <dt>Quality status</dt><dd class="turn-quality">{% if report.quality_status %}<span class="quality {{ report.quality_status.status|quality_class }}">{{ report.quality_status.status }}</span>{% else %}—{% endif %}</dd>
+    <dt>Engine profile</dt><dd class="turn-profile">{% if report.profile %}<a href="{% url 'profiles:detail' report.profile.id %}?version={{ report.profile.version }}"><code>{{ report.profile.id }}@{{ report.profile.version }}</code></a>{% else %}—{% endif %}</dd>
+    <dt>Config revision</dt><dd class="turn-config-revision">{{ report.config_revision|default_if_none:"—" }}</dd>
   </dl>
+  {% if report.capabilities %}<details class="more"><summary>More</summary><dl><dt>Capabilities</dt><dd class="turn-capabilities">{% for c in report.capabilities %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</dd></dl></details>{% endif %}
   <h4>Model calls ({{ report.model_calls|length }})</h4>
   {% if report.model_calls %}
   <table class="model-calls">

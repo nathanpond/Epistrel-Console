@@ -12,6 +12,7 @@ import copy
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -95,6 +96,7 @@ class FakeEngine:
         self._sequences: dict[tuple[str, str], list[_Canned]] = {}
         self._served: dict[tuple[str, str], _Canned] = {}
         self._failures: dict[tuple[str, str], Exception] = {}
+        self._effects: dict[tuple[str, str], Callable[[httpx.Request], httpx.Response]] = {}
         registry: Registry[Any] = Registry().with_resource(
             DOC_URI, Resource.from_contents(self.schema, default_specification=DRAFT202012)
         )
@@ -125,13 +127,15 @@ class FakeEngine:
         headers: dict[str, str] | None = None,
         delay: float = 0.0,
     ) -> None:
-        """Answer ``method path`` (a schema path template) with this, until replaced.
+        """Answer ``method path`` (a schema path template) with this, until replaced (a
+        :meth:`side_effect` on it too).
 
         Refused unless the schema declares the operation and the status, and the JSON body
         validates against that status's response schema.
         """
         method = method.upper()
         self._sequences.pop((method, path), None)
+        self._effects.pop((method, path), None)  # a canned answer replaces a side effect
         self._canned[(method, path)] = self._validated(method, path, status, json, headers, delay)
 
     def respond_sequence(self, method: str, path: str, answers: list[dict[str, Any]]) -> None:
@@ -192,6 +196,17 @@ class FakeEngine:
             raise ValueError(f"{method} {path} is in the Engine's schema: use respond()")
         self._served[(method, path)] = _Canned(status, json, {}, delay)
 
+    def side_effect(
+        self, method: str, path: str, handler: Callable[[httpx.Request], httpx.Response]
+    ) -> None:
+        """Answer ``method path`` (a schema path template) by calling ``handler`` with each
+        request: for a binary answer (media content, #65) the JSON validation cannot cover.
+        Refused unless the schema declares the operation; ``handler`` must answer a status the
+        operation declares (checked per request)."""
+        method = method.upper()
+        self._declared(method, path)
+        self._effects[(method, path)] = handler
+
     def fail(self, method: str, path: str, exc: Exception) -> None:
         """Raise ``exc`` (an httpx transport error) for ``method path``."""
         self._failures[(method.upper(), path)] = exc
@@ -211,10 +226,20 @@ class FakeEngine:
         self.requests.append(request)
         method, path = request.method, request.url.path
         served = self._served.get((method, path))
-        template = None if served else self._match(method, path)
+        # A path parameter may hold an encoded "/" (``%2F``, a principal, #76): the decoded
+        # path then has an extra segment, so the raw path is matched too.
+        raw_path = request.url.raw_path.decode("ascii").split("?", 1)[0]
+        template = None if served else self._match(method, path) or self._match(method, raw_path)
         key = (method, path) if served else (method, template or path)
         if key in self._failures:
             raise self._failures[key]
+        effect = self._effects.get(key)
+        if effect is not None:
+            answer = effect(request)
+            responses = self._declared(method, key[1]).get("responses", {})
+            if self._response_key(responses, answer.status_code) is None:
+                raise UndeclaredEngineCall(f"{method} {key[1]} declares no {answer.status_code}")
+            return answer
         canned = served
         if canned is None:
             if template is None:

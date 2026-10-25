@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "the story already has a character of this name",
+    "details": {
+      "field": "body.name",
+      "reason": "duplicate"
+    }
+  }
+}

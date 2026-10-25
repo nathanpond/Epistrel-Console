@@ -10,6 +10,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.core import signing
+from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -23,11 +24,14 @@ from console.confirm import (
     safe_next,
     shown_name,
 )
+from console.engine.choices import error_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import StorySummary
+from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
+from console.entities import entity_url
 from console.forms import (
     CAST_MAX,
     CHARACTERS_PREFIX,
@@ -38,10 +42,11 @@ from console.forms import (
     story_spec,
 )
 from console.formset_rows import edit_rows, wants_edit
+from console.held import HELD_PARAM, HELD_STATUS
 from console.ids import new_ulid
 
 EMPTY = "—"
-PAUSED_NOTE = "Paused while a check runs"
+PAUSED_NOTE = "Paused while the check runs"  # #80's wording
 RATINGS_FIELD = "rating_choices"  # the select's options, signed, carried across re-renders
 RATINGS_SALT = "console.stories.rating_choices"
 # A 422 at these paths, or with this code, belongs beside the viewpoint field.
@@ -60,11 +65,21 @@ def story_label(name: str | None, story_id: str) -> str:
 # --- List ---------------------------------------------------------------------------------------
 
 
+HELD_NAME = "(held — erasure pending)"  # a held story's list name when the Engine sends none
+HELD_STATUS_TEXT = "Held (erasure pending)"
+
+
 @dataclass(frozen=True)
 class StoryRow:
     story: StorySummary
-    cast_size: int | None  # None when the story's own read failed
+    cast_size: int | None  # None when the story's own read failed (or was skipped: held)
     actions_query: str  # ?name=…&next=… for the action links
+    profile_version: int | None = None  # ?profile= only (#78): the version the story runs on
+
+    @property
+    def held(self) -> bool:
+        """Held by a pending erasure (#87): every read of it is 503 ``erasure_pending``."""
+        return self.story.status == HELD_STATUS
 
 
 def _cast_size(client: EngineClient, request: HttpRequest, story_id: str) -> int | None:
@@ -76,25 +91,126 @@ def _cast_size(client: EngineClient, request: HttpRequest, story_id: str) -> int
         return None
 
 
+def _list_row(
+    client: EngineClient, request: HttpRequest, story: StorySummary, here: str
+) -> StoryRow:
+    """A held story's row skips its ``GET /stories/{id}`` back-fill (it would answer 503) and
+    its actions carry ``held=1`` (the delete confirm's id-only wording)."""
+    if story.status == HELD_STATUS:
+        query = f"{confirm_query(story.name, here)}&{HELD_PARAM}=1"
+        return StoryRow(story, None, query)
+    return StoryRow(story, _cast_size(client, request, story.id), confirm_query(story.name, here))
+
+
 @require_safe
 def story_list(request: HttpRequest) -> HttpResponse:
     """Every story ``GET /stories`` returns, archived included, in the Engine's order. The list
-    item has no cast, so each row's cast size comes from ``GET /stories/{id}`` (sequential)."""
+    item has no cast, so each row's cast size comes from ``GET /stories/{id}`` (sequential).
+    ``?profile=<id>`` narrows it to the stories using that engine profile (#78)."""
     filters = StoryFilterForm(request.GET)
     status = filters.chosen_status()
     client = engine_client_for(request)
+    profile_id = request.GET.get(PROFILE_PARAM, "").strip()
+    if profile_id:
+        return _stories_using_profile(request, client, filters, status, profile_id)
     stories = client.list_stories(status=status)
     here = request.get_full_path()
-    rows = [
-        StoryRow(story, _cast_size(client, request, story.id), confirm_query(story.name, here))
-        for story in stories
-    ]
-    empty_text = f"No {status} stories." if status else "No stories yet"
+    rows = [_list_row(client, request, story, here) for story in stories]
+    empty_text = (
+        f"No {filters.status_label(status).lower()} stories." if status else "No stories yet"
+    )
     return render(
         request,
         "console/stories/list.html",
-        {"rows": rows, "filters": filters, "status": status or "", "empty_text": empty_text},
+        {
+            "rows": rows,
+            "filters": filters,
+            "status": status or "",
+            "empty_text": empty_text,
+            "held_name": HELD_NAME,
+            "held_status": HELD_STATUS_TEXT,
+        },
     )
+
+
+# --- Stories using an engine profile (#78) ------------------------------------------------------
+
+PROFILE_PARAM = "profile"
+PROFILE_PAGE = 50
+PROFILE_UNREAD = "Couldn't read this profile"
+NO_PROFILE_STORIES = "No stories use this profile."
+
+
+@dataclass(frozen=True)
+class Unchecked:
+    """A story whose ``GET /stories/{id}`` failed or was cut by the deadline."""
+
+    story: StorySummary
+    reason: str
+
+
+def _stories_using_profile(
+    request: HttpRequest,
+    client: EngineClient,
+    filters: StoryFilterForm,
+    status: str | None,
+    profile_id: str,
+) -> HttpResponse:
+    """The stories (with ``status``, when chosen) running under ``profile_id`` at any version.
+    ``StorySummaryBody`` has no profile, so each story is read (``GET /stories/{id}``) on the
+    fan-out pool under its 10 s deadline; a failed or cut read is counted and listed, not
+    matched (nathanpond/Epistrel#527 asks for an Engine filter). Paged Console-side."""
+    stories = client.list_stories(status=status)
+    profile_name: str | None = None
+    profile_error = ""
+    try:
+        profile_name = client.get_engine_profile(profile_id).name
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        profile_error = PROFILE_UNREAD
+    results = fan_out(client.get_story, [story.id for story in stories])
+    here = request.get_full_path()
+    rows: list[StoryRow] = []
+    unchecked: list[Unchecked] = []
+    for summary in stories:
+        read = results.get(summary.id)
+        if isinstance(read, EngineClientError) or read is None:
+            reason = error_text(read) if isinstance(read, EngineClientError) else "not read"
+            unchecked.append(Unchecked(summary, reason))
+            continue
+        if read.engine_profile.id != profile_id:
+            continue
+        rows.append(
+            StoryRow(
+                summary,
+                len(read.characters),
+                confirm_query(summary.name, here),
+                read.engine_profile.version,
+            )
+        )
+    page = Paginator(rows, PROFILE_PAGE).get_page(request.GET.get("page"))
+    keep = request.GET.copy()
+    keep.pop("page", None)
+    clear = request.GET.copy()
+    clear.pop(PROFILE_PARAM, None)
+    clear.pop("page", None)
+    context = {
+        "rows": list(page.object_list),
+        "page": page,
+        "page_query": keep.urlencode(),
+        "filters": filters,
+        "status": status or "",
+        "empty_text": NO_PROFILE_STORIES,
+        "profile_id": profile_id,
+        "profile_name": profile_name,
+        "profile_error": profile_error,
+        "profile_url": entity_url("engine_profile", profile_id),
+        "clear_query": clear.urlencode(),
+        "unchecked": unchecked,
+        "held_name": HELD_NAME,
+        "held_status": HELD_STATUS_TEXT,
+    }
+    return render(request, "console/stories/list.html", context)
 
 
 # --- New story ----------------------------------------------------------------------------------
@@ -276,19 +392,27 @@ def story_unarchive(request: HttpRequest, story_id: str) -> HttpResponse:
     return confirm_action(request, page, perform)
 
 
+def _held_delete(request: HttpRequest) -> bool:
+    """The list row (or the held page) asked for a held story's id-only wording (#87)."""
+    source = request.POST if request.method == "POST" else request.GET
+    return source.get(HELD_PARAM) == "1"
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def story_delete(request: HttpRequest, story_id: str) -> HttpResponse:
-    name = shown_name(request)
+    held = _held_delete(request)
+    name = "" if held else shown_name(request)
     label = story_label(name, story_id)
+    hidden = {"name": name, HELD_PARAM: "1"} if held else {"name": name}
     page = ConfirmPage(
         title="Delete story",
-        question="Delete {name}?",
+        question="Delete held story {name}?" if held else "Delete {name}?",
         emphasis=label,
         lines=("This permanently deletes the story and all its history in the Engine.",),
         confirm_label="Delete",
         cancel_url=safe_next(request, _list_url()),
         facts=(("Story id", story_id),),
-        hidden={"name": name},
+        hidden=hidden,
         danger=True,
     )
 

@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "version": 1,
+      "published_at": "2026-10-10T10:00:00.000000Z",
+      "published_by": "console:nate"
+    },
+    {
+      "version": 2,
+      "published_at": "2026-10-20T10:00:00.000000Z",
+      "published_by": "alice"
+    }
+  ]
+}

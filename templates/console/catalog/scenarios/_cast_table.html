@@ -1,0 +1,48 @@
+{% load console_format %}{% comment %}#73 (#74 reuses it): a scenario's cast as a table of roles with
+their seeds nested, and the world seeds in their own table. Context: cast
+(console.catalog.cast_table.CastTable).{% endcomment %}
+<section id="cast">
+  <h2>Cast</h2>
+  <p>Most characters at start: {% if cast.max_characters_at_start is None %}— (deployment default){% else %}{{ cast.max_characters_at_start }}{% endif %}</p>
+  {% if cast.rows %}
+  <table class="cast-roles">
+    <thead><tr><th>Id</th><th>Kind</th><th>Label</th><th>Setup</th><th>Fill</th><th>Required</th><th>Character</th><th>Participation</th><th>Starting location</th><th>Eligibility</th></tr></thead>
+    <tbody>
+      {% for row in cast.rows %}{% with role=row.role %}
+      <tr id="role-{{ role.id }}">
+        <td><code>{{ role.id }}</code></td>
+        <td>{{ role.kind|humanise }}</td>
+        <td>{{ role.public_label }}</td>
+        <td>{{ role.setup_description|truncatechars:120 }}{% if role.setup_description|length > 120 %}<details class="full-text"><summary>Full text</summary>{{ role.setup_description|linebreaksbr }}</details>{% endif %}</td>
+        <td>{{ role.fill|humanise }}</td>
+        <td>{% if role.required %}Yes{% else %}No{% endif %}</td>
+        <td class="role-character">{% if row.character %}{% with c=row.character.label %}{% if c.url %}<a href="{{ c.url }}">{{ c.text }}</a>{% else %}<code>{{ c.text }}</code>{% endif %}{% if c.archived %} (archived){% endif %}{% if c.error %} <span class="lookup-failed">(name unavailable: {{ c.error }})</span>{% endif %}{% endwith %} {{ row.character.version }}{% else %}—{% endif %}</td>
+        <td>{{ role.participation|humanise }}</td>
+        <td>{% if row.location %}{% if row.location.name %}{{ row.location.name }} (<code>{{ row.location.id }}</code>){% else %}<code>{{ row.location.id }}</code> (undeclared){% endif %}{% else %}—{% endif %}</td>
+        <td>{{ row.eligibility }}</td>
+      </tr>
+      <tr class="role-detail" id="role-{{ role.id }}-detail">
+        <td colspan="10">
+          <h4>Seeded memories of <code>{{ role.id }}</code></h4>
+          {% include "console/catalog/scenarios/_seed_table.html" with seeds=row.seeds css="role-seeds" %}
+          {% if role.relationships or role.name_overrides is not None or role.state_initial_values is not None %}
+          <details class="role-more"><summary>Relationships, name overrides and initial values</summary>
+            <dl>
+              <dt>Relationships</dt><dd><pre>{{ role.relationships|pretty_json }}</pre></dd>
+              <dt>Name overrides</dt><dd><pre>{{ role.name_overrides|pretty_json }}</pre></dd>
+              <dt>Initial state values</dt><dd><pre>{{ role.state_initial_values|pretty_json }}</pre></dd>
+            </dl>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endwith %}{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+</section>
+
+<section id="world-seeds">
+  <h2>World seeds</h2>
+  {% include "console/catalog/scenarios/_seed_table.html" with seeds=cast.world_seeds css="world-seeds" %}
+</section>

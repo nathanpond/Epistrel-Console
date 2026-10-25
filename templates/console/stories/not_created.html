@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not created — Epistrel Console{% endblock %}
+{% block heading %}{{ heading }}{% endblock %}
+{% block content %}
+<p>Scenario <a href="{% url 'scenarios:detail' scenario.id %}?version={{ scenario.version }}">{{ scenario_name }}</a> v{{ scenario.version }}. Nothing was created.</p>
+{% if impact %}{% include "console/_impact_report.html" %}{% endif %}
+{% if shown %}{% include "console/stories/_creation_report.html" %}{% endif %}
+{% include "console/_two_stage.html" with confirm_label="Create anyway" confirm_op="confirm" cancel_op="back" cancel_label="Back" %}
+{% endblock %}

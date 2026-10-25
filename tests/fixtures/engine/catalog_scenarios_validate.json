@@ -1,0 +1,12 @@
+{
+  "valid": true,
+  "report": {
+    "errors": [],
+    "warnings": [],
+    "unavailable": [
+      "seed_normalization",
+      "fact_consistency",
+      "state_schema"
+    ]
+  }
+}

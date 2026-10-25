@@ -1,0 +1,36 @@
+{
+  "timeline_revision": 1,
+  "catalog_id": "01JB2Z8Y5Q3W6K9M1N4P7R0C01",
+  "draft_revision": 1,
+  "warnings": [
+    {
+      "code": "definition_truncated",
+      "location": {
+        "entry": "01JB2Z8Y5Q3W6K9M1N4P7R0C01",
+        "version": "draft",
+        "field": "definition.background_flavor",
+        "role": null,
+        "seed_id": null
+      },
+      "outcome": "kept",
+      "rule": "background_flavor holds at most 4000 characters; the rest of the definition was left out",
+      "source": null,
+      "text": null
+    },
+    {
+      "code": "media_retired",
+      "location": {
+        "entry": "01JB2Z8Y5Q3W6K9M1N4P7R0C01",
+        "version": "draft",
+        "field": "public_card.images",
+        "role": null,
+        "seed_id": null
+      },
+      "outcome": "dropped",
+      "rule": "an image the draft shows must be live; a retired one is left out (FR-MEDIA-2)",
+      "source": "01JB2Z8Y5Q3W6K9M1N4P7R0M01",
+      "text": null
+    }
+  ],
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KY2"
+}

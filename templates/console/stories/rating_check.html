@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% comment %}
+A rating check (#80) or a reactivation re-check (#81). Context: story (None when its read failed),
+story_id, job_id, check (RatingCheck, None when unread), target/from_rating (RatingName), target_version,
+names_unavailable, rx (ReactivationView on a reactivation page, else None), and the console/_job_poll.html
+context around stories/_rating_check_status.html (rx: stories/_reactivation_status.html).
+No pause banner here: this page is the check itself.
+{% endcomment %}
+{% block title %}{% if rx %}{{ rx.heading }}{% else %}Rating check{% endif %} — {% if story %}{{ story.name|default:story.id }}{% else %}{{ story_id }}{% endif %} — Epistrel Console{% endblock %}
+{% block heading %}{% if rx %}Guardrail re-check{% else %}Rating check{% endif %} — {% if story %}{{ story.name|default:"—" }}{% else %}<code>{{ story_id }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:detail' story_id %}">Play</a> · {% if rx %}<a href="{{ variants_url }}">Variants</a>{% else %}<a href="{% url 'stories:rating' story_id %}">Rating</a>{% endif %} · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story_id }}</code></p>
+{% if check %}
+<dl class="check-header">
+  <dt>Job</dt><dd><code>{{ check.job_id }}</code></dd>
+  <dt>Kind</dt><dd>{{ check.kind }}</dd>
+  {% if rx %}<dt>Checked against</dt>{% else %}<dt>Target</dt>{% endif %}<dd class="check-target">{% if target.name %}{% if rx %}<em>{{ target.name }}</em>{% else %}{{ target.name }}{% endif %}{% else %}<code>{{ check.target.rating_id }}</code>{% endif %} ({% if target_version is not None %}version {{ target_version }}{% else %}<code>{{ check.target.version }}</code>{% endif %})</dd>
+  {% if not rx %}<dt>From</dt><dd class="check-from">{% if from_rating.name %}{{ from_rating.name }}{% else %}<code>{{ check.from_rating_id }}</code>{% endif %}</dd>{% endif %}
+  <dt>Started by</dt><dd>{{ check.started_by|principal_link }}</dd>
+  <dt>Started</dt><dd>{{ check.started_at|engine_time }}</dd>
+  <dt>Operation</dt><dd>{% if check.operation_id %}<code>{{ check.operation_id }}</code>{% else %}—{% endif %}</dd>
+</dl>
+{% if names_unavailable %}<p class="warning names-unavailable">{{ names_unavailable }}</p>{% endif %}
+{% endif %}
+{% include "console/_job_poll.html" %}
+{% endblock %}

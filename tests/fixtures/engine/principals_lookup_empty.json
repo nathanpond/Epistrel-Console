@@ -1,0 +1,67 @@
+{
+  "principal": "nobody",
+  "owned": {
+    "stories": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "characters": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "scenarios": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "personas": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "media": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "engine_profiles": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    }
+  },
+  "related": {
+    "stories": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "characters": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "scenarios": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "personas": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "media": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    },
+    "engine_profiles": {
+      "count": 0,
+      "items": [],
+      "next_cursor": null
+    }
+  }
+}

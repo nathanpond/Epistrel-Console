@@ -1,0 +1,58 @@
+{% comment %}
+#66: the catalog character's structured form, create and edit. Each field's id is its report anchor
+(f-<path>), so the validation report links to it. Context: form (CharacterForm), create, snap
+(EditSnapshot), snapshot (signed), idempotency_key, publish_idempotency_key, with_companion,
+rating_note, archived_note, action_url; #71: media (the media sections by path).
+{% endcomment %}<form method="post" action="{{ action_url }}" class="character-form">
+  {% csrf_token %}
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if not create %}
+  <input type="hidden" name="publish_idempotency_key" value="{{ publish_idempotency_key }}">
+  <input type="hidden" name="draft_revision" value="{{ snap.draft_revision|default_if_none:'' }}">
+  <input type="hidden" name="companion_draft_revision" value="{{ snap.companion_revision|default_if_none:'' }}">
+  {% endif %}
+  {# Enter in a text input submits the form's first button: make that Save (Create), not a media row button (#71). #}
+  <button type="submit" name="action" value="save" class="default-submit" tabindex="-1" aria-hidden="true"{% if archived_note %} disabled{% endif %}>{% if create %}Create{% else %}Save{% endif %}</button>
+  {{ form.non_field_errors }}
+  {% if create %}
+  <p class="field"><label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label><br>{{ form.owner }} <small class="muted" id="{{ form.owner.auto_id }}_helptext">{{ form.owner.help_text }}</small>{{ form.owner.errors }}</p>
+  {% endif %}
+  {% for section in form.sections %}
+  <fieldset class="character" id="{{ section.anchor }}">
+    <legend>{{ section.title }}</legend>
+    {% for row in section.rows %}{% include "console/catalog/characters/_field.html" %}{% endfor %}
+    {% if section.anchor == "f-definition" %}
+    <table class="dispositions" id="f-definition-dispositions">
+      <caption>Dispositions <small class="muted">(each axis required to publish; "— not set —" clears it)</small></caption>
+      <thead><tr><th>Axis</th><th>Setting</th><th>Nuance</th></tr></thead>
+      <tbody>
+        {% for axis in form.axes %}
+        <tr id="{{ axis.anchor }}">
+          <th><label for="{{ axis.setting.id_for_label }}">{{ axis.label }}</label></th>
+          <td>{{ axis.setting }} <small class="muted" id="{{ axis.setting.auto_id }}_helptext">{{ axis.setting.help_text }}</small>{{ axis.setting.errors }}</td>
+          <td>{{ axis.nuance }} <small class="muted" id="{{ axis.nuance.auto_id }}_helptext">{{ axis.nuance.help_text }}</small>{{ axis.nuance.errors }}{% for note in axis.notes %}<span class="report-note error">{{ note }}</span>{% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if section.anchor == "f-metadata" and rating_note %}<p class="rating-unavailable">{{ rating_note }} <small class="muted">(the content rating is left unchanged)</small></p>{% endif %}
+    {% if section.anchor == "f-visual_identity" %}
+    {% if form.clear_visual_identity %}<p class="field"><label>{{ form.clear_visual_identity }} {{ form.clear_visual_identity.label }}</label> <small class="muted" id="{{ form.clear_visual_identity.auto_id }}_helptext">{{ form.clear_visual_identity.help_text }}</small></p>{% endif %}
+    {% endif %}
+  </fieldset>
+  {% if section.anchor == "f-public_card" %}{% include "console/media/_slot_section.html" with section=media.public_card_images %}{% endif %}
+  {% if section.anchor == "f-visual_identity" %}{% include "console/media/_slot_section.html" with section=media.visual_identity_reference_images %}{% endif %}
+  {% endfor %}
+  <p class="actions">
+    {% if create %}
+    <button type="submit">Create</button>
+    {% else %}
+    <button type="submit" name="action" value="save"{% if archived_note %} disabled title="Archived — unarchive to edit"{% endif %}>Save</button>
+    <button type="submit" name="action" value="publish"{% if archived_note %} disabled title="Archived — unarchive to publish"{% endif %}>Save &amp; publish</button>
+    <label><input type="checkbox" name="with_companion"{% if with_companion %} checked{% endif %}{% if snap.companion_revision is None or archived_note %} disabled{% endif %}> Also publish the companion's draft</label>
+    {% if snap.companion_error %}<small class="companion-unavailable">Companion draft unavailable: {{ snap.companion_error }}</small>{% endif %}
+    {% endif %}
+  </p>
+</form>

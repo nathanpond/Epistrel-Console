@@ -15,7 +15,7 @@ from typing import Any
 
 from django.db import transaction
 
-from console.engine.client import EngineResponse, Operation
+from console.engine.client import Call, EngineResponse, Operation, RecordedAbout
 from console.engine.models import OperationRecord
 from console.models import EngineOperation
 from console.redaction import redact
@@ -41,13 +41,14 @@ class Observed:
     operation: Operation | None  # the registration, when a public client method made the call
     http_method: str
     path: str  # resolved, without the query string
-    params: Mapping[str, str] | None
+    params: Mapping[str, str] | list[tuple[str, str]] | None
     body: object | None
     headers: Mapping[str, str]
     principal: str
     elapsed_ms: int
     response: EngineResponse | None = None
     unreachable: str | None = None  # the reason, when no HTTP answer came
+    call: Call | None = None  # the running client method (its arguments name the entity, #64)
 
 
 def request_json(observed: Observed) -> dict[str, Any]:
@@ -242,7 +243,13 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     replayed = response.headers.get(REPLAY_HEADER, "").lower() == "true" or "reference" in obj
     if 200 <= status < 300:
         model = observed.operation.response_model if observed.operation else None
-        if status == 202:  # a queued turn, or a checking job (#64, #80, #81 complete those)
+        if status == 202 and replayed and _str(obj, "job_id"):
+            # A replayed job 202 (#81): the first call's row is the job's ``queued`` one, so a
+            # replay records no second (the same check page follows it).
+            outcome, code = Outcome.OK, ""
+        elif status == 202 and observed.operation is not None and observed.operation.ended:
+            outcome, code = Outcome.OK, ""  # answered when the run ended (#87's reconcile)
+        elif status == 202:  # a queued turn, or a checking job (#64, #80, #81 complete those)
             queued = isinstance(body, dict)
             outcome, code = (Outcome.QUEUED, "") if queued else (Outcome.ERROR, "bad_response")
         elif replayed or status == 204 or model is None or model.from_json(body) is not None:
@@ -256,7 +263,12 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     sent_key = {k.lower(): v for k, v in observed.headers.items()}.get(IDEMPOTENCY_HEADER.lower())
     key = sent_key or _str(obj, "idempotency_key") or response.headers.get(IDEMPOTENCY_HEADER)
     stored = redact(body) if is_json else None
+    hook = observed.operation.record_response if observed.operation else None
+    if hook is not None and stored is not None:
+        stored = hook(stored)  # #86: an erasure dry run's snippets become "***"
+    job_id = _str(obj, "job_id") if status == 202 else None
     return {
+        "job_id": job_id[:64] if job_id else None,
         "http_status": status,
         "outcome": outcome,
         "error_code": _fit(code, 64),
@@ -295,7 +307,36 @@ def row_fields(observed: Observed) -> dict[str, Any]:
             idempotency_key=_fit(sent_key, 255),
             story_id=_ulid_or_blank(story_id(observed.path, {})),
         )
+    about = _about(observed)
+    if about is not None and about.story_id is not None:
+        fields["story_id"] = _ulid_or_blank(about.story_id)
+    fields.update(entity_fields(observed, fields["story_id"]))
+    if about is not None and about.entity_type and about.entity_id:
+        fields.update(entity_type=_fit(about.entity_type, 32), entity_id=about.entity_id[:64])
     return fields
+
+
+def _about(observed: Observed) -> RecordedAbout | None:
+    """The registration's ``record_about`` hook applied to the call's arguments (#86)."""
+    call = observed.call
+    if call is None or call.operation.record_about is None:
+        return None
+    return call.operation.record_about(call.arguments)
+
+
+def entity_fields(observed: Observed, row_story_id: str) -> dict[str, str | None]:
+    """``entity_type``/``entity_id`` for the row (#64 convention 9): the registration's entity
+    (``@operation(entity=…, entity_id=…)``), else ``story`` when the row names a story, else
+    neither."""
+    body: object = None
+    if observed.response is not None:
+        _, body = _json_body(observed.response)
+    ref = observed.call.entity_ref(body) if observed.call is not None else None
+    if ref is not None:
+        return {"entity_type": ref[0], "entity_id": ref[1][:64]}
+    if row_story_id:
+        return {"entity_type": "story", "entity_id": row_story_id}
+    return {"entity_type": None, "entity_id": None}
 
 
 def record(observed: Observed, operator: Any) -> EngineOperation | None:
@@ -318,6 +359,33 @@ def record(observed: Observed, operator: Any) -> EngineOperation | None:
 
 
 TERMINAL_FAILURES = frozenset({"failed", "abandoned"})
+# What ``complete_job``'s ``overrides`` may set besides the outcome (#64 convention 9).
+JOB_OVERRIDES = frozenset({"engine_operation_id", "timeline_revision", "story_id"})
+
+
+def _complete_row(
+    row: EngineOperation,
+    outcome: str,
+    error_code: str,
+    response: object,
+    changes: Mapping[str, Any] | None = None,
+) -> bool:
+    """Settle one ``queued`` row: its outcome, error code (``""`` for none), stored response and
+    any further ``changes`` (field → value), with the guardrail flag recomputed. ``False``
+    (logged at ERROR) when the write fails."""
+    row.outcome = outcome
+    row.error_code = _fit(error_code, 64)
+    row.response = response
+    for name, value in (changes or {}).items():
+        setattr(row, name, value)
+    row.is_guardrail_rejection = is_guardrail_rejection(row.error_code, response)
+    try:
+        with transaction.atomic(durable=False):
+            row.save()
+    except Exception:
+        log.error("operation record not updated: kind=%s outcome=%s", row.kind, outcome)
+        return False
+    return True
 
 
 def complete_queued(engine_operation_id: str, op: OperationRecord) -> int:
@@ -342,23 +410,52 @@ def complete_queued(engine_operation_id: str, op: OperationRecord) -> int:
             if op.result.status >= 400:
                 error_code = _str(_dict(_dict(response).get("error")), "code") or ""
         if op.status == "committed":
-            row.outcome = Outcome.OK
+            outcome = Outcome.OK
         else:
-            row.outcome = Outcome.ERROR
+            outcome = Outcome.ERROR
             error_code = error_code or op.status
-        row.error_code = _fit(error_code, 64)
-        row.response = response
+        changes: dict[str, Any] = {}
         if op.timeline_revision is not None:
-            row.timeline_revision = op.timeline_revision
+            changes["timeline_revision"] = op.timeline_revision
         revision = _int(_dict(response), "config_revision")
         if revision is not None:
-            row.config_revision = revision
-        row.is_guardrail_rejection = is_guardrail_rejection(row.error_code, response)
-        try:
-            with transaction.atomic(durable=False):
-                row.save()
-        except Exception:
-            log.error("operation record not updated: kind=%s status=%s", row.kind, op.status)
-            continue
-        updated += 1
+            changes["config_revision"] = revision
+        if _complete_row(row, outcome, error_code, response, changes):
+            updated += 1
     return updated
+
+
+def complete_job(
+    job_id: str,
+    outcome: str,
+    error_code: str = "",
+    response: object = None,
+    *,
+    overrides: Mapping[str, Any] | None = None,
+) -> int:
+    """Settle the one row still ``queued`` for the Engine job ``job_id`` (a 202 job: a rating
+    check, offboarding, an erasure, #64 convention 9). Returns 1 when it settled a row, 0 when
+    none was queued, so a second call (the next poll of a finished job) changes nothing.
+
+    The caller maps the job's terminal state: success → ``outcome="ok"``; ``refused`` →
+    ``"error"``, ``error_code="rating_refused"``; ``failed`` → ``"error"`` with the job's
+    ``error.class``. ``response`` (the job's status body) is stored redacted in place of the
+    202's; ``None`` keeps the 202's. ``overrides`` may also set ``engine_operation_id``,
+    ``timeline_revision`` and ``story_id``, in the same ``select_for_update`` transaction.
+    """
+    if outcome not in Outcome.values or outcome == Outcome.QUEUED:
+        raise ValueError(f"complete_job: {outcome!r} is not a terminal outcome")
+    unknown = set(overrides or {}) - JOB_OVERRIDES
+    if unknown:
+        raise ValueError(f"complete_job: cannot override {sorted(unknown)}")
+    with transaction.atomic(durable=False):
+        row = (
+            EngineOperation.objects.select_for_update()
+            .filter(job_id=job_id, outcome=Outcome.QUEUED)
+            .order_by("id")
+            .first()
+        )
+        if row is None:
+            return 0
+        stored = redact(response) if response is not None else row.response
+        return 1 if _complete_row(row, outcome, error_code, stored, overrides) else 0

@@ -278,4 +278,5 @@ def test_history_is_linked_from_the_list_and_the_play_header(
     listed = operator_client.get("/stories/").content.decode()
     for item in stories["items"]:
         link = f'<a class="history-link" href="/stories/{item["id"]}/history/">History</a>'
-        assert link in listed
+        # #87: a held story's row offers its detail link and Delete only.
+        assert (link in listed) is (item["status"] != "blocked_by_erasure")

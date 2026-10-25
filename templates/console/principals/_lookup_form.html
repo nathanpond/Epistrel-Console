@@ -1,0 +1,7 @@
+<form method="get" action="{% url 'principals:index' %}" class="principal-lookup">
+  <p>
+    <label for="{{ form.principal.id_for_label }}">{{ form.principal.label }}</label> {{ form.principal }}
+    <button type="submit">Look up</button>
+  </p>
+  {{ form.principal.errors }}
+</form>

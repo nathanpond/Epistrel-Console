@@ -1,0 +1,74 @@
+{% load console_format principals %}{% comment %}
+#83: one message's feedback widget (context `fb`: console.feedback.FeedbackWidget). `fb.state` is
+collapsed (the bare "Rate" link, plus the result line after a save), open (the form, the history
+and the context the rating was given under) or unavailable. HTMX answers replace the wrapper.
+{% endcomment %}
+<div id="{{ fb.dom_id }}" class="feedback feedback-{{ fb.state }}">
+{% if fb.state == "unavailable" %}
+  <small class="muted feedback-unavailable">Can't be rated (the Engine doesn't know this message)</small>
+{% elif fb.state == "collapsed" %}
+  <a class="feedback-rate" href="{{ fb.open_url }}" hx-get="{{ fb.open_url }}" hx-target="#{{ fb.dom_id }}" hx-swap="outerHTML">Rate</a>{% if fb.result %} <span class="feedback-result" role="status">{{ fb.result }}</span>{% endif %}{% if fb.badge %} <span class="feedback-badge" title="Your rating">{{ fb.badge }}/5</span>{% endif %}
+{% else %}
+  {% with f=fb.feedback %}
+  {% if f %}<p class="feedback-header"><strong>Turn {{ f.turn }}, variant {{ f.variant }}</strong> — rating as {{ f.principal|principal_link }}</p>
+  {% if f.compacted_at %}<p class="muted">Message compacted at {{ f.compacted_at|engine_time }}; the rating is kept</p>{% endif %}{% endif %}
+  {% if fb.notice %}<p class="feedback-notice" role="status">{{ fb.notice }}</p>{% endif %}
+  {% if fb.error %}{% include "console/_engine_error.html" with engine_error=fb.error %}{% endif %}
+  {% if f %}
+  {% if f.rating is None %}<p class="feedback-current">Not rated</p>
+  {% else %}<p class="feedback-current">Rated <strong>{{ f.rating }}</strong> · given {{ f.created_at|engine_time }} · changed {{ f.updated_at|engine_time }}</p>{% endif %}
+  {% endif %}
+  {% if fb.form %}{% with form=fb.form %}
+  <form method="post" action="{{ fb.save_url }}" class="feedback-form" hx-post="{{ fb.save_url }}" hx-target="#{{ fb.dom_id }}" hx-swap="outerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="prefill" value="{{ fb.token }}">
+    <input type="hidden" name="view" value="{{ fb.view }}">
+    <input type="hidden" name="next" value="{{ fb.next_url }}">
+    {% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <fieldset class="feedback-rating">
+      <legend>Rating <small class="muted">1 = worst, 5 = best</small></legend>
+      {% for radio in form.rating %}{{ radio.tag }}<label for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label> {% endfor %}
+      {% if form.rating.errors %}<div class="errors">{{ form.rating.errors }}</div>{% endif %}
+    </fieldset>
+    {% if form.fields.tags.choices %}
+    <fieldset class="feedback-tags">
+      <legend>Tags <small class="muted">at most 10</small></legend>
+      {% for box, unknown in form.boxes %}<span class="feedback-tag{% if unknown %} unknown-tag{% endif %}">{{ box.tag }}<label for="{{ box.id_for_label }}">{{ box.choice_label }}</label>{% if unknown %} <strong class="error">unknown</strong>{% endif %}</span> {% endfor %}
+      {% if form.tags.errors %}<div class="errors">{{ form.tags.errors }}</div>{% endif %}
+    </fieldset>
+    {% endif %}
+    {% if fb.tags_note %}<p class="warning">{{ fb.tags_note }}</p>{% endif %}
+    <p class="feedback-text">
+      <label for="{{ form.text.id_for_label }}">Text</label> <small class="muted">Up to {{ fb.cap }} characters</small><br>
+      {{ form.text }}
+      {% if form.text.errors %}<span class="errors">{{ form.text.errors }}</span>{% endif %}
+    </p>
+    <button type="submit">Save</button>
+    {% if fb.rated %}<button type="submit" formaction="{{ fb.retract_url }}" formmethod="post" formnovalidate hx-post="{{ fb.retract_url }}" hx-target="#{{ fb.dom_id }}" hx-swap="outerHTML">Retract</button>{% endif %}
+    <a class="feedback-close" href="{{ fb.next_url }}" hx-get="{{ fb.close_url }}" hx-target="#{{ fb.dom_id }}" hx-swap="outerHTML">Close</a>
+  </form>
+  {% endwith %}{% else %}
+  <p><a class="feedback-close" href="{{ fb.next_url }}" hx-get="{{ fb.close_url }}" hx-target="#{{ fb.dom_id }}" hx-swap="outerHTML">Close</a></p>
+  {% endif %}
+  {% if f.history %}
+  <details class="feedback-history">
+    <summary>History ({{ f.history|length }})</summary>
+    <table>
+      <thead><tr><th>Kind</th><th>Rating</th><th>Tags</th><th>Text</th><th>Rated at</th><th>Replaced at</th></tr></thead>
+      <tbody>
+      {% for h in f.history %}
+        <tr><td>{{ h.kind }}</td><td>{{ h.rating }}</td><td>{% if h.tags %}{{ h.tags|join:", " }}{% else %}—{% endif %}</td><td>{{ h.text|default_if_none:"—" }}</td><td>{{ h.rated_at|engine_time }}</td><td>{{ h.replaced_at|engine_time }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+  {% if fb.context %}
+  <dl class="feedback-context">
+    {% for line in fb.context %}<dt>{{ line.label }}</dt><dd>{% if line.url %}<a href="{{ line.url }}">{% endif %}{% if line.code and line.value != "—" %}<code>{{ line.value }}</code>{% else %}{{ line.value }}{% endif %}{% if line.url %}</a>{% endif %}</dd>{% endfor %}
+    <dt>Models</dt><dd>{% if fb.models %}{% for m in fb.models %}{{ m }}{% if not forloop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</dd>
+  </dl>
+  {% endif %}
+  {% endwith %}
+{% endif %}
+</div>

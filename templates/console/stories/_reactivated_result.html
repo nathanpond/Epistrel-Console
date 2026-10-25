@@ -1,0 +1,17 @@
+{% comment %}
+A reactivated edit's answer (#81), from the check's outcome.result parsed with #53's result models.
+Context: rx (ReactivationView). Undo rewind and swap: the restored head turn linked to #52's transcript;
+fork: #53's "Forked from" banner and a link to the new story. No auto-redirect.
+{% endcomment %}{% if rx.fork_result %}
+{% include "console/play/_fork_banner.html" with fork_banner=rx.fork_banner %}
+<p class="new-story"><a href="{{ rx.new_story_url }}">Open the new story</a></p>
+{% else %}
+<p class="notice check-applied"><strong>Restored head turn {{ rx.head }}</strong> — <a class="transcript-link" href="{{ rx.transcript_url }}">Transcript at turn {{ rx.head }}</a></p>
+{% endif %}
+<dl class="reactivated-result">
+  {% for row in rx.rows %}<dt>{{ row.label }}</dt><dd>{% if row.code %}<code>{{ row.value }}</code>{% else %}{{ row.value }}{% endif %}</dd>
+  {% endfor %}
+</dl>
+{% if rx.more_rows %}<details class="fork-more"><summary>More</summary>
+<dl>{% for row in rx.more_rows %}<dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>{% endfor %}</dl>
+</details>{% endif %}

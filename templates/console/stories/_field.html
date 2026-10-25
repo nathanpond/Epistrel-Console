@@ -1,0 +1,6 @@
+{# One bound field (#75): label, widget, help text and, when show_errors, its errors. Context: f, show_errors. #}{% if f %}<p class="field-{{ f.name }}">
+  <label for="{{ f.id_for_label }}">{{ f.label }}</label>
+  {{ f }}
+  {% if f.help_text %}<small>{{ f.help_text }}</small>{% endif %}
+  {% if show_errors %}{{ f.errors }}{% endif %}
+</p>{% endif %}

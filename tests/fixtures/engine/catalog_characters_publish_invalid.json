@@ -1,0 +1,89 @@
+{
+  "error": {
+    "code": "publish_invalid",
+    "message": "the draft cannot be published",
+    "details": {
+      "entity": "character",
+      "character_id": "01JC00000000000000000CHAR1",
+      "report": {
+        "errors": [
+          {
+            "code": "true_age_missing",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "definition.true_age",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "FR-CAT-12: a true age is required to publish",
+            "source": null,
+            "text": null
+          },
+          {
+            "code": "content_rating_missing",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "metadata.content_rating_id",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "FR-RATE-3: a content rating is required to publish",
+            "source": null,
+            "text": null
+          },
+          {
+            "code": "field_required",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "definition.dispositions.caution",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "required to publish",
+            "source": null,
+            "text": null
+          },
+          {
+            "code": "primary_image_required",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "public_card.images.primary",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "require_primary_image is on",
+            "source": null,
+            "text": null
+          }
+        ],
+        "warnings": [
+          {
+            "code": "rating_looser",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "metadata.content_rating_id",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "kept",
+            "rule": null,
+            "source": null,
+            "text": null
+          }
+        ],
+        "unavailable": [
+          "fact_consistency"
+        ]
+      }
+    }
+  }
+}

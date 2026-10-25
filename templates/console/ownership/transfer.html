@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Transfer owner — {{ name }} — Epistrel Console{% endblock %}
+{% block heading %}Transfer owner{% endblock %}
+{% block content %}
+{% include "console/ownership/_refusal.html" %}
+{% if confirm %}
+<div class="confirm">
+  <p class="question">Transfer <em>{{ name }}</em>{% if current %} from <code>{{ current }}</code>{% endif %} to <code>{{ target }}</code>?</p>
+  {% if companion_moves %}<p class="companion-moves">{{ companion_moves }}</p>{% endif %}
+  <dl><dt>{{ type_name }} id</dt><dd><code>{{ entity_id }}</code></dd></dl>
+  <form method="post" action="{{ action_url }}">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="principal" value="{{ target }}">
+    <input type="hidden" name="current" value="{{ current }}">
+    <input type="hidden" name="name" value="{{ raw_name }}">
+    {% if has_companion %}<input type="hidden" name="has_companion" value="1">{% endif %}
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <button type="submit">Confirm</button>
+    <a class="cancel" href="{{ cancel_url }}">Cancel</a>
+  </form>
+</div>
+{% else %}
+<p>{{ type_name }} <em>{{ name }}</em> (<code>{{ entity_id }}</code>){% if current %}, owned by <code>{{ current }}</code>{% endif %}.</p>
+<form class="transfer-owner" method="get" action="{{ action_url }}">
+  <input type="hidden" name="current" value="{{ current }}">
+  <input type="hidden" name="name" value="{{ raw_name }}">
+  {% if has_companion %}<input type="hidden" name="has_companion" value="1">{% endif %}
+  <input type="hidden" name="next" value="{{ next_url }}">
+  {{ form.principal.errors }}
+  <label for="{{ form.principal.id_for_label }}">New owner</label> {{ form.principal }}
+  <button type="submit">Transfer…</button>
+  <a class="cancel" href="{{ cancel_url }}">Cancel</a>
+</form>
+{% endif %}
+{% endblock %}

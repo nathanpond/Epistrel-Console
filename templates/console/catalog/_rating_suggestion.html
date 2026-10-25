@@ -1,0 +1,16 @@
+{% comment %}#82: the detail page's "Rating suggestion" section (full view only): the trigger form, then the result area its answer is swapped into. Context: suggestion (SuggestBox).{% endcomment %}<section id="rating-suggestion-section">
+  <h2>Rating suggestion</h2>
+  <form method="post" action="{{ suggestion.url }}" class="rating-suggestion-form"
+        hx-post="{{ suggestion.url }}" hx-target="#rating-suggestion" hx-swap="innerHTML"
+        hx-disable="find button" hx-sync="this:drop" hx-indicator="find .htmx-indicator"
+        hx-config="timeout:{{ suggestion.browser_timeout_s }}s">
+    {% csrf_token %}
+    <input type="hidden" name="name" value="{{ suggestion.name }}">
+    <label>Version
+      <select name="version">{% for value, text in suggestion.options %}<option value="{{ value }}"{% if value == suggestion.selected %} selected{% endif %}>{{ text }}</option>{% endfor %}</select>
+    </label>
+    <label><input type="checkbox" name="include_retired" value="true"> Include retired ratings</label>
+    <button type="submit">Suggest ratings</button> <span class="htmx-indicator">{{ suggestion.wait_text }}</span>
+  </form>
+  <div id="rating-suggestion" aria-live="polite"></div>
+</section>

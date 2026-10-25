@@ -1,0 +1,12 @@
+<table class="offboarding-warnings">
+  <thead><tr><th>Warning</th><th>Entity</th><th>Principals involved</th></tr></thead>
+  <tbody>
+    {% for w in warnings %}
+    <tr class="warning-{{ w.kind }}">
+      <td>{% if w.known %}{{ w.text }} <small><code>{{ w.kind }}</code></small>{% else %}<code>{{ w.kind }}</code>{% endif %}</td>
+      <td>{{ w.entity }}</td>
+      <td>{{ w.principals|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

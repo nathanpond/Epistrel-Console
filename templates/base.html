@@ -29,9 +29,22 @@
     .default-submit { position: absolute; left: -10000px; }
     fieldset.character { margin: 0.8rem 0; }
     fieldset.character textarea { width: 40rem; max-width: 100%; }
+    textarea.monospace { font-family: ui-monospace, monospace; }
+    .report-note { display: block; color: #cf222e; }
     small.source { color: #57606a; white-space: nowrap; }
     .seeded { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; }
     .warning { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
+    .media-grid { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-start; }
+    figure.media-shown { margin: 0.4rem 0; }
+    figure.media-large img { max-width: 320px; height: auto; }
+    figure.media-small img { width: 120px; height: auto; }
+    figure.media-shown video { max-width: 640px; }
+    .slot-row { margin: 0.4rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #d0d7de; }
+    .slot-row.slot-removed { opacity: 0.6; }
+    .slot-error { display: block; }
+    .picker { border: 1px solid #8c959f; padding: 0.4rem 0.8rem; margin: 0.4rem 0; background: #f6f8fa; }
+    .picker-tiles { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .picker-tiles .in-use { color: #9a6700; }
     .policy-form .field { margin: 0.8rem 0; }
     .policy-form textarea { width: 40rem; max-width: 100%; }
     .play { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
@@ -50,6 +63,7 @@
     table.model-calls { font-size: 0.85em; }
     .degraded { background: #fff3cd; font-weight: 700; }
     .muted { color: #57606a; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     tr.revision th { background: #f6f8fa; }
     .settings-form .field { margin: 0.5rem 0; }
     nav.tabs { margin: 1rem 0 0.5rem; border-bottom: 1px solid #d0d7de; }
@@ -72,6 +86,43 @@
     ol.pinned-items li { margin: 0.4rem 0; }
     ol.pinned-items textarea { width: 40rem; max-width: 100%; vertical-align: top; }
     section > h2 small.revision { font-weight: 400; color: #57606a; }
+    nav.shell .nav-group-label { color: #57606a; }
+    nav.shell .nav-group.active .nav-group-label { font-weight: 700; color: inherit; }
+    nav.shell details.acting { position: relative; }
+    nav.shell details.acting summary { cursor: pointer; }
+    nav.shell details.acting form.acting-form { display: block; position: absolute; right: 0; z-index: 10; background: #fff; border: 1px solid #d0d7de; padding: 0.6rem; min-width: 20rem; }
+    nav.shell details.acting form.acting-form label { display: block; margin: 0.3rem 0; }
+    .banner { padding: 0.4rem 0.8rem; margin: 0.5rem 0; }
+    .banner-warning { background: #ffd8a8; border: 1px solid #d9822b; }
+    .residue { padding: 0.1rem 0.5rem; border-radius: 0.3rem; font-weight: 600; }
+    .residue-clean { color: #fff; background: #1a7f37; }
+    .residue-left { color: #fff; background: #cf222e; }
+    .residue-unscanned { color: #fff; background: #6e7781; }
+    mark.erased { background: #e5e5e5; color: #555; font-family: monospace; }
+    .badge-erased { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #6e7781; border-radius: 0.3rem; background: #e5e5e5; color: #555; }
+    .badge-held { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; color: #7d4e00; }
+    .badge-pending { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; }
+    .erasure-marker { font-style: italic; }
+    .banner form { display: inline; margin-left: 0.6rem; }
+    .report .entry { margin: 0.3rem 0; }
+    .report .location { color: #57606a; font-size: 0.9em; }
+    .tag { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; white-space: nowrap; }
+    .tag-strong { color: #0a3069; border-color: #0969da; background: #ddf4ff; font-weight: 700; }
+    table.profile-settings td pre, table.other-settings td pre { margin: 0; }
+    table.profile-settings td.depth-1 { padding-left: 1.7rem; }
+    table.profile-settings td.depth-2 { padding-left: 2.9rem; }
+    table.profile-settings td.depth-3 { padding-left: 4.1rem; }
+    table.profile-settings td.depth-4 { padding-left: 5.3rem; }
+    table.profile-settings td.depth-5 { padding-left: 6.5rem; }
+    table.profile-settings td.depth-6 { padding-left: 7.7rem; }
+    table.profile-settings td.depth-7 { padding-left: 8.9rem; }
+    table.profile-settings td.depth-8 { padding-left: 10.1rem; }
+    tr.deleted td, table.profile-versions tr.viewed td { background: #f6f8fa; }
+    .quality { font-size: 0.85em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; background: #f6f8fa; }
+    .quality-certified { color: #116329; border-color: #1a7f37; background: #dafbe1; }
+    .quality-stale { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    table.effective-config td.effective { background: #fff8c5; font-weight: 600; }
+    table.effective-config td pre { margin: 0; }
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
   </style>
 </head>
@@ -80,17 +131,23 @@
   <nav class="shell">
     <a class="brand" href="/">Epistrel Console</a>
     {% for item in nav_items %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
+    {% if nav_catalog.items %}<span class="nav-group{% if nav_catalog.active %} active{% endif %}"><span class="nav-group-label">Catalog:</span>{% for item in nav_catalog.items %} <a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}</span>{% endif %}
+    {% for item in nav_sections %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
+    {% for item in nav_last %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
     <span class="spacer"></span>
     <a class="badge state-{{ engine_badge.state }}" href="/" title="Engine status">{{ engine_badge.badge }}</a>
+    {% include "console/_acting_as.html" with part="selector" %}
     <span class="operator">{{ user.get_username }}</span>
     <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit">Log out</button></form>
   </nav>
+  {% include "console/_acting_as.html" with part="banner" %}
   {% endif %}
   {% if messages %}
   <ul class="messages">
     {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>{% endfor %}
   </ul>
   {% endif %}
+  {% if pause_banner %}{% include "console/stories/_pause_banner.html" %}{% endif %}
   <header>{% block header %}<h1>{% block heading %}Epistrel Console{% endblock %}</h1>{% endblock %}</header>
   <main>{% block content %}{% endblock %}</main>
   <footer>{% block footer %}Epistrel Console {{ console_version }}{% endblock %}</footer>

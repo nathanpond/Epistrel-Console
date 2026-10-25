@@ -2,6 +2,7 @@
 {% block title %}New story — Epistrel Console{% endblock %}
 {% block heading %}New story{% endblock %}
 {% block content %}
+<p><a class="from-scenario" href="{% url 'stories:from-scenario' %}">From scenario</a></p>
 {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
 <form method="post" action="{% url 'stories:new' %}" class="story-form">
   {% csrf_token %}

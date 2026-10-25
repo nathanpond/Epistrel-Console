@@ -1,0 +1,32 @@
+{
+  "id": "00000000000000000000PRF001",
+  "name": "Lite",
+  "owner_principal": "system",
+  "preset": true,
+  "version": 2,
+  "current_version": 2,
+  "settings": {
+    "pipeline": "lite",
+    "memory": {
+      "rolling_summary": {
+        "enabled": true,
+        "window_messages": 30,
+        "compress_threshold_tokens": 6000
+      }
+    },
+    "pins": {"enabled": true, "max_pinned": 50},
+    "repair": {"polish": {"enabled": true, "max_regenerations": 2}},
+    "budgets": {"model_calls": null, "deadline_ms": 45000},
+    "models": {
+      "purposes": {
+        "generation": {"model": null},
+        "guardrail_check": {"model": null},
+        "lite_summary": {"model": null}
+      },
+      "generation": {"temperature": 0.8, "top_p": 0.95, "response_length": "medium"}
+    }
+  },
+  "created_at": "2026-10-01T09:00:00Z",
+  "updated_at": "2026-10-20T12:30:00Z",
+  "deleted_at": null
+}

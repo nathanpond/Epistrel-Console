@@ -1,0 +1,33 @@
+{% comment %}
+A reactivation re-check's status (#81: undo rewind, swap or fork held back), polled inside
+console/_job_poll.html. Context: rx (ReactivationView, console/views/story_rating.py), rx_text, not_found,
+engine_error, story_url, variants_url. The heading sits in the partial so it follows the check.
+{% endcomment %}<h2 class="reactivation-heading">{{ rx.heading }}</h2>
+{% if not_found %}<p class="notice check-not-found"><strong>{{ rx_text.not_found }}</strong> — <a href="{{ story_url }}">Back to the story</a></p>
+{% elif engine_error %}{% include "console/_engine_error.html" %}
+{% elif rx.check %}
+<dl class="check-status">
+  <dt>Status</dt><dd class="status status-{{ rx.check.status }}">{{ rx.check.status }}</dd>
+  <dt>Progress</dt><dd>{% if rx.indeterminate %}<progress></progress>{% else %}<progress value="{{ rx.check.progress.done }}" max="{{ rx.check.progress.total }}">{{ rx.progress }}</progress>{% endif %} {{ rx.progress }}</dd>
+</dl>
+{% if rx.waiting %}
+<p class="notice reactivation-waiting">{{ rx_text.waiting }}</p>
+{% if rx.fork_name %}<p class="fork-name">Requested new story name: <em>{{ rx.fork_name }}</em></p>{% endif %}
+{% elif rx.check.status == "reactivated" %}
+{% if rx.outcome.readable %}{% include "console/stories/_reactivated_result.html" %}
+{% else %}<p class="notice reactivation-unreadable"><strong>{{ rx_text.unreadable }}</strong></p>
+<details class="raw-outcome"><summary>More</summary><pre>{{ rx.outcome.raw }}</pre></details>{% endif %}
+{% elif rx.check.status == "refused" %}
+<p class="notice check-refused"><strong>{{ rx.unchanged_text }}</strong></p>
+{% include "console/stories/_check_violations.html" with violations=rx.violations %}
+{% elif rx.check.status == "failed" %}
+<p class="notice check-failed"><strong>{{ rx_text.failed }}</strong></p>
+<dl class="check-error">
+  <dt>Error class</dt><dd><code>{{ rx.error_class }}</code></dd>
+  <dt>Message</dt><dd>{{ rx.error_message }}</dd>
+</dl>
+{% elif rx.unexpected %}
+<details class="raw-check"><summary>More</summary><pre>{{ rx.raw_check }}</pre></details>
+{% endif %}
+{% if rx.ended %}<p class="check-back"><a href="{{ story_url }}">Back to the story</a>{% if rx.check.status != "reactivated" %} · <a href="{{ variants_url }}">Variants</a>{% endif %}</p>{% endif %}
+{% endif %}

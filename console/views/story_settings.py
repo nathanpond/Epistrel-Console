@@ -66,6 +66,7 @@ from console.formset_rows import edit_rows, wants_edit
 from console.history import NAME_WITHHELD
 from console.ids import new_ulid
 from console.ingest import BatchErrors
+from console.story_pause import pause_banner, paused_refusal
 from console.story_settings import (
     DEPLOYMENT_DEFAULTS,
     FALLBACK_MAX_INSTRUCTIONS,
@@ -227,6 +228,7 @@ class Refusal:
     """What a section shows about a refused save, with the form kept."""
 
     notice: str = ""
+    notice_url: str = ""  # links the notice (#80: the check a 409 story_paused names)
     line: str = ""  # "HTTP 423 story_busy: …"
     facts: tuple[tuple[str, str], ...] = ()
     violations: tuple[ViolationRow, ...] = ()
@@ -245,6 +247,9 @@ def refusal_for(exc: EngineClientError, key: str) -> Refusal:
         return Refusal(panel=panel_for(exc))
     details = exc.details
     line = f"HTTP {exc.http_status} {exc.code}: {exc.message}"
+    if exc.code == "story_paused":
+        paused = paused_refusal(exc)
+        return Refusal(notice=paused.text, notice_url=paused.url, line=line)
     if exc.code == "story_busy":
         busy = error_inspector(exc, key)  # #48's busy line: notice, operation, Retry-After
         return Refusal(notice=busy.notice, line=line, facts=busy.facts)
@@ -343,6 +348,8 @@ class Page:
             "snap": self.snap,
             "snapshot": self.snap.signed(),
             "archived_note": ARCHIVED_NOTE if self.snap.archived else "",
+            "pause_banner": pause_banner(self.story),  # #80
+            "rating_url": reverse("stories:rating", args=[self.story.id]),
             **self.sections,
         }
 

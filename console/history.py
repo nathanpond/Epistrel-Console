@@ -3,7 +3,8 @@
 - :func:`turn_groups`: the page's items under per-turn headers ("Turn N · variant V"), one row
   per item, with the turn's audit records under it and "no reply" marks;
 - :func:`audit_record`: a ``guardrail_output_rejected`` (or other audit) item, read from its
-  text, which the Engine fills with the event payload's canonical JSON;
+  text, which the Engine fills with the event payload's canonical JSON; an ``erasure_marker``
+  (#87) read from its ``[erasure marker: <id>, <scope>]`` text;
 - :func:`policy_names`: policy id → name from ``GET /stories/{id}/settings``;
 - :func:`operation_links`: Engine operation id → the Console's operation-log row (#44).
 
@@ -11,9 +12,10 @@
 """
 
 import json
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from console.engine.models import (
     History,
@@ -24,12 +26,17 @@ from console.engine.models import (
 )
 from console.models import EngineOperation
 
+if TYPE_CHECKING:
+    from console.feedback import FeedbackWidget
+
 INGEST_KIND = "ingest"  # the operation-log kind of an ingest batch (the client method's name)
 REJECTED_KIND = "guardrail_output_rejected"
 AUDIT_CHANNEL = "audit"
 REPLY_CHANNELS = frozenset({"message", "narration"})
 REPLY_KIND = "message_rendered"
 NAME_WITHHELD = "(name withheld — erasure pending)"
+MARKER_KIND = "erasure_marker"  # an audit item a deleted record left (#87, Engine brief §8)
+MARKER_TEXT = re.compile(r"^\[erasure marker: (?P<id>[^,\]]+), (?P<scope>[^\]]+)\]$")
 INGEST_SCAN = 500  # newest ingest rows of the story looked through for a batch's operations
 
 
@@ -56,10 +63,29 @@ class AuditPolicy:
 
 
 @dataclass(frozen=True)
+class ErasureMarker:
+    """An ``erasure_marker`` audit item's text, parsed: the erased subject's id (shown raw,
+    never resolved) and the erasure's scope."""
+
+    subject_id: str
+    scope: str
+
+    @property
+    def scope_label(self) -> str:
+        """ "story scope", "catalog scope", or any other scope raw, the same way."""
+        return f"{self.scope} scope"
+
+
+def erasure_marker(text: str) -> ErasureMarker | None:
+    found = MARKER_TEXT.match(text)
+    return ErasureMarker(found["id"], found["scope"]) if found else None
+
+
+@dataclass(frozen=True)
 class AuditRecord:
     """An audit item as shown under its turn. ``draft`` is the rejected text (``None`` when the
-    record holds none); ``raw`` is the item's text when it is not a JSON object (an erasure
-    marker)."""
+    record holds none); ``raw`` is the item's text when it is not a JSON object (an
+    unparsable erasure marker); ``marker`` is a parsed erasure marker (#87)."""
 
     item: HistoryItem
     reason: str = ""
@@ -67,6 +93,11 @@ class AuditRecord:
     policies: tuple[AuditPolicy, ...] = ()
     draft: str | None = None
     raw: str = ""
+    marker: ErasureMarker | None = None
+
+    @property
+    def is_marker(self) -> bool:
+        return self.item.kind == MARKER_KIND
 
     @property
     def policy_line(self) -> str:
@@ -93,7 +124,11 @@ def _policy_label(policy_id: str, names: Mapping[str, str | None]) -> tuple[str,
 
 def audit_record(item: HistoryItem, names: Mapping[str, str | None]) -> AuditRecord:
     """``item`` (an audit-channel item) with its payload read: the policy ids (``policy_ids``,
-    else the violations'), each violation's message and the rejected ``text``."""
+    else the violations'), each violation's message and the rejected ``text``. An
+    ``erasure_marker`` is routed first: its text parsed, else kept raw."""
+    if item.kind == MARKER_KIND:
+        marker = erasure_marker(item.text)
+        return AuditRecord(item, marker=marker) if marker else AuditRecord(item, raw=item.text)
     payload = _payload(item.text)
     if payload is None:
         return AuditRecord(item, raw=item.text)
@@ -183,6 +218,7 @@ class Row:
     render: tuple[str, ...]  # render characters' labels (raw id when not in the cast)
     log_pk: int | None  # the operation-log row its operation id links to
     same_message: bool = False  # shares message_id with the row before it (say + do)
+    feedback: FeedbackWidget | None = None  # the "Rate" control (#83, set by the view)
 
 
 @dataclass
@@ -212,8 +248,9 @@ def turn_groups(
     actor_filtered: bool,
 ) -> list[TurnGroup]:
     """The page's turns in ascending order. Audit records render under their turn only for
-    turns on this page. A turn ≥ 1 with no reply item says "no reply" (not while an actor
-    filter is set)."""
+    turns on this page (an erasure marker with no turn under turn 0, which only the oldest page
+    holds). A turn ≥ 1 with no reply item says "no reply" (not while an actor filter is
+    set)."""
     groups: dict[tuple[int, int | None], TurnGroup] = {}
 
     def group(turn: int, variant: int | None) -> TurnGroup:
@@ -242,6 +279,8 @@ def turn_groups(
     for record in audit:
         turn = record.item.turn or 0
         target = groups.get((turn, record.item.variant)) or by_turn.get(turn)
+        if target is None and record.is_marker and turn == 0 and history.next_before_turn is None:
+            target = by_turn.setdefault(0, group(0, None))
         if target is not None:
             target.audit.append(record)
     ordered = sorted(groups.values(), key=lambda g: (g.turn, g.variant or 0))

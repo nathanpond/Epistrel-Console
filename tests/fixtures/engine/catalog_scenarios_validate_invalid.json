@@ -1,0 +1,42 @@
+{
+  "valid": false,
+  "report": {
+    "errors": [
+      {
+        "code": "opening_narration_missing",
+        "location": {
+          "entry": "01JC000000000000000000SCN2",
+          "version": "draft",
+          "field": "starting_state.opening.narration",
+          "role": null,
+          "seed_id": null
+        },
+        "outcome": "rejected",
+        "rule": "FR-SCN-5: an opening narration is required to publish",
+        "source": null,
+        "text": null
+      }
+    ],
+    "warnings": [
+      {
+        "code": "rating_looser",
+        "location": {
+          "entry": "01JC00000000000000000CHAR1",
+          "version": 2,
+          "field": "metadata.content_rating_id",
+          "role": "mother",
+          "seed_id": null
+        },
+        "outcome": "kept",
+        "rule": "FR-RATE-5: the character is rated looser than the scenario",
+        "source": null,
+        "text": null
+      }
+    ],
+    "unavailable": [
+      "seed_normalization",
+      "fact_consistency",
+      "state_schema"
+    ]
+  }
+}

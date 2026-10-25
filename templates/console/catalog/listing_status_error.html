@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Listing status not set — Epistrel Console{% endblock %}
+{% block heading %}Listing status not set{% endblock %}
+{% block content %}
+{% include "console/_engine_error.html" %}
+<p><a class="back" href="{{ detail_url }}">Back to {{ name }}</a></p>
+{% endblock %}

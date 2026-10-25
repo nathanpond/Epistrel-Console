@@ -37,7 +37,9 @@ from django.views.decorators.http import require_POST, require_safe
 
 from console import cast as cast_helpers
 from console.cast import CastMember, character_of, viewpoint_for
+from console.cast_panel import CastPanel, cast_panel
 from console.confirm import confirm_query, posted_idempotency_key
+from console.creation_report import has_creation_report
 from console.engine.client import (
     DEFAULT_TURN_DEADLINE_S,
     EngineClient,
@@ -60,6 +62,7 @@ from console.engine.models import (
 from console.engine_access import complete_queued, engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
+from console.feedback import FeedbackWidget, collapsed, first_parts
 from console.forms.ingest import (
     EVENTS_MAX,
     INGEST_PREFIX,
@@ -83,7 +86,10 @@ from console.ingest import (
 )
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
+from console.story_config import ConfigBadge, badge_from_report, read_badge
+from console.story_pause import TURN_NOTE, PauseBanner, pause_banner, paused_refusal
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
+from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
 from console.timeline import Basis, Link, TurnControls, turn_controls
 from console.turn_reports import (
     ViolationRow,
@@ -91,6 +97,7 @@ from console.turn_reports import (
     stored_turn_report,
     violation_rows,
 )
+from console.views.ownership import OwnershipPanel, ownership_context
 
 TRANSCRIPT_LIMIT = 50
 POLL_GRACE_S = 30.0  # polling stops this long after the turn's deadline (planner)
@@ -187,6 +194,18 @@ class PlayStory:
     def archived(self) -> bool:
         return self.status == "archived"
 
+    @property
+    def paused(self) -> bool:
+        """A check pauses the story (#80): the Engine refuses turns and timeline operations."""
+        return self.status == "paused"
+
+    @property
+    def timeline_note(self) -> str:
+        """Why the timeline controls are disabled ("" when they are not)."""
+        if self.paused:
+            return TIMELINE_PAUSED
+        return TIMELINE_ARCHIVED if self.archived else ""
+
     def default_form_viewpoint(self) -> str:
         """The viewpoint select's first choice: the story default, else the default actor."""
         if self.default_viewpoint:
@@ -260,6 +279,8 @@ class FormView:
 def _form_view(play: PlayStory, form: TurnForm, *, waiting: bool = False) -> FormView:
     if play.archived:
         return FormView(play.id, form, play.signed(), new_ulid(), True, ARCHIVED_NOTE)
+    if play.paused:
+        return FormView(play.id, form, play.signed(), new_ulid(), True, TURN_NOTE)
     note = "Waiting for the queued turn to finish." if waiting else ""
     return FormView(play.id, form, play.signed(), new_ulid(), waiting, note)
 
@@ -272,6 +293,7 @@ class Entry:
     item: HistoryItem
     speaker: str
     controls: TurnControls | None = None  # on the last item of each turn (#53)
+    feedback: FeedbackWidget | None = None  # the "Rate" control on a generated message (#83)
 
 
 @dataclass(frozen=True)
@@ -303,7 +325,15 @@ def timeline_basis(play_story: PlayStory, history: History, story: Story | None 
     else:
         rev, head = history.timeline_revision, history.as_of
     next_url = reverse("stories:detail", args=[play_story.id])
-    return Basis(play_story.id, rev, head, play_story.name or "", play_story.archived, next_url)
+    return Basis(
+        play_story.id,
+        rev,
+        head,
+        play_story.name or "",
+        play_story.archived,
+        next_url,
+        paused=play_story.paused,
+    )
 
 
 def _with_controls(
@@ -349,7 +379,12 @@ def _transcript(
         return Transcript(play_story.id, viewpoint, label, error=panel_for(exc))
     labels = cast_helpers.character_labels(cast)
     basis = timeline_basis(play_story, history, story)
-    entries = [Entry(item, _speaker(item, labels)) for item in history.entries]
+    items = history.entries
+    widget = collapsed(play_story.id, "play", reverse("stories:detail", args=[play_story.id]))
+    entries = [
+        Entry(item, _speaker(item, labels), feedback=widget(item.message_id) if rate else None)
+        for item, rate in zip(items, first_parts(items), strict=True)
+    ]
     chains = story.variant_chains if story is not None else []
     return Transcript(
         play_story.id,
@@ -358,7 +393,7 @@ def _transcript(
         _with_controls(entries, play_story, basis, story),
         history.next_before_turn,
         start=turn_controls(basis, 0, chains=chains),
-        archived_note=TIMELINE_ARCHIVED if play_story.archived else "",
+        archived_note=play_story.timeline_note,
     )
 
 
@@ -371,6 +406,7 @@ class Inspector:
 
     title: str = ""
     notice: str = ""
+    notice_url: str = ""  # links the notice (#80: the check a 409 story_paused names)
     report: TurnReport | None = None
     reply: str = ""
     input_violations: tuple[ViolationRow, ...] = ()
@@ -421,6 +457,10 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
         "error_line": line,
     }
     retry = (("Retry after", f"{exc.retry_after} s"),) if exc.retry_after else ()
+    if exc.code == "story_paused":
+        story_id = details.get("story_id")
+        paused = paused_refusal(exc, story_id if isinstance(story_id, str) else None)
+        return Inspector(notice=paused.text, notice_url=paused.url, **base)
     if exc.code == "story_busy":
         reason = details.get("reason")
         if reason == "queue_full":
@@ -631,15 +671,24 @@ class PlayPage:
     tab: str = TURN_TAB
     header: TimelineHeader | None = None
     fork_banner: ForkBanner | None = None
+    cast_panel: CastPanel | None = None  # #72: Add character, Promote
+    ownership: OwnershipPanel | None = None  # #79: owner and relations
+    pause_banner: PauseBanner | None = None  # #80: a check pauses the story
+    config_badge: ConfigBadge | None = None  # #85: fingerprint and quality status
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "config_badge": self.config_badge,
+            "pause_banner": self.pause_banner,
+            "rating_url": reverse("stories:rating", args=[self.story.id]),
             "timeline": self.header,
             "fork_banner": self.fork_banner,
             "tab": self.tab,
             "iv": self.ingest_view,
             "story": self.story,
             "cast": self.story.cast,
+            "cast_panel": self.cast_panel,
+            "ownership": self.ownership,
             "actions_query": confirm_query(
                 self.story.name, reverse("stories:detail", args=[self.story.id])
             ),
@@ -648,6 +697,12 @@ class PlayPage:
             "inspector": self.inspector,
             "cards": self.cards,
             "status_note": self.status_note,
+            # #75: a story created from a scenario through this Console has a creation report.
+            "creation_report_url": (
+                reverse("stories:creation-report", args=[self.story.id])
+                if has_creation_report(self.story.id)
+                else ""
+            ),
         }
 
 
@@ -659,7 +714,7 @@ class TimelineHeader:
     undo: Link | None
     dormant: int
     variants_url: str
-    archived_note: str
+    archived_note: str  # why Undo rewind is disabled: archived, or paused (#80)
 
 
 def _timeline_header(story: Story, play_story: PlayStory) -> TimelineHeader:
@@ -671,12 +726,13 @@ def _timeline_header(story: Story, play_story: PlayStory) -> TimelineHeader:
         story.name or "",
         play_story.archived,
         next_url,
+        paused=play_story.paused,
     )
     return TimelineHeader(
         undo=basis.undo() if story.undo_available else None,
         dormant=len(story.dormant_chains),
         variants_url=reverse("stories:history", args=[story.id]) + "#variants",
-        archived_note=TIMELINE_ARCHIVED if play_story.archived else "",
+        archived_note=play_story.timeline_note,
     )
 
 
@@ -754,8 +810,31 @@ def _page(
         INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
         _timeline_header(story, play),
         _fork_banner(request, story_id),
+        cast_panel(engine_client_for(request), story),
+        _ownership(request, story),
+        pause_banner(story),
+        read_badge(engine_client_for(request), story_id),
     )
     return render(request, "console/play/play.html", page.context(request))
+
+
+def _ownership(request: HttpRequest, story: Story) -> OwnershipPanel:
+    """#79's panel, its writes returning to the play view (this page when it was a GET; a POST
+    that re-renders the page, a turn, returns to the play view itself)."""
+    next_url = (
+        request.get_full_path()
+        if request.method in ("GET", "HEAD")
+        else reverse("stories:detail", args=[story.id])
+    )
+    return ownership_context(
+        request,
+        engine_client_for(request),
+        "story",
+        story.id,
+        name=story.name,
+        owner=story.owner_principal,
+        next_url=next_url,
+    )
 
 
 @require_safe
@@ -880,7 +959,20 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
         fresh,
         result_inspector(result, key, operation_id),
         viewpoint=result.output_viewpoint,
+        config_badge=_badge_after(request, story_id, result),
     )
+
+
+def _badge_after(
+    request: HttpRequest, story_id: str, result: RespondResponse | None
+) -> ConfigBadge | None:
+    """The header's configuration block after a finished turn (#85), for the HTMX answer's
+    out-of-band swap: from the turn's report, else (no fingerprint in it) re-read. A full page
+    reads it itself."""
+    if not is_htmx(request):
+        return None
+    found = badge_from_report(story_id, result.report if result is not None else None)
+    return found or read_badge(engine_client_for(request), story_id)
 
 
 def _turn_answer(
@@ -891,9 +983,10 @@ def _turn_answer(
     *,
     cards: list[WaitingCard] | None = None,
     viewpoint: str | None = None,
+    config_badge: ConfigBadge | None = None,
 ) -> HttpResponse:
     """The answer to a turn POST. ``viewpoint`` set means the turn finished: the transcript is
-    re-fetched at it."""
+    re-fetched at it (and ``config_badge`` refreshes the header, #85)."""
     if not is_htmx(request):
         return _page(
             request,
@@ -909,6 +1002,7 @@ def _turn_answer(
         "cards": cards or [],
         "status_note": "",
         "transcript": (_transcript(request, play_story, viewpoint) if viewpoint else None),
+        "config_badge": config_badge,
     }
     return render(request, "console/play/_turn_response.html", context)
 
@@ -920,7 +1014,11 @@ def _ingest_view(
     play_story: PlayStory, formset: BaseIngestFormSet, viewpoint: str, **changes: Any
 ) -> IngestView:
     """The ingest tab for ``formset``: a fresh key, disabled while the story is archived."""
-    archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE} if play_story.archived else {}
+    archived: dict[str, Any] = {}
+    if play_story.archived:
+        archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE}
+    elif play_story.paused:
+        archived = {"disabled": True, "note": TURN_NOTE}
     return IngestView(
         play_story.id,
         formset,
@@ -1162,7 +1260,8 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
         if result is not None:
             found = result_inspector(result, key, operation_id)
             note = f"Turn {result.turn} committed."
-            return _poll_end(request, card, found, note, result.output_viewpoint)
+            badge = _badge_after(request, story_id, result)
+            return _poll_end(request, card, found, note, result.output_viewpoint, badge)
         batch = IngestResponse.from_json(op.result.body) if op.result else None
         if batch is not None:  # a queued ingest (#51)
             found = Inspector(
@@ -1187,7 +1286,8 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
                 operation_id=operation_id,
                 log_pk=_log_pk(operation_id),
             )
-            return _poll_end(request, card, found, "Turn committed.", viewpoint or None)
+            badge = _badge_after(request, story_id, None)
+            return _poll_end(request, card, found, "Turn committed.", viewpoint or None, badge)
         return _poll_end(request, card, error_inspector(stored, key), "Turn refused.", None)
     stored = _stored_error(op)
     if stored is not None:
@@ -1213,9 +1313,11 @@ def _poll_end(
     found: Inspector | None,
     note: str,
     viewpoint: str | None,
+    config_badge: ConfigBadge | None = None,
 ) -> HttpResponse:
     """Polling is over: a closing line in the card's place, and out-of-band the inspector (when
-    there is something new to show), the transcript (after a committed turn) and the form."""
+    there is something new to show), the transcript (after a committed turn), the form and
+    (after a committed turn) the header's configuration block (#85)."""
     committed = viewpoint is not None
     play_story, form = _pending_form(
         request, card.story_id, card.operation_id, clear_input=committed
@@ -1228,5 +1330,6 @@ def _poll_end(
         "inspector": found,
         "fv": _form_view(play_story, form),
         "transcript": (_transcript(request, play_story, viewpoint) if committed else None),
+        "config_badge": config_badge,
     }
     return render(request, "console/play/_poll_response.html", context)

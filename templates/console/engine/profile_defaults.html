@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Profile defaults — Epistrel Console{% endblock %}
+{% block heading %}Profile defaults{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:settings' %}">← Deployment settings</a></p>
+<p>The engine profiles' defaults: what every profile leaves out gets. Save sends only the settings you changed (objects merge; <code>null</code> is a value). Config revision {{ facts.revision }}.</p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if refusal %}
+<section class="error-panel invalid-profile" role="alert">
+  <h3>These defaults would leave {% if refusal.count %}{{ refusal.count }}{% else %}some{% endif %} configurations unable to run</h3>
+  {% if refusal.profiles %}<h4>Profile versions</h4><ul class="invalid-profile-list">{% for row in refusal.profiles %}<li><a href="{{ row.url }}"><code>{{ row.text }}</code></a></li>{% endfor %}</ul>{% endif %}
+  {% if refusal.stories %}<h4>Stories</h4><ul class="invalid-story-list">{% for row in refusal.stories %}<li><a href="{{ row.url }}">{{ row.text }}</a>{% if row.note %} <small class="muted">({{ row.note }})</small>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if refusal.extra %}<dl>{% for key, value in refusal.extra %}<dt>{{ key }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}</dl>{% endif %}
+</section>
+{% endif %}
+<form method="post" action="{% url 'engine:profile-defaults' %}" id="profile-defaults-form" class="profile-form" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ form.non_field_errors }}
+  {% for w in form.top_warnings %}<p class="warning">{{ w }}</p>{% endfor %}
+  {% include "console/profiles/_schema_fields.html" with nodes=nodes %}
+  <p><button type="submit">Save</button> <a href="{% url 'engine:settings' %}">Cancel</a></p>
+</form>
+{% endblock %}

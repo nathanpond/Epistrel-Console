@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "character_not_published",
+    "message": "the companion's character has no published version",
+    "details": {
+      "scenario_id": "01JC000000000000000000SCN1",
+      "character_id": "01JC00000000000000000CHAR1"
+    }
+  }
+}

@@ -1,8 +1,8 @@
-{# A story's actions by status (#45): story (id, status), query (?name=…&next=…). #}
+{# A story's actions by status (#45): story (id, status), query (?name=…&next=…). A held story (#87) offers Delete alone. #}
 <span class="actions">
   {% if story.status == "active" %}<a class="button" href="{% url 'stories:archive' story.id %}?{{ query }}">Archive</a>
   {% elif story.status == "archived" %}<a class="button" href="{% url 'stories:unarchive' story.id %}?{{ query }}">Unarchive</a>
-  {% elif story.status == "paused" %}<button type="button" disabled>Archive</button> <span class="note">Paused while a check runs</span>
+  {% elif story.status == "paused" %}<button type="button" disabled>Archive</button> <span class="note">Paused while the check runs</span>
   {% endif %}
   <a class="button" href="{% url 'stories:delete' story.id %}?{{ query }}">Delete</a>
 </span>

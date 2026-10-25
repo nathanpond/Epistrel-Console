@@ -1,0 +1,185 @@
+{
+  "id": "01JC000000000000000000SCN2",
+  "status": "published",
+  "listing_status": "public",
+  "owner_principal": "console:nate",
+  "version": null,
+  "current_version": 2,
+  "draft_revision": 6,
+  "created_at": "2026-10-01T09:00:00.000000Z",
+  "updated_at": "2026-10-22T10:00:00.000000Z",
+  "published_at": null,
+  "companion_of": null,
+  "pinned_character_version": null,
+  "schema_version": 1,
+  "public_card": {
+    "name": "Harvest Weekend",
+    "public_description": "The whole family is home for the weekend.",
+    "media": {
+      "cover": null,
+      "gallery": [],
+      "videos": []
+    }
+  },
+  "metadata": {
+    "labels": [
+      "family",
+      "drama"
+    ],
+    "content_rating_id": "00000000000000000000RAT002"
+  },
+  "world": {
+    "description": "A farmhouse outside a small river town.",
+    "locations": [
+      {
+        "id": "farmhouse",
+        "name": "The farmhouse",
+        "description": "Where everyone sleeps."
+      },
+      {
+        "id": "barn",
+        "name": "The barn"
+      }
+    ],
+    "entities": [
+      {
+        "id": "tractor",
+        "name": "Old Red",
+        "kind": "item",
+        "aliases": [
+          "the tractor"
+        ],
+        "description": "The tractor that never starts."
+      },
+      {
+        "id": "town",
+        "name": "Riverbend"
+      }
+    ],
+    "event_types": [
+      "harvest",
+      "supper"
+    ]
+  },
+  "cast": {
+    "max_characters_at_start": null,
+    "roles": [
+      {
+        "id": "mother",
+        "public_label": "Mother",
+        "setup_description": "Her children are home for the weekend.",
+        "kind": "npc",
+        "fill": "open"
+      },
+      {
+        "id": "son",
+        "public_label": "Son",
+        "setup_description": "Back home for the first time in a year.",
+        "kind": "player",
+        "fill": "open"
+      }
+    ]
+  },
+  "starting_state": {
+    "opening": {
+      "narration": "Dawn over the fields.",
+      "starting_location": "farmhouse",
+      "roles_present": [
+        "mother"
+      ]
+    },
+    "seeded_memories": [
+      {
+        "text": "The harvest is late this year.",
+        "holder": "world"
+      }
+    ],
+    "states": [
+      {
+        "name": "weather",
+        "value": "rain"
+      }
+    ],
+    "clock": {
+      "start": "06:00"
+    },
+    "scheduled_events": [],
+    "predicates": [],
+    "closed_sets": [],
+    "rules": []
+  },
+  "drivers": {
+    "director_guidance": "Keep it warm.",
+    "plot_hooks": [
+      "A letter arrives."
+    ],
+    "objectives": [
+      "Bring the harvest in."
+    ],
+    "milestones": [],
+    "endings": [
+      "Everyone stays for supper."
+    ],
+    "planned_reveals": [
+      {
+        "truth": {
+          "text": "The farm is for sale."
+        },
+        "allowed_roles": [
+          "mother"
+        ]
+      }
+    ]
+  },
+  "story_settings_defaults": {
+    "allow_new_arrivals": true,
+    "interaction_mode": "sequential",
+    "player_authority": null,
+    "turn_concurrency": null,
+    "ambiguous_retcon_timing": null,
+    "backfill_conflict_policy": null,
+    "audit_retention_days": 30,
+    "default_output_viewpoint": "son",
+    "policies": [
+      {
+        "name": "No swearing",
+        "rule": {
+          "type": "wordlist",
+          "words": [
+            "darn"
+          ]
+        },
+        "message": "Keep it clean.",
+        "applies_to": [
+          "text_output"
+        ],
+        "age_condition": "minor_involved_or_present"
+      }
+    ],
+    "required_providers": [
+      "openai"
+    ]
+  },
+  "recommendation": {
+    "engine_profile_id": "lite-default",
+    "capabilities": [
+      "memory"
+    ]
+  },
+  "visual_style": {
+    "prompt": "Warm watercolour",
+    "negative_prompt": null
+  },
+  "creation_rules": {
+    "overridable": [
+      "story_settings_defaults.interaction_mode"
+    ],
+    "bounds": {
+      "audit_retention_days": {
+        "max": 90
+      }
+    }
+  },
+  "config_revision": 4,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KEY"
+}

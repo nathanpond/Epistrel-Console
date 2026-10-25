@@ -1,0 +1,10 @@
+{% comment %}#66: the detail page's plain Publish of the saved draft. Context: publish (PublishBox), character_id.{% endcomment %}<form method="post" action="{% url 'catalog_characters:publish' character_id %}" class="publish-form">
+  {% csrf_token %}
+  <input type="hidden" name="draft_revision" value="{{ publish.draft_revision|default_if_none:'' }}">
+  <input type="hidden" name="companion_draft_revision" value="{{ publish.companion_revision|default_if_none:'' }}">
+  <input type="hidden" name="publish_idempotency_key" value="{{ publish.key }}">
+  <button type="submit"{% if publish.disabled %} disabled{% endif %}>Publish</button>{% if publish.draft_revision %} <small class="muted">the saved draft (revision {{ publish.draft_revision }})</small>{% endif %}
+  <label><input type="checkbox" name="with_companion"{% if publish.companion_revision is None or publish.disabled %} disabled{% endif %}> Also publish the companion's draft</label>
+  {% if publish.disabled %}<small class="publish-disabled">{{ publish.disabled }}</small>{% endif %}
+  {% if publish.companion_error %}<small class="companion-unavailable">Companion draft unavailable: {{ publish.companion_error }}</small>{% endif %}
+</form>

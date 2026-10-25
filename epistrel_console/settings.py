@@ -77,7 +77,14 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # An Engine error a view lets escape renders the shared error panel, never a 500.
     "console.middleware.EngineErrorMiddleware",
+    # ...except a story held by a pending erasure (503 erasure_pending): the held message (#87).
+    "console.middleware.HeldStoryMiddleware",
 ]
+
+# An erasure preview (#86) may list more candidate mentions than Django's default 1,000 fields,
+# and the erase POST carries one checkbox per ticked candidate; the run view then refuses more
+# than the Engine's 1,000 with its own message instead of Django's 400.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20_000
 
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
@@ -97,6 +104,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "console.context_processors.shell",
                 "console.context_processors.engine_badge",
+                "console.context_processors.acting",
             ],
         },
     },

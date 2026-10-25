@@ -198,8 +198,8 @@ def test_detail_page_shows_the_header_and_actions(
     engine.respond("GET", "/stories/{story_id}/history", 200, json=engine_fixture("get_history"))
     html = operator_client.get(f"/stories/{STORY}/").content.decode()
     assert "<h1>Harbour</h1>" in html
-    assert "<li>Mara (player)</li>" in html
-    assert "<li>Tobin</li>" in html
+    assert '<li>Mara (player) <a class="button danger erase"' in html  # #86: Erase…
+    assert '<li>Tobin <a class="button promote"' in html  # #72: Promote on non-players
     assert "Teen" in html
     assert f"/stories/{STORY}/archive/?name=Harbour&amp;next=%2Fstories%2F{STORY}%2F" in html
     assert f"/stories/{STORY}/delete/" in html

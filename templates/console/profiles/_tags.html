@@ -1,0 +1,1 @@
+{% for badge in badges %}<span class="tag{% if badge.strong %} tag-strong{% endif %}">{{ badge.text }}</span>{% if not forloop.last %} {% endif %}{% empty %}{% if untagged %}<span class="muted untagged">untagged</span>{% endif %}{% endfor %}

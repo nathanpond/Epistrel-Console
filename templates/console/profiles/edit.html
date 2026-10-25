@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}{% if create %}New engine profile{% else %}Edit {{ facts.name }}{% endif %} — Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}{% if create %}New engine profile{% else %}Edit {{ facts.name }}{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ cancel_url }}">{% if create %}All profiles{% else %}Back to the profile{% endif %}</a></p>
+{% include "console/profiles/_form.html" %}
+{% endblock %}

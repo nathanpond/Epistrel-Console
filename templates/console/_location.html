@@ -1,0 +1,7 @@
+{% load reports %}{% comment %}
+Where a report entry points (#64): entry and version, role, field (linked to its anchor), seed and
+media id; nulls are skipped. Context: location (EntryLocation), anchor_base (the page URL the
+anchors sit on; empty = this page), anchors (optional: the anchors the page has); #74, optional:
+entry_url and entry_label (the entry links there, labelled so); an empty ``anchors`` collection
+leaves every location plain text.
+{% endcomment %}{% with known=anchors|default_if_none:"" %}{% with anchor=location|location_anchor:known %}<span class="location">entry {% if entry_url %}<a href="{{ entry_url }}"><code>{{ entry_label|default:location.entry }}</code></a>{% else %}<code>{{ location.entry }}</code>{% endif %} v{{ location.version }}{% if location.role %} · role {% if anchor and not location.field and not location.seed_id %}<a href="{{ anchor_base }}#{{ anchor }}"><code>{{ location.role }}</code></a>{% else %}<code>{{ location.role }}</code>{% endif %}{% endif %}{% if location.field %} · field {% if anchor %}<a href="{{ anchor_base }}#{{ anchor }}"><code>{{ location.field }}</code></a>{% else %}<code>{{ location.field }}</code>{% endif %}{% endif %}{% if location.seed_id %} · seed {% if anchor and not location.field %}<a href="{{ anchor_base }}#{{ anchor }}"><code>{{ location.seed_id }}</code></a>{% else %}<code>{{ location.seed_id }}</code>{% endif %}{% endif %}{% if location.media_id %} · media <code>{{ location.media_id }}</code>{% endif %}</span>{% endwith %}{% endwith %}

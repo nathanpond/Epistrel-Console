@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load principals %}
+{% block title %}{% if create %}New persona{% else %}Edit {{ persona.name }}{% endif %} — Personas — Epistrel Console{% endblock %}
+{% block heading %}{% if create %}New persona{% else %}Edit {{ persona.name }}{% endif %}{% endblock %}
+{% block content %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{{ action_url }}" class="persona-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if create %}<input type="hidden" name="next" value="{{ cancel_url }}">{% else %}<input type="hidden" name="snapshot" value="{{ snapshot }}">{% endif %}
+  {{ form.non_field_errors }}
+  {% if not create %}<p class="owner-readonly">Owner: {{ persona.owner_principal|principal_link }} <small class="muted">Change the owner from the Owners panel</small></p>{% endif %}
+  <p id="f-name">
+    <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label> {{ form.name }}
+    {% if name_taken %}<span class="errorlist name-taken" role="alert">{{ name_taken|principal_link }} already has a persona with this name</span>{% endif %}
+    {{ form.name.errors }}
+  </p>
+  <p id="f-gender">
+    <label for="{{ form.gender.id_for_label }}">{{ form.gender.label }}</label> {{ form.gender }} <small class="muted">{{ form.gender.help_text }}</small>
+    {{ form.gender.errors }}
+  </p>
+  <p id="f-age">
+    <label for="{{ form.age.id_for_label }}">{{ form.age.label }}</label> {{ form.age }} <small class="muted">{{ form.age.help_text }}</small>
+    {{ form.age.errors }}
+  </p>
+  <p id="f-description">
+    <label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label><br>{{ form.description }}
+    {{ form.description.errors }}
+  </p>
+  {% if create %}
+  <p id="f-owner">
+    <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label> {{ form.owner }}
+    {{ form.owner.errors }}
+  </p>
+  {% endif %}
+  <p><button type="submit">{% if create %}Create{% else %}Save{% endif %}</button> <a href="{{ cancel_url }}">Cancel</a></p>
+</form>
+{% endblock %}

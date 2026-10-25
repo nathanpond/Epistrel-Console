@@ -1,0 +1,15 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "invalid scenario",
+    "details": {
+      "errors": [
+        {
+          "field": "body.world.locations[1].id",
+          "message": "String should match pattern '^[a-z0-9_]{1,40}$'",
+          "type": "string_pattern_mismatch"
+        }
+      ]
+    }
+  }
+}

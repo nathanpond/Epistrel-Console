@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{% if create %}New character{% else %}Edit {% if name %}{{ name }}{% else %}{{ character_id }}{% endif %}{% endif %} — Characters — Epistrel Console{% endblock %}
+{% block heading %}{% if create %}New character{% else %}Edit {% if name %}{{ name }}{% else %}<code>{{ character_id }}</code>{% endif %}{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{% url 'catalog_characters:index' %}">Back to list</a></p>
+{% if not form %}
+{% include "console/_engine_error.html" %}
+{% else %}
+{% if not create %}
+<p class="entry-header">Status: {{ snap.status|humanise }} · Draft revision {{ snap.draft_revision|default_if_none:"—" }} · {% if snap.current_version %}latest v{{ snap.current_version }}{% else %}never published{% endif %} · Owner: {{ snap.owner|principal_link }} · <a href="{{ detail_url }}">View</a> · <a href="{{ versions_url }}">Versions</a></p>
+{% endif %}
+{% if lifecycle %}{% include "console/catalog/_archived_banner.html" %}{% endif %}
+{% if readiness %}{% include "console/catalog/characters/_publish_readiness.html" %}{% endif %}
+{% if stale %}<div class="banner banner-warning stale" role="alert">{{ stale }}</div>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% for found in reports %}{% include "console/_validation_report.html" with report=found.report label=found.label anchor_base="" anchors=anchors %}{% endfor %}
+{% include "console/catalog/characters/_character_form.html" %}
+{% endif %}
+{% endblock %}

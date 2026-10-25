@@ -1,0 +1,16 @@
+{# One table of console.story_config.ConfigRow (#85). Context: rows, tags (show the tags and schema default columns). #}<table class="effective-config">
+  <thead><tr><th>Setting</th><th>Deployment default</th><th>Profile</th><th>Override</th><th>Source</th>{% if tags %}<th>Schema default</th><th>Tags</th>{% endif %}</tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="{{ row.anchor }}" class="setting source-{{ row.source|slugify }}">
+      <td><code>{{ row.path }}</code>{% if row.title or row.description %}<br><small class="muted describe">{{ row.title }}{% if row.title and row.description %} — {% endif %}{{ row.description }}</small>{% endif %}</td>
+      <td class="layer-default{% if row.source == 'default' %} effective{% endif %}">{% include "console/stories/_config_cell.html" with cell=row.default %}</td>
+      <td class="layer-profile{% if row.source == 'profile' %} effective{% endif %}">{% include "console/stories/_config_cell.html" with cell=row.profile %}</td>
+      <td class="layer-override{% if row.source == 'override' %} effective{% endif %}">{% include "console/stories/_config_cell.html" with cell=row.override %}</td>
+      <td class="source">{% if row.source %}{{ row.source }}{% if row.source == "profile or default" %}: {% include "console/stories/_config_cell.html" with cell=row.effective %}{% endif %}{% else %}—{% endif %}</td>
+      {% if tags %}<td class="schema-default">{% include "console/stories/_config_cell.html" with cell=row.schema_default %}</td>
+      <td class="tags">{% include "console/profiles/_tags.html" with badges=row.badges untagged=row.untagged %}</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

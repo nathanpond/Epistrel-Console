@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}New story from a scenario — Epistrel Console{% endblock %}
+{% block heading %}New story from a scenario{% endblock %}
+{% block content %}
+{% include "console/_engine_error.html" %}
+{% if kept %}
+<p>The scenario could not be read again, so nothing was sent. Your input is kept.</p>
+<form method="post" action="{% url 'stories:from-scenario' %}" class="retry">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% for name, value in kept %}{% if name != "op" %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endif %}{% endfor %}
+  <button type="submit" name="op" value="{{ retry_op }}">Retry</button>
+</form>
+{% endif %}
+<p><a href="{{ pick_url }}">Back to choosing a scenario</a></p>
+{% endblock %}

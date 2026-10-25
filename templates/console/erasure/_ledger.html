@@ -1,0 +1,35 @@
+{# The erasure ledger section (#87): GET /admin/erasure/status, polled (#64 convention 10) only while a re-apply runs; a failed read is the error panel in its place. Context: ledger (views.erasure.Ledger), poll_url, poll_trigger, retrying_text, refresh_url, reapply_url, reapply_label, running_text, none_text. #}
+<section id="erasure-ledger" class="erasure-ledger"{% if ledger.polling %} hx-get="{{ poll_url }}" hx-trigger="{{ poll_trigger }}" hx-swap="outerHTML"{% endif %}>
+  <h2>Ledger</h2>
+  {% if ledger.retrying %}<p class="notice retrying" role="status">{{ retrying_text }}</p>
+  {% elif ledger.error %}{% include "console/_engine_error.html" with engine_error=ledger.error %}
+  {% else %}{% with s=ledger.status %}
+  {% if ledger.banner %}<p class="banner banner-warning pending-banner" role="status">{{ ledger.banner }}</p>{% endif %}
+  <dl class="ledger-facts">
+    <dt>Pending</dt><dd class="pending-count">{{ s.pending_count }}</dd>
+    <dt>Applied</dt><dd class="applied-count">{{ s.applied_count }}</dd>
+    <dt>Re-apply</dt><dd class="ledger-state">{{ ledger.state }}</dd>
+    <dt>Last run</dt><dd class="last-run">{{ ledger.last_run }}</dd>
+    <dt>Last error</dt><dd class="last-error">{% if ledger.last_error %}<code>{{ ledger.last_error }}</code>{% else %}{{ none_text }}{% endif %}</dd>
+  </dl>
+  {% if ledger.rows %}
+  <table class="pending-erasures">
+    <thead><tr><th>Erasure</th><th>Story</th><th>Attempts</th></tr></thead>
+    <tbody>
+    {% for row in ledger.rows %}
+      <tr><td>{% if row.url %}<a href="{{ row.url }}"><code>{{ row.erasure_id }}</code></a>{% else %}<code>{{ row.erasure_id }}</code>{% endif %}</td>
+        <td>{% if row.story_id %}<a href="{{ row.story_url }}"><code>{{ row.story_id }}</code></a>{% else %}catalog{% endif %}</td>
+        <td>{{ row.attempts }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if ledger.more %}<p class="pending-more">…and {{ ledger.more }} more</p>{% endif %}
+  {% endif %}
+  {% if ledger.extra %}<details class="more"><summary>More</summary><dl>{% for key, value in ledger.extra %}<dt><code>{{ key }}</code></dt><dd><pre>{{ value }}</pre></dd>{% endfor %}</dl></details>{% endif %}
+  {% endwith %}{% endif %}
+  <form method="post" action="{{ reapply_url }}" class="reapply">{% csrf_token %}
+    {% if ledger.status.in_progress %}<button type="submit" disabled>{{ reapply_label }}</button> <span class="note">{{ running_text }}</span>
+    {% else %}<button type="submit">{{ reapply_label }}</button>{% endif %}
+  </form>
+  <p class="refresh"><a href="{{ refresh_url }}">Refresh</a></p>
+</section>

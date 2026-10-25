@@ -1,0 +1,19 @@
+{% comment %}#74: the detail page's Validate and Publish. Context: scenario_id, validate (ValidateBox), publish (ScenarioPublishBox, latest and draft views), entry, is_archived, facts, next.{% endcomment %}{% load catalog %}<div class="scenario-actions">
+  {% if validate %}<form method="post" action="{% url 'scenarios:validate' scenario_id %}" class="validate-form" hx-post="{% url 'scenarios:validate' scenario_id %}" hx-target="#report" hx-swap="innerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <input type="hidden" name="facts" value="{{ facts }}">
+    {% if validate.version %}<input type="hidden" name="version" value="{{ validate.version }}">{% else %}<input type="hidden" name="draft_revision" value="{{ validate.draft_revision|default_if_none:'' }}">{% endif %}
+    <button type="submit">{{ validate.label }}</button>
+  </form>{% endif %}
+  {% if publish %}{% if is_archived %}{% disabled_if_archived entry "publish" "Publish saved draft" %}{% else %}<form method="post" action="{% url 'scenarios:publish' scenario_id %}" class="publish-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <input type="hidden" name="facts" value="{{ facts }}">
+    <input type="hidden" name="draft_revision" value="{{ publish.draft_revision|default_if_none:'' }}">
+    <input type="hidden" name="publish_idempotency_key" value="{{ publish.key }}">
+    <button type="submit"{% if publish.disabled %} disabled{% endif %}>Publish saved draft</button>{% if publish.draft_revision %} <small class="muted">revision {{ publish.draft_revision }}</small>{% endif %}
+    {% if publish.disabled %}<small class="publish-disabled">{{ publish.disabled }}</small>{% endif %}
+    {% if publish.note %}<p class="publish-note muted">{{ publish.note }}</p>{% endif %}
+  </form>{% endif %}{% endif %}
+</div>

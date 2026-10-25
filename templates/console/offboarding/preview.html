@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load principals %}
+{% block title %}Offboarding preview — Offboarding — Epistrel Console{% endblock %}
+{% block heading %}Offboarding preview{% endblock %}
+{% block content %}
+<p>Offboarding {{ principal|principal_link }}{% if transfer_to %}, transferring to {{ transfer_to|principal_link }}{% endif %} — dry run, nothing has changed yet.</p>
+<p class="summary">Plan: {{ summary }}</p>
+{% if self_warning %}<p class="warning self-warning" role="alert">{{ self_warning }}</p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if in_progress %}<ul class="errorlist nonfield in-progress" role="alert"><li>{{ in_progress.text }}{% if in_progress.job_url %} — <a href="{{ in_progress.job_url }}">view it</a>{% endif %}</li></ul>{% endif %}
+<h2>Counts</h2>
+{% include "console/offboarding/_counts.html" %}
+{% if warnings %}
+<h2>Warnings</h2>
+{% include "console/offboarding/_warnings.html" %}
+{% endif %}
+{% if nothing %}<p class="nothing">{{ nothing_text }}</p>{% endif %}
+<p><a class="edit-plan" href="{{ edit_url }}">Edit plan</a> · <a href="{{ principal_url }}">Principal page</a></p>
+{% if token %}
+{% include "console/_two_stage.html" with token=token confirm_url=confirm_url confirm_label=confirm_label cancel_url=edit_url idempotency_key="" danger=danger %}
+{% endif %}
+{% endblock %}

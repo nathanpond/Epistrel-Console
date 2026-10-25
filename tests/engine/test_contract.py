@@ -5,16 +5,44 @@ The two "bites" tests run first and prove the check fails on a known-bad registr
 
 import types
 import typing
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from typing import Any, Literal
 
 import pytest
 
 from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
+    AffectedStory,
     AgeCondition,
+    Backfill,
+    BackfillEstimate,
+    CardImage,
+    CardImages,
+    CardRating,
+    CastSource,
+    CatalogCastCard,
+    CatalogCharacter,
+    CatalogCharacterCard,
+    CatalogCharacterDraft,
+    CatalogCharacterListItem,
+    CatalogCharacterPage,
+    CatalogCharacterStatus,
     CatalogSource,
+    CatalogVersion,
+    CatalogVersionList,
     ChainRef,
+    CharacterDefinition,
+    CharacterImage,
+    CharacterImages,
+    CharacterPublished,
+    CheckProgress,
+    CheckTarget,
+    CheckViolation,
+    ClassCapabilityCounts,
+    CompanionDraft,
+    CompanionPublished,
+    CompanionRef,
+    Concern,
     ConfigChange,
     ConfigChanges,
     ConfigSources,
@@ -23,14 +51,33 @@ from console.engine.models import (
     ContentRatingMutation,
     ContentRatingSummary,
     CreatedCharacter,
+    CreationCounts,
+    CreationReport,
+    CreationRules,
+    CurrentEntity,
     CustomInstructions,
     CustomInstructionsWritten,
+    DeferredItem,
     DegradationStep,
     DeploymentSettings,
+    Disposition,
+    Dispositions,
     DormantChain,
+    Drivers,
     EffectiveBudget,
+    EffectiveConfig,
     EffectiveGuardrail,
     EffectivePolicy,
+    Element,
+    EngineProfile,
+    EngineProfilePage,
+    Entity,
+    EntryRef,
+    ErasureCandidate,
+    ErasureResult,
+    EvaluatedRating,
+    FeedbackContext,
+    FeedbackHistoryEntry,
     ForkCharacter,
     ForkedFrom,
     ForkResult,
@@ -40,14 +87,45 @@ from console.engine.models import (
     HealthResponse,
     History,
     HistoryItem,
+    ImpactReport,
+    InactiveItem,
+    InteractionStyle,
+    LedgerEntry,
+    LikesDislikes,
+    ListingStatus,
+    Location,
+    MaterializedEntry,
+    MediaAsset,
+    MediaPage,
+    MediaUploaded,
+    MemberCastCard,
+    MessageFeedback,
+    MissingDependency,
     ModelCall,
     ModelConfig,
     ModelConfigEntry,
     ModelConfigItem,
     ModelConfigMutation,
+    ModelIdentity,
+    OffboardingActions,
+    OffboardingError,
+    OffboardingJob,
+    OffboardingPlan,
+    OffboardingProgress,
+    OffboardingQueued,
+    OffboardingWarning,
     OmniscientStoryCharacter,
+    Opening,
     OperationRecord,
     OperationStage,
+    OutcomeCounts,
+    OverridesRef,
+    OwnedItem,
+    OwnedPage,
+    OwnerTransfer,
+    Persona,
+    PersonaPage,
+    PersonaWritten,
     PinnedItem,
     PinnedMemories,
     PinnedMemoriesWritten,
@@ -57,30 +135,81 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PolicyTarget,
+    ProfileDeleted,
+    ProfileEdit,
+    ProfileRef,
+    ProfileSchema,
+    ProfileValidation,
+    ProfileValidationWarning,
+    ProfileVersion,
+    ProfileVersionList,
     ProfileVersionRef,
+    ProfileWarning,
+    ProfileWritten,
+    Promotion,
     QualityStatus,
     QueuedTurn,
+    RatingApplied,
+    RatingCheck,
+    RatingCheckStarted,
+    RatingSuggestion,
     RatingVersion,
     RatingVersionList,
     ReactivationCheck,
     RebuildQueued,
     RebuildResult,
+    Recommendation,
+    ReferenceImage,
+    ReferencingStory,
     RegenerateResult,
+    RelatedItem,
+    RelatedPage,
+    RelationItem,
+    RelationRecord,
+    Relations,
     ReplyMessage,
+    RequiredModule,
     RespondResponse,
+    RoleCharacter,
+    RoleEligibility,
+    RoleRelationship,
+    Scenario,
+    ScenarioCard,
+    ScenarioCardMedia,
+    ScenarioCardMediaSet,
+    ScenarioCardRole,
+    ScenarioCast,
+    ScenarioDraft,
+    ScenarioListItem,
+    ScenarioMediaSet,
+    ScenarioMetadata,
     ScenarioOrigin,
+    ScenarioPage,
+    ScenarioPolicy,
+    ScenarioPublicCard,
+    ScenarioRole,
+    ScenarioStatus,
+    ScenarioVideo,
+    Seed,
+    SettingTags,
+    StartingState,
     StoredResult,
     Story,
     StoryCharacter,
+    StoryCharacterAdded,
     StoryCreated,
     StoryList,
     StoryPause,
     StoryPauseProgress,
+    StoryProfileWrite,
     StoryRating,
     StorySettings,
+    StorySettingsDefaults,
     StorySettingsWrite,
     StoryStatusChange,
     StorySummary,
+    SubjectRef,
+    SuggestionRow,
     SummarySegment,
     SwapResult,
     TruncateResult,
@@ -90,16 +219,61 @@ from console.engine.models import (
     TurnReport,
     TurnSummary,
     TurnWarning,
+    UnavailableCharacter,
+    UndeliveredSetting,
+    UnmetRecommendation,
     UntruncateResult,
     VariantChain,
     Variants,
+    VisualIdentity,
+    VisualStyle,
     WorkersCheck,
+    World,
 )
 from tests.engine.contract import check_operation, compare_model, compare_type
 from tests.fakes.engine import recorded_schema
 
 DOC = recorded_schema()
 HEALTH_REF = {"$ref": "#/components/schemas/HealthResponse"}
+
+
+# #78: ``EngineProfile.settings`` is raw JSON the profile schema describes (whatever modules
+# this deployment delivers), not the modules the recorded schema spells out.
+SETTINGS_ANY = {"type": "object", "additionalProperties": True}
+# #79: one model reads the story and the non-story owner and relation bodies; each carries one
+# revision (the story's ``timeline_revision`` or the deployment's ``config_revision``), so the
+# model has both, optional. The widening gives each body both, nullable and not required.
+REVISIONS = ("config_revision", "timeline_revision")
+NULLABLE_INT = {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+EFFECTIVE_DOCUMENTS = ("deployment_defaults", "effective")
+OWNERSHIP_BODIES = ("OwnerBody", "StoryOwnerBody", "RelationBody", "StoryRelationBody")
+
+
+def _widened(doc: dict[str, Any]) -> dict[str, Any]:
+    """``doc`` with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s ``media_id``:
+    the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
+    publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
+    any object (#78). The owner and relation bodies carry both revisions, optional (#79)."""
+    import copy
+
+    widened = copy.deepcopy(doc)
+    schemas = widened["components"]["schemas"]
+    schemas["EntryLocation"]["properties"]["media_id"] = schemas["ElementLocation"]["properties"][
+        "media_id"
+    ]
+    schemas["EngineProfile"]["properties"]["settings"] = SETTINGS_ANY
+    schemas["ProfileBody"]["properties"]["settings"] = SETTINGS_ANY  # #84: create and copy
+    for key in EFFECTIVE_DOCUMENTS:  # #85: a story's settings documents, raw
+        schemas["EffectiveConfig"]["properties"][key] = SETTINGS_ANY
+    schemas["OverridesRef"]["properties"]["settings"] = SETTINGS_ANY
+    for name in OWNERSHIP_BODIES:
+        body = schemas[name]
+        body["properties"].update(dict.fromkeys(REVISIONS, NULLABLE_INT))
+        body["required"] = [r for r in body["required"] if r not in REVISIONS]
+    return widened
+
+
+WIDENED = _widened(DOC)
 
 
 def test_bites_on_unknown_operation() -> None:
@@ -144,7 +318,20 @@ def test_bites_on_nested_mismatch() -> None:
 
 @pytest.mark.parametrize("name", sorted(OPERATIONS))
 def test_registered_operations_match_the_recorded_schema(name: str) -> None:
-    assert check_operation(DOC, OPERATIONS[name]) == []
+    assert check_operation(WIDENED, OPERATIONS[name]) == []
+
+
+def test_the_widening_only_adds_media_id() -> None:
+    """The widened document differs from the recorded one by ``EntryLocation.media_id`` alone,
+    and the publish registration does not match the recorded one without it (so the widening
+    is what makes it pass, nothing else)."""
+    entry = DOC["components"]["schemas"]["EntryLocation"]["properties"]
+    widened = WIDENED["components"]["schemas"]["EntryLocation"]["properties"]
+    assert set(widened) - set(entry) == {"media_id"}
+    publish = OPERATIONS["POST /catalog/characters/{character_id}/publish"]
+    problems = check_operation(DOC, publish)
+    assert problems
+    assert all("media_id" in p for p in problems)
 
 
 @pytest.mark.parametrize(
@@ -178,6 +365,8 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (ChainRef, "ChainRefBody"),
         (ScenarioOrigin, "ScenarioOriginBody"),
         (StoryCreated, "StoryCreatedBody"),
+        (StoryCharacterAdded, "StoryCharacterBody"),
+        (Promotion, "PromotionBody"),
         (CreatedCharacter, "CreatedCharacterBody"),
         (StoryStatusChange, "StatusBody"),
         (ContentRatingSummary, "RatingBody"),
@@ -221,17 +410,249 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (ForkCharacter, "ForkCharacterBody"),
         (ForkedFrom, "ForkedFromBody"),
         (ReactivationCheck, "RatingCheckStartedBody"),
+        # #80: a story's rating change and its check.
+        (RatingCheckStarted, "RatingCheckStartedBody"),
+        (RatingApplied, "RatingAppliedBody"),
+        (RatingCheck, "RatingCheckBody"),
+        (CheckProgress, "CheckProgressBody"),
+        (CheckTarget, "CheckTargetBody"),
+        (CheckViolation, "CheckViolationBody"),
         (StorySettingsWrite, "StorySettingsWriteBody"),
         (PinnedItem, "PinnedItemBody"),
         (PinnedMemories, "PinnedMemoriesBody"),
         (PinnedMemoriesWritten, "PinnedMemoriesWritten"),
         (CustomInstructions, "CustomInstructionsBody"),
         (CustomInstructionsWritten, "CustomInstructionsWritten"),
+        (CardImage, "CardImage"),
+        (CardRating, "CardRating"),
+        (CardImages, "CharacterCardImages"),
+        (CatalogCharacterCard, "CharacterCard"),
+        (CatalogCharacterListItem, "CharacterListItem"),
+        (CatalogCharacterPage, "CharacterListBody"),
+        (CatalogCharacter, "CharacterFull"),
+        (CharacterDefinition, "CharacterDefinition"),
+        (Dispositions, "Dispositions"),
+        (Disposition, "WarmthDisposition"),
+        (Disposition, "CautionDisposition"),
+        (InteractionStyle, "InteractionStyle"),
+        (LikesDislikes, "LikesDislikes"),
+        (CharacterImages, "CharacterImagesDetail"),
+        (CharacterImage, "CharacterImageDetail"),
+        (ReferenceImage, "ReferenceImageDetail"),
+        (VisualIdentity, "VisualIdentityDetail"),
+        (CatalogVersion, "CharacterVersionBody"),
+        (CatalogVersionList, "CharacterVersionsBody"),
+        (CatalogCharacterDraft, "CharacterDraftBody"),
+        (CharacterPublished, "CharacterPublishedBody"),
+        (CompanionPublished, "CompanionPublishedBody"),
+        (Persona, "Persona"),
+        (PersonaWritten, "PersonaBody"),
+        (PersonaPage, "PersonaListBody"),
+        (ScenarioCardMedia, "ScenarioCardMedia"),
+        (ScenarioCardMediaSet, "ScenarioCardMediaSet"),
+        (ScenarioCardRole, "ScenarioCardRole"),
+        (ScenarioCard, "ScenarioCard"),
+        (ScenarioListItem, "ScenarioListItem"),
+        (ScenarioPage, "ScenarioListBody"),
+        (ScenarioPublicCard, "ScenarioPublicCard"),
+        (ScenarioMediaSet, "ScenarioMedia"),
+        (ScenarioVideo, "ScenarioVideo"),
+        (ScenarioMetadata, "ScenarioMetadata"),
+        (Location, "ScenarioLocation"),
+        (Entity, "ScenarioEntity"),
+        (World, "ScenarioWorld"),
+        (Opening, "ScenarioOpening"),
+        (StartingState, "ScenarioStartingState"),
+        (Drivers, "ScenarioDrivers"),
+        (ScenarioPolicy, "ScenarioPolicy"),
+        (StorySettingsDefaults, "StorySettingsDefaults"),
+        (Recommendation, "ScenarioRecommendation"),
+        (VisualStyle, "VisualStyle"),
+        (CreationRules, "CreationRules"),
+        (Scenario, "ScenarioFull"),
+        (ScenarioCast, "ScenarioCast"),
+        (ScenarioRole, "ScenarioRole"),
+        (RoleCharacter, "RoleCharacter"),
+        (RoleEligibility, "RoleEligibility"),
+        (RoleRelationship, "RoleRelationship"),
+        (Seed, "Seed"),
+        (ScenarioDraft, "ScenarioDraftBody"),
+        (CatalogVersion, "ScenarioVersionBody"),
+        (CatalogVersionList, "ScenarioVersionsBody"),
+        (CatalogCharacterStatus, "CharacterStatusBody"),
+        (ScenarioStatus, "ScenarioStatusBody"),
+        (ListingStatus, "ListingStatusBody"),
+        (SubjectRef, "SubjectRef"),
+        (SubjectRef, "DepictedSubject"),
+        (MediaAsset, "MediaAsset"),
+        (MediaUploaded, "MediaUploadedBody"),
+        (MediaPage, "MediaListBody"),
+        # #75: a story creation from a scenario's reports.
+        (CreationReport, "CreationReport"),
+        (CreationCounts, "CreationCounts"),
+        (ClassCapabilityCounts, "ClassCapabilityCounts"),
+        (OutcomeCounts, "OutcomeCounts"),
+        (DeferredItem, "DeferredItem"),
+        (InactiveItem, "InactiveItem"),
+        (MaterializedEntry, "MaterializedEntry"),
+        (CastSource, "CastSource"),
+        (CatalogCastCard, "CatalogCastCard"),
+        (MemberCastCard, "MemberCastCard"),
+        (ImpactReport, "ImpactReport"),
+        (AffectedStory, "AffectedStory"),
+        (Backfill, "Backfill"),
+        (BackfillEstimate, "BackfillEstimate"),
+        (UnmetRecommendation, "UnmetRecommendation"),
+        # #76: the principal lookup's pages.
+        (OwnedPage, "OwnedPage"),
+        (OwnedItem, "OwnedItem"),
+        (CompanionRef, "CompanionRef"),
+        (RelatedPage, "RelatedPage"),
+        (RelatedItem, "RelatedItem"),
+        # #77: offboarding.
+        (OffboardingActions, "OffboardingActions"),
+        (OffboardingWarning, "OffboardingWarningBody"),
+        (OffboardingPlan, "OffboardingPlanBody"),
+        (OffboardingQueued, "OffboardingQueuedBody"),
+        (OffboardingProgress, "OffboardingProgress"),
+        (CurrentEntity, "CurrentEntity"),
+        (OffboardingError, "OffboardingError"),
+        (OffboardingJob, "OffboardingView"),
+        (ErasureResult, "ErasureBody"),
+        (ErasureCandidate, "CandidateBody"),
+        (LedgerEntry, "LedgerEntryBody"),
+        (ReferencingStory, "ReferencingStoryBody"),
+        # #78: engine profiles.
+        (EngineProfile, "EngineProfile"),
+        (EngineProfilePage, "ProfileListBody"),
+        (ProfileVersion, "ProfileVersion"),
+        (ProfileVersionList, "ProfileVersionsBody"),
+        (SettingTags, "SettingTagsBody"),
+        (ProfileSchema, "ProfileSchemaBody"),
+        # #84: engine profile writes.
+        (ProfileValidation, "ProfileValidation"),
+        (MissingDependency, "MissingDependency"),
+        (RequiredModule, "epistrel__core__profiles__validate__RequiredModule"),
+        (UndeliveredSetting, "UndeliveredSetting"),
+        (ProfileValidationWarning, "ProfileValidationWarning"),
+        (ProfileWritten, "ProfileBody"),
+        (ProfileEdit, "ProfileEditBody"),
+        (ProfileWarning, "ProfileWarning"),
+        (ProfileDeleted, "ProfileDeletedBody"),
+        # #85: a story's effective configuration.
+        (ProfileRef, "ProfileRef"),
+        (OverridesRef, "OverridesRef"),
+        (EffectiveConfig, "EffectiveConfig"),
+        (StoryProfileWrite, "StoryProfileWriteBody"),
+        # #79: owners and relations.
+        (OwnerTransfer, "OwnerBody"),
+        (OwnerTransfer, "StoryOwnerBody"),
+        (RelationRecord, "RelationBody"),
+        (RelationRecord, "StoryRelationBody"),
+        (RelationItem, "RelationItem"),
+        (Relations, "RelationsBody"),
+        # #82: the rating suggestion.
+        (RatingSuggestion, "RatingSuggestion"),
+        (SuggestionRow, "SuggestionRow"),
+        (Concern, "Concern"),
+        (Element, "Element"),
+        (EntryRef, "EntryRef"),
+        (EvaluatedRating, "EvaluatedRating"),
+        (UnavailableCharacter, "UnavailableCharacter"),
+        # #83: message feedback.
+        (MessageFeedback, "Feedback"),
+        (FeedbackContext, "FeedbackContext"),
+        (FeedbackHistoryEntry, "FeedbackHistoryEntry"),
+        (ModelIdentity, "ModelIdentity"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
     ref = {"$ref": f"#/components/schemas/{component}"}
-    assert compare_model(DOC, model, ref, component) == []
+    assert compare_model(WIDENED, model, ref, component) == []
+
+
+def test_companion_draft_reads_fields_of_scenario_full() -> None:
+    """#66: ``CompanionDraft`` reads a few fields of the companion read's ``ScenarioFull``
+    (#68 owns the whole model): each is a ``ScenarioFull`` property of the same type, and
+    required here only when required there."""
+    node = DOC["components"]["schemas"]["ScenarioFull"]
+    properties = node["properties"]
+    hints = typing.get_type_hints(CompanionDraft)
+    problems = []
+    for f in fields(CompanionDraft):
+        if f.name not in properties:
+            problems.append(f"{f.name}: not a ScenarioFull property")
+            continue
+        problems.extend(compare_type(DOC, hints[f.name], properties[f.name], f.name))
+        has_default = f.default is not MISSING or f.default_factory is not MISSING
+        if not has_default and f.name not in node["required"]:
+            problems.append(f"{f.name}: required here but optional in ScenarioFull")
+    assert problems == []
+    op = OPERATIONS["GET /catalog/characters/{character_id}/companion"]
+    assert op.response_model is None
+
+
+def test_engine_profile_settings_is_the_only_widening_of_engine_profile() -> None:
+    """#78: the widened ``EngineProfile`` differs from the recorded one by ``settings`` alone,
+    which the recorded schema types as an object (of the modules it knew)."""
+    recorded = DOC["components"]["schemas"]["EngineProfile"]
+    widened = WIDENED["components"]["schemas"]["EngineProfile"]
+    assert {k: v for k, v in recorded.items() if k != "properties"} == {
+        k: v for k, v in widened.items() if k != "properties"
+    }
+    differs = [
+        k for k in recorded["properties"] if recorded["properties"][k] != widened["properties"][k]
+    ]
+    assert differs == ["settings"]
+    assert recorded["properties"]["settings"]["type"] == "object"
+
+
+def test_profile_body_settings_is_the_only_widening_of_profile_body() -> None:
+    """#84: like ``EngineProfile``, the create/copy answer differs by ``settings`` alone."""
+    recorded = DOC["components"]["schemas"]["ProfileBody"]["properties"]
+    widened = WIDENED["components"]["schemas"]["ProfileBody"]["properties"]
+    assert [k for k in recorded if recorded[k] != widened[k]] == ["settings"]
+
+
+def test_the_effective_config_widens_only_its_settings_documents() -> None:
+    """#85: ``EffectiveConfig`` differs by its two settings documents and ``OverridesRef`` by
+    ``settings`` alone, each an object in the recorded schema (of the modules it knew)."""
+    schemas = DOC["components"]["schemas"]
+    widened = WIDENED["components"]["schemas"]
+    for component, keys in (
+        ("EffectiveConfig", list(EFFECTIVE_DOCUMENTS)),
+        ("OverridesRef", ["settings"]),
+    ):
+        recorded = schemas[component]["properties"]
+        assert sorted(
+            k for k in recorded if recorded[k] != widened[component]["properties"][k]
+        ) == sorted(keys)
+        assert all(recorded[k]["type"] == "object" for k in keys)
+
+
+def test_a_scenario_card_read_matches_the_card_component() -> None:
+    """``get_scenario`` holds the route's registration (``Scenario``, the full projection);
+    the card read's model is checked against ``ScenarioCard`` above."""
+    op = OPERATIONS["GET /catalog/scenarios/{scenario_id}"]
+    assert op.response_model is Scenario
+    assert check_operation(DOC, op) == []
+
+
+def test_scenario_form_enums_match_the_schema() -> None:
+    """#68's selects offer exactly the schema's values."""
+    from console.forms.scenario import ENTITY_KINDS, SETTING_ENUMS
+
+    schemas = DOC["components"]["schemas"]
+
+    def enum(node: dict[str, typing.Any]) -> list[str]:
+        options = node.get("anyOf") or [node]
+        (values,) = [o["enum"] for o in options if "enum" in o]
+        return list(values)
+
+    assert enum(schemas["ScenarioEntity"]["properties"]["kind"]) == list(ENTITY_KINDS)
+    settings = schemas["StorySettingsDefaults"]["properties"]
+    for name, values in SETTING_ENUMS.items():
+        assert enum(settings[name]) == list(values), name
 
 
 def test_health_checks_both_declared_statuses() -> None:
@@ -316,3 +737,109 @@ def test_a_status_model_for_an_undeclared_status_is_reported() -> None:
     op = OPERATIONS["POST /stories/{story_id}/respond"]
     extra = Operation(op.method, op.path, op.response_model, False, ((201, QueuedTurn),))
     assert "no 201 response in the schema" in " ".join(check_operation(DOC, extra))
+
+
+def test_report_location_matches_element_location() -> None:
+    """#64: ``EntryLocation`` is the Engine's ``ElementLocation`` (``EntryLocation`` plus
+    ``media_id``), so both parse into it."""
+    from console.engine.models import EntryLocation
+
+    ref = {"$ref": "#/components/schemas/ElementLocation"}
+    assert compare_model(DOC, EntryLocation, ref, "ElementLocation") == []
+    element = DOC["components"]["schemas"]["ElementLocation"]["properties"]
+    entry = DOC["components"]["schemas"]["EntryLocation"]["properties"]
+    assert set(element) - set(entry) == {"media_id"}
+
+
+@pytest.mark.parametrize(
+    ("model_name", "component"),
+    [("ReportEntry", "Entry"), ("ValidationReport", "ValidationReport")],
+)
+def test_report_models_match_their_components(model_name: str, component: str) -> None:
+    """Compared with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s
+    ``media_id`` (the one class parses both, #64)."""
+    import copy
+
+    from console.engine import models
+
+    doc = copy.deepcopy(DOC)
+    schemas = doc["components"]["schemas"]
+    schemas["EntryLocation"]["properties"]["media_id"] = schemas["ElementLocation"]["properties"][
+        "media_id"
+    ]
+    ref = {"$ref": f"#/components/schemas/{component}"}
+    assert compare_model(doc, getattr(models, model_name), ref, component) == []
+
+
+def test_an_open_enum_is_compared_with_the_schemas_enum() -> None:
+    """#65: an ``OPEN_ENUM`` ``str`` field passes against a string enum, and bites when the
+    schema's value is not an enum or the field is not a string."""
+    from dataclasses import field as dc_field
+
+    from console.engine.models import OPEN_ENUM
+
+    @dataclass(frozen=True)
+    class Open:
+        setting: str = dc_field(metadata={OPEN_ENUM: True})
+        nuance: str | None = None
+
+    ref = {"$ref": "#/components/schemas/WarmthDisposition"}
+    assert compare_model(DOC, Open, ref, "Open") == []
+
+    @dataclass(frozen=True)
+    class Plain:  # without the flag a str against an enum is reported
+        setting: str
+        nuance: str | None = None
+
+    assert any("enum" in p for p in compare_model(DOC, Plain, ref, "Plain"))
+
+    @dataclass(frozen=True)
+    class NotEnum:
+        media_id: str = dc_field(metadata={OPEN_ENUM: True})
+        alt_text: str | None = None
+
+    problems = compare_model(DOC, NotEnum, {"$ref": "#/components/schemas/CardImage"}, "N")
+    assert any("not a string enum" in p for p in problems)
+
+
+def test_a_union_response_must_match_one_of_its_options() -> None:
+    """#65: ``GET /catalog/characters/{id}`` answers a card or the full projection; the
+    registered model must match one of them."""
+    op = OPERATIONS["GET /catalog/characters/{character_id}"]
+    assert op.response_model is CatalogCharacter
+    wrong = Operation(op.method, op.path, CatalogVersion, False)
+    assert any("no anyOf option" in p for p in check_operation(DOC, wrong))
+
+
+def test_the_principal_lookup_types_match_the_schema() -> None:
+    """#76: ``PrincipalLinks`` reads ``PrincipalLookup`` by hand; its six type keys (and the
+    page's table order) are the schema's ``OwnedEntities``/``RelatedEntities`` properties, each
+    a registry lookup key, and the lookup is registered without a response model."""
+    from console.engine.models import LOOKUP_TYPES
+    from console.entities import BY_LOOKUP_KEY
+    from console.views.principals import ENGINE_LOOKUP_KEYS
+
+    schemas = DOC["components"]["schemas"]
+    assert set(schemas["PrincipalLookup"]["properties"]) == {"principal", "owned", "related"}
+    for side in ("OwnedEntities", "RelatedEntities"):
+        assert set(schemas[side]["properties"]) == set(LOOKUP_TYPES)
+        assert set(schemas[side]["required"]) == set(LOOKUP_TYPES)
+    assert tuple(ENGINE_LOOKUP_KEYS) == LOOKUP_TYPES
+    for key, entity_type in ENGINE_LOOKUP_KEYS.items():
+        assert BY_LOOKUP_KEY[key].type == entity_type
+    assert OPERATIONS["GET /principals/{principal_id}"].response_model is None
+
+
+@pytest.mark.parametrize("component", OWNERSHIP_BODIES)
+def test_the_ownership_bodies_widen_only_their_revisions(component: str) -> None:
+    """#79: each widened body differs from the recorded one by the revisions alone: the one it
+    carries (required, an integer) becomes optional and nullable, and the other is added."""
+    recorded = DOC["components"]["schemas"][component]
+    widened = WIDENED["components"]["schemas"][component]
+    (carried,) = [r for r in REVISIONS if r in recorded["properties"]]
+    assert carried in recorded["required"]
+    assert recorded["properties"][carried]["type"] == "integer"
+    assert set(widened["properties"]) - set(recorded["properties"]) == set(REVISIONS) - {carried}
+    same = set(recorded["properties"]) - {carried}
+    assert all(recorded["properties"][k] == widened["properties"][k] for k in same)
+    assert set(recorded["required"]) - set(widened["required"]) == {carried}

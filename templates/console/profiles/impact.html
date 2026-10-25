@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Confirm changes to {{ facts.name }} — Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}Confirm changes to {{ facts.name }}{% endblock %}
+{% block content %}
+<p>The Engine held this edit for confirmation: nothing was written. Review what it does to the stories that follow the profile, then apply it anyway or go back.</p>
+{% if validation_warnings %}<ul class="validation-warnings">{% for w in validation_warnings %}<li class="warning">{{ w }}</li>{% endfor %}</ul>{% endif %}
+{% include "console/_impact_report.html" %}
+{% endblock %}

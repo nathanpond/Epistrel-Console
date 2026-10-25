@@ -1,0 +1,51 @@
+{% comment %}
+The engine-profile form (#84): name, owner (create only) and the settings generated from the
+profile schema. Validate is hx-post (the whole form swapped, outerHTML); without JS a plain POST
+re-renders the page. Context: see console.views.profile_edit._render.
+{% endcomment %}{% load principals %}<form method="post" action="{{ action_url }}" id="profile-form" class="profile-form" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {% if shown.engine_error %}{% with engine_error=shown.engine_error %}{% include "console/_engine_error.html" %}{% endwith %}{% endif %}
+  {% if shown.moved %}<p class="banner banner-warning version-moved" role="alert">{{ shown.moved }}</p>{% endif %}
+  {% if shown.stories %}
+  <section class="error-panel invalid-stories" role="alert">
+    {% if story_rows %}<h3>{% if shown.stories.count and shown.stories.count > story_rows|length %}{{ shown.stories.count }}{% else %}{{ story_rows|length }}{% endif %} stories' overrides can't run under this change</h3>
+    <ul class="invalid-story-list">{% for row in story_rows %}<li><a href="{{ row.url }}">{{ row.text }}</a>{% if row.note %} <small class="muted">({{ row.note }})</small>{% endif %}</li>{% endfor %}</ul>{% endif %}
+    {% if profile_rows %}<h3>Profile versions that can't run under this change</h3>
+    <ul class="invalid-profile-list">{% for row in profile_rows %}<li><a href="{{ row.url }}"><code>{{ row.text }}</code></a></li>{% endfor %}</ul>{% endif %}
+    {% if shown.stories.extra %}<dl>{% for key, value in shown.stories.extra %}<dt>{{ key }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}</dl>{% endif %}
+  </section>
+  {% endif %}
+  {{ form.non_field_errors }}
+  {% for w in form.top_warnings %}<p class="warning">{{ w }}</p>{% endfor %}
+  <p id="f-name">
+    <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label> {{ form.name }}
+    {{ form.name.errors }}
+  </p>
+  {% if create %}
+  <p id="f-owner">
+    <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label> {{ form.owner }}
+    {{ form.owner.errors }}
+  </p>
+  {% else %}
+  <p class="owner-readonly">Owner: {{ facts.owner|principal_link }}{% if facts.preset %} <span class="badge preset">Preset</span>{% endif %} <small class="muted">Change the owner from the <a href="{% url 'profiles:detail' facts.profile_id %}#ownership">Owners panel</a></small></p>
+  <p class="muted">Editing version {{ facts.version }}. Clearing a field or choosing “(default…)” drops the key.</p>
+  {% endif %}
+  {% if shown.banner %}<p class="validation-banner {% if shown.banner_ok %}valid{% else %}invalid{% endif %}" role="status">{{ shown.banner }}</p>{% endif %}
+  {% if default_unread %}<p class="warning default-unread">{{ default_unread }}</p>{% endif %}
+  {% include "console/profiles/_schema_fields.html" with nodes=nodes %}
+  {% with other=form.other_field %}{% if other %}
+  <div class="schema-field other-settings" id="f-other-settings">
+    <label for="{{ other.id_for_label }}">{{ other.label }}</label><br>{{ other }}
+    <br><small class="muted">{{ other.help_text }}</small>
+    {% for w in form.other_warnings %}<p class="warning field-warning">{{ w }}</p>{% endfor %}
+    {{ other.errors }}
+  </div>
+  {% endif %}{% endwith %}
+  <p>
+    <button type="submit" name="action" value="validate" hx-post="{{ action_url }}" hx-vals='{"action": "validate"}' hx-target="#profile-form" hx-swap="outerHTML"{% if validate_disabled %} disabled{% endif %}>Validate</button>
+    <button type="submit" name="action" value="save">{% if create %}Create{% else %}Save{% endif %}</button>
+    <a href="{{ cancel_url }}">Cancel</a>
+  </p>
+</form>

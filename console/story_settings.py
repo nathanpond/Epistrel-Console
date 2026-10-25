@@ -21,6 +21,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from django.urls import reverse
+
 # The settable ``StorySettingsPatch`` properties, in page order (``policies`` has its own form).
 SETTABLE = (
     "turn_concurrency",
@@ -75,8 +77,8 @@ BUDGET_SOURCES = {
 
 
 def config_url(story_id: str) -> str:
-    """The story's engine-profile overrides page (M3 #85)."""
-    return f"/stories/{story_id}/config/"
+    """The story's Config page (#85): its effective configuration and profile overrides."""
+    return reverse("stories:config", args=[story_id])
 
 
 @dataclass(frozen=True)

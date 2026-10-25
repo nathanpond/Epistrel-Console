@@ -1,0 +1,60 @@
+{# The settings section (#78), laid out by console.profile_schema.settings_view (context `view`). #}
+{% for block in view.blocks %}
+<section class="settings-block" id="block-{{ block.name }}">
+  <h3>{{ block.name }}</h3>
+  <table class="profile-settings">
+    <thead><tr><th>Setting</th><th>This version</th><th>Deployment default</th><th>Schema default</th><th>Tags</th></tr></thead>
+    <tbody>
+      {% for row in block.rows %}
+      <tr id="{{ row.anchor }}" class="setting {{ row.kind }}">
+        <td class="depth-{{ row.depth }}"><code>{{ row.path }}</code>
+          {% if row.title or row.description or row.constraints %}<br><small class="muted describe">{% if row.title %}{{ row.title }}{% endif %}{% if row.title and row.description %} — {% endif %}{{ row.description }}{% if row.constraints %}{% if row.title or row.description %} · {% endif %}{{ row.constraints }}{% endif %}</small>{% endif %}
+          {% if row.mismatch %}<br><small class="muted mismatch">doesn't match schema</small>{% endif %}
+        </td>
+        <td class="value">{% include "console/profiles/_cell.html" with cell=row.value %}</td>
+        <td class="deployment">{% include "console/profiles/_cell.html" with cell=row.deployment %}</td>
+        <td class="schema-default">{% include "console/profiles/_cell.html" with cell=row.schema_default %}</td>
+        <td class="tags">{% include "console/profiles/_tags.html" with badges=row.badges untagged=row.untagged %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+
+{% if view.delivered %}
+<section class="delivered">
+  <h3>Delivered modules</h3>
+  <table class="delivered-modules">
+    <thead><tr><th>Module</th><th>Levels</th></tr></thead>
+    <tbody>
+      {% for module, levels in view.delivered %}<tr id="delivered-{{ module }}"><td><code>{{ module }}</code></td><td>{{ levels|default:"—" }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if view.other %}
+<section class="other-settings">
+  <h3>Other settings</h3>
+  <table class="other-settings">
+    <thead><tr><th>Setting</th><th>This version</th></tr></thead>
+    <tbody>
+      {% for item in view.other %}<tr><td><code>{{ item.path }}</code></td><td><pre>{{ item.text }}</pre></td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if view.has_more %}
+<details class="more">
+  <summary>More</summary>
+  {% if view.purposes %}<p>Model purposes <code>models.purposes</code> may route: {% for purpose in view.purposes %}<code>{{ purpose }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% if view.unmatched_tags %}
+  <p>Tags for settings not shown above:</p>
+  <ul class="unmatched-tags">
+    {% for path, tags in view.unmatched_tags %}<li><code>{{ path }}</code> {% include "console/profiles/_tags.html" with badges=tags untagged=False %}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</details>
+{% endif %}

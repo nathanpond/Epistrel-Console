@@ -72,7 +72,10 @@ def test_a_started_recheck_says_so(operator_client: Client, engine: FakeEngine) 
     response = operator_client.post(
         url("swap", chain="3:2", check="1"), posted(chain="3:2", check="1")
     )
-    assert response.status_code == 302
-    assert response["Location"] == PLAY
+    assert response.status_code == 302  # #81: the check page follows the re-check
+    assert (
+        response["Location"]
+        == f"/stories/{STORY}/rating/checks/01JB2Z8Y5Q3W6K9M1N4P7R0JOB/?op=swap"
+    )
     (line,) = flash(response)
-    assert "the story is paused while check 01JB2Z8Y5Q3W6K9M1N4P7R0JOB runs" in line
+    assert line.startswith("Held for a guardrail re-check")

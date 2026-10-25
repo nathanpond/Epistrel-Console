@@ -1,0 +1,32 @@
+{% load console_format %}
+{% comment %}
+A rating check's status (#80), polled inside console/_job_poll.html. Context: view (CheckView; None when
+the read failed), not_found/not_found_text, engine_error, not_changed, rating_url, story_url.
+{% endcomment %}{% if not_found %}<p class="notice check-not-found"><strong>{{ not_found_text }}</strong></p>
+{% elif engine_error %}{% include "console/_engine_error.html" %}
+{% elif view %}
+<dl class="check-status">
+  <dt>Status</dt><dd class="status status-{{ view.check.status }}">{{ view.check.status }}</dd>
+  <dt>Progress</dt><dd>{% if view.indeterminate %}<progress></progress>{% else %}<progress value="{{ view.check.progress.done }}" max="{{ view.check.progress.total }}">{{ view.progress }}</progress>{% endif %} {{ view.progress }}</dd>
+</dl>
+{% if view.check.status == "applied" %}
+<p class="notice check-applied"><strong>Rating changed to <em>{{ view.target_name }}</em></strong></p>
+<dl class="check-result">
+  <dt>Rating version</dt><dd>{% if view.applied_version is not None %}{{ view.applied_version }}{% else %}<code>{{ view.check.rating_version|default:"—" }}</code>{% endif %}</dd>
+  <dt>Config revision</dt><dd>{{ view.check.config_revision|default_if_none:"—" }}</dd>
+  <dt>Finished</dt><dd>{{ view.check.finished_at|engine_time }}</dd>
+</dl>
+{% elif view.check.status == "refused" %}
+<p class="notice check-refused"><strong>{{ not_changed }}</strong></p>
+{% include "console/stories/_check_violations.html" with violations=view.violations %}
+{% elif view.check.status == "failed" %}
+<p class="notice check-failed"><strong>The check failed — {{ not_changed|lower }}</strong></p>
+<dl class="check-error">
+  <dt>Error class</dt><dd><code>{{ view.error_class }}</code></dd>
+  <dt>Message</dt><dd>{{ view.error_message }}</dd>
+</dl>
+{% elif view.check.status != "checking" %}
+<p class="notice check-unknown">Status <code>{{ view.check.status }}</code></p>
+{% endif %}
+{% if view.terminal %}<p class="check-back"><a href="{{ rating_url }}">Back to rating</a> · <a href="{{ story_url }}">Back to story</a></p>{% endif %}
+{% endif %}

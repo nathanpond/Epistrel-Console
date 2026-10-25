@@ -1,6 +1,6 @@
 {# The inspector's content (#48). Context: inspector (console.views.play.Inspector). #}
 {% if inspector.title %}<h3>{{ inspector.title }}</h3>{% endif %}
-{% if inspector.notice %}<p class="notice"><strong>{{ inspector.notice }}</strong></p>{% endif %}
+{% if inspector.notice %}<p class="notice"><strong>{% if inspector.notice_url %}<a class="notice-link" href="{{ inspector.notice_url }}">{{ inspector.notice }}</a>{% else %}{{ inspector.notice }}{% endif %}</strong></p>{% endif %}
 {% if inspector.error_line %}<p class="error-line"><code>{{ inspector.error_line }}</code></p>{% endif %}
 {% if inspector.facts %}<dl class="facts">{% for label, value in inspector.facts %}<dt>{{ label }}</dt><dd>{% if label == "Operation" %}<code>{{ value }}</code>{% else %}{{ value }}{% endif %}</dd>{% endfor %}</dl>{% endif %}
 {% if inspector.error %}{% include "console/_engine_error.html" with engine_error=inspector.error %}{% endif %}

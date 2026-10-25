@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Erasure preview — Erasure — Epistrel Console{% endblock %}
+{% block heading %}Erasure preview{% endblock %}
+{% block content %}
+<p>Erasing {{ subject_kind|lower }} {{ subject_link }} — {{ scope_label }}{% if story_link %} ({{ story_link }}){% endif %} — dry run, nothing has been erased yet.</p>
+<p class="boundary-link"><a href="{% url 'erasure:boundary' %}">What erasure does and doesn't cover</a></p>
+<h2>What will go</h2>
+<table class="erasure-counts">
+  <tbody>
+    <tr><th scope="row">Records</th><td>{% if records %}<ul class="records">{% for table, n in records %}<li><code>{{ table }}</code>: {{ n }}</li>{% endfor %}</ul>{% else %}{{ nothing_rows }}{% endif %}</td></tr>
+    <tr><th scope="row">Prose segments</th><td>{{ preview.prose_segments }}</td></tr>
+    <tr><th scope="row">{{ media_label }}</th><td>{{ preview.media }}</td></tr>
+    <tr><th scope="row">Idempotency results</th><td>{{ preview.idempotency_results }}</td></tr>
+  </tbody>
+</table>
+{% if groups %}
+<h2>Candidates</h2>
+<p class="muted">Ambiguous mentions: each is erased only if you tick it.</p>
+{% if error_text %}<p class="errorlist candidates-error" role="alert">{{ error_text }}</p>{% endif %}
+{% for group in groups %}
+<h3><code>{{ group.table }}</code></h3>
+<ul class="candidates">
+  {% for c in group.candidates %}
+  <li><label><input type="checkbox" name="{{ candidate_field }}" value="{{ c.candidate_id }}" form="{{ form_id }}"{% if c.candidate_id in ticked %} checked{% endif %}{% if not token %} disabled{% endif %}> <span class="rule">{{ c.rule }}</span>: <q class="snippet">{{ c.snippet }}</q></label>
+    <br><small class="muted"><code>{{ c.field }}</code> · <code>{{ c.record_id }}</code></small></li>
+  {% endfor %}
+</ul>
+{% endfor %}
+{% elif error_text %}<p class="errorlist candidates-error" role="alert">{{ error_text }}</p>
+{% endif %}
+{% if referencing %}
+<h2>Stories that still name the subject</h2>
+<p class="muted">Erasing from the catalog never touches stories: erase the subject in each one separately.</p>
+<ul class="referencing">{% for r in referencing %}<li>{{ r.label }} {{ r.story }}{% if r.character_ids %} — characters {% for cid in r.character_ids %}<code>{{ cid }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}</li>{% endfor %}</ul>
+{% endif %}
+{% if nothing %}
+<p class="nothing">{{ nothing_text }}</p>
+<p><button type="button" class="danger" disabled title="{{ nothing_text }}">{{ confirm_label }}</button> <a class="button" href="{{ back_url }}">Back</a></p>
+{% else %}
+{% include "console/_two_stage.html" with token=token confirm_url=confirm_url confirm_label=confirm_label cancel_url=back_url idempotency_key="" danger=True form_id=form_id %}
+<p class="confirm-text warning">{{ confirm_text }}</p>
+{% endif %}
+{% endblock %}

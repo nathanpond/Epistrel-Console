@@ -147,7 +147,9 @@ def test_story_refusal_is_placed_beside_the_row_live(
     with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
         form = operator_client.get("/stories/new/").content.decode()
         signed = re.search(r'name="rating_choices" value="([^"]+)"', form)
-        default = re.search(r'<option value="([^"]+)" selected>', form)
+        # The rating select's own selected option: the nav's "Acting as" select (#64) also has one.
+        ratings = form[form.index('name="content_rating_id"') :]
+        default = re.search(r'<option value="([^"]+)" selected>', ratings)
         assert signed is not None, form
         assert default is not None, form
         page = operator_client.post(

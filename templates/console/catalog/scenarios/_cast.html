@@ -1,0 +1,68 @@
+{% comment %}#73: the editor's Cast section: the starting-cast limit and the role rows, each with
+its seeded memories. The character select shows for a default or locked fill (after "Update
+form" when the fill was just changed). #74: on a companion (cast.companion) each role's id, kind,
+fill and character are a read-only block ("Fixed — follows <character>", posted as hidden inputs
+the server pins anyway) and roles are neither added nor removed. Context: cast
+(console.forms.scenario_cast.CastForms), archived_note, companion_name.{% endcomment %}
+<fieldset class="section cast" id="f-cast"><legend>Cast</legend>
+  {% if cast.cast_errors %}<ul class="errorlist">{% for error in cast.cast_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+  <p class="field">{% with field=cast.limit.cast__max_characters_at_start %}<label for="{{ field.id_for_label }}">{{ field.label }}</label><br>{{ field }} <small class="muted">{{ field.help_text }}</small>{{ field.errors }}{% endwith %}</p>
+  <fieldset class="rows rows-role" id="f-cast-roles">
+    <legend>Roles</legend>
+    {{ cast.roles.management_form }}
+    {{ cast.roles.non_form_errors }}
+    {% for row in cast.rows %}{% with role=row.form %}
+    <div class="row role" id="{{ row.anchor }}">
+      {{ role.non_field_errors }}
+      {% if cast.companion %}
+      <p class="fixed-slot"><strong>Fixed — follows {{ companion_name }}</strong>: id <code>{{ role.id.value }}</code> · kind {{ role.kind.value }} · fill {{ role.fill.value }} · character {% if role.fixed_character %}<code>{{ role.fixed_character }}</code>{% else %}—{% endif %}
+        {{ role.id.as_hidden }}{{ role.kind.as_hidden }}{{ role.fill.as_hidden }}{% if role.shows_character %}{{ role.character__catalog_id.as_hidden }}{{ role.character__version.as_hidden }}{% endif %}
+      </p>
+      {% if role.slot_errors %}<ul class="errorlist">{% for error in role.slot_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      <p>
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.public_label %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.required %}
+      </p>
+      {% else %}
+      <p>
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.id %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.kind %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.public_label %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.required %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.fill %}
+      </p>
+      {% endif %}
+      <p>{% include "console/catalog/scenarios/_cast_field.html" with field=role.setup_description %}</p>
+      {% if cast.companion %}{% elif role.shows_character %}
+      <p class="role-character">
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.character__catalog_id %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.character__version %}
+      </p>
+      {% else %}
+      <p class="muted role-character">No character: an open role is filled when a story is created. Choose "default" or "locked" and press "Update form" to pick one.</p>
+      {% endif %}
+      <fieldset class="eligibility"><legend>Eligibility</legend>
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.eligibility__labels %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.eligibility__content_ratings %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.eligibility__age_range_min %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.eligibility__age_range_max %}
+      </fieldset>
+      <p>
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.starting_location %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.participation %}
+      </p>
+      <p>
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.relationships %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.name_overrides %}
+        {% include "console/catalog/scenarios/_cast_field.html" with field=role.state_initial_values %}
+      </p>
+      {% include "console/catalog/scenarios/_seeds.html" with seeds=row.seeds title="Seeded memories" %}
+      {% if not cast.companion %}<button type="submit" name="op" value="remove:role-{{ row.index }}" formnovalidate{% if archived_note %} disabled{% endif %}>Remove role</button>{% endif %}
+    </div>
+    {% endwith %}{% empty %}
+    <p class="empty">None.</p>
+    {% endfor %}
+    {% if cast.companion %}<p class="muted">A companion keeps its two roles: none can be added or removed.</p>{% elif cast.can_add_role %}<button type="submit" name="op" value="add:role" formnovalidate{% if archived_note %} disabled{% endif %}>Add role</button>{% else %}<small class="muted">At the limit.</small>{% endif %}
+  </fieldset>
+  {% include "console/catalog/scenarios/_refresh.html" %}
+</fieldset>

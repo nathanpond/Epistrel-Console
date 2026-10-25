@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Copy {{ source }} — Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}Copy {{ source }}{% if version %} v{{ version }}{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ cancel_url }}">Back to the profile</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{{ action_url }}" class="profile-copy-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="source_name" value="{{ source }}">
+  {{ form.non_field_errors }}
+  <p>Copies version {{ version|default:"—" }} of <code>{{ profile_id }}</code> into a new profile (version 1).</p>
+  <p id="f-name"><label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label> {{ form.name }} {{ form.name.errors }}</p>
+  <p id="f-owner"><label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label> {{ form.owner }} {{ form.owner.errors }}</p>
+  <p><button type="submit">Copy</button> <a href="{{ cancel_url }}">Cancel</a></p>
+</form>
+{% endblock %}

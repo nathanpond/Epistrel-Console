@@ -1,0 +1,1 @@
+{% if cell.kind == "plain" %}{{ cell.text }}{% elif cell.kind == "json" %}<pre>{{ cell.text }}</pre>{% elif cell.kind == "null" %}<code>null</code>{% else %}—{% endif %}

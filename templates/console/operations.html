@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load console_format %}
+{% load console_format entities principals %}
 {% block title %}Operations — Epistrel Console{% endblock %}
 {% block heading %}Operations{% endblock %}
 {% block content %}
@@ -30,6 +30,19 @@
       {% for value in operators %}<option value="{{ value }}"{% if value == filters.operator %} selected{% endif %}>{{ value }}</option>{% endfor %}
     </select>
   </label>
+  <label>Principal
+    <select name="principal">
+      <option value="">all</option>
+      {% for value in principals %}<option value="{{ value }}"{% if value == filters.principal %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Entity type
+    <select name="entity_type">
+      <option value="">all</option>
+      {% for value in entity_types %}<option value="{{ value }}"{% if value == filters.entity_type %} selected{% endif %}>{{ value|entity_display }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Entity id <input type="text" name="entity_id" value="{{ filters.entity_id }}" size="28"></label>
   <label>Policy
     <select name="policy">
       <option value="">all</option>
@@ -45,7 +58,7 @@
 <table class="operations">
   <thead>
     <tr>
-      <th>Time</th><th>Operator</th><th>Principal</th><th>Kind</th><th>Story</th>
+      <th>Time</th><th>Operator</th><th>Principal</th><th>Kind</th><th>Entity</th><th>Story</th>
       <th>Outcome / error code</th><th>Timeline revision</th><th>Idempotency key</th>
       <th>Config revision</th><th>Engine operation id</th>
     </tr>
@@ -55,8 +68,9 @@
     <tr class="operation outcome-{{ row.outcome }}">
       <td><a href="{% url 'operations:detail' row.pk %}">{{ row.created_at|engine_time }}</a></td>
       <td>{{ row.operator_username|default:"—" }}</td>
-      <td><code>{{ row.principal }}</code></td>
+      <td>{{ row.principal|principal_link }}</td>
       <td><code>{{ row.kind }}</code>{% if row.replayed %} (replayed){% endif %}</td>
+      <td class="entity">{% if row.entity_type %}{{ row.entity_type|entity_display }} {{ row.entity_id|entity_link:row.entity_type }}{% else %}—{% endif %}</td>
       <td>{% if row.story_id %}<a href="/stories/{{ row.story_id }}/"><code>{{ row.story_id }}</code></a>{% else %}—{% endif %}</td>
       <td>{% if row.outcome == "queued" %}queued (unconfirmed){% else %}{{ row.outcome }}{% endif %}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}</td>
       <td>{{ row.timeline_revision|default_if_none:"—" }}</td>

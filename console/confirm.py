@@ -43,10 +43,11 @@ _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
 def safe_next(request: HttpRequest, fallback: str) -> str:
     """The request's ``next`` (POST first, then GET) when it is a local URL, else ``fallback``."""
     candidate = request.POST.get(NEXT_FIELD) or request.GET.get(NEXT_FIELD) or ""
-    allowed = url_has_allowed_host_and_scheme(
+    if candidate and url_has_allowed_host_and_scheme(
         candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-    )
-    return candidate if candidate and allowed else fallback
+    ):
+        return candidate
+    return fallback
 
 
 def confirm_query(name: str | None, next_url: str) -> str:
@@ -62,10 +63,11 @@ def shown_name(request: HttpRequest) -> str:
     return posted or request.GET.get("name", "")
 
 
-def posted_idempotency_key(request: HttpRequest) -> str:
-    """The key the rendered page carried, or a fresh one when it is missing or malformed (a
-    POST that did not come from the page)."""
-    key = request.POST.get(KEY_FIELD, "")
+def posted_idempotency_key(request: HttpRequest, field: str = KEY_FIELD) -> str:
+    """The key the rendered page carried (in ``field``; a page with two writes carries two,
+    #66), or a fresh one when it is missing or malformed (a POST that did not come from the
+    page)."""
+    key = request.POST.get(field, "")
     return key if _KEY.match(key) else new_ulid()
 
 

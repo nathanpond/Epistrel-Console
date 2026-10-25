@@ -1,0 +1,36 @@
+{
+  "id": "01JC000000000000000000SCN1",
+  "version": 1,
+  "listing_status": "public",
+  "status": "published",
+  "companion_of": "01JC00000000000000000CHAR1",
+  "name": "Ada's world",
+  "public_description": null,
+  "media": {
+    "cover": null,
+    "gallery": [],
+    "videos": []
+  },
+  "labels": [],
+  "content_rating": {
+    "id": "00000000000000000000RAT002",
+    "version_id": "01M5R0RTV00000000000000002",
+    "name": "Teen"
+  },
+  "roles": [
+    {
+      "id": "npc",
+      "public_label": "Ada",
+      "setup_description": "Ada keeps the farm.",
+      "kind": "npc",
+      "fill": "locked"
+    },
+    {
+      "id": "player",
+      "public_label": "You",
+      "setup_description": "A visitor at the farm.",
+      "kind": "player",
+      "fill": "open"
+    }
+  ]
+}

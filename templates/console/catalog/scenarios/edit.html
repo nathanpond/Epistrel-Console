@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{% if create %}New scenario{% else %}Edit {% if name %}{{ name }}{% else %}{{ scenario_id }}{% endif %}{% endif %} — Scenarios — Epistrel Console{% endblock %}
+{% block heading %}{% if create %}New scenario{% else %}Edit {% if name %}{{ name }}{% else %}<code>{{ scenario_id }}</code>{% endif %}{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{% url 'scenarios:index' %}">Back to list</a></p>
+{% if not form %}
+{% include "console/_engine_error.html" %}
+{% else %}
+{% if not create %}
+<p class="entry-header">Status: {{ snap.status|humanise }} · Draft revision {{ snap.draft_revision|default_if_none:"—" }} · {% if snap.current_version %}latest v{{ snap.current_version }}{% else %}never published{% endif %} · Owner: {{ snap.owner|principal_link }} · <a href="{{ detail_url }}">View</a> · <a href="{{ versions_url }}">Versions</a></p>
+{% endif %}
+{% if lifecycle %}{% include "console/catalog/_archived_banner.html" %}{% endif %}
+{% if pinned %}<p class="companion-of">Companion of <a href="{{ companion_url }}">{{ companion_name }}</a> — {{ pinned }}</p>{% endif %}
+{% if stale %}<div class="banner banner-warning stale" role="alert">{{ stale }}</div>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if not create %}<div id="report">{% if refusal %}<p class="refusal errornote" role="alert">{{ refusal }}</p>{% endif %}{% if report %}{% include "console/catalog/scenarios/_report.html" with shown=report %}{% endif %}</div>{% endif %}
+{% include "console/catalog/scenarios/_scenario_form.html" %}
+{% endif %}
+{% endblock %}

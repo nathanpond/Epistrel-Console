@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Versions — {{ profile.name }} — Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}{{ profile.name }}: versions{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ detail_url }}">Back to the profile</a></p>
+<table class="profile-versions">
+  <thead><tr><th>Version</th><th>Created</th><th>Created by</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="version-{{ row.version.version }}"{% if row.viewed %} class="viewed" aria-current="true"{% endif %}>
+      <td><a href="{{ row.url }}">{{ row.version.version }}</a>{% if row.latest %} <span class="badge latest">latest</span>{% endif %}{% if row.viewed %} <span class="muted">(viewed)</span>{% endif %}</td>
+      <td>{{ row.version.created_at|engine_time }}</td>
+      <td>{{ row.version.created_by|principal_link }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3" class="empty">No versions</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

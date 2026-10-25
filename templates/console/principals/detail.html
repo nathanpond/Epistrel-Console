@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{% if principal %}{{ principal }} — {% endif %}Principals — Epistrel Console{% endblock %}
+{% block heading %}{% if principal %}Principal <code>{{ principal }}</code>{% else %}Principal{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{% url 'principals:index' %}">All principals</a>{% if offboarding_url %} · <a class="offboarding" href="{{ offboarding_url }}">Offboarding</a>{% endif %}</p>
+{% include "console/principals/_lookup_form.html" %}
+{% if not invalid %}
+<div class="principal-actions">
+  {% if can_act %}
+  <form method="post" action="{% url 'acting-as' %}" class="act-as">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <input type="hidden" name="other" value="{{ principal }}">
+    <button type="submit">Act as this principal</button>
+  </form>
+  {% endif %}
+  {% if offboard_url %}<a class="button danger offboard" href="{{ offboard_url }}">Offboard…</a>{% endif %}
+</div>
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% else %}
+{% if stale %}<div class="banner stale-cursor" role="status">{{ stale_text }}</div>{% endif %}
+{% if nothing %}<p class="nothing-linked">The Engine has nothing linked to <code>{{ principal }}</code> (principals are never resolved).</p>{% endif %}
+{% for group in groups %}
+<section class="group group-{{ group.side }}">
+  <h2>{{ group.title }} ({{ group.total }})</h2>
+  {% for table in group.tables %}
+  <h3 id="{{ table.anchor }}">{{ table.title }}{% if table.returned %} ({{ table.count }}){% endif %}</h3>
+  {% if not table.returned %}
+  <p class="not-returned">Not returned by the Engine.</p>
+  {% elif table.owned_rows %}
+  <table class="lookup {{ table.anchor }}">
+    <thead><tr><th>Name</th>{% for column in table.columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in table.owned_rows %}
+      <tr id="item-{{ row.item.id }}"{% if row.held %} class="held"{% endif %}>
+        <td>{{ row.name }}</td>{% for cell in row.cells %}<td>{{ cell }}</td>{% endfor %}
+      </tr>
+      {% if row.companion %}
+      <tr class="companion"><td colspan="{{ table.columns|length|add:1 }}" style="padding-left: 2em">Companion: {{ row.companion }}</td></tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif table.related_rows %}
+  <table class="lookup {{ table.anchor }}">
+    <thead><tr><th>Id</th><th>Relations</th></tr></thead>
+    <tbody>
+      {% for row in table.related_rows %}
+      <tr><td>{{ row.id }}</td><td>{{ row.relations }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">None.</p>
+  {% endif %}
+  {% if table.first_query or table.next_query %}
+  <p class="paging">
+    {% if table.first_query %}<a class="first-page" href="{{ table.first_query }}">First page</a>{% endif %}
+    {% if table.next_query %}<a class="next-page" href="{{ table.next_query }}">Next</a>{% endif %}
+  </p>
+  {% endif %}
+  {% endfor %}
+</section>
+{% endfor %}
+{% if links.more %}
+<details class="more"><summary>More</summary>
+  <pre>{{ links.more|pretty_json }}</pre>
+</details>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

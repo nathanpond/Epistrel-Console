@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "media_retired",
+    "message": "media asset 01JC000000000000000000PHT2 cannot be referenced (retired)",
+    "details": {
+      "media_id": "01JC000000000000000000PHT2",
+      "field": "body.public_card.images.gallery[1]",
+      "reason": "retired"
+    }
+  }
+}

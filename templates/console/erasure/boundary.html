@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load erasure %}
+{% block title %}Erasure boundary — Erasure — Epistrel Console{% endblock %}
+{% block heading %}Erasure boundary{% endblock %}
+{% block content %}
+<p class="muted">As stated by this Engine.</p>
+<h2>In scope</h2>
+<ul class="in-scope">{% for entry in boundary.in_scope %}<li>{{ entry|code_spans }}</li>{% empty %}<li>—</li>{% endfor %}</ul>
+<h2>Out of scope</h2>
+<ul class="out-of-scope">{% for entry in boundary.out_of_scope %}<li>{{ entry|code_spans }}</li>{% empty %}<li>—</li>{% endfor %}</ul>
+<h2>Logs</h2>
+<p class="logs">{{ boundary.logs|code_spans }}</p>
+{% if extra %}<details class="more"><summary>More</summary><dl>{% for key, value in extra %}<dt><code>{{ key }}</code></dt><dd><pre>{{ value }}</pre></dd>{% endfor %}</dl></details>{% endif %}
+<p><a href="{{ index_url }}">Erasure</a></p>
+{% endblock %}

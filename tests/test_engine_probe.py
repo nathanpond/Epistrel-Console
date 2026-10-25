@@ -82,7 +82,7 @@ def m2(status: str, **checks: Any) -> dict[str, Any]:
         ({"workers": {"alive": None, "last_heartbeat_s": None}}, "no worker heartbeat"),
         ({"oldest_overdue_job_s": 400.7}, "job overdue 400 s"),
         ({"oldest_overdue_timer_s": 301.0}, "timer overdue 301 s"),
-        ({"erasure_pending": 2}, "erasure pending 2"),
+        ({"erasure_pending": 2}, "erasure pending: 2"),
         (
             {
                 "workers": {"alive": 0, "last_heartbeat_s": 90.0},
@@ -91,7 +91,7 @@ def m2(status: str, **checks: Any) -> dict[str, Any]:
                 "erasure_pending": 1,
             },
             "no worker alive, worker heartbeat 90 s ago, timer overdue 500 s, job overdue 600 s, "
-            "erasure pending 1",
+            "erasure pending: 1",
         ),
     ],
 )

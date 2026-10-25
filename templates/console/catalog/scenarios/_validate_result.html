@@ -1,0 +1,1 @@
+{% comment %}#74: Validate's answer swapped into #report (HTMX): the report, or the Engine's error panel. Context: shown or engine_error.{% endcomment %}{% if engine_error %}{% include "console/_engine_error.html" %}{% else %}{% include "console/catalog/scenarios/_report.html" %}{% endif %}

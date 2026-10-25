@@ -1,0 +1,1 @@
+{% if pairs %}<dl class="counts">{% for key, text, children in pairs %}<dt>{{ key }}</dt><dd>{% if children %}{% include "console/erasure/_counts.html" with pairs=children %}{% else %}{{ text }}{% endif %}</dd>{% endfor %}</dl>{% else %}—{% endif %}

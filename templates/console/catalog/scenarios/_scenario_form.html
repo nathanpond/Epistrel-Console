@@ -1,0 +1,101 @@
+{% comment %}
+#68: the scenario editor, create and edit; #73 adds the Cast and World seeds (cast: CastForms);
+#71 adds the Media section (media: the media sections by path). Each main field's id is its report anchor (f-<path>). Context: form, sections, row_sets,
+create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url; #74 (edit only):
+publish_idempotency_key, next, facts, validate_url, unsaved, archived_publish, companion_name.
+{% endcomment %}<form method="post" action="{{ action_url }}" class="scenario-form" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if not create %}<input type="hidden" name="draft_revision" value="{{ snap.draft_revision|default_if_none:'' }}">
+  <input type="hidden" name="publish_idempotency_key" value="{{ publish_idempotency_key }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <input type="hidden" name="facts" value="{{ facts }}">{% endif %}
+  {# Enter in a text input submits the form's first button: make that Save, not a row button. #}
+  <button type="submit" name="op" value="save" class="default-submit" tabindex="-1" aria-hidden="true" style="position: absolute; left: -9999px"{% if archived_note %} disabled{% endif %}>Save</button>
+  {{ form.non_field_errors }}
+  {% if create %}
+  <p class="field"><label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label><br>{{ form.owner }} <small class="muted" id="{{ form.owner.auto_id }}_helptext">{{ form.owner.help_text }}</small>{{ form.owner.errors }}</p>
+  {% endif %}
+
+  {% with section=sections.public_card %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+  {% include "console/media/_slot_section.html" with section=media.public_card_media %}
+
+  {% with section=sections.metadata %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% if rating_note %}<p class="rating-unavailable">{{ rating_note }} <small class="muted">(the content rating is left unchanged)</small></p>{% endif %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% with section=sections.world %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.loc %}
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.ent %}
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% include "console/catalog/scenarios/_cast.html" with cast=editor.cast %}
+
+  {% with section=sections.starting_state_opening %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  <fieldset class="section world-seeds" id="f-starting_state-seeded_memories"><legend>World seeds</legend>
+    <p class="muted">Seeded memories no role holds (holder <code>world</code> by default); Lite renders them as scenario text.</p>
+    {% if editor.cast.world_errors %}<ul class="errorlist">{% for error in editor.cast.world_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {% include "console/catalog/scenarios/_seeds.html" with seeds=editor.cast.world_rows title="World seeds" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>
+
+  {% with section=sections.story_settings_defaults %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.pol %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% with section=sections.recommendation %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% with section=sections.visual_style %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% with section=sections.creation_rules %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% with section=sections.drivers %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
+    <p class="muted">Lite puts the drivers in the prompt as author notes.</p>
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.hook %}
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.obj %}
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.mile %}
+    {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.end %}
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  {% with section=sections.starting_state %}<fieldset class="section deferred" id="f-deferred"><legend>{{ section.title }}</legend>
+    <p class="muted">Stored by Lite but not used until a later Engine milestone. Each box must be valid JSON before anything is sent.</p>
+    {% include "console/catalog/scenarios/_fields.html" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>{% endwith %}
+
+  <p class="actions">
+    {% if create %}
+    <button type="submit" name="op" value="save">Create</button>
+    {% else %}
+    <button type="submit" name="op" value="save"{% if archived_note %} disabled title="Archived — unarchive to edit"{% endif %}>Save</button>
+    <button type="submit" name="action" value="publish"{% if archived_publish %} disabled title="{{ archived_publish }}"{% endif %}>Save &amp; publish</button>{% if archived_publish %} <small class="muted">({{ archived_publish }})</small>{% endif %}
+    <button type="submit" formaction="{{ validate_url }}" formmethod="post" formnovalidate hx-post="{{ validate_url }}" hx-target="#report" hx-swap="innerHTML">Validate saved draft</button>
+    <small class="muted validate-note">{% if unsaved %}Unsaved edits are not included — save first{% else %}Validates the last saved draft{% endif %}</small>
+    {% endif %}
+  </p>
+</form>

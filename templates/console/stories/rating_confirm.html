@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% comment %}
+Confirm a tightening rating change (#80). No Engine call renders this page. Context: story_id, target
+(the signed target: rating_id, name, version, adds, drops, unknown), line_before/line_after (the pause
+sentence around the rating name), cant_compare, and the two-stage partial's token, confirm_url,
+confirm_label, cancel_url, confirm_key.
+{% endcomment %}
+{% block title %}Change rating — Epistrel Console{% endblock %}
+{% block heading %}Change the rating to {{ target.name }}?{% endblock %}
+{% block content %}
+<p class="confirm-line">{{ line_before }}<em>{{ target.name }}</em>{{ line_after }}</p>
+<dl class="facts">
+  <dt>Story id</dt><dd><code>{{ story_id }}</code></dd>
+  <dt>Target rating</dt><dd>{{ target.name }}{% if target.version is not None %} (v{{ target.version }}){% endif %} <code>{{ target.rating_id }}</code></dd>
+</dl>
+{% if cant_compare %}<p class="warning cant-compare">{{ cant_compare }}</p>
+{% else %}
+<h2>Policies this adds</h2>
+{% if target.adds %}<ul class="policy-adds">{% for policy_id in target.adds %}<li><code>{{ policy_id }}</code></li>{% endfor %}</ul>{% else %}<p class="muted">None.</p>{% endif %}
+<h2>Policies this drops</h2>
+{% if target.drops %}<ul class="policy-drops">{% for policy_id in target.drops %}<li><code>{{ policy_id }}</code></li>{% endfor %}</ul>{% else %}<p class="muted">None.</p>{% endif %}
+{% endif %}
+{% include "console/_two_stage.html" with token=token confirm_url=confirm_url confirm_label=confirm_label cancel_url=cancel_url idempotency_key=confirm_key %}
+{% endblock %}

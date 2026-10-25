@@ -64,7 +64,7 @@ def test_status_filter_is_passed_through(
 
 def test_unknown_status_falls_back_to_all(operator_client: Client, engine: FakeEngine) -> None:
     serve(engine)
-    html = operator_client.get("/stories/?status=blocked_by_erasure").content.decode()
+    html = operator_client.get("/stories/?status=bogus").content.decode()
     (listing,) = calls(engine, "GET", "/stories")
     assert "status" not in listing.url.params
     assert '<option value="" selected>All</option>' in html
@@ -85,8 +85,9 @@ def test_held_story_renders_a_dash_and_its_status(
     response = operator_client.get("/stories/")
     assert response.status_code == 200
     held = row_html(response.content.decode(), "01JB2Z8Y5Q3W6K9M1N4P7R0T2W")
-    assert '<a href="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2W/">—</a>' in held
-    assert '<td class="status">blocked_by_erasure</td>' in held
+    # #87: a held story's null name reads "(held — erasure pending)", its status is worded.
+    assert '<a href="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2W/">(held — erasure pending)</a>' in held
+    assert '<td class="status">Held (erasure pending)</td>' in held
     assert "Archive" not in held  # neither active nor archived nor paused
     assert "Delete" in held
 
@@ -95,7 +96,7 @@ def test_paused_row_disables_archive(operator_client: Client, engine: FakeEngine
     serve(engine, summary(PAUSED, "Busy", "paused"))
     row = row_html(operator_client.get("/stories/").content.decode(), PAUSED)
     assert '<button type="button" disabled>Archive</button>' in row
-    assert "Paused while a check runs" in row
+    assert "Paused while the check runs" in row
     assert f"/stories/{PAUSED}/archive/" not in row
 
 
@@ -107,7 +108,7 @@ def test_active_row_archive_is_enabled(operator_client: Client, engine: FakeEngi
         in row
     )
     assert "disabled" not in row
-    assert "Paused while a check runs" not in row
+    assert "Paused while the check runs" not in row
 
 
 def test_archived_row_offers_unarchive_and_every_row_delete(

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% comment %}
+A story's content rating (#80, console/views/story_rating.py). Context: story, current (CurrentRating),
+options (Option: id, label), selected, field_error, refusal (RatingRefusal), disabled_note/disabled_url
+(archived, or paused with a link to the running check), current_unread, idempotency_key, reads.list_error.
+{% endcomment %}
+{% block title %}Rating — {{ story.name|default:story.id }} — Epistrel Console{% endblock %}
+{% block heading %}Rating — {{ story.name|default:"—" }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:settings' story.id %}">Settings</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+<dl class="current-rating">
+  <dt>Current rating</dt><dd><a href="{% url 'ratings:detail' current.id %}">{{ current.name }}</a>{% if current.retired %} (retired){% endif %}</dd>
+  <dt>Version</dt><dd>{% if current.version is not None %}{{ current.version }}{% else %}<code>{{ current.version_id }}</code>{% endif %}</dd>
+</dl>
+{% if refusal %}
+<div class="refusal">
+  {% if refusal.text %}<p class="notice"><strong>{% if refusal.url %}<a class="refusal-link" href="{{ refusal.url }}">{{ refusal.text }}</a>{% else %}{{ refusal.text }}{% endif %}</strong></p>{% endif %}
+  {% if refusal.panel %}{% include "console/_engine_error.html" with engine_error=refusal.panel %}{% endif %}
+</div>
+{% endif %}
+{% if reads.list_error %}
+{% include "console/_engine_error.html" with engine_error=reads.list_error %}
+{% else %}
+{% if disabled_note %}<p class="warning rating-disabled">{% if disabled_url %}<a href="{{ disabled_url }}">{{ disabled_note }}</a>{% else %}{{ disabled_note }}{% endif %}</p>{% endif %}
+{% if current_unread %}<p class="warning current-unread">{{ current_unread }}</p>{% endif %}
+<form method="post" action="{% url 'stories:rating' story.id %}" class="rating-form">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="current" value="{{ current.id }}">
+  <fieldset{% if disabled_note %} disabled{% endif %}>
+    <div class="field field-rating">
+      <label for="id_rating">Rating</label>
+      <select name="rating" id="id_rating">
+        {% for option in options %}<option value="{{ option.id }}"{% if option.id == selected %} selected{% endif %}>{{ option.label }}</option>{% endfor %}
+      </select>
+      {% if field_error %}<ul class="errorlist"><li>{{ field_error }}</li></ul>{% endif %}
+    </div>
+    <button type="submit">Save</button>
+  </fieldset>
+</form>
+{% endif %}
+{% endblock %}

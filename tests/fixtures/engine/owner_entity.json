@@ -1,0 +1,8 @@
+{
+  "entity_type": "scenario",
+  "entity_id": "01JC000000000000000000SCN1",
+  "owner_principal": "bob",
+  "previous_owner": "alice",
+  "config_revision": 7,
+  "idempotency_key": "01JK0000000000000000000KEY"
+}

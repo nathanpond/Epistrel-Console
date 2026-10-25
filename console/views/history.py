@@ -16,7 +16,8 @@ An HTMX request (the viewpoint select's ``change``) gets the controls fragment a
 audit box enables and disables live; without JavaScript the form refuses audit server-side.
 """
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlencode
 
 from django.http import HttpRequest, HttpResponse, QueryDict
@@ -29,6 +30,7 @@ from console.engine.client import EngineClient, EngineClientError
 from console.engine.models import History, Story, SummarySegment, VariantChain
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
+from console.feedback import FeedbackWidget, collapsed, first_parts
 from console.forms.history import HistoryForm, as_of_options
 from console.history import (
     TurnGroup,
@@ -41,7 +43,8 @@ from console.history import (
     summary_rows,
     turn_groups,
 )
-from console.timeline import ARCHIVED_NOTE, Basis, Link
+from console.story_pause import is_paused, pause_banner
+from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
 
 CONTROLS_TEMPLATE = "console/history/_controls.html"
 PAGE_TEMPLATE = "console/history/history.html"
@@ -155,6 +158,7 @@ def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) 
         story.name or "",
         story.status == "archived",
         request.get_full_path(),
+        paused=is_paused(story),
     )
     rows = []
     for chain in chains:
@@ -194,14 +198,18 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
             log_engine_error(request, exc)
             settings_error = panel_for(exc)
     links = operation_links(story.id, [i.operation_id for i in [*items, *audit_items]])
+    records = [audit_record(i, names) for i in audit_items]
+    if not query["include_audit"]:  # erasure markers show only with omniscient audit (#87)
+        records = [r for r in records if not r.is_marker]
     groups = turn_groups(
         history,
         items,
-        [audit_record(i, names) for i in audit_items],
+        records,
         labels=labels,
         links=links,
         actor_filtered=bool(query["actor_character_id"]),
     )
+    _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     older = history.next_before_turn
     variant = query["variant"] or ""
     return Page(
@@ -217,6 +225,17 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         clear_chain_url=_url(story.id, _with(request, variant=None)) if variant else "",
         settings_error=settings_error,
     )
+
+
+def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidget]) -> None:
+    """Give the first rendered part of each generated message its "Rate" control (#83)."""
+    rows = [row for group in groups for row in group.rows]
+    marks = iter(first_parts(row.item for row in rows))
+    for group in groups:
+        group.rows = [
+            replace(row, feedback=widget(row.item.message_id)) if next(marks) else row
+            for row in group.rows
+        ]
 
 
 @require_safe
@@ -237,5 +256,7 @@ def history(request: HttpRequest, story_id: str) -> HttpResponse:
         "chains": _chain_rows(request, story, chains),
         "variants_error": variants_error,
         "archived_note": ARCHIVED_NOTE if story.status == "archived" else "",
+        "paused_note": PAUSED_NOTE if is_paused(story) else "",
+        "pause_banner": pause_banner(story),  # #80
     }
     return render(request, PAGE_TEMPLATE, context)
