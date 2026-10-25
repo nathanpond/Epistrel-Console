@@ -1200,3 +1200,9 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `media_retired` at a slot reads "No such asset — choose another" when `details.reason` is `unknown`, and "This asset is retired — choose another" otherwise. This covers both the path-placed refusal (`place`, via `partial(self.place, reason=…)`) and the media-id-only one. Publish-report entries carry no `reason`, so they keep the retired wording.
   **Why:** The Engine answers an unknown id as `media_retired` with `reason: unknown`.
   **Issue:** #164
+
+## /n8-exec M3 (verification fixes 2) — 2026-10-25
+
+- **Decision:** M3 had already been executed (#155, #165 merged), so this run implemented only the open verify bug #166, on `milestone/m3-catalog-verify-fixes-2`. The tests drive the HTMX poll partial (`?op=swap`) after a held swap. The ended case uses `refused` with `progress {0, 0}`.
+  **Why:** The poll partial reads only the check, so it isolates the progress line. `refused` is one of the endings the issue names. A scratch worktree with the #81 half of #165 reverse-applied fails the ended test, so it is a real gate. The starting test passes on both trees: the issue asks for it as the paired assertion, and that behaviour predates #165.
+  **Issue:** #166
