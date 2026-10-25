@@ -2262,6 +2262,9 @@ class SubjectRef(Model):
     kind: SubjectKind
     id: str
 
+    def to_json(self) -> dict[str, str]:
+        return {"kind": self.kind, "id": self.id}
+
 
 @dataclass(frozen=True)
 class MediaAsset(Model):
@@ -3147,3 +3150,113 @@ class MessageFeedback(Model):
     updated_at: str | None
     context: FeedbackContext | None
     history: list[FeedbackHistoryEntry]
+
+
+# --- erasure (#86) --------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StoryScope:
+    """An erasure's ``StoryScope``: within one story."""
+
+    story: str
+
+    def to_json(self) -> dict[str, str]:
+        return {"story": self.story}
+
+
+@dataclass(frozen=True)
+class CatalogScope:
+    """An erasure's ``CatalogScope``: the catalog (its characters, scenarios, personas, media)."""
+
+    def to_json(self) -> dict[str, bool]:
+        return {"catalog": True}
+
+
+type ErasureScope = StoryScope | CatalogScope
+
+
+def scope_from_json(raw: object) -> ErasureScope | None:
+    """The scope a request body sent (``{story: <id>}`` or ``{catalog: true}``), else ``None``."""
+    if isinstance(raw, dict):
+        story = raw.get("story")
+        if isinstance(story, str) and story:
+            return StoryScope(story)
+        if raw.get("catalog") is True:
+            return CatalogScope()
+    return None
+
+
+@dataclass(frozen=True)
+class ErasureCandidate(Model):
+    """``CandidateBody``: a mention erased only when confirmed (ADR-154). ``snippet`` is the dry
+    run's text around it, never stored (the operation log keeps ``"***"``)."""
+
+    candidate_id: str
+    record_table: str
+    record_id: str
+    field: str
+    snippet: str
+    rule: str
+
+
+@dataclass(frozen=True)
+class LedgerEntry(Model):
+    """``LedgerEntryBody``: the erasure ledger's row (identifiers, scope, counts; never a name)."""
+
+    erasure_id: str
+    at: str
+    scope: str
+    story_id: str | None
+    counts: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReferencingStory(Model):
+    """``ReferencingStoryBody``: a story still naming a catalog subject, left untouched."""
+
+    story_id: str
+    character_ids: list[str]
+
+
+@dataclass(frozen=True)
+class ErasureResult(Model):
+    """``ErasureBody``: what an erasure did, or (``dry_run``) would do. ``subject`` is the
+    Engine's ``{kind, id}`` object (:attr:`subject_ref` reads it); ``residue`` is ``None`` when
+    no scan ran (a dry run)."""
+
+    config_revision: int
+    dry_run: bool
+    subject: dict[str, str]
+    scope: str
+    story_id: str | None
+    records: dict[str, int]
+    prose_segments: int
+    media: int
+    idempotency_results: int
+    regeneration: str
+    degradation: list[str]
+    referencing_stories: list[ReferencingStory]
+    timeline_revision: int | None = None
+    erasure_id: str | None = None
+    operation_id: str | None = None
+    idempotency_key: str | None = None
+    ledger_entry: LedgerEntry | None = None
+    residue: int | None = None
+    candidates_remaining: int = 0
+    candidates: list[ErasureCandidate] = field(default_factory=list)
+
+    @property
+    def subject_ref(self) -> SubjectRef | None:
+        return SubjectRef.from_json(self.subject)
+
+    @property
+    def nothing(self) -> bool:
+        """Every count zero and no candidate: nothing to erase."""
+        return (
+            not any(self.records.values())
+            and self.prose_segments == 0
+            and self.media == 0
+            and self.idempotency_results == 0
+            and not self.candidates
+        )

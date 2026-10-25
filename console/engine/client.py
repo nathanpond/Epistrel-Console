@@ -27,6 +27,7 @@ from console.engine.models import (
     CatalogCharacterDraft,
     CatalogCharacterPage,
     CatalogCharacterStatus,
+    CatalogScope,
     CatalogVersion,
     CatalogVersionList,
     CharacterPublished,
@@ -42,6 +43,7 @@ from console.engine.models import (
     EffectiveConfig,
     EngineProfile,
     EngineProfilePage,
+    ErasureResult,
     ForkResult,
     HealthResponse,
     HealthResult,
@@ -108,6 +110,7 @@ from console.engine.models import (
     StoryCreated,
     StoryList,
     StoryProfileWrite,
+    StoryScope,
     StorySettings,
     StorySettingsWrite,
     StoryStatusChange,
@@ -123,6 +126,7 @@ from console.engine.models import (
 )
 from console.engine.timeouts import (
     CATALOG_PUBLISH,
+    ERASURE,
     OFFBOARDING,
     PROFILE_EDIT,
     SCENARIO_CREATE,
@@ -267,6 +271,17 @@ class StreamedContent:
 
 
 @dataclass(frozen=True)
+class RecordedAbout:
+    """What an operation-log row is about, from a ``record_about`` hook (#86): its
+    ``entity_type``/``entity_id`` (any string; a type the registry does not know renders as
+    ``<code>``) and its ``story_id`` (``None``: what the path or answer says)."""
+
+    entity_type: str | None
+    entity_id: str | None
+    story_id: str | None = None
+
+
+@dataclass(frozen=True)
 class Operation:
     method: str
     path: str
@@ -286,6 +301,12 @@ class Operation:
     # name (#70: an upload's metadata and its files' names, sizes and types, never the bytes);
     # ``None``: the JSON body as sent.
     record_body: Callable[[Mapping[str, Any]], object] | None = None
+    # What the operation log stores as the (JSON, already redacted) response body (#86: an
+    # erasure dry run's candidate snippets become ``"***"``); ``None``: the body as answered.
+    record_response: Callable[[object], object] | None = None
+    # What the row is about when a static ``entity``/``entity_id`` cannot say it (#86: the
+    # erasure's subject kind and id, and its scope's story), from the call's arguments.
+    record_about: Callable[[Mapping[str, Any]], RecordedAbout | None] | None = None
 
     @property
     def is_recorded(self) -> bool:
@@ -355,6 +376,8 @@ def operation(
     entity: RecordedEntity | None = None,
     entity_id: str | None = None,
     record_body: Callable[[Mapping[str, Any]], object] | None = None,
+    record_response: Callable[[object], object] | None = None,
+    record_about: Callable[[Mapping[str, Any]], RecordedAbout | None] | None = None,
     listed: bool = True,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a client method as the Engine operation ``method path``.
@@ -381,6 +404,11 @@ def operation(
     #70 adds ``record_body``: the redaction hook for a request whose body is not JSON (a
     multipart upload). It is called with the method's arguments by name and returns what the
     operation log stores as the request's body.
+
+    #86 adds ``record_response`` (called with the redacted JSON answer, returns what the row
+    stores: an erasure dry run masks its candidates' snippets) and ``record_about`` (called with
+    the method's arguments, returns a :class:`RecordedAbout` naming the row's entity and story
+    when they depend on the arguments: an erasure's subject kind and its scope's story).
 
     #75 adds ``listed``: ``False`` keeps the registration out of :data:`OPERATIONS` (keyed by
     method and path) for a second client method on an operation another method already lists
@@ -411,6 +439,8 @@ def operation(
             entity,
             entity_id,
             record_body,
+            record_response,
+            record_about,
         )
         if listed:
             OPERATIONS[f"{method} {path}"] = op
@@ -422,7 +452,7 @@ def operation(
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             arguments: dict[str, Any] = {}
-            if entity_id is not None or record_body is not None:
+            if entity_id is not None or record_body is not None or record_about is not None:
                 try:
                     arguments = dict(signature.bind_partial(*args, **kwargs).arguments)
                 except TypeError:
@@ -539,6 +569,42 @@ def upload_record(arguments: Mapping[str, Any]) -> dict[str, Any]:
         "file": file.described() if isinstance(file, UploadPart) else None,
         "poster_file": poster.described() if isinstance(poster, UploadPart) else None,
     }
+
+
+# --- erasure recording (#86) ----------------------------------------------------------------------
+
+SNIPPET_MASK = "***"
+# How the operation log names an erasure's subject (#86): the registry's type for a catalog
+# character or a persona; a story character has no registry type (its own string, shown raw).
+SUBJECT_ENTITY = {
+    "catalog_character": "character",
+    "persona": "persona",
+    "character": "story_character",
+}
+
+
+def erasure_record_response(body: object) -> object:
+    """An erasure answer as the operation log stores it: every ``candidates[].snippet``
+    replaced by ``"***"`` (the Engine returns snippets once and never stores them; neither does
+    the Console)."""
+    if not isinstance(body, dict) or not isinstance(body.get("candidates"), list):
+        return body
+    masked = [
+        {**c, "snippet": SNIPPET_MASK} if isinstance(c, dict) and "snippet" in c else c
+        for c in body["candidates"]
+    ]
+    return {**body, "candidates": masked}
+
+
+def erasure_about(arguments: Mapping[str, Any]) -> RecordedAbout | None:
+    """The erasure row's entity (the subject: its kind through :data:`SUBJECT_ENTITY`, an
+    unknown kind raw) and its story (the scope's story only; ``None`` for the catalog)."""
+    subject = arguments.get("subject")
+    if not isinstance(subject, SubjectRef):
+        return None
+    scope = arguments.get("scope")
+    story = scope.story if isinstance(scope, StoryScope) else None
+    return RecordedAbout(SUBJECT_ENTITY.get(subject.kind, subject.kind), subject.id, story)
 
 
 class EngineClient:
@@ -2011,6 +2077,47 @@ class EngineClient:
         report; 404 ``not_found`` once the report's 90 days are up. Unrecorded."""
         response = self._request("GET", f"/admin/offboarding/{quote(job_id, safe='')}")
         return _parse(response, OffboardingJob)
+
+    # --- erasure (#86) --------------------------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/admin/erasure",
+        response_model=ErasureResult,
+        recorded=True,
+        record_response=erasure_record_response,
+        record_about=erasure_about,
+    )
+    def erase(
+        self,
+        subject: SubjectRef,
+        scope: StoryScope | CatalogScope,
+        *,
+        dry_run: bool,
+        confirm_candidates: Sequence[str] = (),
+        idempotency_key: str | None = None,
+    ) -> ErasureResult:
+        """``POST /admin/erasure``: erase ``subject`` within ``scope``, or (``dry_run``) report
+        what would go, its candidate mentions with their snippets included.
+
+        ``confirm_candidates`` (the ticked candidate ids) is sent only when non-empty; the
+        ``Idempotency-Key`` only when given (a dry run sends none, the Engine keeps no key for
+        one). Recorded either way (#64 convention 9: the dry run is a non-writing POST that
+        needs a principal), on the subject (``entity_type`` its kind, :func:`erasure_about`)
+        and the scope's story, with every candidate's snippet stored as ``"***"``. Waits
+        :data:`~console.engine.timeouts.ERASURE`."""
+        body: dict[str, Any] = {
+            "subject": subject.to_json(),
+            "scope": scope.to_json(),
+            "dry_run": dry_run,
+        }
+        if confirm_candidates:
+            body["confirm_candidates"] = list(confirm_candidates)
+        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+        response = self._request(
+            "POST", "/admin/erasure", json=body, headers=headers, timeout=ERASURE
+        )
+        return _parse(response, ErasureResult)
 
     # --- catalog scenarios (#68) ----------------------------------------------------------------
 

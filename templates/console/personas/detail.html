@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load console_format principals %}
+{% load console_format principals erasure %}
 {% block title %}{{ persona.name }} — Personas — Epistrel Console{% endblock %}
 {% block heading %}{{ persona.name }}{% endblock %}
 {% block content %}
@@ -16,5 +16,5 @@
   <dt>Updated</dt><dd>{{ persona.updated_at|engine_time }}</dd>
 </dl>
 {% include "console/_ownership.html" %}
-<p><a class="button edit" href="{{ edit_url }}">Edit</a> <a class="button danger delete" href="{{ delete_url }}">Delete</a></p>
+<p><a class="button edit" href="{{ edit_url }}">Edit</a> <a class="button danger delete" href="{{ delete_url }}">Delete</a>{% erase_url "persona" persona.id "catalog" as erase_href %}{% if erase_href %} <a class="button danger erase" href="{{ erase_href }}">Erase…</a>{% endif %}</p>
 {% endblock %}

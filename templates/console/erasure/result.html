@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Erasure {{ result.erasure_id|default:"result" }} — Erasure — Epistrel Console{% endblock %}
+{% block heading %}Erasure {% if result.erasure_id %}<code>{{ result.erasure_id }}</code>{% else %}result{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ index_url }}">All erasures</a></p>
+{% if note %}<p class="warning no-erasure-id">{{ note }}</p>{% endif %}
+<p>Erased {{ subject_kind|lower }} {{ subject_link }} — {{ scope_label }}{% if story_link %} ({{ story_link }}){% endif %}.</p>
+<p class="residue-line">Residue: <span class="residue {{ residue.css }}">{{ residue.text }}</span></p>
+<table class="erasure-counts">
+  <tbody>
+    <tr><th scope="row">Records</th><td>{% if records %}<ul class="records">{% for table, n in records %}<li><code>{{ table }}</code>: {{ n }}</li>{% endfor %}</ul>{% else %}{{ nothing_rows }}{% endif %}</td></tr>
+    <tr><th scope="row">Prose segments</th><td>{{ result.prose_segments }}</td></tr>
+    <tr><th scope="row">{{ media_label }}</th><td>{{ result.media }}</td></tr>
+    <tr><th scope="row">Idempotency results</th><td>{{ result.idempotency_results }}</td></tr>
+    <tr><th scope="row">Candidates remaining</th><td>{{ result.candidates_remaining }}</td></tr>
+    <tr><th scope="row">Regeneration</th><td>{{ regeneration }}</td></tr>
+    <tr><th scope="row">Timeline revision</th><td>{% if result.timeline_revision is not None %}{% if transcript_url %}<a class="transcript" href="{{ transcript_url }}">revision {{ result.timeline_revision }}</a>{% else %}revision {{ result.timeline_revision }}{% endif %}{% else %}—{% endif %}</td></tr>
+  </tbody>
+</table>
+{% if degradation %}
+<h2>Degradation</h2>
+<ul class="degradation">{% for text, code in degradation %}<li>{{ text }} <code>{{ code }}</code></li>{% endfor %}</ul>
+{% endif %}
+{% if again_url %}<p><a class="button again" href="{{ again_url }}">{{ again_label }}</a></p>{% endif %}
+<h2>Ledger entry</h2>
+{% if ledger %}
+<dl class="ledger">
+  <dt>Erasure</dt><dd><code>{{ ledger.erasure_id }}</code></dd>
+  <dt>At</dt><dd>{{ ledger.at|engine_time }}</dd>
+  <dt>Scope</dt><dd>{{ ledger.scope }}</dd>
+  <dt>Story</dt><dd>{% if ledger.story_id %}<code>{{ ledger.story_id }}</code>{% else %}—{% endif %}</dd>
+  <dt>Counts</dt><dd>{% include "console/erasure/_counts.html" with pairs=ledger_counts %}</dd>
+</dl>
+{% else %}<p>—</p>{% endif %}
+{% if referencing %}
+<h2>Stories that still name the subject</h2>
+<ul class="referencing">{% for r in referencing %}<li>{{ r.label }} {{ r.story }}
+  {% if r.erase_links %}<ul>{% for url, text in r.erase_links %}<li><a class="erase-in-story" href="{{ url }}">{{ text }}</a></li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

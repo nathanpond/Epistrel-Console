@@ -414,7 +414,20 @@ def test_promote_shows_on_non_players_only(operator_client: Client, engine: Fake
     html = operator_client.get(PLAY_URL).content.decode()
     assert f'href="{PROMOTE_URL}">Promote to catalog</a>' in html
     assert f"/characters/{MARA}/promote/" not in html
-    assert "<li>Mara (player)</li>" in html
+    assert '<li>Mara (player) <a class="button danger erase"' in html
+
+
+def test_every_cast_member_links_erase_in_this_story(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#86: "Erase…" pre-fills a story-scope erasure of the character, players included."""
+    answer_page(engine)
+    html = operator_client.get(PLAY_URL).content.decode()
+    for character in (MARA, TOBIN):
+        assert (
+            f'href="/erasure/new/?kind=character&amp;subject={character}&amp;scope=story'
+            f'&amp;story={STORY}">Erase…</a>'
+        ) in html
 
 
 def test_promote_is_enabled_on_an_archived_story(

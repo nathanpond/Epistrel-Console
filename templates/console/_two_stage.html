@@ -4,8 +4,9 @@ confirm_url, confirm_label ("Apply anyway" / "Start" / "Erase now"), cancel_url,
 minted when this renders), danger (optional: style the button as destructive). The caller renders the
 report above it. #75, optional: confirm_op (the confirm button posts op=<confirm_op>), cancel_op and
 cancel_label (Cancel becomes a submit posting op=<cancel_op> with the token, e.g. "Back"), hidden
-((name, value) pairs posted alongside).
-{% endcomment %}<form method="post" action="{{ confirm_url }}" class="two-stage">{% csrf_token %}
+((name, value) pairs posted alongside). #86, optional: form_id (the form's id, so inputs outside it
+join with form="<form_id>": the erasure preview's candidate checkboxes).
+{% endcomment %}<form method="post" action="{{ confirm_url }}" class="two-stage"{% if form_id %} id="{{ form_id }}"{% endif %}>{% csrf_token %}
   <input type="hidden" name="confirm_token" value="{{ token }}">
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
   {% for name, value in hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}

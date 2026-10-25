@@ -238,6 +238,18 @@ def test_detail_shows_every_field_and_the_copy_note(
     )
 
 
+def test_detail_links_erase_for_the_catalog_scope(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#86: "Erase…" pre-fills the erasure form for this persona, catalog scope."""
+    engine.respond("GET", ITEM, 200, json=persona())
+    html = operator_client.get(DETAIL).content.decode()
+    assert (
+        f'<a class="button danger erase" href="/erasure/new/?kind=persona&amp;subject={PID}'
+        '&amp;scope=catalog">Erase…</a>'
+    ) in html
+
+
 def test_detail_404_shows_the_panel(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", ITEM, 404, json=error("not_found", "no such persona"))
     html = operator_client.get(DETAIL).content.decode()

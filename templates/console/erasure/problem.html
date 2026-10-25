@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Erasure not done — Erasure — Epistrel Console{% endblock %}
+{% block heading %}Erasure not done{% endblock %}
+{% block content %}
+<p>Erasing {{ subject_kind|lower }} {{ subject_link }} — {{ scope_label }}.</p>
+{% if text %}<p class="errorlist erasure-problem" role="alert">{{ text }}</p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if retry %}
+<form method="post" action="{{ retry_url }}" class="retry">{% csrf_token %}
+  <input type="hidden" name="confirm_token" value="{{ token }}">
+  {% for cid in retry_ticked %}<input type="hidden" name="{{ candidate_field }}" value="{{ cid }}">{% endfor %}
+  <button type="submit" class="danger">{{ retry_label }}</button>
+</form>
+{% endif %}
+{% if again %}
+<form method="post" action="{{ again_url }}" class="preview-again">{% csrf_token %}
+  <input type="hidden" name="confirm_token" value="{{ token }}">
+  <button type="submit">{{ again_label }}</button>
+</form>
+{% endif %}
+<p><a href="{{ back_url }}">Back to the form</a></p>
+{% endblock %}

@@ -15,7 +15,7 @@ from typing import Any
 
 from django.db import transaction
 
-from console.engine.client import Call, EngineResponse, Operation
+from console.engine.client import Call, EngineResponse, Operation, RecordedAbout
 from console.engine.models import OperationRecord
 from console.models import EngineOperation
 from console.redaction import redact
@@ -261,6 +261,9 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     sent_key = {k.lower(): v for k, v in observed.headers.items()}.get(IDEMPOTENCY_HEADER.lower())
     key = sent_key or _str(obj, "idempotency_key") or response.headers.get(IDEMPOTENCY_HEADER)
     stored = redact(body) if is_json else None
+    hook = observed.operation.record_response if observed.operation else None
+    if hook is not None and stored is not None:
+        stored = hook(stored)  # #86: an erasure dry run's snippets become "***"
     job_id = _str(obj, "job_id") if status == 202 else None
     return {
         "job_id": job_id[:64] if job_id else None,
@@ -302,8 +305,21 @@ def row_fields(observed: Observed) -> dict[str, Any]:
             idempotency_key=_fit(sent_key, 255),
             story_id=_ulid_or_blank(story_id(observed.path, {})),
         )
+    about = _about(observed)
+    if about is not None and about.story_id is not None:
+        fields["story_id"] = _ulid_or_blank(about.story_id)
     fields.update(entity_fields(observed, fields["story_id"]))
+    if about is not None and about.entity_type and about.entity_id:
+        fields.update(entity_type=_fit(about.entity_type, 32), entity_id=about.entity_id[:64])
     return fields
+
+
+def _about(observed: Observed) -> RecordedAbout | None:
+    """The registration's ``record_about`` hook applied to the call's arguments (#86)."""
+    call = observed.call
+    if call is None or call.operation.record_about is None:
+        return None
+    return call.operation.record_about(call.arguments)
 
 
 def entity_fields(observed: Observed, row_story_id: str) -> dict[str, str | None]:

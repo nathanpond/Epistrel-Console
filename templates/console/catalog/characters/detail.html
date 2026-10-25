@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load console_format principals entities catalog %}
+{% load console_format principals entities catalog erasure %}
 {% block title %}{% if name %}{{ name }}{% else %}{{ character_id }}{% endif %} — Characters — Epistrel Console{% endblock %}
 {% block heading %}{% if name %}{{ name }}{% else %}Character <code>{{ character_id }}</code>{% endif %}{% endblock %}
 {% block content %}
@@ -17,6 +17,7 @@
 <p class="view-mode"><a href="{{ card_query }}">View as public card</a>{% if not is_draft %} · <a href="{{ draft_query }}">View the draft</a>{% endif %}</p>
 {% endif %}
 {% if lifecycle %}{% include "console/catalog/_lifecycle_controls.html" %}{% endif %}
+{% erase_url "catalog_character" character_id "catalog" as erase_href %}{% if erase_href %}<p class="erase-entry"><a class="button danger erase" href="{{ erase_href }}">Erase…</a></p>{% endif %}
 {% if differs %}
 <p class="warning draft-differs">The draft differs from this published version — <a href="{{ draft_query }}">view the draft</a></p>
 {% endif %}

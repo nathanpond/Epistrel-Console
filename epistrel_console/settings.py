@@ -79,6 +79,11 @@ MIDDLEWARE = [
     "console.middleware.EngineErrorMiddleware",
 ]
 
+# An erasure preview (#86) may list more candidate mentions than Django's default 1,000 fields,
+# and the erase POST carries one checkbox per ticked candidate; the run view then refuses more
+# than the Engine's 1,000 with its own message instead of Django's 400.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20_000
+
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Erasure — Epistrel Console{% endblock %}
+{% block heading %}Erasure{% endblock %}
+{% block content %}
+<p><a class="button" href="{{ new_url }}">New erasure</a></p>
+<p class="muted">The erasures this Console ran (the Engine has no read-back; results are kept from the operations log).</p>
+{% if rows %}
+<table class="erasures">
+  <thead><tr><th>Erasure</th><th>Subject</th><th>Scope</th><th>Residue</th><th>When</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr><td><a href="{{ r.url }}"><code>{{ r.erasure_id }}</code></a></td>
+      <td>{% if r.subject %}{{ r.subject.kind }} <code>{{ r.subject.id }}</code>{% else %}—{% endif %}</td>
+      <td>{{ r.scope }}</td>
+      <td><span class="residue {{ r.residue.css }}">{{ r.residue.text }}</span></td>
+      <td>{{ r.row.created_at }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if page.has_previous or page.has_next %}<p>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Previous page</a>{% endif %} {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next page</a>{% endif %}</p>{% endif %}
+{% else %}<p>—</p>{% endif %}
+{% endblock %}

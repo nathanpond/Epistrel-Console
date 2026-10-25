@@ -1,7 +1,7 @@
 {% comment %}
 #48's cast with #72's controls (console.cast_panel.CastPanel): each character, "Promote to catalog"
 (or "Promote again") on the non-player ones with their "Promoted →" links, and "Add character
-(n/20)" (disabled on an archived story). Context: cast_panel.
-{% endcomment %}<ul class="cast">{% for row in cast_panel.rows %}<li>{{ row.name }}{% if row.is_player %} (player){% else %} <a class="button promote" href="{{ row.promote_url }}">{{ row.promote_label }}</a>{% for promoted in row.promoted %} <a class="promoted-link" href="{{ promoted.url }}">Promoted → <code>{{ promoted.catalog_id }}</code></a>{% endfor %}{% endif %}</li>{% empty %}<li>—</li>{% endfor %}</ul>
+(n/20)" (disabled on an archived story), and #86's "Erase…" on every character. Context: cast_panel.
+{% endcomment %}<ul class="cast">{% for row in cast_panel.rows %}<li>{{ row.name }}{% if row.is_player %} (player){% else %} <a class="button promote" href="{{ row.promote_url }}">{{ row.promote_label }}</a>{% for promoted in row.promoted %} <a class="promoted-link" href="{{ promoted.url }}">Promoted → <code>{{ promoted.catalog_id }}</code></a>{% endfor %}{% endif %}{% if row.erase_url %} <a class="button danger erase" href="{{ row.erase_url }}">Erase…</a>{% endif %}</li>{% empty %}<li>—</li>{% endfor %}</ul>
 {% if cast_panel.links_note %}<p class="muted promotion-links-note">{{ cast_panel.links_note }}</p>{% endif %}
 <p class="cast-actions">{% if cast_panel.add_disabled %}<button type="button" class="add-character" disabled title="{{ cast_panel.add_disabled }}">Add character ({{ cast_panel.count }}/{{ cast_panel.cap }})</button>{% else %}<a class="button add-character" href="{{ cast_panel.add_url }}">Add character ({{ cast_panel.count }}/{{ cast_panel.cap }})</a>{% endif %}</p>

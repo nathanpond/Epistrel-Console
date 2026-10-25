@@ -12,6 +12,7 @@ from console.views import (
     catalog_lifecycle,
     catalog_scenarios,
     engine_panel,
+    erasure,
     feedback,
     history,
     media,
@@ -344,6 +345,19 @@ offboarding_patterns = (
     "offboarding",
 )
 
+# Erasure (#86): the form (GET-driven), the dry run (POST, rendered in place), the real run (POST
+# only, from the preview's signed payload), the result read back from the operation log, the list.
+erasure_patterns = (
+    [
+        path("", erasure.erasure_index, name="index"),
+        path("new/", erasure.erasure_new, name="new"),
+        path("preview/", erasure.erasure_preview, name="preview"),
+        path("run/", erasure.erasure_run, name="run"),
+        path("<str:erasure_id>/", erasure.erasure_detail, name="detail"),
+    ],
+    "erasure",
+)
+
 # Owners and relations (#79): the shared panel's writes, for every owned type (``<entity_type>`` is
 # the Engine's ``EntityType``; any other is 404). The removed relation and principal travel in the
 # query string and the POST body, never a path segment (a principal may hold "/").
@@ -387,6 +401,7 @@ urlpatterns = [
     path("profiles/", include(profile_patterns)),
     path("principals/", include(principal_patterns)),
     path("offboarding/", include(offboarding_patterns)),
+    path("erasure/", include(erasure_patterns)),
     path("ownership/", include(ownership_patterns)),
     path("admin/", admin.site.urls),
 ]

@@ -1,0 +1,62 @@
+{% comment %}
+#86's subject section (also the HTMX partial the kind and story selects swap in). Context: section
+(console.views.erasure.Section). shown_kind/shown_story say what this rendered with, so a changed
+kind or story (HTMX or "Next") clears what depended on it.
+{% endcomment %}<div id="subject-section">
+  {% with c=section.choice %}
+  <input type="hidden" name="shown_kind" value="{{ c.kind }}">
+  <input type="hidden" name="shown_story" value="{{ c.story }}">
+  <p id="f-kind">
+    <label for="id_kind">Erase</label>
+    <select name="kind" id="id_kind" hx-get="{% url 'erasure:new' %}" hx-trigger="change" hx-target="#subject-section" hx-swap="outerHTML" hx-include="#subject-section" hx-push-url="true">
+      <option value=""{% if not c.kind %} selected{% endif %}>— choose —</option>
+      {% for value, label in section.kinds %}<option value="{{ value }}"{% if value == c.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% for e in section.errors.kind %}<span class="errorlist">{{ e }}</span>{% endfor %}
+  </p>
+  {% if section.stories %}
+  <p id="f-story">
+    <label for="id_story">Story{% if not section.story_required %} (for “This story”){% endif %}</label>
+    {% if section.stories.free_text %}
+    <input type="text" name="story" id="id_story" value="{{ c.story }}" size="30" maxlength="26" spellcheck="false" autocomplete="off">
+    <small class="muted list-notice">{{ section.stories.notice }}</small>
+    {% else %}
+    <select name="story" id="id_story" hx-get="{% url 'erasure:new' %}" hx-trigger="change" hx-target="#subject-section" hx-swap="outerHTML" hx-include="#subject-section" hx-push-url="true">
+      <option value=""{% if not c.story %} selected{% endif %}>— none —</option>
+      {% for value, label in section.stories.choices %}<option value="{{ value }}"{% if value == c.story %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    {% for e in section.errors.story %}<span class="errorlist">{{ e }}</span>{% endfor %}
+  </p>
+  {% endif %}
+  {% if section.subjects %}
+  <p id="f-subject">
+    <label for="id_subject">Subject</label>
+    {% if section.subjects.free_text %}
+    <input type="text" name="subject" id="id_subject" value="{{ c.subject }}" size="30" maxlength="64" spellcheck="false" autocomplete="off">
+    <small class="muted list-notice">{{ section.subjects.notice }}</small>
+    {% elif section.subjects.empty %}
+    <input type="hidden" name="subject" value="">
+    <span class="muted no-subjects">{{ section.subjects.empty }}</span>
+    {% else %}
+    <select name="subject" id="id_subject">
+      <option value=""{% if not c.subject %} selected{% endif %}>— choose —</option>
+      {% for value, label in section.subjects.choices %}<option value="{{ value }}"{% if value == c.subject %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    {% for e in section.errors.subject %}<span class="errorlist">{{ e }}</span>{% endfor %}
+  </p>
+  {% endif %}
+  {% if section.scopes %}
+  <fieldset id="f-scope" class="scope">
+    <legend>Scope</legend>
+    {% for value, label in section.scopes %}<label><input type="radio" name="scope" value="{{ value }}"{% if value == c.scope %} checked{% endif %}> {{ label }}</label> {% endfor %}
+    {% for e in section.errors.scope %}<span class="errorlist">{{ e }}</span>{% endfor %}
+  </fieldset>
+  {% endif %}
+  <p>
+    <button type="submit" formmethod="get" formaction="{% url 'erasure:new' %}" class="next">Next</button>
+    {% if c.kind %}<button type="submit" class="preview"{% if section.preview_disabled %} disabled title="{{ section.preview_disabled }}"{% endif %}>Preview (dry run)</button>{% endif %}
+  </p>
+  {% endwith %}
+</div>

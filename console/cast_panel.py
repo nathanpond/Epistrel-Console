@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from django.urls import reverse
 
+from console import erasure
 from console.cast import OMNISCIENT
 from console.engine.choices import error_text
 from console.engine.client import EngineClient, EngineClientError
@@ -35,6 +36,7 @@ class CastRow:
     is_player: bool
     promote_url: str  # "" for a player character
     promoted: tuple[Promoted, ...] = ()
+    erase_url: str = ""  # #86's form pre-filled for this character ("" while it does not exist)
 
     @property
     def promote_label(self) -> str:
@@ -91,6 +93,7 @@ def cast_panel(client: EngineClient, story: Story) -> CastPanel:
                 Promoted(catalog_id, reverse("catalog_characters:detail", args=[catalog_id]))
                 for catalog_id in links.get(character.id, ())
             ),
+            erasure.new_url("character", character.id, scope="story", story=story.id) or "",
         )
         for character in story.cast
     )

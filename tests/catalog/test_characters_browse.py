@@ -557,6 +557,18 @@ def test_fixture_list_item_is_valid(engine: FakeEngine) -> None:
     engine.respond("GET", ITEM, 200, json=card())
 
 
+def test_the_detail_links_erase_for_the_catalog_scope(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#86: "Erase…" pre-fills the erasure form for this catalog character, catalog scope."""
+    answer_detail(engine, full(), draft())
+    html = operator_client.get(DETAIL).content.decode()
+    assert (
+        '<a class="button danger erase" href="/erasure/new/?kind=catalog_character&amp;'
+        f'subject={CHAR}&amp;scope=catalog">Erase…</a>'
+    ) in html
+
+
 def test_the_detail_includes_the_ownership_panel(
     operator_client: Client, engine: FakeEngine
 ) -> None:

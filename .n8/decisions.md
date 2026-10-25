@@ -1116,3 +1116,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #54's six superseded dials were already never built and its "Moved to engine profile overrides — see Config" note already existed with a hardcoded URL; #85 only makes `console.story_settings.config_url` reverse `stories:config` and adds a test that the link resolves to the Config page.
   **Why:** Replan 2026-10-24: #54 owns the note; #85 provides the target.
   **Issue:** #85
+- **Decision (drift):** `ErasureResult.subject` is the Engine's `dict[str, str]` (`ErasureBody.subject` is an object of strings, not a `$ref` to `SubjectRef`), with a `subject_ref` property parsing it; `StoryScope`/`CatalogScope` are plain request dataclasses with `to_json()` (not response models).
+  **Why:** The plan typed `subject: SubjectRef`; the contract test compares models with the recorded schema, and the schema says an untyped object.
+  **Issue:** #86
+- **Decision:** `@operation` gains `record_response` (the redacted JSON answer → what the row stores) and `record_about` (arguments → `RecordedAbout(entity_type, entity_id, story_id)`). `erase` uses them: every `candidates[].snippet` is stored as `"***"`, the entity is the subject (`catalog_character` → `character`, `persona` → `persona`, a story `character` → `story_character`, shown as `<code>`), and `story_id` is the scope's story only.
+  **Why:** The plan asked for a per-method response override and the subject as entity. A story character stored as raw `character` would collide with the registry's catalog-character type and link to the wrong page.
+  **Issue:** #86
+- **Decision:** The signed erasure payload's `base` carries the offered ids, the real-run key, the operator and acting principal (as #77's start does), and the dry run's whole answer, snippets included, so a >1,000-ticked refusal re-renders the preview with its ticks and makes zero Engine calls.
+  **Why:** The plan asked for zero calls on that refusal, and the snippets are never stored server-side, so the signed (not stored) token is the only place to keep them. It reaches only the operator's own browser, on the page that already shows them.
+  **Issue:** #86
+- **Decision:** `DATA_UPLOAD_MAX_NUMBER_FIELDS = 20_000` in settings.
+  **Why (Rule 3):** Django's default of 1,000 fields refuses an erase POST with more than about 996 ticked candidates as a bare 400. Without the raise, the planned "At most 1,000 candidates per run" message could never show.
+  **Issue:** #86
+- **Decision:** "Zero calls" on a failed Console check means zero `POST /admin/erasure`. The form re-renders with its option lists, which takes reads. A refused real run (no payload, expired or tampered, ticked id not offered, more than 1,000) makes no Engine call at all.
+  **Why:** Re-rendering the selects needs the lists. No erasure is reachable.
+  **Issue:** #86
+- **Decision:** Persona options read "<name> — <owner> · <id[:8]>" (no status). The story select is shown for every kind, labelled "(for 'This story')" unless it is required. `/erasure/` lists this Console's real runs from the operation log (the nav's `erasure:index`).
+  **Why:** A persona has no status field. A catalog character or persona may also scope to a story, and only the kind and story selects re-render the section. The nav needs an index page, and the Engine has no read-back.
+  **Issue:** #86
+- **Decision:** 503 `erasure_pending` shows #43's generic panel.
+  **Why:** #64's held-records wrapper (convention 16) is #87's to build; until then the generic panel is the convention.
+  **Issue:** #86
