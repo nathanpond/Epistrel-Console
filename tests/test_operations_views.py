@@ -488,8 +488,8 @@ def test_the_entity_column_links_through_the_registry(
     html = operator_client.get("/operations/").content.decode()
     assert "<th>Entity</th>" in html
     assert f'Story <a href="/stories/{STORY_A}/"><code>{STORY_A}</code></a>' in html
-    # The catalog character page does not exist yet: the id renders unlinked.
-    assert f"Character <code>{CHAR}</code>" in html
+    # #65 built the catalog character page: the id links to it.
+    assert f'Character <a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>' in html
 
 
 def test_the_detail_shows_entity_and_job(
@@ -500,6 +500,7 @@ def test_the_detail_shows_entity_and_job(
     row.save()
     html = operator_client.get(f"/operations/{row.pk}/").content.decode()
     assert "<dt>Entity type</dt><dd><code>character</code> (Character)</dd>" in html
-    assert f"<dt>Entity id</dt><dd><code>{CHAR}</code></dd>" in html
+    link = f'<a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>'
+    assert f"<dt>Entity id</dt><dd>{link}</dd>" in html
     assert "<dt>Job id</dt><dd><code>01JA0000000000000000000JOB</code></dd>" in html
     assert "<dt>Principal</dt><dd><code>alice</code></dd>" in html

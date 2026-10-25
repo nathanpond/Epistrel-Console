@@ -1,5 +1,7 @@
 """Test-only URLconf: the real routes plus placeholder M3 pages (#64), so the nav sections, the
-entity registry and ``principal_link`` can be tested before the stories that build them land."""
+entity registry and ``principal_link`` can be tested before the stories that build them land.
+Each placeholder goes once its story builds the real routes (#65 replaced the characters' with
+the scenarios')."""
 
 from django.http import HttpRequest, HttpResponse
 from django.urls import include, path
@@ -17,7 +19,7 @@ PATTERNS = [
 ]
 
 urlpatterns = [
-    path("catalog/characters/", include((PATTERNS, "catalog_characters"))),
+    path("catalog/scenarios/", include((PATTERNS, "scenarios"))),
     path("principals/", include((PATTERNS, "principals"))),
     path("erasure/", include((PATTERNS, "erasure"))),
     *real_urlpatterns,

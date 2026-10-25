@@ -26,6 +26,7 @@ from console.engine.client import (
     EngineClient,
     EngineResponse,
     EngineUnreachable,
+    QueryParams,
     current_call,
 )
 from console.engine.models import OperationRecord
@@ -58,7 +59,7 @@ class RecordingEngineClient(EngineClient):
         *,
         principal: str | None = None,
         timeout: float | None = None,
-        params: dict[str, str] | None = None,
+        params: QueryParams | None = None,
         json: object | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> EngineResponse:

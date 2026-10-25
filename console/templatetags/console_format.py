@@ -72,3 +72,12 @@ def json_value(value: Any) -> str:
     """A JSON value on one line: ``null``, ``true``, ``"medium"``, ``{"model": null}`` (#50's
     profile-defaults table)."""
     return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), default=str)
+
+
+@register.filter
+def humanise(value: Any) -> str:
+    """An Engine enum value for display (#64 convention 17): ``very_cautious`` → ``very
+    cautious``; ``None`` or blank → ``—``; an unknown value renders the same way, raw."""
+    if value is None or value == "":
+        return EMPTY
+    return str(value).replace("_", " ")

@@ -41,7 +41,7 @@ class Observed:
     operation: Operation | None  # the registration, when a public client method made the call
     http_method: str
     path: str  # resolved, without the query string
-    params: Mapping[str, str] | None
+    params: Mapping[str, str] | list[tuple[str, str]] | None
     body: object | None
     headers: Mapping[str, str]
     principal: str

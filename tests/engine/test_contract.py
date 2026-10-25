@@ -13,8 +13,20 @@ import pytest
 from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
     AgeCondition,
+    CardImage,
+    CardImages,
+    CardRating,
+    CatalogCharacter,
+    CatalogCharacterCard,
+    CatalogCharacterListItem,
+    CatalogCharacterPage,
     CatalogSource,
+    CatalogVersion,
+    CatalogVersionList,
     ChainRef,
+    CharacterDefinition,
+    CharacterImage,
+    CharacterImages,
     ConfigChange,
     ConfigChanges,
     ConfigSources,
@@ -27,6 +39,8 @@ from console.engine.models import (
     CustomInstructionsWritten,
     DegradationStep,
     DeploymentSettings,
+    Disposition,
+    Dispositions,
     DormantChain,
     EffectiveBudget,
     EffectiveGuardrail,
@@ -40,6 +54,8 @@ from console.engine.models import (
     HealthResponse,
     History,
     HistoryItem,
+    InteractionStyle,
+    LikesDislikes,
     ModelCall,
     ModelConfig,
     ModelConfigEntry,
@@ -65,6 +81,7 @@ from console.engine.models import (
     ReactivationCheck,
     RebuildQueued,
     RebuildResult,
+    ReferenceImage,
     RegenerateResult,
     ReplyMessage,
     RespondResponse,
@@ -93,6 +110,7 @@ from console.engine.models import (
     UntruncateResult,
     VariantChain,
     Variants,
+    VisualIdentity,
     WorkersCheck,
 )
 from tests.engine.contract import check_operation, compare_model, compare_type
@@ -227,6 +245,25 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (PinnedMemoriesWritten, "PinnedMemoriesWritten"),
         (CustomInstructions, "CustomInstructionsBody"),
         (CustomInstructionsWritten, "CustomInstructionsWritten"),
+        (CardImage, "CardImage"),
+        (CardRating, "CardRating"),
+        (CardImages, "CharacterCardImages"),
+        (CatalogCharacterCard, "CharacterCard"),
+        (CatalogCharacterListItem, "CharacterListItem"),
+        (CatalogCharacterPage, "CharacterListBody"),
+        (CatalogCharacter, "CharacterFull"),
+        (CharacterDefinition, "CharacterDefinition"),
+        (Dispositions, "Dispositions"),
+        (Disposition, "WarmthDisposition"),
+        (Disposition, "CautionDisposition"),
+        (InteractionStyle, "InteractionStyle"),
+        (LikesDislikes, "LikesDislikes"),
+        (CharacterImages, "CharacterImagesDetail"),
+        (CharacterImage, "CharacterImageDetail"),
+        (ReferenceImage, "ReferenceImageDetail"),
+        (VisualIdentity, "VisualIdentityDetail"),
+        (CatalogVersion, "CharacterVersionBody"),
+        (CatalogVersionList, "CharacterVersionsBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -348,3 +385,43 @@ def test_report_models_match_their_components(model_name: str, component: str) -
     ]
     ref = {"$ref": f"#/components/schemas/{component}"}
     assert compare_model(doc, getattr(models, model_name), ref, component) == []
+
+
+def test_an_open_enum_is_compared_with_the_schemas_enum() -> None:
+    """#65: an ``OPEN_ENUM`` ``str`` field passes against a string enum, and bites when the
+    schema's value is not an enum or the field is not a string."""
+    from dataclasses import field as dc_field
+
+    from console.engine.models import OPEN_ENUM
+
+    @dataclass(frozen=True)
+    class Open:
+        setting: str = dc_field(metadata={OPEN_ENUM: True})
+        nuance: str | None = None
+
+    ref = {"$ref": "#/components/schemas/WarmthDisposition"}
+    assert compare_model(DOC, Open, ref, "Open") == []
+
+    @dataclass(frozen=True)
+    class Plain:  # without the flag a str against an enum is reported
+        setting: str
+        nuance: str | None = None
+
+    assert any("enum" in p for p in compare_model(DOC, Plain, ref, "Plain"))
+
+    @dataclass(frozen=True)
+    class NotEnum:
+        media_id: str = dc_field(metadata={OPEN_ENUM: True})
+        alt_text: str | None = None
+
+    problems = compare_model(DOC, NotEnum, {"$ref": "#/components/schemas/CardImage"}, "N")
+    assert any("not a string enum" in p for p in problems)
+
+
+def test_a_union_response_must_match_one_of_its_options() -> None:
+    """#65: ``GET /catalog/characters/{id}`` answers a card or the full projection; the
+    registered model must match one of them."""
+    op = OPERATIONS["GET /catalog/characters/{character_id}"]
+    assert op.response_model is CatalogCharacter
+    wrong = Operation(op.method, op.path, CatalogVersion, False)
+    assert any("no anyOf option" in p for p in check_operation(DOC, wrong))

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Characters — Catalog — Epistrel Console{% endblock %}
+{% block heading %}Catalog characters{% endblock %}
+{% block content %}
+<form method="get" action="{% url 'catalog_characters:index' %}" class="filters">
+  {{ form.non_field_errors }}
+  <p>
+    <label>{{ form.q.label }} {{ form.q }}</label> <small class="muted">{{ form.q.help_text }}</small>
+    {{ form.q.errors }}
+  </p>
+  <p>
+    <label>{{ form.label.label }} {{ form.label }}</label> <small class="muted">{{ form.label.help_text }}</small>
+    {{ form.label.errors }}
+  </p>
+  <p>
+    {% if ratings.ok %}<label>{{ form.content_rating.label }} {{ form.content_rating }}</label>{{ form.content_rating.errors }}
+    {% else %}{{ form.content_rating }}<span class="rating-unavailable">Rating filter unavailable: {{ rating_error }}</span>{% endif %}
+    <label>{{ form.listing_status.label }} {{ form.listing_status }}</label>
+    {% if listing_error %}<small class="listing-unavailable">Listing values unavailable: {{ listing_error }}</small>{% endif %}
+    {{ form.listing_status.errors }}
+    <label>{{ form.status.label }} {{ form.status }}</label>
+    {{ form.status.errors }}
+  </p>
+  <p>
+    <label>{{ form.owner.label }} {{ form.owner }}</label>
+    {{ form.owner.errors }}
+    <label>{{ form.relation.label }} {{ form.relation }}</label>
+    <label>{{ form.relation_principal.label }} {{ form.relation_principal }}</label>
+    {{ form.relation.errors }}{{ form.relation_principal.errors }}
+  </p>
+  <button type="submit">Apply</button>
+  <a href="{% url 'catalog_characters:index' %}">Clear</a>
+</form>
+
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% elif not form.errors %}
+{% if rows %}
+<table class="characters">
+  <thead>
+    <tr><th>Name</th><th>Labels</th><th>Content rating</th><th>Listing status</th><th>Owner</th><th>Latest version</th>{% if searching %}<th>Rank</th>{% endif %}</tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="character-{{ row.item.id }}">
+      <td><a href="{{ row.url }}">{{ row.name }}</a></td>
+      <td>{% for label, href in row.label_links %}<a class="label" href="{{ href }}">{{ label }}</a>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+      <td>{{ row.item.content_rating.name|default:"—" }}</td>
+      <td>{{ row.item.listing_status|humanise }}</td>
+      <td>{{ row.item.owner_principal|principal_link }} <small><a class="owner-filter" href="{{ row.owner_filter }}">filter</a></small></td>
+      <td>{{ row.item.version|default_if_none:"—" }}</td>
+      {% if searching %}<td>{% if row.item.rank is None %}—{% else %}{{ row.item.rank|floatformat:3 }}{% endif %}</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{% if any_filter %}No characters match these filters.{% else %}No characters yet.{% endif %}</p>
+{% endif %}
+<p class="paging">
+  {% if paged %}<a href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

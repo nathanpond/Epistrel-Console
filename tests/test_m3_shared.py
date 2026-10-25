@@ -195,11 +195,15 @@ def test_an_unknown_type_renders_as_code() -> None:
 
 
 def test_a_type_without_its_page_yet_renders_as_code() -> None:
-    assert entity_link("character", CHAR) == f"<code>{CHAR}</code>"
+    assert entity_link("scenario", CHAR) == f"<code>{CHAR}</code>"
 
 
 @override_settings(ROOT_URLCONF="tests.urls_m3")
 def test_a_type_links_once_its_page_exists() -> None:
+    assert entity_link("scenario", CHAR) == (
+        f'<a href="/catalog/scenarios/{CHAR}/"><code>{CHAR}</code></a>'
+    )
+    # #65 built the character pages: they link in the real URLconf too.
     assert entity_link("character", CHAR) == (
         f'<a href="/catalog/characters/{CHAR}/"><code>{CHAR}</code></a>'
     )
@@ -648,22 +652,31 @@ def test_fan_out_reports_a_timeout_and_errors() -> None:
 def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) -> None:
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
-    for label in ("Catalog:", "Characters", "Principals", "Erasure", "Profiles"):
+    for label in ("Scenarios", "Personas", "Principals", "Erasure", "Profiles"):
         assert label not in nav
+    # #65 built the character list: the Catalog group shows with it alone.
+    assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
     assert nav.index(">Engine<") < nav.index(">Operations<") < nav.index(">Admin<")
 
 
 @pytest.mark.django_db
 @override_settings(ROOT_URLCONF="tests.urls_m3")
 def test_m3_sections_show_in_order_once_their_urls_exist(operator_client: Client) -> None:
-    html = operator_client.get("/catalog/characters/").content.decode()
+    html = operator_client.get("/catalog/scenarios/").content.decode()
     assert html == "placeholder"  # the placeholder page itself has no shell
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
-    assert "Scenarios" not in nav  # not built yet
-    assert "Personas" not in nav
-    order = [">Engine<", "Catalog:", ">Characters<", ">Principals<", ">Erasure<", ">Operations<"]
+    assert "Personas" not in nav  # not built yet
+    order = [
+        ">Engine<",
+        "Catalog:",
+        ">Characters<",
+        ">Scenarios<",
+        ">Principals<",
+        ">Erasure<",
+        ">Operations<",
+    ]
     positions = [nav.index(label) for label in order]
     assert positions == sorted(positions)
     assert '<a href="/operations/" class="active">Operations</a>' in nav
@@ -681,7 +694,12 @@ def test_catalog_is_active_under_its_prefixes(rf: RequestFactory) -> None:
                     "label": "Characters",
                     "url": "/catalog/characters/",
                     "active": path.startswith("/catalog/characters/"),
-                }
+                },
+                {
+                    "label": "Scenarios",
+                    "url": "/catalog/scenarios/",
+                    "active": path.startswith("/catalog/scenarios/"),
+                },
             ],
             "active": active,
         }

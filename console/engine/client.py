@@ -22,6 +22,11 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    CatalogCharacter,
+    CatalogCharacterCard,
+    CatalogCharacterPage,
+    CatalogVersion,
+    CatalogVersionList,
     ConfigChanges,
     ContentRating,
     ContentRatingList,
@@ -78,6 +83,20 @@ DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names o
 INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event (#51)
 LONG_MUTATION_TIMEOUT_S = 30.0  # fork and rebuild (#43's timeouts)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
+CATALOG_PAGE = 50  # the same for catalog lists (#65)
+# The media proxy's stream (#65): connect 3 s, then 30 s for each chunk, no total cap.
+MEDIA_CONNECT_TIMEOUT_S = 3.0
+MEDIA_READ_TIMEOUT_S = 30.0
+MEDIA_CHUNK = 65536
+# What the media proxy forwards to the Engine, and the answer headers it hands back (#65).
+MEDIA_REQUEST_HEADERS = ("Range", "If-None-Match", "If-Range")
+MEDIA_RESPONSE_HEADERS = (
+    "Content-Type",
+    "Content-Length",
+    "Content-Range",
+    "ETag",
+    "Accept-Ranges",
+)
 # Routes the Engine serves without auth (Engine #44): never sent the service key.
 EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/redoc"})
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -88,6 +107,10 @@ RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
 RESPONSE_PREFIX = "response:"  # ``@operation(entity_id="response:id")``: the id is in the answer
 # The headers ``_request`` sets itself; a caller's ``headers=`` never replaces them.
 OWN_HEADERS = frozenset({"user-agent", "accept", "authorization", PRINCIPAL_HEADER.lower()})
+
+# A request's query: a mapping, or ``(name, value)`` pairs where a name repeats (a catalog list's
+# ``label`` and ``relation``, #65).
+type QueryParams = Mapping[str, str] | list[tuple[str, str]]
 
 # What ``_request`` returns. Code outside this module names the type through this alias, so
 # only this module imports httpx.
@@ -134,6 +157,46 @@ class EngineUnreachable(EngineClientError):
 
 class EngineNotConfigured(EngineClientError):
     """No Engine URL is set."""
+
+
+@dataclass(frozen=True)
+class StreamedContent:
+    """A media answer being streamed (:meth:`EngineClient.open_media_content`): its status, the
+    answer headers in :data:`MEDIA_RESPONSE_HEADERS` (as sent), and the body, read in chunks
+    with :meth:`iter_bytes` or whole (an error envelope) with :meth:`error`."""
+
+    status: int
+    headers: Mapping[str, str]
+    _response: httpx.Response = field(repr=False)
+
+    def iter_bytes(self, chunk_size: int = MEDIA_CHUNK) -> Iterator[bytes]:
+        """The body in chunks; a read that stalls or fails is :class:`EngineUnreachable`."""
+        try:
+            yield from self._response.iter_bytes(chunk_size)
+        except httpx.TimeoutException as exc:
+            raise EngineUnreachable("timeout") from exc
+        except httpx.TransportError as exc:
+            raise EngineUnreachable("transport error") from exc
+
+    def error(self) -> EngineError:
+        """The answer (a non-success) as :class:`EngineError`, from its envelope if it has one;
+        ``body`` keeps the bytes as sent (the proxy passes them through unchanged)."""
+        try:
+            self._response.read()
+        except httpx.TimeoutException as exc:
+            raise EngineUnreachable("timeout") from exc
+        except httpx.TransportError as exc:
+            raise EngineUnreachable("transport error") from exc
+        try:
+            _raise_for_envelope(self._response)
+        except EngineError as exc:
+            return exc
+        return EngineError(f"http_{self.status}", "", {}, self.status)
+
+    @property
+    def body(self) -> bytes:
+        """The body once :meth:`error` has read it."""
+        return self._response.content
 
 
 @dataclass(frozen=True)
@@ -355,6 +418,43 @@ class EngineClient:
         key = "set" if self._service_key else "not set"
         return f"EngineClient({self.base_url!r}, service key {key})"
 
+    def _wire_headers(
+        self,
+        method: str,
+        path: str,
+        principal: str | None,
+        headers: Mapping[str, str] | None,
+        *,
+        accept: str,
+    ) -> list[tuple[bytes, bytes]]:
+        """The request's headers as wire bytes: the caller's (never replacing the client's own),
+        ``User-Agent``, ``Accept``, the principal (refused here when a mutation has none) and,
+        off the exempt routes, the service key."""
+        extra = {k: v for k, v in (headers or {}).items() if k.lower() not in OWN_HEADERS}
+        sent: dict[str, str | bytes] = {**extra, "User-Agent": USER_AGENT, "Accept": accept}
+        if principal is None:
+            principal = self.principal
+        if principal is not None:
+            sent[PRINCIPAL_HEADER] = _principal_header(principal)
+        elif method in MUTATING:
+            raise ValueError(f"{method} {path} needs a requesting principal")
+        if self._service_key and path.split("?", 1)[0] not in EXEMPT_PATHS:
+            sent["Authorization"] = f"Bearer {self._service_key}"
+        # The principal is already bytes (Latin-1, ``_principal_header``); the rest are ASCII.
+        return [
+            (name.encode("ascii"), v if isinstance(v, bytes) else v.encode("ascii"))
+            for name, v in sent.items()
+        ]
+
+    def _http(self, timeout: httpx.Timeout) -> httpx.Client:
+        return httpx.Client(
+            timeout=timeout,
+            follow_redirects=False,
+            verify=True,
+            trust_env=False,
+            transport=self._transport,
+        )
+
     def _request(
         self,
         method: str,
@@ -362,7 +462,7 @@ class EngineClient:
         *,
         principal: str | None = None,
         timeout: float | None = None,
-        params: dict[str, str] | None = None,
+        params: QueryParams | None = None,
         json: object | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> EngineResponse:
@@ -372,35 +472,15 @@ class EngineClient:
         ``X-Epistrel-Expected-Revision``, ``Prefer``) but never replaces the client's own.
         """
         method = method.upper()
-        extra = {k: v for k, v in (headers or {}).items() if k.lower() not in OWN_HEADERS}
-        sent: dict[str, str | bytes] = {
-            **extra,
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-        }
-        if principal is None:
-            principal = self.principal
-        if principal is not None:
-            sent[PRINCIPAL_HEADER] = _principal_header(principal)
-        elif method in MUTATING:
-            raise ValueError(f"{method} {path} needs a requesting principal")
-        if self._service_key and path.split("?", 1)[0] not in EXEMPT_PATHS:
-            sent["Authorization"] = f"Bearer {self._service_key}"
+        wire = self._wire_headers(method, path, principal, headers, accept="application/json")
+        pairs = params.items() if isinstance(params, Mapping) else params
+        query: list[tuple[str, str | int | float | bool | None]] | None = (
+            None if pairs is None else list(pairs)
+        )
         try:
-            # The principal is already bytes (Latin-1, ``_principal_header``); the rest are ASCII.
-            wire = [
-                (name.encode("ascii"), v if isinstance(v, bytes) else v.encode("ascii"))
-                for name, v in sent.items()
-            ]
-            with httpx.Client(
-                timeout=httpx.Timeout(timeout if timeout is not None else self.timeout),
-                follow_redirects=False,
-                verify=True,
-                trust_env=False,
-                transport=self._transport,
-            ) as client:
-                return client.request(
-                    method, f"{self.base_url}{path}", headers=wire, params=params, json=json
+            with self._http(httpx.Timeout(timeout if timeout is not None else self.timeout)) as c:
+                return c.request(
+                    method, f"{self.base_url}{path}", headers=wire, params=query, json=json
                 )
         except AssertionError:
             raise  # the fake Engine's signals reach the test
@@ -1122,6 +1202,132 @@ class EngineClient:
         params = {"viewpoint": viewpoint} if viewpoint else None
         path = f"/operations/{quote(operation_id, safe='')}"
         return _parse(self._request("GET", path, params=params), OperationRecord)
+
+    # --- catalog characters (#65) ---------------------------------------------------------------
+
+    @operation("GET", "/catalog/characters", response_model=CatalogCharacterPage)
+    def list_catalog_characters(
+        self,
+        *,
+        q: str | None = None,
+        labels: Sequence[str] = (),
+        content_rating: str | None = None,
+        listing_status: str | None = None,
+        owner: str | None = None,
+        relations: Sequence[str] = (),
+        status: str | None = None,
+        cursor: str | None = None,
+        limit: int = CATALOG_PAGE,
+    ) -> CatalogCharacterPage:
+        """``GET /catalog/characters``: one page of cards (``projection=card``, the only one a
+        list has). ``labels`` and ``relations`` (``name:principal`` or ``name:``) are sent as
+        repeated parameters (every label must match); a blank filter is not sent."""
+        params: list[tuple[str, str]] = [("limit", str(limit))]
+        for name, value in (
+            ("q", q),
+            ("content_rating", content_rating),
+            ("listing_status", listing_status),
+            ("owner", owner),
+            ("status", status),
+            ("cursor", cursor),
+        ):
+            if value:
+                params.append((name, value))
+        params.extend(("label", label) for label in labels)
+        params.extend(("relation", relation) for relation in relations)
+        response = self._request("GET", "/catalog/characters", params=params)
+        return _parse(response, CatalogCharacterPage)
+
+    @operation("GET", "/catalog/characters/{character_id}", response_model=CatalogCharacter)
+    def get_catalog_character(
+        self, character_id: str, *, version: str | int | None = None, draft: bool = False
+    ) -> CatalogCharacter:
+        """``GET /catalog/characters/{id}`` in ``full``: the latest published version, version
+        ``version`` or (``draft``) the draft. A never-published entry's latest read is 422
+        ``not_published``; a bad ``version`` reaches the Engine as given (its 422)."""
+        params = _character_read_params("full", version, draft)
+        response = self._request("GET", _character_path(character_id), params=params)
+        return _parse(response, CatalogCharacter)
+
+    def get_catalog_character_card(
+        self, character_id: str, *, version: str | int | None = None, draft: bool = False
+    ) -> CatalogCharacterCard:
+        """The same read in ``card`` (the public card only). Not registered on its own: the
+        registry keys by method and path, which :meth:`get_catalog_character` holds; the contract
+        test checks :class:`CatalogCharacterCard` against ``CharacterCard`` directly."""
+        params = _character_read_params("card", version, draft)
+        response = self._request("GET", _character_path(character_id), params=params)
+        return _parse(response, CatalogCharacterCard)
+
+    @operation(
+        "GET", "/catalog/characters/{character_id}/versions", response_model=CatalogVersionList
+    )
+    def list_catalog_character_versions(self, character_id: str) -> list[CatalogVersion]:
+        """``GET /catalog/characters/{id}/versions``: every published version (the Engine lists
+        them oldest first; callers sort)."""
+        path = f"{_character_path(character_id)}/versions"
+        return _parse(self._request("GET", path), CatalogVersionList).items
+
+    # --- media content (#65's proxy) -------------------------------------------------------------
+
+    @operation("GET", "/media/{media_id}/content")
+    @contextmanager
+    def open_media_content(
+        self, media_id: str, headers: Mapping[str, str]
+    ) -> Iterator[StreamedContent]:
+        """``GET /media/{id}/content``, streamed: a context manager yielding the answer, whatever
+        its status, with the body unread. Only :data:`MEDIA_REQUEST_HEADERS` of ``headers`` are
+        forwarded; the service key goes as on every call. Connect 3 s, then 30 s per chunk.
+        The response and its connection close when the block exits. Never recorded (a read).
+        No answer is :class:`EngineUnreachable`."""
+        wanted = {name.lower() for name in MEDIA_REQUEST_HEADERS}
+        forwarded = {k: v for k, v in headers.items() if k.lower() in wanted}
+        path = f"/media/{quote(media_id, safe='')}/content"
+        wire = self._wire_headers("GET", path, None, forwarded, accept="*/*")
+        http = self._http(httpx.Timeout(MEDIA_READ_TIMEOUT_S, connect=MEDIA_CONNECT_TIMEOUT_S))
+        try:
+            try:
+                request = http.build_request("GET", f"{self.base_url}{path}", headers=wire)
+                response = http.send(request, stream=True)
+            except AssertionError:
+                raise  # the fake Engine's signals reach the test
+            except httpx.TimeoutException as exc:
+                raise EngineUnreachable("timeout") from exc
+            except httpx.ConnectError as exc:
+                raise EngineUnreachable("connection failed") from exc
+            except httpx.TransportError as exc:
+                raise EngineUnreachable("transport error") from exc
+            except Exception as exc:
+                raise EngineUnreachable("transport error", unexpected=True) from exc
+            try:
+                kept = {
+                    name: response.headers[name]
+                    for name in MEDIA_RESPONSE_HEADERS
+                    if name in response.headers
+                }
+                yield StreamedContent(response.status_code, kept, response)
+            finally:
+                response.close()
+        finally:
+            http.close()
+
+
+def _character_read_params(
+    projection: str, version: str | int | None, draft: bool
+) -> dict[str, str]:
+    """A character read's query: ``projection``, and ``draft=true`` or ``version`` (a draft
+    read wins: the Engine refuses both)."""
+    params = {"projection": projection}
+    if draft:
+        params["draft"] = "true"
+    elif version is not None and version != "":
+        params["version"] = str(version)
+    return params
+
+
+def _character_path(character_id: str) -> str:
+    """``/catalog/characters/<id>``, the id percent-encoded."""
+    return f"/catalog/characters/{quote(character_id, safe='')}"
 
 
 def turn_timeout(deadline_s: float | None) -> float:

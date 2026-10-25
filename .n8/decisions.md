@@ -777,3 +777,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `rating_choices` reads `list_content_ratings(include_retired=True)` once and filters retired ratings itself. It returns `RatingChoices(choices, error)` rather than raising.
   **Why:** One read can name a retired `current` ("<name> (retired)"). The failed-read text ("Ratings unavailable: …") belongs to the form.
   **Issue:** #64
+- **Decision (drift):** The Engine's `CharacterCard` has no `current_version`. The versions page takes the latest version from the latest card read's `version`. Image "slot" is the image's place in `images` ("primary", "gallery N", "reference N"), because the Engine has no `slot` field.
+  **Why:** The plan names fields the recorded schema does not have. The Engine's schema wins.
+  **Issue:** #65
+- **Decision:** `get_catalog_character_card` is not registered with `@operation`. `get_catalog_character` (full) holds the `GET /catalog/characters/{character_id}` registry key. The contract helper now accepts an `anyOf`-of-components response when the model matches one option, and `CatalogCharacterCard` is checked against `CharacterCard` directly.
+  **Why:** The registry is keyed by method and path, so two methods on one route would overwrite each other. Reads are never recorded, so nothing else depends on the registration.
+  **Issue:** #65
+- **Decision:** Disposition `setting` and reference-image `audience` are `str` fields with `OPEN_ENUM` metadata (`console.engine.models.open_enum()`). The contract test compares them as the schema's enum. A plain `str` against an enum is still reported.
+  **Why:** The plan asks for `str`, so an unknown Engine value renders raw instead of failing the whole read. The contract test still bites on enum drift.
+  **Issue:** #65
+- **Decision:** The proxy tests serve the sample files through a new `FakeEngine.side_effect(method, path, handler)` (declared route; the answered status is checked against the schema), not respx.
+  **Why:** respx is not a dependency, and the fake Engine already holds the schema checks. Adding a library for one test file is not in the plan.
+  **Issue:** #65
+- **Decision:** `_request` accepts a query as a mapping or as `(name, value)` pairs (`QueryParams`), so `label` and `relation` repeat. Header building moved into `_wire_headers` and `_http`, which the streaming media read shares. The relation filter uses two GET fields, `relation` (name) and `relation_principal`.
+  **Why:** Repeated parameters need pairs. The media stream must send the same headers (key, principal, User-Agent) without going through `_request`'s buffered call.
+  **Issue:** #65
+- **Decision:** Django adds `Content-Length: 0` to the proxy's 304. Apart from that, the 304 carries only ETag, Cache-Control and the two security headers. The proxy answers HEAD with 405 (GET only, as planned).
+  **Why:** `CommonMiddleware` sets Content-Length on every non-streaming response. A zero length on an empty 304 is harmless.
+  **Issue:** #65

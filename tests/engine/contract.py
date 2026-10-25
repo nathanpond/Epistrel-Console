@@ -5,7 +5,9 @@ Type mapping: ``str``/``int``/``float``/``bool`` ↔ ``string``/``integer``/``nu
 ``additionalProperties``; ``list[X]`` ↔ array with ``items``; ``X | None`` ↔ ``anyOf`` with null
 (or ``nullable``); a nested dataclass ↔ a ``$ref`` to the component of the same shape; ``Any``
 (raw JSON) ↔ any schema, and ``dict[str, Any]`` ↔ an object with ``additionalProperties: true``
-(#44). Compared:
+(#44); a field flagged ``OPEN_ENUM`` (``str``, #65) ↔ a string enum, compared as its ``Literal``;
+a response whose schema is an ``anyOf`` of components ↔ a model matching one of them (#65).
+Compared:
 type, enum, properties, required (a field is required when it has no default). Ignored: title,
 description, examples, default.
 """
@@ -16,7 +18,7 @@ from dataclasses import MISSING, fields, is_dataclass
 from typing import Any, Literal, Union
 
 from console.engine.client import Operation
-from console.engine.models import json_name
+from console.engine.models import OPEN_ENUM, json_name
 
 JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
@@ -139,8 +141,30 @@ def compare_model(doc: dict[str, Any], model: type, node: dict[str, Any], where:
             f"{where}: required {sorted(required)} != {sorted(node.get('required', []))}"
         )
     for name in set(model_fields) & set(properties):
-        problems.extend(compare_type(doc, hints[name], properties[name], f"{where}.{name}"))
+        tp = hints[name]
+        if model_fields[name].metadata.get(OPEN_ENUM):
+            tp = _open_enum(doc, tp, properties[name], f"{where}.{name}", problems)
+        problems.extend(compare_type(doc, tp, properties[name], f"{where}.{name}"))
     return problems
+
+
+def _open_enum(
+    doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str, problems: list[str]
+) -> Any:
+    """An ``OPEN_ENUM`` field (``str`` or ``str | None``, #65) compared as the ``Literal`` of the
+    schema's string enum, so the enum must exist and the rest of the type still match."""
+    nullable = typing.get_origin(tp) in (Union, types.UnionType)
+    base = [a for a in typing.get_args(tp) if a is not type(None)] if nullable else [tp]
+    if base != [str]:
+        problems.append(f"{where}: an open enum must be typed str or str | None")
+        return tp
+    options = resolve(doc, node).get("anyOf") or [node]
+    enums = [resolve(doc, o).get("enum") for o in options if resolve(doc, o).get("type") != "null"]
+    if len(enums) != 1 or not isinstance(enums[0], list) or not enums[0]:
+        problems.append(f"{where}: an open enum's schema is not a string enum")
+        return tp
+    literal: Any = Literal[tuple(enums[0])]
+    return literal | None if nullable else literal
 
 
 ERROR_REF = "#/components/schemas/Error"
@@ -162,6 +186,14 @@ def check_operation(doc: dict[str, Any], op: Operation) -> list[str]:
     for status, response in item[op.method.lower()].get("responses", {}).items():
         content = resolve(doc, response).get("content", {}).get("application/json", {})
         schema = content.get("schema")
+        if isinstance(schema, dict) and "anyOf" in schema and status not in others:
+            # One of several components (a catalog read's card or full projection, #65): the
+            # response model must match one of them.
+            checked += 1
+            refs = [o for o in schema["anyOf"] if isinstance(o, dict) and "$ref" in o]
+            if not any(not compare_model(doc, op.response_model, o, name) for o in refs):
+                problems.append(f"{name} {status}: no anyOf option matches the response model")
+            continue
         if isinstance(schema, dict) and "$ref" in schema:
             if schema["$ref"] == ERROR_REF:
                 continue  # the error envelope: EngineError, not the response model

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% load console_format principals entities %}
+{% block title %}{% if name %}{{ name }}{% else %}{{ character_id }}{% endif %} — Characters — Epistrel Console{% endblock %}
+{% block heading %}{% if name %}{{ name }}{% else %}Character <code>{{ character_id }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ back_url }}">Back to list</a></p>
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% else %}
+<h2 class="version-heading">{{ heading }} · <a href="{{ versions_url }}">Versions</a></h2>
+{% if card %}
+<p class="view-mode"><strong>Public card view</strong> · <a href="{{ full_query }}">Back to full view</a></p>
+{% else %}
+<p class="view-mode"><a href="{{ card_query }}">View as public card</a>{% if not is_draft %} · <a href="{{ draft_query }}">View the draft</a>{% endif %}</p>
+{% endif %}
+{% if differs %}
+<p class="warning draft-differs">The draft differs from this published version — <a href="{{ draft_query }}">view the draft</a></p>
+{% endif %}
+
+<section id="card">
+  <h2>Card</h2>
+  <dl>
+    <dt>Name</dt><dd>{{ entry.name|default_if_none:"—" }}</dd>
+    <dt>Public description</dt><dd>{% if entry.public_description %}{{ entry.public_description|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Labels</dt><dd>{{ entry.labels|join:", "|default:"—" }}</dd>
+    <dt>Content rating</dt><dd>{% if entry.content_rating %}<a href="{% url 'ratings:detail' entry.content_rating.id %}" title="{{ entry.content_rating.version_id }}">{{ entry.content_rating.name }}</a>{% else %}—{% endif %}</dd>
+  </dl>
+  <h3>Images</h3>
+  {% for image in images %}{% include "console/catalog/characters/_image.html" %}{% empty %}<p>—</p>{% endfor %}
+</section>
+
+{% if full %}
+{% with d=entry.definition %}
+<section id="definition">
+  <h2>Definition</h2>
+  <dl>
+    <dt>True age</dt><dd>{{ d.true_age|default_if_none:"—" }}</dd>
+    <dt>Appearance</dt><dd>{% if d.appearance %}{{ d.appearance|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Personality</dt><dd>{% if d.personality %}{{ d.personality|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Values and motivations</dt><dd>{% if d.values_motivations %}{{ d.values_motivations|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Background flavour</dt><dd>{% if d.background_flavor %}{{ d.background_flavor|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Likes</dt><dd>{% if d.likes_dislikes.likes %}<ul>{% for item in d.likes_dislikes.likes %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
+    <dt>Dislikes</dt><dd>{% if d.likes_dislikes.dislikes %}<ul>{% for item in d.likes_dislikes.dislikes %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
+  </dl>
+  <h3>Dispositions</h3>
+  <table class="dispositions">
+    <thead><tr><th>Axis</th><th>Setting</th><th>Nuance</th></tr></thead>
+    <tbody>
+      {% for axis, disposition in dispositions %}
+      <tr id="disposition-{{ forloop.counter }}"><th>{{ axis }}</th>{% if disposition %}<td>{{ disposition.setting|humanise }}</td><td>{% if disposition.nuance %}{{ disposition.nuance|linebreaksbr }}{% else %}—{% endif %}</td>{% else %}<td colspan="2">not set</td>{% endif %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h3>Interaction style</h3>
+  <dl>
+    <dt>Speech style</dt><dd>{% if d.interaction_style.speech_style %}{{ d.interaction_style.speech_style|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Vocabulary</dt><dd>{% if d.interaction_style.vocabulary %}{{ d.interaction_style.vocabulary|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Mannerisms</dt><dd>{% if d.interaction_style.mannerisms %}<ul>{% for item in d.interaction_style.mannerisms %}<li>{{ item|linebreaksbr }}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
+    <dt>Sample dialogue</dt><dd>{% if d.interaction_style.sample_dialogue %}<ul>{% for item in d.interaction_style.sample_dialogue %}<li>{{ item|linebreaksbr }}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
+  </dl>
+  <dl>
+    <dt>Deflection style</dt><dd>{% if d.deflection_style %}{{ d.deflection_style|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Safe fallback text</dt><dd>{% if d.safe_fallback_text %}{{ d.safe_fallback_text|linebreaksbr }}{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+{% endwith %}
+{% endif %}
+
+<section id="metadata">
+  <h2>Metadata</h2>
+  <dl>
+    <dt>Id</dt><dd><code>{{ entry.id }}</code></dd>
+    <dt>Status</dt><dd>{{ entry.status|humanise }}</dd>
+    <dt>Listing status</dt><dd>{{ entry.listing_status|humanise }}</dd>
+    {% if full %}<dt>Owner</dt><dd>{{ entry.owner_principal|principal_link }}</dd>{% endif %}
+    <dt>Version</dt><dd>{{ entry.version|default_if_none:"—" }}{% if full %} (current version: {{ entry.current_version|default_if_none:"—" }}){% endif %}</dd>
+    {% if full %}
+    {% if is_draft %}<dt>Draft revision</dt><dd>{{ entry.draft_revision|default_if_none:"—" }}</dd>{% endif %}
+    <dt>Created</dt><dd>{{ entry.created_at|engine_time }}</dd>
+    <dt>Updated</dt><dd>{{ entry.updated_at|engine_time }}</dd>
+    <dt>Published</dt><dd>{{ entry.published_at|engine_time }}</dd>
+    <dt>Aliases</dt><dd>{% if entry.aliases %}{{ entry.aliases|join:", " }}{% else %}—{% endif %}</dd>
+    {% endif %}
+  </dl>
+</section>
+
+{% if full %}
+<section id="visual-identity">
+  <h2>Visual identity</h2>
+  {% with v=entry.visual_identity %}
+  {% if v %}
+  <dl>
+    <dt>Base appearance prompt</dt><dd>{% if v.base_appearance_prompt %}{{ v.base_appearance_prompt|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Negative prompt</dt><dd>{% if v.negative_prompt %}{{ v.negative_prompt|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Restricted details prompt</dt><dd>{% if v.restricted_details_prompt %}{{ v.restricted_details_prompt|linebreaksbr }}{% else %}—{% endif %}</dd>
+    <dt>Preferred image model</dt><dd>{{ v.preferred_image_model|default_if_none:"—" }}</dd>
+    <dt>Seed</dt><dd>{{ v.seed|default_if_none:"—" }}</dd>
+    <dt>Adapter params</dt><dd>{% if v.adapter_params is not None %}<pre>{{ v.adapter_params|pretty_json }}</pre>{% else %}—{% endif %}</dd>
+  </dl>
+  <h3>Reference images</h3>
+  {% for image in references %}{% include "console/catalog/characters/_image.html" with audience=True %}{% empty %}<p>—</p>{% endfor %}
+  {% else %}
+  <p>—</p>
+  {% endif %}
+  {% endwith %}
+</section>
+
+<section id="companion">
+  <h2>Companion</h2>
+  <p>{% if entry.companion_id %}{{ entry.companion_id|entity_link:"scenario" }}{% else %}—{% endif %}</p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

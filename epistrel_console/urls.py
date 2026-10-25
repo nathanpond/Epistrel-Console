@@ -7,8 +7,10 @@ from django.urls import include, path
 from console.auth import OperatorAuthenticationForm
 from console.views import (
     acting,
+    catalog_characters,
     engine_panel,
     history,
+    media_proxy,
     models,
     operations,
     play,
@@ -114,6 +116,27 @@ engine_patterns = (
     "engine",
 )
 
+catalog_character_patterns = (
+    [
+        path("", catalog_characters.character_list, name="index"),
+        path("<str:character_id>/", catalog_characters.character_detail, name="detail"),
+        path(
+            "<str:character_id>/versions/",
+            catalog_characters.character_versions,
+            name="versions",
+        ),
+    ],
+    "catalog_characters",
+)
+
+# The media section (#70 adds its pages); #65 builds the proxy every M3 page shows media with.
+media_patterns = (
+    [
+        path("<str:media_id>/content/", media_proxy.media_content, name="content"),
+    ],
+    "media",
+)
+
 urlpatterns = [
     path("", status.status, name="status"),
     path("health", status.health, name="health"),
@@ -130,5 +153,7 @@ urlpatterns = [
     path("guardrails/policies/", include(policy_patterns)),
     path("guardrails/ratings/", include(rating_patterns)),
     path("engine/", include(engine_patterns)),
+    path("catalog/characters/", include(catalog_character_patterns)),
+    path("media/", include(media_patterns)),
     path("admin/", admin.site.urls),
 ]

@@ -1342,3 +1342,221 @@ class ValidationReport(Model):
     @property
     def is_empty(self) -> bool:
         return not (self.errors or self.warnings or self.unavailable)
+
+
+# --- Catalog characters (#65) --------------------------------------------------------------------
+#
+# A card (``CharacterCard``) is the public projection every list and ``projection=card`` read
+# answers; ``CatalogCharacter`` is ``CharacterFull`` (``projection=full``), private fields
+# included. ``CardImage`` and ``CardRating`` are shared with the scenario pages (#68).
+
+OPEN_ENUM = "open_enum"
+"""Field metadata: a ``str`` field the schema types as a string enum. Read as a plain string so
+a value the Console does not know yet renders raw (#64 convention 17) instead of failing the
+whole answer; the contract test compares it with the enum's members."""
+
+EntryStatus = Literal["draft", "published", "archived"]
+
+
+def open_enum(**kwargs: Any) -> Any:
+    """``field(...)`` for an :data:`OPEN_ENUM` string."""
+    return field(metadata={OPEN_ENUM: True}, **kwargs)
+
+
+@dataclass(frozen=True)
+class CardImage(Model):
+    """``CardImage``: a public image of a card, by media id."""
+
+    media_id: str
+    alt_text: str | None = None
+
+
+@dataclass(frozen=True)
+class CardRating(Model):
+    """``CardRating``: a catalog entry's content rating, the version it pins and its name."""
+
+    id: str
+    version_id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class CardImages(Model):
+    """``CharacterCardImages``: the primary image and the gallery, in order."""
+
+    primary: CardImage | None = None
+    gallery: list[CardImage] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CatalogCharacterCard(Model):
+    """``CharacterCard``: a character's public card. ``version`` is ``None`` on a never-published
+    draft."""
+
+    id: str
+    version: int | None
+    name: str | None
+    public_description: str | None
+    images: CardImages
+    labels: list[str]
+    content_rating: CardRating | None
+    listing_status: str
+    status: EntryStatus
+
+
+@dataclass(frozen=True)
+class CatalogCharacterListItem(CatalogCharacterCard):
+    """``CharacterListItem``: a card as ``GET /catalog/characters`` lists it, with its owner, its
+    last change and (when searching with ``q``) its ``rank``."""
+
+    owner_principal: str
+    updated_at: str
+    rank: float | None = None
+
+
+@dataclass(frozen=True)
+class CatalogCharacterPage(Model):
+    """``CharacterListBody``: one page of cards; ``next_cursor`` reads the next."""
+
+    items: list[CatalogCharacterListItem]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class Disposition(Model):
+    """One disposition axis (``WarmthDisposition`` and the four others): its five-step
+    ``setting`` and free-text ``nuance``."""
+
+    setting: str = open_enum()
+    nuance: str | None = None
+
+
+@dataclass(frozen=True)
+class Dispositions(Model):
+    """``Dispositions``: the five axes, each missing until set (a publish needs all five)."""
+
+    threat_response: Disposition | None = None
+    dominance: Disposition | None = None
+    honesty: Disposition | None = None
+    warmth: Disposition | None = None
+    caution: Disposition | None = None
+
+
+@dataclass(frozen=True)
+class InteractionStyle(Model):
+    speech_style: str | None = None
+    vocabulary: str | None = None
+    mannerisms: list[str] = field(default_factory=list)
+    sample_dialogue: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class LikesDislikes(Model):
+    likes: list[str] = field(default_factory=list)
+    dislikes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CharacterDefinition(Model):
+    """``CharacterDefinition``: the private definition (never on a card)."""
+
+    true_age: int | None = None
+    appearance: str | None = None
+    personality: str | None = None
+    values_motivations: str | None = None
+    background_flavor: str | None = None
+    likes_dislikes: LikesDislikes | None = None
+    dispositions: Dispositions | None = None
+    interaction_style: InteractionStyle | None = None
+    deflection_style: str | None = None
+    safe_fallback_text: str | None = None
+
+
+@dataclass(frozen=True)
+class CharacterImage(Model):
+    """``CharacterImageDetail`` (and ``ReferenceImageDetail``, which adds ``audience``): an
+    image with what the full projection says about it."""
+
+    media_id: str
+    alt_text: str | None = None
+    caption: str | None = None
+    mime_type: str | None = None
+    width: int | None = None
+    height: int | None = None
+    generation_metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ReferenceImage(CharacterImage):
+    """``ReferenceImageDetail``: a visual-identity reference image and its ``audience``
+    (``perceivable`` or ``restricted``)."""
+
+    audience: str | None = open_enum(default=None)
+
+
+@dataclass(frozen=True)
+class CharacterImages(Model):
+    """``CharacterImagesDetail``: the primary image and the gallery, in full."""
+
+    primary: CharacterImage | None = None
+    gallery: list[CharacterImage] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class VisualIdentity(Model):
+    """``VisualIdentityDetail``: what image generation uses for the character."""
+
+    base_appearance_prompt: str | None = None
+    negative_prompt: str | None = None
+    restricted_details_prompt: str | None = None
+    preferred_image_model: str | None = None
+    seed: int | None = None
+    adapter_params: dict[str, Any] | None = None
+    reference_images: list[ReferenceImage] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CatalogCharacter(Model):
+    """``CharacterFull``: a character as ``projection=full`` gives it, private fields included.
+
+    ``version`` is the version read (``None`` for a draft), ``current_version`` the latest
+    published one (``None`` before the first publish); ``draft_revision`` is the draft's save
+    counter (only on a draft read; not comparable to ``version``).
+    """
+
+    id: str
+    status: EntryStatus
+    listing_status: str
+    owner_principal: str
+    version: int | None
+    current_version: int | None
+    created_at: str
+    updated_at: str
+    published_at: str | None
+    companion_id: str | None
+    name: str | None
+    public_description: str | None
+    images: CharacterImages
+    labels: list[str]
+    content_rating: CardRating | None
+    aliases: list[str]
+    definition: CharacterDefinition
+    visual_identity: VisualIdentity | None
+    draft_revision: int | None = None
+
+
+@dataclass(frozen=True)
+class CatalogVersion(Model):
+    """``CharacterVersionBody``: one published version."""
+
+    version: int
+    published_at: str
+    published_by: str
+
+
+@dataclass(frozen=True)
+class CatalogVersionList(Model):
+    """``CharacterVersionsBody``: every published version (the Engine lists them oldest
+    first)."""
+
+    items: list[CatalogVersion]
