@@ -108,11 +108,8 @@
   {% endif %}
   {% endwith %}
 </section>
-
-<section id="companion">
-  <h2>Companion</h2>
-  <p>{% if entry.companion_id %}{{ entry.companion_id|entity_link:"scenario" }}{% else %}—{% endif %}</p>
-</section>
 {% endif %}
+
+{% if companion %}{% include "console/catalog/characters/_companion.html" %}{% endif %}
 {% endif %}
 {% endblock %}

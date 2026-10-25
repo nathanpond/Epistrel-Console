@@ -273,7 +273,9 @@ def test_the_detail_reads_full_and_shows_every_section(
         f'<a href="/guardrails/ratings/{TEEN}/" title="01M5R0RTV00000000000000002">Teen</a>' in html
     )
     assert "&quot;lora&quot;: &quot;knight-v2&quot;" in html  # adapter params, pretty JSON
-    assert f"<code>{SCENARIO}</code>" in html  # companion: plain until #68's page exists
+    # #74: the companion's card read names its link (and "Edit companion" on the latest view).
+    assert f'href="/catalog/scenarios/{SCENARIO}/">Ada&#x27;s world</a>' in html
+    assert f'href="/catalog/scenarios/{SCENARIO}/edit/">Edit companion</a>' in html
     assert "Draft revision" not in page  # only on draft views
     assert '<a href="/catalog/characters/">Back to list</a>' not in html  # class attr present
     assert 'class="back" href="/catalog/characters/"' in html
@@ -312,7 +314,7 @@ def test_the_card_view_reads_card_and_hides_the_definition(
     assert item_reads(engine) == [{"projection": "card"}]
     assert "Public card view" in html
     assert '<a href="?">Back to full view</a>' in html
-    # Complement: no definition field (nor visual identity, companion, owner) on the card view.
+    # Complement: no definition field (nor visual identity, owner) on the card view.
     for private in (
         'id="definition"',
         "True age",
@@ -320,10 +322,12 @@ def test_the_card_view_reads_card_and_hides_the_definition(
         "Dispositions",
         "Safe fallback",
         'id="visual-identity"',
-        'id="companion"',
         "Owner",
     ):
         assert private not in html
+    # #74: the companion link shows on every view; "Edit companion" not on the card view.
+    assert f'href="/catalog/scenarios/{SCENARIO}/">Ada&#x27;s world</a>' in html
+    assert "Edit companion" not in html
     assert "A knight errant." in html
     assert f'src="/media/{MED1}/content/?img=1"' in html
 

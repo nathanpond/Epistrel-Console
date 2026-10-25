@@ -630,15 +630,29 @@ def test_the_edit_page_of_an_archived_entry_renders_read_only_with_the_banner(
     assert 'value="save" disabled title="Archived — unarchive to edit"' in html
 
 
-def test_the_edit_page_of_an_archived_companion_names_the_character_by_id(
+def test_the_edit_page_of_an_archived_companion_names_the_character(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#74: the editor names a companion's character from one card read (#69 showed the id)."""
+    engine.respond("GET", S_ITEM, 200, json=companion_scenario(status="archived"))
+    engine.respond("GET", ITEM, 200, json=card())
+    answer_ratings(engine)
+    answer_profiles(engine)
+    html = operator_client.get(f"{COMPANION_DETAIL}edit/").content.decode()
+    assert f'Archived with <a href="/catalog/characters/{CHAR}/">Sir Aldric</a>' in html
+    (read,) = calls(engine, "GET", f"/catalog/characters/{CHAR}")
+    assert dict(read.url.params) == {"projection": "card"}
+
+
+def test_the_edit_page_of_an_archived_companion_falls_back_to_the_id(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     engine.respond("GET", S_ITEM, 200, json=companion_scenario(status="archived"))
+    engine.respond("GET", ITEM, 503, json=error("database_unavailable", "down"))
     answer_ratings(engine)
     answer_profiles(engine)
     html = operator_client.get(f"{COMPANION_DETAIL}edit/").content.decode()
     assert f'Archived with <a href="/catalog/characters/{CHAR}/">{CHAR}</a>' in html
-    assert calls(engine, "GET", f"/catalog/characters/{CHAR}") == []
 
 
 @pytest.mark.parametrize("entry", ["character", "scenario"])

@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "companion_slots_fixed",
+    "message": "a companion scenario keeps its two slots",
+    "details": {
+      "scenario_id": "01JC000000000000000000SCN1",
+      "character_id": "01JC00000000000000000CHAR1",
+      "role": "npc",
+      "field": "body.cast.roles[0].fill"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{% comment %}#74: the character's companion scenario (console.views.catalog_characters.CompanionBox): its
+name linked to the scenario, and "Edit companion" on the full latest and draft views (disabled
+while the companion is archived). Context: companion.{% endcomment %}<section id="companion">
+  <h2>Companion scenario</h2>
+  {% if companion.none %}<p class="no-companion">No companion</p>
+  {% elif companion.error %}<p class="companion-unavailable">{% if companion.scenario_id %}<code>{{ companion.scenario_id }}</code> — {% endif %}Companion unavailable: {{ companion.error }}</p>
+  {% else %}
+  <p><a class="companion-link" href="{{ companion.url }}">{{ companion.name }}</a>{% if companion.archived %} <small class="archived-tag">(archived)</small>{% endif %}
+  {% if companion.show_edit %} · {% if companion.archived %}<button type="button" class="archived-disabled" disabled title="Archived — unarchive to edit">Edit companion</button> <small class="muted">(Archived — unarchive to edit)</small>{% else %}<a class="edit-companion" href="{{ companion.edit_url }}">Edit companion</a>{% endif %}{% endif %}</p>
+  {% endif %}
+</section>

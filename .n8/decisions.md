@@ -924,3 +924,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #68's companion-name lookup moves to `console/catalog/character_labels.py` (`character_labels`, `CharacterLabel` with a new `archived` flag), and `companion_labels` stays as an alias. The detail page's World seeds section now sits right after Cast, because `_cast_table.html` renders both. The catalog test `engine` fixture answers `GET /catalog/characters` by default.
   **Why:** The cast table names role characters with the same one-read-per-id lookup, and it needs to know whether each one is archived. #74 reuses the partial whole. Every scenario edit page now reads the published characters.
   **Issue:** #73
+- **Decision (drift):** The Console treats a companion's `character_not_published` as "Publish *Character* first" in two cases: a top-level 422 code (what the plan names, tested with the generic `Error` envelope), and an error entry inside a 422 `publish_invalid` report. The second is how the Engine actually refuses it.
+  **Why:** `PublishScenarios.publish_alone` validates the repinned draft, so the code arrives as a report entry. The schema's publish 422 enum does not list `character_not_published`.
+  **Issue:** #74
+- **Decision:** On the edit page, Save keeps #68's `name="op" value="save"`. Save & publish is `name="action" value="publish"`. The two idempotency keys are `idempotency_key` (save) and `publish_idempotency_key` (publish, as in #66), not `idem_save`/`idem_publish`. `publish_scenario` takes an `idempotency_key` beyond the planned `(id, *, draft_revision)`.
+  **Why:** Existing editor tests and helpers post `op=save` and `idempotency_key`. The publish endpoint takes `Idempotency-Key` (#43 per-render rule).
+  **Issue:** #74
+- **Decision:** A `publish_invalid` from Save & publish redirects to `edit/?report=<pk>`. That GET reads the draft fresh, places the report's errors at fields (`ScenarioEditor.place_report`) and shows the report in `#report`. Other refusals after a save (`rating_retired`, `entry_archived`, `character_not_published`, any other) re-render from a fresh draft read. Before placing errors, the editor validates quietly, so the Console's own checks of an unedited draft are not shown.
+  **Why:** This is the "fresh draft read" the plan asks for, and the same report-from-row path #66 uses for characters. After a save the posted snapshot is stale, so re-rendering it would make the next save a 409.
+  **Issue:** #74
+- **Decision:** Validate and Publish post a signed `facts` token (scenario name, role → catalog-character map, and a companion's character and name). The Validate page title, the report's role-character links and the "pinned to" flash use it without extra Engine reads. Missing or tampered, it falls back to the id.
+  **Why:** The plan's complement test needs Validate to make no write. Re-reading the scenario only to label the report adds a call per Validate.
+  **Issue:** #74
+- **Decision:** The character detail's companion section (#65 showed the companion's id, full views only) is now "Companion scenario" on every view, card included, from one `?projection=card` companion read. #69's companion edit page now names the character from the editor's single card read, where it showed the id before. Tests changed: `test_characters_browse` (×2), `test_lifecycle` (the edit-page banner) and `test_character_publish` (companion read counts now count `projection=full` only).
+  **Why:** #74's AC and Discretion require it.
+  **Issue:** #74
+- **Decision:** `FakeEngine.respond` now replaces a `side_effect` on the same route. The catalog test fixture answers the companion route by projection (`companion_reads`: card or full draft). `_location.html` takes optional `entry_url`/`entry_label`, and an empty `anchors` collection now leaves locations as plain text (`default_if_none` in place of `default`).
+  **Why:** One route serves both the card and the full companion reads. Version reports must show plain-text locations.
+  **Issue:** #74

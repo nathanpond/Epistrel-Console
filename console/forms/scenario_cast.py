@@ -363,6 +363,44 @@ def cast_data(doc: Mapping[str, Any]) -> dict[str, list[str]]:
     return data
 
 
+# --- a companion's fixed slots (#74) --------------------------------------------------------------
+
+# What a companion role keeps (the Engine's ``companion_slots.SLOT_FIELDS`` and the id), as posted.
+SLOT_FIELDS = ("id", "kind", "fill", CHARACTER_ID, CHARACTER_VERSION)
+
+
+def pin_companion_slots(data: QueryDict, original: Mapping[str, Any]) -> QueryDict:
+    """``data`` with a companion's role rows pinned to the signed ``original``: the same number
+    of roles, each keeping its id, kind, fill and character (version included). Whatever was
+    posted for them (a tampered form) is replaced, so the patch echoes the slots unchanged;
+    every other role field is the posted one."""
+    out = data.copy()
+    roles = [r for r in ((original.get("cast") or {}).get("roles") or []) if isinstance(r, Mapping)]
+    out[f"{ROLE}-TOTAL_FORMS"] = str(len(roles))
+    for n, role in enumerate(roles):
+        character = role.get("character") if isinstance(role.get("character"), Mapping) else None
+        values = {
+            "id": role.get("id"),
+            "kind": role.get("kind"),
+            "fill": role.get("fill") or "open",
+            CHARACTER_ID: character.get("catalog_id") if character else None,
+            CHARACTER_VERSION: character.get("version") if character else None,
+        }
+        for name, value in values.items():
+            key = f"{ROLE}-{n}-{name}"
+            if value is None:
+                out.pop(key, None)
+            else:
+                out[key] = str(value)
+    return out
+
+
+def companion_role_op(prefix: str) -> bool:
+    """Whether a row button names a companion's roles themselves (adding or removing one),
+    which a companion refuses (its seeds' buttons stay)."""
+    return prefix == ROLE
+
+
 # --- row editing ----------------------------------------------------------------------------------
 
 
@@ -713,6 +751,20 @@ class RoleForm(_RowForm):
     def shows_character(self) -> bool:
         return self.raw("fill") in WITH_CHARACTER
 
+    @property
+    def fixed_character(self) -> str:
+        """A companion slot's character as its read-only block shows it: ``<id>@v<N>``,
+        ``<id> (not pinned yet)``, or empty for a role with none (#74)."""
+        catalog_id = self.raw(CHARACTER_ID) if self.shows_character else ""
+        if not catalog_id:
+            return ""
+        version = self.raw(CHARACTER_VERSION)
+        return f"{catalog_id}@v{version}" if version else f"{catalog_id} (not pinned yet)"
+
+    def slot_errors(self) -> list[str]:
+        """The errors on a companion slot's fixed fields (shown in its read-only block)."""
+        return [str(e) for name in SLOT_FIELDS if name in self.errors for e in self.errors[name]]
+
     def _character_fields(self, characters: CharacterChoices) -> None:
         if characters.ok:
             self.fields[CHARACTER_ID] = forms.ChoiceField(
@@ -909,6 +961,7 @@ class CastForms:
         self.world = SeedFormSet(
             self.data, prefix=WSEED, form_kwargs={**seed_kwargs, "base_path": WORLD_SEEDS_PATH}
         )
+        self.companion = choices.companion
         self.cast_errors: list[str] = []
         self.world_errors: list[str] = []
         self._built: _Built | None = None
@@ -1026,6 +1079,17 @@ class CastForms:
                 self.world_errors.append(f"{path}: {message}" if rest else message)
             return True
         return False
+
+    def place_fixed(self, role_id: object, path: object, message: str) -> None:
+        """A 422 ``companion_slots_fixed`` (#74): at the row of role ``role_id`` (naming the
+        slot field ``path``), else at the top of Cast."""
+        field_path = path.removeprefix("body.") if isinstance(path, str) else ""
+        text = f"{field_path}: {message}" if field_path else message
+        for form in self.roles.forms:
+            if isinstance(role_id, str) and role_id and form.raw("id") == role_id:
+                form.add_error(None, text)
+                return
+        self.cast_errors.append(text)
 
     def _place_role(self, path: str, message: str) -> bool:
         match = _INDEXED.match(path.removeprefix("cast.roles"))

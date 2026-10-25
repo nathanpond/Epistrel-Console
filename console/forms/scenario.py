@@ -52,7 +52,7 @@ from django.http import QueryDict
 from console import merge_patch
 from console.engine.choices import CharacterChoices, ProfileChoices, RatingChoices
 from console.engine.client import EngineError
-from console.engine.models import Scenario
+from console.engine.models import Scenario, ValidationReport
 from console.engine_form_errors import engine_field_errors
 from console.forms.catalog_character import (
     LabelsField,
@@ -79,6 +79,7 @@ from console.forms.scenario_cast import (
     cast_to_write,
     new_row,
     normalize_cast,
+    pin_companion_slots,
     posted_role_ids,
     prepared,
     row_caps,
@@ -107,6 +108,7 @@ NO_LOCATIONS = "Add locations (World) first"
 DEFERRED_NOTE = "Stored by Lite but not used until a later Engine milestone"
 DRAFT_TOO_LARGE = "Draft exceeds the Engine's 1 MiB limit"
 CAST_LIMIT_EXCEEDED = "cast_limit_exceeded"
+COMPANION_SLOTS_FIXED = "companion_slots_fixed"
 CAST_LIMIT_PATH = "cast.max_characters_at_start"
 
 # The Engine's bounds (``ScenarioCreate`` and its groups).
@@ -775,6 +777,9 @@ class ScenarioEditor:
         original: Mapping[str, Any] | None = None,
         cast_choices: CastChoices | None = None,
     ) -> None:
+        # A companion's slots are the signed original's whatever was posted (#74).
+        if cast_choices is not None and cast_choices.companion and original:
+            data = pin_companion_slots(data, original)
         # The cast's management forms filled and its audiences re-homed (#73): every part of
         # the editor, and the page it renders, reads the same state.
         data = prepared(data)
@@ -915,6 +920,10 @@ class ScenarioEditor:
         failure first and places it elsewhere (#71's media slots) when it answers ``True``.
         Returns how many landed on a field."""
         form = self.form
+        if error.code == COMPANION_SLOTS_FIXED:
+            details = error.details
+            self.cast.place_fixed(details.get("role"), details.get("field"), error.message)
+            return 1
         if error.code == "draft_too_large" or error.http_status == 413:
             form.add_error(None, DRAFT_TOO_LARGE)
             return 0
@@ -937,6 +946,38 @@ class ScenarioEditor:
                 placed += 1
             else:
                 form.add_error(None, f"{path}: {message}")
+        return placed
+
+    def validated_quietly(self) -> None:
+        """Validate, then drop the errors (#74): a page shown from the saved draft can take
+        Engine errors at its fields (``add_error`` needs ``cleaned_data``) without showing the
+        Console's own checks of a draft it did not edit."""
+        forms_: list[forms.Form] = [
+            self.form,
+            *(f for fs in self.formsets.values() for f in fs.forms),
+            self.cast.limit,
+            *(f for fs in self.cast._formsets() for f in fs.forms),
+        ]
+        for form in forms_:
+            form.full_clean()  # even after quiet(), which marks a form as validated
+        self.quiet()
+
+    def place_report(self, report: ValidationReport, scenario_id: str) -> int:
+        """Place a refused publish's errors (#74: ``publish_invalid``'s report) at the fields
+        their locations name, when the entry is this scenario's; the rest stay in the report
+        shown beside the form. Returns how many landed."""
+        self.validated_quietly()
+        placed = 0
+        for entry in report.errors:
+            location = entry.location
+            if not location.field or (location.entry and location.entry != scenario_id):
+                continue
+            message = f"{entry.code}: {entry.rule}" if entry.rule else entry.code
+            try:
+                landed = self._place(location.field, message)
+            except KeyError:  # a row the Console's own checks refused: the report shows it
+                landed = False
+            placed += landed
         return placed
 
     def _place(self, path: str, message: str) -> bool:

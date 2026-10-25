@@ -2027,6 +2027,31 @@ class ScenarioDraft(Scenario):
 
 
 @dataclass(frozen=True)
+class ValidationResult(Model):
+    """``ValidationResult`` (#74): a scenario validation's answer, a dry run that writes
+    nothing. ``valid`` is true when the report has no error."""
+
+    valid: bool
+    report: ValidationReport
+
+
+@dataclass(frozen=True)
+class ScenarioPublished(Model):
+    """``ScenarioPublishedBody`` (#74): the version a scenario's publish made, the draft's new
+    revision (the draft still equals what was published), its status and the validation report
+    the version keeps (no errors; its warnings and the checks the deployment cannot run)."""
+
+    config_revision: int
+    id: str
+    version: int
+    draft_revision: int
+    status: EntryStatus
+    published_at: str
+    report: ValidationReport
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
 class EngineProfileSummary(Model):
     """The part of ``EngineProfile`` a select needs (``GET /engine-profiles``): id, name, owner,
     whether it is a preset, its version and whether it is deleted. The profile pages' full model

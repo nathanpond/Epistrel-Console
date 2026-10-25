@@ -3,7 +3,10 @@
 import copy
 import json
 import re
+from collections.abc import Callable
 from typing import Any
+
+import httpx
 
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
@@ -99,6 +102,24 @@ def companion(draft_revision: int = 3, **changes: Any) -> dict[str, Any]:
     """The companion's draft (``ScenarioFull``) at ``draft_revision``."""
     body: dict[str, Any] = copy.deepcopy(engine_fixture("catalog_characters_companion_draft"))
     return {**body, "draft_revision": draft_revision, **changes}
+
+
+def companion_reads(
+    card: dict[str, Any] | None = None, draft: dict[str, Any] | None = None
+) -> Callable[[httpx.Request], httpx.Response]:
+    """The companion read by projection (#74): ``card`` (the character detail's companion
+    link) or the full draft (#66's Publish). Both fixtures are schema-checked by
+    ``tests/catalog/test_scenario_validate_publish.py``."""
+    card_body = card if card is not None else engine_fixture("catalog_characters_companion_card")
+    draft_body = (
+        draft if draft is not None else engine_fixture("catalog_characters_companion_draft")
+    )
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        projection = request.url.params.get("projection", "card")
+        return httpx.Response(200, json=card_body if projection == "card" else draft_body)
+
+    return answer
 
 
 def patched(draft_revision: int = 6, **changes: Any) -> dict[str, Any]:

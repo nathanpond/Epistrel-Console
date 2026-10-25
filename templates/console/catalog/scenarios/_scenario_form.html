@@ -1,12 +1,16 @@
 {% comment %}
 #68: the scenario editor, create and edit; #73 adds the Cast and World seeds (cast: CastForms);
 #71 adds the Media section (media: the media sections by path). Each main field's id is its report anchor (f-<path>). Context: form, sections, row_sets,
-create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url.
+create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url; #74 (edit only):
+publish_idempotency_key, next, facts, validate_url, unsaved, archived_publish, companion_name.
 {% endcomment %}<form method="post" action="{{ action_url }}" class="scenario-form" novalidate>
   {% csrf_token %}
   <input type="hidden" name="snapshot" value="{{ snapshot }}">
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-  {% if not create %}<input type="hidden" name="draft_revision" value="{{ snap.draft_revision|default_if_none:'' }}">{% endif %}
+  {% if not create %}<input type="hidden" name="draft_revision" value="{{ snap.draft_revision|default_if_none:'' }}">
+  <input type="hidden" name="publish_idempotency_key" value="{{ publish_idempotency_key }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <input type="hidden" name="facts" value="{{ facts }}">{% endif %}
   {# Enter in a text input submits the form's first button: make that Save, not a row button. #}
   <button type="submit" name="op" value="save" class="default-submit" tabindex="-1" aria-hidden="true" style="position: absolute; left: -9999px"{% if archived_note %} disabled{% endif %}>Save</button>
   {{ form.non_field_errors }}
@@ -89,6 +93,9 @@ create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url.
     <button type="submit" name="op" value="save">Create</button>
     {% else %}
     <button type="submit" name="op" value="save"{% if archived_note %} disabled title="Archived — unarchive to edit"{% endif %}>Save</button>
+    <button type="submit" name="action" value="publish"{% if archived_publish %} disabled title="{{ archived_publish }}"{% endif %}>Save &amp; publish</button>{% if archived_publish %} <small class="muted">({{ archived_publish }})</small>{% endif %}
+    <button type="submit" formaction="{{ validate_url }}" formmethod="post" formnovalidate hx-post="{{ validate_url }}" hx-target="#report" hx-swap="innerHTML">Validate saved draft</button>
+    <small class="muted validate-note">{% if unsaved %}Unsaved edits are not included — save first{% else %}Validates the last saved draft{% endif %}</small>
     {% endif %}
   </p>
 </form>

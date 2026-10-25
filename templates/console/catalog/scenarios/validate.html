@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Validation — {{ name }} — Scenarios — Epistrel Console{% endblock %}
+{% block heading %}Validation — {{ name }}{% endblock %}
+{% block content %}
+{% comment %}#74: Validate without JS: the report (or the error panel) and a link back. Context: name, back_url, shown or engine_error.{% endcomment %}
+<p><a class="back" href="{{ back_url }}">Back</a></p>
+<div id="report">{% include "console/catalog/scenarios/_validate_result.html" %}</div>
+{% endblock %}

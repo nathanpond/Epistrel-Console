@@ -413,6 +413,14 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
         }
     )
     context["is_archived"] = entry.status == ARCHIVED
+    # #74: the companion, on every view (after the character's own reads).
+    context["companion"] = _companion_box(
+        request,
+        client,
+        entry,
+        character_id,
+        editable=isinstance(entry, CatalogCharacter) and version is None,
+    )
     if isinstance(entry, CatalogCharacter):
         context["references"] = _reference_images(entry, infos)
         context["dispositions"] = _dispositions(entry)
@@ -976,6 +984,52 @@ def character_publish(request: HttpRequest, character_id: str) -> HttpResponse:
         messages.error(request, f"Not published: {error_text(exc)}")
         return redirect(detail)
     return _published_redirect(request, client, character_id, published, with_companion)
+
+
+@dataclass(frozen=True)
+class CompanionBox:
+    """The detail page's "Companion scenario" (#74): the companion's card (its latest version,
+    or its draft while never published) linked by name, "Edit companion" (``show_edit``: the
+    full latest and draft views; disabled while the companion is ``archived``), "No companion"
+    (``none``), or the scenario id (when known) and why the read failed."""
+
+    scenario_id: str = ""
+    name: str = ""
+    url: str = ""
+    edit_url: str = ""
+    archived: bool = False
+    show_edit: bool = False
+    none: bool = False
+    error: str = ""
+
+
+COMPANION_LINK = "Companion scenario"
+
+
+def _companion_box(
+    request: HttpRequest,
+    client: EngineClient,
+    entry: CatalogCharacter | CatalogCharacterCard,
+    character_id: str,
+    *,
+    editable: bool,
+) -> CompanionBox:
+    known = entry.companion_id if isinstance(entry, CatalogCharacter) else None
+    if isinstance(entry, CatalogCharacter) and known is None:
+        return CompanionBox(none=True)
+    try:
+        card = client.get_catalog_character_companion_card(character_id)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return CompanionBox(scenario_id=known or "", error=error_text(exc))
+    return CompanionBox(
+        scenario_id=card.id,
+        name=card.name or COMPANION_LINK,
+        url=reverse("scenarios:detail", args=[card.id]),
+        edit_url=reverse("scenarios:edit", args=[card.id]),
+        archived=card.status == ARCHIVED,
+        show_edit=editable,
+    )
 
 
 @dataclass(frozen=True)

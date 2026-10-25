@@ -79,6 +79,7 @@ from console.engine.models import (
     ScenarioDraft,
     ScenarioListItem,
     ScenarioPage,
+    ScenarioPublished,
     ScenarioStatus,
     Story,
     StoryCharacterAdded,
@@ -92,6 +93,7 @@ from console.engine.models import (
     SwapResult,
     TruncateResult,
     UntruncateResult,
+    ValidationResult,
     VariantChain,
     Variants,
 )
@@ -1552,6 +1554,15 @@ class EngineClient:
         path = f"{_character_path(character_id)}/companion"
         return _parse(self._request("GET", path, params=params), CompanionDraft)
 
+    def get_catalog_character_companion_card(self, character_id: str) -> ScenarioCard:
+        """``GET /catalog/characters/{id}/companion?projection=card`` (#74): the companion's
+        latest published card, or its draft's while it was never published. Not registered on
+        its own (the registry keys by method and path, which
+        :meth:`get_catalog_character_companion` holds)."""
+        path = f"{_character_path(character_id)}/companion"
+        response = self._request("GET", path, params={"projection": "card"})
+        return _parse(response, ScenarioCard)
+
     # --- personas (#67) -------------------------------------------------------------------------
 
     @operation("GET", "/personas", response_model=PersonaPage)
@@ -1756,6 +1767,60 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         return _parse(response, ScenarioDraft)
+
+    @operation(
+        "POST",
+        "/catalog/scenarios/{scenario_id}/validate",
+        response_model=ValidationResult,
+        recorded=True,
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def validate_scenario(
+        self,
+        scenario_id: str,
+        *,
+        draft_revision: int | None = None,
+        version: int | None = None,
+    ) -> ValidationResult:
+        """``POST /catalog/scenarios/{id}/validate`` (#74): the checks a publish runs, as the
+        catalog stands now, writing nothing (no ``Idempotency-Key``). The draft by default
+        (``draft_revision``, when given, must still be the draft's: else 409 ``draft_stale``);
+        published version ``version`` instead (``?version=``, no revision sent). Recorded in
+        the operation log: it requires a principal."""
+        body: dict[str, int] = {}
+        if draft_revision is not None and version is None:
+            body["draft_revision"] = draft_revision
+        response = self._request(
+            "POST",
+            f"{_scenario_path(scenario_id)}/validate",
+            params={"version": str(version)} if version is not None else None,
+            json=body,
+            timeout=CATALOG_PUBLISH,
+        )
+        return _parse(response, ValidationResult)
+
+    @operation(
+        "POST",
+        "/catalog/scenarios/{scenario_id}/publish",
+        response_model=ScenarioPublished,
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def publish_scenario(
+        self, scenario_id: str, *, draft_revision: int, idempotency_key: str
+    ) -> ScenarioPublished:
+        """``POST /catalog/scenarios/{id}/publish`` (#74): the draft at ``draft_revision`` as the
+        next version. Any validation error is 422 ``publish_invalid`` with ``details.report``; a
+        companion published alone is pinned to its character's latest published version."""
+        response = self._request(
+            "POST",
+            f"{_scenario_path(scenario_id)}/publish",
+            json={"draft_revision": draft_revision},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=CATALOG_PUBLISH,
+        )
+        return _parse(response, ScenarioPublished)
 
     # --- catalog lifecycle and listing status (#69) ---------------------------------------------
     #

@@ -127,13 +127,15 @@ class FakeEngine:
         headers: dict[str, str] | None = None,
         delay: float = 0.0,
     ) -> None:
-        """Answer ``method path`` (a schema path template) with this, until replaced.
+        """Answer ``method path`` (a schema path template) with this, until replaced (a
+        :meth:`side_effect` on it too).
 
         Refused unless the schema declares the operation and the status, and the JSON body
         validates against that status's response schema.
         """
         method = method.upper()
         self._sequences.pop((method, path), None)
+        self._effects.pop((method, path), None)  # a canned answer replaces a side effect
         self._canned[(method, path)] = self._validated(method, path, status, json, headers, delay)
 
     def respond_sequence(self, method: str, path: str, answers: list[dict[str, Any]]) -> None:

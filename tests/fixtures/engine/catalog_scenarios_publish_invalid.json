@@ -1,0 +1,48 @@
+{
+  "error": {
+    "code": "publish_invalid",
+    "message": "the draft cannot be published",
+    "details": {
+      "entity": "scenario",
+      "scenario_id": "01JC000000000000000000SCN2",
+      "report": {
+        "errors": [
+          {
+            "code": "opening_narration_missing",
+            "location": {
+              "entry": "01JC000000000000000000SCN2",
+              "version": "draft",
+              "field": "starting_state.opening.narration",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "FR-SCN-5: an opening narration is required to publish",
+            "source": null,
+            "text": null
+          },
+          {
+            "code": "world_description_missing",
+            "location": {
+              "entry": "01JC000000000000000000SCN2",
+              "version": "draft",
+              "field": "world.description",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "FR-SCN-5: a world description is required to publish",
+            "source": null,
+            "text": null
+          }
+        ],
+        "warnings": [],
+        "unavailable": [
+          "seed_normalization",
+          "fact_consistency",
+          "state_schema"
+        ]
+      }
+    }
+  }
+}

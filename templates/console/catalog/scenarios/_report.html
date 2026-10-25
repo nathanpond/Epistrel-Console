@@ -1,0 +1,17 @@
+{% comment %}#74: a scenario's validation or publish report (console.catalog.scenario_report.ShownReport),
+each entry's location through #64's _location.html. Context: shown.{% endcomment %}<section class="report scenario-report">
+  <h3>{% if shown.label %}{{ shown.label }} · {% endif %}{{ shown.heading }}: <span class="headline {% if shown.valid %}valid{% else %}invalid{% endif %}">{{ shown.headline }}</span></h3>
+  {% if shown.errors %}
+  <h4>Errors ({{ shown.errors|length }})</h4>
+  <ul class="report-errors">
+    {% for item in shown.errors %}{% with entry=item.entry %}<li class="entry error"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location anchor_base=shown.anchor_base anchors=shown.anchors entry_url=item.entry_url entry_label=item.entry_label %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endwith %}{% endfor %}
+  </ul>
+  {% endif %}
+  {% if shown.warnings %}
+  <h4>Warnings ({{ shown.warnings|length }})</h4>
+  <ul class="report-warnings">
+    {% for item in shown.warnings %}{% with entry=item.entry %}<li class="entry warning"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location anchor_base=shown.anchor_base anchors=shown.anchors entry_url=item.entry_url entry_label=item.entry_label %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endwith %}{% endfor %}
+  </ul>
+  {% endif %}
+  {% if shown.unavailable %}<p class="unavailable muted">Checks the Engine could not run: {% for name, code in shown.unavailable %}{% if name %}{{ name }} (<code>{{ code }}</code>){% else %}<code>{{ code }}</code>{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+</section>

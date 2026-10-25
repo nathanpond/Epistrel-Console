@@ -177,6 +177,17 @@ scenario_patterns = (
         path("new/", catalog_scenarios.scenario_new, name="new"),
         path("<str:scenario_id>/", catalog_scenarios.scenario_detail, name="detail"),
         path("<str:scenario_id>/edit/", catalog_scenarios.scenario_edit, name="edit"),
+        # #74: a dry run, and the detail page's Publish.
+        path(
+            "<str:scenario_id>/validate/",
+            catalog_scenarios.scenario_validate,
+            name="validate",
+        ),
+        path(
+            "<str:scenario_id>/publish/",
+            catalog_scenarios.scenario_publish,
+            name="publish",
+        ),
         path(
             "<str:scenario_id>/versions/",
             catalog_scenarios.scenario_versions,

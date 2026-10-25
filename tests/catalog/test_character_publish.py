@@ -347,9 +347,10 @@ def test_the_detail_page_offers_publish_and_edit(
     html = operator_client.get(DETAIL).content.decode()
     assert f'href="{EDIT}"' in html
     assert f'action="{PUBLISH_URL}"' in html
-    # The latest view reads the draft (its revision is what Publish names) and the companion.
+    # The latest view reads the draft (its revision is what Publish names) and the companion's
+    # draft (#74 adds the companion's card, for its link).
     assert len(calls(engine, "GET", ITEM.format(character_id=CHAR))) == 2
-    assert len(calls(engine, "GET", COMPANION.format(character_id=CHAR))) == 1
+    assert len(companion_draft_reads(engine)) == 1
 
 
 def test_the_detail_publish_names_the_draft_revision(
@@ -407,7 +408,7 @@ def test_detail_publish_is_disabled_when_the_draft_read_fails(
     html = operator_client.get(DETAIL).content.decode()
     assert "The draft could not be read: 503 database_unavailable" in html
     assert re_disabled(html)
-    assert calls(engine, "GET", COMPANION.format(character_id=CHAR)) == []
+    assert companion_draft_reads(engine) == []
 
 
 def re_disabled(html: str) -> bool:
@@ -508,3 +509,9 @@ def test_stale_banner_names_the_stale_side() -> None:
     assert stale_banner(stale(current_draft_revision=8), draft_revision=5).startswith(
         "This draft was saved elsewhere (now revision 8)"
     )
+
+
+def companion_draft_reads(engine: FakeEngine) -> list[Any]:
+    """The companion reads in ``full`` (#66's Publish), not #74's card read for the link."""
+    reads = calls(engine, "GET", COMPANION.format(character_id=CHAR))
+    return [r for r in reads if r.url.params.get("projection") == "full"]
