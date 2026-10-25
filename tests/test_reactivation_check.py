@@ -302,6 +302,39 @@ def test_the_poll_partial_reads_only_the_check_and_renders_the_ending(
     ]
 
 
+def test_a_starting_check_shows_an_indeterminate_progress(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    hold(operator_client, engine, "swap")
+    engine.reset()
+    engine.respond("GET", CHECK_PATH, 200, json=check_json(progress={"done": 0, "total": 0}))
+
+    html = page(operator_client, f"{CHECK_PAGE}?op=swap", **HTMX)
+
+    assert "<progress></progress>" in html
+    assert "starting…" in html
+
+
+def test_an_ended_check_with_no_records_says_nothing_to_check(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#163/#166: a re-check that finished having counted no records does not read as starting."""
+    hold(operator_client, engine, "swap")
+    engine.reset()
+    engine.respond(
+        "GET",
+        CHECK_PATH,
+        200,
+        json=check_json("refused", progress={"done": 0, "total": 0}, violations=[VIOLATION]),
+    )
+
+    html = page(operator_client, f"{CHECK_PAGE}?op=swap", **HTMX)
+
+    assert "nothing to check" in html
+    assert "starting…" not in html
+    assert "<progress" not in html
+
+
 def test_a_missing_op_falls_back_to_the_outcome(
     operator_client: Client, engine: FakeEngine
 ) -> None:
