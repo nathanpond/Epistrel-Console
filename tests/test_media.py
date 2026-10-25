@@ -289,6 +289,50 @@ def test_upload_streams_metadata_and_file_and_records_no_bytes(
     assert KnownPrincipal.objects.filter(principal="alice").exists()
 
 
+@pytest.mark.parametrize("status", [201, 422])
+def test_the_console_keeps_no_copy_of_an_uploaded_file(
+    operator_client: Client,
+    engine: FakeEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    """The file goes to ``POST /media`` and nowhere else: Django's temporary copy is gone after
+    the request and nothing is saved to Console storage, whether the Engine takes it or not."""
+    from django.core.files import uploadedfile
+    from django.core.files.storage import default_storage
+
+    temp_dir, media_root = tmp_path / "tmp", tmp_path / "media"
+    temp_dir.mkdir()
+    media_root.mkdir()
+    created: list[Path] = []
+    real_init = uploadedfile.TemporaryUploadedFile.__init__
+
+    def recording_init(self: uploadedfile.TemporaryUploadedFile, *args: Any, **kw: Any) -> None:
+        real_init(self, *args, **kw)
+        created.append(Path(self.temporary_file_path()))
+
+    monkeypatch.setattr(uploadedfile.TemporaryUploadedFile, "__init__", recording_init)
+    answer_lookups(engine)
+    body = uploaded() if status == 201 else error("validation_failed")
+    engine.respond("POST", LIST, status, json=body)
+    # A threshold below the file's size makes Django spool it to a temporary file, as it does
+    # for any upload above the default 2.5 MB.
+    with override_settings(
+        FILE_UPLOAD_MAX_MEMORY_SIZE=len(PNG) - 1,
+        FILE_UPLOAD_TEMP_DIR=str(temp_dir),
+        MEDIA_ROOT=str(media_root),
+    ):
+        response = operator_client.post(UPLOAD, upload_data())
+        assert response.status_code == (302 if status == 201 else 200)
+        assert parts(posts(engine)[0])[1][3] == PNG
+        assert [p.parent for p in created] == [temp_dir]
+        assert not any(p.exists() for p in created)
+        assert list(temp_dir.iterdir()) == []
+        assert list(media_root.iterdir()) == []
+        assert default_storage.listdir("") == ([], [])
+
+
 def test_a_video_sends_its_poster_file_after_the_file(
     operator_client: Client, engine: FakeEngine
 ) -> None:

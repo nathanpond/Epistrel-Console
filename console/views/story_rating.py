@@ -646,11 +646,14 @@ class CheckView:
 
     @property
     def progress(self) -> str:
-        return progress_text(self.check.progress.done, self.check.progress.total)
+        progress = self.check.progress
+        return progress_text(progress.done, progress.total, ended=self.terminal)
 
     @property
     def indeterminate(self) -> bool:
-        return self.check.progress.total == 0
+        """No records counted yet while the check runs: an indeterminate bar. An ended check
+        with none shows no bar, only "nothing to check"."""
+        return self.check.progress.total == 0 and not self.terminal
 
     @property
     def target_name(self) -> str:
@@ -791,11 +794,12 @@ class ReactivationView:
     def progress(self) -> str:
         if self.check is None:
             return ""
-        return progress_text(self.check.progress.done, self.check.progress.total)
+        progress = self.check.progress
+        return progress_text(progress.done, progress.total, ended=self.ended)
 
     @property
     def indeterminate(self) -> bool:
-        return self.check is not None and self.check.progress.total == 0
+        return self.check is not None and self.check.progress.total == 0 and not self.ended
 
     @property
     def error_class(self) -> str:

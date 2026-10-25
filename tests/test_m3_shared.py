@@ -669,6 +669,34 @@ def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) 
     assert nav.index(">Engine<") < nav.index(">Operations<") < nav.index(">Admin<")
 
 
+def _nav(html: str) -> str:
+    return html[html.index('<nav class="shell">') : html.index("</nav>")]
+
+
+@pytest.mark.django_db
+@override_settings(ROOT_URLCONF="tests.urls_no_offboarding")
+def test_a_section_is_absent_while_its_url_is_missing(operator_client: Client) -> None:
+    nav = _nav(operator_client.get("/operations/").content.decode())
+    assert ">Offboarding<" not in nav
+    assert "/offboarding/" not in nav
+    # The sections whose URLs do resolve still show.
+    assert '<a href="/principals/">Principals</a>' in nav
+    assert '<a href="/erasure/">Erasure</a>' in nav
+
+
+@pytest.mark.django_db
+@override_settings(ROOT_URLCONF="tests.urls_no_catalog")
+def test_the_catalog_group_is_absent_while_none_of_its_urls_exist(
+    operator_client: Client,
+) -> None:
+    nav = _nav(operator_client.get("/operations/").content.decode())
+    assert "Catalog:" not in nav
+    assert "nav-group" not in nav
+    for label in (">Characters<", ">Scenarios<", ">Personas<", ">Media<"):
+        assert label not in nav
+    assert '<a href="/operations/" class="active">Operations</a>' in nav
+
+
 @pytest.mark.django_db
 @override_settings(ROOT_URLCONF="tests.urls_m3")
 def test_m3_sections_show_in_order_once_their_urls_exist(operator_client: Client) -> None:

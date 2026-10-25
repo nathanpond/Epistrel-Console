@@ -407,9 +407,16 @@ def _unsigned(request: HttpRequest) -> Signed | None:
 
 
 def _dry_run(
-    request: HttpRequest, client: EngineClient, subject: SubjectRef, scope: Any
+    request: HttpRequest,
+    client: EngineClient,
+    subject: SubjectRef,
+    scope: Any,
+    choice: Choice | None = None,
 ) -> HttpResponse:
-    choice = choice_of(subject, scope)
+    """The dry run; a refusal re-renders the form with ``choice`` (the posted values, so a
+    catalog scope keeps the story a story character was picked from), else with the values
+    the request was built from."""
+    choice = choice or choice_of(subject, scope)
     try:
         preview = client.erase(subject, scope, dry_run=True)
     except EngineClientError as exc:
@@ -431,7 +438,7 @@ def erasure_preview(request: HttpRequest) -> HttpResponse:
     if not form.is_valid():
         errors = {name: [str(e) for e in found] for name, found in form.errors.items()}
         return _render_form(request, client, form.choice(), errors=errors)
-    return _dry_run(request, client, form.subject_ref(), form.scope_ref())
+    return _dry_run(request, client, form.subject_ref(), form.scope_ref(), form.choice())
 
 
 # --- the real run ---------------------------------------------------------------------------------

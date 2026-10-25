@@ -34,6 +34,7 @@ REACTIVATION_TEXT = "Paused: guardrail re-check before {op}"
 AN_EDIT = "an edit"  # a reactivation whose op the Console did not record
 UNAVAILABLE_TEXT = "Paused — check status unavailable"
 STARTING = "starting…"
+NOTHING_TO_CHECK = "nothing to check"  # #163: an ended check that counted no records
 # Disabled controls while paused (#80's wording).
 TURN_NOTE = "Paused — turns are refused until the check finishes"
 CONTROLS_NOTE = "Paused while the check runs"
@@ -49,9 +50,12 @@ def check_url(story_id: str, job_id: str, **params: str) -> str:
     return f"{path}?{urlencode(params)}" if params else path
 
 
-def progress_text(done: int, total: int) -> str:
-    """``done/total``, or "starting…" before the Engine has counted the records."""
-    return STARTING if total == 0 else f"{done}/{total}"
+def progress_text(done: int, total: int, *, ended: bool = False) -> str:
+    """``done/total``, or with no records counted "starting…" while the check runs and
+    "nothing to check" once it has ended (#163)."""
+    if total == 0:
+        return NOTHING_TO_CHECK if ended else STARTING
+    return f"{done}/{total}"
 
 
 def cause_text(cause: str, op: str = "") -> str:

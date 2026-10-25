@@ -696,6 +696,29 @@ def test_a_starting_check_shows_an_indeterminate_progress(
     assert "starting…" in html
 
 
+def test_an_ended_check_with_no_records_says_nothing_to_check(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#163: a check that finished having counted no records does not read as starting."""
+    engine.respond(
+        "GET",
+        CHECK,
+        200,
+        json=check_json(
+            "applied",
+            progress={"done": 0, "total": 0},
+            finished_at="2026-10-24T21:40:01Z",
+            rating_version="01M5R0RTVOLD00000000000001",
+        ),
+    )
+
+    html = operator_client.get(CHECK_URL, headers=HTMX).content.decode()
+
+    assert "nothing to check" in html
+    assert "starting…" not in html
+    assert "<progress" not in html
+
+
 def test_a_check_404_says_it_expired(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", STORY_PATH, 200, json=story_json())
     engine.respond("GET", CHECK, 404, json=error_json("not_found", "no such check"))

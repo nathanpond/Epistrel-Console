@@ -251,6 +251,36 @@ def test_validate_on_the_draft_view_names_its_revision(
     assert form_fields(html, "validate-form")["draft_revision"] == "5"
 
 
+def test_reports_render_through_the_shared_partial(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#160: one report partial for every page (#64's), not a scenario copy of it."""
+    data = posted(edit_page(operator_client, engine, fixture("draft_cast")))
+    answer_validate(engine, "validate_invalid")
+    response = operator_client.post(VALIDATE_URL, as_post(data), headers=HTMX)
+    used = [t.name for t in response.templates]
+    assert "console/_validation_report.html" in used
+    assert not [name for name in used if name and name.startswith("console/catalog/scenarios/_r")]
+
+
+def test_an_entry_about_the_scenario_itself_shows_only_its_field(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#161: no "entry <own id> vdraft"; an entry about another id keeps it, with its version."""
+    data = posted(edit_page(operator_client, engine))
+    answer_validate(engine, "validate_invalid")
+    html = operator_client.post(VALIDATE_URL, as_post(data), headers=HTMX).content.decode()
+    errors = html[html.index('<ul class="report-errors">') : html.index("</ul>")]
+    assert SCN not in errors
+    assert "vdraft" not in html
+    assert (
+        '<span class="location">field <a href="#f-starting_state-opening-narration">'
+        "<code>starting_state.opening.narration</code></a></span>"
+    ) in errors
+    warnings = html[html.index('<ul class="report-warnings">') :]
+    assert f"entry <code>{CHAR}</code> v2 · role <code>mother</code>" in warnings
+
+
 def test_each_report_group_renders(operator_client: Client, engine: FakeEngine) -> None:
     data = posted(edit_page(operator_client, engine, fixture("draft_cast")))
     answer_validate(engine, "validate_invalid")

@@ -7,7 +7,7 @@ the read failed), not_found/not_found_text, engine_error, not_changed, rating_ur
 {% elif view %}
 <dl class="check-status">
   <dt>Status</dt><dd class="status status-{{ view.check.status }}">{{ view.check.status }}</dd>
-  <dt>Progress</dt><dd>{% if view.indeterminate %}<progress></progress>{% else %}<progress value="{{ view.check.progress.done }}" max="{{ view.check.progress.total }}">{{ view.progress }}</progress>{% endif %} {{ view.progress }}</dd>
+  <dt>Progress</dt><dd>{% if view.indeterminate %}<progress></progress> {% elif view.check.progress.total %}<progress value="{{ view.check.progress.done }}" max="{{ view.check.progress.total }}">{{ view.progress }}</progress> {% endif %}{{ view.progress }}</dd>
 </dl>
 {% if view.check.status == "applied" %}
 <p class="notice check-applied"><strong>Rating changed to <em>{{ view.target_name }}</em></strong></p>

@@ -802,6 +802,10 @@ def test_invalid_scope_shows_at_the_scope(operator_client: Client, engine: FakeE
     assert sent(call)["scope"] == {"catalog": True}  # a crafted POST reaches the Engine
     block = html[html.index('id="f-scope"') :]
     assert "can&#x27;t be erased from the catalog" in block[: block.index("</fieldset>")]
+    # #162: the form keeps the story the character was picked from, so the character is listed.
+    assert selected(html, "story") == STORY
+    assert selected(html, "subject") == TOBIN
+    assert "(not listed)" not in html
 
 
 @pytest.mark.parametrize(

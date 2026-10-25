@@ -30,13 +30,15 @@ adds a row, ``op=up:<prefix>-<n>`` / ``op=down:<prefix>-<n>`` move one, and
 
 Engine refusals land at their slot (:meth:`MediaSections.place`): the Engine's list index maps to
 the row sent at that index (blank and removed rows dropped, in order). ``media_retired`` reads
-"This asset is retired — choose another"; a refusal or report entry that names only a media id
+"This asset is retired — choose another", or "No such asset — choose another" when its
+``details.reason`` is ``unknown`` (#164); a refusal or report entry that names only a media id
 marks every slot holding it.
 """
 
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 from urllib.parse import urlencode
 
@@ -73,6 +75,7 @@ CAPTION_TEXT = f"At most {CAPTION_MAX} characters"
 NEEDS_ID_TEXT = "Choose a media asset or remove this row"
 DUPLICATE_TEXT = "Already in this list (row {n})"
 RETIRED_TEXT = "This asset is retired — choose another"
+UNKNOWN_TEXT = "No such asset — choose another"
 MEDIA_RETIRED = "media_retired"
 # ``a_b__c_d``: lowercase letters and underscores. One character class, no nested repeat, so
 # matching is linear (the earlier ``[a-z_]+(__[a-z_]+)*`` accepted the same strings but could
@@ -80,6 +83,15 @@ MEDIA_RETIRED = "media_retired"
 FIELD_NAME = re.compile(r"^[a-z_]+$")
 # ``gallery[3].audience`` and the ``gallery.3.audience`` spelling of a validation error's path.
 _INDEX = re.compile(r"^(?:\[(?P<a>\d+)\]|\.(?P<b>\d+))(?:\.(?P<rest>.+))?$")
+
+
+def refusal_text(code: str, message: str, reason: object = None) -> str:
+    """A refusal's text at its slot: ``media_retired`` in the Console's words, by
+    ``details.reason`` (the Engine answers an unknown id as ``media_retired``, ``reason:
+    unknown``); any other code the Engine's ``message``."""
+    if code != MEDIA_RETIRED:
+        return message
+    return UNKNOWN_TEXT if reason == "unknown" else RETIRED_TEXT
 
 
 # --- fields and row forms -------------------------------------------------------------------------
@@ -836,12 +848,13 @@ class MediaSections:
                 return section.path, None, None, ""
         return None
 
-    def place(self, path: str, message: str, code: str = "") -> bool:
-        """Place one refusal at its slot; ``False`` when ``path`` names none of the sections."""
+    def place(self, path: str, message: str, code: str = "", reason: object = None) -> bool:
+        """Place one refusal at its slot; ``False`` when ``path`` names none of the sections.
+        ``reason``: the refusal's ``details.reason``."""
         target = self._target(path)
         if target is None:
             return False
-        text = RETIRED_TEXT if code == MEDIA_RETIRED else message
+        text = refusal_text(code, message, reason)
         section_path, formset, index, rest = target
         if formset is None:
             spec = next(s for s in self.specs if s.path == section_path)
@@ -883,9 +896,9 @@ class MediaSections:
             and not isinstance(error.details.get("field"), str)
             and not error.details.get("errors")
         ):
-            text = RETIRED_TEXT if error.code == MEDIA_RETIRED else error.message
-            self.place_media_id(media_id, text)
-        return self.place
+            reason = error.details.get("reason")
+            self.place_media_id(media_id, refusal_text(error.code, error.message, reason))
+        return partial(self.place, reason=error.details.get("reason"))
 
     def place_report(self, report: ValidationReport) -> int:
         """Note each report error beside its slot (a ``media_id``-only entry at every slot

@@ -8,7 +8,7 @@ engine_error, story_url, variants_url. The heading sits in the partial so it fol
 {% elif rx.check %}
 <dl class="check-status">
   <dt>Status</dt><dd class="status status-{{ rx.check.status }}">{{ rx.check.status }}</dd>
-  <dt>Progress</dt><dd>{% if rx.indeterminate %}<progress></progress>{% else %}<progress value="{{ rx.check.progress.done }}" max="{{ rx.check.progress.total }}">{{ rx.progress }}</progress>{% endif %} {{ rx.progress }}</dd>
+  <dt>Progress</dt><dd>{% if rx.indeterminate %}<progress></progress> {% elif rx.check.progress.total %}<progress value="{{ rx.check.progress.done }}" max="{{ rx.check.progress.total }}">{{ rx.progress }}</progress> {% endif %}{{ rx.progress }}</dd>
 </dl>
 {% if rx.waiting %}
 <p class="notice reactivation-waiting">{{ rx_text.waiting }}</p>
