@@ -27,7 +27,17 @@ from tests.fakes.feedback import settings_json as feedback_settings
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
 from tests.history import helpers as history_helpers
-from tests.play.helpers import MARA, STORY, TOBIN, answer_page, history_json, story_json
+from tests.play.helpers import (
+    MARA,
+    QUEUED_OP,
+    RESPOND,
+    STORY,
+    TOBIN,
+    answer_page,
+    history_json,
+    post_turn,
+    story_json,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -220,6 +230,33 @@ def test_an_archived_story_still_offers_rating(
     assert "disabled" not in form
     response = save(operator_client, form, rating="3")
     assert "Rated 3" in response.content.decode()
+
+
+def test_rating_stays_enabled_while_a_turn_runs(
+    operator_client: Client, engine: FakeEngine, store: FeedbackStore
+) -> None:
+    """A queued turn disables the turn form, never an earlier reply's Rate control."""
+    answer_page(engine, history=history_with(player_input(), item(REPLY)))
+    engine.respond(
+        "POST",
+        RESPOND,
+        202,
+        json={"operation_id": QUEUED_OP, "position": 1},
+        headers={"Location": f"/operations/{QUEUED_OP}"},
+    )
+    post_turn(operator_client)
+    html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    assert "Waiting for the queued turn to finish." in html  # the turn is still running
+    assert widget_ids(html, "play") == [REPLY]
+    control = html[html.index(f'id="feedback-play-{REPLY}"') :]
+    control = control[: control.index("</div>")]
+    assert f'class="feedback-rate" href="{open_url()}&amp;' in control
+    assert "disabled" not in control
+    form = opened(operator_client)
+    assert "disabled" not in form
+    response = save(operator_client, form, rating="3")
+    assert "Rated 3" in response.content.decode()
+    assert len(requests(engine, "PUT")) == 1
 
 
 # --- opening the form ---------------------------------------------------------------------------
