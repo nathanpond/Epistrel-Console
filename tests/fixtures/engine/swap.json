@@ -1,0 +1,12 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": "01M5R6ZBQH55KTJVBBZG2SJQ1A",
+  "operation_id": "01M5R6ZBQZSZ942RNFW23BSJBM",
+  "next_turn_index": 5,
+  "active_chain": {
+    "turn": 4,
+    "variant": 2
+  },
+  "activated_operations": 1,
+  "dormant_operations": 2
+}

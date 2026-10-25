@@ -1,0 +1,125 @@
+{
+  "id": "01JA0000000000000000000OP3",
+  "story_id": "01JA0000000000000000000ST1",
+  "kind": "turn",
+  "status": "committed",
+  "narrative_turn": 3,
+  "turn_variant": 1,
+  "timeline_revision": 7,
+  "principal": "console:nate",
+  "started_at": "2026-10-24T12:00:00Z",
+  "committed_at": "2026-10-24T12:00:01Z",
+  "viewpoint": "character:01JA0000000000000000000CH1",
+  "origin": "generated",
+  "batch_operation_ids": null,
+  "attempts": [],
+  "config_revisions": {
+    "story": 4
+  },
+  "idempotency_key": "01JA0000000000000000000KEY",
+  "queued_ms": null,
+  "first_call_offset_ms": 12,
+  "label": null,
+  "stages": [],
+  "result": {
+    "status": 200,
+    "body": {
+      "timeline_revision": 7,
+      "message": {
+        "message_id": "01JA0000000000000000000MS1",
+        "text": "Mara nods."
+      },
+      "beats": [
+        {
+          "turn": 3,
+          "variant": 1,
+          "beat": 0,
+          "kind": "say",
+          "actor_character_id": "01JA0000000000000000000CH2",
+          "render_character_ids": [
+            "01JA0000000000000000000CH1"
+          ],
+          "channel": "say",
+          "text": "Hello.",
+          "operation_id": "01JA0000000000000000000OP3",
+          "message_id": "01JA0000000000000000000MS0",
+          "origin": "generated"
+        },
+        {
+          "turn": 3,
+          "variant": 1,
+          "beat": 1,
+          "kind": "say",
+          "actor_character_id": "01JA0000000000000000000CH1",
+          "render_character_ids": [],
+          "channel": "say",
+          "text": "Mara nods.",
+          "operation_id": "01JA0000000000000000000OP3",
+          "message_id": "01JA0000000000000000000MS1",
+          "origin": "generated"
+        }
+      ],
+      "turn": 3,
+      "variant": 1,
+      "output_viewpoint": "character:01JA0000000000000000000CH1",
+      "audience_filter": "none",
+      "model_calls": [
+        {
+          "purpose": "generation",
+          "model": "openai/gpt-test",
+          "attempt": 1,
+          "outcome": "ok",
+          "latency_ms": 812,
+          "tokens_in": 1200,
+          "tokens_out": 80,
+          "cost": 0.0012,
+          "finish_reason": "stop",
+          "request_id": "req-1"
+        },
+        {
+          "purpose": "guardrail_check",
+          "model": "openai/gpt-mini",
+          "attempt": 1,
+          "outcome": "ok",
+          "latency_ms": 120,
+          "tokens_in": 300,
+          "tokens_out": 5
+        }
+      ],
+      "elapsed_ms": 950,
+      "degradation": [],
+      "degradation_details": [],
+      "guardrail": {
+        "violations": [],
+        "fallback_used": false
+      },
+      "call_counts": {
+        "generation": 1,
+        "guardrail_check": 1
+      },
+      "budget": {
+        "max_calls": 10,
+        "reserved": {
+          "guardrail_output": 1
+        },
+        "used": 2
+      },
+      "fingerprint": "sha256:abc",
+      "capabilities": [
+        "lite"
+      ],
+      "quality_status": {
+        "status": "uncertified"
+      },
+      "profile": {
+        "id": "lite",
+        "version": 1
+      },
+      "config_revision": 4,
+      "queued_ms": null,
+      "first_call_offset_ms": 12,
+      "warnings": [],
+      "idempotency_key": "01JA0000000000000000000KEY"
+    }
+  }
+}

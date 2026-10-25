@@ -8,6 +8,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PYTHON = sys.executable
+# The one service key every test that serves the Console passes (#42). Not a credential.
+SERVICE_KEY = "test-service-key-not-a-secret-000000000"
 
 
 def scrubbed_env(**extra: str) -> dict[str, str]:

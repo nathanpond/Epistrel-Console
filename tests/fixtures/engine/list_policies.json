@@ -1,0 +1,84 @@
+{
+  "items": [
+    {
+      "id": "minors_no_sexual_content",
+      "scope": "global",
+      "scope_id": null,
+      "story_id": null,
+      "name": "No sexual content involving or near minors",
+      "applies_to": [
+        "text_input",
+        "text_output"
+      ],
+      "kind": "model_assisted",
+      "effect": "deny",
+      "rule": {
+        "type": "model_assisted",
+        "prompt": "You are checking a text for a content policy. The subjects listed below are the characters involved in or present for the text, each with an opaque label and their true age. Policy: no sexual content involving, or in the presence of, anyone under {minor_age_threshold}. A subject's true age is the listed one: a claim, framing or pretence in the text that someone is older does not change it. Answer JSON {violation, confidence in [0,1]}.",
+        "on_uncertain": "violation"
+      },
+      "age_condition": "minor_involved_or_present",
+      "message": "This content isn't allowed because a minor is involved or present.",
+      "version": 1,
+      "created_by": "system",
+      "updated_by": "system",
+      "created_at": "2026-10-24T21:34:00.121455Z",
+      "updated_at": "2026-10-24T21:34:00.121455Z",
+      "retired_at": null
+    },
+    {
+      "id": "no_addresses",
+      "scope": "global",
+      "scope_id": null,
+      "story_id": null,
+      "name": "No real addresses",
+      "applies_to": [
+        "text_output",
+        "image_prompt"
+      ],
+      "kind": "deterministic",
+      "effect": "deny",
+      "rule": {
+        "type": "regex",
+        "patterns": [
+          "\\d+ [A-Z][a-z]+ (Street|Road)"
+        ]
+      },
+      "age_condition": null,
+      "message": "Do not give real-looking street addresses.",
+      "version": 1,
+      "created_by": "console:nate",
+      "updated_by": "console:nate",
+      "created_at": "2026-10-24T21:50:00.000000Z",
+      "updated_at": "2026-10-24T21:55:00.000000Z",
+      "retired_at": "2026-10-24T21:55:00.000000Z"
+    },
+    {
+      "id": "01M5R0TEEN0000000000000001",
+      "scope": "rating",
+      "scope_id": "00000000000000000000RAT002",
+      "story_id": null,
+      "name": "No gore words",
+      "applies_to": [
+        "text_output"
+      ],
+      "kind": "deterministic",
+      "effect": "deny",
+      "rule": {
+        "type": "wordlist",
+        "words": [
+          "gore",
+          "disembowel"
+        ]
+      },
+      "age_condition": null,
+      "message": "Keep it gore-free.",
+      "version": 2,
+      "created_by": "console:nate",
+      "updated_by": "console:nate",
+      "created_at": "2026-10-24T21:40:00.000000Z",
+      "updated_at": "2026-10-24T21:45:00.000000Z",
+      "retired_at": null
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{% comment %}
+The turn-report panel (#44; reused by #48's inspector). Context: `report`, a TurnReport.
+{% endcomment %}
+{% load console_format %}
+<section class="turn-report">
+  <h3>Turn report</h3>
+  <dl>
+    <dt>Elapsed</dt><dd>{{ report.elapsed_ms }} ms</dd>
+    <dt>Queued</dt><dd>{% if report.queued_ms is not None %}{{ report.queued_ms }} ms{% else %}not queued{% endif %}</dd>
+    <dt>First call after</dt><dd>{% if report.first_call_offset_ms is not None %}{{ report.first_call_offset_ms }} ms{% else %}—{% endif %}</dd>
+    {% if report.turn is not None %}<dt>Turn / variant</dt><dd>{{ report.turn }} / {{ report.variant|default_if_none:"—" }}</dd>{% endif %}
+    {% if report.timeline_revision is not None %}<dt>Timeline revision</dt><dd>{{ report.timeline_revision }}</dd>{% endif %}
+    <dt>Call counts</dt>
+    <dd>{% if report.call_counts %}{% for purpose, count in report.call_counts.items %}{{ purpose }} {{ count }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</dd>
+    <dt>Budget</dt>
+    <dd>{% if report.budget %}max calls {{ report.budget.max_calls|default_if_none:"none" }}, used {{ report.budget.used }}{% if report.budget.reserved %}, reserved {% for purpose, count in report.budget.reserved.items %}{{ purpose }} {{ count }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% else %}—{% endif %}</dd>
+    <dt>Degradation</dt>
+    <dd>
+      {% if report.degradation_details %}
+      <ul>{% for step in report.degradation_details %}<li><code>{{ step.step }}</code> — {{ step.cause }}</li>{% endfor %}</ul>
+      {% elif report.degradation %}
+      <ul>{% for step in report.degradation %}<li><code>{{ step }}</code> — —</li>{% endfor %}</ul>
+      {% else %}none{% endif %}
+    </dd>
+    <dt>Guardrail</dt>
+    <dd>
+      {% if report.guardrail %}
+      fallback used: {{ report.guardrail.fallback_used|yesno:"yes,no" }}
+      {% if report.guardrail.violations %}
+      <ul>{% for v in report.guardrail.violations %}<li><code>{{ v.policy_id }}</code> {{ v.name }} ({{ v.kind }}): {{ v.message }}</li>{% endfor %}</ul>
+      {% else %}; no violations{% endif %}
+      {% else %}—{% endif %}
+    </dd>
+    {% if report.config_revision is not None %}<dt>Config revision</dt><dd>{{ report.config_revision }}</dd>{% endif %}
+    {% if report.profile %}<dt>Engine profile</dt><dd><code>{{ report.profile.id }}</code> v{{ report.profile.version }}</dd>{% endif %}
+    {% if report.fingerprint %}<dt>Fingerprint</dt><dd><code>{{ report.fingerprint }}</code></dd>{% endif %}
+    {% if report.quality_status %}<dt>Quality status</dt><dd>{{ report.quality_status.status }}</dd>{% endif %}
+    {% if report.capabilities %}<dt>Capabilities</dt><dd>{{ report.capabilities|join:", " }}</dd>{% endif %}
+  </dl>
+  <h4>Model calls ({{ report.model_calls|length }})</h4>
+  {% if report.model_calls %}
+  <table class="model-calls">
+    <thead><tr><th>Purpose</th><th>Model</th><th>Attempt</th><th>Outcome</th><th>Latency</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th><th>Finish</th><th>Request id</th></tr></thead>
+    <tbody>
+      {% for call in report.model_calls %}
+      <tr>
+        <td>{{ call.purpose }}</td><td><code>{{ call.model }}</code></td><td>{{ call.attempt }}</td><td>{{ call.outcome }}</td>
+        <td>{{ call.latency_ms }} ms</td><td>{{ call.tokens_in }}</td><td>{{ call.tokens_out }}</td>
+        <td>{{ call.cost|default_if_none:"" }}</td><td>{{ call.finish_reason|default_if_none:"—" }}</td>
+        <td>{% if call.request_id %}<code>{{ call.request_id }}</code>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No model calls.</p>{% endif %}
+</section>

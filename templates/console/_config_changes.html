@@ -1,0 +1,32 @@
+{% load console_format %}
+{# Configuration changes (#50 deployment, #54 a story): change_groups from console.config_changes.revision_groups. #}
+{% if change_groups %}
+<table class="config-changes">
+  <thead>
+    <tr><th>Setting</th><th>Class</th><th>Old → new</th><th>Actor</th><th>Time</th><th>Config revision</th></tr>
+  </thead>
+  <tbody>
+    {% for group in change_groups %}
+    <tr class="revision">
+      <th colspan="6">Config revision {{ group.config_revision }} — {{ group.at|engine_time }} by {{ group.actors|join:", " }}</th>
+    </tr>
+    {% for row in group.rows %}
+    <tr class="change">
+      <td><code>{{ row.change.setting }}</code></td>
+      <td>{{ row.change.change_class }}</td>
+      <td class="diff">
+        {% if row.old.truncated %}<details><summary><code>{{ row.old.short }}</code></summary><pre>{{ row.old.full }}</pre></details>{% else %}<code>{{ row.old.short }}</code>{% endif %}
+        →
+        {% if row.new.truncated %}<details><summary><code>{{ row.new.short }}</code></summary><pre>{{ row.new.full }}</pre></details>{% else %}<code>{{ row.new.short }}</code>{% endif %}
+      </td>
+      <td class="actor">{% if row.actor_url %}<a href="{{ row.actor_url }}">{{ row.change.actor }}</a>{% else %}{{ row.change.actor }}{% endif %}</td>
+      <td>{{ row.change.at|engine_time }}</td>
+      <td>{{ row.change.config_revision }}</td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No configuration changes.</p>
+{% endif %}

@@ -1,0 +1,38 @@
+{
+  "items": [
+    {
+      "id": "00000000000000000000RAT003",
+      "name": "Mature",
+      "description": "Strong violence, strong language and mature themes; no explicit sexual content. Starter guidance — edit for your deployment.",
+      "display_order": 30,
+      "prompt_guidance": "Strong violence, strong language and mature themes are acceptable; sexual content is not explicit. Starter guidance — edit for your deployment.",
+      "image_guidance": "No explicit sexual imagery. Starter guidance — edit for your deployment.",
+      "policy_ids": [],
+      "inherits_from": [
+        "00000000000000000000RAT004"
+      ],
+      "version_id": "00000000000000000000RTV003",
+      "version": 1,
+      "created_at": "2026-10-24T21:34:00.121025Z",
+      "created_by": "system",
+      "retired_at": null
+    },
+    {
+      "id": "00000000000000000000RAT003",
+      "name": "Mature",
+      "description": "Strong violence, strong language and mature themes; no explicit sexual content. Starter guidance — edit for your deployment.",
+      "display_order": 30,
+      "prompt_guidance": "Strong violence and mature themes; keep it non-explicit.",
+      "image_guidance": "No explicit sexual imagery. Starter guidance — edit for your deployment.",
+      "policy_ids": [],
+      "inherits_from": [
+        "00000000000000000000RAT004"
+      ],
+      "version_id": "01M5R0RTV00000000000000003",
+      "version": 2,
+      "created_at": "2026-10-24T22:20:00.000000Z",
+      "created_by": "console:nate",
+      "retired_at": null
+    }
+  ]
+}

@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.helpers import PYTHON, free_port, scrubbed_env, working_copy
+from tests.helpers import PYTHON, SERVICE_KEY, free_port, scrubbed_env, working_copy
 
 BUDGET_S = 30
 
@@ -32,7 +32,9 @@ def wait_for(url: str) -> httpx.Response:
 
 @pytest.fixture
 def server(copy_dir: Path) -> Iterator[tuple[int, Path]]:
-    env = scrubbed_env(CONSOLE_ENGINE_URL="http://127.0.0.1:9")
+    env = scrubbed_env(
+        CONSOLE_ENGINE_URL="http://127.0.0.1:9", CONSOLE_ENGINE_SERVICE_KEY=SERVICE_KEY
+    )
     migrate = subprocess.run(  # noqa: S603
         [PYTHON, "manage.py", "migrate", "--noinput"],
         cwd=copy_dir,

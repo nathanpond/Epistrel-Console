@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}New story — Epistrel Console{% endblock %}
+{% block heading %}New story{% endblock %}
+{% block content %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{% url 'stories:new' %}" class="story-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="rating_choices" value="{{ rating_choices }}">
+  {# The first submit button is what Enter presses: make it Create, not Remove. #}
+  <button type="submit" name="create" value="1" class="default-submit" tabindex="-1" aria-hidden="true">Create story</button>
+  {% if show_errors %}{{ form.non_field_errors }}{% endif %}
+  {% for field in form %}
+  <p>
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {% if show_errors %}{{ field.errors }}{% endif %}
+  </p>
+  {% endfor %}
+  <datalist id="cast-names">{% for name in cast_names %}<option value="{{ name }}">{% endfor %}</datalist>
+
+  <h2>Characters</h2>
+  {{ characters.management_form }}
+  {% if show_errors %}{{ characters.non_form_errors }}{% endif %}
+  {% for row in characters.forms %}
+  <fieldset class="character" id="character-{{ forloop.counter0 }}">
+    <legend>Character {{ forloop.counter }}</legend>
+    {% if show_errors %}{{ row.non_field_errors }}{% endif %}
+    {% for field in row %}
+    <p class="field-{{ field.name }}">
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+      {% if show_errors %}{{ field.errors }}{% endif %}
+    </p>
+    {% endfor %}
+    {% if can_remove %}<button type="submit" name="remove" value="{{ forloop.counter0 }}" formnovalidate>Remove character {{ forloop.counter }}</button>{% endif %}
+  </fieldset>
+  {% endfor %}
+  {% if can_add %}<p><button type="submit" name="add" value="1" formnovalidate>Add character</button></p>{% endif %}
+
+  <p><button type="submit" name="create" value="1">Create story</button></p>
+</form>
+{% endblock %}

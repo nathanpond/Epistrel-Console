@@ -1,0 +1,28 @@
+{
+    "config_revision": 6,
+    "idempotency_key": "01M5QYP7SB5SX54EXV043E29JS",
+    "base_url": "http://host.docker.internal:11434/v1",
+    "model": "guard-1",
+    "params": {
+        "temperature": 0.7,
+        "timeout": 30.0,
+        "stop": [
+            "a"
+        ],
+        "seed": 42
+    },
+    "api_key": null,
+    "api_key_fingerprint": null,
+    "sources": {
+        "base_url": "default",
+        "model": "own",
+        "api_key": "default",
+        "params": {
+            "temperature": "default",
+            "timeout": "own",
+            "stop": "default",
+            "seed": "own"
+        }
+    },
+    "purpose": "guardrail_check"
+}

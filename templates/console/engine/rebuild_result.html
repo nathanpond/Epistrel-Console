@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Rebuild — Epistrel Console{% endblock %}
+{% block heading %}Rebuild projections: {{ label }}{% endblock %}
+{% block content %}
+{% if result %}
+<table class="rebuild-counts">
+  <thead><tr><th>Projection</th><th>Rows</th></tr></thead>
+  <tbody>
+    {% for table, count in result.counts.items %}<tr><td><code>{{ table }}</code></td><td>{{ count }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+<dl>
+  <dt>Engine operation id</dt><dd><code>{{ result.operation_id }}</code></dd>
+  <dt>Timeline revision</dt><dd>{{ result.timeline_revision }}</dd>
+  {% if row and row.elapsed_ms is not None %}<dt>Elapsed (Console)</dt><dd>{{ row.elapsed_ms }} ms</dd>{% endif %}
+</dl>
+{% elif job_text %}
+{% include "console/engine/_rebuild_job.html" %}
+{% else %}
+<p>This rebuild has no result to show{% if row %} (outcome {{ row.outcome }}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}){% endif %}.</p>
+{% endif %}
+{% if row %}<p><a href="{% url 'operations:detail' row.pk %}">Operation {{ row.pk }} in the operation log</a></p>{% endif %}
+<p><a href="{{ back_url }}">{{ back_label }}</a></p>
+{% endblock %}

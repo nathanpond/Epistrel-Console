@@ -232,7 +232,8 @@ jobs:
       - run: .github/scripts/engine-up.sh wait
       - id: identify
         run: .github/scripts/engine-up.sh identify
-      - run: uv run pytest -m engine_live
+      # engine_auth needs service auth and the M2 routes (Engine #44); release 0.1.1 has neither.
+      - run: uv run pytest -m "engine_live and not engine_auth"
       - name: summary
         if: always()
         env:

@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import httpx
@@ -5,14 +6,17 @@ import pytest
 
 from console.engine.client import (
     OPERATIONS,
+    Call,
     EngineClient,
     EngineError,
     EngineNotConfigured,
     EngineUnreachable,
     _raise_for_envelope,
+    current_call,
 )
-from console.engine.models import HealthChecks, HealthResponse, WorkersCheck
+from console.engine.models import HealthChecks, HealthResponse, StoryList, WorkersCheck
 from tests.fakes.engine import FakeEngine, recorded_schema, with_test_thing
+from tests.fixtures import engine_fixture
 
 URL = "http://engine.test"
 KEY = "sekrit-123"
@@ -334,6 +338,7 @@ def test_openapi_errors(fake_engine: FakeEngine, status: int, body: object, code
 
 def test_operations_registered() -> None:
     assert OPERATIONS["GET /health"].response_model is HealthResponse
+    assert OPERATIONS["GET /stories"].response_model is StoryList
     assert OPERATIONS["GET /openapi.json"].schema_exempt
 
 
@@ -351,3 +356,137 @@ def test_from_settings(settings: Any) -> None:
     settings.ENGINE_URL = None
     with pytest.raises(EngineNotConfigured):
         EngineClient.from_settings()
+
+
+# --- #43: list_stories and the client's default principal --------------------------------------
+
+
+def test_list_stories_parses_the_fixture(fake_engine: FakeEngine) -> None:
+    fake_engine.respond("GET", "/stories", 200, json=engine_fixture("list_stories"))
+    stories = client(fake_engine).list_stories()
+    assert [s.status for s in stories] == ["active", "blocked_by_erasure"]
+    first, held = stories
+    assert first.name == "The lighthouse"
+    assert first.content_rating.name == "General"
+    assert first.timeline_revision == 7
+    assert held.name is None  # a held story lists with a null name
+    request = fake_engine.requests[0]
+    assert request.url.path == "/stories"
+    assert request.url.query == b""
+    assert request.headers["authorization"] == f"Bearer {KEY}"
+
+
+def test_list_stories_sends_the_status_filter(fake_engine: FakeEngine) -> None:
+    fake_engine.respond("GET", "/stories", 200, json={"items": []})
+    assert client(fake_engine).list_stories(status="archived") == []
+    assert fake_engine.requests[0].url.params["status"] == "archived"
+
+
+def test_list_stories_401_raises_engine_error(fake_engine: FakeEngine) -> None:
+    envelope = {"error": {"code": "unauthenticated", "message": "no", "details": {}}}
+    fake_engine.respond("GET", "/stories", 401, json=envelope)
+    with pytest.raises(EngineError) as caught:
+        client(fake_engine).list_stories()
+    assert (caught.value.http_status, caught.value.code) == (401, "unauthenticated")
+
+
+def test_list_stories_bad_body_is_bad_response() -> None:
+    engine = EngineClient(
+        URL, KEY, transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"x": 1}))
+    )
+    with pytest.raises(EngineError) as caught:
+        engine.list_stories()
+    assert (caught.value.code, caught.value.http_status) == ("bad_response", 200)
+
+
+def test_default_principal_is_sent_and_a_per_call_one_wins(thing_engine: FakeEngine) -> None:
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    engine = EngineClient(URL, KEY, transport=thing_engine.transport, principal="console:nate")
+    engine._request("POST", "/_test/thing")
+    engine._request("POST", "/_test/thing", principal="console:other")
+    first, second = thing_engine.requests
+    assert first.headers["x-epistrel-principal"] == "console:nate"
+    assert second.headers["x-epistrel-principal"] == "console:other"
+
+
+def test_bad_default_principal_is_refused_before_sending(thing_engine: FakeEngine) -> None:
+    engine = EngineClient(URL, KEY, transport=thing_engine.transport, principal="system")
+    with pytest.raises(ValueError, match="reserved"):
+        engine._request("POST", "/_test/thing")
+    assert thing_engine.requests == []
+
+
+# --- #44: request bodies and headers, get_operation, the call context --------------------------
+
+
+def test_request_sends_a_json_body_and_extra_headers(thing_engine: FakeEngine) -> None:
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    client(thing_engine)._request(
+        "POST",
+        "/_test/thing",
+        principal="console:nate",
+        json={"to_turn": 2},
+        headers={"Idempotency-Key": "k1", "Prefer": "respond-async"},
+    )
+    (sent,) = thing_engine.requests
+    assert json.loads(sent.content) == {"to_turn": 2}
+    assert sent.headers["idempotency-key"] == "k1"
+    assert sent.headers["prefer"] == "respond-async"
+
+
+def test_extra_headers_never_replace_the_clients_own(thing_engine: FakeEngine) -> None:
+    thing_engine.respond("POST", "/_test/thing", 200, json={"name": "x"})
+    client(thing_engine)._request(
+        "POST",
+        "/_test/thing",
+        principal="console:nate",
+        headers={
+            "Authorization": "Bearer forged",
+            "X-Epistrel-Principal": "console:mallory",
+            "user-agent": "forged",
+        },
+    )
+    (sent,) = thing_engine.requests
+    assert sent.headers["authorization"] == f"Bearer {KEY}"
+    assert sent.headers["x-epistrel-principal"] == "console:nate"
+    assert sent.headers["user-agent"].startswith("epistrel-console/")
+
+
+def test_get_operation_parses_the_record(fake_engine: FakeEngine) -> None:
+    fake_engine.respond(
+        "GET", "/operations/{operation_id}", 200, json=engine_fixture("get_operation")
+    )
+    record = client(fake_engine).get_operation("01JA0000000000000000000OP3", viewpoint="omniscient")
+    assert record.id == "01JA0000000000000000000OP3"
+    assert record.status == "committed"
+    assert record.principal == "console:nate"
+    assert record.config_revisions == {"story": 4}
+    assert record.result is not None
+    assert record.result.status == 200
+    assert record.result.body["timeline_revision"] == 7
+    assert fake_engine.requests[0].url.params["viewpoint"] == "omniscient"
+
+
+def test_get_operation_404_is_an_engine_error(fake_engine: FakeEngine) -> None:
+    error = {"error": {"code": "not_found", "message": "no such operation", "details": {}}}
+    fake_engine.respond("GET", "/operations/{operation_id}", 404, json=error)
+    with pytest.raises(EngineError) as caught:
+        client(fake_engine).get_operation("01JA0000000000000000000OP9")
+    assert (caught.value.http_status, caught.value.code) == (404, "not_found")
+
+
+def test_a_registered_method_names_its_call(fake_engine: FakeEngine) -> None:
+    seen: list[Call | None] = []
+
+    class Spy(EngineClient):
+        def _request(self, *args: Any, **kwargs: Any) -> httpx.Response:
+            seen.append(current_call())
+            return super()._request(*args, **kwargs)
+
+    fake_engine.respond("GET", "/stories", 200, json={"items": []})
+    Spy(URL, KEY, transport=fake_engine.transport).list_stories()
+    (call,) = seen
+    assert call is not None
+    assert call.kind == "list_stories"
+    assert call.operation == OPERATIONS["GET /stories"]
+    assert current_call() is None  # reset once the method returns

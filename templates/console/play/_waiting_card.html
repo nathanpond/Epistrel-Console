@@ -1,0 +1,4 @@
+{# A queued turn's waiting card (#48): polls its operation 1 s after each answer until it ends. #}
+<div class="waiting-card" id="waiting-{{ card.operation_id }}" hx-get="{{ card.poll_url }}" hx-trigger="load delay:1s" hx-swap="outerHTML" hx-config="timeout:10s">
+  <strong>{{ card.text }}</strong> — operation <code>{{ card.operation_id }}</code>
+</div>

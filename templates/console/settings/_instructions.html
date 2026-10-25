@@ -1,0 +1,16 @@
+{# Custom instructions (#54). Context: instructions_form, instructions_refusal, instructions_key, snapshot, snap, archived_note. #}
+{% include "console/settings/_refusal.html" with refusal=instructions_refusal %}
+<form method="post" action="{% url 'stories:settings-instructions' snap.story_id %}" class="settings-form instructions-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ instructions_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ instructions_form.non_field_errors }}
+  <fieldset{% if archived_note %} disabled{% endif %}>
+  <div class="field">
+    {{ instructions_form.text }}<br>
+    <small>{{ instructions_form.text.help_text }}</small>
+    {{ instructions_form.text.errors }}
+  </div>
+  <p><button type="submit">Save custom instructions</button></p>
+  </fieldset>
+</form>

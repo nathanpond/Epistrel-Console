@@ -1,0 +1,5 @@
+{# A rating's action links. Context: rating, action_query. Retired ratings have none. #}
+{% if not rating.retired %}<span class="rating-actions">
+  <a class="button" href="{% url 'ratings:edit' rating.id %}">Edit</a>
+  <a class="button retire" href="{% url 'ratings:retire' rating.id %}?{{ action_query }}">Retire</a>
+</span>{% endif %}

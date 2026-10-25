@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Deployment settings — Epistrel Console{% endblock %}
+{% block heading %}Deployment settings{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:home' %}">← Engine</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if form %}
+<p>Config revision {{ page.revision }}. Save sends only the settings you changed.</p>
+<form method="post" action="{% url 'engine:settings' %}" class="settings-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ form.non_field_errors }}
+  {% for title, rows in form.sections %}
+  <fieldset class="settings-section">
+    <legend>{{ title }}</legend>
+    {% for row in rows %}
+    <div class="field field-{{ row.name }}">
+      <label for="{{ row.field.id_for_label }}"><code>{{ row.name }}</code></label>
+      {{ row.field }}{% if row.unit %} <span class="unit">{{ row.unit }}</span>{% endif %}
+      {% if row.clear %}<label class="clear">{{ row.clear }} Clear</label>{% endif %}
+      <small class="muted">{{ row.field.help_text }}</small>
+      {{ row.field.errors }}
+    </div>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+  <button type="submit">Save</button>
+</form>
+{% endif %}
+
+{% if page %}
+<section class="profile-defaults">
+  <h2>Profile defaults</h2>
+  <p>The engine profiles' defaults (the bottom layer of every story's configuration), read-only here.
+    Edit profile defaults: <code>{{ profile_defaults_edit_url }}</code> (not built yet, M3 #84).</p>
+  {% if profile_defaults %}
+  <table class="profile-defaults-table">
+    <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+    <tbody>
+      {% for path, value in profile_defaults %}<tr><td><code>{{ path }}</code></td><td><code>{{ value|json_value }}</code></td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

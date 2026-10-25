@@ -1,0 +1,8 @@
+{
+  "timeline_revision": 9,
+  "operation_id": "01JA0000000000000000000OP2",
+  "next_turn_index": 2,
+  "to_turn": 1,
+  "discarded_operations": 0,
+  "idempotency_key": "01JA0000000000000000000KY2"
+}

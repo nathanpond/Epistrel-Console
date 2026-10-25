@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}History — {{ story.name|default:story.id }} — Epistrel Console{% endblock %}
+{% block heading %}History — {{ story.name|default:"—" }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+<form method="get" action="{% url 'stories:history' story.id %}" class="history-controls">
+  {% include "console/history/_controls.html" %}
+  <button type="submit">Show</button>
+</form>
+<section class="items">
+  {% if page %}{% include "console/history/_items.html" %}
+  {% else %}<p class="muted">Correct the controls above — nothing was read.</p>{% endif %}
+</section>
+{% include "console/history/_variants.html" %}
+{% endblock %}

@@ -1,0 +1,8 @@
+{# The play view's form area (#51): the Turn / Ingest tabs and the chosen tab's form. The tab links work without JavaScript (?tab=); with HTMX they swap only this area, carrying the snapshot and the turn form's viewpoint. Context: tab, fv, iv. #}
+<div id="play-form-area">
+  <nav class="tabs">
+    <a href="{% url 'stories:detail' fv.story_id %}?tab=turn" hx-get="{% url 'stories:detail' fv.story_id %}?tab=turn" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint]"{% if tab == "turn" %} aria-current="page"{% endif %}>Turn</a>
+    <a href="{% url 'stories:detail' fv.story_id %}?tab=ingest" hx-get="{% url 'stories:detail' fv.story_id %}?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint]"{% if tab == "ingest" %} aria-current="page"{% endif %}>Ingest</a>
+  </nav>
+  {% if tab == "ingest" %}{% include "console/play/_ingest.html" %}{% else %}{% include "console/play/_turn_form.html" %}{% endif %}
+</div>

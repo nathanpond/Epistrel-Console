@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Content ratings — Epistrel Console{% endblock %}
+{% block heading %}Content ratings{% endblock %}
+{% block content %}
+<p><a href="{% url 'ratings:new' %}">New rating</a> · <a href="{% url 'policies:list' %}">Guardrail policies</a></p>
+
+<form method="get" action="" class="filters">
+  <label><input type="checkbox" name="retired" value="1"{% if show_retired %} checked{% endif %}> Show retired</label>
+  <button type="submit">Filter</button>
+</form>
+{% if engine_error %}<p class="note">The deployment settings could not be read: the default rating is not marked.</p>{% include "console/_engine_error.html" %}{% endif %}
+
+{% if rows %}
+<table class="ratings">
+  <thead>
+    <tr><th>Order</th><th>Name</th><th>Description</th><th>Inherits from</th><th>Version</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="rating-{{ row.rating.id }}">
+      <td>{{ row.rating.display_order }}</td>
+      <td><a href="{% url 'ratings:detail' row.rating.id %}">{{ row.rating.name }}</a>{% if row.default %} <strong class="default">default</strong>{% endif %}</td>
+      <td>{{ row.rating.description }}</td>
+      <td class="inherits">{{ row.parents|join:", "|default:"—" }}</td>
+      <td>{{ row.rating.version }}</td>
+      <td class="status">{% if row.rating.retired %}retired {{ row.rating.retired_at|engine_time }}{% else %}live{% endif %}</td>
+      <td>{% include "console/ratings/_actions.html" with rating=row.rating action_query=row.action_query %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if page.has_other_pages %}
+<p class="paging">
+  {% if page.has_previous %}<a href="?{% if filter_query %}{{ filter_query }}&amp;{% endif %}page={{ page.previous_page_number }}">Previous</a>{% endif %}
+  Page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}<a href="?{% if filter_query %}{{ filter_query }}&amp;{% endif %}page={{ page.next_page_number }}">Next</a>{% endif %}
+</p>
+{% endif %}
+{% else %}
+<p class="empty">No content ratings.</p>
+{% endif %}
+{% endblock %}

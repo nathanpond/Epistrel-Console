@@ -1,0 +1,190 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Is the ferry late?",
+      "operation_id": "01M5R5XK5X7GQK27XMD1FZQV27",
+      "message_id": "01M5R5XK6GZ8J6WBVVD48H5BZ6",
+      "origin": "generated",
+      "true_ages": {
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 34
+      }
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "[stub generation 588a8f98f3e8] Mara: \"Is the ferry late?\"",
+      "operation_id": "01M5R5XK5X7GQK27XMD1FZQV27",
+      "message_id": "01M5R5XK6GZ8J6WBVVD48H5BZ7",
+      "origin": "generated",
+      "true_ages": {
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B": 41
+      }
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Again?",
+      "operation_id": "01M5R5XK7WR01RFAEPETK19Q5K",
+      "message_id": "01M5R5XK89ZEXJVVY162N1611K",
+      "origin": "generated",
+      "true_ages": {
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 34
+      }
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "[stub generation 51c440ef6145] Mara: \"Again?\"",
+      "operation_id": "01M5R5XK7WR01RFAEPETK19Q5K",
+      "message_id": "01M5R5XK89ZEXJVVY162N1611M",
+      "origin": "generated",
+      "true_ages": {
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B": 41
+      }
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Third?",
+      "operation_id": "01M5R5XWJH0Y9SEDSFMZEG2SFF",
+      "message_id": "01M5R5XWK4AD648CN1TXWRXFR3",
+      "origin": "generated",
+      "true_ages": {
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 34
+      }
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "Tobin changes the subject.",
+      "operation_id": "01M5R5XWJH0Y9SEDSFMZEG2SFF",
+      "message_id": "01M5R5XWK4AD648CN1TXWRXFR7",
+      "origin": "generated",
+      "true_ages": {
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B": 41
+      }
+    }
+  ],
+  "audit": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "guardrail_output_rejected",
+      "actor_character_id": null,
+      "render_character_ids": null,
+      "channel": "audit",
+      "text": "{\"attempt\":0,\"confidence\":null,\"policy_ids\":[\"no_stub52\"],\"reason\":\"output_policy\",\"text\":\"[stub generation 9442fa3ca9fd] Mara: \\\"Third?\\\"\",\"violations\":[{\"kind\":\"deterministic\",\"message\":\"Stub generations are off-limits\",\"name\":\"no stub\",\"policy_id\":\"no_stub52\"}]}",
+      "operation_id": "01M5R5XWJH0Y9SEDSFMZEG2SFF",
+      "message_id": "01M5R5XWK4AD648CN1TXWRXFR4",
+      "origin": "generated",
+      "true_ages": {}
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "guardrail_output_rejected",
+      "actor_character_id": null,
+      "render_character_ids": null,
+      "channel": "audit",
+      "text": "{\"attempt\":1,\"confidence\":null,\"policy_ids\":[\"no_stub52\"],\"reason\":\"output_policy\",\"text\":\"[stub generation 630850923e80] Mara: \\\"Third?\\\"\",\"violations\":[{\"kind\":\"deterministic\",\"message\":\"Stub generations are off-limits\",\"name\":\"no stub\",\"policy_id\":\"no_stub52\"}]}",
+      "operation_id": "01M5R5XWJH0Y9SEDSFMZEG2SFF",
+      "message_id": "01M5R5XWK4AD648CN1TXWRXFR5",
+      "origin": "generated",
+      "true_ages": {}
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "guardrail_output_rejected",
+      "actor_character_id": null,
+      "render_character_ids": null,
+      "channel": "audit",
+      "text": "{\"attempt\":2,\"confidence\":null,\"policy_ids\":[\"no_stub52\"],\"reason\":\"output_policy\",\"text\":\"[stub generation adefacf2df9b] Mara: \\\"Third?\\\"\",\"violations\":[{\"kind\":\"deterministic\",\"message\":\"Stub generations are off-limits\",\"name\":\"no stub\",\"policy_id\":\"no_stub52\"}]}",
+      "operation_id": "01M5R5XWJH0Y9SEDSFMZEG2SFF",
+      "message_id": "01M5R5XWK4AD648CN1TXWRXFR6",
+      "origin": "generated",
+      "true_ages": {}
+    }
+  ],
+  "summary": [
+    {
+      "level": 0,
+      "covers_from": 1,
+      "covers_to": 2,
+      "text": "Mara asked twice about the ferry.",
+      "operation_id": "01M5R5XWJH0Y9SEDSFMZEG2SS1"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R5XK6GZ8J6WBVVD48H5BZ7",
+        "text": "[stub generation 588a8f98f3e8] Mara: \"Is the ferry late?\""
+      }
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R5XK89ZEXJVVY162N1611M",
+        "text": "[stub generation 51c440ef6145] Mara: \"Again?\""
+      }
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R5XWK4AD648CN1TXWRXFR7",
+        "text": "Tobin changes the subject."
+      }
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "as_of": 3,
+  "timeline_revision": 4,
+  "next_before_turn": null
+}

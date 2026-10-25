@@ -672,12 +672,38 @@ def test_docker_job_drops_engine_edge_only_without_live_smoke() -> None:
     assert step["run"] == 'uv run pytest -m "$MARKERS"'
 
 
-def test_engine_may_get_only_these_four_variables() -> None:
+# The newest Engine release (0.1.1) has no service auth and no /stories (#42).
+RELEASE_SMOKE_RUN = 'uv run pytest -m "engine_live and not engine_auth"'
+CI_CREDENTIAL = "ci-only-credential-not-a-secret-0000"
+
+
+def test_engine_up_passes_the_ci_credential_and_hands_it_to_the_smoke() -> None:
+    script = ENGINE_UP.read_text()
+    assert f"SERVICE_KEY={CI_CREDENTIAL}  # CI-only, not a secret" in script
+    assert len(CI_CREDENTIAL) >= 32
+    assert '"EPISTREL_SERVICE_CREDENTIALS=$SERVICE_KEY"' in script
+    assert 'echo "ENGINE_LIVE_SERVICE_KEY=$SERVICE_KEY" >> "${GITHUB_ENV:-/dev/null}"' in script
+
+
+@pytest.mark.parametrize("workflow", sorted(WORKFLOWS.glob("*.yml")), ids=lambda p: p.name)
+def test_the_live_service_key_has_one_source(workflow: Path) -> None:
+    # Only engine-up.sh sets it; drift's engine_schema --check reads the exempt /openapi.json and
+    # sets no Console key either.
+    text = workflow.read_text()
+    assert "ENGINE_LIVE_SERVICE_KEY" not in text
+    assert CI_CREDENTIAL not in text
+    if workflow.name == "engine-drift.yml":
+        assert "CONSOLE_ENGINE_SERVICE_KEY" not in text
+
+
+def test_engine_may_get_only_these_five_variables() -> None:
+    # EPISTREL_MODEL_ADAPTER=stub: the smoke's turn (#48) runs on the Engine's test adapter.
     assert engine_env_vars(ENGINE_UP.read_text()) == {
         "EPISTREL_DATABASE_URL",
         "EPISTREL_LOG_LEVEL",
         "EPISTREL_SERVICE_CREDENTIALS",
         "EPISTREL_CONFIG_KEY",
+        "EPISTREL_MODEL_ADAPTER",
     }
 
 
@@ -717,9 +743,12 @@ def test_engine_release_smoke_starts_the_newest_engine_release() -> None:
         runs.index(".github/scripts/engine-up.sh start"),
         runs.index(".github/scripts/engine-up.sh wait"),
         runs.index(".github/scripts/engine-up.sh identify"),
-        runs.index("uv run pytest -m engine_live"),
+        runs.index(RELEASE_SMOKE_RUN),
     ]
     assert order == sorted(order)
+    # Complement: only the release smoke leaves engine_auth out; edge runs every live test.
+    assert "uv run pytest -m engine_live" not in runs
+    assert RELEASE_SMOKE_RUN not in [str(s.get("run", "")) for s in smoke["steps"]]
     # The same tail as engine-smoke: summary always, Engine and Postgres logs on failure.
     assert [s for s in steps if s.get("name") in ("summary", "logs")] == [
         s for s in smoke["steps"] if s.get("name") in ("summary", "logs")
@@ -1260,7 +1289,7 @@ def test_publish_cache_cleanup_and_smoke_engine(tmp_path: Path, workflow: Path) 
     assert ran.called("docker", "run") == [
         ["docker", "run", "-d", "--name", "console-smoke", "--platform", "linux/amd64",
          "-p", "127.0.0.1:7739:7739", "-e", "CONSOLE_ENGINE_URL=http://127.0.0.1:9",
-         f"{IMAGE}@{DIGEST}"],
+         "-e", "CONSOLE_ENGINE_SERVICE_KEY=smoke-only-key-not-a-secret", f"{IMAGE}@{DIGEST}"],
     ]  # fmt: skip
 
 

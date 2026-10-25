@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{% if rating_id %}Edit {{ options.name }}{% else %}New rating{% endif %} — Content ratings — Epistrel Console{% endblock %}
+{% block heading %}{% if rating_id %}Edit content rating: {{ options.name }}{% else %}New content rating{% endif %}{% endblock %}
+{% block content %}
+<p>{% if rating_id %}<a href="{% url 'ratings:detail' rating_id %}">Back to the rating</a> · {% endif %}<a href="{% url 'ratings:list' %}">All ratings</a></p>
+{% if rating_id %}<p><small>Version {{ options.version }}. Saving writes a new version.</small></p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<form method="post" action="{% if rating_id %}{% url 'ratings:edit' rating_id %}{% else %}{% url 'ratings:new' %}{% endif %}" class="rating-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="options" value="{{ signed_options }}">
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <div class="field field-{{ field.name }}">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {{ field.errors }}
+    {% if field.name == "prompt_guidance" %}<small class="guidance-note">{{ guidance_note }}</small>{% endif %}
+  </div>
+  {% endfor %}
+  {% if form.policy_note %}<p class="note policy-note">{{ form.policy_note }}</p>{% endif %}
+  {% if form.parents_note %}<p class="note parents-note">{{ form.parents_note }}</p>{% endif %}
+  <p><button type="submit">{% if rating_id %}Save{% else %}Create rating{% endif %}</button></p>
+</form>
+{% endblock %}

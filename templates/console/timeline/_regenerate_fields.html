@@ -1,0 +1,13 @@
+{# Regenerate's confirm form (#53): the hidden-field errors, then the optional overrides in a collapsed <details> (open when any was given or refused). Blank keeps what the turn was played with. Context: form (RegenerateForm), archived. #}
+{% include "console/timeline/_fields.html" %}
+{% if archived %}<p class="warning">Archived — unarchive to change the timeline. The Engine will refuse this.</p>{% endif %}
+<details class="regenerate-params"{% if form.has_overrides %} open{% endif %}>
+  <summary>Parameters (optional — blank keeps the recorded values)</summary>
+  {% for field in form.visible_fields %}
+  <div class="field field-{{ field.name }}">
+    {{ field.label_tag }} {{ field }}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {{ field.errors }}
+  </div>
+  {% endfor %}
+</details>

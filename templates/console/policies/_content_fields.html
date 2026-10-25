@@ -1,0 +1,15 @@
+{# A PolicyContentForm's fields (shared with #54's story policies). Context: form; kept_rule shown read-only. #}
+{% load console_format %}
+{% for field in form.hidden_fields %}{{ field }}{% endfor %}
+{% for field in form.visible_fields %}
+<div class="field field-{{ field.name }}">
+  <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+  {{ field }}
+  {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+  {{ field.errors }}
+</div>
+{% if field.name == "rule_type" and form.kept_rule %}
+<div class="kept-rule"><p>The current rule (kept as is when its type stays selected):</p><pre>{{ form.kept_rule|pretty_json }}</pre></div>
+{% endif %}
+{% endfor %}
+{% if not form.shows_effect %}<p>Effect: <strong>deny</strong> <small>(the only effect: policies add refusals and never relax them)</small></p>{% endif %}

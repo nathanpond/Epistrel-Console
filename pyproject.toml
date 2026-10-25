@@ -9,6 +9,7 @@ dependencies = [
     "django>=6.1",
     "gunicorn>=26",
     "httpx>=0.28",
+    "python-ulid>=4.0.1",
     "whitenoise>=6.12",
 ]
 
@@ -57,5 +58,6 @@ addopts = "-ra --strict-markers -m 'not docker and not engine_live'"
 markers = [
     "docker: needs the docker CLI and daemon; run with `uv run pytest -m docker`",
     "engine_live: needs a live Engine at ENGINE_LIVE_URL; run with `uv run pytest -m engine_live`",
+    "engine_auth: engine_live test that needs an Engine enforcing service auth (not the release smoke)",
     "engine_edge: docker test that runs the live Engine edge image",
 ]

@@ -1,7 +1,10 @@
 """The single probe of the Engine's /health, and how its answer is classified.
 
-Healthy: 200 with a valid body and ``status == "ok"``. Unhealthy: the Engine answered but reported
-a problem (or answered with something that is not a health body). Unreachable: no HTTP answer.
+Healthy: 200 with a valid body and ``status == "ok"``. Degraded: 200 with ``status == "degraded"``
+(workers late, timers or jobs overdue, erasures pending), with the reasons derived from the checks.
+Unhealthy: the Engine answered but reported a problem (or answered with something that is not a
+health body). Unreachable: no HTTP answer. The state is the Engine's own ``status``; the checks
+only produce the reason text, so the Console never overrides the Engine.
 The probe goes through the Engine client, never sends the service key (``/health`` is an exempt
 route) and never raises, so /health cannot 500 because of the Engine.
 """
@@ -17,6 +20,7 @@ from console.engine.client import (
     EngineUnreachable,
 )
 from console.engine.models import HealthResult
+from console.engine_access import engine_client_unauthenticated
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +29,17 @@ REPEAT_LOG_S = 60.0
 # says never changes its status).
 PASSING_VALUES = frozenset({"ok", "skipped", "missing"})
 
-State = Literal["healthy", "unhealthy", "unreachable"]
+# Mirrors of the Engine's defaults; they only shape reason text (the state is the Engine's).
+HEARTBEAT_LATE_S = 60
+OVERDUE_ALERT_S = 300
+
+State = Literal["healthy", "degraded", "unhealthy", "unreachable"]
+STATE_WORDS: dict[str, str] = {
+    "healthy": "Healthy",
+    "degraded": "Degraded",
+    "unhealthy": "Unhealthy",
+    "unreachable": "Unreachable",
+}
 
 
 @dataclass(frozen=True)
@@ -37,6 +51,17 @@ class ProbeResult:
     checks: dict[str, Any] | None
     reason: str | None
     latency_ms: int | None
+    content_logging: bool | None = None
+
+    @property
+    def state_word(self) -> str:
+        return STATE_WORDS[self.state]
+
+    @property
+    def badge(self) -> str:
+        """``Engine: Healthy`` or ``Engine: <State> — <reason>``."""
+        text = f"Engine: {self.state_word}"
+        return f"{text} — {self.reason}" if self.reason else text
 
 
 def _valid_body(raw: object) -> dict[str, Any] | None:
@@ -56,6 +81,35 @@ def _failing_reason(status: str, checks: dict[str, Any]) -> str:
     return ", ".join(failing) if failing else f"status {status}"
 
 
+def _number(value: object) -> float | None:
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def degraded_reasons(checks: dict[str, Any]) -> list[str]:
+    """Why a ``degraded`` Engine is degraded, in a fixed order (seconds floored to int)."""
+    reasons: list[str] = []
+    workers = checks.get("workers")
+    if isinstance(workers, dict):
+        alive = workers.get("alive")
+        heartbeat = _number(workers.get("last_heartbeat_s"))
+        if isinstance(alive, int) and not isinstance(alive, bool) and alive == 0:
+            reasons.append("no worker alive")
+        elif heartbeat is None:
+            reasons.append("no worker heartbeat")
+        if heartbeat is not None and heartbeat > HEARTBEAT_LATE_S:
+            reasons.append(f"worker heartbeat {int(heartbeat)} s ago")
+    for key, label in (("oldest_overdue_timer_s", "timer"), ("oldest_overdue_job_s", "job")):
+        overdue = _number(checks.get(key))
+        if overdue is not None and overdue > OVERDUE_ALERT_S:
+            reasons.append(f"{label} overdue {int(overdue)} s")
+    pending = checks.get("erasure_pending")
+    if isinstance(pending, int) and not isinstance(pending, bool) and pending > 0:
+        reasons.append(f"erasure pending {pending}")
+    return reasons
+
+
 def classify(health: HealthResult) -> ProbeResult:
     code, latency_ms = health.http_status, health.latency_ms
     body = _valid_body(health.raw)
@@ -65,10 +119,17 @@ def classify(health: HealthResult) -> ProbeResult:
         )
     status: str = body["status"]
     checks: dict[str, Any] = body["checks"]
+    logging_on = body.get("content_logging")
+    content_logging = logging_on if isinstance(logging_on, bool) else None
     if code == 200 and status == "ok":
-        return ProbeResult("healthy", True, code, status, checks, None, latency_ms)
+        return ProbeResult("healthy", True, code, status, checks, None, latency_ms, content_logging)
+    if code == 200 and status == "degraded":
+        reason = ", ".join(degraded_reasons(checks)) or f"status {status}"
+        return ProbeResult(
+            "degraded", True, code, status, checks, reason, latency_ms, content_logging
+        )
     reason = _failing_reason(status, checks) if code in (200, 503) else f"HTTP {code}"
-    return ProbeResult("unhealthy", True, code, status, checks, reason, latency_ms)
+    return ProbeResult("unhealthy", True, code, status, checks, reason, latency_ms, content_logging)
 
 
 def _unreachable(reason: str) -> ProbeResult:
@@ -82,7 +143,7 @@ def probe(client: EngineClient | None = None) -> ProbeResult:
     """
     if client is None:
         try:
-            client = EngineClient.from_settings()
+            client = engine_client_unauthenticated()
         except EngineNotConfigured:
             result = _unreachable("not configured")
             _log(None, result)

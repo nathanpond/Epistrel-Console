@@ -142,7 +142,8 @@ jobs:
         run: |
           set -u
           docker run -d --name console-smoke --platform linux/amd64 -p 127.0.0.1:7739:7739 \
-            -e CONSOLE_ENGINE_URL=http://127.0.0.1:9 "$IMAGE@$DIGEST"
+            -e CONSOLE_ENGINE_URL=http://127.0.0.1:9 \
+            -e CONSOLE_ENGINE_SERVICE_KEY=smoke-only-key-not-a-secret "$IMAGE@$DIGEST"
           for _ in $(seq 1 30); do
             if curl -fsS --max-time 5 http://127.0.0.1:7739/health; then echo; exit 0; fi
             sleep 2

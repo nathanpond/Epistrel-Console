@@ -1,0 +1,4 @@
+{# One rating in the inheritance drawing and, nested, what it inherits from. Context: node. #}
+<li>{{ node.label }}{% if node.loop %} (loop){% endif %}{% if node.parents %}
+  <ul>{% for parent in node.parents %}{% include "console/ratings/_tree.html" with node=parent %}{% endfor %}</ul>{% endif %}
+</li>

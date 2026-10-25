@@ -1,0 +1,94 @@
+{
+  "timeline_revision": 7,
+  "idempotency_key": "01M5R6ZBAJHBTYVAEQAM3EGA2M",
+  "message": {
+    "message_id": "01M5R6ZBBW3VRBBRYQ924Q5375",
+    "text": "[stub generation 0e5cbb8aeb19] Mara: \"Line 5?\""
+  },
+  "beats": [
+    {
+      "turn": 5,
+      "variant": 2,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Line 5?",
+      "operation_id": "01M5R6ZBB2M2GCN1ZFDX07WSXE",
+      "message_id": "01M5R6ZBBW3VRBBRYQ924Q5374",
+      "origin": "generated"
+    },
+    {
+      "turn": 5,
+      "variant": 2,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "[stub generation 0e5cbb8aeb19] Mara: \"Line 5?\"",
+      "operation_id": "01M5R6ZBB2M2GCN1ZFDX07WSXE",
+      "message_id": "01M5R6ZBBW3VRBBRYQ924Q5375",
+      "origin": "generated"
+    }
+  ],
+  "turn": 5,
+  "variant": 2,
+  "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+  "audience_filter": "none",
+  "model_calls": [
+    {
+      "purpose": "generation",
+      "model": "stub",
+      "attempt": 1,
+      "outcome": "ok",
+      "latency_ms": 1,
+      "tokens_in": 171,
+      "tokens_out": 11,
+      "cost": 0.0,
+      "request_id": "stub-0e5cbb8aeb19dc3eeb60150c",
+      "finish_reason": "stop"
+    }
+  ],
+  "elapsed_ms": 42,
+  "degradation": [],
+  "degradation_details": [],
+  "guardrail": {
+    "violations": [],
+    "fallback_used": false
+  },
+  "call_counts": {
+    "generation": 1
+  },
+  "budget": {
+    "max_calls": 9,
+    "reserved": {
+      "guardrail_input": 0,
+      "guardrail_output": 0
+    },
+    "used": 1
+  },
+  "queued_ms": null,
+  "first_call_offset_ms": 25,
+  "fingerprint": "sha256:2b36736933bae77180bbd820be64ede15ad7ef4167d1510abf6f135d90ed5d2a",
+  "capabilities": [
+    "budgets",
+    "lite",
+    "models",
+    "pins",
+    "polish",
+    "rolling_summary"
+  ],
+  "quality_status": {
+    "status": "uncertified"
+  },
+  "profile": {
+    "id": "00000000000000000000PRF001",
+    "version": 1
+  },
+  "config_revision": 0,
+  "previous_variant": 1
+}

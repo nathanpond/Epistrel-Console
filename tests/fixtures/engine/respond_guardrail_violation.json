@@ -1,0 +1,16 @@
+{
+  "error": {
+    "code": "guardrail_violation",
+    "message": "Input violates 1 policy: a minor is involved or present.",
+    "details": {
+      "violations": [
+        {
+          "policy_id": "minors_no_sexual_content",
+          "name": "Minors: no sexual content",
+          "message": "No sexual content involving minors.",
+          "locator": "player_input.text"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{# A policy's action links. Context: row (a PolicyView). #}
+<span class="policy-actions">
+{% if row.editable %}
+  <a class="button" href="{% url 'policies:edit' row.policy.id %}">Edit</a>
+  {% if row.retirable %}<a class="button retire" href="{% url 'policies:retire' row.policy.id %}?{{ row.action_query }}"{% if row.minors %} title="{{ minors_warning|default:'' }}"{% endif %}>{{ row.retire_label }}</a>{% endif %}
+{% else %}
+  <small>written through the story's settings</small>
+{% endif %}
+</span>

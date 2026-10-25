@@ -65,11 +65,92 @@ def test_database_down_is_unhealthy_with_checks() -> None:
     assert result.checks == body["checks"]
 
 
-def test_degraded_on_200_is_unhealthy() -> None:
-    body = {"status": "degraded", "checks": {"database": "ok", "workers": {"alive": 0}}}
+def m2(status: str, **checks: Any) -> dict[str, Any]:
+    """An M2 body: OK_BODY's checks with ``checks`` overriding them."""
+    return {**OK_BODY, "status": status, "checks": {**OK_BODY["checks"], **checks}}
+
+
+@pytest.mark.parametrize(
+    ("checks", "reason"),
+    [
+        ({"workers": {"alive": 0, "last_heartbeat_s": None}}, "no worker alive"),
+        (
+            {"workers": {"alive": 0, "last_heartbeat_s": 75.9}},
+            "no worker alive, worker heartbeat 75 s ago",
+        ),
+        ({"workers": {"alive": 1, "last_heartbeat_s": 75.0}}, "worker heartbeat 75 s ago"),
+        ({"workers": {"alive": None, "last_heartbeat_s": None}}, "no worker heartbeat"),
+        ({"oldest_overdue_job_s": 400.7}, "job overdue 400 s"),
+        ({"oldest_overdue_timer_s": 301.0}, "timer overdue 301 s"),
+        ({"erasure_pending": 2}, "erasure pending 2"),
+        (
+            {
+                "workers": {"alive": 0, "last_heartbeat_s": 90.0},
+                "oldest_overdue_timer_s": 500.0,
+                "oldest_overdue_job_s": 600.0,
+                "erasure_pending": 1,
+            },
+            "no worker alive, worker heartbeat 90 s ago, timer overdue 500 s, job overdue 600 s, "
+            "erasure pending 1",
+        ),
+    ],
+)
+def test_degraded_on_200_with_reasons(checks: dict[str, Any], reason: str) -> None:
+    result, _ = run(lambda r: httpx.Response(200, json=m2("degraded", **checks)))
+    assert (result.state, result.reason) == ("degraded", reason)
+    assert result.badge == f"Engine: Degraded — {reason}"
+
+
+@pytest.mark.parametrize(
+    "checks",
+    [
+        {},
+        # Complement: at or under the thresholds, and zero erasures, give no reason.
+        {"workers": {"alive": 1, "last_heartbeat_s": 60.0}, "oldest_overdue_job_s": 300.0},
+        {"erasure_pending": 0, "oldest_overdue_timer_s": None},
+    ],
+)
+def test_degraded_without_a_derivable_reason(checks: dict[str, Any]) -> None:
+    result, _ = run(lambda r: httpx.Response(200, json=m2("degraded", **checks)))
+    assert (result.state, result.reason) == ("degraded", "status degraded")
+
+
+def test_ffmpeg_missing_stays_healthy_without_a_reason() -> None:
+    result, _ = run(lambda r: httpx.Response(200, json=m2("ok", ffmpeg="missing", ffprobe="ok")))
+    assert (result.state, result.reason) == ("healthy", None)
+    assert result.badge == "Engine: Healthy"
+
+
+def test_degraded_on_non_200_is_http_code() -> None:
+    result, _ = run(lambda r: httpx.Response(500, json=m2("degraded")))
+    assert (result.state, result.reason) == ("unhealthy", "HTTP 500")
+
+
+def test_m2_unavailable_503_is_unhealthy() -> None:
+    body = m2("unavailable", database="error", workers={"alive": 0, "last_heartbeat_s": None})
+    result, _ = run(lambda r: httpx.Response(503, json=body))
+    # Only string-valued checks give the reason; the nested workers object is skipped.
+    assert (result.state, result.reason) == ("unhealthy", "database error")
+
+
+def test_m2_unavailable_without_failing_string_check() -> None:
+    result, _ = run(lambda r: httpx.Response(503, json=m2("unavailable")))
+    assert (result.state, result.reason) == ("unhealthy", "status unavailable")
+
+
+def test_m0_body_still_healthy() -> None:
+    # Complement: no regression for the old M0 body (no workers, no content_logging).
+    result, _ = run(
+        lambda r: httpx.Response(200, json={"status": "ok", "checks": {"database": "ok"}})
+    )
+    assert (result.state, result.reason, result.content_logging) == ("healthy", None, None)
+
+
+@pytest.mark.parametrize(("value", "expected"), [(True, True), (False, False), ("yes", None)])
+def test_content_logging_is_carried(value: object, expected: bool | None) -> None:
+    body = {**OK_BODY, "content_logging": value}
     result, _ = run(lambda r: httpx.Response(200, json=body))
-    assert result.state == "unhealthy"
-    assert result.reason == "status degraded"
+    assert result.content_logging is expected
 
 
 def test_other_status_is_http_code() -> None:

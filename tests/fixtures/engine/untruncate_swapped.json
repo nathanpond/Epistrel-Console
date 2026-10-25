@@ -1,0 +1,14 @@
+{
+  "timeline_revision": 12,
+  "idempotency_key": "01M5R6ZBM8VQWVW6CSH0KW1391",
+  "operation_id": "01M5R6ZBMK0JERHJDNSZ2RV0PC",
+  "next_turn_index": 6,
+  "truncate_operation_id": "01M5R6ZBHTPCYEY6ZV6BAF4THB",
+  "restored_operations": 2,
+  "swapped": true,
+  "active_chain": {
+    "turn": 4,
+    "variant": 1
+  },
+  "dormant_operations": 1
+}

@@ -1,8 +1,11 @@
 # Publishes the Engine `edge` on 127.0.0.1:8000 so the live smoke suite (tests/engine_live/) and
 # `manage.py engine_schema --url http://127.0.0.1:8000` can reach it from the host:
 #   docker compose -f docker-compose.yml -f compose.smoke.yml up -d --wait engine db
-#   ENGINE_LIVE_URL=http://127.0.0.1:8000 uv run pytest -m engine_live
+#   ENGINE_LIVE_URL=http://127.0.0.1:8000 \
+#     ENGINE_LIVE_SERVICE_KEY=dev-only-credential-change-me-00000000 uv run pytest -m engine_live
 services:
   engine:
+    environment:
+      EPISTREL_MODEL_ADAPTER: stub  # the smoke plays a turn without model credentials (#48)
     ports:
       - "127.0.0.1:8000:8000"

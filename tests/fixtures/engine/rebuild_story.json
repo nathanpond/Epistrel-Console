@@ -1,0 +1,14 @@
+{
+    "timeline_revision": 7,
+    "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KEY",
+    "counts": {
+        "transcript_messages": 12,
+        "story_heads": 1,
+        "story_texts": 1,
+        "lite_summary_segments": 0,
+        "relationships": 0,
+        "placement": 0,
+        "scene_state": 0
+    },
+    "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0OP1"
+}

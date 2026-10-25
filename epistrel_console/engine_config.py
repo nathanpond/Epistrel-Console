@@ -1,7 +1,7 @@
 """Where the Console's Engine lives, read from the process environment.
 
-The Engine URL is required to serve. The service key is optional until the Engine enforces
-service auth (epic #3); when set it is kept out of every log line, error message and ``repr()``.
+The Engine URL and the service key are required to serve (the Engine enforces service auth, #42).
+The key is kept verbatim (never trimmed) and out of every log line, error message and ``repr()``.
 
 Validation is not a Django system check: ``makemigrations`` runs every registered check, and
 runserver's autoreloader prints check errors and keeps watching instead of exiting. Serving
@@ -29,7 +29,8 @@ UNKNOWN = "unknown setting"
 
 @dataclass(frozen=True)
 class EngineConfig:
-    """The parsed Engine settings. ``url`` is ``None`` when unset or invalid."""
+    """The parsed Engine settings. ``url`` is ``None`` when unset or invalid, ``service_key`` when
+    unset or empty; each is then also in ``errors``. Tooling ignores ``errors``."""
 
     url: str | None
     service_key: str | None = field(default=None, repr=False)
@@ -70,17 +71,19 @@ def parse(environ: Mapping[str, str]) -> EngineConfig:
     url, reason = parse_url(environ.get(URL_VAR))
     if reason:
         errors.append((URL_VAR, reason))
+    key = environ.get(KEY_VAR) or None
+    if key is None:
+        errors.append((KEY_VAR, REQUIRED))
     errors.extend(
         (name, UNKNOWN)
         for name in sorted(environ)
         if name.startswith("CONSOLE_") and name not in KNOWN_VARS
     )
-    key = environ.get(KEY_VAR) or None
     return EngineConfig(url=url, service_key=key, errors=tuple(errors))
 
 
 def require() -> None:
-    """Refuse to serve without a valid Engine URL: print each problem and exit 1.
+    """Refuse to serve without a valid Engine URL and a service key: print each problem, exit 1.
 
     Re-reads ``os.environ`` rather than trusting settings, so nothing can mask a refusal.
     """

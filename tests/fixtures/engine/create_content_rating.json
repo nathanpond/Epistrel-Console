@@ -1,0 +1,19 @@
+{
+  "config_revision": 12,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KEY",
+  "id": "01M5R0RAT00000000000000005",
+  "name": "Gritty",
+  "description": "Grim, but not explicit.",
+  "display_order": 50,
+  "prompt_guidance": "Keep it grim.",
+  "image_guidance": "",
+  "policy_ids": [],
+  "inherits_from": [
+    "00000000000000000000RAT003"
+  ],
+  "version_id": "01M5R0RTV00000000000000005",
+  "version": 1,
+  "created_at": "2026-10-24T22:30:00.000000Z",
+  "created_by": "console:nate",
+  "retired_at": null
+}

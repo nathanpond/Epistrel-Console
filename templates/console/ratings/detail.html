@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{{ rating.name }} — Content ratings — Epistrel Console{% endblock %}
+{% block heading %}Content rating: {{ rating.name }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'ratings:list' %}">All ratings</a> · <a href="{% url 'policies:list' %}">Guardrail policies</a></p>
+{% if rating.retired %}<p class="warning retired-banner">Retired {{ rating.retired_at|engine_time }} — stories using it keep their version; new stories cannot choose it.</p>{% endif %}
+{% if ratings_failed %}<p class="note">The content ratings could not be read: ratings show their ids.</p>{% endif %}
+{% if policies_failed %}<p class="note">The policies could not be read: policies show their ids.</p>{% endif %}
+<dl class="rating">
+  <dt>Id</dt><dd><code>{{ rating.id }}</code></dd>
+  <dt>Name</dt><dd>{{ rating.name }}</dd>
+  <dt>Description</dt><dd>{{ rating.description|default:"(none)" }}</dd>
+  <dt>Display order</dt><dd>{{ rating.display_order }}</dd>
+  <dt>Policies</dt><dd class="own-policies">{{ policies|join:", "|default:"none" }}</dd>
+  <dt>Inherits from</dt><dd class="inherits">{{ parents|join:", "|default:"nothing" }}</dd>
+  <dt>Version</dt><dd>{{ rating.version }}</dd>
+  <dt>Created</dt><dd>{{ rating.created_at|engine_time }} by {{ rating.created_by }}</dd>
+  {% if rating.retired %}<dt>Retired</dt><dd>{{ rating.retired_at|engine_time }}</dd>{% endif %}
+</dl>
+<p>{% include "console/ratings/_actions.html" %}</p>
+
+<h2>Guidance</h2>
+{% include "console/ratings/_guidance.html" with entry=rating %}
+
+<h2>Effective guardrails</h2>
+<p class="note global-note">Global policies (e.g. <code>minors_no_sexual_content</code>) apply to every rating — see <a href="{{ global_policies_url }}">Policies</a>.</p>
+{% if own or inherited %}
+<table class="guardrails">
+  <thead><tr><th>Policy id</th><th>Policy</th><th>Source rating</th><th></th></tr></thead>
+  <tbody>
+    {% for row in own %}<tr class="own"><td><code>{{ row.policy_id }}</code></td><td><a href="{% url 'policies:detail' row.policy_id %}">{{ row.policy }}</a></td><td>{{ row.source }}</td><td>own</td></tr>{% endfor %}
+    {% for row in inherited %}<tr class="inherited"><td><code>{{ row.policy_id }}</code></td><td><a href="{% url 'policies:detail' row.policy_id %}">{{ row.policy }}</a></td><td><a href="{% url 'ratings:detail' row.source_id %}">{{ row.source }}</a></td><td>inherited</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No rating policies apply — only the global ones.</p>
+{% endif %}
+
+<h2>Inheritance</h2>
+{% if chain %}
+<p class="chain">{{ chain|join:" → " }}</p>
+{% else %}
+<ul class="inheritance-tree">{% include "console/ratings/_tree.html" with node=tree %}</ul>
+{% endif %}
+
+<h2>Version history</h2>
+{% if versions_error %}{% include "console/_engine_error.html" with engine_error=versions_error %}{% endif %}
+{% if versions %}
+<table class="versions">
+  <thead><tr><th>Version</th><th>Created at</th><th>Created by</th></tr></thead>
+  <tbody>
+    {% for entry in versions %}<tr><td><a href="{% url 'ratings:version' rating.id entry.version %}">{{ entry.version }}</a></td><td>{{ entry.created_at|engine_time }}</td><td>{{ entry.created_by }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if more_versions %}<p><a href="{% url 'ratings:versions' rating.id %}">All versions ({{ version_count }}) →</a></p>{% endif %}
+{% endif %}
+{% endblock %}

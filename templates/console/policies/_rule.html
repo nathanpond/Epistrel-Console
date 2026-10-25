@@ -1,0 +1,13 @@
+{# A policy's rule, read-only. Context: row (a PolicyView). #}
+{% load console_format %}
+<div class="rule">
+  <p>{{ row.rule_label }}</p>
+  {% if row.policy.rule_type == "model_assisted" %}
+  <pre class="prompt">{{ row.policy.rule.prompt }}</pre>
+  <p>When the model is uncertain: <code>{{ row.policy.rule.on_uncertain|default:"violation" }}</code></p>
+  {% elif row.rule_entries %}
+  <ul class="entries">{% for entry in row.rule_entries %}<li><code>{{ entry }}</code></li>{% endfor %}</ul>
+  {% else %}
+  <pre>{{ row.policy.rule|pretty_json }}</pre>
+  {% endif %}
+</div>

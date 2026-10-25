@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{# A refused timeline operation (#53): the reload line alone for a stale page, else the notice, its links and #48's inspector content. Nothing was changed. Context: refusal (console.views.timeline.Refusal). #}
+{% block title %}{{ refusal.title }} — Epistrel Console{% endblock %}
+{% block heading %}{{ refusal.title }}{% endblock %}
+{% block content %}
+{% if refusal.conflict %}
+<p class="conflict warning"><strong>{{ refusal.conflict }}</strong></p>
+<p><a class="button reload" href="{% url 'stories:detail' refusal.story_id %}">Reload</a></p>
+{% else %}
+{% if refusal.notice %}<p class="notice refusal-notice"><strong>{{ refusal.notice }}</strong></p>{% endif %}
+{% if refusal.links %}<ul class="refusal-links">{% for link in refusal.links %}<li><a href="{{ link.url }}">{{ link.label }}</a></li>{% endfor %}</ul>{% endif %}
+{% if refusal.inspector %}<div class="inspector">{% include "console/play/_inspector_body.html" with inspector=refusal.inspector %}</div>{% endif %}
+<p>Nothing was changed. <a href="{% url 'stories:detail' refusal.story_id %}">Back to the story</a></p>
+{% endif %}
+{% endblock %}

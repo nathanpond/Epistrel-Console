@@ -28,10 +28,11 @@ docker compose up -d                 # Engine on http://127.0.0.1:8000
 
 # in this repo
 uv run python manage.py migrate      # create the local SQLite database
-CONSOLE_ENGINE_URL=http://127.0.0.1:8000 uv run python manage.py runserver
+uv run python manage.py createsuperuser   # an operator account (the only way to sign in)
+CONSOLE_ENGINE_URL=http://127.0.0.1:8000 CONSOLE_ENGINE_SERVICE_KEY=dev-only-credential-change-me-00000000 uv run python manage.py runserver
 ```
 
-Open http://127.0.0.1:7739/. The Console runs on port 7739 so it never collides with the Engine (8000); `runserver <addr:port>` still overrides it. Without a valid `CONSOLE_ENGINE_URL`, `runserver` (and the WSGI/ASGI entry points) refuse to start and name the problem.
+Open http://127.0.0.1:7739/ and sign in as that operator: every page except `/health` is behind the login, and only active superusers may sign in (there is no sign-up). The Console runs on port 7739 so it never collides with the Engine (8000); `runserver <addr:port>` still overrides it. Without a valid `CONSOLE_ENGINE_URL` and a `CONSOLE_ENGINE_SERVICE_KEY`, `runserver` (and the WSGI/ASGI entry points) refuse to start and name each problem. The key is the Engine compose's dev-only credential; use whatever your Engine's `EPISTREL_SERVICE_CREDENTIALS` holds.
 
 ### Settings
 
@@ -40,7 +41,7 @@ All settings come from the process environment.
 | Variable | Default | Meaning |
 |---|---|---|
 | `CONSOLE_ENGINE_URL` | — (required to serve) | The Engine's base URL: `http://` or `https://` with a host, no credentials, query or fragment. Trailing slashes are dropped. |
-| `CONSOLE_ENGINE_SERVICE_KEY` | unset | The Engine service credential. Optional until the Engine enforces service auth; never logged or shown. |
+| `CONSOLE_ENGINE_SERVICE_KEY` | — (required to serve) | The Engine service credential, one of the Engine's `EPISTREL_SERVICE_CREDENTIALS`. Used verbatim (never trimmed); never logged or shown. |
 | `DJANGO_DEBUG` | `1` | `1` for development; anything else turns debug off. |
 | `CONSOLE_DATA_DIR` | the repo directory | Where the Console keeps its own data: `db.sqlite3` and, with debug off, the generated `secret_key`. A relative path resolves against the repo; created if missing. The image sets `/data`. |
 | `DJANGO_SECRET_KEY` | dev fallback while debug is on; with debug off, generated on first start into `<CONSOLE_DATA_DIR>/secret_key` and reused | Set it to override the key in either mode. |
@@ -51,7 +52,7 @@ Any other variable starting with `CONSOLE_` is treated as a typo and refuses sta
 
 ### The PR gate
 
-Every pull request runs `.github/workflows/ci.yml`, and `main` accepts a merge only when its `gate` check is green. These are its commands, in order, so you can run the same checks locally. Leave `CONSOLE_ENGINE_URL` unset for the test commands: the tests and tooling must not need an Engine.
+Every pull request runs `.github/workflows/ci.yml`, and `main` accepts a merge only when its `gate` check is green. These are its commands, in order, so you can run the same checks locally. Leave `CONSOLE_ENGINE_URL` and `CONSOLE_ENGINE_SERVICE_KEY` unset for the test commands: the tests and tooling must not need an Engine.
 
 ```bash
 uv lock --check                                    # uv.lock matches pyproject.toml
@@ -73,10 +74,10 @@ Every PR also runs a smoke suite (`tests/engine_live/`, marker `engine_live`) ag
 
 ```bash
 docker compose -f docker-compose.yml -f compose.smoke.yml up -d --wait engine db
-ENGINE_LIVE_URL=http://127.0.0.1:8000 uv run pytest -m engine_live
+ENGINE_LIVE_URL=http://127.0.0.1:8000 ENGINE_LIVE_SERVICE_KEY=dev-only-credential-change-me-00000000 uv run pytest -m engine_live
 ```
 
-Selecting `engine_live` without `ENGINE_LIVE_URL` is an error, never a silent skip.
+Selecting `engine_live` without `ENGINE_LIVE_URL` or `ENGINE_LIVE_SERVICE_KEY` is an error, never a silent skip. In CI, `engine-up.sh` gives the Engine a CI-only credential and hands the same value to the smoke. Tests marked `engine_auth` need an Engine that enforces service auth; `engine-release-smoke` leaves them out while the newest Engine release has none. The smoke plays one turn (#48) on the Engine's deterministic `stub` model adapter, which `engine-up.sh` and `compose.smoke.yml` switch on (`EPISTREL_MODEL_ADAPTER=stub`), so it needs no model credentials.
 
 ## Run with Docker
 
@@ -84,8 +85,8 @@ Selecting `engine_live` without `ENGINE_LIVE_URL` is an error, never a silent sk
 
 ```bash
 docker compose pull && docker compose up -d --wait --wait-timeout 120   # three healthy services
-open http://127.0.0.1:7739/                              # Engine http://engine:8000 — Healthy
-docker compose exec console python manage.py createsuperuser   # an admin login
+docker compose exec console python manage.py createsuperuser   # an operator login
+open http://127.0.0.1:7739/                              # sign in: Engine http://engine:8000 — Healthy
 docker compose pull && docker compose up -d --wait       # pick up a newer Console and Engine edge
 docker compose stop                                      # stop, keeping everything
 docker compose down                                      # remove containers, keep data
@@ -98,7 +99,7 @@ docker compose down -v                                   # remove containers and
 - Nothing restarts by itself: the stack comes up only when you run `up`.
 - Console data (its SQLite database and generated secret key) lives in the `console-data` volume and survives `down`; `down -v` wipes it, along with the Engine's database and media.
 - `up --wait` exits non-zero if the Engine is unhealthy, even though the Console itself is up; the Console page then says why.
-- The Engine runs with its compose's dev-only service credential and config key. They are fine for this localhost-only stack and nothing else.
+- The Engine runs with its compose's dev-only service credential and config key, and the Console sends the same credential as its `CONSOLE_ENGINE_SERVICE_KEY`. They are fine for this localhost-only stack and nothing else. To change them, edit `docker-compose.yml` and override both dev-only values (the credential and the config key) together; the credential must stay the same on the `engine` and `console` services.
 - Every value in `docker-compose.yml` is a literal, so a `.env` cannot change any setting. The exception is the project name: the file's `name: epistrel-console` fixes it, but a `COMPOSE_PROJECT_NAME` in the environment or a `.env` overrides it, and then the volume names change too, so the stack comes up empty. Leave it unset to keep your data.
 
 ## License

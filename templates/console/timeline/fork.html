@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{# The fork form (#53): not a confirm page, since forking only creates. Context: form (ForkForm), story_id, turn, label, facts, idempotency_key, next_url. #}
+{% block title %}Fork {{ label }} — Epistrel Console{% endblock %}
+{% block heading %}Fork {{ label }} at turn {{ turn }}{% endblock %}
+{% block content %}
+<p>Copy the story's history through turn {{ turn }}{% if form.variant_chain.value %} along chain {{ form.variant_chain.value }}{% endif %} into a new story. The original is not changed.</p>
+<dl>{% for name, value in facts %}<dt>{{ name }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}</dl>
+<form method="post" class="fork-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  {% for name, value in form.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
+  {% endfor %}
+  {% include "console/timeline/_fields.html" %}
+  <div class="field field-new_name">{{ form.new_name.label_tag }} {{ form.new_name }} {{ form.new_name.errors }}</div>
+  <button type="submit">Fork</button>
+  <a href="{{ next_url }}">Cancel</a>
+</form>
+{% endblock %}

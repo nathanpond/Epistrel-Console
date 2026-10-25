@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Retire content rating — Epistrel Console{% endblock %}
+{% block heading %}Retire content rating{% endblock %}
+{% block content %}
+<div class="engine-error" role="alert">
+  <p><strong>{{ message }}</strong> — <a href="{{ settings_url }}">deployment settings</a>.</p>
+  <p><em>{{ label }}</em> was not retired.</p>
+</div>
+<p><a href="{% url 'ratings:detail' rating_id %}">Back to the rating</a> · <a href="{% url 'ratings:list' %}">All ratings</a></p>
+{% endblock %}

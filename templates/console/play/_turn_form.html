@@ -1,0 +1,28 @@
+{# The turn form (#48). Context: fv (FormView: form, snapshot, idempotency_key, disabled, note). #}
+<div id="turn-form"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <h2>Play a turn</h2>
+  {% if fv.note %}<p class="warning">{{ fv.note }}</p>{% endif %}
+  <form method="post" action="{% url 'stories:turn' fv.story_id %}" class="turn-form"
+        hx-post="{% url 'stories:turn' fv.story_id %}" hx-target="#inspector" hx-swap="innerHTML"
+        hx-disable="this" hx-sync="this:drop" hx-config="timeout:{{ fv.timeout_s }}s">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ fv.idempotency_key }}">
+    <input type="hidden" name="snapshot" value="{{ fv.snapshot }}">
+    {{ fv.form.non_field_errors }}
+    <fieldset{% if fv.disabled %} disabled{% endif %}>
+      {% for field in fv.form %}
+      <div class="field field-{{ field.name }}">
+        {{ field.label_tag }}
+        {% if field.name == "output_viewpoint" %}
+        <select name="output_viewpoint" id="{{ field.auto_id }}" hx-get="{% url 'stories:transcript' fv.story_id %}" hx-target="#transcript" hx-swap="outerHTML" hx-include="[name=snapshot]">
+          {% for value, label in field.field.choices %}<option value="{{ value }}"{% if value == field.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        {% else %}{{ field }}{% endif %}
+        {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+      <button type="submit">Send</button> <span class="htmx-indicator">Running…</span>
+    </fieldset>
+  </form>
+</div>

@@ -1,20 +1,98 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>{% block title %}Epistrel Console{% endblock %}</title>
+  <script src="{% static 'console/htmx.min.js' %}" defer></script>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+    body { font-family: system-ui, sans-serif; margin: 0 2rem 2rem; max-width: 72rem; }
+    nav.shell { display: flex; gap: 1rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #ccc; flex-wrap: wrap; }
+    nav.shell .brand { font-weight: 700; text-decoration: none; color: inherit; }
+    nav.shell a.active { font-weight: 700; text-decoration: underline; }
+    nav.shell .spacer { flex: 1; }
+    nav.shell form { display: inline; margin: 0; }
+    .badge { padding: 0.15rem 0.5rem; border-radius: 0.3rem; border: 1px solid currentColor; text-decoration: none; }
     .state-healthy { color: #1a7f37; }
-    .state-unhealthy { color: #9a6700; }
+    .state-degraded { color: #9a6700; }
+    .state-unhealthy { color: #bc4c00; }
     .state-unreachable { color: #cf222e; }
+    ul.messages { list-style: none; padding: 0.5rem 0.8rem; background: #f6f8fa; border: 1px solid #d0d7de; }
+    ul.messages .error { color: #cf222e; }
+    .engine-error { border: 2px solid #cf222e; padding: 0.5rem 1rem; margin: 1rem 0; background: #fff5f5; }
+    .errorlist { color: #cf222e; }
+    pre { background: #f6f8fa; padding: 0.4rem; overflow-x: auto; }
     dt { font-weight: 600; }
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #d0d7de; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+    a.button { padding: 0.1rem 0.5rem; border: 1px solid #8c959f; border-radius: 0.3rem; text-decoration: none; color: inherit; background: #f6f8fa; }
+    button.danger { color: #fff; background: #cf222e; border: 1px solid #a40e26; }
+    .default-submit { position: absolute; left: -10000px; }
+    fieldset.character { margin: 0.8rem 0; }
+    fieldset.character textarea { width: 40rem; max-width: 100%; }
+    small.source { color: #57606a; white-space: nowrap; }
+    .seeded { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; }
+    .warning { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
+    .policy-form .field { margin: 0.8rem 0; }
+    .policy-form textarea { width: 40rem; max-width: 100%; }
+    .play { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+    .play-right { position: sticky; top: 0.5rem; max-height: 95vh; overflow-y: auto; border-left: 1px solid #d0d7de; padding-left: 1rem; }
+    ol.transcript { list-style: none; padding: 0; max-height: 28rem; overflow-y: auto; border: 1px solid #d0d7de; }
+    ol.transcript li { padding: 0.25rem 0.5rem; border-bottom: 1px solid #eaeef2; }
+    ol.transcript .channel { font-size: 0.8em; color: #57606a; }
+    ol.transcript li.channel-message { background: #f6f8fa; }
+    .turn-form .field { margin: 0.4rem 0; }
+    .turn-form textarea { width: 100%; }
+    .turn-form fieldset { border: 1px solid #d0d7de; }
+    .waiting-card { border: 2px solid #9a6700; padding: 0.4rem 0.8rem; margin: 0.5rem 0; background: #fff8c5; }
+    li.turn-controls { list-style: none; font-size: 0.85em; margin: 0.2rem 0 0.6rem; }
+    .fork-banner { border: 1px solid #8c959f; padding: 0.4rem 0.8rem; margin-bottom: 0.8rem; }
+    blockquote.reply { border-left: 4px solid #8c959f; margin: 0.5rem 0; padding: 0.2rem 0.8rem; }
+    table.model-calls { font-size: 0.85em; }
+    .degraded { background: #fff3cd; font-weight: 700; }
+    .muted { color: #57606a; }
+    tr.revision th { background: #f6f8fa; }
+    .settings-form .field { margin: 0.5rem 0; }
+    nav.tabs { margin: 1rem 0 0.5rem; border-bottom: 1px solid #d0d7de; }
+    nav.tabs a { display: inline-block; padding: 0.3rem 0.9rem; }
+    nav.tabs a[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
+    .ingest-form fieldset.event { border: 1px solid #d0d7de; margin: 0.5rem 0; }
+    .ingest-form .field { margin: 0.3rem 0; }
+    .ingest-form textarea { width: 100%; }
+    .settings-form textarea { width: 32rem; max-width: 100%; }
+    .history-controls .field { display: inline-block; margin: 0.3rem 1rem 0.3rem 0; vertical-align: top; }
+    .history-controls input[type=number] { width: 6rem; }
+    table.history tr.channel-think td, table.history tr.channel-latent td { color: #57606a; font-style: italic; }
+    table.history .badge-channel { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; }
+    table.history tr.turn-header th { background: #f6f8fa; text-align: left; }
+    .audit-record { border-left: 4px solid #cf222e; padding: 0.2rem 0.8rem; margin: 0.3rem 0; background: #fff5f5; }
+    .badge-recheck { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; }
+    td.marker-story { font-weight: 700; }
+    td.marker-unknown { color: #9a6700; }
+    .refusal { border: 2px solid #cf222e; padding: 0.4rem 0.8rem; margin: 0.5rem 0; background: #fff5f5; }
+    ol.pinned-items li { margin: 0.4rem 0; }
+    ol.pinned-items textarea { width: 40rem; max-width: 100%; vertical-align: top; }
+    section > h2 small.revision { font-weight: 400; color: #57606a; }
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
   </style>
 </head>
-<body>
-  <header>{% block header %}<h1>Epistrel Console</h1>{% endblock %}</header>
+<body hx-headers:inherited='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  {% if user.is_authenticated %}
+  <nav class="shell">
+    <a class="brand" href="/">Epistrel Console</a>
+    {% for item in nav_items %}<a href="{{ item.url }}"{% if item.active %} class="active"{% endif %}>{{ item.label }}</a>{% endfor %}
+    <span class="spacer"></span>
+    <a class="badge state-{{ engine_badge.state }}" href="/" title="Engine status">{{ engine_badge.badge }}</a>
+    <span class="operator">{{ user.get_username }}</span>
+    <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit">Log out</button></form>
+  </nav>
+  {% endif %}
+  {% if messages %}
+  <ul class="messages">
+    {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <header>{% block header %}<h1>{% block heading %}Epistrel Console{% endblock %}</h1>{% endblock %}</header>
   <main>{% block content %}{% endblock %}</main>
-  <footer>{% block footer %}Epistrel Console {{ version }}{% endblock %}</footer>
+  <footer>{% block footer %}Epistrel Console {{ console_version }}{% endblock %}</footer>
 </body>
 </html>

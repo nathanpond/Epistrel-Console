@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -20,8 +21,10 @@ DATABASE_URL = (
     "EPISTREL_DATABASE_URL=postgresql+psycopg://epistrel:epistrel-dev@postgres:5432/epistrel"
 )
 LOG_LEVEL = "EPISTREL_LOG_LEVEL=INFO"
-CREDENTIALS = "EPISTREL_SERVICE_CREDENTIALS=dev-only-credential-change-me-00000000"
-CONFIG_KEY = "EPISTREL_CONFIG_KEY=ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA="
+CI_KEY = "ci-only-credential-not-a-secret-0000"
+CREDENTIALS = f"EPISTREL_SERVICE_CREDENTIALS={CI_KEY}"
+CONFIG_KEY = "EPISTREL_CONFIG_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+STUB_ADAPTER = "EPISTREL_MODEL_ADAPTER=stub"  # the smoke's turn needs a model (#48)
 # What the probe printed for the real images (checked 2026-10-24, the `edge` list trimmed).
 RELEASED = [
     "EPISTREL_DATABASE_URL",
@@ -30,7 +33,13 @@ RELEASED = [
     "EPISTREL_LOG_LEVEL",
     "EPISTREL_PORT",
 ]
-EDGE = [*RELEASED, "EPISTREL_AUTH_DISABLED", "EPISTREL_CONFIG_KEY", "EPISTREL_SERVICE_CREDENTIALS"]
+EDGE = [
+    *RELEASED,
+    "EPISTREL_AUTH_DISABLED",
+    "EPISTREL_CONFIG_KEY",
+    "EPISTREL_MODEL_ADAPTER",
+    "EPISTREL_SERVICE_CREDENTIALS",
+]
 
 FAKE_DOCKER = """#!/usr/bin/env bash
 printf '%s\\0' "$@" >> "$FAKE_LOG"; printf '\\036' >> "$FAKE_LOG"
@@ -42,7 +51,14 @@ exit 0
 """
 
 
-def start(tmp_path: Path, known: list[str], probe_rc: int = 0) -> tuple[int, str, list[list[str]]]:
+class Started(NamedTuple):
+    code: int
+    out: str
+    calls: list[list[str]]
+    github_env: str
+
+
+def start(tmp_path: Path, known: list[str], probe_rc: int = 0) -> Started:
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     docker = bindir / "docker"
@@ -50,7 +66,10 @@ def start(tmp_path: Path, known: list[str], probe_rc: int = 0) -> tuple[int, str
     docker.chmod(0o755)
     log = tmp_path / "docker.log"
     log.write_text("")
+    github_env = tmp_path / "github_env"
+    github_env.write_text("")
     env = {
+        "GITHUB_ENV": str(github_env),
         "PATH": f"{bindir}:/usr/bin:/bin",
         "ENGINE_IMAGE": IMAGE,
         "NETWORK": "net1",
@@ -64,7 +83,7 @@ def start(tmp_path: Path, known: list[str], probe_rc: int = 0) -> tuple[int, str
         [bash, str(ENGINE_UP), "start"], env=env, capture_output=True, text=True, check=False
     )
     calls = [call.split("\0")[:-1] for call in log.read_text().split("\x1e") if call]
-    return proc.returncode, proc.stdout + proc.stderr, calls
+    return Started(proc.returncode, proc.stdout + proc.stderr, calls, github_env.read_text())
 
 
 def engine_run(calls: list[list[str]]) -> list[str] | None:
@@ -72,7 +91,7 @@ def engine_run(calls: list[list[str]]) -> list[str] | None:
 
 
 def test_a_released_engine_gets_only_the_settings_it_knows(tmp_path: Path) -> None:
-    code, out, calls = start(tmp_path, RELEASED)
+    code, out, calls, github_env = start(tmp_path, RELEASED)
     assert code == 0, out
     assert engine_run(calls) == [
         "run", "-d", "--name", "engine", "--network", "net1", "-p", "127.0.0.1:8000:8000",
@@ -80,10 +99,13 @@ def test_a_released_engine_gets_only_the_settings_it_knows(tmp_path: Path) -> No
     ]  # fmt: skip
     assert f"{IMAGE} has no EPISTREL_SERVICE_CREDENTIALS; not passed" in out
     assert f"{IMAGE} has no EPISTREL_CONFIG_KEY; not passed" in out
+    assert f"{IMAGE} has no EPISTREL_MODEL_ADAPTER; not passed" in out
+    # The smoke still gets a key: an Engine without service auth ignores it.
+    assert github_env == f"ENGINE_LIVE_SERVICE_KEY={CI_KEY}\n"
 
 
-def test_edge_gets_all_four(tmp_path: Path) -> None:
-    code, out, calls = start(tmp_path, EDGE)
+def test_edge_gets_all_five(tmp_path: Path) -> None:
+    code, out, calls, github_env = start(tmp_path, EDGE)
     assert code == 0, out
     run = engine_run(calls)
     assert run is not None
@@ -96,16 +118,26 @@ def test_edge_gets_all_four(tmp_path: Path) -> None:
         CREDENTIALS,
         "-e",
         CONFIG_KEY,
+        "-e",
+        STUB_ADAPTER,
         IMAGE,
     ]
     assert "not passed" not in out
+    # The smoke's service key is the Engine's credential, from the one literal in the script.
+    assert github_env == f"ENGINE_LIVE_SERVICE_KEY={CI_KEY}\n"
+
+
+def test_the_ci_credential_is_long_enough_and_written_once() -> None:
+    # The Engine refuses a credential under 32 characters; the literal lives only in the script.
+    assert len(CI_KEY) >= 32
+    assert ENGINE_UP.read_text().count(CI_KEY) == 1
 
 
 def test_a_name_that_only_starts_like_a_setting_does_not_count(tmp_path: Path) -> None:
     # grep -x: EPISTREL_CONFIG_KEY_V2 is not EPISTREL_CONFIG_KEY.
-    _, _, calls = start(
+    calls = start(
         tmp_path, [*RELEASED, "EPISTREL_CONFIG_KEY_V2", "XEPISTREL_SERVICE_CREDENTIALS"]
-    )
+    ).calls
     run = engine_run(calls)
     assert run is not None
     assert CONFIG_KEY not in run
@@ -113,7 +145,7 @@ def test_a_name_that_only_starts_like_a_setting_does_not_count(tmp_path: Path) -
 
 
 def test_the_probe_runs_the_image_python_after_the_pull(tmp_path: Path) -> None:
-    _, _, calls = start(tmp_path, RELEASED)
+    calls = start(tmp_path, RELEASED).calls
     assert calls[0] == ["pull", IMAGE]
     probe = calls[1]
     assert probe[:5] == ["run", "--rm", "--entrypoint", "python", IMAGE]
@@ -124,16 +156,18 @@ def test_the_probe_runs_the_image_python_after_the_pull(tmp_path: Path) -> None:
 
 
 def test_a_failed_probe_starts_nothing(tmp_path: Path) -> None:
-    code, out, calls = start(tmp_path, EDGE, probe_rc=1)
+    code, out, calls, github_env = start(tmp_path, EDGE, probe_rc=1)
     assert code == 1
     assert f"::error::could not read the settings {IMAGE} accepts" in out
     assert engine_run(calls) is None
+    assert github_env == ""
 
 
 @pytest.mark.parametrize("known", [[], ["EPISTREL_LOG_LEVEL", "EPISTREL_PORT"]])
 def test_an_image_without_database_url_starts_nothing(tmp_path: Path, known: list[str]) -> None:
-    code, out, calls = start(tmp_path, known)
+    code, out, calls, github_env = start(tmp_path, known)
     assert code == 1
+    assert github_env == ""
     assert f"::error::{IMAGE} has no EPISTREL_DATABASE_URL setting" in out
     assert engine_run(calls) is None
 

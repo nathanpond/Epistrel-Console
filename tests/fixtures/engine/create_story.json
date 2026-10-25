@@ -1,0 +1,19 @@
+{
+  "timeline_revision": 1,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KEY",
+  "applied": true,
+  "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "characters": [
+    {"id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A", "name": "Mara"},
+    {"id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B", "name": "Tobin"}
+  ],
+  "content_rating": {
+    "id": "00000000000000000000RAT002",
+    "version_id": "00000000000000000000RTV002",
+    "name": "Teen"
+  },
+  "scenario": null,
+  "engine_profile": null,
+  "report": null,
+  "impact": null
+}

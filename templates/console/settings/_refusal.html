@@ -1,0 +1,10 @@
+{# A refused save (console.views.story_settings.Refusal). Context: refusal. #}
+{% if refusal %}
+<div class="refusal">
+  {% if refusal.notice %}<p class="notice"><strong>{{ refusal.notice }}</strong></p>{% endif %}
+  {% if refusal.line %}<p class="error-line"><code>{{ refusal.line }}</code></p>{% endif %}
+  {% if refusal.facts %}<dl class="facts">{% for label, value in refusal.facts %}<dt>{{ label }}</dt><dd>{% if label == "Operation" %}<code>{{ value }}</code>{% else %}{{ value }}{% endif %}</dd>{% endfor %}</dl>{% endif %}
+  {% if refusal.violations %}{% include "console/_violations.html" with violations=refusal.violations %}{% endif %}
+  {% if refusal.panel %}{% include "console/_engine_error.html" with engine_error=refusal.panel %}{% endif %}
+</div>
+{% endif %}

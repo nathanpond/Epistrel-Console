@@ -1,0 +1,37 @@
+{# The settings form (#54). Context: settings_form, settings_refusal, deployment_error, others, superseded, config_url, settings_key, snapshot, snap, archived_note. #}
+{% load console_format %}
+{% include "console/settings/_refusal.html" with refusal=settings_refusal %}
+{% if deployment_error %}
+<div class="deployment-error"><p>The deployment's defaults could not be read: markers that depend on them read “unknown”.</p>
+{% include "console/_engine_error.html" with engine_error=deployment_error %}</div>
+{% endif %}
+<form method="post" action="{% url 'stories:settings' snap.story_id %}" class="settings-form story-settings-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ settings_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ settings_form.non_field_errors }}
+  <fieldset{% if archived_note %} disabled{% endif %}>
+  <table class="story-settings">
+    <thead><tr><th>Setting</th><th>Value</th><th>Source</th><th>Reset</th></tr></thead>
+    <tbody>
+      {% for row in settings_form.rows %}
+      <tr class="setting setting-{{ row.name }}">
+        <th><label for="{{ row.field.id_for_label }}">{{ row.field.label }}</label></th>
+        <td>{{ row.field }}{% if row.field.help_text %}<br><small>{{ row.field.help_text }}</small>{% endif %}{{ row.field.errors }}</td>
+        <td class="marker marker-{{ row.marker.source }}">{{ row.marker.text }}</td>
+        <td>{% if row.marker.overridden %}<label>{{ row.reset }} {{ row.reset.label }}</label>{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p><button type="submit">Save settings</button> <small>Only changed fields are sent.</small></p>
+  </fieldset>
+</form>
+<p class="note superseded-note">Moved to engine profile overrides — see <a href="{{ config_url }}">Config</a>: generation settings, Lite window and summary cap, call budget, turn deadline and guardrail retry budget ({% for name in superseded %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}).</p>
+{% if others %}
+<h3>Other settings</h3>
+<p class="muted">Returned by the Engine but not edited here; never sent.</p>
+<table class="other-settings">
+  <tbody>{% for name, value in others %}<tr><th><code>{{ name }}</code></th><td><code>{{ value|json_value }}</code></td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}

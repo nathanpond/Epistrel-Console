@@ -1,0 +1,19 @@
+{# Effective or inactive policies, read-only. Context: rows (PolicyRow). #}
+<table class="policies">
+  <thead><tr><th>Name</th><th>Id</th><th>Scope</th><th>Source</th><th>Applies to</th><th>Age condition</th><th>Kind</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr class="policy">
+      <td>{% if row.policy.name is None %}<em>{{ row.name }}</em>{% else %}{{ row.name }}{% endif %}</td>
+      <td><code>{{ row.policy.id }}</code></td>
+      <td>{{ row.scope }}</td>
+      <td>{{ row.policy.source }}</td>
+      <td>{{ row.applies_to }}</td>
+      <td>{{ row.policy.age_condition|default:"—" }}</td>
+      <td>{{ row.policy.kind }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="muted">None.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

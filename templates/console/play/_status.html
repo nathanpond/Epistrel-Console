@@ -1,0 +1,5 @@
+{# The waiting area (#48): live waiting cards, or the line a finished poll left. #}
+<div id="turn-status"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% for card in cards %}{% include "console/play/_waiting_card.html" %}{% endfor %}
+  {% if status_note %}<p class="turn-note">{{ status_note }}</p>{% endif %}
+</div>

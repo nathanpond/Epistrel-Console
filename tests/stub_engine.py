@@ -1,4 +1,5 @@
-"""A stdlib HTTP server that answers /health like the Engine, for live tests."""
+"""A stdlib HTTP server that answers /health like the Engine (and ``GET /stories`` with an empty
+list, for the status page's service-key check), for live tests."""
 
 import json
 import threading
@@ -8,6 +9,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HEALTHY = {"status": "ok", "checks": {"database": "ok", "ffmpeg": "missing"}}
+STORIES: dict[str, list[object]] = {"items": []}
 
 
 @contextmanager
@@ -16,7 +18,8 @@ def stub_engine(delay_s: float = 0.0) -> Iterator[ThreadingHTTPServer]:
         def do_GET(self) -> None:
             if delay_s:
                 time.sleep(delay_s)
-            payload = json.dumps(HEALTHY).encode()
+            body = STORIES if self.path.split("?", 1)[0] == "/stories" else HEALTHY
+            payload = json.dumps(body).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))

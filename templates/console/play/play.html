@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}{{ story.name|default:story.id }} — Epistrel Console{% endblock %}
+{% block heading %}{{ story.name|default:"—" }}{% endblock %}
+{% block content %}
+{% if fork_banner %}
+<div class="fork-banner notice">
+  <p><strong>Forked from <em><a href="{% url 'stories:detail' fork_banner.source_id %}">{{ fork_banner.source_name|default:fork_banner.source_id }}</a></em> at turn {{ fork_banner.at_turn }}</strong></p>
+  {% if fork_banner.characters %}
+  <table class="fork-mapping">
+    <thead><tr><th>Name</th><th>Source id</th><th>New id</th></tr></thead>
+    <tbody>{% for name, source, new in fork_banner.characters %}<tr><td>{{ name }}</td><td><code>{{ source }}</code></td><td><code>{{ new }}</code></td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+<dl class="story-header">
+  <dt>Id</dt><dd><code>{{ story.id }}</code></dd>
+  <dt>Status</dt><dd class="status">{{ story.status }}</dd>
+  <dt>Timeline revision</dt><dd>{{ story.timeline_revision }}{% if timeline.undo %} {% if timeline.archived_note %}<button type="button" class="undo-rewind" disabled title="{{ timeline.archived_note }}">{{ timeline.undo.label }}</button>{% else %}<a class="button undo-rewind" href="{{ timeline.undo.url }}">{{ timeline.undo.label }}</a>{% endif %}{% endif %}{% if timeline.dormant %} <a class="dormant-chains" href="{{ timeline.variants_url }}">{{ timeline.dormant }} dormant chain{{ timeline.dormant|pluralize }}</a>{% endif %}</dd>
+  <dt>Content rating</dt><dd>{{ story.content_rating.name|default:"—" }}</dd>
+  <dt>Cast</dt>
+  <dd>{% if cast %}<ul class="cast">{% for character in cast %}<li>{{ character.name }}{% if character.is_player %} (player){% endif %}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
+  <dt>Created</dt><dd>{{ story.created_at|engine_time }}</dd>
+</dl>
+<p>{% include "console/stories/_actions.html" with story=story query=actions_query %} <a class="button" href="{% url 'engine:rebuild' story.id %}?{{ actions_query }}">Rebuild projections</a> <a class="history-link" href="{% url 'stories:history' story.id %}">History</a> <a class="settings-link" href="{% url 'stories:settings' story.id %}">Settings</a> <a href="{% url 'stories:list' %}">All stories</a></p>
+<div class="play">
+  <section class="play-left">
+    {% include "console/play/_transcript.html" %}
+    {% include "console/play/_status.html" %}
+    {% include "console/play/_form_area.html" %}
+  </section>
+  <section class="play-right">
+    <h2>Inspector</h2>
+    <div id="inspector">{% include "console/play/_inspector_body.html" %}</div>
+  </section>
+</div>
+{% endblock %}
