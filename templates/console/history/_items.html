@@ -1,4 +1,4 @@
-{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn. #}
+{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). #}
 {% load console_format %}
 {% if page.chain %}<p class="chain-line">Viewing chain {{ page.chain }} — <a href="{{ page.clear_chain_url }}">clear</a></p>{% endif %}
 {% if page.error %}
@@ -31,6 +31,7 @@
       <td>{{ row.item.text }}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
       <td>{% if row.log_pk %}<a class="operation-link" href="{% url 'operations:detail' row.log_pk %}"><code>{{ row.item.operation_id }}</code></a>{% else %}<code>{{ row.item.operation_id }}</code>{% endif %}</td>
     </tr>
+    {% if row.feedback %}<tr class="feedback-row"><td colspan="7">{% include "console/stories/_feedback.html" with fb=row.feedback %}</td></tr>{% endif %}
     {% endfor %}
     {% if group.audit %}
     <tr class="audit"><td colspan="7">

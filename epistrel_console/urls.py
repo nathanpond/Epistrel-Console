@@ -12,6 +12,7 @@ from console.views import (
     catalog_lifecycle,
     catalog_scenarios,
     engine_panel,
+    feedback,
     history,
     media,
     media_picker,
@@ -59,6 +60,17 @@ story_patterns = (
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         path("<str:story_id>/history/", history.history, name="history"),
+        # #83: rate, re-rate and retract feedback on one rendered message.
+        path(
+            "<str:story_id>/messages/<str:message_id>/feedback/",
+            feedback.feedback,
+            name="feedback",
+        ),
+        path(
+            "<str:story_id>/messages/<str:message_id>/feedback/retract/",
+            feedback.retract,
+            name="feedback-retract",
+        ),
         path(
             "<str:story_id>/creation-report/",
             story_from_scenario.creation_report,

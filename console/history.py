@@ -13,7 +13,7 @@
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from console.engine.models import (
     History,
@@ -23,6 +23,9 @@ from console.engine.models import (
     VariantChain,
 )
 from console.models import EngineOperation
+
+if TYPE_CHECKING:
+    from console.feedback import FeedbackWidget
 
 INGEST_KIND = "ingest"  # the operation-log kind of an ingest batch (the client method's name)
 REJECTED_KIND = "guardrail_output_rejected"
@@ -183,6 +186,7 @@ class Row:
     render: tuple[str, ...]  # render characters' labels (raw id when not in the cast)
     log_pk: int | None  # the operation-log row its operation id links to
     same_message: bool = False  # shares message_id with the row before it (say + do)
+    feedback: FeedbackWidget | None = None  # the "Rate" control (#83, set by the view)
 
 
 @dataclass

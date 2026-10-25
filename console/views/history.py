@@ -16,7 +16,8 @@ An HTMX request (the viewpoint select's ``change``) gets the controls fragment a
 audit box enables and disables live; without JavaScript the form refuses audit server-side.
 """
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlencode
 
 from django.http import HttpRequest, HttpResponse, QueryDict
@@ -29,6 +30,7 @@ from console.engine.client import EngineClient, EngineClientError
 from console.engine.models import History, Story, SummarySegment, VariantChain
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
+from console.feedback import FeedbackWidget, collapsed, first_parts
 from console.forms.history import HistoryForm, as_of_options
 from console.history import (
     TurnGroup,
@@ -204,6 +206,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         links=links,
         actor_filtered=bool(query["actor_character_id"]),
     )
+    _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     older = history.next_before_turn
     variant = query["variant"] or ""
     return Page(
@@ -219,6 +222,17 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         clear_chain_url=_url(story.id, _with(request, variant=None)) if variant else "",
         settings_error=settings_error,
     )
+
+
+def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidget]) -> None:
+    """Give the first rendered part of each generated message its "Rate" control (#83)."""
+    rows = [row for group in groups for row in group.rows]
+    marks = iter(first_parts(row.item for row in rows))
+    for group in groups:
+        group.rows = [
+            replace(row, feedback=widget(row.item.message_id)) if next(marks) else row
+            for row in group.rows
+        ]
 
 
 @require_safe

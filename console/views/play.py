@@ -62,6 +62,7 @@ from console.engine.models import (
 from console.engine_access import complete_queued, engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
+from console.feedback import FeedbackWidget, collapsed, first_parts
 from console.forms.ingest import (
     EVENTS_MAX,
     INGEST_PREFIX,
@@ -291,6 +292,7 @@ class Entry:
     item: HistoryItem
     speaker: str
     controls: TurnControls | None = None  # on the last item of each turn (#53)
+    feedback: FeedbackWidget | None = None  # the "Rate" control on a generated message (#83)
 
 
 @dataclass(frozen=True)
@@ -376,7 +378,12 @@ def _transcript(
         return Transcript(play_story.id, viewpoint, label, error=panel_for(exc))
     labels = cast_helpers.character_labels(cast)
     basis = timeline_basis(play_story, history, story)
-    entries = [Entry(item, _speaker(item, labels)) for item in history.entries]
+    items = history.entries
+    widget = collapsed(play_story.id, "play", reverse("stories:detail", args=[play_story.id]))
+    entries = [
+        Entry(item, _speaker(item, labels), feedback=widget(item.message_id) if rate else None)
+        for item, rate in zip(items, first_parts(items), strict=True)
+    ]
     chains = story.variant_chains if story is not None else []
     return Transcript(
         play_story.id,

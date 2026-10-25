@@ -2922,3 +2922,63 @@ class RatingSuggestion(Model):
 
     def calls(self) -> list[SuggestionModelCall]:
         return [SuggestionModelCall.from_raw(raw) for raw in self.model_calls]
+
+
+# --- Message feedback (#83) ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ModelIdentity(Model):
+    """``ModelIdentity``: one model purpose's model as a fingerprint names it (the configured id
+    and the version the provider reports, ``None`` until an adapter reports one)."""
+
+    id: str | None
+    reported_version: str | None = None
+
+
+@dataclass(frozen=True)
+class FeedbackContext(Model):
+    """``FeedbackContext``: the configuration a rated message was produced under, copied when
+    the rating was first written. ``profile_version`` is ``<profile id>@<version>``;
+    ``quality_status`` is the schema's ``QualityStatusValue`` kept as a plain string."""
+
+    operation_id: str
+    config_fingerprint: str | None = None
+    models: dict[str, ModelIdentity] | None = None
+    profile_version: str | None = None
+    quality_status: str | None = open_enum(default=None)
+    rating_version_id: str | None = None
+
+
+@dataclass(frozen=True)
+class FeedbackHistoryEntry(Model):
+    """``FeedbackHistoryEntry``: an earlier value of a rating and why it stopped being current
+    (``kind``: ``replaced`` or ``retracted``)."""
+
+    rating: int
+    tags: list[str]
+    text: str | None
+    rated_at: str
+    replaced_at: str
+    kind: str = open_enum()
+
+
+@dataclass(frozen=True)
+class MessageFeedback(Model):
+    """``Feedback``: the requesting principal's rating of one generated message (``rating``
+    ``None`` when the principal has none), its ``context`` (``None`` without a rating) and the
+    ``history`` of earlier values, newest first."""
+
+    story_id: str
+    message_id: str
+    turn: int
+    variant: int
+    principal: str
+    rating: int | None
+    tags: list[str]
+    text: str | None
+    compacted_at: str | None
+    created_at: str | None
+    updated_at: str | None
+    context: FeedbackContext | None
+    history: list[FeedbackHistoryEntry]

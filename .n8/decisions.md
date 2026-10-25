@@ -1068,3 +1068,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The concern's element is worded and linked in Python (`element_html`), following the planner's per-kind wording. It doesn't use #64's `_location.html`, whose "entry X vN · field …" wording doesn't match. A kind the Console doesn't know renders as "<Kind> in `entry`", linked to the entry. A known policy shows its name, linked. An unknown policy shows its id, linked. When the policies read failed, the id shows unlinked.
   **Why:** The story's AC fixes the per-kind wording. `_location.html` keeps its shape for the validation reports.
   **Issue:** #82
+- **Decision:** Retract also requires the open form's signed pre-fill (bound to story, message and acting principal); without a valid one it answers "This form expired — open it again" with zero Engine calls, like save. Under HTMX an expired form re-collapses the widget with that line; without JS it flashes and redirects to `next`. Without JS a successful retract redirects to the open form's page (flash "Rating retracted"), so the operator lands on the re-read history as the HTMX path shows it.
+  **Why:** Retract sits only in the open form, which always carries the token, and the kept-form error path needs the pre-fill to re-render. The plan named the expired rule for save only.
+  **Issue:** #83
+- **Decision:** The signed pre-fill carries the whole rating read (history and context included) plus the tag list, text cap and whether the settings read worked, compressed. An invalid form, a 422 or a panel re-renders the kept form from it with zero extra reads.
+  **Why:** The planner fixed "invalid form = zero Engine calls"; re-rendering the history and tag boxes needs those values.
+  **Issue:** #83
+- **Decision:** The feedback fake is a stateful helper, `tests/fakes/feedback.py` `FeedbackStore` (side effects on the three routes plus a `GET /admin/settings` answer), not new code in `FakeEngine` itself; every answer it serves is validated against the schema. Test tags follow the Engine's `feedback_tags` item pattern `^[a-z0-9_]{1,40}$`.
+  **Why:** Same pattern as #79's `tests/fakes/ownership.py`; the generic fake stays schema-driven.
+  **Issue:** #83
+- **Decision:** In #52's history the colspan `<tr class="feedback-row">` is rendered under each item that carries a control (not under every item); the context block shows as its own list below the History `<details>`, only while a rating exists.
+  **Why:** Rows without a control would be empty. The plan hid the context without a rating but didn't place it; keeping it outside the closed History keeps "the configuration it was given under" visible.
+  **Issue:** #83

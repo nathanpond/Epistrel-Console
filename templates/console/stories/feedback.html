@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% comment %}
+#83: the feedback widget as a page of its own (no JS): context `fb` (console.feedback.FeedbackWidget).
+{% endcomment %}
+{% block title %}Rate a message — Epistrel Console{% endblock %}
+{% block heading %}Rate message <code>{{ fb.message_id }}</code>{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ fb.next_url }}">Back</a></p>
+{% include "console/stories/_feedback.html" %}
+{% endblock %}

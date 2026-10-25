@@ -51,6 +51,7 @@ from console.engine.models import (
     MediaKind,
     MediaPage,
     MediaUploaded,
+    MessageFeedback,
     Model,
     ModelConfig,
     ModelConfigItem,
@@ -1876,6 +1877,56 @@ class EngineClient:
             )
             return _parse(response, RatingSuggestion)
 
+    # --- message feedback (#83) -----------------------------------------------------------------
+
+    @operation(
+        "GET", "/stories/{story_id}/messages/{message_id}/feedback", response_model=MessageFeedback
+    )
+    def get_message_feedback(self, story_id: str, message_id: str) -> MessageFeedback:
+        """``GET /stories/{id}/messages/{message_id}/feedback``: the requesting principal's own
+        rating of the message (``rating`` ``None`` when it has none) and its history. An unknown
+        message (or the consumer's own narration) is :class:`EngineError` 404. Unrecorded."""
+        return _parse(self._request("GET", _feedback_path(story_id, message_id)), MessageFeedback)
+
+    @operation(
+        "PUT",
+        "/stories/{story_id}/messages/{message_id}/feedback",
+        response_model=MessageFeedback,
+        recorded=True,
+    )
+    def put_message_feedback(
+        self,
+        story_id: str,
+        message_id: str,
+        *,
+        rating: int,
+        tags: Sequence[str],
+        text: str | None,
+    ) -> tuple[MessageFeedback, bool]:
+        """``PUT /stories/{id}/messages/{message_id}/feedback {rating, tags, text}``: rate the
+        message as the requesting principal. Returns the rating and whether it was new (201);
+        200 is a replacement or the same value again. 422 ``unknown_feedback_tag`` (with
+        ``details.unknown_tags``) or ``validation_error``; 404 for an unknown message. No
+        ``Idempotency-Key`` (the write is idempotent by itself); recorded in the operation log
+        although the Engine flags it non-mutating (#64 convention 9)."""
+        response = self._request(
+            "PUT",
+            _feedback_path(story_id, message_id),
+            json={"rating": rating, "tags": list(tags), "text": text},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, MessageFeedback), response.status_code == 201
+
+    @operation("DELETE", "/stories/{story_id}/messages/{message_id}/feedback", recorded=True)
+    def delete_message_feedback(self, story_id: str, message_id: str) -> None:
+        """``DELETE /stories/{id}/messages/{message_id}/feedback``: retract the requesting
+        principal's rating (it stays in the history). 204 also when there was none; 404 for an
+        unknown message. No ``Idempotency-Key``; recorded."""
+        response = self._request(
+            "DELETE", _feedback_path(story_id, message_id), timeout=MUTATION_TIMEOUT_S
+        )
+        _raise_for_envelope(response)
+
     # --- principal lookup (#76) -----------------------------------------------------------------
 
     @operation("GET", "/principals/{principal_id}")
@@ -2573,6 +2624,11 @@ def _config_change_params(
 def _story_path(story_id: str) -> str:
     """``/stories/<id>``, the id percent-encoded (an unknown id still reaches the Engine)."""
     return f"/stories/{quote(story_id, safe='')}"
+
+
+def _feedback_path(story_id: str, message_id: str) -> str:
+    """``/stories/<id>/messages/<message_id>/feedback``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/messages/{quote(message_id, safe='')}/feedback"
 
 
 def _purpose_path(purpose: str) -> str:

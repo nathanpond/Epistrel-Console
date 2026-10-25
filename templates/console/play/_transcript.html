@@ -1,4 +1,4 @@
-{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector. After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. #}
+{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector; a generated message carries its "Rate" control (#83). After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. #}
 <div id="transcript"{% if oob %} hx-swap-oob="true"{% endif %}>
   <h2>Transcript <small>as {{ transcript.viewpoint_label }}</small></h2>
   {% if transcript.error %}{% include "console/_engine_error.html" with engine_error=transcript.error %}
@@ -14,6 +14,7 @@
       <span class="channel">{{ entry.item.channel }}</span>
       {% if entry.speaker %}<strong>{{ entry.speaker }}</strong>:{% endif %} <span class="text">{{ entry.item.text }}</span>
       {% if entry.item.origin == "ingested" %}<small class="source">ingested</small>{% endif %}
+      {% if entry.feedback %}{% include "console/stories/_feedback.html" with fb=entry.feedback %}{% endif %}
     </li>
     {% if entry.controls %}{% include "console/timeline/_turn_controls.html" with c=entry.controls %}{% endif %}
     {% endfor %}
