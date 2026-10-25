@@ -170,8 +170,8 @@ def test_the_detail_shows_every_section(operator_client: Client, engine: FakeEng
         "metadata",
         "world",
         "cast",
+        "world-seeds",  # #73: the cast table's partial renders both
         "opening",
-        "world-seeds",
         "story-settings-defaults",
         "recommendation",
         "visual-style",

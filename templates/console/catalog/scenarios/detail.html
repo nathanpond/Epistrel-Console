@@ -97,10 +97,7 @@
 </section>
 {% endwith %}
 
-<section id="cast">
-  <h2>Cast</h2>
-  <details><summary>Cast (JSON)</summary><pre>{{ entry.cast|pretty_json }}</pre></details>
-</section>
+{% include "console/catalog/scenarios/_cast_table.html" %}
 
 {% with o=entry.starting_state.opening %}
 <section id="opening">
@@ -112,11 +109,6 @@
   </dl>
 </section>
 {% endwith %}
-
-<section id="world-seeds">
-  <h2>World seeds</h2>
-  {% if entry.starting_state.seeded_memories %}<details><summary>{{ entry.starting_state.seeded_memories|length }} seed{{ entry.starting_state.seeded_memories|length|pluralize }} (JSON)</summary><pre>{{ entry.starting_state.seeded_memories|pretty_json }}</pre></details>{% else %}<p>—</p>{% endif %}
-</section>
 
 {% with s=entry.story_settings_defaults %}
 <section id="story-settings-defaults">

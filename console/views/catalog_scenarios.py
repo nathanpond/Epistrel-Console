@@ -29,18 +29,22 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_safe
 
 from console.acting import acting_principal
+from console.catalog.cast_table import cast_table, character_ids, rating_ids
+from console.catalog.character_labels import CharacterLabel, character_labels
 from console.confirm import posted_idempotency_key
 from console.draft_stale import DRAFT_STALE, stale_banner
 from console.engine.choices import (
+    CharacterChoices,
     ProfileChoices,
     RatingChoices,
     engine_profile_choices,
     error_text,
+    kept_ratings,
+    published_character_choices,
     rating_choices,
 )
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import CatalogVersion, Scenario, ScenarioCard
-from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.entities import label
@@ -61,6 +65,7 @@ from console.forms.scenario import (
     editor_data,
     retemplated,
 )
+from console.forms.scenario_cast import CastChoices
 from console.formset_rows import OP, OP_REFRESH, parse_op
 from console.ids import new_ulid
 from console.media_slots import (
@@ -114,37 +119,9 @@ def _listing_values(request: HttpRequest, client: EngineClient) -> tuple[list[st
         return None, error_text(exc)
 
 
-@dataclass(frozen=True)
-class CompanionLabel:
-    """How a page names the character a companion scenario belongs to: its card's name (or the
-    id, with ``error``, when the read failed) and its detail URL."""
-
-    character_id: str
-    text: str
-    url: str
-    error: str = ""
-
-
-def companion_labels(client: EngineClient, ids: list[str]) -> dict[str, CompanionLabel]:
-    """One ``GET /catalog/characters/{id}?projection=card`` per distinct id, on the fan-out
-    pool; a failed read is labelled by the id."""
-    distinct = list(dict.fromkeys(i for i in ids if i))
-    results = fan_out(
-        lambda character_id: client.get_catalog_character_card(character_id), distinct
-    )
-    labels: dict[str, CompanionLabel] = {}
-    for character_id in distinct:
-        url = reverse("catalog_characters:detail", args=[character_id])
-        result = results[character_id]
-        if isinstance(result, EngineClientError):
-            labels[character_id] = CompanionLabel(
-                character_id, character_id, url, error_text(result)
-            )
-        else:
-            labels[character_id] = CompanionLabel(
-                character_id, label(result.name, character_id), url
-            )
-    return labels
+# The companion marker names its character as #73's role characters do.
+CompanionLabel = CharacterLabel
+companion_labels = character_labels
 
 
 # --- list -----------------------------------------------------------------------------------------
@@ -296,13 +273,19 @@ class Named:
     name: str | None
 
 
-def _rating_name(client: EngineClient, rating_id: str | None) -> Named | None:
+def _rating_names(client: EngineClient, ids: list[str]) -> dict[str, str]:
+    """The names of ``ids`` (the card's rating and the roles' eligibility ratings, #73) from
+    one ratings read; an id the Engine does not list, or a failed read, has none."""
+    if not ids:
+        return {}
+    choices = rating_choices(client, include_retired=True)
+    return {k: v for k, v in choices.choices if k in ids}
+
+
+def _rating_name(names: dict[str, str], rating_id: str | None) -> Named | None:
     if not rating_id:
         return None
-    choices = rating_choices(client, current=rating_id, include_retired=True)
-    names = dict(choices.choices)
-    shown = names.get(rating_id)
-    return Named(rating_id, shown if shown and not shown.endswith(" (missing)") else None)
+    return Named(rating_id, names.get(rating_id))
 
 
 def _profile_name(client: EngineClient, profile_id: str | None) -> Named | None:
@@ -420,7 +403,10 @@ def scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
         )
     context["media"] = shown_media(entry, slot_infos(client, _media_ids(entry)))
     if not isinstance(entry, ScenarioCard):
-        context["rating"] = _rating_name(client, entry.metadata.content_rating_id)
+        rating_id = entry.metadata.content_rating_id
+        names = _rating_names(client, [*([rating_id] if rating_id else []), *rating_ids(entry)])
+        context["rating"] = _rating_name(names, rating_id)
+        context["cast"] = cast_table(entry, character_labels(client, character_ids(entry)), names)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""
@@ -493,9 +479,10 @@ DRAFT_REVISION = "draft_revision"
 @dataclass(frozen=True)
 class EditSnapshot:
     """What the editor posts back, signed: the draft as rendered (the merge patch's original),
-    its revision and header facts, the cast's role ids (the role selects' options) and the two
-    lookups' options or why they could not be read. A create page carries one too
-    (``scenario_id`` empty)."""
+    its revision and header facts, and the lookups' options or why they could not be read: the
+    content ratings (the main select's, and the roles' eligibility ones from the same read), the
+    engine profiles and the published catalog characters (#73's role selects). A create page
+    carries one too (``scenario_id`` empty)."""
 
     scenario_id: str = ""
     draft_revision: int | None = None
@@ -505,11 +492,13 @@ class EditSnapshot:
     owner: str = ""
     current_version: int | None = None
     companion_of: str | None = None
-    roles: list[str] = field(default_factory=list)
     ratings: list[tuple[str, str]] = field(default_factory=list)
+    eligibility_ratings: list[tuple[str, str]] = field(default_factory=list)
     ratings_error: str = ""
     profiles: list[tuple[str, str]] = field(default_factory=list)
     profiles_note: str = ""
+    characters: list[tuple[str, str]] = field(default_factory=list)
+    characters_note: str = ""
     # #71: the Media section as rendered (ids only) and each slot's looked-up metadata.
     media_original: dict[str, Any] = field(default_factory=dict)
     media: dict[str, Any] = field(default_factory=dict)
@@ -526,8 +515,8 @@ class EditSnapshot:
         if not isinstance(raw, dict) or raw.get("scenario_id") != scenario_id:
             return None
         try:
-            raw["ratings"] = [(str(k), str(v)) for k, v in raw["ratings"]]
-            raw["profiles"] = [(str(k), str(v)) for k, v in raw["profiles"]]
+            for name in ("ratings", "eligibility_ratings", "profiles", "characters"):
+                raw[name] = [(str(k), str(v)) for k, v in raw[name]]
             return cls(**raw)
         except KeyError, TypeError, ValueError:
             return None
@@ -549,22 +538,50 @@ class EditSnapshot:
     def profile_choices(self) -> ProfileChoices:
         return ProfileChoices(list(self.profiles), note=self.profiles_note)
 
+    def cast_choices(self) -> CastChoices:
+        return CastChoices(
+            CharacterChoices(list(self.characters), note=self.characters_note),
+            list(self.eligibility_ratings),
+            self.ratings_error,
+            companion=self.companion_of is not None,
+        )
 
-def _lookups(client: EngineClient, *, rating: str | None, profile: str | None) -> dict[str, Any]:
-    ratings = rating_choices(client, current=rating)
+
+def _cast_refs(original: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """The catalog character ids and eligibility rating ids the draft's roles name."""
+    characters: list[str] = []
+    ratings: list[str] = []
+    for role in (original.get("cast") or {}).get("roles") or []:
+        character = role.get("character") or {}
+        if character.get("catalog_id"):
+            characters.append(character["catalog_id"])
+        ratings.extend((role.get("eligibility") or {}).get("content_ratings") or [])
+    return characters, ratings
+
+
+def _lookups(
+    client: EngineClient,
+    *,
+    rating: str | None,
+    profile: str | None,
+    original: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The editor's lookups: one ratings read (retired included) narrowed for the main select
+    and for the roles' eligibility (#73), the engine profiles and the published catalog
+    characters, each saved id kept."""
+    characters, eligibility = _cast_refs(original or {})
+    ratings = rating_choices(client, current=rating, include_retired=True)
     profiles = engine_profile_choices(client, current=profile)
+    published = published_character_choices(client, current=characters)
     return {
-        "ratings": list(ratings.choices),
+        "ratings": kept_ratings(ratings, [rating or ""]),
+        "eligibility_ratings": kept_ratings(ratings, eligibility),
         "ratings_error": ratings.unavailable_text if ratings.error is not None else "",
         "profiles": list(profiles.choices),
         "profiles_note": profiles.unavailable_text,
+        "characters": list(published.choices),
+        "characters_note": published.unavailable_text,
     }
-
-
-def _role_ids(cast: object) -> list[str]:
-    roles = cast.get("roles") if isinstance(cast, dict) else None
-    ids = (r.get("id") for r in roles or [] if isinstance(r, dict))
-    return list(dict.fromkeys(i for i in ids if isinstance(i, str) and i))
 
 
 def _read_snapshot(client: EngineClient, scenario_id: str) -> EditSnapshot:
@@ -581,13 +598,13 @@ def _read_snapshot(client: EngineClient, scenario_id: str) -> EditSnapshot:
         owner=draft.owner_principal,
         current_version=draft.current_version,
         companion_of=draft.companion_of,
-        roles=_role_ids(draft.cast),
         media_original=media_original,
         media=infos_to_snapshot(slot_infos(client, media_ids(media_original))),
         **_lookups(
             client,
             rating=original["metadata"]["content_rating_id"],
             profile=original["recommendation"]["engine_profile_id"],
+            original=original,
         ),
     )
 
@@ -601,9 +618,10 @@ def _editor(snap: EditSnapshot, data: QueryDict, *, create: bool) -> ScenarioEdi
         data,
         ratings=snap.rating_choices(),
         profiles=snap.profile_choices(),
-        roles=snap.roles,
         create=create,
         current_rating=snap.rating,
+        original=snap.original,
+        cast_choices=snap.cast_choices(),
     )
 
 

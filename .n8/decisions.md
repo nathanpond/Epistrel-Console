@@ -906,3 +906,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The add form's images use a new `StoryImageFormSet`, which is #71's image-slot formset with the cap message "At most 20 images", plus a `STORY_CHARACTER_SECTIONS` spec (`images`) registered with #71's picker and slot-row endpoints. A 409 `revision_conflict` re-renders with the hidden expected revision moved to `details.current_revision`.
   **Why:** #71's `ImageSlotFormSet` says "gallery images". Without moving the revision, the "check and submit again" line would conflict again on every submit.
   **Issue:** #72
+- **Decision (drift):** A blank role-character version is left out of the write. It is not sent as `null`. A companion's role sends `version: null` (its pin) when the draft held none.
+  **Why:** The plan says blank version = `null`. The Engine's save rules refuse an explicit `null` on a non-companion (`role_version_null`: "omit `version`"). Only a companion's locked role may name a `null` pin, and its slots must echo unchanged (`companion_slots_fixed`).
+  **Issue:** #73
+- **Decision:** The role selects #68 built (default output viewpoint, roles present) now offer the role rows' ids in the current form state. `EditSnapshot.roles` is gone. The snapshot gains the published characters and the eligibility ratings.
+  **Why:** The cast is edited on the same form, so a role added or renamed before Save must be offered at once, as the holder and audience choices are.
+  **Issue:** #73
+- **Decision:** The editor reads content ratings once (retired included) and narrows the list twice with `kept_ratings`: non-retired plus the saved rating for the main select, and non-retired plus the saved eligibility ratings for the roles. The detail page reads ratings once for the card rating and the eligibility names.
+  **Why:** Convention 13 allows at most one ratings read per request. Eligibility can keep several retired ratings, which `rating_choices(current=…)` cannot keep.
+  **Issue:** #73
+- **Decision:** `StartingState.seeded_memories` and `ScenarioRole.seeded_memories` are `list[Seed]`, not tuples. `RoleEligibility.age_range` and `ScenarioRole.name_overrides` are raw `Any`.
+  **Why:** The model parser and the contract test support lists only. The schema types `age_range` as a two-item `prefixItems` tuple. `name_overrides` is edited as a JSON box.
+  **Issue:** #73
+- **Decision:** A saved role character that the published list lacks is kept as "<id> (missing)". A posted holder that is not a current role or `world` is kept as "<value> (missing)", so the Engine's `unknown_role` error can land on it.
+  **Why:** Without a read per id, the Console cannot tell an archived character from a never-published or deleted one. Without the kept option, the select would refuse the value before any call.
+  **Issue:** #73
+- **Decision:** #68's companion-name lookup moves to `console/catalog/character_labels.py` (`character_labels`, `CharacterLabel` with a new `archived` flag), and `companion_labels` stays as an alias. The detail page's World seeds section now sits right after Cast, because `_cast_table.html` renders both. The catalog test `engine` fixture answers `GET /catalog/characters` by default.
+  **Why:** The cast table names role characters with the same one-read-per-id lookup, and it needs to know whether each one is archived. #74 reuses the partial whole. Every scenario edit page now reads the published characters.
+  **Issue:** #73

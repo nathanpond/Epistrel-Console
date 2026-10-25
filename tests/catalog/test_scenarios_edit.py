@@ -111,9 +111,10 @@ def test_the_edit_page_header_and_sections(operator_client: Client, engine: Fake
     assert '<option value="son" selected>son</option>' in html
     assert '<option value="farmhouse" selected>farmhouse</option>' in html
     assert 'value="mother" id="f-starting_state-opening-roles_present_0" checked' in html
-    # World seeds, the cast and media are not in the form.
-    assert "seeded_memories" not in html
-    assert "The harvest is late this year." not in html
+    # #73: the cast and the world seeds are edited here too.
+    assert "<legend>Cast</legend>" in html
+    assert "<legend>World seeds</legend>" in html
+    assert "The harvest is late this year." in html
 
 
 # --- each section round-trips into the patch ------------------------------------------------------
@@ -641,7 +642,6 @@ def test_place_error_without_a_path_is_a_form_error() -> None:
         editor_data({}),
         ratings=RatingChoices([]),
         profiles=ProfileChoices([]),
-        roles=[],
         create=False,
     )
     assert editor.is_valid()

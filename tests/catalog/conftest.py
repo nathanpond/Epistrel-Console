@@ -29,7 +29,9 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     recording client. The companion's draft is answered by default (#66: the detail page's
     Publish reads it), and so is ``/admin/settings`` (#69: the detail page's listing-status
     select reads it); a test that cares registers its own. ``GET /media/{id}`` answers a live
-    image with the id asked (#71: detail and edit pages look up each attached asset)."""
+    image with the id asked (#71: detail and edit pages look up each attached asset), and
+    ``GET /catalog/characters`` the list fixture (#73: the scenario editor's role character
+    select reads the published characters)."""
     fake = FakeEngine()
     fake.respond(
         "GET",
@@ -39,6 +41,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     )
     answer_settings(fake)
     answer_media(fake)
+    fake.respond("GET", "/catalog/characters", 200, json=engine_fixture("list_catalog_characters"))
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

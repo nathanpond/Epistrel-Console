@@ -1,5 +1,5 @@
 {% comment %}
-#68: the scenario editor, create and edit: every section but the cast and the world seeds (#73);
+#68: the scenario editor, create and edit; #73 adds the Cast and World seeds (cast: CastForms);
 #71 adds the Media section (media: the media sections by path). Each main field's id is its report anchor (f-<path>). Context: form, sections, row_sets,
 create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url.
 {% endcomment %}<form method="post" action="{{ action_url }}" class="scenario-form" novalidate>
@@ -33,10 +33,19 @@ create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url.
     {% include "console/catalog/scenarios/_refresh.html" %}
   </fieldset>{% endwith %}
 
+  {% include "console/catalog/scenarios/_cast.html" with cast=editor.cast %}
+
   {% with section=sections.starting_state_opening %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
     {% include "console/catalog/scenarios/_fields.html" %}
     {% include "console/catalog/scenarios/_refresh.html" %}
   </fieldset>{% endwith %}
+
+  <fieldset class="section world-seeds" id="f-starting_state-seeded_memories"><legend>World seeds</legend>
+    <p class="muted">Seeded memories no role holds (holder <code>world</code> by default); Lite renders them as scenario text.</p>
+    {% if editor.cast.world_errors %}<ul class="errorlist">{% for error in editor.cast.world_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {% include "console/catalog/scenarios/_seeds.html" with seeds=editor.cast.world_rows title="World seeds" %}
+    {% include "console/catalog/scenarios/_refresh.html" %}
+  </fieldset>
 
   {% with section=sections.story_settings_defaults %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
     {% include "console/catalog/scenarios/_fields.html" %}

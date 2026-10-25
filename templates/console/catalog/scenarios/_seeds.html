@@ -1,0 +1,28 @@
+{% comment %}#73: a seed formset (a role's or the world's), edited without JavaScript: Add and
+each row's Remove submit op=add:<prefix> / op=remove:<prefix>-<m>. Each seed shows its Engine id
+("new" before its first save) and carries it back in a hidden field.
+Context: seeds (console.forms.scenario_cast.SeedRows), title, archived_note.{% endcomment %}
+<fieldset class="rows seeds" id="{{ seeds.prefix }}">
+  <legend>{{ title }}</legend>
+  {{ seeds.formset.management_form }}
+  {{ seeds.formset.non_form_errors }}
+  {% for seed in seeds.formset.forms %}
+  <div class="row seed"{% if seed.shown_id != "new" %} id="seed-{{ seed.shown_id }}"{% endif %}>
+    <p class="seed-id">Seed <code>{{ seed.shown_id }}</code>{{ seed.id }}</p>
+    {{ seed.non_field_errors }}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.text %}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.holder %}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.audience %}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.audience_other %}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.disclosure %}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.kind %}
+    <details class="advanced"{% if seed.valid_time.errors %} open{% endif %}><summary>Advanced</summary>
+      {% include "console/catalog/scenarios/_cast_field.html" with field=seed.valid_time %}
+    </details>
+    <button type="submit" name="op" value="remove:{{ seeds.prefix }}-{{ forloop.counter0 }}" formnovalidate{% if archived_note %} disabled{% endif %}>Remove seed</button>
+  </div>
+  {% empty %}
+  <p class="empty">None.</p>
+  {% endfor %}
+  {% if seeds.can_add %}<button type="submit" name="op" value="add:{{ seeds.prefix }}" formnovalidate{% if archived_note %} disabled{% endif %}>Add seed</button>{% else %}<small class="muted">At the limit.</small>{% endif %}
+</fieldset>

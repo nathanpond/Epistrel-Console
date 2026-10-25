@@ -324,3 +324,86 @@ def media_lookups(client: EngineClient, media_ids: Iterable[str]) -> dict[str, M
         )
         for media_id, result in results.items()
     }
+
+
+# --- role characters (#73) ------------------------------------------------------------------------
+
+NOT_LISTED_SUFFIX = " (missing)"
+
+
+@dataclass(frozen=True)
+class CharacterChoices:
+    """A role's character select (#73): published catalog characters as ``(id, label)``, or why
+    there is none (the read's ``error``, or ``too_many``), in which case the form offers a raw
+    catalog-id input with :attr:`unavailable_text` beside it. ``note`` carries that text across
+    a signed snapshot."""
+
+    choices: list[tuple[str, str]]
+    error: EngineClientError | None = None
+    too_many: bool = False
+    note: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None and not self.too_many and not self.note
+
+    @property
+    def unavailable_text(self) -> str:
+        if self.note:
+            return self.note
+        if self.error is not None:
+            return f"Catalog characters unavailable: {error_text(self.error)} — enter the id"
+        return TOO_MANY if self.too_many else ""
+
+
+def published_character_choices(
+    client: EngineClient, *, current: Iterable[str] = ()
+) -> CharacterChoices:
+    """Published catalog characters by name (then id; a shared name gets its last 6 id
+    characters), following cursors up to :data:`SUBJECTS_MAX`. Each of ``current`` (the saved
+    ids) the list lacks — archived, never published or gone — is kept as "<id> (missing)".
+    Never raises."""
+    found: dict[str, tuple[str, str, str]] = {}
+    read = 0
+    cursor: str | None = None
+    try:
+        while True:
+            page = client.list_catalog_characters(
+                status="published", cursor=cursor, limit=SUBJECTS_PAGE
+            )
+            read += len(page.items)
+            for item in page.items:
+                found.setdefault(item.id, (item.id, label(item.name, item.id), ""))
+            if read > SUBJECTS_MAX:
+                return CharacterChoices([], too_many=True)
+            cursor = page.next_cursor
+            if not cursor:
+                break
+    except EngineClientError as exc:
+        return CharacterChoices([], exc)
+    choices = _ordered(list(found.values()))
+    known = set(found)
+    choices.extend(
+        (value, f"{value}{NOT_LISTED_SUFFIX}")
+        for value in dict.fromkeys(current)
+        if value and value not in known
+    )
+    return CharacterChoices(choices)
+
+
+def kept_ratings(ratings: RatingChoices, keep: Iterable[str]) -> list[tuple[str, str]]:
+    """``ratings`` read with ``include_retired=True`` narrowed to a select's options: every
+    non-retired rating, plus each of ``keep`` (saved ids) as "<name> (retired)" or, when the
+    Engine does not list it, "<id> (missing)" (#73: one ratings read serves the main rating
+    select and each role's eligibility)."""
+    wanted = {value for value in keep if value}
+    options = [
+        (value, shown)
+        for value, shown in ratings.choices
+        if not shown.endswith(RETIRED_SUFFIX) or value in wanted
+    ]
+    listed = {value for value, _ in options}
+    options.extend(
+        (v, f"{v}{MISSING_SUFFIX}") for v in dict.fromkeys(keep) if v and v not in listed
+    )
+    return options

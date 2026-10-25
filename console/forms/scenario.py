@@ -1,5 +1,5 @@
-"""The scenario editor (#68): create and edit every part of a scenario's draft except its cast
-and world seeds (#73) and its media (#71).
+"""The scenario editor (#68): create and edit every part of a scenario's draft; the cast and the
+world seeds are #73's :class:`~console.forms.scenario_cast.CastForms`, the media #71's.
 
 One flat :class:`ScenarioForm` whose field names are the Engine's write paths joined with ``__``
 (#64 convention 6; the one alias is ``metadata.content_rating_id`` → ``metadata__content_rating``,
@@ -20,9 +20,11 @@ refused save all read the same state. A row is added or removed by an ``op`` but
 The sections Lite stores but does not use yet (``starting_state``'s states, clock, scheduled
 events, predicates, closed sets and rules) and ``drivers.planned_reveals`` are JSON boxes
 (:class:`~console.forms.fields.JsonBoxField`), parsed and type-checked before any call;
-``creation_rules.bounds`` too. The world seeds (``starting_state.seeded_memories``) and the cast
-are never in the form, so no write ever carries them; ``public_card.media`` is #71's Media
-section (``console.forms.media_picker``), which the views set into the patch whole.
+``creation_rules.bounds`` too. ``public_card.media`` is #71's Media section
+(``console.forms.media_picker``), which the views set into the patch whole. The cast (#73) is
+sent whole when its normalised form changed; the world seeds travel inside ``starting_state``
+(a list, so the merge patch replaces it whole). The role selects (viewpoint, roles present) and
+the cast's holder and audience choices offer the role rows' ids in the current form state.
 
 Values are normalised the same way for the draft (:func:`draft_to_write`) and the form
 (:meth:`ScenarioEditor.write_doc`) before they are compared: CRLF → LF and surrounding whitespace
@@ -48,7 +50,7 @@ from django.forms.utils import ErrorDict, ErrorList
 from django.http import QueryDict
 
 from console import merge_patch
-from console.engine.choices import ProfileChoices, RatingChoices
+from console.engine.choices import CharacterChoices, ProfileChoices, RatingChoices
 from console.engine.client import EngineError
 from console.engine.models import Scenario
 from console.engine_form_errors import engine_field_errors
@@ -70,6 +72,18 @@ from console.forms.policy import (
     rule_template_text,
 )
 from console.forms.principal import PrincipalField
+from console.forms.scenario_cast import (
+    CastChoices,
+    CastForms,
+    cast_data,
+    cast_to_write,
+    new_row,
+    normalize_cast,
+    posted_role_ids,
+    prepared,
+    row_caps,
+    seed_to_write,
+)
 from console.formset_rows import OP_ADD, Op, apply_op
 from console.reports import field_anchor
 
@@ -92,6 +106,8 @@ NO_ROLES = "Add roles (Cast) first"
 NO_LOCATIONS = "Add locations (World) first"
 DEFERRED_NOTE = "Stored by Lite but not used until a later Engine milestone"
 DRAFT_TOO_LARGE = "Draft exceeds the Engine's 1 MiB limit"
+CAST_LIMIT_EXCEEDED = "cast_limit_exceeded"
+CAST_LIMIT_PATH = "cast.max_characters_at_start"
 
 # The Engine's bounds (``ScenarioCreate`` and its groups).
 NAME_MAX = 120
@@ -188,9 +204,9 @@ def _policy(policy: Any) -> dict[str, Any]:
 
 
 def draft_to_write(draft: Scenario) -> dict[str, Any]:
-    """The draft's groups #68 edits, in the write shape and normalised (unset values ``None``):
-    the merge patch's original and the form's first state. The cast, the card's media and the
-    world seeds are left out (#73's and #71's)."""
+    """The draft's groups the editor edits, in the write shape and normalised (unset values
+    ``None``): the merge patch's original and the form's first state. The card's media is left
+    out (#71's)."""
     world = draft.world
     state = draft.starting_state
     opening = state.opening
@@ -227,7 +243,9 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
             ),
             "event_types": norm_lines(world.event_types) or None,
         },
+        "cast": cast_to_write(draft.cast, companion=draft.companion_of is not None),
         "starting_state": {
+            "seeded_memories": [seed_to_write(s) for s in state.seeded_memories],
             "opening": {
                 "narration": norm_text(opening.narration),
                 "starting_location": opening.starting_location,
@@ -347,6 +365,8 @@ def editor_data(doc: Mapping[str, Any]) -> QueryDict:
             for key, value in row.items():
                 put(f"{prefix}-{index}-{key}", value)
         data.update(_management(prefix, len(items)))
+    for name, values in cast_data(doc).items():
+        data.setlist(name, values)
     return data
 
 
@@ -630,7 +650,7 @@ class ScenarioForm(forms.Form):
     """The main form. ``ratings``/``profiles`` are the two lookups' options (a failed rating read
     leaves the field out and keeps ``current_rating``; a failed or too-long profile read makes
     the profile a free-text id). ``locations`` and ``roles`` are the ids the starting-location
-    and role selects offer (the form's own location rows; the draft's cast). ``create`` adds the
+    and role selects offer (the form's own location and role rows). ``create`` adds the
     owner."""
 
     def __init__(
@@ -750,29 +770,44 @@ class ScenarioEditor:
         *,
         ratings: RatingChoices,
         profiles: ProfileChoices,
-        roles: list[str],
         create: bool,
         current_rating: str | None = None,
+        original: Mapping[str, Any] | None = None,
+        cast_choices: CastChoices | None = None,
     ) -> None:
+        # The cast's management forms filled and its audiences re-homed (#73): every part of
+        # the editor, and the page it renders, reads the same state.
+        data = prepared(data)
         self.data = data
         self.create = create
+        locations = posted_ids(data, LOCATIONS)
         self.form = ScenarioForm(
             data,
             ratings=ratings,
             profiles=profiles,
-            locations=posted_ids(data, LOCATIONS),
-            roles=roles,
+            locations=locations,
+            roles=posted_role_ids(data),
             create=create,
             current_rating=current_rating,
         )
         self.formsets: dict[str, BaseFormSet[Any]] = {
             prefix: formset(data, prefix=prefix) for prefix, formset in FORMSETS.items()
         }
+        self.cast = CastForms(
+            data,
+            original=original or {},
+            choices=cast_choices or CastChoices(CharacterChoices([])),
+            locations=locations,
+        )
 
     # --- validation ------------------------------------------------------------------------
 
     def is_valid(self) -> bool:
-        results = [self.form.is_valid(), *(fs.is_valid() for fs in self.formsets.values())]
+        results = [
+            self.form.is_valid(),
+            *(fs.is_valid() for fs in self.formsets.values()),
+            self.cast.is_valid(),
+        ]
         return all(results)
 
     def quiet(self) -> None:
@@ -787,12 +822,14 @@ class ScenarioEditor:
             for form in formset.forms:
                 quieted = form
                 quieted._errors = ErrorDict()
+        self.cast.quiet()
 
     def disable(self) -> None:
         """Render every input disabled (an archived scenario); the posted state is unchanged."""
         for form in [self.form, *(f for fs in self.formsets.values() for f in fs.forms)]:
             for field in form.fields.values():
                 field.widget.attrs["disabled"] = True
+        self.cast.disable()
 
     def sent(self, prefix: str) -> list[forms.Form]:
         """The rows of ``prefix`` that are sent, in order (blank rows dropped): the Engine's list
@@ -846,6 +883,8 @@ class ScenarioEditor:
             doc.setdefault("drivers", {})[leaf] = [
                 f.cleaned_data["text"] for f in self.sent(prefix)
             ]
+        doc["cast"] = self.cast.cast_body()
+        doc.setdefault("starting_state", {})["seeded_memories"] = self.cast.world_seeds()
         return doc
 
     def create_body(self) -> dict[str, Any]:
@@ -856,8 +895,15 @@ class ScenarioEditor:
 
     def edit_patch(self, original: Mapping[str, Any]) -> dict[str, Any]:
         """The merge patch from ``original`` (the draft rendered) to the editor; ``{}`` when
-        nothing changed."""
-        return merge_patch.diff(prune(original), prune(self.write_doc()))
+        nothing changed. The cast is not diffed: when :func:`normalize_cast` of it differs from
+        the original's, the whole ``cast`` object is sent (#73)."""
+        before = dict(original)
+        after = self.write_doc()
+        original_cast, cast = before.pop("cast", None), after.pop("cast")
+        patch = merge_patch.diff(prune(before), prune(after))
+        if normalize_cast(original_cast) != normalize_cast(cast):
+            patch["cast"] = cast
+        return patch
 
     # --- Engine errors ---------------------------------------------------------------------
 
@@ -874,6 +920,9 @@ class ScenarioEditor:
             return 0
         failures = engine_field_errors(error)
         if not failures:
+            if error.code == CAST_LIMIT_EXCEEDED:
+                self.cast.place(CAST_LIMIT_PATH, error.message)
+                return 1
             if error.code == "rating_retired" and RATING_FIELD in form.fields:
                 form.add_error(RATING_FIELD, error.message)
                 return 1
@@ -892,6 +941,8 @@ class ScenarioEditor:
 
     def _place(self, path: str, message: str) -> bool:
         form = self.form
+        if self.cast.place(path, message):
+            return True
         if path == RATING_PATH and RATING_FIELD in form.fields:
             form.add_error(RATING_FIELD, message)
             return True
@@ -974,6 +1025,13 @@ class ScenarioEditor:
 
 
 def apply_row_op(data: QueryDict, op: Op) -> QueryDict:
-    """The posted state after a row button (``console.formset_rows.apply_op``), re-templated."""
+    """The posted state after a row button (``console.formset_rows.apply_op``), re-templated.
+    The cast's rows (#73) are named by their prefixes too: ``role``, ``role-<n>-seed`` and
+    ``wseed``."""
     new_rows: dict[str, Mapping[str, list[str]]] = dict(NEW_ROWS) if op.kind == OP_ADD else {}
-    return retemplated(apply_op(data, op, max_rows=ROW_CAPS, new_rows=new_rows))
+    if op.kind == OP_ADD:
+        cast_row = new_row(data, op.prefix)
+        if cast_row is not None:
+            new_rows[op.prefix] = cast_row
+    caps = {**ROW_CAPS, **row_caps(op.prefix)}
+    return retemplated(apply_op(data, op, max_rows=caps, new_rows=new_rows))

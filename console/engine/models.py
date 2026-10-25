@@ -1683,8 +1683,8 @@ class PersonaPage(Model):
 # --- catalog scenarios (#68) ----------------------------------------------------------------------
 #
 # A card (``ScenarioCard``) is what lists and ``projection=card`` answer; ``Scenario`` is
-# ``ScenarioFull``. The groups #68 edits and the card's media (#71) are typed; the cast (#73), the
-# world seeds (#73) and the sections Lite stores but does not use yet (``starting_state``'s
+# ``ScenarioFull``. The groups #68 edits, the card's media (#71), the cast and the world seeds
+# (#73) are typed; the sections Lite stores but does not use yet (``starting_state``'s
 # states, clock, scheduled events, predicates, closed sets and rules; planned reveals) stay raw
 # JSON, which the pages show and edit as JSON.
 
@@ -1831,12 +1831,27 @@ class Opening(Model):
 
 
 @dataclass(frozen=True)
+class Seed(Model):
+    """``Seed`` (#73): a seeded item, a role's or the world's (``starting_state``). ``id`` is
+    the Engine's, assigned when a save stores the seed (sent back to keep it); holder, audience
+    and disclosure may be unset on a draft (publishing needs all three)."""
+
+    text: str
+    id: str | None = None
+    holder: str | None = None
+    audience: list[str] | None = None
+    disclosure: str | None = open_enum(default=None)
+    kind: str | None = open_enum(default=None)
+    valid_time: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class StartingState(Model):
-    """``ScenarioStartingState``: the opening, the world seeds (#73's) and the sections Lite
+    """``ScenarioStartingState``: the opening, the world seeds (#73) and the sections Lite
     stores but does not use yet, raw."""
 
     opening: Opening = field(default_factory=Opening)
-    seeded_memories: list[Any] = field(default_factory=list)
+    seeded_memories: list[Seed] = field(default_factory=list)
     states: list[dict[str, Any]] = field(default_factory=list)
     clock: dict[str, Any] | None = None
     scheduled_events: list[dict[str, Any]] = field(default_factory=list)
@@ -1913,10 +1928,68 @@ class CreationRules(Model):
 
 
 @dataclass(frozen=True)
+class RoleCharacter(Model):
+    """``RoleCharacter`` (#73): the catalog character a ``default`` or ``locked`` role is filled
+    with, and its version (``None``: the latest published when a story is created)."""
+
+    catalog_id: str
+    version: int | None = None
+
+
+@dataclass(frozen=True)
+class RoleEligibility(Model):
+    """``RoleEligibility`` (#73): who may fill a role. ``age_range`` is ``[min, max]`` (either
+    end ``None``), raw: the schema types it as a two-item tuple."""
+
+    labels: list[str] = field(default_factory=list)
+    content_ratings: list[str] = field(default_factory=list)
+    age_range: Any = None
+
+
+@dataclass(frozen=True)
+class RoleRelationship(Model):
+    """``RoleRelationship`` (#73): the role's relationship ``name`` to another role."""
+
+    to_role: str
+    name: str
+
+
+@dataclass(frozen=True)
+class ScenarioRole(Model):
+    """``ScenarioRole`` (#73): a character slot, its fill (``open``, ``default`` or ``locked``,
+    the last two naming ``character``), who may fill it, its seeds and starting facts.
+    ``name_overrides`` is raw (``NameOverrides``; edited as JSON)."""
+
+    id: str
+    public_label: str
+    setup_description: str
+    kind: str = open_enum()
+    fill: str = open_enum(default="open")
+    required: bool = True
+    character: RoleCharacter | None = None
+    eligibility: RoleEligibility | None = None
+    starting_location: str | None = None
+    participation: str | None = open_enum(default=None)
+    seeded_memories: list[Seed] = field(default_factory=list)
+    relationships: list[RoleRelationship] = field(default_factory=list)
+    name_overrides: Any = None
+    state_initial_values: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioCast(Model):
+    """``ScenarioCast`` (#73): the roles and the starting-cast limit (``None``: the
+    deployment's default)."""
+
+    max_characters_at_start: int | None = None
+    roles: list[ScenarioRole] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class Scenario(Model):
     """``ScenarioFull``: a scenario as ``projection=full`` gives it. ``version`` is the version
     read (``None`` for a draft), ``current_version`` the latest published one;
-    ``draft_revision`` is the draft's save counter (on a draft read). ``cast`` is #73's, raw."""
+    ``draft_revision`` is the draft's save counter (on a draft read)."""
 
     id: str
     status: EntryStatus
@@ -1933,7 +2006,7 @@ class Scenario(Model):
     public_card: ScenarioPublicCard
     metadata: ScenarioMetadata
     world: World
-    cast: Any
+    cast: ScenarioCast
     starting_state: StartingState
     drivers: Drivers
     story_settings_defaults: StorySettingsDefaults
