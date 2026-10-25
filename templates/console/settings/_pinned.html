@@ -1,0 +1,32 @@
+{# Pinned memories (#54): a formset with add/remove/up/down buttons (no JS). Context: pinned, pinned_refusal, pinned_holder, pinned_show_errors, pinned_can_add, max_pinned, pinned_key, snapshot, snap, archived_note. #}
+<p class="scope">Story-level text in every prompt, in order. Up to {{ max_pinned }} items (the deployment's <code>max_pinned_memories</code>), each up to 2,000 characters; the story's engine profile may allow fewer.</p>
+{% include "console/settings/_refusal.html" with refusal=pinned_refusal %}
+{% if pinned_holder %}{{ pinned_holder.non_field_errors }}{% endif %}
+<form method="post" action="{% url 'stories:settings-pinned' snap.story_id %}" class="settings-form pinned-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ pinned_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ pinned.management_form }}
+  {% if pinned_show_errors %}{{ pinned.non_form_errors }}{% endif %}
+  <fieldset{% if archived_note %} disabled{% endif %}>
+  <ol class="pinned-items">
+    {% for form in pinned %}
+    <li class="pinned-item" id="pin-{{ forloop.counter0 }}">
+      {{ form.id }}
+      {% if pinned_show_errors %}{{ form.non_field_errors }}{% endif %}
+      {{ form.text }}
+      {% if pinned_show_errors %}{{ form.text.errors }}{% endif %}
+      <span class="row-buttons">
+        {% if not forloop.first %}<button type="submit" name="up" value="{{ forloop.counter0 }}">Up</button>{% endif %}
+        {% if not forloop.last %}<button type="submit" name="down" value="{{ forloop.counter0 }}">Down</button>{% endif %}
+        <button type="submit" name="remove" value="{{ forloop.counter0 }}">Remove</button>
+      </span>
+    </li>
+    {% empty %}
+    <li class="muted">No pinned memories.</li>
+    {% endfor %}
+  </ol>
+  <p>{% if pinned_can_add %}<button type="submit" name="add" value="1">Add a pinned memory</button>{% else %}<small>At the cap ({{ max_pinned }}).</small>{% endif %}
+  <button type="submit" name="save" value="1">Save pinned memories</button> <small>Add, remove and reorder change nothing until you save.</small></p>
+  </fieldset>
+</form>

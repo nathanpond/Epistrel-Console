@@ -1,0 +1,15 @@
+{# One story policy, added or edited (#54). Context: policy_form, policy_editing, policy_refusal, policy_key, snapshot, snap, archived_note. #}
+<h3>{% if policy_editing %}Edit policy: {{ policy_editing }}{% else %}Add a story policy{% endif %}</h3>
+{% if policy_editing %}<p><a href="{% url 'stories:settings' snap.story_id %}#story-policies">Add a new policy instead</a></p>{% endif %}
+{% include "console/settings/_refusal.html" with refusal=policy_refusal %}
+<form method="post" action="{% url 'stories:settings-policy' snap.story_id %}" class="policy-form story-policy-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ policy_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <input type="hidden" name="policy_name" value="{{ policy_editing }}">
+  {{ policy_form.non_field_errors }}
+  <fieldset{% if archived_note %} disabled{% endif %}>
+  {% include "console/policies/_content_fields.html" with form=policy_form %}
+  <p><button type="submit">{% if policy_editing %}Save policy{% else %}Add policy{% endif %}</button> <small>Sent as the <code>policies</code> upsert of a settings PATCH.</small></p>
+  </fieldset>
+</form>

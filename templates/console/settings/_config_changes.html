@@ -1,0 +1,21 @@
+{# The story's configuration changes (#54) with #50's shared table. Context: change_form, change_groups, changes_error, next_query, first_query, paged, snap. #}
+<form method="get" action="{% url 'stories:settings' snap.story_id %}#config-changes" class="filters">
+  {{ change_form.non_field_errors }}
+  <label>{{ change_form.setting.label }} {{ change_form.setting }}</label>
+  {{ change_form.setting.errors }}
+  <label>{{ change_form.prefixed.label }} {{ change_form.prefixed }}</label>
+  {{ change_form.prefixed.errors }}
+  <label>{{ change_form.change_class.label }} {{ change_form.change_class }}</label>
+  {{ change_form.change_class.errors }}
+  <button type="submit">Filter</button>
+  <a href="{% url 'stories:settings' snap.story_id %}#config-changes">Clear</a>
+</form>
+{% if changes_error %}
+{% include "console/_engine_error.html" with engine_error=changes_error %}
+{% elif not change_form.errors %}
+{% include "console/_config_changes.html" %}
+<p class="paging">
+  {% if paged %}<a href="?{{ first_query }}#config-changes">First page</a>{% endif %}
+  {% if next_query %}<a href="?{{ next_query }}#config-changes">Next</a>{% endif %}
+</p>
+{% endif %}

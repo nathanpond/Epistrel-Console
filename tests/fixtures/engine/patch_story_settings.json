@@ -1,0 +1,43 @@
+{
+  "timeline_revision": 1,
+  "idempotency_key": "01M5R89539B69NZ9YYZE7C795A",
+  "settings": {
+    "regenerate_retry_budget": 2,
+    "turn_concurrency": "queue",
+    "turn_queue_max": 3,
+    "default_output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+    "lite_summary_chunk": null,
+    "audit_retention_days": null,
+    "allow_new_arrivals": true
+  },
+  "effective_policies": [],
+  "inactive_policies": [
+    {
+      "id": "minors_no_sexual_content",
+      "name": "No sexual content involving or near minors",
+      "scope": "global",
+      "source": "global",
+      "applies_to": [
+        "text_input",
+        "text_output"
+      ],
+      "age_condition": "minor_involved_or_present",
+      "kind": "model_assisted"
+    }
+  ],
+  "guardrail_calls": {
+    "input": 0,
+    "output": 0
+  },
+  "effective_budget": {
+    "max_model_calls_per_turn": 9,
+    "source": "formula",
+    "turn_deadline": 45.0,
+    "reserved": {
+      "guardrail_input": 0,
+      "guardrail_output": 0
+    },
+    "minimum_required": 1
+  },
+  "config_revision": 4
+}

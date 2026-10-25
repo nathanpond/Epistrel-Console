@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "config_revision": 2,
+      "setting": "policy:01M5R8954SQXFAN5N439FEG48J",
+      "class": "interpretive",
+      "old": null,
+      "new": {
+        "kind": "deterministic",
+        "name": "No war",
+        "rule": {
+          "type": "wordlist",
+          "words": [
+            "the war"
+          ]
+        },
+        "scope": "story",
+        "effect": "deny",
+        "message": "No war talk.",
+        "version": 1,
+        "scope_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+        "applies_to": [
+          "text_output"
+        ],
+        "age_condition": null
+      },
+      "actor": "console:nate",
+      "at": "2026-10-25T00:44:59.417347Z"
+    },
+    {
+      "config_revision": 1,
+      "setting": "turn_queue_max",
+      "class": "prospective",
+      "old": null,
+      "new": 3,
+      "actor": "console:nate",
+      "at": "2026-10-25T00:44:59.375697Z"
+    },
+    {
+      "config_revision": 1,
+      "setting": "turn_concurrency",
+      "class": "prospective",
+      "old": "reject",
+      "new": "queue",
+      "actor": "console:nate",
+      "at": "2026-10-25T00:44:59.375697Z"
+    }
+  ],
+  "next": "01M5R895CURSOR0000000000000"
+}

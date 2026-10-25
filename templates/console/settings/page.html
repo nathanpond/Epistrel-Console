@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ snap.label }} — Epistrel Console{% endblock %}
+{% block heading %}Settings — {{ story.name|default:"—" }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a href="{% url 'stories:history' story.id %}">History</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+{% if archived_note %}<p class="warning">{{ archived_note }}.</p>{% endif %}
+<nav class="settings-toc">
+  <a href="#settings">Settings</a> · <a href="#budget">Budget</a> · <a href="#effective-policies">Effective policies</a> · <a href="#story-policies">Story policies</a> · <a href="#pinned">Pinned memories</a> · <a href="#instructions">Custom instructions</a> · <a href="#config-changes">Config changes</a>
+</nav>
+
+<section id="settings">
+  <h2>Settings</h2>
+  {% if settings_error %}{% include "console/_engine_error.html" with engine_error=settings_error %}
+  {% else %}{% include "console/settings/_settings_form.html" %}{% endif %}
+</section>
+
+<section id="budget">
+  <h2>Budget and guardrail calls</h2>
+  {% if settings_read %}{% include "console/settings/_budget.html" %}{% else %}<p class="muted">Unavailable — the settings could not be read.</p>{% endif %}
+</section>
+
+<section id="effective-policies">
+  <h2>Effective policies</h2>
+  {% if settings_read %}{% include "console/settings/_policies.html" %}{% else %}<p class="muted">Unavailable — the settings could not be read.</p>{% endif %}
+</section>
+
+<section id="story-policies">
+  <h2>Story policies</h2>
+  {% if settings_read %}{% include "console/settings/_story_policies.html" %}{% else %}<p class="muted">Unavailable — the settings could not be read.</p>{% endif %}
+</section>
+
+<section id="pinned">
+  <h2>Pinned memories{% if pinned_revision is not None %} <small class="revision">revision {{ pinned_revision }}</small>{% endif %}</h2>
+  {% if pinned_error %}{% include "console/_engine_error.html" with engine_error=pinned_error %}
+  {% else %}{% include "console/settings/_pinned.html" %}{% endif %}
+</section>
+
+<section id="instructions">
+  <h2>Custom instructions{% if instructions_revision is not None %} <small class="revision">revision {{ instructions_revision }}</small>{% endif %}</h2>
+  {% if instructions_error %}{% include "console/_engine_error.html" with engine_error=instructions_error %}
+  {% else %}{% include "console/settings/_instructions.html" %}{% endif %}
+</section>
+
+<section id="config-changes">
+  <h2>Config changes</h2>
+  {% include "console/settings/_config_changes.html" %}
+</section>
+{% endblock %}

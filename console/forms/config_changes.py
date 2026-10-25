@@ -1,10 +1,12 @@
-"""The configuration-change list's filters (#50 the deployment's; #54 reuses it for a story's).
+"""The configuration-change list's filters (#50 the deployment's; #54 reuses it for a story's,
+grouped and without ``since``).
 
 ``setting`` is a select of the names the recorded schema's enum lists, plus a free-text
 "prefixed key" (``policy:<id>`` …) checked against the schema's pattern, so a value the Engine
 would refuse is a form error and no call is made. ``since`` is read in UTC.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,12 +38,26 @@ class ConfigChangeFilterForm(forms.Form):
     )
     after = forms.CharField(required=False, widget=forms.HiddenInput)
 
-    def __init__(self, data: Any = None, *, settings: SettingFilter) -> None:
+    def __init__(
+        self,
+        data: Any = None,
+        *,
+        settings: SettingFilter,
+        groups: Sequence[tuple[str, Sequence[tuple[str, str]]]] | None = None,
+        with_since: bool = True,
+    ) -> None:
+        """``groups``: the setting select as option groups (#54) instead of one flat list.
+        ``with_since``: offer the ``since`` filter (#54's story list does not)."""
         super().__init__(data)
         self.setting_filter = settings
         field = self.fields["setting"]
         if isinstance(field, forms.ChoiceField):
-            field.choices = [(ANY, "any"), *((name, name) for name in settings.names)]
+            if groups is not None:
+                field.choices = [(ANY, "any"), *((title, list(opts)) for title, opts in groups)]
+            else:
+                field.choices = [(ANY, "any"), *((name, name) for name in settings.names)]
+        if not with_since:
+            del self.fields["since"]
 
     def clean_prefixed(self) -> str:
         value: str = self.cleaned_data.get("prefixed", "").strip()

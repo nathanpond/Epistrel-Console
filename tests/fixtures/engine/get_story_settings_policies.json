@@ -1,0 +1,87 @@
+{
+  "settings": {
+    "regenerate_retry_budget": 2,
+    "turn_concurrency": "reject",
+    "turn_queue_max": null,
+    "default_output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+    "lite_summary_chunk": null,
+    "audit_retention_days": null,
+    "allow_new_arrivals": true
+  },
+  "effective_policies": [
+    {
+      "id": "01M5R8954SQXFAN5N439FEG48J",
+      "name": "No war",
+      "scope": "story",
+      "source": "story",
+      "applies_to": [
+        "text_output"
+      ],
+      "age_condition": null,
+      "kind": "deterministic"
+    },
+    {
+      "id": "01M5R8954SQXFAN5N439FEG48K",
+      "name": "Tobin keeps quiet",
+      "scope": "character",
+      "source": "character",
+      "applies_to": [
+        "text_input",
+        "text_output"
+      ],
+      "age_condition": null,
+      "kind": "model_assisted"
+    },
+    {
+      "id": "01M5R8954SQXFAN5N439FEG48M",
+      "name": null,
+      "scope": "story",
+      "source": "story",
+      "applies_to": [
+        "text_output"
+      ],
+      "age_condition": null,
+      "kind": "deterministic"
+    },
+    {
+      "id": "no_slurs",
+      "name": "No slurs",
+      "scope": "global",
+      "source": "global",
+      "applies_to": [
+        "text_input",
+        "text_output"
+      ],
+      "age_condition": null,
+      "kind": "deterministic"
+    }
+  ],
+  "inactive_policies": [
+    {
+      "id": "minors_no_sexual_content",
+      "name": "No sexual content involving or near minors",
+      "scope": "global",
+      "source": "global",
+      "applies_to": [
+        "text_input",
+        "text_output"
+      ],
+      "age_condition": "minor_involved_or_present",
+      "kind": "model_assisted"
+    }
+  ],
+  "guardrail_calls": {
+    "input": 1,
+    "output": 1
+  },
+  "effective_budget": {
+    "max_model_calls_per_turn": 11,
+    "source": "formula",
+    "turn_deadline": 45.0,
+    "reserved": {
+      "guardrail_input": 1,
+      "guardrail_output": 1
+    },
+    "minimum_required": 3
+  }
+}

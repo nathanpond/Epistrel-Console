@@ -23,7 +23,7 @@
   <dd>{% if cast %}<ul class="cast">{% for character in cast %}<li>{{ character.name }}{% if character.is_player %} (player){% endif %}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
   <dt>Created</dt><dd>{{ story.created_at|engine_time }}</dd>
 </dl>
-<p>{% include "console/stories/_actions.html" with story=story query=actions_query %} <a class="button" href="{% url 'engine:rebuild' story.id %}?{{ actions_query }}">Rebuild projections</a> <a class="history-link" href="{% url 'stories:history' story.id %}">History</a> <a href="{% url 'stories:list' %}">All stories</a></p>
+<p>{% include "console/stories/_actions.html" with story=story query=actions_query %} <a class="button" href="{% url 'engine:rebuild' story.id %}?{{ actions_query }}">Rebuild projections</a> <a class="history-link" href="{% url 'stories:history' story.id %}">History</a> <a class="settings-link" href="{% url 'stories:settings' story.id %}">Settings</a> <a href="{% url 'stories:list' %}">All stories</a></p>
 <div class="play">
   <section class="play-left">
     {% include "console/play/_transcript.html" %}

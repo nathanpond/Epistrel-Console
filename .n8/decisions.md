@@ -682,3 +682,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** On the history page, each Variants row gets Swap (hidden on active chains, `&check=1` when `requires_check`) and "Fork" at the chain's `tip_turn` with `variant_chain=T:V`. The panel gets `id="variants"`. An archived story disables Swap. Added an `engine_live` + `engine_auth` test (`tests/engine_live/test_timeline_live.py`) that runs the issue's demo: regenerate, rewind, a stale second rewind refused, undo, swap back, and fork with its banner.
   **Why:** The planner's Variants-panel placement. A fork must lie on its chain, and the tip is on it.
   **Issue:** #53
+- **Decision (drift):** No schema re-record for #54. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, stub adapter, torn down after) reports a match; the settings `PATCH`, pinned-memories and custom-instructions `GET`/`PUT` and `GET …/config-changes` are in the recording. The error shapes were checked live: `superseded` arrives as 422 `validation_error` with `details.reason: superseded` and `details.replacement`; `cannot_relax` names `body.policies[0].effect`; the pinned cap is 422 `validation_error` with `details.{field: body.items, cap, limit, actual}`.
+  **Why:** #43's schema convention; the AC's wording is mapped onto what `edge` sends.
+  **Issue:** #54
+- **Decision:** `/stories/<id>/settings/` reads the story (its error escapes to the page panel), then settings, `/admin/settings`, pinned memories, custom instructions and config changes, each degrading only its section. Each form posts to its own URL with one signed snapshot (story, cast, status, settings as read, the deployment's three defaults and two caps). A refused or edited submit (invalid form, Engine refusal, pinned add/remove/up/down) re-renders only that section from the snapshot (`settings/section.html`), with the input kept and no Engine read; a save redirects to the page's anchor with a flash.
+  **Why:** The test plan needs "refused by the form with zero calls", and re-reading six endpoints to re-show one form would break that.
+  **Issue:** #54
+- **Decision:** No call sends `X-Epistrel-Expected-Revision`, so the planner's "409 shows #53's reload message" for pinned/instructions has no path; a 409 `revision_conflict` / `timeline_changed` would render the error panel.
+  **Why:** Pass 2 and #43 ("expected revision only where an AC names it") override the earlier planner line.
+  **Issue:** #54
+- **Decision:** Settings form: a blank nullable input (and the viewpoint's "no override" option) means `null`; "Reset to default" (shown only on "story" fields) sends `null`, except on a nullable field already `null`, which sends nothing. Changed = differs from the snapshot's value (bools by type). A constant-default field equal to its default reads "default" even if stored.
+  **Why:** Merge-patch convention (#43, #50); the planner's marker rules.
+  **Issue:** #54
+- **Decision (drift):** Story policies reuse #47's `PolicyContentForm` per-type rule inputs (`STORY_RULE_TYPES`), not a JSON rule textarea; `StoryPolicyForm` adds the scope select (story / `character:<id>`), an effect select (deny/allow) and a hidden `policy_id`. Editing is `?policy=<id>`: it reads `GET /admin/policies/{id}` for the content (`EffectivePolicyBody` has no rule or message) and is refused without a call for an id not in the story's named story/character policies. `_content_fields.html` now renders hidden fields separately and shows the fixed "Effect: deny" line only for forms without an effect select (`shows_effect`). `cannot_relax` shows "A story policy can only add restrictions — <Engine message>" at the non-field errors; other 422s go through `STORY_POLICY_ERROR_PATHS` (`policies[0].<path>` → #47's placement).
+  **Why:** #47 built per-type inputs and the helper inventory says reuse them; one form shape across both policy pages.
+  **Issue:** #54
+- **Decision:** The effective / inactive tables show a character policy's scope as `character` without naming the character.
+  **Why:** `EffectivePolicyBody` carries no `scope_id`; naming it would mean an extra read per policy.
+  **Issue:** #54
+- **Decision:** `console/formset_rows.py` gained `up` / `down` buttons (value = row index, swapped with the neighbour; ids move with their rows). The pinned formset uses it with `min_rows=0` and `max_rows` = the cap, and Add is hidden at the cap. `ConfigChangeFilterForm` gained `groups=` (option groups) and `with_since=False`; the story's setting select groups the recorded enum as Settings / Historical / Profile overrides / Rating and profile.
+  **Why:** Extend the shared helpers rather than copy them (#51's lift).
+  **Issue:** #54
+- **Decision:** Pinned / instructions refusals: a cap 422 and `pin_limit_exceeded` show their cap or scope, limit and actual as facts; a field 422 is placed on its row; a guardrail rejection lists the violations (#44's table) and marks the `items[n]` row its locator names; `erased_subject_referenced` shows the AC's message and marks the row when `details.field` / `locator` / `path` names `items[n]`; `story_busy` uses #48's `error_inspector` busy line. A write with `operation_id: null` flashes "No change … nothing was written".
+  **Why:** The AC's wording, with #48's busy wording reused.
+  **Issue:** #54
+- **Decision:** The "Moved to engine profile overrides — see Config" note and the budget's "Change in Config" link point at `/stories/<id>/config/`, which 404s until M3 #85 builds it. An archived story's forms render inside a disabled fieldset with "Archived — unarchive to change the settings". Added `tests/engine_live/test_story_settings_live.py` (`engine_auth`), which runs the demo against `edge`.
+  **Why:** The test plan names the link; #43's archived convention.
+  **Issue:** #54

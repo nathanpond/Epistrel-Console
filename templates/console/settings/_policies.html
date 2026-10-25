@@ -1,0 +1,6 @@
+{# The story's effective and inactive policies (#54). Context: effective_rows, inactive_rows. #}
+<p class="scope">Every policy that applies to this story, with where it comes from.</p>
+{% include "console/settings/_policy_table.html" with rows=effective_rows %}
+<h3>Inactive policies</h3>
+<p class="muted">Age-conditioned policies whose condition does not hold for the cast yet.</p>
+{% include "console/settings/_policy_table.html" with rows=inactive_rows %}

@@ -1,0 +1,11 @@
+{# guardrail_calls and effective_budget as the Engine sends them (#54). Context: settings_read, budget_source, config_url. #}
+{% with budget=settings_read.effective_budget calls=settings_read.guardrail_calls %}
+<dl class="budget">
+  <dt>Model calls per turn</dt><dd class="budget-calls">{{ budget.max_model_calls_per_turn }} <small class="source">source: {{ budget_source }}</small></dd>
+  <dt>Turn deadline</dt><dd class="budget-deadline">{{ budget.turn_deadline }} s</dd>
+  <dt>Reserved guardrail calls</dt><dd class="budget-reserved">{% for name, count in budget.reserved.items %}{{ name }} {{ count }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+  <dt>Minimum required</dt><dd class="budget-minimum">{{ budget.minimum_required }}</dd>
+  <dt>Guardrail calls</dt><dd class="guardrail-calls">input {{ calls.input }}, output {{ calls.output }}</dd>
+</dl>
+<p><a href="{{ config_url }}">Change in Config</a> <small>(the budget is an engine-profile override)</small></p>
+{% endwith %}

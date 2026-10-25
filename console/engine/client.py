@@ -26,6 +26,8 @@ from console.engine.models import (
     ContentRatingList,
     ContentRatingMutation,
     ContentRatingSummary,
+    CustomInstructions,
+    CustomInstructionsWritten,
     DeploymentSettings,
     ForkResult,
     HealthResponse,
@@ -37,6 +39,8 @@ from console.engine.models import (
     ModelConfigItem,
     ModelConfigMutation,
     OperationRecord,
+    PinnedMemories,
+    PinnedMemoriesWritten,
     Policy,
     PolicyList,
     PolicyMutation,
@@ -53,6 +57,7 @@ from console.engine.models import (
     StoryCreated,
     StoryList,
     StorySettings,
+    StorySettingsWrite,
     StoryStatusChange,
     StorySummary,
     SwapResult,
@@ -930,6 +935,86 @@ class EngineClient:
         """``GET /stories/{id}/settings``: the story's settings, policies and effective budget
         (``effective_budget.turn_deadline`` is the turn deadline in seconds)."""
         return _parse(self._request("GET", f"{_story_path(story_id)}/settings"), StorySettings)
+
+    # --- A story's settings, pinned memories and custom instructions (#54) --------------------
+    # None sends ``X-Epistrel-Expected-Revision`` (#43: only where an AC names it).
+
+    @operation("PATCH", "/stories/{story_id}/settings", response_model=StorySettingsWrite)
+    def patch_story_settings(
+        self, story_id: str, patch: Mapping[str, Any], *, idempotency_key: str
+    ) -> StorySettingsWrite:
+        """``PATCH /stories/{id}/settings`` with a ``StorySettingsPatch`` (a JSON merge patch:
+        a key sets that setting, ``null`` resets it; ``policies`` upserts story policies)."""
+        response = self._request(
+            "PATCH",
+            f"{_story_path(story_id)}/settings",
+            json=dict(patch),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, StorySettingsWrite)
+
+    @operation("GET", "/stories/{story_id}/pinned-memories", response_model=PinnedMemories)
+    def get_pinned_memories(self, story_id: str) -> PinnedMemories:
+        """``GET /stories/{id}/pinned-memories``: the pinned memories in prompt order."""
+        path = f"{_story_path(story_id)}/pinned-memories"
+        return _parse(self._request("GET", path), PinnedMemories)
+
+    @operation("PUT", "/stories/{story_id}/pinned-memories", response_model=PinnedMemoriesWritten)
+    def put_pinned_memories(
+        self, story_id: str, items: Sequence[Mapping[str, Any]], *, idempotency_key: str
+    ) -> PinnedMemoriesWritten:
+        """``PUT /stories/{id}/pinned-memories``: replace the pinned memories (``items`` in
+        order, each ``{id?, text}``; an empty list clears them)."""
+        response = self._request(
+            "PUT",
+            f"{_story_path(story_id)}/pinned-memories",
+            json={"items": [dict(item) for item in items]},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PinnedMemoriesWritten)
+
+    @operation("GET", "/stories/{story_id}/custom-instructions", response_model=CustomInstructions)
+    def get_custom_instructions(self, story_id: str) -> CustomInstructions:
+        """``GET /stories/{id}/custom-instructions``: the text (``""`` when none)."""
+        path = f"{_story_path(story_id)}/custom-instructions"
+        return _parse(self._request("GET", path), CustomInstructions)
+
+    @operation(
+        "PUT",
+        "/stories/{story_id}/custom-instructions",
+        response_model=CustomInstructionsWritten,
+    )
+    def put_custom_instructions(
+        self, story_id: str, text: str, *, idempotency_key: str
+    ) -> CustomInstructionsWritten:
+        """``PUT /stories/{id}/custom-instructions``: replace the text (``""`` clears it)."""
+        response = self._request(
+            "PUT",
+            f"{_story_path(story_id)}/custom-instructions",
+            json={"text": text},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CustomInstructionsWritten)
+
+    @operation("GET", "/stories/{story_id}/config-changes", response_model=ConfigChanges)
+    def list_story_config_changes(
+        self,
+        story_id: str,
+        *,
+        setting: str | None = None,
+        change_class: str | None = None,
+        since: str | None = None,
+        after: str | None = None,
+        limit: int = CONFIG_CHANGES_PAGE,
+    ) -> ConfigChanges:
+        """``GET /stories/{id}/config-changes``: the story's configuration changes (settings,
+        story and character policies), newest first, one page."""
+        params = _config_change_params(setting, change_class, since, after, limit)
+        path = f"{_story_path(story_id)}/config-changes"
+        return _parse(self._request("GET", path, params=params), ConfigChanges)
 
     @operation("GET", "/operations/{operation_id}", response_model=OperationRecord)
     def get_operation(self, operation_id: str, viewpoint: str | None = None) -> OperationRecord:

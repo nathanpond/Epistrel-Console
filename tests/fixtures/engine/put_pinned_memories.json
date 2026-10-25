@@ -1,0 +1,13 @@
+{
+  "timeline_revision": 5,
+  "idempotency_key": "01M5R8955NJY76XABWXXGHB7VE",
+  "items": [
+    {
+      "id": "01M5R89563XNHAKKC94WKCRC0Z",
+      "text": "Tobin owes Mara money."
+    }
+  ],
+  "operation_id": "01M5R895604STFZ0RAW2Y5FBKS",
+  "model_calls": [],
+  "elapsed_ms": 22
+}

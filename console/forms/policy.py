@@ -3,7 +3,8 @@
 :class:`PolicyContentForm` is a policy's content: name, targets (``applies_to``), the rule,
 age condition and message. Its :meth:`~PolicyContentForm.content` is the body every policy
 write shares (``PolicyReplacement``; ``StoryPolicyItem`` and ``PolicyFields`` add their scope
-and id to it). ``effect`` is never a field: it is always sent as ``"deny"``.
+and id to it). ``effect`` is not one of its fields: it is sent as ``"deny"`` (#54's story
+policy form adds an effect select so the Engine's ``cannot_relax`` is reachable).
 
 One "rule type" select sets the rule and with it the policy's ``kind``. Every rule input is
 shown (no JS) and only the chosen type's is validated:
@@ -134,6 +135,8 @@ def policy_initial(policy: Policy) -> dict[str, Any]:
 
 class PolicyContentForm(forms.Form):
     """A policy's content; see the module docstring."""
+
+    shows_effect = False  # the effect is fixed (deny); #54's story form adds an effect select
 
     name = forms.CharField(label="Name", max_length=NAME_MAX)
     applies_to = forms.MultipleChoiceField(

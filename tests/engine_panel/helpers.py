@@ -46,11 +46,12 @@ def error(code: str, message: str = "refused", **details: Any) -> dict[str, Any]
     return {"error": {"code": code, "message": message, "details": details}}
 
 
-def form_data(html: str) -> dict[str, str]:
-    """The settings form's values as the browser would post them unchanged."""
+def form_data(html: str, action: str = "/engine/settings/") -> dict[str, str]:
+    """The values of the POST form to ``action`` as the browser would post them unchanged."""
     import html as markup
 
-    form = re.search(r'<form method="post" action="/engine/settings/".*?</form>', html, re.S)
+    pattern = rf'<form method="post" action="{re.escape(action)}".*?</form>'
+    form = re.search(pattern, html, re.S)
     assert form is not None
     data: dict[str, str] = {}
     for match in re.finditer(r"<input([^>]*)>", form.group(0)):

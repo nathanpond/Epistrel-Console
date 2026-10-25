@@ -1,0 +1,22 @@
+{# The story- and character-scoped policies and the add/edit form (#54). Context: story_policy_rows + _policy_form.html's. #}
+<p class="note">Story policies cannot be removed in this Engine version.</p>
+<table class="story-policies">
+  <thead><tr><th>Name</th><th>Id</th><th>Scope</th><th>Applies to</th><th>Age condition</th><th>Kind</th><th></th></tr></thead>
+  <tbody>
+    {% for row in story_policy_rows %}
+    <tr class="story-policy">
+      <td>{% if row.policy.name is None %}<em>{{ row.name }}</em>{% else %}{{ row.name }}{% endif %}</td>
+      <td><code>{{ row.policy.id }}</code></td>
+      <td>{{ row.scope }}</td>
+      <td>{{ row.applies_to }}</td>
+      <td>{{ row.policy.age_condition|default:"—" }}</td>
+      <td>{{ row.policy.kind }}</td>
+      <td>{% if row.editable and not archived_note %}<a href="{{ row.edit_url }}">Edit</a>{% elif not row.editable %}<span class="muted">not editable</span>{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="muted">This story has no policies of its own.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if policy_error %}{% include "console/_engine_error.html" with engine_error=policy_error %}{% endif %}
+{% include "console/settings/_policy_form.html" %}

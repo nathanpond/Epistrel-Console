@@ -580,6 +580,71 @@ def _effective_policies(raw: list[Any]) -> list[EffectivePolicy]:
     return [policy for policy in parsed if policy is not None]
 
 
+# --- A story's settings, pinned memories and custom instructions (#54) -------------------------
+
+
+@dataclass(frozen=True)
+class StorySettingsWrite(StorySettings):
+    """``StorySettingsWriteBody`` (``PATCH /stories/{id}/settings``): the settings after the
+    write in the read's shape, the story's ``config_revision`` (moved by a write that changed
+    something) and its unchanged ``timeline_revision``."""
+
+    timeline_revision: int
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class PinnedItem(Model):
+    """``PinnedItemBody``: one pinned memory, its server-minted id and its text."""
+
+    id: str
+    text: str
+
+
+@dataclass(frozen=True)
+class PinnedMemories(Model):
+    """``PinnedMemoriesBody``: the story's pinned memories in prompt order, and its revision."""
+
+    items: list[PinnedItem]
+    timeline_revision: int
+
+
+@dataclass(frozen=True)
+class PinnedMemoriesWritten(Model):
+    """``PinnedMemoriesWritten``: the stored pinned memories after a ``PUT``, the edit's
+    operation (``None`` when nothing changed), the story's revision and what the input gate
+    spent."""
+
+    timeline_revision: int
+    items: list[PinnedItem]
+    operation_id: str | None
+    model_calls: list[ModelCall]
+    elapsed_ms: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CustomInstructions(Model):
+    """``CustomInstructionsBody``: the story's custom instructions (``""`` when none)."""
+
+    text: str
+    timeline_revision: int
+
+
+@dataclass(frozen=True)
+class CustomInstructionsWritten(Model):
+    """``CustomInstructionsWritten``: the stored instructions after a ``PUT`` (see
+    :class:`PinnedMemoriesWritten`)."""
+
+    timeline_revision: int
+    text: str
+    operation_id: str | None
+    model_calls: list[ModelCall]
+    elapsed_ms: int
+    idempotency_key: str | None = None
+
+
 # --- Stories (#45; #48's play view and #50's settings page reuse them) -------------------------
 
 

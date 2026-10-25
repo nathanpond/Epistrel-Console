@@ -15,6 +15,7 @@ from console.views import (
     ratings,
     status,
     stories,
+    story_settings,
     timeline,
 )
 
@@ -37,6 +38,20 @@ story_patterns = (
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         path("<str:story_id>/history/", history.history, name="history"),
+        # The story's settings page (#54): GET the page, POST its settings form; each other
+        # section posts to its own URL.
+        path("<str:story_id>/settings/", story_settings.settings_page, name="settings"),
+        path(
+            "<str:story_id>/settings/policies/",
+            story_settings.save_policy,
+            name="settings-policy",
+        ),
+        path("<str:story_id>/settings/pinned/", story_settings.save_pinned, name="settings-pinned"),
+        path(
+            "<str:story_id>/settings/instructions/",
+            story_settings.save_instructions,
+            name="settings-instructions",
+        ),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),
