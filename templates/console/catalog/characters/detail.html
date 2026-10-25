@@ -7,7 +7,9 @@
 {% if engine_error %}
 {% include "console/_engine_error.html" %}
 {% else %}
-<h2 class="version-heading">{{ heading }} · <a href="{{ versions_url }}">Versions</a></h2>
+<h2 class="version-heading">{{ heading }} · <a href="{{ versions_url }}">Versions</a> · <a class="edit" href="{{ edit_url }}">Edit</a></h2>
+{% for found in reports %}{% include "console/_validation_report.html" with report=found.report label=found.label anchor_base=edit_url %}{% endfor %}
+{% if publish and not card %}{% include "console/catalog/characters/_publish_form.html" %}{% endif %}
 {% if card %}
 <p class="view-mode"><strong>Public card view</strong> · <a href="{{ full_query }}">Back to full view</a></p>
 {% else %}

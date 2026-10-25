@@ -119,7 +119,14 @@ engine_patterns = (
 catalog_character_patterns = (
     [
         path("", catalog_characters.character_list, name="index"),
+        path("new/", catalog_characters.character_new, name="new"),
         path("<str:character_id>/", catalog_characters.character_detail, name="detail"),
+        path("<str:character_id>/edit/", catalog_characters.character_edit, name="edit"),
+        path(
+            "<str:character_id>/publish/",
+            catalog_characters.character_publish,
+            name="publish",
+        ),
         path(
             "<str:character_id>/versions/",
             catalog_characters.character_versions,

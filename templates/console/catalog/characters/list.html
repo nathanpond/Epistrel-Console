@@ -3,6 +3,7 @@
 {% block title %}Characters — Catalog — Epistrel Console{% endblock %}
 {% block heading %}Catalog characters{% endblock %}
 {% block content %}
+<p><a class="new" href="{% url 'catalog_characters:new' %}">New character</a></p>
 <form method="get" action="{% url 'catalog_characters:index' %}" class="filters">
   {{ form.non_field_errors }}
   <p>

@@ -795,3 +795,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Django adds `Content-Length: 0` to the proxy's 304. Apart from that, the 304 carries only ETag, Cache-Control and the two security headers. The proxy answers HEAD with 405 (GET only, as planned).
   **Why:** `CommonMiddleware` sets Content-Length on every non-streaming response. A zero length on an empty 304 is harmless.
   **Issue:** #65
+- **Decision (drift):** `get_catalog_character_companion` is registered without a response model. It parses a narrow `CompanionDraft` (id, status, versions, `companion_of`, `draft_revision`), and a contract test checks each of those fields against `ScenarioFull`.
+  **Why:** The companion read answers a whole `ScenarioFull`. The contract check needs a model to match the component exactly, and the full scenario model is #68's to build.
+  **Issue:** #66
+- **Decision:** The contract tests compare registered operations and models against the recorded schema with `EntryLocation` widened by `ElementLocation.media_id`. This is the same widening #64's report test already used. A new test proves that `media_id` is the only difference.
+  **Why:** `CharacterPublished` holds the shared `ValidationReport`, whose `EntryLocation` parses both of the Engine's location shapes (#64). Without the widening, the publish registration could not match.
+  **Issue:** #66
+- **Decision:** The edit form carries a signed snapshot. It holds the draft as rendered (the merge-patch original), its revision and header facts, the companion revision (or the read error) and the rating options. A POST validates from it with no Engine read. A missing or tampered snapshot redirects to the edit page, which reads again. The create page signs the rating options the same way.
+  **Why:** The plan requires that an invalid form makes zero calls, including invalid `adapter_params` and a nuance with no setting. The rating select's options are needed to validate, so they travel signed rather than being read again.
+  **Issue:** #66
+- **Decision:** On edit, the visual identity diffs field by field, so each cleared field sends `null`. A draft with no stored visual identity whose fields stay empty sends nothing. An `adapter_params` of `{}` counts as blank. Only "Clear visual identity" sends `visual_identity: null`.
+  **Why:** Sending `visual_identity: null` whenever every text field is cleared would also delete the reference images (#71's). Sending `{}` would make a call with no change.
+  **Issue:** #66
+- **Decision:** If Save & publish saves and the publish then gets a 409, the Console redirects to the edit page. The flash says "Saved as draft revision R, but not published." and the stale banner follows as a second flash. `?companion=1` keeps the box ticked. A 409 with no save first re-renders the page with the banner and the input kept. Errors on index paths in comma-separated labels read "Label N:" rather than "Line N:".
+  **Why:** After a save, the snapshot is stale, so the page has to be read again. The redirect still keeps the checkbox state, as the plan requires. Labels are not one per line.
+  **Issue:** #66
+- **Decision:** New shared helpers: `console/draft_stale.py` `stale_banner(error, *, draft_revision, companion_draft_revision=None)` (#64 convention 2's banner, naming the stale side) and `console/reports.py` `publish_reports(pk, *, entity_id=None) -> list[LabelledReport]` (a publish's character and companion reports read back from the #44 row). `confirm.posted_idempotency_key` gained an optional field name, because a page with two writes carries two keys.
+  **Why:** No earlier story built the draft-stale banner. The scenario editor (#68/#74) needs the same banner and report read-back.
+  **Issue:** #66
+- **Decision:** The detail page shows Publish only on full views of the latest version or the draft, never on the card view. On the latest view it reuses the draft read that "draft differs" already makes, then makes one companion read. The catalog test fixture answers the companion read by default.
+  **Why:** The plan names the latest and draft views. The card view has no draft read. #65's detail tests would otherwise fail on the new read.
+  **Issue:** #66

@@ -5,7 +5,7 @@ The two "bites" tests run first and prove the check fails on a known-bad registr
 
 import types
 import typing
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from typing import Any, Literal
 
 import pytest
@@ -18,6 +18,7 @@ from console.engine.models import (
     CardRating,
     CatalogCharacter,
     CatalogCharacterCard,
+    CatalogCharacterDraft,
     CatalogCharacterListItem,
     CatalogCharacterPage,
     CatalogSource,
@@ -27,6 +28,9 @@ from console.engine.models import (
     CharacterDefinition,
     CharacterImage,
     CharacterImages,
+    CharacterPublished,
+    CompanionDraft,
+    CompanionPublished,
     ConfigChange,
     ConfigChanges,
     ConfigSources,
@@ -120,6 +124,23 @@ DOC = recorded_schema()
 HEALTH_REF = {"$ref": "#/components/schemas/HealthResponse"}
 
 
+def _widened(doc: dict[str, Any]) -> dict[str, Any]:
+    """``doc`` with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s ``media_id``:
+    the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
+    publish's answer, #66) is compared against this."""
+    import copy
+
+    widened = copy.deepcopy(doc)
+    schemas = widened["components"]["schemas"]
+    schemas["EntryLocation"]["properties"]["media_id"] = schemas["ElementLocation"]["properties"][
+        "media_id"
+    ]
+    return widened
+
+
+WIDENED = _widened(DOC)
+
+
 def test_bites_on_unknown_operation() -> None:
     problems = check_operation(DOC, Operation("GET", "/nope", None, False))
     assert problems == ["GET /nope: not in the recorded schema"]
@@ -162,7 +183,20 @@ def test_bites_on_nested_mismatch() -> None:
 
 @pytest.mark.parametrize("name", sorted(OPERATIONS))
 def test_registered_operations_match_the_recorded_schema(name: str) -> None:
-    assert check_operation(DOC, OPERATIONS[name]) == []
+    assert check_operation(WIDENED, OPERATIONS[name]) == []
+
+
+def test_the_widening_only_adds_media_id() -> None:
+    """The widened document differs from the recorded one by ``EntryLocation.media_id`` alone,
+    and the publish registration does not match the recorded one without it (so the widening
+    is what makes it pass, nothing else)."""
+    entry = DOC["components"]["schemas"]["EntryLocation"]["properties"]
+    widened = WIDENED["components"]["schemas"]["EntryLocation"]["properties"]
+    assert set(widened) - set(entry) == {"media_id"}
+    publish = OPERATIONS["POST /catalog/characters/{character_id}/publish"]
+    problems = check_operation(DOC, publish)
+    assert problems
+    assert all("media_id" in p for p in problems)
 
 
 @pytest.mark.parametrize(
@@ -264,11 +298,35 @@ def test_registered_operations_match_the_recorded_schema(name: str) -> None:
         (VisualIdentity, "VisualIdentityDetail"),
         (CatalogVersion, "CharacterVersionBody"),
         (CatalogVersionList, "CharacterVersionsBody"),
+        (CatalogCharacterDraft, "CharacterDraftBody"),
+        (CharacterPublished, "CharacterPublishedBody"),
+        (CompanionPublished, "CompanionPublishedBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
     ref = {"$ref": f"#/components/schemas/{component}"}
-    assert compare_model(DOC, model, ref, component) == []
+    assert compare_model(WIDENED, model, ref, component) == []
+
+
+def test_companion_draft_reads_fields_of_scenario_full() -> None:
+    """#66: ``CompanionDraft`` reads a few fields of the companion read's ``ScenarioFull``
+    (#68 owns the whole model): each is a ``ScenarioFull`` property of the same type, and
+    required here only when required there."""
+    node = DOC["components"]["schemas"]["ScenarioFull"]
+    properties = node["properties"]
+    hints = typing.get_type_hints(CompanionDraft)
+    problems = []
+    for f in fields(CompanionDraft):
+        if f.name not in properties:
+            problems.append(f"{f.name}: not a ScenarioFull property")
+            continue
+        problems.extend(compare_type(DOC, hints[f.name], properties[f.name], f.name))
+        has_default = f.default is not MISSING or f.default_factory is not MISSING
+        if not has_default and f.name not in node["required"]:
+            problems.append(f"{f.name}: required here but optional in ScenarioFull")
+    assert problems == []
+    op = OPERATIONS["GET /catalog/characters/{character_id}/companion"]
+    assert op.response_model is None
 
 
 def test_health_checks_both_declared_statuses() -> None:

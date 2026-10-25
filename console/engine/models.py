@@ -1560,3 +1560,61 @@ class CatalogVersionList(Model):
     first)."""
 
     items: list[CatalogVersion]
+
+
+# --- Catalog character writes (#66) --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CatalogCharacterDraft(CatalogCharacter):
+    """``CharacterDraftBody``: the draft after a create or a save, in ``full``.
+    ``draft_revision`` is the revision the next save or publish sends; ``config_revision`` the
+    deployment's (unchanged by the write)."""
+
+    draft_revision: int = field()  # required here (no default), optional on a read
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CompanionPublished(Model):
+    """``CompanionPublishedBody``: the companion version a character's publish made (always one:
+    its draft with ``with_companion``, else its latest content re-pinned), its draft's new
+    revision and that version's validation report."""
+
+    id: str
+    version: int
+    draft_revision: int
+    report: ValidationReport
+
+
+@dataclass(frozen=True)
+class CharacterPublished(Model):
+    """``CharacterPublishedBody``: the version a publish made, the draft's new revision, the
+    report (no errors; warnings and the checks the deployment cannot run) and the companion
+    version made with it."""
+
+    id: str
+    version: int
+    draft_revision: int
+    status: EntryStatus
+    published_at: str
+    report: ValidationReport
+    companion: CompanionPublished
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CompanionDraft(Model):
+    """The part of ``GET /catalog/characters/{id}/companion?draft=true&projection=full``
+    (``ScenarioFull``) a character's publish needs: the companion scenario's id, status, versions
+    and its draft's ``draft_revision``. Only these fields of the scenario are read (the scenario
+    pages' full model is #68's); the contract test compares each with ``ScenarioFull``."""
+
+    id: str
+    status: EntryStatus
+    version: int | None
+    current_version: int | None
+    companion_of: str | None
+    draft_revision: int | None = None

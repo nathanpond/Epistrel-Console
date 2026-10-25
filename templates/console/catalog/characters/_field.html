@@ -1,0 +1,6 @@
+<p class="field">
+  <label for="{{ row.field.id_for_label }}">{{ row.field.label }}</label><br>
+  {{ row.field }} <small class="muted" id="{{ row.field.auto_id }}_helptext">{{ row.field.help_text }}</small>
+  {{ row.field.errors }}
+  {% for note in row.notes %}<span class="report-note error">{{ note }}</span>{% endfor %}
+</p>

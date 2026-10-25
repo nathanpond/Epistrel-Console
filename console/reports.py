@@ -13,6 +13,7 @@ A report shown after a redirect is read back from its operation-log row (``?repo
 
 import re
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import Any
 
 from console.engine.models import EntryLocation, ValidationReport
@@ -90,3 +91,55 @@ def report_from_row(pk: object) -> ValidationReport | None:
     except EngineOperation.DoesNotExist, ValueError:
         return None
     return report_from_json(row.response)
+
+
+@dataclass(frozen=True)
+class LabelledReport:
+    """One report of a publish, with the side it is about: ``entity`` is the Engine's
+    (``character``, ``companion``, ``scenario``) and ``label`` its display form."""
+
+    label: str
+    entity: str
+    report: ValidationReport
+
+    @property
+    def has_findings(self) -> bool:
+        return bool(self.report.warnings or self.report.unavailable)
+
+
+def _labelled(entity: object, report: ValidationReport) -> LabelledReport:
+    name = entity if isinstance(entity, str) and entity else "character"
+    return LabelledReport(name.replace("_", " ").capitalize(), name, report)
+
+
+def publish_reports(pk: object, *, entity_id: str | None = None) -> list[LabelledReport]:
+    """The reports a catalog publish stored in operation-log row ``pk`` (#66): a success's
+    ``report`` (labelled by the row's ``entity_type``) and its ``companion.report``
+    ("Companion"), or a 422 ``publish_invalid``'s ``details.report`` labelled by
+    ``details.entity``. Empty when the row is missing, holds no report, or (with ``entity_id``)
+    is about another entity."""
+    try:
+        row = EngineOperation.objects.get(pk=int(str(pk)))
+    except EngineOperation.DoesNotExist, ValueError:
+        return []
+    if entity_id is not None and row.entity_id != entity_id:
+        return []
+    body = row.response
+    if not isinstance(body, dict):
+        return []
+    error = body.get("error")
+    if isinstance(error, dict):
+        details = error.get("details")
+        details = details if isinstance(details, dict) else {}
+        report = ValidationReport.from_json(details.get("report"))
+        return [] if report is None else [_labelled(details.get("entity"), report)]
+    found: list[LabelledReport] = []
+    own = ValidationReport.from_json(body.get("report"))
+    if own is not None:
+        found.append(_labelled(row.entity_type, own))
+    companion = body.get("companion")
+    if isinstance(companion, dict):
+        theirs = ValidationReport.from_json(companion.get("report"))
+        if theirs is not None:
+            found.append(_labelled("companion", theirs))
+    return found

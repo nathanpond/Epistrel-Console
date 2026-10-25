@@ -24,9 +24,12 @@ from django.conf import settings
 from console.engine.models import (
     CatalogCharacter,
     CatalogCharacterCard,
+    CatalogCharacterDraft,
     CatalogCharacterPage,
     CatalogVersion,
     CatalogVersionList,
+    CharacterPublished,
+    CompanionDraft,
     ConfigChanges,
     ContentRating,
     ContentRatingList,
@@ -72,6 +75,7 @@ from console.engine.models import (
     VariantChain,
     Variants,
 )
+from console.engine.timeouts import CATALOG_PUBLISH
 from console.entities import EntityType
 from console.version import VERSION
 
@@ -1267,6 +1271,103 @@ class EngineClient:
         them oldest first; callers sort)."""
         path = f"{_character_path(character_id)}/versions"
         return _parse(self._request("GET", path), CatalogVersionList).items
+
+    # --- catalog character writes (#66) ---------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/catalog/characters",
+        response_model=CatalogCharacterDraft,
+        entity="character",
+        entity_id="response:id",
+    )
+    def create_catalog_character(
+        self, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> CatalogCharacterDraft:
+        """``POST /catalog/characters`` with a ``CharacterCreate`` (``public_card``,
+        ``definition``, ``metadata``, ``visual_identity``, ``owner``): a new entry whose draft is
+        at revision 1."""
+        response = self._request(
+            "POST",
+            "/catalog/characters",
+            json=dict(body),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CatalogCharacterDraft)
+
+    @operation(
+        "PATCH",
+        "/catalog/characters/{character_id}",
+        response_model=CatalogCharacterDraft,
+        entity="character",
+        entity_id="character_id",
+    )
+    def patch_catalog_character(
+        self,
+        character_id: str,
+        patch: Mapping[str, Any],
+        *,
+        draft_revision: int,
+        idempotency_key: str,
+    ) -> CatalogCharacterDraft:
+        """``PATCH /catalog/characters/{id}``: a JSON merge patch over the draft (a key sets that
+        field, ``null`` removes it, a list replaces the stored one) based on ``draft_revision``
+        (a stale one is 409 ``draft_stale``)."""
+        response = self._request(
+            "PATCH",
+            _character_path(character_id),
+            json={**patch, "draft_revision": draft_revision},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CatalogCharacterDraft)
+
+    @operation(
+        "POST",
+        "/catalog/characters/{character_id}/publish",
+        response_model=CharacterPublished,
+        entity="character",
+        entity_id="character_id",
+    )
+    def publish_catalog_character(
+        self,
+        character_id: str,
+        *,
+        draft_revision: int,
+        companion_draft_revision: int | None = None,
+        idempotency_key: str,
+    ) -> CharacterPublished:
+        """``POST /catalog/characters/{id}/publish``: the draft at ``draft_revision`` as the next
+        version, with a companion version made in the same step. Given a
+        ``companion_draft_revision``, the companion's draft is published with it
+        (``?with_companion=true``, which the Engine requires the revision for); without one the
+        companion's latest content is re-pinned. 422 ``publish_invalid`` carries
+        ``details.report`` (and ``details.entity``: ``character`` or ``companion``)."""
+        body: dict[str, int] = {"draft_revision": draft_revision}
+        params: dict[str, str] | None = None
+        if companion_draft_revision is not None:
+            body["companion_draft_revision"] = companion_draft_revision
+            params = {"with_companion": "true"}
+        response = self._request(
+            "POST",
+            f"{_character_path(character_id)}/publish",
+            params=params,
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=CATALOG_PUBLISH,
+        )
+        return _parse(response, CharacterPublished)
+
+    @operation("GET", "/catalog/characters/{character_id}/companion")
+    def get_catalog_character_companion(self, character_id: str) -> CompanionDraft:
+        """``GET /catalog/characters/{id}/companion?draft=true&projection=full``: the companion
+        scenario's draft, read for its ``draft_revision`` (what a publish ``with_companion``
+        names). Registered without a response model: the answer is a whole ``ScenarioFull``
+        (#68's model), of which :class:`CompanionDraft` reads a few fields."""
+        params = {"draft": "true", "projection": "full"}
+        path = f"{_character_path(character_id)}/companion"
+        return _parse(self._request("GET", path, params=params), CompanionDraft)
 
     # --- media content (#65's proxy) -------------------------------------------------------------
 

@@ -1,0 +1,24 @@
+{
+  "id": "01JC00000000000000000CHAR1",
+  "version": 3,
+  "draft_revision": 7,
+  "status": "published",
+  "published_at": "2026-10-24T11:00:00.000000Z",
+  "report": {
+    "errors": [],
+    "warnings": [],
+    "unavailable": []
+  },
+  "companion": {
+    "id": "01JC000000000000000000SCN1",
+    "version": 2,
+    "draft_revision": 4,
+    "report": {
+      "errors": [],
+      "warnings": [],
+      "unavailable": []
+    }
+  },
+  "config_revision": 7,
+  "idempotency_key": "01JC0000000000000000000KEY"
+}

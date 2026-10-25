@@ -14,17 +14,22 @@
 Images go through the media proxy (``/media/<id>/content/``, :mod:`console.views.media_proxy`).
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 from urllib.parse import urlencode
 
+from django.contrib import messages
+from django.core import signing
 from django.http import HttpRequest, HttpResponse, QueryDict
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_safe
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
-from console.engine.choices import error_text, rating_choices
+from console.acting import acting_principal
+from console.confirm import posted_idempotency_key
+from console.draft_stale import CHARACTER, stale_banner
+from console.engine.choices import RatingChoices, error_text, rating_choices
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import (
     CardImage,
@@ -32,12 +37,17 @@ from console.engine.models import (
     CatalogCharacterCard,
     CatalogVersion,
     CharacterImage,
+    CharacterPublished,
     Disposition,
 )
-from console.engine_access import engine_client_for
+from console.engine_access import RecordingEngineClient, engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.entities import label
 from console.forms.catalog import CatalogFilterForm
+from console.forms.catalog_character import OWNER, CharacterForm, draft_to_write, flatten
+from console.forms.principal import remember_principals
+from console.ids import new_ulid
+from console.reports import LabelledReport, publish_reports
 
 LIST_URL = "/catalog/characters/"
 NOT_PUBLISHED = "not_published"
@@ -282,6 +292,24 @@ def _heading(
     return f"Version {entry.version} (latest)"
 
 
+def _publish_box(
+    request: HttpRequest,
+    client: EngineClient,
+    entry: CatalogCharacter,
+    draft_revision: int | None,
+    draft_error: str,
+) -> PublishBox:
+    """The detail page's Publish form (latest and draft views): one companion draft read for
+    the checkbox; disabled when the draft read failed or the entry is archived."""
+    if entry.status == ARCHIVED:
+        return PublishBox(draft_revision, None, "", disabled=ARCHIVED_PUBLISH)
+    if draft_revision is None:
+        error = f"The draft could not be read: {draft_error or 'no draft revision'}"
+        return PublishBox(None, None, "", error=error, disabled=error)
+    companion_revision, companion_error = _companion_revision(request, client, entry.id)
+    return PublishBox(draft_revision, companion_revision, companion_error)
+
+
 @require_safe
 def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
     client = engine_client_for(request)
@@ -316,12 +344,29 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
         context["engine_error"] = panel_for(exc)
         return render(request, "console/catalog/characters/detail.html", context)
     differs = False
-    if isinstance(entry, CatalogCharacter) and not (draft or version or never_published):
-        try:
-            differs = draft_differs(entry, client.get_catalog_character(character_id, draft=True))
-        except EngineClientError as exc:
-            log_engine_error(request, exc)  # the note is left out; nothing else changes
     shown_draft = draft or never_published
+    # The draft revision Publish (#66) names: the draft itself, or the draft read for "differs".
+    draft_revision: int | None = None
+    draft_error = ""
+    if isinstance(entry, CatalogCharacter) and shown_draft:
+        draft_revision = entry.draft_revision
+    elif isinstance(entry, CatalogCharacter) and version is None:
+        try:
+            current_draft = client.get_catalog_character(character_id, draft=True)
+        except EngineClientError as exc:
+            log_engine_error(request, exc)  # the note is left out; Publish shows the error
+            draft_error = error_text(exc)
+        else:
+            differs = draft_differs(entry, current_draft)
+            draft_revision = current_draft.draft_revision
+    if isinstance(entry, CatalogCharacter) and version is None:
+        context["publish"] = _publish_box(request, client, entry, draft_revision, draft_error)
+    context["reports"] = [
+        r
+        for r in publish_reports(params.get(REPORT_PARAM), entity_id=character_id)
+        if r.has_findings
+    ]
+    context["edit_url"] = reverse("catalog_characters:edit", args=[character_id])
     context.update(
         {
             "entry": entry,
@@ -377,3 +422,438 @@ def character_versions(request: HttpRequest, character_id: str) -> HttpResponse:
         }
     )
     return render(request, "console/catalog/characters/versions.html", context)
+
+
+# --- create, edit and publish (#66) ---------------------------------------------------------------
+
+EDIT_TEMPLATE = "console/catalog/characters/edit.html"
+SNAPSHOT_FIELD = "snapshot"
+SNAPSHOT_SALT = "console.catalog_character"
+ACTION_SAVE = "save"
+ACTION_PUBLISH = "publish"
+WITH_COMPANION = "with_companion"
+DRAFT_REVISION = "draft_revision"
+COMPANION_REVISION = "companion_draft_revision"
+PUBLISH_KEY = "publish_idempotency_key"
+REPORT_PARAM = "report"
+COMPANION_PARAM = "companion"  # ``?companion=1``: keep the box ticked after a redirect
+PUBLISH_INVALID = "publish_invalid"
+DRAFT_STALE = "draft_stale"
+ARCHIVED = "archived"
+ARCHIVED_NOTE = "Archived — unarchive to save or publish."
+ARCHIVED_PUBLISH = "Archived — unarchive to publish."
+NO_CHANGES = "No changes"
+NO_REVISION = "The page carried no draft revision — reload it and retry."
+NO_COMPANION_REVISION = "The companion's draft revision is unknown — reload the page and retry."
+
+
+@dataclass(frozen=True)
+class EditSnapshot:
+    """What the edit form posts back, signed: the draft as rendered (its write shape, the merge
+    patch's original), its revision and header facts, the companion draft's revision (or why it
+    could not be read) and the rating select's options (or why they could not be read). A
+    refused form re-renders from it, so an invalid form makes no Engine call. A create page
+    carries one too (``character_id`` empty), for the rating options."""
+
+    character_id: str = ""
+    draft_revision: int | None = None
+    original: dict[str, Any] = field(default_factory=dict)
+    status: str = ""
+    name: str | None = None
+    owner: str = ""
+    current_version: int | None = None
+    companion_revision: int | None = None
+    companion_error: str = ""
+    ratings: list[tuple[str, str]] = field(default_factory=list)
+    ratings_error: str = ""
+
+    def signed(self) -> str:
+        return signing.dumps(asdict(self), salt=SNAPSHOT_SALT, compress=True)
+
+    @classmethod
+    def unsigned(cls, value: str | None, character_id: str) -> EditSnapshot | None:
+        try:
+            raw = signing.loads(value or "", salt=SNAPSHOT_SALT)
+        except signing.BadSignature:
+            return None
+        if not isinstance(raw, dict) or raw.get("character_id") != character_id:
+            return None
+        try:
+            raw["ratings"] = [(str(k), str(v)) for k, v in raw["ratings"]]
+            return cls(**raw)
+        except KeyError, TypeError, ValueError:
+            return None
+
+    @property
+    def archived(self) -> bool:
+        return self.status == ARCHIVED
+
+    @property
+    def rating(self) -> str | None:
+        metadata = self.original.get("metadata") or {}
+        value = metadata.get("content_rating_id")
+        return value if isinstance(value, str) else None
+
+    def rating_choices(self) -> RatingChoices:
+        if self.ratings_error:
+            return RatingChoices([], EngineClientError(self.ratings_error))
+        return RatingChoices(list(self.ratings))
+
+
+def _companion_revision(
+    request: HttpRequest, client: EngineClient, character_id: str
+) -> tuple[int | None, str]:
+    """The companion draft's revision, or ``None`` and why it could not be read."""
+    try:
+        companion = client.get_catalog_character_companion(character_id)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None, error_text(exc)
+    if companion.draft_revision is None:
+        return None, "the companion's draft has no revision"
+    return companion.draft_revision, ""
+
+
+def _ratings_snapshot(ratings: RatingChoices) -> dict[str, Any]:
+    return {
+        "ratings": list(ratings.choices),
+        "ratings_error": ratings.unavailable_text if ratings.error is not None else "",
+    }
+
+
+def _read_snapshot(request: HttpRequest, client: EngineClient, character_id: str) -> EditSnapshot:
+    """Read the draft (its errors escape), the companion draft and the ratings."""
+    draft = client.get_catalog_character(character_id, draft=True)
+    original = draft_to_write(draft)
+    companion_revision, companion_error = _companion_revision(request, client, character_id)
+    rating = original["metadata"]["content_rating_id"]
+    return EditSnapshot(
+        character_id=character_id,
+        draft_revision=draft.draft_revision,
+        original=original,
+        status=draft.status,
+        name=draft.name,
+        owner=draft.owner_principal,
+        current_version=draft.current_version,
+        companion_revision=companion_revision,
+        companion_error=companion_error,
+        **_ratings_snapshot(rating_choices(client, current=rating)),
+    )
+
+
+def _edit_url(character_id: str, **params: str) -> str:
+    url = reverse("catalog_characters:edit", args=[character_id])
+    return f"{url}?{urlencode(params)}" if params else url
+
+
+def _detail_url(character_id: str, report: int | None = None) -> str:
+    url = reverse("catalog_characters:detail", args=[character_id])
+    return f"{url}?{urlencode({REPORT_PARAM: report})}" if report is not None else url
+
+
+def _form(snap: EditSnapshot, *, create: bool, **kwargs: Any) -> CharacterForm:
+    form = CharacterForm(
+        ratings=snap.rating_choices(), create=create, current_rating=snap.rating, **kwargs
+    )
+    if snap.archived:
+        for each in form.fields.values():
+            each.disabled = True
+    return form
+
+
+def _render_edit(
+    request: HttpRequest,
+    snap: EditSnapshot,
+    form: CharacterForm,
+    *,
+    create: bool = False,
+    with_companion: bool = False,
+    stale: str = "",
+    engine_error: ErrorPanel | None = None,
+    reports: list[LabelledReport] | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    character_id = snap.character_id
+    context: dict[str, Any] = {
+        "create": create,
+        "snap": snap,
+        "form": form,
+        "character_id": character_id,
+        "name": label(snap.name, character_id) if not create else "",
+        "snapshot": snap.signed(),
+        "idempotency_key": new_ulid(),
+        "publish_idempotency_key": new_ulid(),
+        "with_companion": with_companion and snap.companion_revision is not None,
+        "stale": stale,
+        "engine_error": engine_error,
+        "reports": reports or [],
+        "anchors": form.anchors(),
+        "rating_note": snap.ratings_error,
+        "archived_note": ARCHIVED_NOTE if snap.archived else "",
+    }
+    if not create:
+        context["detail_url"] = reverse("catalog_characters:detail", args=[character_id])
+        context["versions_url"] = reverse("catalog_characters:versions", args=[character_id])
+        context["action_url"] = reverse("catalog_characters:edit", args=[character_id])
+    else:
+        context["action_url"] = reverse("catalog_characters:new")
+    return render(request, EDIT_TEMPLATE, context, status=status)
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def character_new(request: HttpRequest) -> HttpResponse:
+    """``/catalog/characters/new/``: the empty form (owner pre-filled with the acting
+    principal); Create POSTs ``/catalog/characters`` and lands on the edit page."""
+    if request.method == "POST":
+        return _create(request)
+    client = engine_client_for(request)
+    snap = EditSnapshot(**_ratings_snapshot(rating_choices(client)))
+    form = _form(snap, create=True, initial={OWNER: acting_principal(request)})
+    return _render_edit(request, snap, form, create=True)
+
+
+def _create(request: HttpRequest) -> HttpResponse:
+    snap = EditSnapshot.unsigned(request.POST.get(SNAPSHOT_FIELD), "")
+    if snap is None:  # not from the page: read the ratings again
+        snap = EditSnapshot(**_ratings_snapshot(rating_choices(engine_client_for(request))))
+    form = _form(snap, create=True, data=request.POST)
+    if not form.is_valid():
+        return _render_edit(request, snap, form, create=True)
+    remember_principals(form)
+    client = engine_client_for(request)
+    try:
+        created = client.create_catalog_character(
+            form.create_body(), idempotency_key=posted_idempotency_key(request)
+        )
+    except EngineError as exc:
+        log_engine_error(request, exc)
+        if exc.http_status in (413, 422):
+            form.place_error(exc)
+            return _render_edit(request, snap, form, create=True)
+        return _render_edit(request, snap, form, create=True, engine_error=panel_for(exc))
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return _render_edit(request, snap, form, create=True, engine_error=panel_for(exc))
+    messages.success(
+        request,
+        f"Created {label(created.name, created.id)} — draft revision {created.draft_revision}.",
+    )
+    return redirect(_edit_url(created.id))
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def character_edit(request: HttpRequest, character_id: str) -> HttpResponse:
+    """``/catalog/characters/<id>/edit/``: the draft in the structured form. Save
+    (``action=save``) PATCHes the changed fields; Save & publish (``action=publish``) saves the
+    same way (skipped when nothing changed), then publishes the revision that save produced."""
+    if request.method == "POST":
+        return _edit_post(request, character_id)
+    client = engine_client_for(request)
+    try:
+        snap = _read_snapshot(request, client, character_id)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        context = {"character_id": character_id, "engine_error": panel_for(exc), "create": False}
+        return render(request, EDIT_TEMPLATE, context)
+    form = _form(snap, create=False, initial=flatten(snap.original))
+    reports = publish_reports(request.GET.get(REPORT_PARAM), entity_id=character_id)
+    for found in reports:
+        if found.entity == CHARACTER:
+            form.place_report(found.report)
+    ticked = request.GET.get(COMPANION_PARAM) == "1"
+    return _render_edit(request, snap, form, with_companion=ticked, reports=reports)
+
+
+def _posted_int(request: HttpRequest, name: str) -> int | None:
+    value = request.POST.get(name, "")
+    return int(value) if value.isdecimal() and int(value) >= 1 else None
+
+
+def _publish_flash(published: CharacterPublished, with_companion: bool) -> str:
+    how = "its draft published" if with_companion else "previous content re-pinned"
+    return f"Published v{published.version} (companion v{published.companion.version}, {how})"
+
+
+def _published_redirect(
+    request: HttpRequest,
+    client: RecordingEngineClient,
+    character_id: str,
+    published: CharacterPublished,
+    with_companion: bool,
+) -> HttpResponse:
+    """The success flash, and the detail page (``?report=<pk>`` when either report has
+    warnings or checks the deployment cannot run)."""
+    messages.success(request, _publish_flash(published, with_companion))
+    reports = (published.report, published.companion.report)
+    findings = any(r.warnings or r.unavailable for r in reports)
+    report = client.last_operation_id if findings else None
+    return redirect(_detail_url(character_id, report))
+
+
+def _edit_post(request: HttpRequest, character_id: str) -> HttpResponse:
+    snap = EditSnapshot.unsigned(request.POST.get(SNAPSHOT_FIELD), character_id)
+    if snap is None:  # not from the page: start again from the Engine's draft
+        return redirect(_edit_url(character_id))
+    if snap.archived:
+        messages.error(request, ARCHIVED_NOTE)
+        return redirect(_edit_url(character_id))
+    action = request.POST.get("action", ACTION_SAVE)
+    with_companion = action == ACTION_PUBLISH and request.POST.get(WITH_COMPANION) == "on"
+    form = _form(snap, create=False, data=request.POST)
+    if not form.is_valid():
+        return _render_edit(request, snap, form, with_companion=with_companion)
+    draft_revision = _posted_int(request, DRAFT_REVISION) or snap.draft_revision
+    companion_revision = _posted_int(request, COMPANION_REVISION) or snap.companion_revision
+    if draft_revision is None or (with_companion and companion_revision is None):
+        form.add_error(None, NO_REVISION if draft_revision is None else NO_COMPANION_REVISION)
+        return _render_edit(request, snap, form, with_companion=with_companion)
+    patch = form.edit_patch(snap.original)
+    if not patch and action != ACTION_PUBLISH:
+        messages.info(request, NO_CHANGES)
+        return redirect(_edit_url(character_id))
+    client = engine_client_for(request)
+    saved: int | None = None
+    if patch:
+        try:
+            result = client.patch_catalog_character(
+                character_id,
+                patch,
+                draft_revision=draft_revision,
+                idempotency_key=posted_idempotency_key(request),
+            )
+        except EngineError as exc:
+            log_engine_error(request, exc)
+            if exc.code == DRAFT_STALE:
+                stale = stale_banner(exc, draft_revision=draft_revision)
+                return _render_edit(request, snap, form, with_companion=with_companion, stale=stale)
+            if exc.http_status in (413, 422) and exc.code != "entry_archived":
+                form.place_error(exc)
+                return _render_edit(request, snap, form, with_companion=with_companion)
+            return _render_edit(
+                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
+            )
+        except EngineClientError as exc:
+            log_engine_error(request, exc)
+            return _render_edit(
+                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
+            )
+        saved = result.draft_revision
+        if action != ACTION_PUBLISH:
+            messages.success(request, f"Saved — draft revision {saved}.")
+            return redirect(_edit_url(character_id))
+        draft_revision = saved
+    not_published = f"Saved as draft revision {saved}, but not published."
+    if with_companion and saved is not None:
+        # A character save can move the companion's draft: publish with its current revision.
+        companion_revision, companion_error = _companion_revision(request, client, character_id)
+        if companion_revision is None:
+            messages.warning(
+                request, f"{not_published} The companion read failed: {companion_error}"
+            )
+            return redirect(_edit_url(character_id))
+    try:
+        published = client.publish_catalog_character(
+            character_id,
+            draft_revision=draft_revision,
+            companion_draft_revision=companion_revision if with_companion else None,
+            idempotency_key=posted_idempotency_key(request, PUBLISH_KEY),
+        )
+    except EngineError as exc:
+        log_engine_error(request, exc)
+        if saved is not None:
+            messages.warning(request, not_published)
+        if exc.code == PUBLISH_INVALID:
+            report = client.last_operation_id
+            params = {REPORT_PARAM: str(report)} if report is not None else {}
+            if with_companion:
+                params[COMPANION_PARAM] = "1"
+            return redirect(_edit_url(character_id, **params))
+        if exc.code == DRAFT_STALE:
+            stale = stale_banner(
+                exc,
+                draft_revision=draft_revision,
+                companion_draft_revision=companion_revision if with_companion else None,
+            )
+            if saved is None:
+                return _render_edit(request, snap, form, with_companion=with_companion, stale=stale)
+            messages.warning(request, stale)
+            params = {COMPANION_PARAM: "1"} if with_companion else {}
+            return redirect(_edit_url(character_id, **params))
+        if saved is None:
+            return _render_edit(
+                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
+            )
+        messages.error(request, f"Engine error {exc.http_status} {exc.code}: {exc.message}")
+        return redirect(_edit_url(character_id))
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        if saved is None:
+            return _render_edit(
+                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
+            )
+        messages.warning(request, f"{not_published} {error_text(exc)}")
+        return redirect(_edit_url(character_id))
+    return _published_redirect(request, client, character_id, published, with_companion)
+
+
+@require_POST
+def character_publish(request: HttpRequest, character_id: str) -> HttpResponse:
+    """``/catalog/characters/<id>/publish/``: the detail page's plain Publish of the saved
+    draft (the revision the page read), with the companion's draft when ticked."""
+    detail = _detail_url(character_id)
+    draft_revision = _posted_int(request, DRAFT_REVISION)
+    with_companion = request.POST.get(WITH_COMPANION) == "on"
+    companion_revision = _posted_int(request, COMPANION_REVISION) if with_companion else None
+    if draft_revision is None or (with_companion and companion_revision is None):
+        messages.error(request, NO_REVISION if draft_revision is None else NO_COMPANION_REVISION)
+        return redirect(detail)
+    client = engine_client_for(request)
+    try:
+        published = client.publish_catalog_character(
+            character_id,
+            draft_revision=draft_revision,
+            companion_draft_revision=companion_revision,
+            idempotency_key=posted_idempotency_key(request, PUBLISH_KEY),
+        )
+    except EngineError as exc:
+        log_engine_error(request, exc)
+        if exc.code == PUBLISH_INVALID:
+            report = client.last_operation_id
+            params = {REPORT_PARAM: str(report)} if report is not None else {}
+            if with_companion:
+                params[COMPANION_PARAM] = "1"
+            messages.error(request, "Not published: the draft has errors.")
+            return redirect(_edit_url(character_id, **params))
+        if exc.code == DRAFT_STALE:
+            messages.warning(
+                request,
+                stale_banner(
+                    exc,
+                    draft_revision=draft_revision,
+                    companion_draft_revision=companion_revision,
+                ),
+            )
+            return redirect(detail)
+        messages.error(
+            request, f"Not published: Engine error {exc.http_status} {exc.code}: {exc.message}"
+        )
+        return redirect(detail)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        messages.error(request, f"Not published: {error_text(exc)}")
+        return redirect(detail)
+    return _published_redirect(request, client, character_id, published, with_companion)
+
+
+@dataclass(frozen=True)
+class PublishBox:
+    """The detail page's Publish form: the draft revision it publishes (``None`` when the draft
+    read failed, with ``error``), the companion's (``None`` disables the checkbox, with
+    ``companion_error``), a fresh idempotency key, and why it is disabled."""
+
+    draft_revision: int | None
+    companion_revision: int | None
+    companion_error: str
+    error: str = ""
+    disabled: str = ""
+    key: str = field(default_factory=new_ulid)

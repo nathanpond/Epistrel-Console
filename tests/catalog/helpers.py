@@ -1,6 +1,8 @@
 """Helpers for the catalog character tests (#65)."""
 
 import copy
+import json
+import re
 from typing import Any
 
 from tests.fakes.engine import FakeEngine
@@ -74,3 +76,72 @@ def list_params(engine: FakeEngine) -> list[tuple[str, str]]:
 
 def item_reads(engine: FakeEngine) -> list[dict[str, str]]:
     return [dict(r.url.params) for r in calls(engine, "GET", ITEM.format(character_id=CHAR))]
+
+
+# --- #66: create, edit and publish ----------------------------------------------------------------
+
+COMPANION = "/catalog/characters/{character_id}/companion"
+PUBLISH = "/catalog/characters/{character_id}/publish"
+NEW_URL = "/catalog/characters/new/"
+EDIT = f"/catalog/characters/{CHAR}/edit/"
+PUBLISH_URL = f"/catalog/characters/{CHAR}/publish/"
+NEW_CHAR = "01JC00000000000000000CHAR9"
+HIDDEN_FIELDS = (
+    "snapshot",
+    "idempotency_key",
+    "publish_idempotency_key",
+    "draft_revision",
+    "companion_draft_revision",
+)
+
+
+def companion(draft_revision: int = 3, **changes: Any) -> dict[str, Any]:
+    """The companion's draft (``ScenarioFull``) at ``draft_revision``."""
+    body: dict[str, Any] = copy.deepcopy(engine_fixture("catalog_characters_companion_draft"))
+    return {**body, "draft_revision": draft_revision, **changes}
+
+
+def patched(draft_revision: int = 6, **changes: Any) -> dict[str, Any]:
+    body: dict[str, Any] = copy.deepcopy(engine_fixture("catalog_characters_patch"))
+    return {**body, "draft_revision": draft_revision, **changes}
+
+
+def published(**changes: Any) -> dict[str, Any]:
+    body: dict[str, Any] = copy.deepcopy(engine_fixture("catalog_characters_publish"))
+    return {**body, **changes}
+
+
+def answer_edit_reads(
+    engine: FakeEngine, body: dict[str, Any] | None = None, companion_revision: int = 3
+) -> None:
+    """The edit page's reads: the draft, the companion's draft and the ratings."""
+    engine.respond("GET", ITEM, 200, json=body if body is not None else draft())
+    engine.respond("GET", COMPANION, 200, json=companion(companion_revision))
+    answer_ratings(engine)
+
+
+def form_data(response: Any) -> dict[str, str]:
+    """What the rendered form posts back unchanged: every field's shown value and the hidden
+    inputs (the snapshot, keys and revisions)."""
+    form = response.context["form"]
+    data: dict[str, str] = {}
+    for name in form.fields:
+        value = form[name].value()
+        if value is False or value is None:
+            continue
+        data[name] = "on" if value is True else str(value)
+    html = response.content.decode()
+    for name in HIDDEN_FIELDS:
+        match = re.search(rf'name="{name}" value="([^"]*)"', html)
+        if match:
+            data[name] = match.group(1)
+    return data
+
+
+def writes(engine: FakeEngine) -> list[Any]:
+    """The requests that write (anything but a GET)."""
+    return [r for r in engine.requests if r.method != "GET"]
+
+
+def body_of(request: Any) -> Any:
+    return json.loads(request.content)
