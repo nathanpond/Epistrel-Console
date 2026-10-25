@@ -1,0 +1,27 @@
+{
+  "memory": {
+    "id": "01JB2Z8Y5Q3W6K9M1N4P7R0M01",
+    "kind": "episodic",
+    "text": "Mara asked Tobin about the tavern fire.",
+    "provenance": "render",
+    "membership": "active",
+    "pinned": true,
+    "pinned_by": "nate",
+    "quarantined": false,
+    "quarantine_reason": null,
+    "quarantined_at": null,
+    "quarantined_by": null,
+    "retrieval_tier": "hot",
+    "retired_reason": null,
+    "holder_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+    "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+    "narrative_turn": 5,
+    "beat": 2,
+    "implication_count": 0,
+    "embedded": true,
+    "visibility": {"scope": "objective", "characters": null}
+  },
+  "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0P01",
+  "timeline_revision": 42,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0K01"
+}

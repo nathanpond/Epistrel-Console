@@ -396,3 +396,19 @@ def retrieval_url(story_id: str, params: Mapping[str, str]) -> str | None:
     except NoReverseMatch:
         return None
     return f"{base}?{urlencode(params)}" if params else base
+
+
+# The longest URL-encoded ``next`` a memory action link carries (#143); a longer explorer path
+# falls back to the explorer pre-filled with the memory alone (convention 11).
+ACTION_NEXT_MAX = 2000
+
+
+def memory_action_url(action: str, story_id: str, memory_id: str, next_url: str) -> str:
+    """The link to a memory's ``inspect:memory-<action>`` page (``quarantine``, ``release``;
+    #143), carrying ``next`` (the explorer's full path). A ``next`` over
+    :data:`ACTION_NEXT_MAX` characters URL-encoded becomes ``inspect:retrieval`` with only
+    ``memory=<id>``."""
+    base = reverse(f"inspect:memory-{action}", args=[story_id, memory_id])
+    if len(urlencode({"next": next_url})) - len("next=") > ACTION_NEXT_MAX:
+        next_url = retrieval_url(story_id, {"memory": memory_id}) or ""
+    return f"{base}?{urlencode({'next': next_url})}"

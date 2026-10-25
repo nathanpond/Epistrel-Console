@@ -1296,3 +1296,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** In the inspector the link sits in the revisions block after "Engine operation" (`<dt>Retrieval</dt>`); when the inspector has no revisions block (a transcript turn not played here) it renders as a line on its own.
   **Why:** A transcript turn played elsewhere has `revisions=False`, but the AC still gives it the link.
   **Issue:** #142
+- **Decision:** `<mid>` uses the existing `<ulid:memory_id>` path converter (`console.ids.UlidConverter`) instead of a new `re_path`.
+  **Why:** It is the same Engine ULID pattern, and it already 404s any other id before the view runs.
+  **Issue:** #143
+- **Decision:** `QuarantineForm.clean_reason` does the newline normalising and the length, blank and reserved checks, not the view.
+  **Why:** The checks are still local, and the form re-renders the raw typed value either way. The field is still `CharField(strip=False, max_length=None)`, as planned.
+  **Issue:** #143
+- **Decision:** Shared mutation refusals on a memory write (404, `story_archived`, `revision_conflict`, `idempotency_conflict`, `erased_subject_referenced`, `story_paused`, `story_busy`) use short texts in `console/views/inspect_memory.py` (`REFUSALS`, `refusal_text`): an error flash for row actions, above the form on the quarantine page. Any other error goes to #43's panel. On the quarantine page that panel renders above the kept form.
+  **Why:** #43 has no central code-to-text map. The paused and busy texts reuse `paused_refusal` and the busy wording from ownership.py.
+  **Issue:** #143
+- **Decision:** The pin-limit flash keeps the AC's literal backticks around `details.cap`. A scope other than `story`, or `character` without a `character_id`, uses the "Pin limit reached." fallback.
+  **Why:** The AC gives the exact text, and the flash is plain text. Neither case is named, so there is no holder to show.
+  **Issue:** #143
+- **Decision:** `MemoryView.kind`, `membership` and `retrieval_tier` are open enums (`OPEN_ENUM`). `OPEN_ENUM`/`open_enum` moved to the top of `console/engine/models.py` so earlier models can use them.
+  **Why:** The contract test needs enum-typed schema fields declared as open enums. The models that use them are defined above the old location.
+  **Issue:** #143
+- **Decision (Rule 3):** `tests/inspect/urls.py` builds `REAL` only from inspect routes named after a `Tab`.
+  **Why:** The new `memory-*` routes in `inspect_patterns` aren't tabs, and `Tab(name)` raised on them.
+  **Issue:** #143
+- **Decision:** The explorer passes `actions_next` (the request's full path) next to `actions`, and the quarantine and release links get theirs from the `{% memory_action_url %}` tag (`console.inspect.memory_action_url`, which applies the 2,000-character fallback).
+  **Why:** The row partial needs the explorer's path, and the fallback depends on each row's memory id.
+  **Issue:** #143

@@ -194,3 +194,45 @@ class RetrievalForm(forms.Form):
             return
         if not apply_engine_errors(exc, self, aliases=ENGINE_FIELDS):
             self.add_error(None, exc.message)
+
+
+# --- quarantining a memory (#143) ----------------------------------------------------------------
+
+REASON_MAX = 500  # the Engine's ``QuarantineRequest.reason`` maxLength
+RESERVED_REASON = "repeated_implication"  # the output gate's own reason (FR-GUARD-5)
+REASON_TOO_LONG = "At most 500 characters."
+REASON_BLANK = "Give a reason."
+REASON_RESERVED = "`repeated_implication` is the Engine's own reason; give your own."
+
+
+class QuarantineForm(forms.Form):
+    """The quarantine page's reason (#143). Checked here, before any Engine call: ``\\r\\n``
+    becomes ``\\n`` first (a browser's ``maxlength`` counts a newline once), then more than 500
+    characters, blank after ``str.strip``, or exactly ``repeated_implication`` once trimmed
+    (case-sensitive) is refused. ``cleaned_data["reason"]`` is the trimmed reason, as sent; a
+    refused form re-renders the raw typed value."""
+
+    reason = forms.CharField(
+        label="Reason",
+        required=False,
+        strip=False,
+        max_length=None,
+        widget=forms.Textarea(attrs={"maxlength": REASON_MAX, "rows": 4, "cols": 60}),
+    )
+
+    def clean_reason(self) -> str:
+        typed = str(self.cleaned_data.get("reason") or "").replace("\r\n", "\n")
+        if len(typed) > REASON_MAX:
+            raise forms.ValidationError(REASON_TOO_LONG)
+        trimmed = typed.strip()
+        if not trimmed:
+            raise forms.ValidationError(REASON_BLANK)
+        if trimmed == RESERVED_REASON:
+            raise forms.ValidationError(REASON_RESERVED)
+        return trimmed
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422 on the field ``details.field`` names (``body.reason`` → the reason), else above
+        the form."""
+        if not apply_engine_errors(exc, self):
+            self.add_error(None, exc.message)

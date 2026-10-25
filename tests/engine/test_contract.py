@@ -104,6 +104,8 @@ from console.engine.models import (
     MediaPage,
     MediaUploaded,
     MemberCastCard,
+    MemoryView,
+    MemoryWritten,
     MentionBody,
     MessageFeedback,
     MissingDependency,
@@ -586,6 +588,9 @@ def test_the_widening_only_adds_media_id() -> None:
         (RetrievedMemoryBody, "RetrievedMemoryBody"),
         (ResolutionBody, "ResolutionBody"),
         (MentionBody, "MentionBody"),
+        # #143: memory pins and quarantine.
+        (MemoryView, "MemoryView"),
+        (MemoryWritten, "MemoryWritten"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

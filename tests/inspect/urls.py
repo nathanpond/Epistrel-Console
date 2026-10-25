@@ -34,7 +34,13 @@ def _view(tab: Tab) -> Any:
 
 
 # Tabs whose own story has registered them for real: those keep their real view.
-REAL = {Tab(p.name) for p in real.inspect_patterns[0] if isinstance(p, URLPattern) and p.name}
+# (Other Inspect routes, such as #143's memory actions, aren't tabs.)
+TAB_NAMES = {tab.value for tab in Tab}
+REAL = {
+    Tab(p.name)
+    for p in real.inspect_patterns[0]
+    if isinstance(p, URLPattern) and p.name in TAB_NAMES
+}
 
 inspect_patterns = (
     [

@@ -58,6 +58,7 @@ from console.engine.models import (
     MediaKind,
     MediaPage,
     MediaUploaded,
+    MemoryWritten,
     MessageFeedback,
     Model,
     ModelConfig,
@@ -1137,6 +1138,64 @@ class EngineClient:
             "GET", f"{_story_path(story_id)}/retrieve", params=params, timeout=RETRIEVE_TIMEOUT_S
         )
         return _parse(response, RetrievalBody)
+
+    # --- memory pins and quarantine (#143) -------------------------------------------------------
+
+    @operation("POST", "/stories/{story_id}/memories/{memory_id}/pin", response_model=MemoryWritten)
+    def pin_memory(self, story_id: str, memory_id: str, *, idempotency_key: str) -> MemoryWritten:
+        """``POST /stories/{id}/memories/{mid}/pin``: pin the memory (outside the hot-set budgets,
+        never retired, in every structured render's context). 422 ``pin_limit_exceeded`` when the
+        pin would pass a ceiling; a pinned memory answers unchanged (``operation_id`` null)."""
+        return self._memory_write("POST", _memory_path(story_id, memory_id, "pin"), idempotency_key)
+
+    @operation(
+        "DELETE", "/stories/{story_id}/memories/{memory_id}/pin", response_model=MemoryWritten
+    )
+    def unpin_memory(self, story_id: str, memory_id: str, *, idempotency_key: str) -> MemoryWritten:
+        """``DELETE /stories/{id}/memories/{mid}/pin``: remove the pin (an unpin above budget
+        opens an overflow episode); an unpinned memory answers unchanged."""
+        path = _memory_path(story_id, memory_id, "pin")
+        return self._memory_write("DELETE", path, idempotency_key)
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/memories/{memory_id}/quarantine",
+        response_model=MemoryWritten,
+    )
+    def quarantine_memory(
+        self, story_id: str, memory_id: str, reason: str, *, idempotency_key: str
+    ) -> MemoryWritten:
+        """``POST /admin/stories/{id}/memories/{mid}/quarantine {reason}``: never retrieve,
+        consolidate or place the memory in context until released. ``reason`` is 1 to 500
+        characters (``repeated_implication`` is reserved: 422). 409 ``module_off`` without
+        episodic memory; a quarantined memory answers unchanged."""
+        path = "/admin" + _memory_path(story_id, memory_id, "quarantine")
+        return self._memory_write("POST", path, idempotency_key, {"reason": reason})
+
+    @operation(
+        "DELETE",
+        "/admin/stories/{story_id}/memories/{memory_id}/quarantine",
+        response_model=MemoryWritten,
+    )
+    def release_memory(
+        self, story_id: str, memory_id: str, *, idempotency_key: str
+    ) -> MemoryWritten:
+        """``DELETE /admin/stories/{id}/memories/{mid}/quarantine``: release the quarantine; a
+        memory that isn't quarantined answers unchanged. 409 ``module_off`` as quarantine."""
+        path = "/admin" + _memory_path(story_id, memory_id, "quarantine")
+        return self._memory_write("DELETE", path, idempotency_key)
+
+    def _memory_write(
+        self, method: str, path: str, idempotency_key: str, body: Mapping[str, Any] | None = None
+    ) -> MemoryWritten:
+        response = self._request(
+            method,
+            path,
+            json=dict(body) if body is not None else None,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, MemoryWritten)
 
     @operation("GET", "/admin/model-config", response_model=ModelConfig)
     def list_model_config(self) -> ModelConfig:
@@ -3070,6 +3129,11 @@ def _config_change_params(
 def _story_path(story_id: str) -> str:
     """``/stories/<id>``, the id percent-encoded (an unknown id still reaches the Engine)."""
     return f"/stories/{quote(story_id, safe='')}"
+
+
+def _memory_path(story_id: str, memory_id: str, action: str) -> str:
+    """``/stories/<id>/memories/<mid>/<action>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/memories/{quote(memory_id, safe='')}/{action}"
 
 
 def _feedback_path(story_id: str, message_id: str) -> str:

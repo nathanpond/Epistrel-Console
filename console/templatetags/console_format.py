@@ -1,5 +1,6 @@
 """Rendering Engine values that are not plain strings (health checks hold objects and numbers),
-and the engine-wide ``engine_time`` / ``pretty_json`` filters (#43)."""
+and the engine-wide ``engine_time`` / ``pretty_json`` filters (#43); ``new_idempotency_key`` for a
+page with one form per row (#143)."""
 
 import json
 from datetime import UTC, datetime
@@ -8,6 +9,8 @@ from typing import Any
 from django import template
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
+
+from console.ids import new_ulid
 
 register = template.Library()
 
@@ -115,3 +118,10 @@ def count(value: Any) -> str:
     if not isinstance(value, int) or isinstance(value, bool):
         return EMPTY
     return f"{value:,}"
+
+
+@register.simple_tag
+def new_idempotency_key() -> str:
+    """A fresh ULID per call (#43's per-render key, #135 convention 8), for a page that renders
+    several write forms (#143's memory row buttons): ``{% new_idempotency_key as key %}``."""
+    return new_ulid()

@@ -16,6 +16,7 @@ from console.views import (
     feedback,
     history,
     inspect,
+    inspect_memory,
     media,
     media_picker,
     media_proxy,
@@ -156,6 +157,15 @@ inspect_patterns = (
         path("", inspect.overview, name="overview"),
         path("memory/", inspect.memory, name="memory"),
         path("retrieval/", inspect.retrieval, name="retrieval"),
+        # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
+        path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
+        path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),
+        path(
+            "memories/<ulid:memory_id>/quarantine/",
+            inspect_memory.quarantine,
+            name="memory-quarantine",
+        ),
+        path("memories/<ulid:memory_id>/release/", inspect_memory.release, name="memory-release"),
     ],
     "inspect",
 )

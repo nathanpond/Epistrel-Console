@@ -95,6 +95,7 @@ from console.retrieval import more as retrieval_more
 OVERVIEW_TEMPLATE = "console/inspect/overview.html"
 MEMORY_TEMPLATE = "console/inspect/memory.html"
 RETRIEVAL_TEMPLATE = "console/inspect/retrieval.html"
+MEMORY_ACTIONS_TEMPLATE = "console/inspect/_memory_actions.html"
 OMNISCIENT_REQUIRED = "omniscient_required"
 
 
@@ -379,7 +380,8 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
         time=time_view(body.resolution),
         episodic_off=unavailable_for(EPISODIC, ctx.effective) if episodic_skipped(body) else None,
         candidates=candidates(ctx.story_id, body, names, filters, keep),
-        actions=None,  # convention 14: #143 sets the row actions partial
+        actions=MEMORY_ACTIONS_TEMPLATE,  # convention 14: #143's row actions
+        actions_next=ctx.request.get_full_path(),  # where a row action returns
         more=retrieval_more(body),
     )
 

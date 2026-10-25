@@ -1,0 +1,9 @@
+{% load console_format inspect_tags %}{% comment %}
+A retrieved memory's row actions (#143; #135 convention 14: _memory_row.html includes it in the
+Actions cell). Context: row, story_id, actions_next (the explorer's full path). Pin and Unpin are
+POST forms, each with its own idempotency key minted now (the row carries no pinned flag, so
+both show and the Engine's answer decides). Quarantine (when not quarantined) or Release are
+links to their own pages, which mint their keys there. #144 adds Sanitize… last.
+{% endcomment %}{% with m=row.memory %}<form method="post" action="{% url 'inspect:memory-pin' story_id m.id %}">{% csrf_token %}{% new_idempotency_key as pin_key %}<input type="hidden" name="idempotency_key" value="{{ pin_key }}"><input type="hidden" name="next" value="{{ actions_next }}"><button type="submit" class="memory-pin"{% if m.quarantined %} title="A quarantined pin stays out of context until released"{% endif %}>Pin</button></form>
+<form method="post" action="{% url 'inspect:memory-unpin' story_id m.id %}">{% csrf_token %}{% new_idempotency_key as unpin_key %}<input type="hidden" name="idempotency_key" value="{{ unpin_key }}"><input type="hidden" name="next" value="{{ actions_next }}"><button type="submit" class="memory-unpin">Unpin</button></form>
+{% if m.quarantined %}<a class="button memory-release" href="{% memory_action_url 'release' story_id m.id actions_next %}">Release</a>{% else %}<a class="button memory-quarantine" href="{% memory_action_url 'quarantine' story_id m.id actions_next %}">Quarantine</a>{% endif %}{% endwith %}

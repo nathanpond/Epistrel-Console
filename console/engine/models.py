@@ -76,6 +76,17 @@ def _parse(tp: Any, value: object) -> tuple[bool, object]:
 JSON_NAME = "json"
 
 
+OPEN_ENUM = "open_enum"
+"""Field metadata: a ``str`` field the schema types as a string enum. Read as a plain string so
+a value the Console does not know yet renders raw (#64 convention 17) instead of failing the
+whole answer; the contract test compares it with the enum's members."""
+
+
+def open_enum(**kwargs: Any) -> Any:
+    """``field(...)`` for an :data:`OPEN_ENUM` string."""
+    return field(metadata={OPEN_ENUM: True}, **kwargs)
+
+
 def json_name(f: Field[Any]) -> str:
     """The JSON key a model field reads: its ``JSON_NAME`` metadata, else its own name."""
     name = f.metadata.get(JSON_NAME, f.name)
@@ -1342,6 +1353,46 @@ class RetrievalBody(Model):
     timings: dict[str, float]
 
 
+@dataclass(frozen=True)
+class MemoryView(Model):
+    """``MemoryView``: a memory as the omniscient admin reads it (#143): its pin, its quarantine
+    state, its retrieval tier (``hot``/``retired``, and why it was retired). ``provenance`` and
+    ``visibility`` stay raw JSON (shown in "More")."""
+
+    id: str
+    kind: str = field(metadata={OPEN_ENUM: True})
+    text: str
+    provenance: Any
+    membership: str = field(metadata={OPEN_ENUM: True})
+    pinned: bool = False
+    pinned_by: str | None = None
+    quarantined: bool = False
+    quarantine_reason: str | None = None
+    quarantined_at: str | None = None
+    quarantined_by: str | None = None
+    retrieval_tier: str = open_enum(default="hot")
+    retired_reason: str | None = None
+    holder_character_id: str | None = None
+    character_id: str | None = None
+    narrative_turn: int | None = None
+    beat: int | None = None
+    implication_count: int = 0
+    embedded: bool = False
+    visibility: Any = None
+
+
+@dataclass(frozen=True)
+class MemoryWritten(Model):
+    """``MemoryWritten``: a memory pin, unpin, quarantine or release (#143). ``memory`` is the
+    memory after the call; ``operation_id`` is ``None`` when nothing changed (the memory was
+    already in that state)."""
+
+    memory: MemoryView
+    operation_id: str | None
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 
@@ -1610,17 +1661,7 @@ class Promotion(Model):
 # answers; ``CatalogCharacter`` is ``CharacterFull`` (``projection=full``), private fields
 # included. ``CardImage`` and ``CardRating`` are shared with the scenario pages (#68).
 
-OPEN_ENUM = "open_enum"
-"""Field metadata: a ``str`` field the schema types as a string enum. Read as a plain string so
-a value the Console does not know yet renders raw (#64 convention 17) instead of failing the
-whole answer; the contract test compares it with the enum's members."""
-
 EntryStatus = Literal["draft", "published", "archived"]
-
-
-def open_enum(**kwargs: Any) -> Any:
-    """``field(...)`` for an :data:`OPEN_ENUM` string."""
-    return field(metadata={OPEN_ENUM: True}, **kwargs)
 
 
 @dataclass(frozen=True)
