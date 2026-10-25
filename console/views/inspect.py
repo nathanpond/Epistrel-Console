@@ -50,10 +50,20 @@ from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
 from console.held import is_held, render_held
 from console.inspect import (
+    CAPABILITY_MAP_LABEL,
+    CAPABILITY_MAP_URL,
+    PIPELINE,
+    SETTINGS,
     Tab,
     Unavailable,
+    capabilities,
     is_module_off,
     module_off_unavailable,
+    module_rows,
+    overview_fingerprint,
+    pipeline_dials,
+    profile_flags,
+    setting,
     tab_availability,
 )
 
@@ -163,7 +173,19 @@ def inspect_page(
 
 
 def _overview(ctx: InspectContext) -> dict[str, Any]:
-    return {}  # #151 builds the Overview's content
+    """The Overview (#151), from the shell's effective-config read alone (no other Engine read):
+    the header line, the reported capabilities, the module table and the capability-map link."""
+    config = ctx.config
+    return {
+        "profile_flags": profile_flags(config),
+        "fingerprint_short": overview_fingerprint(config.fingerprint),
+        "pipeline": setting(ctx.effective, SETTINGS[PIPELINE]),
+        "capabilities": capabilities(config),
+        "modules": module_rows(ctx.effective),
+        "dials": pipeline_dials(ctx.effective),
+        "capability_map_url": CAPABILITY_MAP_URL,
+        "capability_map_label": CAPABILITY_MAP_LABEL,
+    }
 
 
 @require_safe

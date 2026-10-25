@@ -1230,3 +1230,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The shell tests register every tab through a test urlconf (`tests/inspect/urls.py`). Its builds read `GET …/retrieve` and `GET …/inspect/ledger`, so the gate's zero-call rule and the 409 path can be tested before the tabs' own stories land.
   **Why:** #135 registers only `inspect:overview`. The real urlconf is used to show that unregistered tabs are absent.
   **Issue:** #135
+- **Decision:** The Overview's fingerprint uses a new `overview_fingerprint` in `console/inspect.py` rather than #85's `short_fingerprint`.
+  **Why:** The plan shows the `sha256:` prefix when present and "—" when empty. `short_fingerprint` drops the prefix and returns "", which the story header still relies on.
+  **Issue:** #151
+- **Decision:** A switch with an unexpected type (`<code>` verbatim) is tested by calling `module_rows` and rendering the template directly, not through the fake Engine.
+  **Why:** The fake validates responses against the OpenAPI schema and refuses a mistyped switch, so a page-level test can't send one.
+  **Issue:** #151
+- **Decision:** A `verification:<level>` capability gets its label from a `verification` entry ("Verification") in `CAPABILITY_LABELS`. Any `<module>:<level>` with a known module reads "<Label> (<level>)". Budgets and models get "(always on)" only in their plain form.
+  **Why:** The plan's general `<module>:<level>` rule needs a label for each module. No module is reported at a level in the always-on form.
+  **Issue:** #151

@@ -37,6 +37,7 @@ from enum import StrEnum
 from typing import Any, TypeGuard
 
 from console.engine.client import EngineError
+from console.engine.models import EffectiveConfig
 
 MODULE_OFF = "module_off"  # the 409's code
 
@@ -174,3 +175,179 @@ def module_off_unavailable(
     if module is None:
         return Unavailable("", None, UNNAMED_REASON)
     return unavailable_for(module, effective)
+
+
+# --- the Overview (#151) --------------------------------------------------------------------------
+#
+# What the story runs with, from the shell's one effective-config read: the capabilities the
+# Engine reports (``capability_names()`` in its ``core/profiles/capabilities.py``: a module on by
+# its name, ``<module>:<level>`` at another level, the pipeline by its level, sorted), the module
+# table (one row per module the Engine delivers in M4, in its ``schema.MODULES`` order), and a link
+# to the Engine's capability map. Nothing is derived Console-side: ``floor`` and required-field
+# repair are never in ``capabilities`` and are not shown.
+
+# The Engine serves no capability-map route. A version-tag link is dead for released tags (v0.1.1
+# has no such doc), so the link is to ``main``, unversioned.
+CAPABILITY_MAP_URL = "https://github.com/nathanpond/Epistrel/blob/main/docs/capability-map.md"
+CAPABILITY_MAP_LABEL = "Capability map (Engine docs, main)"
+
+CAPABILITY_LABELS: Mapping[str, str] = {
+    "lite": "Lite pipeline",
+    "structured": "Structured pipeline",
+    "episodic": "Episodic memory",
+    "consolidation": "Consolidation",
+    "commitment": "Commitment",
+    "pins": "Pinned memories",
+    "polish": "Polish",
+    "rolling_summary": "Rolling summary",
+    "partitions": "Per-character partitions",
+    "budgets": "Budgets",
+    "models": "Model routing",
+    "repair": "Repair attempts",
+    "contradiction_checking": "Contradiction checking",
+    "verification": "Verification",
+}
+ALWAYS_ON = frozenset({"budgets", "models"})  # reported under every profile
+
+
+@dataclass(frozen=True)
+class Capability:
+    """One reported capability: the raw ``value`` and its label (``None``: unknown, shown as
+    ``<code>value</code>``)."""
+
+    value: str
+    label: str | None
+
+
+def capability_label(value: str) -> str | None:
+    """``"episodic"`` → "Episodic memory"; ``"verification:entailment"`` → "Verification
+    (entailment)"; ``budgets``/``models`` add "(always on)"; an unknown module → ``None``."""
+    module, _, level = value.partition(":")
+    label = CAPABILITY_LABELS.get(module)
+    if label is None:
+        return None
+    if level:
+        return f"{label} ({level})"
+    return f"{label} (always on)" if module in ALWAYS_ON else label
+
+
+def capabilities(config: EffectiveConfig) -> list[Capability]:
+    """Every value the Engine reports, the pipeline level (the value equal to
+    ``effective.pipeline``) first and the rest in the Engine's order. Without that value the
+    Engine's order is kept as is."""
+    values = list(config.capabilities)
+    level = setting(config.effective, SETTINGS[PIPELINE])
+    if isinstance(level, str) and level in values:
+        values.remove(level)
+        values.insert(0, level)
+    return [Capability(value, capability_label(value)) for value in values]
+
+
+# One row per module the Engine delivers in M4, in its ``schema.MODULES`` order: (module, switch).
+MODULE_ROWS: tuple[tuple[str, str], ...] = (
+    ("pipeline", "pipeline"),
+    ("rolling_summary", "memory.rolling_summary.enabled"),
+    ("episodic", "memory.episodic.enabled"),
+    ("consolidation", "memory.consolidation.enabled"),
+    ("pins", "pins.enabled"),
+    ("verification", "verification.level"),
+    ("contradiction_checking", "verification.contradiction_checking"),
+    ("commitment", "commitment.enabled"),
+    ("repair", "repair.max_attempts"),
+    ("polish", "repair.polish.enabled"),
+    ("budgets", "budgets"),
+    ("models", "models"),
+)
+# The structured pipeline's dials, listed under the ``pipeline`` row (``render.*`` is not a module).
+RENDER_DIALS: tuple[str, ...] = (
+    "render.max_beats",
+    "render.prompt_token_budget",
+    "render.working_memory_beats",
+)
+
+# A row's state kinds: "on" / "off" / "always on" read as words, a ``level`` verbatim, ``attempts``
+# "on · N attempt(s)", ``raw`` an unexpected value verbatim in ``<code>``.
+ON, OFF, ALWAYS, LEVEL, ATTEMPTS, RAW = "on", "off", "always on", "level", "attempts", "raw"
+
+
+@dataclass(frozen=True)
+class ModuleRow:
+    """One module table row: the module, the switch path it reads, its state kind and the value
+    (a level, an attempt count, or a raw value)."""
+
+    module: str
+    path: str
+    kind: str
+    value: Any = None
+
+    @property
+    def off(self) -> bool:
+        return self.kind == OFF
+
+
+def _state(module: str, value: Any) -> tuple[str, Any]:
+    if module in ALWAYS_ON:
+        return ALWAYS, None
+    if isinstance(value, bool):
+        return (ON if value else OFF), None
+    if module == "repair" and isinstance(value, int):
+        return (ATTEMPTS, value) if value > 0 else (OFF, None)  # the Engine's rule
+    if module in ("pipeline", "verification") and isinstance(value, str) and value:
+        return (OFF, None) if value == OFF else (LEVEL, value)
+    return RAW, value
+
+
+def module_rows(effective: Mapping[str, Any]) -> list[ModuleRow]:
+    """The module table: a row per :data:`MODULE_ROWS` entry whose switch is in ``effective``
+    (the Engine sends only delivered settings, so an undelivered module has no row)."""
+    rows = []
+    for module, path in MODULE_ROWS:
+        value = setting(effective, path)
+        if value is None:
+            continue
+        rows.append(ModuleRow(module, path, *_state(module, value)))
+    return rows
+
+
+@dataclass(frozen=True)
+class Dial:
+    path: str
+    value: Any
+
+    @property
+    def shown(self) -> str:
+        """An integer with thousands separators; anything else verbatim."""
+        if isinstance(self.value, int) and not isinstance(self.value, bool):
+            return f"{self.value:,}"
+        return str(self.value)
+
+
+def pipeline_dials(effective: Mapping[str, Any]) -> list[Dial]:
+    """The ``render.*`` dials present in ``effective``, in :data:`RENDER_DIALS` order."""
+    return [
+        Dial(path, value)
+        for path in RENDER_DIALS
+        if (value := setting(effective, path)) is not None
+    ]
+
+
+FINGERPRINT_PREFIX = "sha256:"
+FINGERPRINT_SHOWN = 12
+
+
+def overview_fingerprint(value: str) -> str:
+    """``sha256:`` and the first 12 hex digits when prefixed, else the value's first 12
+    characters; "—" when empty."""
+    if not value:
+        return "—"
+    if value.startswith(FINGERPRINT_PREFIX):
+        return FINGERPRINT_PREFIX + value.removeprefix(FINGERPRINT_PREFIX)[:FINGERPRINT_SHOWN]
+    return value[:FINGERPRINT_SHOWN]
+
+
+def profile_flags(config: EffectiveConfig) -> str:
+    """ "pinned", "deleted", "pinned, deleted" or "" for the header line."""
+    profile = config.profile
+    return ", ".join(
+        name for name, on in (("pinned", profile.pinned), ("deleted", profile.deleted)) if on
+    )
