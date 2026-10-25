@@ -2,14 +2,14 @@
 report (after a redirect, read back from the operation-log row) and a 422 ``publish_invalid``.
 
 :func:`shown_report` wraps #64's :class:`~console.engine.models.ValidationReport` with what the
-partial ``console/catalog/scenarios/_report.html`` renders around #64's ``_location.html``:
+shared partial ``console/_validation_report.html`` (#64) renders when given ``shown``:
 
 - a headline: "Valid", "Valid — N warning(s)", "N error(s)" or "N error(s), M warning(s)";
 - the heading naming what was checked ("Draft revision R", or "Version N — checked against the
   catalog as it stands now");
 - each entry in the Engine's order; one whose ``location.entry`` is another entry links to
   ``/catalog/characters/<id>/`` (labelled with the role id) when a role's character is that id,
-  else shows the id in ``<code>``;
+  else shows the id in ``<code>``; one about the scenario itself shows no entry id;
 - the checks the Engine could not run, by label and code ("Seed normalization
   (``seed_normalization``)"; an unknown code raw).
 
@@ -73,6 +73,11 @@ class ShownEntry:
     entry_url: str = ""
     entry_label: str = ""
     other_entry: bool = False
+
+    @property
+    def own_entry(self) -> bool:
+        """The entry is about the scenario itself: its location shows no entry id (#161)."""
+        return not self.entry_url and not self.other_entry
 
 
 @dataclass(frozen=True)

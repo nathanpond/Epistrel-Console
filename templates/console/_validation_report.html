@@ -1,20 +1,26 @@
-{% comment %}
+{% load reports %}{% comment %}
 A ValidationReport (#64, M3 convention 4). Context: report (console.engine.models.ValidationReport),
 label (e.g. "Companion"; may be empty), anchor_base (the page URL the field anchors sit on; empty =
 this page), anchors (optional). Each entry links to its field / seed / role anchor via _location.html.
-{% endcomment %}<section class="report">
-  <h3>{% if label %}{{ label }}: {% endif %}validation report</h3>
-  {% if report.errors %}
-  <h4>Errors ({{ report.errors|length }})</h4>
+#74, optional: scenario_report (console.catalog.scenario_report.ShownReport), a scenario's report:
+the heading names what was checked with its headline, an entry about another entry links to its
+role's character, one about the scenario itself shows no entry id (#161), empty sections are left
+to the headline, and the checks the Engine could not run show by label.
+{% endcomment %}{% with source=scenario_report|default:report %}{% with errors=source|report_items:"errors" warnings=source|report_items:"warnings" %}<section class="report{% if scenario_report %} scenario-report{% endif %}">
+  {% if scenario_report %}<h3>{% if label %}{{ label }} · {% endif %}{{ scenario_report.heading }}: <span class="headline {% if scenario_report.valid %}valid{% else %}invalid{% endif %}">{{ scenario_report.headline }}</span></h3>
+  {% else %}<h3>{% if label %}{{ label }}: {% endif %}validation report</h3>{% endif %}
+  {% if errors %}
+  <h4>Errors ({{ errors|length }})</h4>
   <ul class="report-errors">
-    {% for entry in report.errors %}<li class="entry error"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endfor %}
+    {% for item in errors %}{% with entry=item.entry %}<li class="entry error"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location entry_url=item.entry_url entry_label=item.entry_label own_entry=item.own_entry %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endwith %}{% endfor %}
   </ul>
-  {% else %}<p>No errors.</p>{% endif %}
-  {% if report.warnings %}
-  <h4>Warnings ({{ report.warnings|length }})</h4>
+  {% elif not scenario_report %}<p>No errors.</p>{% endif %}
+  {% if warnings %}
+  <h4>Warnings ({{ warnings|length }})</h4>
   <ul class="report-warnings">
-    {% for entry in report.warnings %}<li class="entry warning"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endfor %}
+    {% for item in warnings %}{% with entry=item.entry %}<li class="entry warning"><code>{{ entry.code }}</code> — {{ entry.outcome }}{% if entry.rule %} · rule: {{ entry.rule }}{% endif %}{% if entry.source %} · source: {{ entry.source }}{% endif %}<br>{% include "console/_location.html" with location=entry.location entry_url=item.entry_url entry_label=item.entry_label own_entry=item.own_entry %}{% if entry.text is not None %}<blockquote>{{ entry.text }}</blockquote>{% endif %}</li>{% endwith %}{% endfor %}
   </ul>
-  {% else %}<p>No warnings.</p>{% endif %}
-  {% if report.unavailable %}<p class="muted">Checks this deployment cannot run: {% for check in report.unavailable %}<code>{{ check }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-</section>
+  {% elif not scenario_report %}<p>No warnings.</p>{% endif %}
+  {% if scenario_report %}{% if scenario_report.unavailable %}<p class="unavailable muted">Checks the Engine could not run: {% for name, code in scenario_report.unavailable %}{% if name %}{{ name }} (<code>{{ code }}</code>){% else %}<code>{{ code }}</code>{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% elif report.unavailable %}<p class="muted">Checks this deployment cannot run: {% for check in report.unavailable %}<code>{{ check }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+</section>{% endwith %}{% endwith %}

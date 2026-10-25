@@ -535,7 +535,7 @@ def test_the_redirect_carries_the_warnings(operator_client: Client, engine: Fake
     html = promote_page(operator_client, engine)
     engine.respond("POST", PROMOTE, 201, json=fixture("promote_201"))
     response = operator_client.post(PROMOTE_URL, promote_data(html))
-    entry = f"entry {CATALOG_ID} vdraft"
+    entry = f"entry {CATALOG_ID} draft"
     assert flashes(response) == [
         f"Promoted Tobin → draft {CATALOG_ID} (revision 1)",
         "Warning definition_truncated: Definition cut to 4000 characters in background flavor "
@@ -556,7 +556,7 @@ def test_an_unknown_warning_keeps_the_engine_text() -> None:
     )
     assert entry is not None
     assert warning_line(entry) == (
-        f"Warning something_new: <b>bold</b> (entry {CATALOG_ID} vdraft · field name)"
+        f"Warning something_new: <b>bold</b> (entry {CATALOG_ID} draft · field name)"
     )
 
 

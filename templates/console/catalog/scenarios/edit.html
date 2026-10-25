@@ -14,7 +14,7 @@
 {% if pinned %}<p class="companion-of">Companion of <a href="{{ companion_url }}">{{ companion_name }}</a> — {{ pinned }}</p>{% endif %}
 {% if stale %}<div class="banner banner-warning stale" role="alert">{{ stale }}</div>{% endif %}
 {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
-{% if not create %}<div id="report">{% if refusal %}<p class="refusal errornote" role="alert">{{ refusal }}</p>{% endif %}{% if report %}{% include "console/catalog/scenarios/_report.html" with shown=report %}{% endif %}</div>{% endif %}
+{% if not create %}<div id="report">{% if refusal %}<p class="refusal errornote" role="alert">{{ refusal }}</p>{% endif %}{% if report %}{% include "console/_validation_report.html" with scenario_report=report report=report.report label=report.label anchor_base=report.anchor_base anchors=report.anchors %}{% endif %}</div>{% endif %}
 {% include "console/catalog/scenarios/_scenario_form.html" %}
 {% endif %}
 {% endblock %}
