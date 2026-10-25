@@ -375,6 +375,17 @@ def history_turn_url(story_id: str, turn: int) -> str:
     return f"{base}?{urlencode({'before_turn': turn + 1})}#turn-{turn}-0"
 
 
+def position_text(turn: int | None, beat: int | None, variant: int | None = None) -> str | None:
+    """Convention 4: "turn 12 · beat 3" ("turn 12 · v2 · beat 3" with a variant), skipping
+    nulls; ``None`` when every part is null (first used by #141)."""
+    parts = [
+        f"{name}{value}"
+        for name, value in (("turn ", turn), ("v", variant), ("beat ", beat))
+        if value is not None
+    ]
+    return " · ".join(parts) or None
+
+
 def retrieval_url(story_id: str, params: Mapping[str, str]) -> str | None:
     """A link into the Retrieval explorer (#141) pre-filled with ``params`` (convention 11:
     filters only, no read), or ``None`` while ``inspect:retrieval`` isn't registered (the

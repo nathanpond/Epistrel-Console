@@ -2,8 +2,9 @@
 read (budgets, counts, pins, overflow episodes, recent retirements), its text markers, its links
 into the Retrieval explorer (#141) and its section-level failures.
 
-Runs against the real urlconf with Memory registered; tests of the Retrieval links use
-``tests.inspect.urls``, where every tab (Retrieval included) is registered."""
+Runs against the real urlconf, where Memory and Retrieval (#141) are registered, so the links
+into Retrieval render; ``tests.inspect.urls_without_retrieval`` checks they are omitted without
+the Retrieval tab."""
 
 import copy
 import json
@@ -34,7 +35,7 @@ MARA = "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"  # the player
 TOBIN = "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
 STRANGER = "01JB2Z8Y5Q3W6K9M1N4P7R0T9Z"  # in counters, not in the cast
 STORED_ONLY = "01JB2Z8Y5Q3W6K9M1N4P7R0T8Y"  # in stored_counters only
-RETRIEVAL_URLS = "tests.inspect.urls"
+RETRIEVAL_URLS = "epistrel_console.urls"  # Retrieval registered for real (#141)
 STORED_NOTE = "The Engine hasn't stored counts yet; its next commit recounts."
 BROWSE_TEXT = (
     "The Engine can't list a story's memories yet (nathanpond/Epistrel#531). "
@@ -458,10 +459,21 @@ def test_the_browse_grid_links_kind_by_tier(operator_client: Client, engine: Fak
     ]
 
 
-def test_links_are_omitted_while_retrieval_is_not_registered(
+def test_links_render_with_the_real_urlconf(operator_client: Client, engine: FakeEngine) -> None:
+    html = page(operator_client, engine, fixture("full"))
+    assert len(browse_links(html)) == 6
+    assert len(links(html, "memory-link")) == 5
+    assert all(
+        url.startswith(f"/stories/{STORY}/inspect/retrieval/?")
+        for url in links(html, "memory-link")
+    )
+
+
+def test_links_are_omitted_without_the_retrieval_tab(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    html = page(operator_client, engine, fixture("full"))
+    with override_settings(ROOT_URLCONF="tests.inspect.urls_without_retrieval"):
+        html = page(operator_client, engine, fixture("full"))
     assert BROWSE_TEXT in html
     assert 'class="browse-memories"' not in html
     assert 'class="memory-link"' not in html

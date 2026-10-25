@@ -104,6 +104,7 @@ from console.engine.models import (
     MediaPage,
     MediaUploaded,
     MemberCastCard,
+    MentionBody,
     MessageFeedback,
     MissingDependency,
     ModelCall,
@@ -174,8 +175,11 @@ from console.engine.models import (
     Relations,
     ReplyMessage,
     RequiredModule,
+    ResolutionBody,
     RespondResponse,
     RetirementBody,
+    RetrievalBody,
+    RetrievedMemoryBody,
     RoleCharacter,
     RoleEligibility,
     RoleRelationship,
@@ -577,6 +581,11 @@ def test_the_widening_only_adds_media_id() -> None:
         (HotSetPins, "HotSetPins"),
         (EpisodeBody, "EpisodeBody"),
         (RetirementBody, "RetirementBody"),
+        # #141: the retrieval explorer.
+        (RetrievalBody, "RetrievalBody"),
+        (RetrievedMemoryBody, "RetrievedMemoryBody"),
+        (ResolutionBody, "ResolutionBody"),
+        (MentionBody, "MentionBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

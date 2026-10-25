@@ -2,4 +2,5 @@
 A character in an Inspect table (#135 convention 2, first used by #140): its cast label with the
 full id in title and " (player)" for the player; an id the cast doesn't name (or every id when the
 story read failed: label empty) as a short <code> id. Context: label, character_id, is_player.
+No trailing newline, so a list joins it with ", " (#141).
 {% endcomment %}{% if label %}<span class="character" title="{{ character_id }}">{{ label }}{% if is_player %} (player){% endif %}</span>{% else %}{{ character_id|engine_id }}{% endif %}

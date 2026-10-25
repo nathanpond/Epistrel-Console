@@ -1,6 +1,7 @@
 """Reason text with backtick code spans (#135, :mod:`console.inspect`): ``code_spans`` for a
-panel (escaped, then each `` `span` `` as ``<code>``), ``no_backticks`` for a ``title``; and
-``engine_id`` for convention 2's short Engine id (#140)."""
+panel (escaped, then each `` `span` `` as ``<code>``), ``no_backticks`` for a ``title``;
+``engine_id`` for convention 2's short Engine id (#140); and ``decimal3`` for convention 5's
+scores (#141)."""
 
 import re
 from typing import Any
@@ -10,6 +11,7 @@ from django.utils.html import escape, format_html
 from django.utils.safestring import SafeString, mark_safe
 
 from console.inspect import short_id
+from console.retrieval import decimal3 as _decimal3
 
 register = template.Library()
 
@@ -36,3 +38,10 @@ def engine_id(value: Any) -> SafeString | str:
     if value is None or value == "":
         return "—"
     return format_html('<code title="{}">{}</code>', value, short_id(str(value)))
+
+
+@register.filter
+def decimal3(value: Any) -> str:
+    """Convention 5: a score or similarity to 3 decimals (``0.81234`` → ``0.812``); "—" for
+    ``None`` or anything that is not a number."""
+    return _decimal3(value)

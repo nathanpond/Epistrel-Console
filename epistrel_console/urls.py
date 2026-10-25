@@ -155,6 +155,7 @@ inspect_patterns = (
     [
         path("", inspect.overview, name="overview"),
         path("memory/", inspect.memory, name="memory"),
+        path("retrieval/", inspect.retrieval, name="retrieval"),
     ],
     "inspect",
 )

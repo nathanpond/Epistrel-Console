@@ -1260,3 +1260,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Counts rows judge every character against `memories_per_character`, although the Engine scales a minor's budget, which the hot-set answer doesn't report. Filed #168.
   **Why:** The response doesn't carry the scaled budget, and adding it would change the API contract.
   **Issue:** #140
+- **Decision:** `retrieve` sends `include_quarantined=true` (only when checked) and the form accepts any checked value (`1`, `on`), so #140's `include_quarantined=1` links work. `q` goes to the Engine exactly as typed, with no stripping.
+  **Why:** The Engine's flag is a boolean query parameter. The AC says "exactly as entered", and the Engine checks `len(q)` on the raw text.
+  **Issue:** #141
+- **Decision:** With the cast known, a blank `actor` is filled with `cast.default_actor` before the form is bound, so the select shows the default and the id links keep `actor`. The player is still never sent.
+  **Why:** This keeps the form sticky the way the history form fills in `limit`. The Engine call doesn't change.
+  **Issue:** #141
+- **Decision:** `explain`/`explain_variant` are not form fields yet. The `{% if explain_banner %}` slot includes `console/inspect/_explain_banner.html`, which #142 creates.
+  **Why:** The plan says #142 owns them. A hidden pass-through with no meaning yet would only prejudge #142's design.
+  **Issue:** #141
+- **Decision:** With `skipped: ["episodic"]`, #135's reason renders inline above the results. The Resolution section still renders, and Candidates shows only its heading (no tables, no "retrieved no memories" line).
+  **Why:** Convention 7 puts the notice above the empty results, and the AC says "instead of empty tables".
+  **Issue:** #141
+- **Decision:** "This question retrieved no memories." shows whenever the three tables hold no candidates at all, filter or not. The `memory` filter also accepts the shown short form with its leading "…".
+  **Why:** Both are true whenever they apply, and the operator can then paste an id straight from a table.
+  **Issue:** #141
+- **Decision:** A mention's `<mark>` title carries the full entity id when the cast doesn't name it (the table shows the short id). The number goes in a `<sup>` after the mark, with `data-mention` on the mark.
+  **Why:** The AC says "resolved name/id" for the title, and a title is where a full id belongs (convention 2). The mark's text stays exactly the span.
+  **Issue:** #141
+- **Decision:** Shared helpers added: `position_text` (convention 4) in `console/inspect.py`, the `decimal3` filter in `inspect_tags`, and the partials `_memory_table.html`/`_memory_row.html` (with convention 14's `actions`) plus `_score_legend.html`. `_character.html` lost its trailing newline so comma-joined lists don't show a stray space.
+  **Why:** #142/#143/#145/#152 reuse the rows. Without the fix, participants rendered "Mara (player) , Tobin".
+  **Issue:** #141
+- **Decision:** With Retrieval registered, #140's link tests run against the real urlconf. A new `tests/inspect/urls_without_retrieval.py` keeps the "links omitted" path tested. `tests/inspect/urls.py` no longer lists a stub read for Retrieval.
+  **Why:** The links now render for real, and #140's AC expects them there.
+  **Issue:** #141

@@ -1,0 +1,84 @@
+{% extends "console/inspect/base.html" %}
+{% load console_format inspect_tags %}
+{% comment %}
+The Retrieval tab (#141): the GET form, then what one GET /stories/{id}/retrieve read returns for
+the question (viewpoint=omniscient). Rows come from console/retrieval.py. The form stays above every
+error; the results are Resolution and Candidates (#152 adds Canon, Profiles, Context and Run facts
+after them, replacing "More"'s raw JSON). explain_banner is #142's reconstruction banner slot,
+between the form and the results.
+{% endcomment %}
+{% block tab_content %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" class="retrieval-form">
+  <fieldset class="retrieval-question">
+    <legend>Question</legend>
+    <div class="field field-q">{{ form.q.label_tag }}<br>{{ form.q }}{{ form.q.errors }}</div>
+    <div class="field field-actor">{{ form.actor.label_tag }} {{ form.actor }}{{ form.actor.errors }}</div>
+    <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
+    <div class="field field-include_quarantined"><label>{{ form.include_quarantined }} Include quarantined</label>{{ form.include_quarantined.errors }}</div>
+  </fieldset>
+  <fieldset class="retrieval-filters">
+    <legend>Display filters — these don't change the Engine call</legend>
+    <div class="field field-kind">{{ form.kind.label_tag }} {{ form.kind }}{{ form.kind.errors }}</div>
+    <div class="field field-tier">{{ form.tier.label_tag }} {{ form.tier }}{{ form.tier.errors }}</div>
+    <div class="field field-memory">{{ form.memory.label_tag }} {{ form.memory }} <small class="muted">{{ form.memory.help_text }}</small></div>
+  </fieldset>
+  <button type="submit">Retrieve</button> <a class="retrieval-clear" href="{{ clear_url }}">Clear</a>
+</form>
+{% if explain_banner %}{% include "console/inspect/_explain_banner.html" %}{% endif %}
+
+{% if prompt %}<p class="retrieval-prompt">Retrieval answers a question — enter one to see the memories it returns.</p>
+{% elif omniscient_required %}<p class="omniscient-required">This read needs the omniscient viewpoint</p>
+{% elif retrieval_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif retrieval_error %}{% include "console/_engine_error.html" with engine_error=retrieval_error %}
+{% elif retrieval %}
+<p class="retrieval-header">As {{ actor_label }} · after {% if as_of is not None %}turn {{ as_of }}{% elif head is not None and head >= 0 %}turn {{ head }} (head){% else %}the head{% endif %} · quarantined {% if form.cleaned_data.include_quarantined %}shown{% else %}hidden{% endif %}
+  · participants {% for p in participants %}{% include "console/inspect/_character.html" with label=p.label character_id=p.id is_player=p.is_player %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
+{% if episodic_off %}{% include "console/inspect/_unavailable.html" with unavailable=episodic_off inline=True %}{% endif %}
+
+<section class="retrieval-resolution">
+  <h2>Resolution</h2>
+  <p class="retrieval-question-text">{% for s in segments %}{% if s.number %}<mark class="mention" data-mention="{{ s.number }}" title="{{ s.title }}">{{ s.text }}</mark><sup class="mention-number">{{ s.number }}</sup>{% else %}{{ s.text }}{% endif %}{% endfor %}</p>
+  <table class="retrieval-mentions">
+    <thead><tr><th>#</th><th>Span</th><th>Kind</th><th>Resolved to</th></tr></thead>
+    <tbody>
+    {% for m in mentions %}
+      <tr class="mention-row">
+        <td>{{ m.number }}</td>
+        <td>{% if m.span_text is None %}—{% else %}{{ m.span_text }}{% endif %}{% if not m.highlighted %} <span class="hint">not highlighted</span>{% endif %}</td>
+        <td><span title="{{ m.kind }}">{{ m.kind_label }}</span></td>
+        <td>{% if m.entity %}{% include "console/inspect/_character.html" with label=m.entity.label character_id=m.entity.id is_player=m.entity.is_player %}{% elif m.reason %}<span title="{{ m.reason }}">{{ m.reason_label }}</span>{% else %}—{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr class="mention-none"><td colspan="4">None</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% with r=retrieval.resolution %}
+  <dl class="retrieval-resolved">
+    <dt>Entities</dt><dd class="resolved-entities">{% for e in r.entities %}{{ e|engine_id }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</dd>
+    <dt>Event type</dt><dd class="resolved-event-type">{% if r.event_type %}<span title="{{ r.event_type }}">{{ r.event_type|humanise|capfirst }}</span>{% else %}—{% endif %}</dd>
+    <dt>Time</dt><dd class="resolved-time">{% if time.window %}{% if time.window.raw %}<code>{{ time.window.text }}</code>{% else %}{{ time.window.text }}{% endif %} · turns {% if time.turns is None %}—{% elif time.turns.raw %}<code>{{ time.turns.text }}</code>{% else %}{{ time.turns.text }}{% endif %}{% elif time.turns %}turns {% if time.turns.raw %}<code>{{ time.turns.text }}</code>{% else %}{{ time.turns.text }}{% endif %}{% elif time.reason %}<span title="{{ time.reason }}">{{ time.reason_label }}</span>{% else %}No time expression{% endif %}</dd>
+  </dl>
+  {% endwith %}
+</section>
+
+<section class="retrieval-candidates">
+  <h2>Candidates</h2>
+  {% if not episodic_off %}
+  {% with c=candidates %}
+  {% if c.hidden %}<p class="candidates-shown">Showing {{ c.shown|count }} of {{ c.total|count }} candidates</p>{% endif %}
+  <p class="candidates-note">Memories this question retrieves — not a full list (nathanpond/Epistrel#531)</p>
+  {% if c.memory_note %}<p class="memory-note">{{ c.memory_note }}</p>{% endif %}
+  {% if not c.total %}<p class="candidates-none">This question retrieved no memories.</p>
+  {% else %}
+  {% include "console/inspect/_score_legend.html" %}
+  {% for table in c.tables %}{% include "console/inspect/_memory_table.html" %}{% endfor %}
+  {% endif %}
+  {% endwith %}
+  {% endif %}
+</section>
+
+<details class="more"><summary>More</summary><pre>{{ more|pretty_json }}</pre></details>
+{% endif %}
+{% endblock %}

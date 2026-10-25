@@ -1,0 +1,20 @@
+{% comment %}
+The Retrieval tab's score and arms legend (#141, console.retrieval.Legend), closed, above the
+candidate tables. The weights are the story's effective memory.episodic.weight_* dials.
+{% endcomment %}<details class="legend score-legend">
+  <summary>How candidates are scored and found</summary>
+  <p class="score-formula"><em>score = w_sim·similarity + w_rec·recency + w_imp·decayed importance</em>,
+    with w_sim = {{ legend.similarity }}, w_rec = {{ legend.recency }}, w_imp = {{ legend.importance }} (this story's <code>memory.episodic.weight_*</code>). Importance is shown but is not itself a score term.</p>
+  <dl class="score-terms">
+    <dt>Similarity</dt><dd>how well the vector, lexical and alias arms agree, fused by reciprocal rank (0–1)</dd>
+    <dt>Recency</dt><dd>halves every <code>recency_half_life_turns</code> turns before the asked position ({{ legend.half_life }} for this story)</dd>
+    <dt>Decayed importance</dt><dd>importance halved over its age (the deployment's <code>memory_importance_half_life_turns</code>)</dd>
+    <dt>Importance</dt><dd>the memory's stored weight, shown for reference; it enters the score only as decayed importance</dd>
+  </dl>
+  <p>Episodes and assessments have no score, so their score columns read "—".</p>
+  <dl class="arm-legend">
+    {% for arm, meaning in legend.arms.items %}<dt><span class="arm arm-{{ arm }}">{{ arm }}</span></dt><dd>{{ meaning }}</dd>
+    {% endfor %}
+  </dl>
+  <p>A memory found by several arms was fused from them.</p>
+</details>

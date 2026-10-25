@@ -48,6 +48,7 @@ from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import EffectiveConfig, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
+from console.forms.inspect import QUESTION_FIELDS, RetrievalForm
 from console.held import is_held, render_held
 from console.hot_set import (
     REASON_LEGEND,
@@ -73,13 +74,26 @@ from console.inspect import (
     overview_fingerprint,
     pipeline_dials,
     profile_flags,
+    retrieval_url,
     setting,
     tab_availability,
     unavailable_for,
 )
+from console.retrieval import (
+    Filters,
+    Names,
+    candidates,
+    episodic_skipped,
+    legend,
+    mention_rows,
+    time_view,
+)
+from console.retrieval import more as retrieval_more
 
 OVERVIEW_TEMPLATE = "console/inspect/overview.html"
 MEMORY_TEMPLATE = "console/inspect/memory.html"
+RETRIEVAL_TEMPLATE = "console/inspect/retrieval.html"
+OMNISCIENT_REQUIRED = "omniscient_required"
 
 
 @dataclass(frozen=True)
@@ -249,3 +263,85 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
 def memory(request: HttpRequest, story_id: str) -> HttpResponse:
     """``inspect:memory``, the story's hot set (#140)."""
     return inspect_page(request, story_id, Tab.MEMORY, MEMORY_TEMPLATE, _memory)
+
+
+def _head(story: Story | None) -> int | None:
+    return story.next_turn_index - 1 if story is not None else None
+
+
+def _actor_label(form: RetrievalForm, names: Names) -> str:
+    """The results header's "As …": the asked actor's cast label (the player marked), its id
+    when the cast doesn't name it, or the player default when the cast is unknown."""
+    actor = form.cleaned_data.get("actor") or form.default_actor
+    if not actor:
+        return "the player (default)"
+    return names.label(actor) or actor
+
+
+def _retrieval(ctx: InspectContext) -> dict[str, Any]:
+    """The Retrieval tab (#141): the GET form, then at most one ``GET /stories/{id}/retrieve``
+    read (``viewpoint=omniscient``) and its Resolution and Candidates sections.
+
+    No read for a request without ``q`` (a filter-only link, convention 11: the form pre-filled
+    and the prompt) or with an invalid form. A 422 lands on the field ``details.field`` names or
+    above the form; 403 ``omniscient_required`` and 404 render convention 10's lines, any other
+    failure #43's panel, each below the form; ``erasure_pending`` (and a 409 ``module_off``)
+    escape to #87's held wrapper (and the shell's panel). ``skipped: ["episodic"]`` shows #135's
+    reason inline instead of the candidate tables."""
+    cast = ctx.story.cast if ctx.story is not None else None
+    head = _head(ctx.story)
+    form = RetrievalForm(ctx.request.GET, cast=cast, head=head)
+    names = Names(cast)
+    context: dict[str, Any] = {
+        "form": form,
+        "clear_url": retrieval_url(ctx.story_id, {}),
+        "head": head,
+        "legend": legend(ctx.effective),
+    }
+    if "q" not in ctx.request.GET:
+        form.filters_only()
+        context["prompt"] = True
+        return context
+    if not form.is_valid():
+        return context
+    query = form.query()
+    try:
+        body = ctx.client.retrieve(ctx.story_id, **query)
+    except EngineClientError as exc:
+        if is_held(exc) or is_module_off(exc):
+            raise
+        log_engine_error(ctx.request, exc)
+        if isinstance(exc, EngineError) and exc.http_status == 422:
+            form.apply_engine_error(exc)
+        elif isinstance(exc, EngineError) and exc.code == OMNISCIENT_REQUIRED:
+            context["omniscient_required"] = True
+        elif isinstance(exc, EngineError) and exc.http_status == 404:
+            context["retrieval_not_found"] = True
+        else:
+            context["retrieval_error"] = panel_for(exc)
+        return context
+    keep = {name: form.value(name) for name in QUESTION_FIELDS if form.value(name)}
+    filters = Filters(
+        form.filter_value("kind"), form.filter_value("tier"), form.filter_value("memory")
+    )
+    segments, mentions = mention_rows(query["q"], body.resolution.mentions, names)
+    context.update(
+        retrieval=body,
+        actor_label=_actor_label(form, names),
+        as_of=query["as_of"],
+        participants=[names.person(p) for p in body.participants],
+        segments=segments,
+        mentions=mentions,
+        time=time_view(body.resolution),
+        episodic_off=unavailable_for(EPISODIC, ctx.effective) if episodic_skipped(body) else None,
+        candidates=candidates(ctx.story_id, body, names, filters, keep),
+        actions=None,  # convention 14: #143 sets the row actions partial
+        more=retrieval_more(body),
+    )
+    return context
+
+
+@require_safe
+def retrieval(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:retrieval``, the retrieval explorer (#141)."""
+    return inspect_page(request, story_id, Tab.RETRIEVAL, RETRIEVAL_TEMPLATE, _retrieval)

@@ -102,6 +102,7 @@ from console.engine.models import (
     RelationRecord,
     Relations,
     RespondResponse,
+    RetrievalBody,
     Scenario,
     ScenarioCard,
     ScenarioDraft,
@@ -144,6 +145,9 @@ from console.version import VERSION
 USER_AGENT = f"epistrel-console/{VERSION}"
 DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
 MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
+# A retrieve read may embed its query and runs five search arms (#141).
+RETRIEVE_TIMEOUT_S = 10.0
+OMNISCIENT_VIEWPOINT = "omniscient"  # the only viewpoint the retrieve read accepts
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
 INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event (#51)
@@ -1103,6 +1107,36 @@ class EngineClient:
         as stored), budgets and pin ceilings, pins, open overflow episodes and latest 20
         retirements. A read: nothing is written (and nothing recorded)."""
         return _parse(self._request("GET", f"/admin{_story_path(story_id)}/hot-set"), HotSetBody)
+
+    # --- the retrieval explorer (#141) ----------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/retrieve", response_model=RetrievalBody)
+    def retrieve(
+        self,
+        story_id: str,
+        *,
+        q: str,
+        as_of: int | None = None,
+        actor_character_id: str | None = None,
+        include_quarantined: bool = False,
+    ) -> RetrievalBody:
+        """``GET /stories/{id}/retrieve``: what a structured render would retrieve for the text
+        ``q`` asked by ``actor_character_id`` (default the player) just after turn ``as_of``
+        (default the head). Always ``viewpoint=omniscient`` (#135 convention 1: the route is
+        omniscient-only). ``include_quarantined`` shows quarantined memories, marked. A
+        ``None`` or ``False`` argument is left out of the query. A read: no operation, and no
+        memory's access time moves."""
+        params: dict[str, str] = {"q": q, "viewpoint": OMNISCIENT_VIEWPOINT}
+        if as_of is not None:
+            params["as_of"] = str(as_of)
+        if actor_character_id:
+            params["actor_character_id"] = actor_character_id
+        if include_quarantined:
+            params["include_quarantined"] = "true"
+        response = self._request(
+            "GET", f"{_story_path(story_id)}/retrieve", params=params, timeout=RETRIEVE_TIMEOUT_S
+        )
+        return _parse(response, RetrievalBody)
 
     @operation("GET", "/admin/model-config", response_model=ModelConfig)
     def list_model_config(self) -> ModelConfig:

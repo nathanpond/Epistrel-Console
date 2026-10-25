@@ -1,0 +1,287 @@
+{
+  "position": [
+    6,
+    0
+  ],
+  "resolution": {
+    "mentions": [
+      {
+        "span": [
+          21,
+          27
+        ],
+        "kind": "name",
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+        "reason": null
+      },
+      {
+        "span": [
+          33,
+          38
+        ],
+        "kind": "name",
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "reason": null
+      }
+    ],
+    "entities": [
+      "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+    ],
+    "event_type": "social_gathering",
+    "window": [
+      480,
+      null
+    ],
+    "turns": [
+      2,
+      null
+    ],
+    "time_reason": null
+  },
+  "episodes": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0ME1",
+      "kind": "episodic",
+      "text": "Mara and Tobin shared a drink at the tavern.",
+      "narrative_turn": 2,
+      "beat": 1,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "event_type": "social_gathering",
+      "participants": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "retrieval_tier": "hot",
+      "importance": 0.7,
+      "arms": [
+        "occasion"
+      ],
+      "score": null,
+      "similarity": null,
+      "recency": null,
+      "decayed_importance": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0ME2",
+      "kind": "episodic",
+      "text": "Tobin sang at the tavern.",
+      "narrative_turn": 3,
+      "beat": 0,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "event_type": "social_gathering",
+      "participants": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "retrieval_tier": "retired",
+      "importance": 0.4,
+      "arms": [
+        "occasion"
+      ],
+      "score": null,
+      "similarity": null,
+      "recency": null,
+      "decayed_importance": null
+    }
+  ],
+  "assessments": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0MA1",
+      "kind": "reflection",
+      "text": "Tobin trusts Mara more than he admits.",
+      "narrative_turn": 4,
+      "beat": null,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "event_type": null,
+      "participants": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "retrieval_tier": "hot",
+      "importance": 0.8,
+      "arms": [
+        "assessment"
+      ],
+      "score": null,
+      "similarity": null,
+      "recency": null,
+      "decayed_importance": null
+    }
+  ],
+  "memories": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0M01",
+      "kind": "episodic",
+      "text": "Mara asked Tobin about the tavern fire.",
+      "narrative_turn": 5,
+      "beat": 2,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "event_type": "conversation",
+      "participants": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "retrieval_tier": "hot",
+      "importance": 0.65,
+      "arms": [
+        "vector",
+        "lexical"
+      ],
+      "score": 0.81234,
+      "similarity": 0.9,
+      "recency": 0.75,
+      "decayed_importance": 0.6
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0M02",
+      "kind": "semantic",
+      "text": "The tavern belongs to Tobin's family.",
+      "narrative_turn": 4,
+      "beat": null,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "event_type": null,
+      "participants": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "retrieval_tier": "hot",
+      "importance": 0.6,
+      "arms": [
+        "lexical",
+        "alias"
+      ],
+      "score": 0.7,
+      "similarity": 0.8,
+      "recency": 0.5,
+      "decayed_importance": 0.55
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0M03",
+      "kind": "reflection",
+      "text": "Mara avoids the tavern since the fire.",
+      "narrative_turn": 1,
+      "beat": 0,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "event_type": null,
+      "participants": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+      ],
+      "retrieval_tier": "retired",
+      "importance": 0.5,
+      "arms": [
+        "vector"
+      ],
+      "score": 0.6,
+      "similarity": 0.55,
+      "recency": 0.4,
+      "decayed_importance": 0.35
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0M04",
+      "kind": "episodic",
+      "text": "Tobin swept the tavern floor.",
+      "narrative_turn": 2,
+      "beat": 3,
+      "character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "event_type": null,
+      "participants": [],
+      "retrieval_tier": "hot",
+      "importance": 0.3,
+      "arms": [
+        "alias"
+      ],
+      "score": 0.5,
+      "similarity": 0.45,
+      "recency": 0.3,
+      "decayed_importance": 0.2,
+      "quarantined": true
+    }
+  ],
+  "participants": [
+    "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+    "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+  ],
+  "profiles": [
+    {
+      "entity": {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "kind": "character",
+        "name": "Tobin"
+      },
+      "as_of": 5,
+      "relationships": [],
+      "placement": null,
+      "inventory": [],
+      "viewpoint": "omniscient"
+    }
+  ],
+  "canon": [
+    {
+      "fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01",
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+      "predicate_id": "owned_by",
+      "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "object_set": null,
+      "literal": null,
+      "polarity": "positive"
+    }
+  ],
+  "context": {
+    "budget": 2000,
+    "used": 420,
+    "items": [
+      {
+        "tier": 1,
+        "kind": "episode",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0ME1",
+        "text": "Mara and Tobin shared a drink at the tavern.",
+        "tokens": 12
+      },
+      {
+        "tier": 2,
+        "kind": "canon",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01",
+        "text": "The tavern is owned by Tobin.",
+        "tokens": 8
+      },
+      {
+        "tier": 3,
+        "kind": "memory",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M01",
+        "text": "Mara asked Tobin about the tavern fire.",
+        "tokens": 10
+      }
+    ],
+    "dropped": [
+      {
+        "tier": 3,
+        "kind": "memory",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M03",
+        "tokens": 11,
+        "reason": "budget"
+      },
+      {
+        "tier": 3,
+        "kind": "memory",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M04",
+        "tokens": 9,
+        "reason": "budget"
+      }
+    ]
+  },
+  "rehydrated": [
+    "01JB2Z8Y5Q3W6K9M1N4P7R0M03",
+    "01JB2Z8Y5Q3W6K9M1N4P7R0ME2"
+  ],
+  "degradation": [],
+  "skipped": [],
+  "model_calls": 1,
+  "embedding_model_version": "text-embed-3@1",
+  "timings": {
+    "resolve": 1.5,
+    "occasion": 2.25,
+    "vector": 4.0,
+    "lexical": 1.0,
+    "rank": 0.5,
+    "profiles": 1.25,
+    "assemble": 0.75
+  }
+}

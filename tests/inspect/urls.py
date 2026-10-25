@@ -14,7 +14,6 @@ from console.views.inspect import InspectContext, inspect_page
 from epistrel_console import urls as real
 
 READS = {
-    Tab.RETRIEVAL: "/stories/{story_id}/retrieve",
     Tab.LEDGER: "/stories/{story_id}/inspect/ledger",
 }
 TEMPLATE = "console/inspect/overview.html"

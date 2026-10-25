@@ -1266,6 +1266,82 @@ class HotSetBody(Model):
     timeline_revision: int
 
 
+@dataclass(frozen=True)
+class MentionBody(Model):
+    """``MentionBody``: a mention the resolve stage found: its character ``span`` (``[start,
+    end)`` in code points of the query), its ``kind``, the entity it resolved to (or ``None``)
+    and, when unresolved, the ``reason`` code."""
+
+    span: list[int]
+    kind: str
+    entity_id: str | None
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class ResolutionBody(Model):
+    """``ResolutionBody``: the resolve stage's mentions, resolved entities and event type, the
+    time ``window`` in story-minutes (``[start, end)``, an open bound ``None``) with the
+    ``turns`` it maps to, and why the time did not resolve (``time_reason``)."""
+
+    mentions: list[MentionBody]
+    entities: list[str]
+    event_type: str | None
+    window: list[int | None] | None
+    turns: list[int | None] | None
+    time_reason: str | None
+
+
+@dataclass(frozen=True)
+class RetrievedMemoryBody(Model):
+    """``RetrievedMemoryBody``: one returned memory. ``retrieval_tier`` ``retired`` means it was
+    rehydrated for this query (its tier unchanged); a ranked memory carries its ``score`` and the
+    terms it came from (fused ``similarity``, ``recency``, ``decayed_importance``), an episode or
+    assessment ``None`` for them. ``arms`` are the searches that found it, in the Engine's
+    order."""
+
+    id: str
+    kind: str
+    text: str
+    narrative_turn: int | None
+    beat: int | None
+    character_id: str | None
+    event_type: str | None
+    participants: list[str]
+    retrieval_tier: str
+    importance: float | None
+    arms: list[str]
+    score: float | None
+    similarity: float | None
+    recency: float | None
+    decayed_importance: float | None
+    quarantined: bool = False
+
+
+@dataclass(frozen=True)
+class RetrievalBody(Model):
+    """``RetrievalBody``: ``GET /stories/{id}/retrieve``, what a structured render would retrieve
+    for a query (FR-RET-2..7). ``position`` is ``(as_of + 1, 0)``. ``canon``, ``profiles`` and
+    ``context`` stay raw JSON until #152 types them; ``skipped`` names the stages that did not
+    run (``episodic`` when the module is off: everything else is then empty)."""
+
+    position: list[int]
+    resolution: ResolutionBody
+    episodes: list[RetrievedMemoryBody]
+    participants: list[str]
+    assessments: list[RetrievedMemoryBody]
+    memories: list[RetrievedMemoryBody]
+    profiles: Any
+    canon: Any
+    context: Any
+    rehydrated: list[str]
+    degradation: list[str]
+    skipped: list[str]
+    model_calls: int
+    embedding_model_version: str | None
+    timings: dict[str, float]
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 

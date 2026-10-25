@@ -1,0 +1,22 @@
+{% load console_format inspect_tags %}{% comment %}
+One retrieved memory (#141, console.retrieval.CandidateRow): the shared row of the Retrieval tab's
+Memories, Episodes and Assessments tables. Context: row; actions (#135 convention 14: a template
+name for an extra Actions cell, rendered with row in context, or None; #143 sets it). Null values
+show "—"; unknown kinds, tiers and arms show as <code>.
+{% endcomment %}{% with m=row.memory %}<tr class="memory-row{% if m.quarantined %} quarantined{% endif %}">
+  <td>{% if row.filter_url %}<a class="memory-filter" href="{{ row.filter_url }}">{{ m.id|engine_id }}</a>{% else %}{{ m.id|engine_id }}{% endif %}{% if m.quarantined %} <span class="badge quarantined">quarantined</span>{% endif %}</td>
+  <td>{% if row.kind_label %}<span title="{{ m.kind }}">{{ row.kind_label }}</span>{% else %}<code>{{ m.kind }}</code>{% endif %}</td>
+  <td>{% if row.tier_label %}<span title="{{ m.retrieval_tier }}">{{ row.tier_label }}</span>{% else %}<code>{{ m.retrieval_tier }}</code>{% endif %}</td>
+  <td>{{ m.importance|decimal3 }}</td>
+  <td>{{ m.score|decimal3 }}</td>
+  <td>{{ m.similarity|decimal3 }}</td>
+  <td>{{ m.recency|decimal3 }}</td>
+  <td>{{ m.decayed_importance|decimal3 }}</td>
+  <td>{% for arm in row.arms %}{% if arm.known %}<span class="arm arm-{{ arm.name }}">{{ arm.name }}</span>{% else %}<code>{{ arm.name }}</code>{% endif %}{% if not forloop.last %} {% endif %}{% empty %}—{% endfor %}</td>
+  <td>{% if row.actor %}{% include "console/inspect/_character.html" with label=row.actor.label character_id=row.actor.id is_player=row.actor.is_player %}{% else %}—{% endif %}</td>
+  <td>{% for p in row.participants %}{% include "console/inspect/_character.html" with label=p.label character_id=p.id is_player=p.is_player %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+  <td>{% if row.event_type_label %}<span title="{{ m.event_type }}">{{ row.event_type_label }}</span>{% else %}—{% endif %}</td>
+  <td>{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position }}</a>{% elif row.position %}{{ row.position }}{% else %}—{% endif %}</td>
+  <td class="memory-text">{{ m.text }}</td>
+  {% if actions %}<td class="actions">{% include actions %}</td>{% endif %}
+</tr>{% endwith %}
