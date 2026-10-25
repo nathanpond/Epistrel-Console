@@ -1284,3 +1284,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** With Retrieval registered, #140's link tests run against the real urlconf. A new `tests/inspect/urls_without_retrieval.py` keeps the "links omitted" path tested. `tests/inspect/urls.py` no longer lists a stub read for Retrieval.
   **Why:** The links now render for real, and #140's AC expects them there.
   **Issue:** #141
+- **Decision:** `history_turn_url` stays in `console/inspect.py` (built by #140) and gains an optional `variant` for the `#turn-N-<variant>` fragment, instead of a second copy in `console/history.py`; `explain_query`/`explain_url` are in `console/history.py` as planned.
+  **Why:** One convention-3 helper; existing callers keep the active-chain `-0` anchor.
+  **Issue:** #142
+- **Decision:** `explain_banner(cleaned_data, story_id, actor_label)` takes the story id and the asked actor's label rather than the story, and runs after the retrieve call.
+  **Why:** The banner needs only those; running after the call means a 422 on `query.as_of` (which removes `as_of` from `cleaned_data`) drops the banner with no extra check.
+  **Issue:** #142
+- **Decision:** `result_inspector` now takes `story_id` first; just-played and logged-row inspectors get the history-anchor link via `_with_history_link`. An inspector with `error` or `error_line` gets none.
+  **Why:** The history link needs the story; `error_line` marks a logged refusal, which the AC counts as an error.
+  **Issue:** #142
+- **Decision:** In the inspector the link sits in the revisions block after "Engine operation" (`<dt>Retrieval</dt>`); when the inspector has no revisions block (a transcript turn not played here) it renders as a line on its own.
+  **Why:** A transcript turn played elsewhere has `revisions=False`, but the AC still gives it the link.
+  **Issue:** #142

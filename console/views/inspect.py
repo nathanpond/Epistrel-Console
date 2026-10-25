@@ -68,11 +68,13 @@ from console.inspect import (
     Tab,
     Unavailable,
     capabilities,
+    history_turn_url,
     is_module_off,
     module_off_unavailable,
     module_rows,
     overview_fingerprint,
     pipeline_dials,
+    position_text,
     profile_flags,
     retrieval_url,
     setting,
@@ -278,16 +280,41 @@ def _actor_label(form: RetrievalForm, names: Names) -> str:
     return names.label(actor) or actor
 
 
-def _retrieval(ctx: InspectContext) -> dict[str, Any]:
-    """The Retrieval tab (#141): the GET form, then at most one ``GET /stories/{id}/retrieve``
-    read (``viewpoint=omniscient``) and its Resolution and Candidates sections.
+@dataclass(frozen=True)
+class ExplainBanner:
+    """#142's reconstruction banner: the re-run of turn ``turn``'s retrieval, as ``actor_label``
+    (the actor actually asked), linked back to the turn in history."""
 
-    No read for a request without ``q`` (a filter-only link, convention 11: the form pre-filled
-    and the prompt) or with an invalid form. A 422 lands on the field ``details.field`` names or
-    above the form; 403 ``omniscient_required`` and 404 render convention 10's lines, any other
-    failure #43's panel, each below the form; ``erasure_pending`` (and a 409 ``module_off``)
-    escape to #87's held wrapper (and the shell's panel). ``skipped: ["episodic"]`` shows #135's
-    reason inline instead of the candidate tables."""
+    turn: int
+    position: str  # "turn 7", "turn 7 · v2" (convention 4)
+    actor_label: str
+    history_url: str
+
+
+def explain_banner(
+    cleaned_data: Mapping[str, Any], story_id: str, actor_label: str
+) -> ExplainBanner | None:
+    """The banner when the question re-runs a past turn: ``explain`` a turn ≥ 1, ``as_of`` still
+    the turn before it and a question asked. It checks only ``explain`` against ``as_of`` (the
+    link carries no fingerprint of the input, so an edited ``q`` or actor keeps it). An as_of
+    the Engine refused (a 422 on ``query.as_of``) is gone from ``cleaned_data``: no banner."""
+    turn = cleaned_data.get("explain")
+    as_of = cleaned_data.get("as_of")
+    if not isinstance(turn, int) or as_of != turn - 1 or not cleaned_data.get("q"):
+        return None
+    variant = cleaned_data.get("explain_variant")
+    variant = variant if isinstance(variant, int) else None
+    return ExplainBanner(
+        turn,
+        position_text(turn, None, variant) or f"turn {turn}",
+        actor_label,
+        history_turn_url(story_id, turn, variant),
+    )
+
+
+def _retrieval(ctx: InspectContext) -> dict[str, Any]:
+    """The Retrieval tab (#141) and, for a past turn's re-run, #142's reconstruction banner
+    (:func:`explain_banner`) above whatever the read answered."""
     cast = ctx.story.cast if ctx.story is not None else None
     head = _head(ctx.story)
     form = RetrievalForm(ctx.request.GET, cast=cast, head=head)
@@ -302,8 +329,25 @@ def _retrieval(ctx: InspectContext) -> dict[str, Any]:
         form.filters_only()
         context["prompt"] = True
         return context
+    _ask(ctx, form, names, context)
+    context["explain_banner"] = explain_banner(
+        form.cleaned_data, ctx.story_id, _actor_label(form, names)
+    )
+    return context
+
+
+def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[str, Any]) -> None:
+    """The question (#141): at most one ``GET /stories/{id}/retrieve`` read
+    (``viewpoint=omniscient``) and its Resolution and Candidates sections, into ``context``.
+
+    No read for a request without ``q`` (a filter-only link, convention 11: the form pre-filled
+    and the prompt) or with an invalid form. A 422 lands on the field ``details.field`` names or
+    above the form; 403 ``omniscient_required`` and 404 render convention 10's lines, any other
+    failure #43's panel, each below the form; ``erasure_pending`` (and a 409 ``module_off``)
+    escape to #87's held wrapper (and the shell's panel). ``skipped: ["episodic"]`` shows #135's
+    reason inline instead of the candidate tables."""
     if not form.is_valid():
-        return context
+        return
     query = form.query()
     try:
         body = ctx.client.retrieve(ctx.story_id, **query)
@@ -319,7 +363,7 @@ def _retrieval(ctx: InspectContext) -> dict[str, Any]:
             context["retrieval_not_found"] = True
         else:
             context["retrieval_error"] = panel_for(exc)
-        return context
+        return
     keep = {name: form.value(name) for name in QUESTION_FIELDS if form.value(name)}
     filters = Filters(
         form.filter_value("kind"), form.filter_value("tier"), form.filter_value("memory")
@@ -338,7 +382,6 @@ def _retrieval(ctx: InspectContext) -> dict[str, Any]:
         actions=None,  # convention 14: #143 sets the row actions partial
         more=retrieval_more(body),
     )
-    return context
 
 
 @require_safe

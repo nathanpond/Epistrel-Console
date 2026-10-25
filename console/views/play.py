@@ -72,6 +72,7 @@ from console.forms.ingest import (
 )
 from console.forms.play import DEADLINE_MAX, ERROR_PATHS, STORY_DEFAULT, TurnForm
 from console.formset_rows import edit_rows, wants_edit
+from console.history import explain_query, explain_url
 from console.ids import new_ulid
 from console.ingest import (
     ERASED_EVENT,
@@ -84,6 +85,7 @@ from console.ingest import (
     place_ingest_error,
     result_rows,
 )
+from console.inspect import STRUCTURED, history_turn_url
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.story_config import ConfigBadge, badge_from_report, read_badge
@@ -419,6 +421,8 @@ class Inspector:
     operation_id: str = ""
     log_pk: int | None = None  # the operation-log row, linked
     revisions: bool = True  # show the revision/key lines
+    explain_url: str = ""  # "Explain retrieval" for a transcript turn (#142)
+    history_url: str = ""  # "Explain retrieval in history": the reported turn's anchor (#142)
 
 
 NOTHING_SELECTED = Inspector(notice="Select a turn to see its report.", revisions=False)
@@ -512,8 +516,28 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
     return Inspector(title="Turn refused", error=panel_for(exc), idempotency_key=idempotency_key)
 
 
-def result_inspector(result: RespondResponse, idempotency_key: str, operation_id: str) -> Inspector:
-    return Inspector(
+def _with_history_link(story_id: str, found: Inspector) -> Inspector:
+    """#142: an inspector showing a structured turn's report (``capabilities`` has
+    ``structured``, report ``turn`` ≥ 1, no error) links that turn in history, where its
+    "Explain retrieval" link lives. Never built from the logged request: after an erasure the
+    log still holds the input, the transcript doesn't."""
+    report = found.report
+    if (
+        report is None
+        or STRUCTURED not in (report.capabilities or ())
+        or report.turn is None
+        or report.turn < 1
+        or found.error is not None
+        or found.error_line
+    ):
+        return found
+    return replace(found, history_url=history_turn_url(story_id, report.turn, report.variant))
+
+
+def result_inspector(
+    story_id: str, result: RespondResponse, idempotency_key: str, operation_id: str
+) -> Inspector:
+    found = Inspector(
         title=f"Turn {result.turn} (variant {result.variant})",
         report=result.report,
         reply=result.message.text,
@@ -523,6 +547,7 @@ def result_inspector(result: RespondResponse, idempotency_key: str, operation_id
         operation_id=operation_id,
         log_pk=_log_pk(operation_id),
     )
+    return _with_history_link(story_id, found)
 
 
 def _log_pk(operation_id: str) -> int | None:
@@ -542,7 +567,7 @@ def row_inspector(row: EngineOperation) -> Inspector:
     regenerated = isinstance(previous, int) and not isinstance(previous, bool)
     spend = input_gate_text(row.response)
     facts = (("Previous variant", str(previous)),) if regenerated else ()
-    return Inspector(
+    found = Inspector(
         title=turn if not violations else "Rejected input",
         notice=notice,
         facts=(*facts, ("Input gate", spend)) if spend else facts,
@@ -555,6 +580,7 @@ def row_inspector(row: EngineOperation) -> Inspector:
         operation_id=row.engine_operation_id,
         log_pk=row.pk,
     )
+    return _with_history_link(row.story_id, found)
 
 
 def _latest_inspector(story_id: str) -> Inspector:
@@ -765,13 +791,17 @@ def _fork_banner(request: HttpRequest, story_id: str) -> ForkBanner | None:
 
 def _turn_inspector(transcript: Transcript, turn: int) -> Inspector | None:
     """The inspector for turn ``turn`` of the transcript (``?turn=N``): its reply's operation,
-    else any of its items'."""
+    else any of its items'. Its "Explain retrieval" link (#142) is rebuilt from the transcript's
+    items for that turn, as history builds it, in place of the history-anchor link."""
     items = [e.item for e in transcript.entries if e.item.turn == turn]
     replies = [i for i in items if i.channel == REPLY_CHANNEL]
     chosen = (replies or items)[-1:] if items else []
     if not chosen:
         return None
-    return selected_inspector(chosen[0].operation_id, chosen[0].origin)
+    found = selected_inspector(chosen[0].operation_id, chosen[0].origin)
+    query = explain_query(items, turn, chosen[0].variant)
+    link = explain_url(transcript.story_id, query) if query is not None else None
+    return replace(found, explain_url=link or "", history_url="")
 
 
 def _page(
@@ -957,7 +987,7 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
         request,
         play_story,
         fresh,
-        result_inspector(result, key, operation_id),
+        result_inspector(story_id, result, key, operation_id),
         viewpoint=result.output_viewpoint,
         config_badge=_badge_after(request, story_id, result),
     )
@@ -1258,7 +1288,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
     if op.status == "committed":
         result = RespondResponse.from_json(op.result.body) if op.result else None
         if result is not None:
-            found = result_inspector(result, key, operation_id)
+            found = result_inspector(story_id, result, key, operation_id)
             note = f"Turn {result.turn} committed."
             badge = _badge_after(request, story_id, result)
             return _poll_end(request, card, found, note, result.output_viewpoint, badge)

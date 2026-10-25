@@ -37,6 +37,8 @@ from console.history import (
     audit_record,
     chain_key,
     chain_tip,
+    explain_query,
+    explain_url,
     operation_links,
     policy_names,
     split_audit,
@@ -210,8 +212,10 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         actor_filtered=bool(query["actor_character_id"]),
     )
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
-    older = history.next_before_turn
     variant = query["variant"] or ""
+    if not variant:  # a chain view isn't the active timeline (#142)
+        _with_explain(story.id, groups)
+    older = history.next_before_turn
     return Page(
         history=history,
         viewpoint_label=cast_helpers.viewpoint_label(history.output_viewpoint, cast),
@@ -225,6 +229,14 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         clear_chain_url=_url(story.id, _with(request, variant=None)) if variant else "",
         settings_error=settings_error,
     )
+
+
+def _with_explain(story_id: str, groups: list[TurnGroup]) -> None:
+    """Give each structured turn whose input the page shows its "Explain retrieval" link (#142),
+    built from the page's items only (zero Engine reads)."""
+    for group in groups:
+        found = explain_query([row.item for row in group.rows], group.turn, group.variant)
+        group.explain_url = explain_url(story_id, found) if found is not None else None
 
 
 def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidget]) -> None:

@@ -6,7 +6,9 @@
   text, which the Engine fills with the event payload's canonical JSON; an ``erasure_marker``
   (#87) read from its ``[erasure marker: <id>, <scope>]`` text;
 - :func:`policy_names`: policy id → name from ``GET /stories/{id}/settings``;
-- :func:`operation_links`: Engine operation id → the Console's operation-log row (#44).
+- :func:`operation_links`: Engine operation id → the Console's operation-log row (#44);
+- :func:`explain_query` / :func:`explain_url`: a structured turn's "Explain retrieval" link
+  into the Retrieval explorer (#142), rebuilt from the turn's transcript items.
 
 #53 builds its timeline controls onto these groups.
 """
@@ -24,6 +26,7 @@ from console.engine.models import (
     SummarySegment,
     VariantChain,
 )
+from console.inspect import retrieval_url
 from console.models import EngineOperation
 
 if TYPE_CHECKING:
@@ -36,6 +39,8 @@ REPLY_CHANNELS = frozenset({"message", "narration"})
 REPLY_KIND = "message_rendered"
 NAME_WITHHELD = "(name withheld — erasure pending)"
 MARKER_KIND = "erasure_marker"  # an audit item a deleted record left (#87, Engine brief §8)
+INPUT_KIND = "player_input"  # a turn's input: a ``say`` item, then a ``do`` item
+EXPLAIN_QUERY_MAX = 2000  # the turn pipeline's retrieval query cut (structured/pipeline.py)
 MARKER_TEXT = re.compile(r"^\[erasure marker: (?P<id>[^,\]]+), (?P<scope>[^\]]+)\]$")
 INGEST_SCAN = 500  # newest ingest rows of the story looked through for a batch's operations
 
@@ -228,6 +233,7 @@ class TurnGroup:
     rows: list[Row] = field(default_factory=list)
     audit: list[AuditRecord] = field(default_factory=list)
     no_reply: bool = False
+    explain_url: str | None = None  # "Explain retrieval" (#142, set by the view)
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:
@@ -289,6 +295,58 @@ def turn_groups(
             not actor_filtered and g.turn >= 1 and not any(is_reply(r.item) for r in g.rows)
         )
     return ordered
+
+
+# --- Explain retrieval (#142) -------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExplainQuery:
+    """A past turn's retrieval, re-run: the turn's input as the question, asked as the character
+    who acted, as of just before the turn."""
+
+    q: str
+    as_of: int
+    actor: str
+    turn: int
+    variant: int | None
+
+
+def explain_query(
+    items: Sequence[HistoryItem], turn: int, variant: int | None
+) -> ExplainQuery | None:
+    """The re-run for turn ``turn`` from its items as a page shows them, or ``None`` when there
+    is none to offer: turn 0, a Lite turn (no ``player_input`` item carries ``propositions``),
+    no input on the page, a blank input or no actor.
+
+    The input is the first ``player_input`` message's items (Engine order: say, then do; an
+    ingest batch with several at one turn uses the first), their non-empty texts joined with
+    ``"\n"`` as the Engine's ``joined_input`` does, cut to 2,000 code points. Redacted and
+    quarantined items are used as they read; the explorer's banner is the caveat."""
+    inputs = [i for i in items if i.kind == INPUT_KIND]
+    if turn < 1 or not any(i.propositions is not None for i in inputs):
+        return None
+    first = inputs[0]
+    parts = [i for i in inputs if i.message_id == first.message_id]
+    q = "\n".join(i.text for i in parts if i.text)[:EXPLAIN_QUERY_MAX]
+    if not q.strip() or first.actor_character_id is None:
+        return None
+    return ExplainQuery(q, turn - 1, first.actor_character_id, turn, variant)
+
+
+def explain_url(story_id: str, query: ExplainQuery) -> str | None:
+    """The explorer pre-filled with ``query`` (``q``, ``as_of``, ``actor``, ``explain``, then
+    ``explain_variant`` for a variant ≥ 1), or ``None`` while ``inspect:retrieval`` isn't
+    registered. Following it makes the one retrieve read; building it makes none."""
+    params = {
+        "q": query.q,
+        "as_of": str(query.as_of),
+        "actor": query.actor,
+        "explain": str(query.turn),
+    }
+    if query.variant is not None and query.variant >= 1:
+        params["explain_variant"] = str(query.variant)
+    return retrieval_url(story_id, params)
 
 
 def summary_rows(segments: Sequence[SummarySegment] | None) -> list[SummarySegment]:

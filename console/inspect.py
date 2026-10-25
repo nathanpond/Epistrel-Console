@@ -368,11 +368,12 @@ def short_id(value: str) -> str:
     return f"…{value[-SHORT_ID:]}" if len(value) > SHORT_ID else value
 
 
-def history_turn_url(story_id: str, turn: int) -> str:
+def history_turn_url(story_id: str, turn: int, variant: int | None = None) -> str:
     """Convention 3: the story's history at ``turn`` on the active chain: ``before_turn`` one
-    past it and the ``#turn-<turn>-0`` anchor of ``history/_items.html``."""
+    past it and the ``#turn-<turn>-<variant or 0>`` anchor of ``history/_items.html`` (#142
+    passes a turn's variant; the page still shows the active chain)."""
     base = reverse("stories:history", args=[story_id])
-    return f"{base}?{urlencode({'before_turn': turn + 1})}#turn-{turn}-0"
+    return f"{base}?{urlencode({'before_turn': turn + 1})}#turn-{turn}-{variant or 0}"
 
 
 def position_text(turn: int | None, beat: int | None, variant: int | None = None) -> str | None:

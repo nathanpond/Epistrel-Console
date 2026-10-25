@@ -23,6 +23,7 @@ between the form and the results.
     <div class="field field-tier">{{ form.tier.label_tag }} {{ form.tier }}{{ form.tier.errors }}</div>
     <div class="field field-memory">{{ form.memory.label_tag }} {{ form.memory }} <small class="muted">{{ form.memory.help_text }}</small></div>
   </fieldset>
+  {{ form.explain }}{{ form.explain_variant }}
   <button type="submit">Retrieve</button> <a class="retrieval-clear" href="{{ clear_url }}">Clear</a>
 </form>
 {% if explain_banner %}{% include "console/inspect/_explain_banner.html" %}{% endif %}

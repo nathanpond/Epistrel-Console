@@ -13,6 +13,10 @@ story read succeeded), an unknown ``kind`` or ``tier``. ``as_of`` above the head
 so the Engine's 422 (``details.head``) lands on the field. ``memory`` is never an error: a short
 or odd value simply matches nothing.
 
+``explain`` and ``explain_variant`` (hidden) mark a re-run of a past turn's retrieval (#142's
+reconstruction banner); they are lenient: a value that isn't a whole number ≥ 1 cleans to
+``None``, never a field error, and neither changes the Engine call.
+
 A request with no ``q`` parameter at all (a filter-only link, #135 convention 11) is not a
 question: :meth:`RetrievalForm.filters_only` keeps only the ``kind``/``tier`` errors.
 """
@@ -58,6 +62,11 @@ def as_of_help(head: int | None) -> str:
     return f"blank = head (turn {head})"
 
 
+def _positive(value: str) -> int | None:
+    """A whole number ≥ 1 written in ASCII digits, else ``None``."""
+    return int(value) if value.isascii() and value.isdigit() and int(value) >= 1 else None
+
+
 class RetrievalForm(forms.Form):
     """The question and the display filters. ``cast`` fills the actor select (``None`` when the
     story read failed: the select then offers the player default and the requested id);
@@ -88,6 +97,8 @@ class RetrievalForm(forms.Form):
     memory = forms.CharField(
         required=False, label="Memory id", help_text="full id or its last 8+ characters"
     )
+    explain = forms.CharField(required=False, widget=forms.HiddenInput)
+    explain_variant = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(
         self,
@@ -132,6 +143,12 @@ class RetrievalForm(forms.Form):
     def clean_memory(self) -> str:
         memory: str = self.cleaned_data["memory"]
         return memory.strip()
+
+    def clean_explain(self) -> int | None:
+        return _positive(self.cleaned_data["explain"])
+
+    def clean_explain_variant(self) -> int | None:
+        return _positive(self.cleaned_data["explain_variant"])
 
     def filters_only(self) -> None:
         """A request without ``q``: validate, then keep only the ``kind``/``tier`` errors (the
