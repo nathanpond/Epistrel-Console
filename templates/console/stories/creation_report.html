@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Creation report — Epistrel Console{% endblock %}
+{% block heading %}Creation report{% endblock %}
+{% block content %}
+{% if unavailable %}
+<p class="unavailable">{{ unavailable }}</p>
+<p><a href="{% url 'stories:detail' story_id %}">Back to the story</a></p>
+{% else %}
+<p><a class="play" href="{{ play_url }}">Play</a> · <a href="{% url 'operations:detail' row.pk %}">View in operations log</a></p>
+<dl class="applied">
+  <dt>Story</dt><dd><a href="{{ play_url }}"><code>{{ story_id }}</code></a></dd>
+  <dt>Scenario</dt><dd>{% if created.scenario %}<a href="{{ scenario_url }}">{% if scenario_name %}{{ scenario_name }}{% else %}<code>{{ created.scenario.id }}</code>{% endif %}</a> v{{ created.scenario.version }}{% if scenario_error %} <span class="lookup-failed">(scenario unavailable: {{ scenario_error }})</span>{% endif %}{% else %}—{% endif %}</dd>
+  <dt>Content rating</dt><dd>{% if created.content_rating %}{{ created.content_rating.name }} (<code>{{ created.content_rating.version_id }}</code>){% else %}—{% endif %}</dd>
+  <dt>Engine profile</dt><dd>{% if created.engine_profile %}{% if profile_name %}{{ profile_name }} (<code>{{ created.engine_profile.id }}</code> v{{ created.engine_profile.version }}){% else %}<code>{{ created.engine_profile.id }}</code> v{{ created.engine_profile.version }}{% if profile_error %} <span class="lookup-failed">(profile unavailable: {{ profile_error }})</span>{% endif %}{% endif %}{% else %}—{% endif %}</dd>
+  <dt>Timeline revision</dt><dd>{{ created.timeline_revision }}</dd>
+</dl>
+{% include "console/stories/_creation_report.html" %}
+{% if created.impact %}<details class="impact-details"><summary>Impact report</summary>{% include "console/_impact_report.html" with impact=created.impact %}</details>{% endif %}
+{% endif %}
+{% endblock %}

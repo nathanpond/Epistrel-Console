@@ -900,7 +900,8 @@ class StoryCreated(Model):
     """``StoryCreatedBody``: what ``POST /stories`` answers.
 
     ``story_id`` and ``content_rating`` are ``None`` only on a scenario creation's 200
-    ``applied: false``; ``report`` and ``impact`` are raw JSON (scenario creations only).
+    ``applied: false``; ``report`` and ``impact`` (#75: typed, :class:`CreationReport` and
+    :class:`ImpactReport`) come with scenario creations only.
     """
 
     timeline_revision: int
@@ -911,8 +912,8 @@ class StoryCreated(Model):
     idempotency_key: str | None = None
     engine_profile: ProfileVersionRef | None = None
     scenario: ScenarioOrigin | None = None
-    report: Any = None
-    impact: Any = None
+    report: CreationReport | None = None
+    impact: ImpactReport | None = None
 
 
 @dataclass(frozen=True)
@@ -2180,3 +2181,194 @@ class MediaPage(Model):
 
     items: list[MediaAsset]
     next_cursor: str | None
+
+
+# --- story creation from a scenario (#75) ---------------------------------------------------------
+#
+# What ``POST /stories`` answers for a ``StoryFromScenario``: the creation report (#119, #122: the
+# cast as created, the entries, what Lite deferred or left inactive, and a structured story's
+# materialization, #149) and the engine profile's impact report (#109). The report's entries are
+# the shared :class:`ReportEntry` (#64 convention 4).
+
+FieldClass = Literal[
+    "public_card",
+    "knowledge_seed",
+    "story_rule",
+    "starting_state",
+    "director",
+    "configuration",
+    "recommendation",
+    "style",
+]
+MaterializedOutcome = Literal["canon", "memory", "deferred", "merge_conflict", "entity", "rule"]
+
+
+@dataclass(frozen=True)
+class ClassCapabilityCounts(Model):
+    """``ClassCapabilityCounts``: items counted by field class and by the capability needed."""
+
+    by_class: dict[str, int] = field(default_factory=dict)
+    by_capability: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OutcomeCounts(Model):
+    """``OutcomeCounts``: a structured creation's materialized items by outcome."""
+
+    by_outcome: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CreationCounts(Model):
+    """``CreationCounts``: the report's totals (every projection carries them)."""
+
+    errors: int = 0
+    conflicts: int = 0
+    warnings: int = 0
+    deferred: ClassCapabilityCounts = field(default_factory=ClassCapabilityCounts)
+    inactive: ClassCapabilityCounts = field(default_factory=ClassCapabilityCounts)
+    materialized: OutcomeCounts | None = None
+
+
+@dataclass(frozen=True)
+class DeferredItem(Model):
+    """``DeferredItem``: scenario content the story's profile cannot use yet, kept for the
+    capability it needs (``payload``: the content, raw)."""
+
+    field_ref: str
+    location: EntryLocation
+    capability_needed: str
+    payload: dict[str, Any]
+    field_class: str = open_enum()
+
+
+@dataclass(frozen=True)
+class InactiveItem(Model):
+    """``InactiveItem``: a setting kept but inactive under the story's profile (``value``
+    raw)."""
+
+    name: str
+    value: Any
+    capability: str
+    location: EntryLocation
+    field_class: str = open_enum()
+
+
+@dataclass(frozen=True)
+class MaterializedEntry(Model):
+    """``MaterializedEntry``: one item a structured creation materialized and its outcomes."""
+
+    field_ref: str
+    location: EntryLocation
+    outcomes: list[MaterializedOutcome]
+    rule: str | None = None
+    winner: str | None = None
+    loser: str | None = None
+
+
+@dataclass(frozen=True)
+class CastSource(Model):
+    """``CastSource``: the catalog character and version a cast member was copied from."""
+
+    catalog_id: str
+    version: int
+
+
+@dataclass(frozen=True)
+class CatalogCastCard(Model):
+    """``CatalogCastCard``: a cast member filled from the catalog, with its card."""
+
+    id: str
+    version: int | None
+    name: str | None
+    public_description: str | None
+    images: CardImages
+    labels: list[str]
+    content_rating: CardRating | None
+    listing_status: str
+    status: EntryStatus
+    character_id: str
+    role_id: str
+    source: CastSource
+    kind: Literal["catalog"] = "catalog"
+
+
+@dataclass(frozen=True)
+class MemberCastCard(Model):
+    """``MemberCastCard``: an ad-hoc cast member or a player."""
+
+    kind: Literal["ad_hoc", "player"]
+    character_id: str
+    role_id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class CreationReport(Model):
+    """``CreationReport``: what a creation from a scenario applied. The ``card`` projection
+    carries ``counts`` and ``unavailable`` only; ``full`` (what the Console always asks for)
+    every list. ``errors``/``warnings``/``unavailable`` make it render through the shared
+    ``_validation_report.html`` like a :class:`ValidationReport`."""
+
+    counts: CreationCounts
+    story_id: str | None = None
+    cast: list[CatalogCastCard | MemberCastCard] = field(default_factory=list)
+    errors: list[ReportEntry] | None = None
+    warnings: list[ReportEntry] | None = None
+    deferred: list[DeferredItem] | None = None
+    inactive: list[InactiveItem] | None = None
+    materialized: list[MaterializedEntry] | None = None
+    unavailable: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class UnmetRecommendation(Model):
+    """``UnmetRecommendation``: a capability the scenario recommends that the profile lacks."""
+
+    capability: str
+    recommended_by: str
+
+
+@dataclass(frozen=True)
+class BackfillEstimate(Model):
+    model_calls: int
+    tokens: int
+    duration_s: float
+
+
+@dataclass(frozen=True)
+class Backfill(Model):
+    needed: bool
+    estimate: BackfillEstimate | None = None
+
+
+@dataclass(frozen=True)
+class AffectedStory(Model):
+    """``AffectedStory``: one story a profile change reaches (empty for a creation)."""
+
+    story_id: str
+    capabilities_gained: list[str]
+    capabilities_lost: list[str]
+    backfill: Backfill
+    upgrade_unavailable: bool
+    capabilities_after: list[str] | None = None
+    fingerprint_before: str | None = None
+    fingerprint_after: str | None = None
+    quality_status_after: QualityStatus | None = None
+
+
+@dataclass(frozen=True)
+class ImpactReport(Model):
+    """``ImpactReport`` (#109): what the engine profile means for the story: the scenario's
+    recommendations it leaves unmet, the warnings, the guarantees lost, and the capabilities,
+    quality status and fingerprints after."""
+
+    affected_stories: list[AffectedStory]
+    affected_count: int
+    recommendations_unmet: list[UnmetRecommendation]
+    guarantees_lost: list[str]
+    warnings: list[str]
+    capabilities_after: list[str] | None = None
+    quality_status_after: QualityStatus | None = None
+    fingerprint_before: str | None = None
+    fingerprint_after: str | None = None

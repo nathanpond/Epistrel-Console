@@ -17,6 +17,7 @@
 {% else %}
 <p class="view-mode"><a href="{{ card_query }}">View as public card</a>{% if not is_draft %} · <a href="{{ draft_query }}">View the draft</a>{% endif %}</p>
 {% endif %}
+{% if start_url %}<p class="start-story">{% if is_archived %}{% disabled_if_archived entry "start a story" "Start a story" %}{% else %}<a class="button start-story" href="{{ start_url }}">Start a story</a>{% endif %}</p>{% endif %}
 {% if lifecycle %}{% include "console/catalog/_lifecycle_controls.html" %}{% endif %}
 {% if differs %}
 <p class="warning draft-differs">The draft differs from this published version — <a href="{{ draft_query }}">view the draft</a></p>

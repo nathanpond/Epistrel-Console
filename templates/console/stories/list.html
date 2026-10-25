@@ -2,7 +2,7 @@
 {% block title %}Stories — Epistrel Console{% endblock %}
 {% block heading %}Stories{% endblock %}
 {% block content %}
-<p><a href="{% url 'stories:new' %}">New story</a></p>
+<p><a href="{% url 'stories:new' %}">New story</a> · <a class="from-scenario" href="{% url 'stories:from-scenario' %}">New story from scenario</a></p>
 
 <form method="get" action="" class="filters">
   <label>Status

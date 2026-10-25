@@ -942,3 +942,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `FakeEngine.respond` now replaces a `side_effect` on the same route. The catalog test fixture answers the companion route by projection (`companion_reads`: card or full draft). `_location.html` takes optional `entry_url`/`entry_label`, and an empty `anchors` collection now leaves locations as plain text (`default_if_none` in place of `default`).
   **Why:** One route serves both the card and the full companion reads. Version reports must show plain-text locations.
   **Issue:** #74
+- **Decision:** `@operation` gains `listed=False`. With it, a second client method on an operation another method already lists stays out of `OPERATIONS`, but its calls are still recorded under their own kind. `create_story_from_scenario` uses it beside `create_story` (both `POST /stories`, both answering `StoryCreated`): its #44 rows have kind `create_story_from_scenario`, `entity_type="scenario"` and the scenario id. `StoryCreated.report` and `.impact` are now typed (`CreationReport`, `ImpactReport`), and the contract test covers both.
+  **Why:** The registry is keyed by method and path, and the planned #44 kind is the method name. Without the flag, the new method would replace `create_story`'s registration.
+  **Issue:** #75
+- **Decision:** Scalar override widgets (enum, bool, int, and a text input for the string `default_output_viewpoint`) all send `null` when cleared to "(default)" or blank over a scenario value. A JSON box sends nothing when blank. Values identical to the scenario's are never sent. The plan named the `null` rule for bool only, and named no widget for a plain string.
+  **Why:** One rule for every scalar lets the operator clear any setting back to the deployment default. A JSON box for a single role-id string would be awkward.
+  **Issue:** #75
+- **Decision:** If the pinned scenario cannot be re-read on POST (create, Create anyway, Back), the page shows the #43 panel. Every posted value is carried as hidden inputs with a Retry button: re-render for a create, the same op for confirm/back. The form itself is not shown, and nothing is sent. Persona options read `GET /personas?owner=<principal>` at limit 200, following cursors up to 500. The step-1 version select appears after "Choose" (`?pick=<id>`), and "Continue" goes to step 2.
+  **Why:** Without the scenario's roles the form cannot be rebuilt, and no role list travels in a signed field (plan). Hidden inputs keep the input. Two GET stages need no JavaScript.
+  **Issue:** #75
+- **Decision:** `_two_stage.html` takes optional `confirm_op`, `cancel_op`/`cancel_label` and `hidden` pairs. The not-created page uses them: "Create anyway" posts `op=confirm` and "Back" posts `op=back`, both with the token. The partial's existing behaviour is unchanged. A shared `_impact_report.html` partial (context `impact`) is new.
+  **Why:** The plan's "Back" posts the signed payload. It is not a Cancel link.
+  **Issue:** #75

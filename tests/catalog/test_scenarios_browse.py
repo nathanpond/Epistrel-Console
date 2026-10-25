@@ -269,6 +269,25 @@ def test_view_as_public_card_shows_the_roles(operator_client: Client, engine: Fa
     assert "Deferred" not in page
 
 
+def test_the_detail_offers_start_a_story_at_the_shown_version(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#75: a published, non-archived scenario's detail links step 2 at the version shown."""
+    engine.respond("GET", S_ITEM, 200, json=detail())
+    html = detail_page(operator_client, engine)
+    start = f"/stories/new/from-scenario/?scenario={SCN}&amp;version=2"
+    assert f'href="{start}">Start a story</a>' in html
+
+
+def test_an_archived_scenario_disables_start_a_story(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", S_ITEM, 200, json=detail(status="archived"))
+    html = detail_page(operator_client, engine)
+    assert ">Start a story</a>" not in html
+    assert "Archived — unarchive to start a story" in html
+
+
 def test_a_companion_detail_names_its_character(
     operator_client: Client, engine: FakeEngine
 ) -> None:

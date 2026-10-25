@@ -97,7 +97,12 @@ from console.engine.models import (
     VariantChain,
     Variants,
 )
-from console.engine.timeouts import CATALOG_PUBLISH, STORY_CHARACTER_ADD, UPLOAD
+from console.engine.timeouts import (
+    CATALOG_PUBLISH,
+    SCENARIO_CREATE,
+    STORY_CHARACTER_ADD,
+    UPLOAD,
+)
 from console.entities import EntityType
 from console.version import VERSION
 
@@ -316,6 +321,7 @@ def operation(
     entity: EntityType | None = None,
     entity_id: str | None = None,
     record_body: Callable[[Mapping[str, Any]], object] | None = None,
+    listed: bool = True,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a client method as the Engine operation ``method path``.
 
@@ -339,6 +345,11 @@ def operation(
     #70 adds ``record_body``: the redaction hook for a request whose body is not JSON (a
     multipart upload). It is called with the method's arguments by name and returns what the
     operation log stores as the request's body.
+
+    #75 adds ``listed``: ``False`` keeps the registration out of :data:`OPERATIONS` (keyed by
+    method and path) for a second client method on an operation another method already lists
+    (``create_story_from_scenario`` beside ``create_story``); its calls are still marked, so the
+    operation log records them under their own kind and entity.
 
     Example::
 
@@ -365,7 +376,8 @@ def operation(
             entity_id,
             record_body,
         )
-        OPERATIONS[f"{method} {path}"] = op
+        if listed:
+            OPERATIONS[f"{method} {path}"] = op
         signature = inspect.signature(func)
         if (
             entity_id is not None
@@ -657,6 +669,37 @@ class EngineClient:
                 {},
                 response.status_code,
             )
+        return created
+
+    @operation(
+        "POST",
+        "/stories",
+        response_model=StoryCreated,
+        entity="scenario",
+        entity_id="scenario_id",
+        listed=False,
+    )
+    def create_story_from_scenario(
+        self, body: Mapping[str, Any], *, scenario_id: str, idempotency_key: str
+    ) -> StoryCreated:
+        """``POST /stories`` with a ``StoryFromScenario`` body (#75), on the scenario-creation
+        timeout. Answers the 201 (a story) and the 200 ``applied: false`` (nothing created,
+        ``story_id`` ``None``) alike; a refusal is :class:`EngineError`.
+
+        ``scenario_id`` (the body's ``scenario.id``) names the operation log's entity: the row
+        is recorded as ``create_story_from_scenario`` on the scenario, and its ``story_id`` is
+        set from a 201's answer. Not listed in :data:`OPERATIONS` (``create_story`` holds
+        ``POST /stories``; both answer :class:`StoryCreated`)."""
+        response = self._request(
+            "POST",
+            "/stories",
+            json=dict(body),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=SCENARIO_CREATE,
+        )
+        created = _parse(response, StoryCreated)
+        if response.status_code == 201 and created.story_id is None:
+            raise EngineError("bad_response", "the Engine answered 201 without a story id", {}, 201)
         return created
 
     @operation("GET", "/stories/{story_id}", response_model=Story)
@@ -1983,6 +2026,13 @@ class EngineClient:
         response = self._request("GET", "/engine-profiles", params=params)
         page = _parse(response, EngineProfileSummaryPage)
         return page.items, page.next_cursor
+
+    @operation("GET", "/engine-profiles/{profile_id}")
+    def get_engine_profile(self, profile_id: str) -> EngineProfileSummary:
+        """``GET /engine-profiles/{id}`` (#75: a creation report names the story's profile).
+        Registered without a response model, as :meth:`list_engine_profiles` is."""
+        path = f"/engine-profiles/{quote(profile_id, safe='')}"
+        return _parse(self._request("GET", path), EngineProfileSummary)
 
     # --- media (#70) ----------------------------------------------------------------------------
 

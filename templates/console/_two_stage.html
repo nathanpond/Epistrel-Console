@@ -2,10 +2,13 @@
 The confirm step of a two-stage write (#64, M3 convention 3). Context: token (console.twostage.sign),
 confirm_url, confirm_label ("Apply anyway" / "Start" / "Erase now"), cancel_url, idempotency_key (fresh,
 minted when this renders), danger (optional: style the button as destructive). The caller renders the
-report above it.
+report above it. #75, optional: confirm_op (the confirm button posts op=<confirm_op>), cancel_op and
+cancel_label (Cancel becomes a submit posting op=<cancel_op> with the token, e.g. "Back"), hidden
+((name, value) pairs posted alongside).
 {% endcomment %}<form method="post" action="{{ confirm_url }}" class="two-stage">{% csrf_token %}
   <input type="hidden" name="confirm_token" value="{{ token }}">
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-  <button type="submit"{% if danger %} class="danger"{% endif %}>{{ confirm_label }}</button>
-  <a class="button" href="{{ cancel_url }}">Cancel</a>
+  {% for name, value in hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <button type="submit"{% if confirm_op %} name="op" value="{{ confirm_op }}"{% endif %}{% if danger %} class="danger"{% endif %}>{{ confirm_label }}</button>
+  {% if cancel_op %}<button type="submit" name="op" value="{{ cancel_op }}">{{ cancel_label|default:"Cancel" }}</button>{% else %}<a class="button" href="{{ cancel_url }}">Cancel</a>{% endif %}
 </form>

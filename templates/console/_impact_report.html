@@ -1,0 +1,25 @@
+{% comment %}
+An engine profile's ImpactReport (#109; #75 owns the partial). Context: impact
+(console.engine.models.ImpactReport). Unmet recommendations, warnings, guarantees lost, capabilities
+and quality status after, fingerprints and, for a profile change, the stories it reaches.
+{% endcomment %}{% load console_format %}<section class="impact">
+  <h3>Impact report</h3>
+  <h4>Recommendations unmet</h4>
+  {% if impact.recommendations_unmet %}<ul class="recommendations-unmet">{% for r in impact.recommendations_unmet %}<li><code>{{ r.capability }}</code> — recommended by <code>{{ r.recommended_by }}</code></li>{% endfor %}</ul>{% else %}<p>—</p>{% endif %}
+  <h4>Warnings</h4>
+  {% if impact.warnings %}<ul class="impact-warnings">{% for w in impact.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% else %}<p>—</p>{% endif %}
+  <dl>
+    <dt>Guarantees lost</dt><dd>{% for g in impact.guarantees_lost %}<code>{{ g }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+    <dt>Capabilities after</dt><dd>{% if impact.capabilities_after is not None %}{% for c in impact.capabilities_after %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</dd>
+    <dt>Quality status after</dt><dd>{% if impact.quality_status_after %}{{ impact.quality_status_after.status|humanise }}{% else %}—{% endif %}</dd>
+    <dt>Fingerprint before</dt><dd>{% if impact.fingerprint_before %}<code>{{ impact.fingerprint_before }}</code>{% else %}—{% endif %}</dd>
+    <dt>Fingerprint after</dt><dd>{% if impact.fingerprint_after %}<code>{{ impact.fingerprint_after }}</code>{% else %}—{% endif %}</dd>
+    <dt>Stories affected</dt><dd>{{ impact.affected_count }}</dd>
+  </dl>
+  {% if impact.affected_stories %}
+  <table class="affected-stories">
+    <thead><tr><th>Story</th><th>Gained</th><th>Lost</th><th>Backfill</th><th>Upgrade unavailable</th></tr></thead>
+    <tbody>{% for s in impact.affected_stories %}<tr><td><code>{{ s.story_id }}</code></td><td>{{ s.capabilities_gained|join:", "|default:"—" }}</td><td>{{ s.capabilities_lost|join:", "|default:"—" }}</td><td>{% if s.backfill.needed %}needed{% if s.backfill.estimate %} ({{ s.backfill.estimate.model_calls }} calls, {{ s.backfill.estimate.tokens }} tokens, {{ s.backfill.estimate.duration_s }} s){% endif %}{% else %}—{% endif %}</td><td>{{ s.upgrade_unavailable|yesno:"yes,no" }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+</section>

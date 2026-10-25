@@ -24,6 +24,7 @@ from console.views import (
     status,
     stories,
     story_characters,
+    story_from_scenario,
     story_settings,
     timeline,
 )
@@ -40,6 +41,8 @@ story_patterns = (
     [
         path("", stories.story_list, name="list"),
         path("new/", stories.story_new, name="new"),
+        # #75: start a story from a scenario (step 1, step 2 and their POSTs).
+        path("new/from-scenario/", story_from_scenario.from_scenario, name="from-scenario"),
         path("<str:story_id>/", play.play, name="detail"),
         path("<str:story_id>/turn/", play.turn, name="turn"),
         path("<str:story_id>/ingest/", play.ingest, name="ingest"),
@@ -47,6 +50,11 @@ story_patterns = (
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         path("<str:story_id>/history/", history.history, name="history"),
+        path(
+            "<str:story_id>/creation-report/",
+            story_from_scenario.creation_report,
+            name="creation-report",
+        ),
         # The story's settings page (#54): GET the page, POST its settings form; each other
         # section posts to its own URL.
         path("<str:story_id>/settings/", story_settings.settings_page, name="settings"),

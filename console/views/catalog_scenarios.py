@@ -537,6 +537,10 @@ def _detail_page(
             context["validate"] = ValidateBox(f"Validate v{entry.version}", version=entry.version)
         if version is None:
             context["publish"] = _publish_box(entry, draft_revision, draft_error, differs)
+        if not shown_draft and entry.version is not None:
+            # #75: start a story from the version shown (disabled while archived).
+            query = urlencode({"scenario": scenario_id, "version": entry.version})
+            context["start_url"] = f"{reverse('stories:from-scenario')}?{query}"
         pk = report_pk if report_pk is not None else params.get(REPORT_PARAM)
         row = report_from_publish_row(pk, scenario_id) if pk else None
         if row is not None:

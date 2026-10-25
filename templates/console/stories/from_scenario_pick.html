@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}New story from a scenario — Epistrel Console{% endblock %}
+{% block heading %}New story from a scenario{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:new' %}">Blank story instead</a> · <a href="{% url 'stories:list' %}">All stories</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% else %}
+<form method="get" action="" class="filters">
+  <label>Search <input type="search" name="q" value="{{ q }}"></label>
+  <button type="submit">Apply</button>
+</form>
+<form method="get" action="" class="scenario-pick">
+  <input type="hidden" name="q" value="{{ q }}">
+  <p><label for="id_pick">Published scenario</label>
+    <select name="pick" id="id_pick">
+      {% for value, text in options %}<option value="{{ value }}"{% if value == pick %} selected{% endif %}>{{ text }}</option>{% empty %}<option value="">No published scenarios{% if q %} match{% endif %}</option>{% endfor %}
+    </select>
+    <button type="submit">Choose</button>
+  </p>
+</form>
+{% if next_url %}<p><a class="next-page" href="{{ next_url }}">Next page</a></p>{% endif %}
+{% if pick %}
+<form method="get" action="" class="scenario-version">
+  <input type="hidden" name="scenario" value="{{ pick }}">
+  <p><label for="id_version">Version</label>
+    <select name="version" id="id_version">
+      <option value="">latest</option>
+      {% for v in versions %}<option value="{{ v.version }}">v{{ v.version }} — published {{ v.published_at }}</option>{% endfor %}
+    </select>
+    {% if versions_error %}<small class="lookup-failed">Versions unavailable: {{ versions_error }}</small>{% endif %}
+    <button type="submit">Continue</button>
+  </p>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

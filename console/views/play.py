@@ -39,6 +39,7 @@ from console import cast as cast_helpers
 from console.cast import CastMember, character_of, viewpoint_for
 from console.cast_panel import CastPanel, cast_panel
 from console.confirm import confirm_query, posted_idempotency_key
+from console.creation_report import has_creation_report
 from console.engine.client import (
     DEFAULT_TURN_DEADLINE_S,
     EngineClient,
@@ -651,6 +652,12 @@ class PlayPage:
             "inspector": self.inspector,
             "cards": self.cards,
             "status_note": self.status_note,
+            # #75: a story created from a scenario through this Console has a creation report.
+            "creation_report_url": (
+                reverse("stories:creation-report", args=[self.story.id])
+                if has_creation_report(self.story.id)
+                else ""
+            ),
         }
 
 

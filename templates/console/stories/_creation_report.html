@@ -1,0 +1,39 @@
+{% comment %}
+A story creation's report (#75). Context: shown (console.creation_report.ShownCreation), lite_notice
+(optional: shown when the report has no materialized list), anchor_base (optional). The cast table,
+the counts, the entries through the shared _validation_report.html, deferred items by capability
+needed, inactive settings, and a structured story's materialized items raw under "More".
+{% endcomment %}{% load console_format %}<section class="creation-report">
+  {% if shown.cast %}
+  <h3>Cast</h3>
+  <table class="creation-cast">
+    <thead><tr><th>Name</th><th>Role</th><th>Source</th></tr></thead>
+    <tbody>{% for m in shown.cast %}<tr class="cast-{{ m.kind }}"><td>{{ m.name }}</td><td>{{ m.role_label }}</td><td>{% if m.source_url %}<a href="{{ m.source_url }}"><code>{{ m.source }}</code></a>{% else %}{{ m.source }}{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+  <h3>Counts</h3>
+  <p class="counts">{{ shown.counts_line }}</p>
+  {% for group, by, counts in shown.count_tables %}
+  <table class="count-table">
+    <caption>{{ group }} {{ by }}</caption>
+    <tbody>{% for key, n in counts.items %}<tr><td><code>{{ key }}</code></td><td>{{ n }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endfor %}
+  {% include "console/_validation_report.html" with report=shown.entries label="Creation" anchor_base=anchor_base %}
+  <h3>Deferred (by capability needed)</h3>
+  {% if shown.deferred %}
+  {% for group in shown.deferred %}
+  <h4 class="deferred-capability">Needs <code>{{ group.capability }}</code></h4>
+  <ul class="deferred">{% for item in group.items %}<li><code>{{ item.field_ref }}</code> — {{ item.field_class|humanise }}<br>{% include "console/_location.html" with location=item.location %}<details><summary>Payload</summary><pre>{{ item.payload|pretty_json }}</pre></details></li>{% endfor %}</ul>
+  {% endfor %}
+  {% else %}<p>—</p>{% endif %}
+  <h3>Inactive settings</h3>
+  {% if shown.inactive %}
+  <table class="inactive">
+    <thead><tr><th>Name</th><th>Value</th><th>Capability</th><th>Class</th></tr></thead>
+    <tbody>{% for item in shown.inactive %}<tr><td><code>{{ item.name }}</code></td><td><code>{{ item.value|json_value }}</code></td><td><code>{{ item.capability }}</code></td><td>{{ item.field_class|humanise }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+  {% if shown.lite %}{% if lite_notice %}<p class="lite-notice notice">{{ lite_notice }}</p>{% endif %}
+  {% else %}<details class="more"><summary>More</summary><h4>Materialized</h4><pre>{{ shown.materialized|pretty_json }}</pre></details>{% endif %}
+</section>
