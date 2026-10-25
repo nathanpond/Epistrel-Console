@@ -1,11 +1,13 @@
-{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector. #}
+{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector. After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. #}
 <div id="transcript"{% if oob %} hx-swap-oob="true"{% endif %}>
   <h2>Transcript <small>as {{ transcript.viewpoint_label }}</small></h2>
   {% if transcript.error %}{% include "console/_engine_error.html" with engine_error=transcript.error %}
   {% else %}
   {% if transcript.older_before_turn is not None %}<p><a href="{% url 'stories:history' transcript.story_id %}?before_turn={{ transcript.older_before_turn }}{% if transcript.viewpoint %}&amp;viewpoint={{ transcript.viewpoint|urlencode }}{% endif %}">Older →</a></p>{% endif %}
+  {% if transcript.archived_note %}<p class="warning timeline-archived">{{ transcript.archived_note }}</p>{% endif %}
   {% if transcript.entries %}
   <ol class="transcript">
+    {% if transcript.start %}{% include "console/timeline/_turn_controls.html" with c=transcript.start %}{% endif %}
     {% for entry in transcript.entries %}
     <li class="item channel-{{ entry.item.channel }}" data-operation="{{ entry.item.operation_id }}">
       <a href="{% url 'stories:detail' transcript.story_id %}?operation={{ entry.item.operation_id }}&amp;origin={{ entry.item.origin }}" hx-get="{% url 'stories:inspector' transcript.story_id %}?operation={{ entry.item.operation_id }}&amp;origin={{ entry.item.origin }}" hx-target="#inspector" title="Show this turn's report">T{{ entry.item.turn|default_if_none:"0" }}{% if entry.item.variant and entry.item.variant != 1 %}.{{ entry.item.variant }}{% endif %}</a>
@@ -13,6 +15,7 @@
       {% if entry.speaker %}<strong>{{ entry.speaker }}</strong>:{% endif %} <span class="text">{{ entry.item.text }}</span>
       {% if entry.item.origin == "ingested" %}<small class="source">ingested</small>{% endif %}
     </li>
+    {% if entry.controls %}{% include "console/timeline/_turn_controls.html" with c=entry.controls %}{% endif %}
     {% endfor %}
   </ol>
   {% else %}<p>No turns yet.</p>{% endif %}

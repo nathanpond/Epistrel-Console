@@ -676,6 +676,110 @@ class Variants(Model):
     items: list[VariantChain]
 
 
+# --- Timeline operations (#53) --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RegenerateResult(RespondResponse):
+    """``RegeneratedBody`` (``POST /stories/{id}/regenerate``): the respond body for the new
+    variant of the latest turn, plus ``previous_variant`` (now dormant, swap back to it)."""
+
+    previous_variant: int = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class TruncateResult(Model):
+    """``TruncatedBody`` (``POST /stories/{id}/truncate``): the rewind's operation, the new
+    ``next_turn_index`` and how many operations became ``discarded``."""
+
+    timeline_revision: int
+    operation_id: str
+    next_turn_index: int
+    to_turn: int
+    discarded_operations: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class UntruncateResult(Model):
+    """``UntruncatedBody`` (``POST /stories/{id}/untruncate``): the most recent rewind undone.
+    ``swapped`` means newer turns had been written over it, so the undo was a swap to the old
+    chain (``active_chain``) and the newer turns became dormant."""
+
+    timeline_revision: int
+    operation_id: str
+    next_turn_index: int
+    truncate_operation_id: str
+    restored_operations: int
+    swapped: bool
+    active_chain: ChainRef | None
+    dormant_operations: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class SwapResult(Model):
+    """``SwappedBody`` (``POST /stories/{id}/swap``): the chain now active. Swapping to the
+    active chain writes nothing (``operation_id`` null, revision unchanged)."""
+
+    timeline_revision: int
+    operation_id: str | None
+    next_turn_index: int
+    active_chain: ChainRef
+    activated_operations: int
+    dormant_operations: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ForkCharacter(Model):
+    """``ForkCharacterBody``: a character of the fork and the source character it copies."""
+
+    id: str
+    name: str
+    source_id: str
+
+
+@dataclass(frozen=True)
+class ForkedFrom(Model):
+    """``ForkedFromBody``: the source story, the revision the fork equals, the last turn copied
+    and the chain followed (``None``: the active one)."""
+
+    story_id: str
+    revision: int
+    at_turn: int
+    variant_chain: ChainRef | None
+
+
+@dataclass(frozen=True)
+class ForkResult(Model):
+    """``ForkedBody`` (``POST /stories/{id}/fork``'s 201): the new story."""
+
+    timeline_revision: int
+    story_id: str
+    operation_id: str
+    next_turn_index: int
+    name: str | None
+    forked_from: ForkedFrom
+    characters: list[ForkCharacter]
+    counts: dict[str, int]
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ReactivationCheck(Model):
+    """``RatingCheckStartedBody``: the 202 of untruncate, swap and fork when turns they would
+    make active must be re-checked under the current guardrails first. The story is paused
+    until check ``job_id`` ends (#81 follows it)."""
+
+    timeline_revision: int
+    job_id: str
+    operation_id: str
+    status: str
+    config_revision: int
+    idempotency_key: str | None = None
+
+
 @dataclass(frozen=True)
 class ScenarioOrigin(Model):
     """``ScenarioOriginBody``: the scenario version a story was created from."""

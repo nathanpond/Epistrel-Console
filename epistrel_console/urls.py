@@ -15,6 +15,7 @@ from console.views import (
     ratings,
     status,
     stories,
+    timeline,
 )
 
 operation_patterns = (
@@ -39,6 +40,12 @@ story_patterns = (
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),
+        # Timeline operations (#53): GET renders the confirm page (fork: its form), POST acts.
+        path("<str:story_id>/regenerate/", timeline.regenerate, name="regenerate"),
+        path("<str:story_id>/rewind/<int:turn>/", timeline.rewind, name="rewind"),
+        path("<str:story_id>/undo-rewind/", timeline.undo_rewind, name="undo-rewind"),
+        path("<str:story_id>/swap/", timeline.swap, name="swap"),
+        path("<str:story_id>/fork/<int:turn>/", timeline.fork, name="fork"),
     ],
     "stories",
 )

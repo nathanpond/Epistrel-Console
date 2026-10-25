@@ -83,6 +83,8 @@ from console.ingest import (
 )
 from console.models import EngineOperation
 from console.operation_log import input_violations, turn_report_json
+from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
+from console.timeline import Basis, Link, TurnControls, turn_controls
 from console.turn_reports import ViolationRow, stored_turn_report, violation_rows
 
 TRANSCRIPT_LIMIT = 50
@@ -94,6 +96,7 @@ REPORT_SCAN = 50  # log rows looked at for the first-load inspector
 TERMINAL = frozenset({"committed", "failed", "abandoned"})
 ARCHIVED_NOTE = "Archived — unarchive to play"
 EMPTY = "—"
+REPLY_CHANNEL = "message"  # a character's reply: what regenerate replaces (#53)
 # Errors whose input stays in the form and whose details belong beside a field.
 PLACED_CODES = frozenset(
     {"validation_error", "viewpoint_unresolved", "budget_below_safety_minimum"}
@@ -205,7 +208,8 @@ def _turn_deadline(client: EngineClient, request: HttpRequest, story_id: str) ->
         return None
 
 
-def _read_story(request: HttpRequest, story_id: str) -> tuple[Story, PlayStory]:
+def read_story(request: HttpRequest, story_id: str) -> tuple[Story, PlayStory]:
+    """``GET /stories/{id}`` (and its turn deadline) as the play view carries it."""
     client = engine_client_for(request)
     story = client.get_story(story_id)
     return story, PlayStory.of(story, _turn_deadline(client, request, story_id))
@@ -213,7 +217,7 @@ def _read_story(request: HttpRequest, story_id: str) -> tuple[Story, PlayStory]:
 
 def _snapshot(request: HttpRequest, story_id: str, value: str | None) -> PlayStory:
     found = PlayStory.unsigned(value, story_id)
-    return found if found is not None else _read_story(request, story_id)[1]
+    return found if found is not None else read_story(request, story_id)[1]
 
 
 def _form(play: PlayStory, data: Any = None, *, initial: dict[str, Any] | None = None) -> TurnForm:
@@ -262,6 +266,7 @@ def _form_view(play: PlayStory, form: TurnForm, *, waiting: bool = False) -> For
 class Entry:
     item: HistoryItem
     speaker: str
+    controls: TurnControls | None = None  # on the last item of each turn (#53)
 
 
 @dataclass(frozen=True)
@@ -272,6 +277,8 @@ class Transcript:
     entries: tuple[Entry, ...] = ()
     older_before_turn: int | None = None
     error: ErrorPanel | None = None
+    start: TurnControls | None = None  # turn 0: "Rewind to start", "Fork from here" (#53)
+    archived_note: str = ""
 
 
 def _speaker(item: HistoryItem, labels: dict[str, str]) -> str:
@@ -282,21 +289,72 @@ def _speaker(item: HistoryItem, labels: dict[str, str]) -> str:
     return ""
 
 
+def timeline_basis(play_story: PlayStory, history: History, story: Story | None = None) -> Basis:
+    """What the transcript's timeline links carry (#53): the story read's revision and head
+    when the page made one, else (an HTMX refresh) the history read's, which answers for the
+    same revision and head."""
+    if story is not None:
+        rev, head = story.timeline_revision, story.next_turn_index - 1
+    else:
+        rev, head = history.timeline_revision, history.as_of
+    next_url = reverse("stories:detail", args=[play_story.id])
+    return Basis(play_story.id, rev, head, play_story.name or "", play_story.archived, next_url)
+
+
+def _with_controls(
+    entries: list[Entry], play_story: PlayStory, basis: Basis, story: Story | None
+) -> tuple[Entry, ...]:
+    """The entries, the last item of each turn (1 and up) carrying that turn's controls. Swap
+    links need the story read's chains, so an HTMX refresh shows none."""
+    chains = story.variant_chains if story is not None else []
+    snapshot = play_story.signed()
+    marked = []
+    for index, entry in enumerate(entries):
+        turn = entry.item.turn or 0
+        following = (entries[index + 1].item.turn or 0) if index + 1 < len(entries) else None
+        if turn >= 1 and following != turn:
+            has_reply = any(
+                e.item.turn == turn and e.item.channel == REPLY_CHANNEL for e in entries
+            )
+            controls = turn_controls(
+                basis, turn, chains=chains, has_reply=has_reply, snapshot=snapshot
+            )
+            entry = replace(entry, controls=controls)
+        marked.append(entry)
+    return tuple(marked)
+
+
 def _transcript(
-    request: HttpRequest, story_id: str, viewpoint: str | None, cast: tuple[CastMember, ...]
+    request: HttpRequest,
+    play_story: PlayStory,
+    viewpoint: str | None,
+    *,
+    story: Story | None = None,
 ) -> Transcript:
-    """The last 50 items at ``viewpoint`` (oldest first); a failed read degrades this section."""
+    """The last 50 items at ``viewpoint`` (oldest first) with each turn's timeline controls; a
+    failed read degrades this section."""
+    cast = play_story.cast
     label = cast_helpers.viewpoint_label(viewpoint, cast)
     try:
         history: History = engine_client_for(request).get_history(
-            story_id, viewpoint=viewpoint, limit=TRANSCRIPT_LIMIT
+            play_story.id, viewpoint=viewpoint, limit=TRANSCRIPT_LIMIT
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return Transcript(story_id, viewpoint, label, error=panel_for(exc))
+        return Transcript(play_story.id, viewpoint, label, error=panel_for(exc))
     labels = cast_helpers.character_labels(cast)
-    entries = tuple(Entry(item, _speaker(item, labels)) for item in history.entries)
-    return Transcript(story_id, viewpoint, label, entries, history.next_before_turn)
+    basis = timeline_basis(play_story, history, story)
+    entries = [Entry(item, _speaker(item, labels)) for item in history.entries]
+    chains = story.variant_chains if story is not None else []
+    return Transcript(
+        play_story.id,
+        viewpoint,
+        label,
+        _with_controls(entries, play_story, basis, story),
+        history.next_before_turn,
+        start=turn_controls(basis, 0, chains=chains),
+        archived_note=TIMELINE_ARCHIVED if play_story.archived else "",
+    )
 
 
 # --- Inspector ----------------------------------------------------------------------------------
@@ -430,9 +488,12 @@ def row_inspector(row: EngineOperation) -> Inspector:
     turn = f"Turn {report.turn} (variant {report.variant})" if report and report.turn else "Turn"
     violations = tuple(violation_rows(input_violations(row.response)))
     notice = "Input rejected by a guardrail — no reply was added." if violations else ""
+    previous = row.response.get("previous_variant") if isinstance(row.response, dict) else None
+    regenerated = isinstance(previous, int) and not isinstance(previous, bool)
     return Inspector(
         title=turn if not violations else "Rejected input",
         notice=notice,
+        facts=(("Previous variant", str(previous)),) if regenerated else (),
         report=report,
         input_violations=violations,
         error_line=f"HTTP {row.http_status} {row.error_code}" if row.error_code else "",
@@ -556,9 +617,13 @@ class PlayPage:
     cards: list[WaitingCard] = field(default_factory=list)
     status_note: str = ""
     tab: str = TURN_TAB
+    header: TimelineHeader | None = None
+    fork_banner: ForkBanner | None = None
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "timeline": self.header,
+            "fork_banner": self.fork_banner,
             "tab": self.tab,
             "iv": self.ingest_view,
             "story": self.story,
@@ -574,10 +639,78 @@ class PlayPage:
         }
 
 
+@dataclass(frozen=True)
+class TimelineHeader:
+    """The story header's timeline line (#53): "Undo rewind" while the story reports
+    ``undo_available``, and the dormant chains, linked to the Variants panel."""
+
+    undo: Link | None
+    dormant: int
+    variants_url: str
+    archived_note: str
+
+
+def _timeline_header(story: Story, play_story: PlayStory) -> TimelineHeader:
+    next_url = reverse("stories:detail", args=[story.id])
+    basis = Basis(
+        story.id,
+        story.timeline_revision,
+        story.next_turn_index - 1,
+        story.name or "",
+        play_story.archived,
+        next_url,
+    )
+    return TimelineHeader(
+        undo=basis.undo() if story.undo_available else None,
+        dormant=len(story.dormant_chains),
+        variants_url=reverse("stories:history", args=[story.id]) + "#variants",
+        archived_note=TIMELINE_ARCHIVED if play_story.archived else "",
+    )
+
+
+@dataclass(frozen=True)
+class ForkBanner:
+    """ "Forked from *Name* at turn T" on a new fork's first page view, with the character id
+    mapping (name, source id, new id) when the fork answered one (#53)."""
+
+    source_id: str
+    source_name: str
+    at_turn: int
+    characters: tuple[tuple[str, str, str], ...] = ()
+
+
+FORK_BANNER_KEY = "fork_banner:{}"  # session key the fork view sets (console.views.timeline)
+
+
+def _fork_banner(request: HttpRequest, story_id: str) -> ForkBanner | None:
+    raw = request.session.pop(FORK_BANNER_KEY.format(story_id), None)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        rows = tuple((str(n), str(s), str(i)) for n, s, i in raw.get("characters") or [])
+        return ForkBanner(
+            str(raw["source_id"]), str(raw.get("source_name") or ""), int(raw["at_turn"]), rows
+        )
+    except KeyError, TypeError, ValueError:
+        return None
+
+
+def _turn_inspector(transcript: Transcript, turn: int) -> Inspector | None:
+    """The inspector for turn ``turn`` of the transcript (``?turn=N``): its reply's operation,
+    else any of its items'."""
+    items = [e.item for e in transcript.entries if e.item.turn == turn]
+    replies = [i for i in items if i.channel == REPLY_CHANNEL]
+    chosen = (replies or items)[-1:] if items else []
+    if not chosen:
+        return None
+    return selected_inspector(chosen[0].operation_id, chosen[0].origin)
+
+
 def _page(
     request: HttpRequest,
     story_id: str,
     *,
+    turn: int | None = None,
     form: TurnForm | None = None,
     inspector: Inspector | None = None,
     cards: list[WaitingCard] | None = None,
@@ -586,7 +719,7 @@ def _page(
     tab: str = TURN_TAB,
     ingest_view: IngestView | None = None,
 ) -> HttpResponse:
-    story, play = _read_story(request, story_id)
+    story, play = read_story(request, story_id)
     restored = _restored_cards(play) if cards is None else cards
     if form is None:
         form = _form(play, initial=_initial(play, viewpoint))
@@ -594,16 +727,21 @@ def _page(
         form["output_viewpoint"].value() if form.is_bound else form.initial.get("output_viewpoint")
     )
     chosen = viewpoint or play.resolve(form_viewpoint)
+    shown = _transcript(request, play, chosen, story=story)
+    if inspector is None and turn is not None:
+        inspector = _turn_inspector(shown, turn)
     page = PlayPage(
         story,
         play,
         _form_view(play, form, waiting=bool(restored)),
-        _transcript(request, story_id, chosen, play.cast),
+        shown,
         inspector if inspector is not None else _latest_inspector(story_id),
         ingest_view or _ingest_view(play, ingest_formset(play.cast), str(form_viewpoint or "")),
         restored,
         status_note,
         INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
+        _timeline_header(story, play),
+        _fork_banner(request, story_id),
     )
     return render(request, "console/play/play.html", page.context(request))
 
@@ -611,8 +749,9 @@ def _page(
 @require_safe
 def play(request: HttpRequest, story_id: str) -> HttpResponse:
     """The play view. ``?viewpoint=`` picks the transcript's viewpoint, ``?operation=`` the
-    inspector's turn (the no-JavaScript forms of the HTMX controls), ``?tab=ingest`` the form
-    area's tab. An HTMX request with ``?tab=`` (a tab link) gets the form area alone."""
+    inspector's turn (the no-JavaScript forms of the HTMX controls), ``?turn=N`` the turn whose
+    report the inspector shows (after a regenerate, #53), ``?tab=ingest`` the form area's tab.
+    An HTMX request with ``?tab=`` (a tab link) gets the form area alone."""
     tab = request.GET.get("tab", TURN_TAB)
     if "tab" in request.GET and is_htmx(request):
         return _form_area(request, story_id, tab)
@@ -621,6 +760,7 @@ def play(request: HttpRequest, story_id: str) -> HttpResponse:
     return _page(
         request,
         story_id,
+        turn=_int(request.GET.get("turn")),
         inspector=inspector,
         viewpoint=request.GET.get("viewpoint") or None,
         tab=tab,
@@ -651,7 +791,7 @@ def transcript(request: HttpRequest, story_id: str) -> HttpResponse:
     play_story = _snapshot(request, story_id, request.GET.get(SNAPSHOT_FIELD))
     if viewpoint is None:
         viewpoint = play_story.resolve(request.GET.get("output_viewpoint"))
-    found = _transcript(request, story_id, viewpoint, play_story.cast)
+    found = _transcript(request, play_story, viewpoint)
     return render(request, "console/play/_transcript.html", {"transcript": found})
 
 
@@ -756,9 +896,7 @@ def _turn_answer(
         "fv": _form_view(play_story, form, waiting=bool(cards)),
         "cards": cards or [],
         "status_note": "",
-        "transcript": (
-            _transcript(request, play_story.id, viewpoint, play_story.cast) if viewpoint else None
-        ),
+        "transcript": (_transcript(request, play_story, viewpoint) if viewpoint else None),
     }
     return render(request, "console/play/_turn_response.html", context)
 
@@ -899,9 +1037,7 @@ def _ingest_answer(
         "cards": cards or [],
         "status_note": "",
         "transcript": (
-            _transcript(request, play_story.id, viewpoint, play_story.cast)
-            if viewpoint is not None
-            else None
+            _transcript(request, play_story, viewpoint) if viewpoint is not None else None
         ),
     }
     return render(request, "console/play/_ingest_response.html", context)
@@ -946,7 +1082,7 @@ def _pending_form(
     posted = pending.pop(operation_id, None)
     request.session[PENDING_KEY] = pending
     if posted is None:
-        play_story = _read_story(request, story_id)[1]
+        play_story = read_story(request, story_id)[1]
         return play_story, _form(play_story)
     data = _query_dict(posted)
     play_story = _snapshot(request, story_id, data.get(SNAPSHOT_FIELD))
@@ -1079,8 +1215,6 @@ def _poll_end(
         "note": note,
         "inspector": found,
         "fv": _form_view(play_story, form),
-        "transcript": (
-            _transcript(request, card.story_id, viewpoint, play_story.cast) if committed else None
-        ),
+        "transcript": (_transcript(request, play_story, viewpoint) if committed else None),
     }
     return render(request, "console/play/_poll_response.html", context)

@@ -655,3 +655,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** With story history built, no placeholder routes remain: `console/views/placeholders.py` and `templates/console/placeholder.html` are deleted, and `tests/test_shell.py`'s placeholder test now checks that the history URL resolves to the real view and that no top-level route is a placeholder. Added an `engine_live` + `engine_auth` test (`tests/engine_live/test_history_live.py`) that plays a stub turn and browses it (character, omniscient with audit + summary, as of 0, 422 beyond head).
   **Why:** #43: the owning story replaces its placeholder; dead code would linger otherwise.
   **Issue:** #52
+- **Decision (drift):** No schema re-record for #53. `engine_schema --check` against a fresh Engine `edge` (127.0.0.1:18000, stub adapter, torn down after) reports a match; `regenerate`, `truncate`, `untruncate`, `swap`, `fork` and their bodies are in the recording. The fixtures `regenerate`, `untruncate`, `untruncate_swapped`, `swap`, `swap_active` and `fork` were captured live and re-keyed to the test ids.
+  **Why:** #43's schema convention.
+  **Issue:** #53
+- **Decision (drift):** Regenerate is sent without `Prefer: respond-async` and has no 202 / waiting-card path. A running turn shows #48's busy message ("Story busy — another turn is running"). `test_regenerate_async.py` checks that the schema declares no 202 or `Prefer`, and that a 423 shows the busy message with no waiting card.
+  **Why:** On `edge`, regenerate declares neither a 202 nor a `Prefer` parameter. It is "never queued" (423 `story_busy`), and the fake Engine only serves declared statuses. The planner's 202 → `?waiting=` path and the "Regenerating…" card cannot happen.
+  **Issue:** #53
+- **Decision (drift):** The Engine has no `swap_required` code. Undo after newer turns answers 200 `swapped: true` with `active_chain`, and the flash says "Rewind undone as a swap — new turns had been added since the rewind…". A 409 `nothing_to_undo` whose `details.options` include `swap` shows "Nothing to undo — there is no rewind to reverse. New turns were added since the rewind — swap to the old chain instead." with links to the Variants panel (`history/#variants`) and Fork. Without options it shows the first sentence only.
+  **Why:** `edge` and Engine `core/timeline.py` turn that case into a swap. `nothing_to_undo` is what lists `options: ["swap","fork"]` and `dormant_chains`. The AC's wording and links are kept where they apply.
+  **Issue:** #53
+- **Decision:** Untruncate, swap and fork register their 202 (`RatingCheckStartedBody`) as `ReactivationCheck`. The Console shows only a one-line flash: "Guardrail re-check started — the story is paused while check <job> runs…". It redirects to the source play view. Following the check is #81.
+  **Why:** The contract test needs each declared JSON status mapped to a model. Without that, a 202 would read as `bad_response`.
+  **Issue:** #53
+- **Decision:** All five operations live in `console/views/timeline.py`. The links and wording they share are in `console/timeline.py` (`Basis`, `Link`, `TurnControls`, `turn_controls`, `ARCHIVED_NOTE`, `reload_message`) and the forms in `console/forms/timeline.py` (`TimelineForm`, `SwapForm`, `RegenerateForm`, `ForkForm`, `parse_chain`, `default_fork_name`). Every success redirects to the play view, never to `next`: the AC's PRG target is the play view, and `next` is only the Cancel link.
+  **Why:** `play.py` and `history.py` both build the links, and the view module imports `play.py`'s inspector wording, so the link builder has to sit outside the views to avoid an import cycle.
+  **Issue:** #53
+- **Decision:** Refusals render `timeline/refused.html`. A 409 `revision_conflict` shows only "The story changed since you loaded this page (now revision N) — reload" and a Reload link (N from `details.current_revision`). Everything else uses #48's `error_inspector` (busy, erased subject, guardrail violation, model unavailable, else the error panel) and adds `nothing_to_regenerate` / `nothing_to_undo` text and `unknown_chain` candidate links (swap links on swap, "Fork along" links on fork). Regenerate's 422 `validation_error` / `viewpoint_unresolved` (a stale `turn` included) and fork's `validation_error` re-render their page with the errors placed and the inputs kept.
+  **Why:** The planner's conflict and placement rules, with #48's wording reused instead of duplicated.
+  **Issue:** #53
+- **Decision:** The play transcript's per-turn controls (`<li class="turn-controls" id="turn-N">` after each turn's last item, turn 0 first) carry the story read's revision and head on a full page. On an HTMX refresh (after a turn, ingest, poll or viewpoint change) they carry the history read's `timeline_revision` and `as_of`. Swap links appear only on a full page, because only the story read has the chains. The regenerate link also carries the signed play snapshot, so its confirm page gets the cast without a read; without the snapshot, it reads the story once.
+  **Why:** #48's transcript partial must not read the story (`test_play_page` checks that). The history read answers at the same revision and head. Swap targets need `variant_chains`.
+  **Issue:** #53
+- **Decision:** The swap call waits `turn_timeout(None)` (45 s + 15 s). Swap links do not carry the story's turn deadline.
+  **Why:** #43 counts swap as a turn-producing call, and the confirm GET makes no read to learn the deadline.
+  **Issue:** #53
+- **Decision:** On the history page, each Variants row gets Swap (hidden on active chains, `&check=1` when `requires_check`) and "Fork" at the chain's `tip_turn` with `variant_chain=T:V`. The panel gets `id="variants"`. An archived story disables Swap. Added an `engine_live` + `engine_auth` test (`tests/engine_live/test_timeline_live.py`) that runs the issue's demo: regenerate, rewind, a stale second rewind refused, undo, swap back, and fork with its banner.
+  **Why:** The planner's Variants-panel placement. A fork must lie on its chain, and the tip is on it.
+  **Issue:** #53

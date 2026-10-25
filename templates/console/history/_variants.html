@@ -1,9 +1,10 @@
-{# The story's variant chains (#52): GET /stories/{id}/variants, each with a "view" link. Swapping is #53. #}
+{# The story's variant chains (#52): GET /stories/{id}/variants, each with a "view" link, and Swap (not on the active chain) and Fork (#53). #}
 {% load console_format %}
-<section class="variants">
+<section class="variants" id="variants">
   <h2>Variants</h2>
   {% if variants_error %}{% include "console/_engine_error.html" with engine_error=variants_error %}
   {% elif chains %}
+  {% if archived_note %}<p class="warning timeline-archived">{{ archived_note }}</p>{% endif %}
   <table class="variants">
     <thead><tr><th>Chain</th><th>Membership</th><th>Tip turn</th><th>Turns</th><th>Parent</th><th></th></tr></thead>
     <tbody>
@@ -14,7 +15,9 @@
         <td>{{ row.chain.tip_turn }}</td>
         <td>{{ row.chain.turn_count }}</td>
         <td>{{ row.parent }}</td>
-        <td><a class="view-chain" href="{{ row.view_url }}">view</a></td>
+        <td><a class="view-chain" href="{{ row.view_url }}">view</a>
+          {% if row.swap %}{% if archived_note %}<button type="button" class="swap" disabled title="{{ archived_note }}">Swap</button>{% else %}<a class="button swap" href="{{ row.swap.url }}">Swap</a>{% endif %}{% endif %}
+          {% if row.fork %}<a class="button fork" href="{{ row.fork.url }}">Fork</a>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

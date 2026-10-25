@@ -41,6 +41,7 @@ from console.history import (
     summary_rows,
     turn_groups,
 )
+from console.timeline import ARCHIVED_NOTE, Basis, Link
 
 CONTROLS_TEMPLATE = "console/history/_controls.html"
 PAGE_TEMPLATE = "console/history/history.html"
@@ -65,6 +66,8 @@ class ChainRow:
     key: str
     view_url: str
     parent: str
+    swap: Link | None = None  # every chain but the active one (#53)
+    fork: Link | None = None  # fork along this chain, through its tip (#53)
 
 
 @dataclass(frozen=True)
@@ -140,8 +143,19 @@ def _controls(
     )
 
 
-def _chain_rows(request: HttpRequest, story_id: str, chains: list[VariantChain]) -> list[ChainRow]:
-    """Each chain with its "view" link: ``viewpoint`` and ``limit`` kept, ``variant`` set."""
+def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) -> list[ChainRow]:
+    """Each chain with its "view" link (``viewpoint`` and ``limit`` kept, ``variant`` set) and
+    its Swap (not on the active chain; ``&check=1`` when it ``requires_check``) and Fork links,
+    carrying the story read's revision and head (#53)."""
+    story_id = story.id
+    basis = Basis(
+        story_id,
+        story.timeline_revision,
+        story.next_turn_index - 1,
+        story.name or "",
+        story.status == "archived",
+        request.get_full_path(),
+    )
     rows = []
     for chain in chains:
         key = chain_key(chain)
@@ -151,7 +165,13 @@ def _chain_rows(request: HttpRequest, story_id: str, chains: list[VariantChain])
                 params[name] = request.GET[name]
         params["variant"] = key
         parent = f"{chain.parent.turn}:{chain.parent.variant}" if chain.parent else "—"
-        rows.append(ChainRow(chain, key, _url(story_id, params), parent))
+        swap = (
+            basis.swap(chain.turn, chain.variant, requires_check=chain.requires_check)
+            if chain.membership != "active"
+            else None
+        )
+        fork = basis.fork(chain.tip_turn, chain=(chain.turn, chain.variant))
+        rows.append(ChainRow(chain, key, _url(story_id, params), parent, swap, fork))
     return rows
 
 
@@ -214,7 +234,8 @@ def history(request: HttpRequest, story_id: str) -> HttpResponse:
         "story": story,
         "controls": _controls(story, form, chains),
         "page": page,
-        "chains": _chain_rows(request, story_id, chains),
+        "chains": _chain_rows(request, story, chains),
         "variants_error": variants_error,
+        "archived_note": ARCHIVED_NOTE if story.status == "archived" else "",
     }
     return render(request, PAGE_TEMPLATE, context)

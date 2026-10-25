@@ -1,0 +1,7 @@
+{# One transcript turn's timeline operations (#53). Context: c (console.timeline.TurnControls). Archived: all but Fork disabled. #}
+<li class="turn-controls" id="turn-{{ c.turn }}">
+  {% if c.regenerate %}{% if c.archived %}<button type="button" class="regenerate" disabled title="Archived — unarchive to change the timeline">{{ c.regenerate.label }}</button>{% else %}<a class="button regenerate" href="{{ c.regenerate.url }}">{{ c.regenerate.label }}</a>{% endif %}{% endif %}
+  {% if c.rewind %}{% if c.archived %}<button type="button" class="rewind" disabled title="Archived — unarchive to change the timeline">{{ c.rewind.label }}</button>{% else %}<a class="button rewind" href="{{ c.rewind.url }}">{{ c.rewind.label }}</a>{% endif %}{% endif %}
+  {% for link in c.swaps %}{% if c.archived %}<button type="button" class="swap" disabled title="Archived — unarchive to change the timeline">{{ link.label }}</button>{% else %}<a class="button swap" href="{{ link.url }}">{{ link.label }}</a>{% endif %}{% endfor %}
+  <a class="button fork" href="{{ c.fork.url }}">{{ c.fork.label }}</a>
+</li>

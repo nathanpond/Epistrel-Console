@@ -27,6 +27,7 @@ from console.engine.models import (
     ContentRatingMutation,
     ContentRatingSummary,
     DeploymentSettings,
+    ForkResult,
     HealthResponse,
     HealthResult,
     History,
@@ -43,8 +44,10 @@ from console.engine.models import (
     QueuedTurn,
     RatingVersion,
     RatingVersionList,
+    ReactivationCheck,
     RebuildQueued,
     RebuildResult,
+    RegenerateResult,
     RespondResponse,
     Story,
     StoryCreated,
@@ -52,6 +55,9 @@ from console.engine.models import (
     StorySettings,
     StoryStatusChange,
     StorySummary,
+    SwapResult,
+    TruncateResult,
+    UntruncateResult,
     VariantChain,
     Variants,
 )
@@ -69,6 +75,7 @@ CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/redoc"})
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 PRINCIPAL_HEADER = "X-Epistrel-Principal"
+EXPECTED_REVISION_HEADER = "X-Epistrel-Expected-Revision"
 PRINCIPAL_MAX = 256
 RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
 # The headers ``_request`` sets itself; a caller's ``headers=`` never replaces them.
@@ -716,6 +723,162 @@ class EngineClient:
         if response.status_code == 202:
             return _parse(response, QueuedTurn)
         return _parse(response, IngestResponse)
+
+    # --- Timeline operations (#53) ------------------------------------------------------------
+    # Each sends the revision the operator was looking at as ``X-Epistrel-Expected-Revision``
+    # (when given): a stale one is 409 ``revision_conflict`` with nothing written.
+
+    def _timeline(
+        self,
+        story_id: str,
+        action: str,
+        *,
+        body: Mapping[str, Any] | None,
+        expected_revision: int | None,
+        idempotency_key: str,
+        timeout: float,
+    ) -> EngineResponse:
+        headers = {"Idempotency-Key": idempotency_key}
+        if expected_revision is not None:
+            headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
+        return self._request(
+            "POST",
+            f"{_story_path(story_id)}/{action}",
+            json=dict(body) if body is not None else None,
+            headers=headers,
+            timeout=timeout,
+        )
+
+    @operation("POST", "/stories/{story_id}/regenerate", response_model=RegenerateResult)
+    def regenerate(
+        self,
+        story_id: str,
+        body: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
+    ) -> RegenerateResult:
+        """``POST /stories/{id}/regenerate``: answer the latest turn anew as its next variant
+        (the old one becomes dormant). ``body`` is a ``RegenerateRequest`` (``turn``, and
+        ``prompt_params`` / ``render_character_ids`` / ``output_viewpoint`` overrides; omitted
+        ones reuse the recorded values). The Engine never queues it (423 ``story_busy``), so
+        there is no ``Prefer``. ``timeout``: :func:`turn_timeout`."""
+        response = self._timeline(
+            story_id,
+            "regenerate",
+            body=body,
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+            timeout=timeout,
+        )
+        return _parse(response, RegenerateResult)
+
+    @operation("POST", "/stories/{story_id}/truncate", response_model=TruncateResult)
+    def truncate(
+        self, story_id: str, to_turn: int, *, expected_revision: int | None, idempotency_key: str
+    ) -> TruncateResult:
+        """``POST /stories/{id}/truncate``: rewind to ``to_turn`` (0 to the head - 1); every
+        later operation becomes ``discarded`` (``untruncate`` restores them)."""
+        response = self._timeline(
+            story_id,
+            "truncate",
+            body={"to_turn": to_turn},
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, TruncateResult)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/untruncate",
+        response_model=UntruncateResult,
+        status_models={202: ReactivationCheck},
+    )
+    def untruncate(
+        self, story_id: str, *, expected_revision: int | None, idempotency_key: str
+    ) -> UntruncateResult | ReactivationCheck:
+        """``POST /stories/{id}/untruncate`` with no body: undo the most recent rewind. 409
+        ``nothing_to_undo`` when there is none; :class:`ReactivationCheck` (202) when the turns
+        it restores must be re-checked first."""
+        response = self._timeline(
+            story_id,
+            "untruncate",
+            body=None,
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 202:
+            return _parse(response, ReactivationCheck)
+        return _parse(response, UntruncateResult)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/swap",
+        response_model=SwapResult,
+        status_models={202: ReactivationCheck},
+    )
+    def swap(
+        self,
+        story_id: str,
+        turn: int,
+        variant: int,
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
+    ) -> SwapResult | ReactivationCheck:
+        """``POST /stories/{id}/swap``: make chain ``turn:variant`` (``to_variant_chain``) the
+        active timeline. 409 ``unknown_chain`` lists ``candidates``; :class:`ReactivationCheck`
+        (202) when its turns must be re-checked first. ``timeout``: :func:`turn_timeout`."""
+        response = self._timeline(
+            story_id,
+            "swap",
+            body={"to_variant_chain": {"turn": turn, "variant": variant}},
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+            timeout=timeout,
+        )
+        if response.status_code == 202:
+            return _parse(response, ReactivationCheck)
+        return _parse(response, SwapResult)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/fork",
+        response_model=ForkResult,
+        status_models={202: ReactivationCheck},
+    )
+    def fork(
+        self,
+        story_id: str,
+        *,
+        at_turn: int,
+        name: str,
+        variant_chain: tuple[int, int] | None = None,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ForkResult | ReactivationCheck:
+        """``POST /stories/{id}/fork``: copy the story through ``at_turn`` into a new one named
+        ``name`` (201), along ``variant_chain`` (``(turn, variant)``; default the active chain). An
+        archived story can be forked. :class:`ReactivationCheck` (202) when a dormant chain's
+        turns must be re-checked first. Waits 30 s (#43's fork timeout)."""
+        body: dict[str, Any] = {"at_turn": at_turn, "name": name}
+        if variant_chain is not None:
+            body["variant_chain"] = {"turn": variant_chain[0], "variant": variant_chain[1]}
+        response = self._timeline(
+            story_id,
+            "fork",
+            body=body,
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+            timeout=LONG_MUTATION_TIMEOUT_S,
+        )
+        if response.status_code == 202:
+            return _parse(response, ReactivationCheck)
+        return _parse(response, ForkResult)
 
     @operation("GET", "/stories/{story_id}/history", response_model=History)
     def get_history(
