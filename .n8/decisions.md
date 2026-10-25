@@ -816,3 +816,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The detail page shows Publish only on full views of the latest version or the draft, never on the card view. On the latest view it reuses the draft read that "draft differs" already makes, then makes one companion read. The catalog test fixture answers the companion read by default.
   **Why:** The plan names the latest and draft views. The card view has no draft read. #65's detail tests would otherwise fail on the new read.
   **Issue:** #66
+- **Decision:** The persona edit snapshot is signed with a one-hour max age (`twostage.MAX_AGE_S`). A tampered or expired snapshot re-reads the persona, keeps the posted input and shows "This form expired — your changes were not saved; check and submit again". It never PATCHes.
+  **Why:** The plan names "tampered or expired". #43's snapshots have no max age, so the one-hour limit M3 already uses for signed confirmations gives "expired" a meaning.
+  **Issue:** #67
+- **Decision:** The delete confirm page posts the list to return to in a hidden `back` field. Cancel (the shared partial's `next`) goes to the detail page. The list links each detail page with `?back=<list URL>`, and the detail page passes it on to Delete as `next`. Every return URL is checked as same-origin, else `/personas/`.
+  **Why:** The plan sends Cancel to the detail page but the delete to the list it came from. The shared confirm partial carries only one `next`.
+  **Issue:** #67
+- **Decision:** A 422 on persona create or edit is placed at its fields (`apply_engine_errors`). The error panel shows only when no field could be placed. Other errors, including a 503 `erasure_pending`, show #43's panel. Detail, edit-read and delete errors escape to the shared panel.
+  **Why:** The plan names placement for `persona_name_taken` only. This matches #66's handling of field errors.
+  **Issue:** #67

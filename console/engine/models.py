@@ -1618,3 +1618,38 @@ class CompanionDraft(Model):
     current_version: int | None
     companion_of: str | None
     draft_revision: int | None = None
+
+
+# --- personas (#67) -------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Persona(Model):
+    """``Persona``: a principal's saved player identity (not a catalog entry). A story keeps a
+    snapshot of the persona it was created with, so later edits never reach a story."""
+
+    id: str
+    owner_principal: str
+    name: str
+    gender: str | None
+    age: int
+    description: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class PersonaWritten(Persona):
+    """``PersonaBody``: the persona after a create or an edit, with the deployment's
+    ``config_revision`` (unchanged) and the call's ``idempotency_key``."""
+
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class PersonaPage(Model):
+    """``PersonaListBody``: one page of personas, newest first; ``next_cursor`` reads the next."""
+
+    items: list[Persona]
+    next_cursor: str | None

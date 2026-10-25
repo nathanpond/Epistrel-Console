@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{{ persona.name }} — Personas — Epistrel Console{% endblock %}
+{% block heading %}{{ persona.name }}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ back_url }}">Back to list</a></p>
+<p class="note keep-copy">{{ keep_copy }}</p>
+<dl class="persona">
+  <dt>Id</dt><dd><code>{{ persona.id }}</code></dd>
+  <dt>Owner</dt><dd>{{ persona.owner_principal|principal_link }}</dd>
+  <dt>Name</dt><dd>{{ persona.name }}</dd>
+  <dt>Gender</dt><dd>{{ persona.gender|default_if_none:"—" }}</dd>
+  <dt>Age</dt><dd>{{ persona.age }}</dd>
+  <dt>Description</dt><dd><pre class="description" style="white-space: pre-wrap">{{ persona.description }}</pre></dd>
+  <dt>Created</dt><dd>{{ persona.created_at|engine_time }}</dd>
+  <dt>Updated</dt><dd>{{ persona.updated_at|engine_time }}</dd>
+</dl>
+<p><a class="button edit" href="{{ edit_url }}">Edit</a> <a class="button danger delete" href="{{ delete_url }}">Delete</a></p>
+{% endblock %}

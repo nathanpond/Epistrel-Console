@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Personas — Epistrel Console{% endblock %}
+{% block heading %}Personas{% endblock %}
+{% block content %}
+<p><a class="new" href="{{ new_url }}">New persona</a></p>
+<form method="get" action="{% url 'personas:index' %}" class="filters">
+  {{ form.non_field_errors }}
+  <p>
+    <label>{{ form.owner.label }} {{ form.owner }}</label>
+    {{ form.owner.errors }}
+  </p>
+  <p>
+    <label>{{ form.relation.label }} {{ form.relation }}</label>
+    <label>{{ form.relation_principal.label }} {{ form.relation_principal }}</label>
+    {{ form.relation.errors }}{{ form.relation_principal.errors }}
+  </p>
+  <button type="submit">Apply</button>
+  <a href="{% url 'personas:index' %}">Clear</a>
+</form>
+
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% elif not form.errors %}
+{% if rows %}
+<table class="personas">
+  <thead>
+    <tr><th>Name</th><th>Gender</th><th>Age</th><th>Owner</th><th>Created</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="persona-{{ row.persona.id }}">
+      <td><a href="{{ row.url }}">{{ row.persona.name }}</a></td>
+      <td>{{ row.persona.gender|default_if_none:"—" }}</td>
+      <td>{{ row.persona.age }}</td>
+      <td>{{ row.persona.owner_principal|principal_link }} <small><a class="owner-filter" href="{{ row.owner_filter }}">filter</a></small></td>
+      <td>{{ row.persona.created_at|engine_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{% if any_filter %}No personas match these filters.{% else %}No personas.{% endif %}</p>
+{% endif %}
+<p class="paging">
+  {% if paged %}<a href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

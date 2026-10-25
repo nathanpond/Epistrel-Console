@@ -48,6 +48,9 @@ from console.engine.models import (
     ModelConfigItem,
     ModelConfigMutation,
     OperationRecord,
+    Persona,
+    PersonaPage,
+    PersonaWritten,
     PinnedMemories,
     PinnedMemoriesWritten,
     Policy,
@@ -1369,6 +1372,98 @@ class EngineClient:
         path = f"{_character_path(character_id)}/companion"
         return _parse(self._request("GET", path, params=params), CompanionDraft)
 
+    # --- personas (#67) -------------------------------------------------------------------------
+
+    @operation("GET", "/personas", response_model=PersonaPage)
+    def list_personas(
+        self,
+        *,
+        owner: str | None = None,
+        relation: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[Persona], str | None]:
+        """``GET /personas``: one page of personas, newest first, and the next page's cursor
+        (``None`` on the last). ``owner`` narrows to that principal's; ``relation`` is
+        ``name:principal`` or ``name:``. A blank filter is not sent."""
+        params: list[tuple[str, str]] = [("limit", str(limit or CATALOG_PAGE))]
+        for name, value in (("owner", owner), ("relation", relation), ("cursor", cursor)):
+            if value:
+                params.append((name, value))
+        page = _parse(self._request("GET", "/personas", params=params), PersonaPage)
+        return page.items, page.next_cursor
+
+    @operation("GET", "/personas/{persona_id}", response_model=Persona)
+    def get_persona(self, persona_id: str) -> Persona:
+        """``GET /personas/{id}``: the persona, its owner and when it was created and changed."""
+        return _parse(self._request("GET", _persona_path(persona_id)), Persona)
+
+    @operation(
+        "POST",
+        "/personas",
+        response_model=PersonaWritten,
+        entity="persona",
+        entity_id="response:id",
+    )
+    def create_persona(
+        self,
+        *,
+        name: str,
+        age: int,
+        description: str,
+        owner: str,
+        gender: str | None = None,
+        idempotency_key: str,
+    ) -> PersonaWritten:
+        """``POST /personas``: a persona owned by ``owner`` (always sent, #64 convention 7);
+        ``gender`` only when given. A name the owner already uses (ignoring case) is 409
+        ``persona_name_taken``."""
+        body: dict[str, Any] = {"name": name, "age": age, "description": description}
+        if gender is not None:
+            body["gender"] = gender
+        body["owner"] = owner
+        response = self._request(
+            "POST",
+            "/personas",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PersonaWritten)
+
+    @operation(
+        "PATCH",
+        "/personas/{persona_id}",
+        response_model=PersonaWritten,
+        entity="persona",
+        entity_id="persona_id",
+    )
+    def patch_persona(
+        self, persona_id: str, changes: Mapping[str, object], *, idempotency_key: str
+    ) -> PersonaWritten:
+        """``PATCH /personas/{id}``: a JSON merge patch of the changed fields (last write wins);
+        ``None`` is sent as ``null``, which only ``gender`` accepts (it removes it)."""
+        response = self._request(
+            "PATCH",
+            _persona_path(persona_id),
+            json=dict(changes),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PersonaWritten)
+
+    @operation("DELETE", "/personas/{persona_id}", entity="persona", entity_id="persona_id")
+    def delete_persona(self, persona_id: str, *, idempotency_key: str) -> None:
+        """``DELETE /personas/{id}``: the persona and its relations (204; a retry under the same
+        key is a 204 too, ``Idempotent-Replay: true``). Stories keep their snapshot."""
+        response = self._request(
+            "DELETE",
+            _persona_path(persona_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
     # --- media content (#65's proxy) -------------------------------------------------------------
 
     @operation("GET", "/media/{media_id}/content")
@@ -1429,6 +1524,11 @@ def _character_read_params(
 def _character_path(character_id: str) -> str:
     """``/catalog/characters/<id>``, the id percent-encoded."""
     return f"/catalog/characters/{quote(character_id, safe='')}"
+
+
+def _persona_path(persona_id: str) -> str:
+    """``/personas/<id>``, the id percent-encoded."""
+    return f"/personas/{quote(persona_id, safe='')}"
 
 
 def turn_timeout(deadline_s: float | None) -> float:

@@ -13,6 +13,7 @@ from console.views import (
     media_proxy,
     models,
     operations,
+    personas,
     play,
     policies,
     ratings,
@@ -136,6 +137,17 @@ catalog_character_patterns = (
     "catalog_characters",
 )
 
+persona_patterns = (
+    [
+        path("", personas.persona_list, name="index"),
+        path("new/", personas.persona_new, name="new"),
+        path("<str:persona_id>/", personas.persona_detail, name="detail"),
+        path("<str:persona_id>/edit/", personas.persona_edit, name="edit"),
+        path("<str:persona_id>/delete/", personas.persona_delete, name="delete"),
+    ],
+    "personas",
+)
+
 # The media section (#70 adds its pages); #65 builds the proxy every M3 page shows media with.
 media_patterns = (
     [
@@ -161,6 +173,7 @@ urlpatterns = [
     path("guardrails/ratings/", include(rating_patterns)),
     path("engine/", include(engine_patterns)),
     path("catalog/characters/", include(catalog_character_patterns)),
+    path("personas/", include(persona_patterns)),
     path("media/", include(media_patterns)),
     path("admin/", admin.site.urls),
 ]

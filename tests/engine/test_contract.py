@@ -68,6 +68,9 @@ from console.engine.models import (
     OmniscientStoryCharacter,
     OperationRecord,
     OperationStage,
+    Persona,
+    PersonaPage,
+    PersonaWritten,
     PinnedItem,
     PinnedMemories,
     PinnedMemoriesWritten,
@@ -301,6 +304,9 @@ def test_the_widening_only_adds_media_id() -> None:
         (CatalogCharacterDraft, "CharacterDraftBody"),
         (CharacterPublished, "CharacterPublishedBody"),
         (CompanionPublished, "CompanionPublishedBody"),
+        (Persona, "Persona"),
+        (PersonaWritten, "PersonaBody"),
+        (PersonaPage, "PersonaListBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

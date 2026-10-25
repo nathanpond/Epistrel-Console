@@ -652,10 +652,11 @@ def test_fan_out_reports_a_timeout_and_errors() -> None:
 def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) -> None:
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
-    for label in ("Scenarios", "Personas", "Principals", "Erasure", "Profiles"):
+    for label in ("Scenarios", "Principals", "Erasure", "Profiles"):
         assert label not in nav
-    # #65 built the character list: the Catalog group shows with it alone.
+    # #65 built the character list and #67 the personas: the Catalog group shows with them.
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
+    assert '<a href="/personas/">Personas</a>' in nav
     assert nav.index(">Engine<") < nav.index(">Operations<") < nav.index(">Admin<")
 
 
@@ -667,12 +668,12 @@ def test_m3_sections_show_in_order_once_their_urls_exist(operator_client: Client
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
-    assert "Personas" not in nav  # not built yet
     order = [
         ">Engine<",
         "Catalog:",
         ">Characters<",
         ">Scenarios<",
+        ">Personas<",
         ">Principals<",
         ">Erasure<",
         ">Operations<",
@@ -699,6 +700,11 @@ def test_catalog_is_active_under_its_prefixes(rf: RequestFactory) -> None:
                     "label": "Scenarios",
                     "url": "/catalog/scenarios/",
                     "active": path.startswith("/catalog/scenarios/"),
+                },
+                {
+                    "label": "Personas",
+                    "url": "/personas/",
+                    "active": path.startswith("/personas/"),
                 },
             ],
             "active": active,
