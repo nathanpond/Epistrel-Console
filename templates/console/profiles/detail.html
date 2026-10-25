@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{{ profile.name }} — Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}{{ profile.name }}{% endblock %}
+{% block content %}
+<p><a class="back" href="{% url 'profiles:index' %}">All profiles</a></p>
+{% if profile.deleted_at %}<p class="banner banner-warning deleted-banner" role="status">This profile was deleted {{ profile.deleted_at|engine_time }}. It still serves the stories that use it.</p>{% endif %}
+{% for warning in warnings %}<p class="warning">{{ warning }}</p>{% endfor %}
+<dl class="profile">
+  <dt>Id</dt><dd><code>{{ profile.id }}</code></dd>
+  <dt>Version</dt><dd class="version">Version {{ profile.version }} of {{ profile.current_version }}{% if not is_latest %} — <a class="latest" href="{{ latest_url }}">latest</a>{% endif %} · <a class="versions" href="{{ versions_url }}">Versions</a></dd>
+  <dt>Owner</dt><dd>{{ profile.owner_principal|principal_link }}</dd>
+  <dt>Badges</dt><dd>{% if profile.preset %}<span class="badge preset">preset</span> {% endif %}{% if is_default %}<span class="badge default-marker">Deployment default</span>{% endif %}{% if not profile.preset and not is_default %}—{% endif %}</dd>
+  <dt>Created</dt><dd>{{ profile.created_at|engine_time }}</dd>
+  <dt>Updated</dt><dd>{{ profile.updated_at|engine_time }}</dd>
+</dl>
+<p><a class="stories-using" href="{{ stories_url }}">Stories using this profile</a></p>
+{% include "console/profiles/_ownership.html" %}
+<h2>Settings</h2>
+{% include "console/profiles/_settings.html" %}
+{% endblock %}

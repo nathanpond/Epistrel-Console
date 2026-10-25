@@ -2053,10 +2053,15 @@ class ScenarioPublished(Model):
 
 
 @dataclass(frozen=True)
-class EngineProfileSummary(Model):
-    """The part of ``EngineProfile`` a select needs (``GET /engine-profiles``): id, name, owner,
-    whether it is a preset, its version and whether it is deleted. The profile pages' full model
-    is #78's; the contract test compares each field with ``EngineProfile``."""
+class EngineProfile(Model):
+    """``EngineProfile`` (#78): a profile at one version. ``version`` is the one read (the
+    latest unless the read named another), ``current_version`` the latest. ``settings`` is what
+    that version sets, raw (the profile schema, :class:`ProfileSchema`, describes it; a setting
+    left out takes the default). A deleted profile still reads, with its ``deleted_at``.
+
+    ``settings`` is compared with an object schema of any keys: the recorded schema spells out
+    the modules delivered when it was recorded, and the Console shows whatever this deployment
+    delivers (the contract test widens it)."""
 
     id: str
     name: str
@@ -2064,13 +2069,58 @@ class EngineProfileSummary(Model):
     preset: bool
     version: int
     current_version: int
+    settings: dict[str, Any]
+    created_at: str
+    updated_at: str
     deleted_at: str | None
 
 
 @dataclass(frozen=True)
-class EngineProfileSummaryPage(Model):
-    items: list[EngineProfileSummary]
+class EngineProfilePage(Model):
+    """``ProfileListBody``: a page of profiles at their latest version, newest first."""
+
+    items: list[EngineProfile]
     next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class ProfileVersion(Model):
+    """``ProfileVersion``: one version of a profile, when it was made and by whom."""
+
+    version: int
+    created_at: str
+    created_by: str
+
+
+@dataclass(frozen=True)
+class ProfileVersionList(Model):
+    """``ProfileVersionsBody``: every version of a profile, oldest first."""
+
+    items: list[ProfileVersion]
+
+
+@dataclass(frozen=True)
+class SettingTags(Model):
+    """``SettingTagsBody``: one setting's three tags: ``behavioral``/``data_producing``,
+    ``interpretive``/``prospective`` and quality ``relevant``/``irrelevant``. Plain strings, so a
+    tag the Console does not know renders raw."""
+
+    tag: str = field(metadata={OPEN_ENUM: True})
+    class_: str = field(metadata={JSON_NAME: "class", OPEN_ENUM: True})
+    quality: str = field(metadata={OPEN_ENUM: True})
+
+
+@dataclass(frozen=True)
+class ProfileSchema(Model):
+    """``ProfileSchemaBody`` (#78): what a profile may set on this deployment. ``schema`` is the
+    JSON Schema of the delivered modules (raw: the Console walks it, ``console.profile_schema``),
+    ``tags`` each delivered setting's tags by dotted path, ``delivered`` each delivered module
+    with its levels, and ``purposes`` the model purposes ``models.purposes`` may route."""
+
+    schema: dict[str, Any]
+    tags: dict[str, SettingTags]
+    delivered: dict[str, list[str]]
+    purposes: list[str]
 
 
 # --- catalog lifecycle and listing status (#69) ---------------------------------------------------

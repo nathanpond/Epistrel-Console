@@ -981,3 +981,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** In report lines, an object entry's `id` links by its own `entity_type` when it has one (relations entries carry it). Otherwise it links by the section's type key. `relations` name lists show as text. `remaining` renders the Engine's `{owned, owned_counts, related, related_counts}` as "Still owned" / "Still related" per type, with ids linked. The job page answers 404 with the "expired" text when the Engine has no such job. A `<ulid:…>` path converter (`console.ids.UlidConverter`) makes any other id a Django 404 with zero calls.
   **Why:** The Engine's actual report shapes (src/epistrel/core/offboarding.py, principals.Remaining) are more specific than the plan's generic wording.
   **Issue:** #77
+- **Decision:** The profile list's URL name is `profiles:index`, not the plan's `profiles:list` (`profiles:detail` and `profiles:versions` as planned).
+  **Why:** #64 convention 20 makes each root's landing page `<ns>:index`, and the nav (`console/context_processors.py`) already shows "Profiles" once `profiles:index` resolves. #64's conventions take precedence over a story's lines.
+  **Issue:** #78
+- **Decision (drift):** `EngineProfile` replaces #68's `EngineProfileSummary` (the select and #75's creation report use it unchanged). `settings` stays `dict[str, Any]`, and the contract test widens `EngineProfile.settings` to any object, the way it already widens `EntryLocation.media_id`. All four profile reads are registered with response models.
+  **Why:** The recorded schema types `settings` as the modules delivered when it was recorded (`additionalProperties: false`). The Console must show whatever this deployment's `/engine-profiles/schema` describes, so it can't hold the stricter shape.
+  **Issue:** #78
+- **Decision:** `tests/fixtures/profile_schema.json` comes from the Engine source (`epistrel.core.profiles.store.profile_schema` with the Engine's own `Purposes`, Engine @ b4adb1a), serialised through `ProfileSchemaBody`, not from a running deployment. It includes the modules the Engine delivers past M3 (`character_knowledge`, `perception`, `multi_character`).
+  **Why:** No live Engine was available. The function is exactly what the endpoint returns.
+  **Issue:** #78
+- **Decision:** On the list, a deleted deployment default is detected by one extra `GET /engine-profiles/{default}`. This happens only when "Show deleted" is off and the default isn't among the listed rows. A failed read adds no note. "Start over" shows under the error panel only when a cursor was sent.
+  **Why:** With deleted profiles hidden, the list itself can't say whether the default is deleted.
+  **Issue:** #78
+- **Decision:** A map entry and every setting under it take the map path's tags (e.g. `models.purposes.<purpose>.model` shows `models.purposes`' tags). An object node whose value is `null` (a nullable object such as `params`) renders as one leaf showing `null`, without descending.
+  **Why:** The Engine tags only the map path. Descending into a `null` object would show children that this version explicitly cleared as "not set".
+  **Issue:** #78
+- **Decision:** `/stories/?profile=` reuses the per-story reads for the cast column, so it makes no second sequential read. Its "couldn't be checked" note is singular for one story. The unfiltered list is unchanged.
+  **Why:** Reading every story once on the pool is what the filter needs anyway.
+  **Issue:** #78

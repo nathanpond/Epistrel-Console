@@ -289,10 +289,9 @@ def test_links_per_type(operator_client: Client, engine: FakeEngine) -> None:
     }
     for anchor, link in owned.items():
         assert link in section(html, anchor), anchor
-    # Engine profiles have no Console page yet: the name and the id, unlinked.
+    # #78 built the profile pages: engine profiles link like every other type.
     profiles = section(html, "owned-engine_profiles")
-    assert f"Fast local <code>{ulid('PROF01')}</code>" in profiles
-    assert "<a " not in profiles.split("</thead>")[1]
+    assert f'<a href="/profiles/{ulid("PROF01")}/">Fast local</a>' in profiles
     related = {
         "related-stories": f'<a href="/stories/{ulid("STRY05")}/"><code>{ulid("STRY05")}</code>',
         "related-scenarios": (

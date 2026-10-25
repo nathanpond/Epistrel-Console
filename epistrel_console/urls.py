@@ -23,6 +23,7 @@ from console.views import (
     play,
     policies,
     principals,
+    profiles,
     ratings,
     status,
     stories,
@@ -237,6 +238,17 @@ media_patterns = (
     "media",
 )
 
+# Engine profiles (#78): the list, a profile at its latest or any version, and its versions. Ids
+# are plain strings (a preset's need not be a ULID), quoted into Engine paths by the client.
+profile_patterns = (
+    [
+        path("", profiles.profile_list, name="index"),
+        path("<str:profile_id>/", profiles.profile_detail, name="detail"),
+        path("<str:profile_id>/versions/", profiles.profile_versions, name="versions"),
+    ],
+    "profiles",
+)
+
 principal_patterns = (
     [
         path("", principals.principal_index, name="index"),
@@ -279,6 +291,7 @@ urlpatterns = [
     path("catalog/scenarios/", include(scenario_patterns)),
     path("personas/", include(persona_patterns)),
     path("media/", include(media_patterns)),
+    path("profiles/", include(profile_patterns)),
     path("principals/", include(principal_patterns)),
     path("offboarding/", include(offboarding_patterns)),
     path("admin/", admin.site.urls),

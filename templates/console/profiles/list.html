@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}Engine profiles{% endblock %}
+{% block content %}
+<form method="get" action="{% url 'profiles:index' %}" class="filters">
+  {{ form.non_field_errors }}
+  <p>
+    <label>{{ form.owner.label }} {{ form.owner }}</label>
+    {{ form.owner.errors }}
+  </p>
+  <p>
+    <label>{{ form.relation.label }} {{ form.relation }}</label>
+    <label>{{ form.relation_principal.label }} {{ form.relation_principal }}</label>
+    {{ form.relation.errors }}{{ form.relation_principal.errors }}
+  </p>
+  <p><label><input type="checkbox" name="deleted" value="1"{% if show_deleted %} checked{% endif %}> {{ form.deleted.label }}</label></p>
+  <button type="submit">Apply</button>
+  <a href="{% url 'profiles:index' %}">Clear</a>
+</form>
+
+{% if default_warning %}<p class="warning default-unread">{{ default_warning }}</p>{% endif %}
+{% if deleted_default %}<p class="warning deleted-default">The deployment default <code>{{ deleted_default }}</code> is deleted</p>{% endif %}
+
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% if paged %}<p><a class="start-over" href="?{{ first_query }}">Start over</a></p>{% endif %}
+{% elif not form.errors %}
+{% if rows %}
+<table class="profiles">
+  <thead>
+    <tr><th>Name</th><th>Id</th><th>Current version</th><th>Preset</th><th>Default</th><th>Owner</th><th>Deleted</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="profile-{{ row.profile.id }}"{% if row.profile.deleted_at %} class="deleted muted"{% endif %}>
+      <td><a href="{{ row.url }}">{{ row.profile.name }}</a></td>
+      <td><code>{{ row.profile.id }}</code></td>
+      <td>{{ row.profile.current_version }}</td>
+      <td>{% if row.profile.preset %}<span class="badge preset">preset</span>{% else %}—{% endif %}</td>
+      <td>{% if row.is_default %}<span class="badge default-marker">default</span>{% else %}—{% endif %}</td>
+      <td>{{ row.profile.owner_principal|principal_link }}</td>
+      <td>{{ row.profile.deleted_at|engine_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{% if any_filter %}No profiles match these filters.{% else %}No profiles{% endif %}</p>
+{% if not show_deleted %}<p class="empty-deleted muted">Deleted profiles are hidden — <a href="?{{ first_query }}{% if first_query %}&amp;{% endif %}deleted=1">Show deleted</a></p>{% endif %}
+{% endif %}
+<p class="paging">
+  {% if paged %}<a href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

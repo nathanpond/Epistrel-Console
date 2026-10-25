@@ -39,8 +39,8 @@ from console.engine.models import (
     CustomInstructions,
     CustomInstructionsWritten,
     DeploymentSettings,
-    EngineProfileSummary,
-    EngineProfileSummaryPage,
+    EngineProfile,
+    EngineProfilePage,
     ForkResult,
     HealthResponse,
     HealthResult,
@@ -70,6 +70,9 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PrincipalLinks,
+    ProfileSchema,
+    ProfileVersion,
+    ProfileVersionList,
     Promotion,
     QueuedTurn,
     RatingVersion,
@@ -2083,34 +2086,53 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
 
-    # --- engine profiles (a select's options; #78 builds the profile pages) ---------------------
+    # --- engine profiles (#68's select; #78's pages) ---------------------------------------------
 
-    @operation("GET", "/engine-profiles")
+    @operation("GET", "/engine-profiles", response_model=EngineProfilePage)
     def list_engine_profiles(
         self,
         *,
+        owner: str | None = None,
+        relation: Sequence[str] = (),
         include_deleted: bool = False,
         cursor: str | None = None,
-        limit: int = ENGINE_PROFILES_PAGE,
-    ) -> tuple[list[EngineProfileSummary], str | None]:
+        limit: int = CATALOG_PAGE,
+    ) -> tuple[list[EngineProfile], str | None]:
         """``GET /engine-profiles``: one page of profiles (newest first) and the next cursor.
-        Registered without a response model: :class:`EngineProfileSummary` reads a few fields of
-        ``EngineProfile`` (the contract test compares each)."""
+        ``owner`` narrows to that principal's; each ``relation`` is ``name:principal`` or
+        ``name:``. A blank filter is not sent."""
         params: list[tuple[str, str]] = [("limit", str(limit))]
+        if owner:
+            params.append(("owner", owner))
+        params.extend(("relation", value) for value in relation if value)
         if include_deleted:
             params.append(("include_deleted", "true"))
         if cursor:
             params.append(("cursor", cursor))
         response = self._request("GET", "/engine-profiles", params=params)
-        page = _parse(response, EngineProfileSummaryPage)
+        page = _parse(response, EngineProfilePage)
         return page.items, page.next_cursor
 
-    @operation("GET", "/engine-profiles/{profile_id}")
-    def get_engine_profile(self, profile_id: str) -> EngineProfileSummary:
-        """``GET /engine-profiles/{id}`` (#75: a creation report names the story's profile).
-        Registered without a response model, as :meth:`list_engine_profiles` is."""
-        path = f"/engine-profiles/{quote(profile_id, safe='')}"
-        return _parse(self._request("GET", path), EngineProfileSummary)
+    @operation("GET", "/engine-profiles/schema", response_model=ProfileSchema)
+    def get_engine_profile_schema(self) -> ProfileSchema:
+        """``GET /engine-profiles/schema``: the delivered settings schema, each setting's tags,
+        the delivered modules and the routable model purposes (#78; pages read it through
+        ``console.profile_schema.get_profile_schema_cached``)."""
+        return _parse(self._request("GET", "/engine-profiles/schema"), ProfileSchema)
+
+    @operation("GET", "/engine-profiles/{profile_id}", response_model=EngineProfile)
+    def get_engine_profile(self, profile_id: str, version: int | None = None) -> EngineProfile:
+        """``GET /engine-profiles/{id}``: the profile at its latest version, or at ``version``
+        (404 when that version does not exist)."""
+        params = {"version": str(version)} if version is not None else None
+        return _parse(self._request("GET", _profile_path(profile_id), params=params), EngineProfile)
+
+    @operation("GET", "/engine-profiles/{profile_id}/versions", response_model=ProfileVersionList)
+    def list_engine_profile_versions(self, profile_id: str) -> list[ProfileVersion]:
+        """``GET /engine-profiles/{id}/versions``: every version, in the Engine's order (oldest
+        first)."""
+        path = f"{_profile_path(profile_id)}/versions"
+        return _parse(self._request("GET", path), ProfileVersionList).items
 
     # --- media (#70) ----------------------------------------------------------------------------
 
@@ -2258,6 +2280,11 @@ def _scenario_path(scenario_id: str) -> str:
 def _persona_path(persona_id: str) -> str:
     """``/personas/<id>``, the id percent-encoded."""
     return f"/personas/{quote(persona_id, safe='')}"
+
+
+def _profile_path(profile_id: str) -> str:
+    """``/engine-profiles/<id>``, the id percent-encoded."""
+    return f"/engine-profiles/{quote(profile_id, safe='')}"
 
 
 def _media_path(media_id: str) -> str:

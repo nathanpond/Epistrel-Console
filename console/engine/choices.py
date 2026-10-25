@@ -17,8 +17,14 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from console.engine.client import EngineClient, EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import ContentRatingSummary, EngineProfileSummary, MediaAsset
+from console.engine.client import (
+    ENGINE_PROFILES_PAGE,
+    EngineClient,
+    EngineClientError,
+    EngineError,
+    EngineUnreachable,
+)
+from console.engine.models import ContentRatingSummary, EngineProfile, MediaAsset
 from console.engine.pool import fan_out
 from console.entities import label
 
@@ -118,11 +124,13 @@ def engine_profile_choices(client: EngineClient, *, current: str | None = None) 
     (missing)". Reads ``GET /engine-profiles`` (deleted included, so a deleted ``current``
     keeps its name) page by page, stopping after :data:`PROFILES_MAX` profiles (``too_many``).
     Never raises."""
-    found: list[EngineProfileSummary] = []
+    found: list[EngineProfile] = []
     cursor: str | None = None
     try:
         while True:
-            items, cursor = client.list_engine_profiles(include_deleted=True, cursor=cursor)
+            items, cursor = client.list_engine_profiles(
+                include_deleted=True, cursor=cursor, limit=ENGINE_PROFILES_PAGE
+            )
             found.extend(items)
             if len(found) > PROFILES_MAX:
                 return ProfileChoices([], too_many=True)

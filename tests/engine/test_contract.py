@@ -63,7 +63,8 @@ from console.engine.models import (
     EffectiveBudget,
     EffectiveGuardrail,
     EffectivePolicy,
-    EngineProfileSummary,
+    EngineProfile,
+    EngineProfilePage,
     Entity,
     ForkCharacter,
     ForkedFrom,
@@ -116,6 +117,9 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PolicyTarget,
+    ProfileSchema,
+    ProfileVersion,
+    ProfileVersionList,
     ProfileVersionRef,
     Promotion,
     QualityStatus,
@@ -153,6 +157,7 @@ from console.engine.models import (
     ScenarioStatus,
     ScenarioVideo,
     Seed,
+    SettingTags,
     StartingState,
     StoredResult,
     Story,
@@ -194,10 +199,16 @@ DOC = recorded_schema()
 HEALTH_REF = {"$ref": "#/components/schemas/HealthResponse"}
 
 
+# #78: ``EngineProfile.settings`` is raw JSON the profile schema describes (whatever modules
+# this deployment delivers), not the modules the recorded schema spells out.
+SETTINGS_ANY = {"type": "object", "additionalProperties": True}
+
+
 def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     """``doc`` with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s ``media_id``:
     the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
-    publish's answer, #66) is compared against this."""
+    publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
+    any object (#78)."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -205,6 +216,7 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     schemas["EntryLocation"]["properties"]["media_id"] = schemas["ElementLocation"]["properties"][
         "media_id"
     ]
+    schemas["EngineProfile"]["properties"]["settings"] = SETTINGS_ANY
     return widened
 
 
@@ -446,6 +458,13 @@ def test_the_widening_only_adds_media_id() -> None:
         (CurrentEntity, "CurrentEntity"),
         (OffboardingError, "OffboardingError"),
         (OffboardingJob, "OffboardingView"),
+        # #78: engine profiles.
+        (EngineProfile, "EngineProfile"),
+        (EngineProfilePage, "ProfileListBody"),
+        (ProfileVersion, "ProfileVersion"),
+        (ProfileVersionList, "ProfileVersionsBody"),
+        (SettingTags, "SettingTagsBody"),
+        (ProfileSchema, "ProfileSchemaBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -474,22 +493,19 @@ def test_companion_draft_reads_fields_of_scenario_full() -> None:
     assert op.response_model is None
 
 
-def test_engine_profile_summary_reads_fields_of_engine_profile() -> None:
-    """#68: ``EngineProfileSummary`` reads a few ``EngineProfile`` fields (#78 owns the whole
-    model): each is a property of the same type, required here only when required there."""
-    node = DOC["components"]["schemas"]["EngineProfile"]
-    hints = typing.get_type_hints(EngineProfileSummary)
-    problems = []
-    for f in fields(EngineProfileSummary):
-        if f.name not in node["properties"]:
-            problems.append(f"{f.name}: not an EngineProfile property")
-            continue
-        problems.extend(compare_type(DOC, hints[f.name], node["properties"][f.name], f.name))
-        has_default = f.default is not MISSING or f.default_factory is not MISSING
-        if not has_default and f.name not in node["required"]:
-            problems.append(f"{f.name}: required here but optional in EngineProfile")
-    assert problems == []
-    assert OPERATIONS["GET /engine-profiles"].response_model is None
+def test_engine_profile_settings_is_the_only_widening_of_engine_profile() -> None:
+    """#78: the widened ``EngineProfile`` differs from the recorded one by ``settings`` alone,
+    which the recorded schema types as an object (of the modules it knew)."""
+    recorded = DOC["components"]["schemas"]["EngineProfile"]
+    widened = WIDENED["components"]["schemas"]["EngineProfile"]
+    assert {k: v for k, v in recorded.items() if k != "properties"} == {
+        k: v for k, v in widened.items() if k != "properties"
+    }
+    differs = [
+        k for k in recorded["properties"] if recorded["properties"][k] != widened["properties"][k]
+    ]
+    assert differs == ["settings"]
+    assert recorded["properties"]["settings"]["type"] == "object"
 
 
 def test_a_scenario_card_read_matches_the_card_component() -> None:

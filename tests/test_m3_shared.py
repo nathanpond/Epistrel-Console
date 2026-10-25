@@ -196,7 +196,9 @@ def test_an_unknown_type_renders_as_code() -> None:
     assert entity_link(None, "<b>") == "<code>&lt;b&gt;</code>"
 
 
+@override_settings(ROOT_URLCONF="tests.urls_bare")
 def test_a_type_without_its_page_yet_renders_as_code() -> None:
+    # Every registered type has its page since #78; an empty URLconf stands in for "not yet".
     assert entity_link("engine_profile", CHAR) == f"<code>{CHAR}</code>"
 
 
@@ -654,10 +656,10 @@ def test_fan_out_reports_a_timeout_and_errors() -> None:
 def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) -> None:
     html = operator_client.get("/operations/").content.decode()
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
-    for label in ("Erasure", "Profiles"):
-        assert label not in nav
-    # #76 built the principal pages.
+    assert "Erasure" not in nav
+    # #76 built the principal pages, #78 the profile pages.
     assert '<a href="/principals/">Principals</a>' in nav
+    assert '<a href="/profiles/">Profiles</a>' in nav
     # #65 built the character list, #67 the personas, #68 the scenarios and #70 the media
     # library: the Catalog group shows with them.
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
