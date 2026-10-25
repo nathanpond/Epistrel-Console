@@ -12,6 +12,9 @@
 - ``/catalog/characters/<id>/versions/``: the versions, newest first, and the card for the name.
 
 Images go through the media proxy (``/media/<id>/content/``, :mod:`console.views.media_proxy`).
+#71: the detail page shows each attached image by slot (looked up per asset, so an id that no
+longer reads says so); the editor carries the Images and Reference images sections
+(:mod:`console.forms.media_picker`), each sent whole when it changed.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -20,6 +23,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core import signing
+from django.forms.utils import ErrorDict
 from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -44,9 +48,33 @@ from console.engine_access import RecordingEngineClient, engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.entities import label
 from console.forms.catalog import CatalogFilterForm
-from console.forms.catalog_character import OWNER, CharacterForm, draft_to_write, flatten
+from console.forms.catalog_character import (
+    CLEAR_IDENTITY,
+    OWNER,
+    CharacterForm,
+    draft_to_write,
+    flatten,
+)
+from console.forms.media_picker import (
+    CHARACTER_SECTIONS,
+    REFERENCES,
+    MediaSections,
+    character_media,
+    media_ids,
+    media_op,
+)
 from console.forms.principal import remember_principals
 from console.ids import new_ulid
+from console.media_slots import (
+    LARGE,
+    SMALL,
+    ShownMedia,
+    SlotInfo,
+    info_for,
+    infos_from_snapshot,
+    infos_to_snapshot,
+    slot_infos,
+)
 from console.reports import LabelledReport, publish_reports
 from console.views.catalog_lifecycle import CHARACTER as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import lifecycle_for
@@ -178,51 +206,50 @@ def _query(params: QueryDict, **changes: str | None) -> str:
     return f"?{query.urlencode()}"
 
 
-@dataclass(frozen=True)
-class Shown:
-    """One image as the page shows it: the full detail when the read had it (``detail``),
-    else only the card's id and alt text."""
-
-    slot: str
-    media_id: str
-    alt_text: str | None
-    detail: CharacterImage | None = None
-    audience: str | None = None
-
-    @property
-    def is_video(self) -> bool:
-        mime = self.detail.mime_type if self.detail is not None else None
-        return bool(mime and mime.startswith("video/"))
-
-    @property
-    def restricted(self) -> bool:
-        return self.audience == "restricted"
+def _shown(
+    slot: str,
+    image: CharacterImage | CardImage,
+    infos: dict[str, SlotInfo],
+    size: str,
+    audience: str | None = None,
+) -> ShownMedia:
+    detail = image if isinstance(image, CharacterImage) else None
+    return ShownMedia(slot, info_for(infos, image.media_id), size, image.alt_text, detail, audience)
 
 
-def _images(entry: CatalogCharacter | CatalogCharacterCard) -> list[Shown]:
-    """The primary image and the gallery, in order (a card's have no detail)."""
-    primary: list[CharacterImage | CardImage] = (
-        [entry.images.primary] if entry.images.primary is not None else []
-    )
-    gallery: list[CharacterImage | CardImage] = list(entry.images.gallery)
-    slots = [("primary", image) for image in primary]
-    slots += [(f"gallery {n}", image) for n, image in enumerate(gallery, start=1)]
-    return [
-        Shown(slot, image.media_id, image.alt_text, image)
-        if isinstance(image, CharacterImage)
-        else Shown(slot, image.media_id, image.alt_text)
-        for slot, image in slots
+def _images(
+    entry: CatalogCharacter | CatalogCharacterCard, infos: dict[str, SlotInfo]
+) -> list[ShownMedia]:
+    """The primary image (up to 320 px) and the gallery (120 px), in order; a card's have only
+    the id and alt text (#71)."""
+    images = entry.images
+    gallery: list[CharacterImage | CardImage] = list(images.gallery)
+    shown = [_shown("Primary", images.primary, infos, LARGE)] if images.primary else []
+    shown += [
+        _shown(f"Gallery {n}", image, infos, SMALL) for n, image in enumerate(gallery, start=1)
     ]
+    return shown
 
 
-def _reference_images(entry: CatalogCharacter) -> list[Shown]:
+def _reference_images(entry: CatalogCharacter, infos: dict[str, SlotInfo]) -> list[ShownMedia]:
+    """Each reference image, labelled "Reference — <audience>"."""
     identity = entry.visual_identity
     if identity is None:
         return []
     return [
-        Shown(f"reference {n}", r.media_id, r.alt_text, r, r.audience)
-        for n, r in enumerate(identity.reference_images, start=1)
+        _shown(f"Reference — {r.audience or 'no audience'}", r, infos, SMALL, r.audience)
+        for r in identity.reference_images
     ]
+
+
+def _attached_ids(entry: CatalogCharacter | CatalogCharacterCard) -> list[str]:
+    images = entry.images
+    ids = [images.primary.media_id] if images.primary else []
+    ids += [image.media_id for image in images.gallery]
+    identity = getattr(entry, "visual_identity", None)
+    if identity is not None:
+        ids += [r.media_id for r in identity.reference_images]
+    return ids
 
 
 def _dispositions(entry: CatalogCharacter) -> list[tuple[str, Disposition | None]]:
@@ -369,6 +396,7 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
         if r.has_findings
     ]
     context["edit_url"] = reverse("catalog_characters:edit", args=[character_id])
+    infos = slot_infos(client, _attached_ids(entry))
     context.update(
         {
             "entry": entry,
@@ -380,12 +408,12 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
                 entry, never_published=never_published, draft=draft, version=version, card=card
             ),
             "differs": differs,
-            "images": _images(entry),
+            "images": _images(entry, infos),
         }
     )
     context["is_archived"] = entry.status == ARCHIVED
     if isinstance(entry, CatalogCharacter):
-        context["references"] = _reference_images(entry)
+        context["references"] = _reference_images(entry, infos)
         context["dispositions"] = _dispositions(entry)
         context["lifecycle"] = lifecycle_for(
             request,
@@ -480,6 +508,9 @@ class EditSnapshot:
     ratings: list[tuple[str, str]] = field(default_factory=list)
     ratings_error: str = ""
     companion_id: str | None = None  # #69: the archived banner's unarchive link names it
+    # #71: the media sections as rendered (ids only) and each slot's looked-up metadata.
+    media_original: dict[str, Any] = field(default_factory=dict)
+    media: dict[str, Any] = field(default_factory=dict)
 
     def signed(self) -> str:
         return signing.dumps(asdict(self), salt=SNAPSHOT_SALT, compress=True)
@@ -536,9 +567,12 @@ def _ratings_snapshot(ratings: RatingChoices) -> dict[str, Any]:
 
 
 def _read_snapshot(request: HttpRequest, client: EngineClient, character_id: str) -> EditSnapshot:
-    """Read the draft (its errors escape), the companion draft and the ratings."""
+    """Read the draft (its errors escape), the companion draft, the ratings and each attached
+    asset (#71)."""
     draft = client.get_catalog_character(character_id, draft=True)
     original = draft_to_write(draft)
+    media_original = character_media(draft)
+    infos = slot_infos(client, media_ids(media_original))
     companion_revision, companion_error = _companion_revision(request, client, character_id)
     rating = original["metadata"]["content_rating_id"]
     return EditSnapshot(
@@ -552,6 +586,8 @@ def _read_snapshot(request: HttpRequest, client: EngineClient, character_id: str
         companion_revision=companion_revision,
         companion_error=companion_error,
         companion_id=draft.companion_id,
+        media_original=media_original,
+        media=infos_to_snapshot(infos),
         **_ratings_snapshot(rating_choices(client, current=rating)),
     )
 
@@ -576,10 +612,45 @@ def _form(snap: EditSnapshot, *, create: bool, **kwargs: Any) -> CharacterForm:
     return form
 
 
+def _sections(snap: EditSnapshot, data: QueryDict | None = None) -> MediaSections:
+    """The Images and Reference images sections (#71), bound to ``data`` (``None``: the draft's,
+    shown without validating)."""
+    sections = MediaSections(
+        data if data is not None else QueryDict(),
+        CHARACTER_SECTIONS,
+        original=snap.media_original,
+        infos=infos_from_snapshot(snap.media),
+        disabled=snap.archived,
+    )
+    if data is None:
+        sections.quiet()
+    return sections
+
+
+def _quiet(form: CharacterForm) -> CharacterForm:
+    """Show a bound form's state without validating it (a media row button)."""
+    quieted: Any = form
+    quieted._errors = ErrorDict()
+    return form
+
+
+def _rerender(
+    request: HttpRequest, snap: EditSnapshot, data: QueryDict, *, create: bool
+) -> HttpResponse:
+    """A media row button (``console.forms.media_picker.media_op``): the posted state, edited,
+    shown without validating; no Engine call."""
+    form = _quiet(_form(snap, create=create, data=data))
+    sections = _sections(snap, data)
+    sections.quiet()
+    with_companion = data.get(WITH_COMPANION) == "on"
+    return _render_edit(request, snap, form, sections, create=create, with_companion=with_companion)
+
+
 def _render_edit(
     request: HttpRequest,
     snap: EditSnapshot,
     form: CharacterForm,
+    sections: MediaSections | None = None,
     *,
     create: bool = False,
     with_companion: bool = False,
@@ -589,10 +660,14 @@ def _render_edit(
     status: int = 200,
 ) -> HttpResponse:
     character_id = snap.character_id
+    if sections is None:
+        sections = _sections(snap)
     context: dict[str, Any] = {
         "create": create,
         "snap": snap,
         "form": form,
+        "media_sections": sections,
+        "media": sections.by_path(),
         "character_id": character_id,
         "name": label(snap.name, character_id) if not create else "",
         "snapshot": snap.signed(),
@@ -602,7 +677,7 @@ def _render_edit(
         "stale": stale,
         "engine_error": engine_error,
         "reports": reports or [],
-        "anchors": form.anchors(),
+        "anchors": [*form.anchors(), *sections.anchors()],
         "rating_note": snap.ratings_error,
         "archived_note": ARCHIVED_NOTE if snap.archived else "",
     }
@@ -641,24 +716,32 @@ def _create(request: HttpRequest) -> HttpResponse:
     snap = EditSnapshot.unsigned(request.POST.get(SNAPSHOT_FIELD), "")
     if snap is None:  # not from the page: read the ratings again
         snap = EditSnapshot(**_ratings_snapshot(rating_choices(engine_client_for(request))))
+    edited = media_op(request.POST, CHARACTER_SECTIONS)
+    if edited is not None:
+        return _rerender(request, snap, edited, create=True)
     form = _form(snap, create=True, data=request.POST)
-    if not form.is_valid():
-        return _render_edit(request, snap, form, create=True)
+    sections = _sections(snap, request.POST)
+    if not all([form.is_valid(), sections.is_valid()]):
+        return _render_edit(request, snap, form, sections, create=True)
+    changed = sections.changed()
+    if not sections.require_audiences(changed):
+        return _render_edit(request, snap, form, sections, create=True)
     remember_principals(form)
     client = engine_client_for(request)
+    body = sections.patch(form.create_body(), sections.create_parts(changed))
     try:
         created = client.create_catalog_character(
-            form.create_body(), idempotency_key=posted_idempotency_key(request)
+            body, idempotency_key=posted_idempotency_key(request)
         )
     except EngineError as exc:
         log_engine_error(request, exc)
         if exc.http_status in (413, 422):
-            form.place_error(exc)
-            return _render_edit(request, snap, form, create=True)
-        return _render_edit(request, snap, form, create=True, engine_error=panel_for(exc))
+            form.place_error(exc, extra=sections.place_error(exc))
+            return _render_edit(request, snap, form, sections, create=True)
+        return _render_edit(request, snap, form, sections, create=True, engine_error=panel_for(exc))
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return _render_edit(request, snap, form, create=True, engine_error=panel_for(exc))
+        return _render_edit(request, snap, form, sections, create=True, engine_error=panel_for(exc))
     messages.success(
         request,
         f"Created {label(created.name, created.id)} — draft revision {created.draft_revision}.",
@@ -681,12 +764,14 @@ def character_edit(request: HttpRequest, character_id: str) -> HttpResponse:
         context = {"character_id": character_id, "engine_error": panel_for(exc), "create": False}
         return render(request, EDIT_TEMPLATE, context)
     form = _form(snap, create=False, initial=flatten(snap.original))
+    sections = _sections(snap)
     reports = publish_reports(request.GET.get(REPORT_PARAM), entity_id=character_id)
     for found in reports:
         if found.entity == CHARACTER:
             form.place_report(found.report)
+            sections.place_report(found.report)
     ticked = request.GET.get(COMPANION_PARAM) == "1"
-    return _render_edit(request, snap, form, with_companion=ticked, reports=reports)
+    return _render_edit(request, snap, form, sections, with_companion=ticked, reports=reports)
 
 
 def _posted_int(request: HttpRequest, name: str) -> int | None:
@@ -722,17 +807,30 @@ def _edit_post(request: HttpRequest, character_id: str) -> HttpResponse:
     if snap.archived:
         messages.error(request, ARCHIVED_NOTE)
         return redirect(_edit_url(character_id))
+    edited = media_op(request.POST, CHARACTER_SECTIONS)
+    if edited is not None:
+        return _rerender(request, snap, edited, create=False)
     action = request.POST.get("action", ACTION_SAVE)
     with_companion = action == ACTION_PUBLISH and request.POST.get(WITH_COMPANION) == "on"
     form = _form(snap, create=False, data=request.POST)
-    if not form.is_valid():
-        return _render_edit(request, snap, form, with_companion=with_companion)
+    sections = _sections(snap, request.POST)
+
+    def again(**kwargs: Any) -> HttpResponse:
+        return _render_edit(request, snap, form, sections, with_companion=with_companion, **kwargs)
+
+    if not all([form.is_valid(), sections.is_valid()]):
+        return again()
     draft_revision = _posted_int(request, DRAFT_REVISION) or snap.draft_revision
     companion_revision = _posted_int(request, COMPANION_REVISION) or snap.companion_revision
     if draft_revision is None or (with_companion and companion_revision is None):
         form.add_error(None, NO_REVISION if draft_revision is None else NO_COMPANION_REVISION)
-        return _render_edit(request, snap, form, with_companion=with_companion)
-    patch = form.edit_patch(snap.original)
+        return again()
+    # #71: each changed media section is sent whole; "Clear visual identity" wins.
+    cleared = bool(form.cleaned_data.get(CLEAR_IDENTITY))
+    changed = sections.changed(skip=[REFERENCES] if cleared else [])
+    if not sections.require_audiences(changed):
+        return again()
+    patch = sections.patch(form.edit_patch(snap.original), changed)
     if not patch and action != ACTION_PUBLISH:
         messages.info(request, NO_CHANGES)
         return redirect(_edit_url(character_id))
@@ -749,19 +847,14 @@ def _edit_post(request: HttpRequest, character_id: str) -> HttpResponse:
         except EngineError as exc:
             log_engine_error(request, exc)
             if exc.code == DRAFT_STALE:
-                stale = stale_banner(exc, draft_revision=draft_revision)
-                return _render_edit(request, snap, form, with_companion=with_companion, stale=stale)
+                return again(stale=stale_banner(exc, draft_revision=draft_revision))
             if exc.http_status in (413, 422) and exc.code != "entry_archived":
-                form.place_error(exc)
-                return _render_edit(request, snap, form, with_companion=with_companion)
-            return _render_edit(
-                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
-            )
+                form.place_error(exc, extra=sections.place_error(exc))
+                return again()
+            return again(engine_error=panel_for(exc))
         except EngineClientError as exc:
             log_engine_error(request, exc)
-            return _render_edit(
-                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
-            )
+            return again(engine_error=panel_for(exc))
         saved = result.draft_revision
         if action != ACTION_PUBLISH:
             messages.success(request, f"Saved — draft revision {saved}.")
@@ -800,22 +893,18 @@ def _edit_post(request: HttpRequest, character_id: str) -> HttpResponse:
                 companion_draft_revision=companion_revision if with_companion else None,
             )
             if saved is None:
-                return _render_edit(request, snap, form, with_companion=with_companion, stale=stale)
+                return again(stale=stale)
             messages.warning(request, stale)
             params = {COMPANION_PARAM: "1"} if with_companion else {}
             return redirect(_edit_url(character_id, **params))
         if saved is None:
-            return _render_edit(
-                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
-            )
+            return again(engine_error=panel_for(exc))
         messages.error(request, f"Engine error {exc.http_status} {exc.code}: {exc.message}")
         return redirect(_edit_url(character_id))
     except EngineClientError as exc:
         log_engine_error(request, exc)
         if saved is None:
-            return _render_edit(
-                request, snap, form, with_companion=with_companion, engine_error=panel_for(exc)
-            )
+            return again(engine_error=panel_for(exc))
         messages.warning(request, f"{not_published} {error_text(exc)}")
         return redirect(_edit_url(character_id))
     return _published_redirect(request, client, character_id, published, with_companion)

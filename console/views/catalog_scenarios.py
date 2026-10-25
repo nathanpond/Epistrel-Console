@@ -12,6 +12,8 @@
   The page carries a signed snapshot (the draft as rendered, its revision, the role ids and the
   two lookups' options), so a refused form, a row button and "Update form" make no Engine call.
   Save PATCHes the changed groups with ``draft_revision``; create POSTs the non-empty groups.
+  #71: the Media section (cover, gallery, videos; :mod:`console.forms.media_picker`) is sent
+  whole when it changed, and the detail page shows the media by slot through the proxy.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -43,6 +45,13 @@ from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.entities import label
 from console.forms.catalog import ScenarioFilterForm
+from console.forms.media_picker import (
+    SCENARIO_SECTIONS,
+    MediaSections,
+    media_ids,
+    media_op,
+    scenario_media,
+)
 from console.forms.principal import remember_principals
 from console.forms.scenario import (
     OWNER,
@@ -54,6 +63,16 @@ from console.forms.scenario import (
 )
 from console.formset_rows import OP, OP_REFRESH, parse_op
 from console.ids import new_ulid
+from console.media_slots import (
+    LARGE,
+    SMALL,
+    ShownMedia,
+    SlotInfo,
+    info_for,
+    infos_from_snapshot,
+    infos_to_snapshot,
+    slot_infos,
+)
 from console.views.catalog_lifecycle import SCENARIO as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import Follows, follows_label, lifecycle_for
 
@@ -301,6 +320,47 @@ def _profile_url(profile_id: str) -> str:
         return ""
 
 
+def _media_ids(entry: Scenario | ScenarioCard) -> list[str]:
+    if isinstance(entry, ScenarioCard):
+        card = entry.media
+        ids = [card.cover.media_id] if card.cover else []
+        return [*ids, *(m.media_id for m in (*card.gallery, *card.videos))]
+    return media_ids(scenario_media(entry))
+
+
+def shown_media(entry: Scenario | ScenarioCard, infos: dict[str, SlotInfo]) -> list[ShownMedia]:
+    """The cover (up to 320 px), the gallery (120 px) and the videos (caption below: the
+    scenario's, else the asset's), by slot (#71). The card read carries alt text and captions;
+    the full read only ids, so the looked-up asset's alt text is used."""
+    shown: list[ShownMedia] = []
+    if isinstance(entry, ScenarioCard):
+        card = entry.media
+        if card.cover is not None:
+            shown.append(
+                ShownMedia(
+                    "Cover", info_for(infos, card.cover.media_id), LARGE, card.cover.alt_text
+                )
+            )
+        for n, item in enumerate(card.gallery, start=1):
+            info = info_for(infos, item.media_id)
+            shown.append(ShownMedia(f"Gallery {n}", info, SMALL, item.alt_text))
+        for n, item in enumerate(card.videos, start=1):
+            info = info_for(infos, item.media_id)
+            shown.append(ShownMedia(f"Video {n}", info, LARGE, item.alt_text, caption=item.caption))
+        return shown
+    media = entry.public_card.media
+    if media.cover:
+        info = info_for(infos, media.cover)
+        shown.append(ShownMedia("Cover", info, LARGE, info.alt_text))
+    for n, media_id in enumerate(media.gallery, start=1):
+        info = info_for(infos, media_id)
+        shown.append(ShownMedia(f"Gallery {n}", info, SMALL, info.alt_text))
+    for n, video in enumerate(media.videos, start=1):
+        info = info_for(infos, video.media_id)
+        shown.append(ShownMedia(f"Video {n}", info, LARGE, info.alt_text, caption=video.caption))
+    return shown
+
+
 @require_safe
 def scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
     client = engine_client_for(request)
@@ -358,9 +418,8 @@ def scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
             listing_status=entry.listing_status,
             follows=follows,
         )
-    if isinstance(entry, ScenarioCard):
-        context["card_media"] = asdict(entry.media)
-    else:
+    context["media"] = shown_media(entry, slot_infos(client, _media_ids(entry)))
+    if not isinstance(entry, ScenarioCard):
         context["rating"] = _rating_name(client, entry.metadata.content_rating_id)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
@@ -451,6 +510,9 @@ class EditSnapshot:
     ratings_error: str = ""
     profiles: list[tuple[str, str]] = field(default_factory=list)
     profiles_note: str = ""
+    # #71: the Media section as rendered (ids only) and each slot's looked-up metadata.
+    media_original: dict[str, Any] = field(default_factory=dict)
+    media: dict[str, Any] = field(default_factory=dict)
 
     def signed(self) -> str:
         return signing.dumps(asdict(self), salt=SNAPSHOT_SALT, compress=True)
@@ -506,9 +568,10 @@ def _role_ids(cast: object) -> list[str]:
 
 
 def _read_snapshot(client: EngineClient, scenario_id: str) -> EditSnapshot:
-    """Read the draft (its errors escape) and the two lookups."""
+    """Read the draft (its errors escape), the two lookups and each attached asset (#71)."""
     draft = client.get_scenario(scenario_id, draft=True)
     original = draft_to_write(draft)
+    media_original = scenario_media(draft)
     return EditSnapshot(
         scenario_id=scenario_id,
         draft_revision=draft.draft_revision,
@@ -519,6 +582,8 @@ def _read_snapshot(client: EngineClient, scenario_id: str) -> EditSnapshot:
         current_version=draft.current_version,
         companion_of=draft.companion_of,
         roles=_role_ids(draft.cast),
+        media_original=media_original,
+        media=infos_to_snapshot(slot_infos(client, media_ids(media_original))),
         **_lookups(
             client,
             rating=original["metadata"]["content_rating_id"],
@@ -542,17 +607,37 @@ def _editor(snap: EditSnapshot, data: QueryDict, *, create: bool) -> ScenarioEdi
     )
 
 
+def _sections(snap: EditSnapshot, data: QueryDict | None = None) -> MediaSections:
+    """The Media section (#71), bound to ``data`` (``None``: the draft's, shown without
+    validating)."""
+    sections = MediaSections(
+        data if data is not None else QueryDict(),
+        SCENARIO_SECTIONS,
+        original=snap.media_original,
+        infos=infos_from_snapshot(snap.media),
+        disabled=snap.archived,
+    )
+    if data is None:
+        sections.quiet()
+    return sections
+
+
 def _render_edit(
     request: HttpRequest,
     snap: EditSnapshot,
     editor: ScenarioEditor,
+    sections: MediaSections | None = None,
     *,
     create: bool = False,
     stale: str = "",
     engine_error: ErrorPanel | None = None,
 ) -> HttpResponse:
     scenario_id = snap.scenario_id
+    if sections is None:
+        sections = _sections(snap)
     context: dict[str, Any] = {
+        "media_sections": sections,
+        "media": sections.by_path(),
         "create": create,
         "snap": snap,
         "editor": editor,
@@ -588,15 +673,24 @@ def _render_edit(
     return render(request, EDIT_TEMPLATE, context)
 
 
-def _rerender(request: HttpRequest, snap: EditSnapshot, *, create: bool) -> HttpResponse:
-    """A row button or "Update form": the posted state, edited, shown without validating; no
-    Engine call."""
-    op = parse_op(request.POST.get(OP))
-    data = apply_row_op(request.POST, op) if op.kind != OP_REFRESH else retemplated(request.POST)
+def _rerender(
+    request: HttpRequest, snap: EditSnapshot, *, create: bool, media: QueryDict | None = None
+) -> HttpResponse:
+    """A row button, a media row button (``media``: the posted state it edited) or "Update
+    form": the posted state, edited, shown without validating; no Engine call."""
+    if media is not None:
+        data = retemplated(media)
+    else:
+        op = parse_op(request.POST.get(OP))
+        data = (
+            apply_row_op(request.POST, op) if op.kind != OP_REFRESH else retemplated(request.POST)
+        )
     data.pop(OP, None)
     editor = _editor(snap, data, create=create)
     editor.quiet()
-    return _render_edit(request, snap, editor, create=create)
+    sections = _sections(snap, data)
+    sections.quiet()
+    return _render_edit(request, snap, editor, sections, create=create)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -619,26 +713,33 @@ def _create(request: HttpRequest) -> HttpResponse:
     if snap is None:  # not from the page: read the lookups again
         client = engine_client_for(request)
         snap = EditSnapshot(**_lookups(client, rating=None, profile=None))
+    edited = media_op(request.POST, SCENARIO_SECTIONS)
+    if edited is not None:
+        return _rerender(request, snap, create=True, media=edited)
     if parse_op(request.POST.get(OP)).edits_rows:
         return _rerender(request, snap, create=True)
     editor = _editor(snap, request.POST, create=True)
-    if not editor.is_valid():
-        return _render_edit(request, snap, editor, create=True)
+    sections = _sections(snap, request.POST)
+    if not all([editor.is_valid(), sections.is_valid()]):
+        return _render_edit(request, snap, editor, sections, create=True)
     remember_principals(editor.form)
     client = engine_client_for(request)
+    body = sections.patch(editor.create_body(), sections.create_parts(sections.changed()))
     try:
-        created = client.create_scenario(
-            editor.create_body(), idempotency_key=posted_idempotency_key(request)
-        )
+        created = client.create_scenario(body, idempotency_key=posted_idempotency_key(request))
     except EngineError as exc:
         log_engine_error(request, exc)
         if exc.http_status in (413, 422) and exc.code != ENTRY_ARCHIVED:
-            editor.place_error(exc)
-            return _render_edit(request, snap, editor, create=True)
-        return _render_edit(request, snap, editor, create=True, engine_error=panel_for(exc))
+            editor.place_error(exc, extra=sections.place_error(exc))
+            return _render_edit(request, snap, editor, sections, create=True)
+        return _render_edit(
+            request, snap, editor, sections, create=True, engine_error=panel_for(exc)
+        )
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return _render_edit(request, snap, editor, create=True, engine_error=panel_for(exc))
+        return _render_edit(
+            request, snap, editor, sections, create=True, engine_error=panel_for(exc)
+        )
     messages.success(request, f"Created at draft revision {created.draft_revision}")
     return redirect(_edit_url(created.id))
 
@@ -672,18 +773,23 @@ def _edit_post(request: HttpRequest, scenario_id: str) -> HttpResponse:
     snap = EditSnapshot.unsigned(request.POST.get(SNAPSHOT_FIELD), scenario_id)
     if snap is None:  # not from the page: start again from the Engine's draft
         return redirect(_edit_url(scenario_id))
+    edited = media_op(request.POST, SCENARIO_SECTIONS)
+    if edited is not None:
+        return _rerender(request, snap, create=False, media=edited)
     if parse_op(request.POST.get(OP)).edits_rows:
         return _rerender(request, snap, create=False)
     # An archived entry's controls are disabled; a forced POST goes on, so the Engine's own
     # refusal (422 entry_archived) is what the operator sees.
     editor = _editor(snap, request.POST, create=False)
-    if not editor.is_valid():
-        return _render_edit(request, snap, editor)
+    sections = _sections(snap, request.POST)
+    if not all([editor.is_valid(), sections.is_valid()]):
+        return _render_edit(request, snap, editor, sections)
     draft_revision = _posted_int(request, DRAFT_REVISION) or snap.draft_revision
     if draft_revision is None:
         editor.form.add_error(None, NO_REVISION)
-        return _render_edit(request, snap, editor)
-    patch = editor.edit_patch(snap.original)
+        return _render_edit(request, snap, editor, sections)
+    # #71: a changed Media section is sent whole; an unchanged one is not sent.
+    patch = sections.patch(editor.edit_patch(snap.original), sections.changed())
     if not patch:
         messages.info(request, NO_CHANGES)
         return redirect(_edit_url(scenario_id))
@@ -699,13 +805,13 @@ def _edit_post(request: HttpRequest, scenario_id: str) -> HttpResponse:
         log_engine_error(request, exc)
         if exc.code == DRAFT_STALE:
             stale = stale_banner(exc, draft_revision=draft_revision)
-            return _render_edit(request, snap, editor, stale=stale)
+            return _render_edit(request, snap, editor, sections, stale=stale)
         if exc.http_status in (413, 422) and exc.code != ENTRY_ARCHIVED:
-            editor.place_error(exc)
-            return _render_edit(request, snap, editor)
-        return _render_edit(request, snap, editor, engine_error=panel_for(exc))
+            editor.place_error(exc, extra=sections.place_error(exc))
+            return _render_edit(request, snap, editor, sections)
+        return _render_edit(request, snap, editor, sections, engine_error=panel_for(exc))
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return _render_edit(request, snap, editor, engine_error=panel_for(exc))
+        return _render_edit(request, snap, editor, sections, engine_error=panel_for(exc))
     messages.success(request, f"Saved — draft revision {saved.draft_revision}.")
     return redirect(_edit_url(scenario_id))

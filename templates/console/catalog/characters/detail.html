@@ -30,7 +30,7 @@
     <dt>Content rating</dt><dd>{% if entry.content_rating %}<a href="{% url 'ratings:detail' entry.content_rating.id %}" title="{{ entry.content_rating.version_id }}">{{ entry.content_rating.name }}</a>{% else %}—{% endif %}</dd>
   </dl>
   <h3>Images</h3>
-  {% for image in images %}{% include "console/catalog/characters/_image.html" %}{% empty %}<p>—</p>{% endfor %}
+  {% if images %}<div class="media-grid">{% for item in images %}{% include "console/media/_shown.html" %}{% endfor %}</div>{% else %}<p>—</p>{% endif %}
 </section>
 
 {% if full %}
@@ -102,7 +102,7 @@
     <dt>Adapter params</dt><dd>{% if v.adapter_params is not None %}<pre>{{ v.adapter_params|pretty_json }}</pre>{% else %}—{% endif %}</dd>
   </dl>
   <h3>Reference images</h3>
-  {% for image in references %}{% include "console/catalog/characters/_image.html" with audience=True %}{% empty %}<p>—</p>{% endfor %}
+  {% if references %}<div class="media-grid">{% for item in references %}{% include "console/media/_shown.html" %}{% endfor %}</div>{% else %}<p>—</p>{% endif %}
   {% else %}
   <p>—</p>
   {% endif %}

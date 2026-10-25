@@ -33,7 +33,7 @@ Engine errors land on their fields (:func:`field_for_path`, :meth:`CharacterForm
 import json
 import math
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
@@ -649,8 +649,8 @@ class CharacterForm(forms.Form):
             self.fields[CLEAR_IDENTITY] = forms.BooleanField(
                 label="Clear visual identity",
                 required=False,
-                help_text="Removes the whole visual identity (its reference images too); the "
-                "fields above are then ignored",
+                help_text="Removes the whole visual identity; the fields above are then "
+                "ignored. Also removes the reference images",
             )
         for name, field in self.fields.items():
             if name not in (OWNER, CLEAR_IDENTITY):
@@ -715,11 +715,14 @@ class CharacterForm(forms.Form):
 
     # --- Engine errors ---------------------------------------------------------------------
 
-    def place_error(self, error: EngineError) -> int:
+    def place_error(
+        self, error: EngineError, *, extra: Callable[[str, str, str], bool] | None = None
+    ) -> int:
         """Place a 422/413's field failures (``details.errors[]`` or ``details.field``) at
         their fields; the others become non-field errors naming the path. A ``rating_retired``
-        without a path lands on the rating, a ``draft_too_large`` is the form's. Returns how many
-        landed on a field."""
+        without a path lands on the rating, a ``draft_too_large`` is the form's. ``extra``
+        (``path, message, code``) is offered each failure first and places it elsewhere (#71's
+        media slots) when it answers ``True``. Returns how many landed on a field."""
         if error.code == "draft_too_large":
             self.add_error(None, DRAFT_TOO_LARGE)
             return 0
@@ -730,6 +733,9 @@ class CharacterForm(forms.Form):
         placed = 0
         for failure in failures:
             message = failure.message or error.message
+            if extra is not None and extra(failure.path, message, error.code):
+                placed += 1
+                continue
             found = field_for_path(failure.path, self.fields)
             if found is None:
                 self.add_error(None, f"{failure.path.removeprefix(BODY_PREFIX)}: {message}")

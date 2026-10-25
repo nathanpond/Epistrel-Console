@@ -1,0 +1,41 @@
+{% comment %}
+#71: one media slot (a SlotRow): the id input (typed or pasted ids allowed; its change reloads this
+row), the thumbnail through the proxy, alt text and metadata from the per-slot lookup, the
+reference image's audience or the video's caption, and "Choose…" (the picker loads under the row;
+picking a tile swaps this row). Without JavaScript the operator pastes an id. The row's id is its
+report anchor (f-<path>).
+{% endcomment %}{% load console_format %}<div class="slot-row{% if row.deleted %} slot-removed{% endif %}" id="{{ row.anchor }}">
+  <label for="{{ row.anchor }}-id">{% if row.is_list %}Row {{ row.number }}{% else %}Media id{% endif %}</label>
+  <input type="text" name="{{ row.id_name }}" id="{{ row.anchor }}-id" value="{{ row.media_id }}" size="30" maxlength="40" spellcheck="false" autocomplete="off" hx-get="{{ row.row_url }}" hx-trigger="change" hx-target="#{{ row.anchor }}" hx-swap="outerHTML" hx-include="#{{ row.anchor }}"{% if row.disabled %} disabled{% endif %}>
+  {% if row.info %}
+  {% with info=row.info %}
+  {% if info.unavailable %}
+  <span class="slot-unavailable"><code>{{ info.media_id }}</code> {{ info.unavailable_text }}</span>
+  {% else %}
+  <a class="slot-thumb" href="{{ info.detail_url }}" target="_blank" rel="noopener">{% if row.is_video or info.is_video %}{% if info.poster_url %}<img src="{{ info.poster_url }}" width="80" alt="">{% else %}<span class="video-tile">[video]</span>{% endif %}{% else %}<img src="{{ info.image_url }}" width="80" alt="{{ info.alt_text|default_if_none:'' }}">{% endif %}</a>
+  {% if info.retired %}<strong class="retired">retired</strong>{% endif %}
+  <small class="muted slot-meta">{% if info.alt_text %}{{ info.alt_text }}{% if info.metadata %} · {% endif %}{% endif %}{{ info.metadata }}</small>
+  {% endif %}
+  {% endwith %}
+  {% endif %}
+  {% if row.is_reference %}
+  <label for="{{ row.anchor }}-audience">Audience</label>
+  <select name="{{ row.field }}-{{ row.index }}-audience" id="{{ row.anchor }}-audience"{% if row.disabled %} disabled{% endif %}>{% for value, text in row.audience_choices %}<option value="{{ value }}"{% if value == row.audience %} selected{% endif %}>{{ text }}</option>{% endfor %}</select>
+  {% endif %}
+  {% if row.is_video and row.is_list %}
+  <label for="{{ row.anchor }}-caption">Caption</label>
+  <input type="text" name="{{ row.field }}-{{ row.index }}-caption" id="{{ row.anchor }}-caption" value="{{ row.caption|default_if_none:'' }}" maxlength="500" size="40"{% if row.placeholder %} placeholder="{{ row.placeholder }}"{% endif %}{% if row.disabled %} disabled{% endif %}>
+  {% endif %}
+  <button type="button" class="choose" hx-get="{{ row.picker_url }}" hx-target="#{{ row.anchor }}-picker" hx-swap="innerHTML" hx-include="#{{ row.list_anchor }}"{% if row.disabled %} disabled{% endif %}>Choose…</button>
+  {% if row.is_list %}
+  <input type="hidden" name="{{ row.field }}-{{ row.index }}-ORDER" value="{{ row.order }}">
+  <label><input type="checkbox" name="{{ row.field }}-{{ row.index }}-DELETE"{% if row.deleted %} checked{% endif %}{% if row.disabled %} disabled{% endif %}> Remove</label>
+  {% if row.can_up %}<button type="submit" name="op" value="up:{{ row.field }}-{{ row.index }}" title="Move up"{% if row.disabled %} disabled{% endif %}>↑</button>{% endif %}
+  {% if row.can_down %}<button type="submit" name="op" value="down:{{ row.field }}-{{ row.index }}" title="Move down"{% if row.disabled %} disabled{% endif %}>↓</button>{% endif %}
+  {% else %}
+  {% if row.media_id %}<button type="submit" name="op" value="remove:{{ row.field }}"{% if row.disabled %} disabled{% endif %}>Remove</button>{% endif %}
+  {% endif %}
+  {% for error in row.errors %}<span class="errorlist slot-error">{{ error }}</span>{% endfor %}
+  {% for note in row.notes %}<span class="report-note error">{{ note }}</span>{% endfor %}
+  <div class="picker-slot" id="{{ row.anchor }}-picker"></div>
+</div>

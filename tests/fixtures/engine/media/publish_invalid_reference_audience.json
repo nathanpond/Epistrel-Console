@@ -1,0 +1,58 @@
+{
+  "error": {
+    "code": "publish_invalid",
+    "message": "the draft cannot be published",
+    "details": {
+      "entity": "character",
+      "character_id": "01JC00000000000000000CHAR1",
+      "report": {
+        "errors": [
+          {
+            "code": "reference_image_missing_audience",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "visual_identity.reference_images[1].audience",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "FR-CAT-4: a reference image declares its audience",
+            "source": null,
+            "text": null
+          },
+          {
+            "code": "media_retired",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "public_card.images.gallery[0]",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "a media asset the entry shows was retired",
+            "source": "01JC000000000000000000MED2",
+            "text": null
+          },
+          {
+            "code": "primary_image_required",
+            "location": {
+              "entry": "01JC00000000000000000CHAR1",
+              "version": "draft",
+              "field": "public_card.images.primary",
+              "role": null,
+              "seed_id": null
+            },
+            "outcome": "rejected",
+            "rule": "require_primary_image is on",
+            "source": null,
+            "text": null
+          }
+        ],
+        "warnings": [],
+        "unavailable": []
+      }
+    }
+  }
+}

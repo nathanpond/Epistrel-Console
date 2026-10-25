@@ -1,0 +1,27 @@
+{% comment %}
+#71: one media section (a ShownSection) inside an editor's form: its single slot (primary image or
+cover) and its lists (formsets: management form, rows, "Add another" — a non-saving submit,
+HTMX-enhanced to re-render just this section, hidden at the limit; on an archived entry #69's
+disabled "Archived — unarchive to edit" button). Context: section, action_url, snap.
+{% endcomment %}{% load catalog %}<fieldset class="character media-section" id="{{ section.fieldset_id }}">
+  <legend>{{ section.spec.title }}</legend>
+  {% for error in section.errors %}<p class="errorlist section-error">{{ error }}</p>{% endfor %}
+  {% if section.single %}
+  <div class="slot-single">
+    <h4>{{ section.spec.single.title }}</h4>
+    {% include "console/media/_slot_row.html" with row=section.single %}
+  </div>
+  {% endif %}
+  {% for shown in section.lists %}
+  <div class="slot-list" id="{{ shown.anchor }}">
+    <h4>{{ shown.spec.title }} <small class="muted">(up to {{ shown.spec.limit }}{% if shown.spec.kind == "video" %}; captions up to 500 characters, blank: the asset's own{% endif %})</small></h4>
+    {{ shown.management }}
+    {% for error in shown.errors %}<p class="errorlist list-error">{{ error }}</p>{% endfor %}
+    {% for row in shown.rows %}{% include "console/media/_slot_row.html" %}{% endfor %}
+    <p class="slot-actions">
+      {% if shown.disabled %}{% disabled_if_archived snap "edit" "Add another" %}{% elif shown.can_add %}<button type="submit" name="op" value="add:{{ shown.spec.prefix }}" hx-post="{{ action_url }}" hx-target="#{{ section.fieldset_id }}" hx-select="#{{ section.fieldset_id }}" hx-swap="outerHTML">Add another</button>{% endif %}
+      <a href="{{ shown.upload_url }}" target="_blank" rel="noopener">Upload new…</a>
+    </p>
+  </div>
+  {% endfor %}
+</fieldset>

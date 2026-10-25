@@ -2,7 +2,7 @@
 #66: the catalog character's structured form, create and edit. Each field's id is its report anchor
 (f-<path>), so the validation report links to it. Context: form (CharacterForm), create, snap
 (EditSnapshot), snapshot (signed), idempotency_key, publish_idempotency_key, with_companion,
-rating_note, archived_note, action_url.
+rating_note, archived_note, action_url; #71: media (the media sections by path).
 {% endcomment %}<form method="post" action="{{ action_url }}" class="character-form">
   {% csrf_token %}
   <input type="hidden" name="snapshot" value="{{ snapshot }}">
@@ -12,6 +12,8 @@ rating_note, archived_note, action_url.
   <input type="hidden" name="draft_revision" value="{{ snap.draft_revision|default_if_none:'' }}">
   <input type="hidden" name="companion_draft_revision" value="{{ snap.companion_revision|default_if_none:'' }}">
   {% endif %}
+  {# Enter in a text input submits the form's first button: make that Save (Create), not a media row button (#71). #}
+  <button type="submit" name="action" value="save" class="default-submit" tabindex="-1" aria-hidden="true"{% if archived_note %} disabled{% endif %}>{% if create %}Create{% else %}Save{% endif %}</button>
   {{ form.non_field_errors }}
   {% if create %}
   <p class="field"><label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label><br>{{ form.owner }} <small class="muted" id="{{ form.owner.auto_id }}_helptext">{{ form.owner.help_text }}</small>{{ form.owner.errors }}</p>
@@ -37,10 +39,11 @@ rating_note, archived_note, action_url.
     {% endif %}
     {% if section.anchor == "f-metadata" and rating_note %}<p class="rating-unavailable">{{ rating_note }} <small class="muted">(the content rating is left unchanged)</small></p>{% endif %}
     {% if section.anchor == "f-visual_identity" %}
-    <p class="muted">Reference images are set on the images page.</p>
     {% if form.clear_visual_identity %}<p class="field"><label>{{ form.clear_visual_identity }} {{ form.clear_visual_identity.label }}</label> <small class="muted" id="{{ form.clear_visual_identity.auto_id }}_helptext">{{ form.clear_visual_identity.help_text }}</small></p>{% endif %}
     {% endif %}
   </fieldset>
+  {% if section.anchor == "f-public_card" %}{% include "console/media/_slot_section.html" with section=media.public_card_images %}{% endif %}
+  {% if section.anchor == "f-visual_identity" %}{% include "console/media/_slot_section.html" with section=media.visual_identity_reference_images %}{% endif %}
   {% endfor %}
   <p class="actions">
     {% if create %}

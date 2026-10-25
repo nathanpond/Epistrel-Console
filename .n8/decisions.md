@@ -876,3 +876,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** When the rating read fails, the upload form refuses a POST with the "Ratings unavailable" text as a non-field error, and no `POST /media` is made. The Upload button is also disabled.
   **Why:** The rating is required and comes only from the select. A crafted POST would otherwise reach `metadata()` without one.
   **Issue:** #70
+- **Decision:** On a re-render after a refused form or a media row button, the edit page shows each slot's metadata from the signed snapshot. The snapshot holds the per-slot lookups made when the page was read, so the page makes no new `GET /media/{id}`. An id typed since then shows its thumbnail through the proxy but no metadata until the slot-row partial looks it up. The plan said to re-run the lookups on an error re-render.
+  **Why:** #64/#66 hold that an invalid form makes zero Engine calls, and the AC says an unset audience "makes zero calls". Re-running the lookups would break both.
+  **Issue:** #71
+- **Decision (drift):** Engine paths are read in bracket form (`body.public_card.images.gallery[1]`, `visual_identity.reference_images[1].audience`), and the plan's `.<i>.` spelling is accepted too. Refusals are placed by a `MediaSections.place` hook that `CharacterForm.place_error` and `ScenarioEditor.place_error` offer each failure first (new keyword `extra=`). The plan instead had `apply_engine_errors` gain a `formsets=` argument.
+  **Why:** The Engine's `validation_error`, `media_retired.details.field` and report locations all use brackets. Neither editor uses `apply_engine_errors`; each has its own `place_error`.
+  **Issue:** #71
+- **Decision:** A POST that has no management form for a media list keeps that list's draft value (unchanged, so not sent). A POST without the primary or cover field keeps the draft's primary or cover. Ordering does not use Django's `ordered_forms`: rows sort by `ORDER`, and a blank `ORDER` takes the row's rendered position, ties keeping rendered order. The up/down buttons renumber `ORDER`.
+  **Why:** A POST built without the sections (#66/#68's tests, an old tab) must not clear the images. Django puts blank `ORDER` values last, but the plan says blank keeps the rendered order.
+  **Issue:** #71
+- **Decision:** Duplicate refusal reads "Already in this list (row N)" for the character gallery, the scenario gallery and the videos. N is the rendered row of the first occurrence. The audience select's blank choice is a server-side error only (no HTML `required`), since the blank extra row would otherwise block every submit. The character form gained a hidden default Save button, so Enter never triggers a media row button.
+  **Why:** Pass 2 of the plan overrides pass 1's "Already in this gallery". The other two are needed for the form to work without JS.
+  **Issue:** #71
+- **Decision:** A failed per-slot read shows "<id> unavailable (<status> <code>)" with no `<img>` (the Engine's 404 code is `not_found`). On detail pages, `<img alt>` is the read's alt text, else "". The scenario full read has only ids, so it uses the looked-up asset's alt text. #65's `characters/_image.html` was replaced by the shared `media/_shown.html`, and the generation-metadata `<details>` was kept.
+  **Why:** The AC says never a broken image alone. `ScenarioMedia` has no alt text.
+  **Issue:** #71

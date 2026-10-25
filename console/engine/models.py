@@ -1658,7 +1658,7 @@ class PersonaPage(Model):
 # --- catalog scenarios (#68) ----------------------------------------------------------------------
 #
 # A card (``ScenarioCard``) is what lists and ``projection=card`` answer; ``Scenario`` is
-# ``ScenarioFull``. The groups #68 edits are typed; the cast (#73), the card's media (#71), the
+# ``ScenarioFull``. The groups #68 edits and the card's media (#71) are typed; the cast (#73), the
 # world seeds (#73) and the sections Lite stores but does not use yet (``starting_state``'s
 # states, clock, scheduled events, predicates, closed sets and rules; planned reveals) stay raw
 # JSON, which the pages show and edit as JSON.
@@ -1732,12 +1732,30 @@ class ScenarioPage(Model):
 
 
 @dataclass(frozen=True)
+class ScenarioVideo(Model):
+    """``ScenarioVideo`` (#71): a video on the card and the caption the scenario shows with it
+    (``None``: the asset's own caption shows)."""
+
+    media_id: str
+    caption: str | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioMediaSet(Model):
+    """``ScenarioMedia`` (#71): the card's cover image, gallery images and videos, by media id."""
+
+    cover: str | None = None
+    gallery: list[str] = field(default_factory=list)
+    videos: list[ScenarioVideo] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ScenarioPublicCard(Model):
-    """``ScenarioPublicCard``: name, public description and (raw; #71's) media ids."""
+    """``ScenarioPublicCard``: name, public description and the media (#71)."""
 
     name: str | None = None
     public_description: str | None = None
-    media: Any = None
+    media: ScenarioMediaSet = field(default_factory=ScenarioMediaSet)
 
 
 @dataclass(frozen=True)

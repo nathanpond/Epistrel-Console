@@ -41,7 +41,8 @@
     </tbody>
   </table>
   {% else %}<p>—</p>{% endif %}
-  <details class="media"><summary>Media</summary><pre>{{ card_media|pretty_json }}</pre></details>
+  <h3>Media</h3>
+  {% include "console/catalog/scenarios/_media.html" %}
 </section>
 {% else %}
 {# --- the full projection -------------------------------------------------------------------- #}
@@ -53,7 +54,8 @@
     <dt>Labels</dt><dd>{{ entry.metadata.labels|join:", "|default:"—" }}</dd>
     <dt>Content rating</dt><dd>{% if rating %}{% if rating.name %}<a href="{% url 'ratings:detail' rating.id %}">{{ rating.name }}</a>{% else %}<code>{{ rating.id }}</code>{% endif %}{% else %}—{% endif %}</dd>
   </dl>
-  <details class="media"><summary>Media</summary><pre>{{ entry.public_card.media|pretty_json }}</pre></details>
+  <h3>Media</h3>
+  {% include "console/catalog/scenarios/_media.html" %}
 </section>
 
 <section id="metadata">

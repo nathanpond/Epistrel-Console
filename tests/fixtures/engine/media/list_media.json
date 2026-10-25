@@ -1,0 +1,81 @@
+{
+  "items": [
+    {
+      "id": "01JC000000000000000000PHT1",
+      "owner_principal": "console:nate",
+      "kind": "image",
+      "mime_type": "image/png",
+      "size": 74,
+      "width": 640,
+      "height": 480,
+      "duration_ms": null,
+      "checksum": "sha256-abc123",
+      "content_rating_id": "00000000000000000000RAT002",
+      "content_rating_version_id": "01M5R0RTV00000000000000002",
+      "alt_text": "A lighthouse at dusk",
+      "caption": null,
+      "generation_metadata": null,
+      "source": "uploaded",
+      "state": "live",
+      "depicted_subjects": [
+        {
+          "kind": "catalog_character",
+          "id": "01JC00000000000000000CHAR1"
+        }
+      ],
+      "created_at": "2026-10-24T09:00:00.000000Z",
+      "created_by": "console:nate",
+      "poster_media_id": null
+    },
+    {
+      "id": "01JC000000000000000000PHT2",
+      "owner_principal": "console:nate",
+      "kind": "image",
+      "mime_type": "image/png",
+      "size": 74,
+      "width": 1024,
+      "height": 768,
+      "duration_ms": null,
+      "checksum": "sha256-abc123",
+      "content_rating_id": "00000000000000000000RAT002",
+      "content_rating_version_id": "01M5R0RTV00000000000000002",
+      "alt_text": null,
+      "caption": null,
+      "generation_metadata": null,
+      "source": "uploaded",
+      "state": "live",
+      "depicted_subjects": [
+        {
+          "kind": "persona",
+          "id": "01JC0000000000000000PERSN1"
+        }
+      ],
+      "created_at": "2026-10-24T09:00:00.000000Z",
+      "created_by": "console:nate",
+      "poster_media_id": null
+    },
+    {
+      "id": "01JC000000000000000000VDE1",
+      "owner_principal": "console:nate",
+      "kind": "video",
+      "mime_type": "video/mp4",
+      "size": 74,
+      "width": 1280,
+      "height": 720,
+      "duration_ms": 65300,
+      "checksum": "sha256-abc123",
+      "content_rating_id": "00000000000000000000RAT002",
+      "content_rating_version_id": "01M5R0RTV00000000000000002",
+      "alt_text": null,
+      "caption": "Storm footage",
+      "generation_metadata": null,
+      "source": "uploaded",
+      "state": "live",
+      "depicted_subjects": [],
+      "created_at": "2026-10-24T09:00:00.000000Z",
+      "created_by": "console:nate",
+      "poster_media_id": "01JC000000000000000000PST1"
+    }
+  ],
+  "next_cursor": "cursor-2"
+}

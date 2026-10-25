@@ -1,0 +1,20 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "invalid patch",
+    "details": {
+      "errors": [
+        {
+          "field": "body.public_card.images.gallery[1]",
+          "message": "String should match pattern '^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}$'",
+          "type": "string_pattern_mismatch"
+        },
+        {
+          "field": "body.visual_identity.reference_images[0].audience",
+          "message": "Field required",
+          "type": "missing"
+        }
+      ]
+    }
+  }
+}

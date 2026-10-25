@@ -1,0 +1,1 @@
+{% comment %}#71: the scenario's cover, gallery and videos by slot, through the proxy (context: media, a list of ShownMedia).{% endcomment %}{% if media %}<div class="media-grid">{% for item in media %}{% include "console/media/_shown.html" %}{% endfor %}</div>{% else %}<p>—</p>{% endif %}

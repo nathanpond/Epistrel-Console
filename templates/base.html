@@ -34,6 +34,17 @@
     small.source { color: #57606a; white-space: nowrap; }
     .seeded { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; }
     .warning { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
+    .media-grid { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-start; }
+    figure.media-shown { margin: 0.4rem 0; }
+    figure.media-large img { max-width: 320px; height: auto; }
+    figure.media-small img { width: 120px; height: auto; }
+    figure.media-shown video { max-width: 640px; }
+    .slot-row { margin: 0.4rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #d0d7de; }
+    .slot-row.slot-removed { opacity: 0.6; }
+    .slot-error { display: block; }
+    .picker { border: 1px solid #8c959f; padding: 0.4rem 0.8rem; margin: 0.4rem 0; background: #f6f8fa; }
+    .picker-tiles { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .picker-tiles .in-use { color: #9a6700; }
     .policy-form .field { margin: 0.8rem 0; }
     .policy-form textarea { width: 40rem; max-width: 100%; }
     .play { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }

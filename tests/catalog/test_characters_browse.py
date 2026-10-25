@@ -283,18 +283,21 @@ def test_the_detail_reads_full_and_shows_every_section(
 def test_images_go_through_the_proxy(operator_client: Client, engine: FakeEngine) -> None:
     answer_detail(engine, full(), draft())
     html = operator_client.get(DETAIL).content.decode()
+    # #71: each image links to its library page, labelled by slot.
     assert (
-        f'<a href="/media/{MED1}/content/"><img src="/media/{MED1}/content/?img=1" width="160" '
+        f'<a href="/media/{MED1}/"><img src="/media/{MED1}/content/?img=1" '
         'alt="Sir Aldric in armour"></a>'
     ) in html
+    assert 'class="media-shown media-large"' in html  # the primary: up to 320 px
     # A video renders as <video> through the proxy, without ?img=1.
-    assert f'<video controls preload="metadata" width="160" src="/media/{MED2}/content/">' in html
+    assert f'<video controls preload="metadata" src="/media/{MED2}/content/">' in html
     assert f'src="/media/{MED2}/content/?img=1"' not in html
-    # Reference images, the restricted one labelled.
-    assert f'src="/media/{MED3}/content/?img=1" width="160" alt="Reference front"' in html
-    restricted = html[html.index(f'id="image-{MED4}"') :]
-    assert 'alt=""' in restricted[:400]
-    assert '<strong class="restricted">restricted</strong>' in restricted
+    # Reference images, labelled by audience, the restricted one marked.
+    assert f'src="/media/{MED3}/content/?img=1" alt="Reference front"' in html
+    assert "Reference — perceivable" in html
+    restricted = html[html.index(f'id="media-reference-restricted-{MED4}"') :]
+    assert '<strong class="restricted">restricted</strong>' in restricted[:400]
+    assert f'src="/media/{MED4}/content/?img=1" alt=""' in restricted  # no alt text in the read
     assert "img-1" in html  # generation metadata
     assert "&quot;seed&quot;: 7" in html
     assert "512\u00d7768" in html

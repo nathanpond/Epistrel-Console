@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "no media asset 01JC000000000000000000GNE1",
+    "details": {
+      "media_id": "01JC000000000000000000GNE1"
+    }
+  }
+}

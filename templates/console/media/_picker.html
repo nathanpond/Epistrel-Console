@@ -1,0 +1,37 @@
+{% comment %}
+#71: the media picker panel, loaded under a slot row. Tiles of live media (newest first), "in use"
+marks for ids already in the list, owner filter, Next/First paging, Refresh, Close and "Upload new…"
+(a new tab). Picking a tile swaps the slot row (which drops this panel).
+{% endcomment %}<div class="picker" id="{{ slot.anchor }}-panel">
+  <p class="picker-bar">
+    <strong>Choose {{ slot.kind }}</strong>
+    <label for="{{ slot.anchor }}-owner">Owner</label>
+    <input type="text" name="picker_owner" id="{{ slot.anchor }}-owner" value="{{ owner }}" size="24">
+    <button type="button" hx-get="{{ refresh_url }}" hx-target="#{{ slot.anchor }}-picker" hx-swap="innerHTML" hx-include="{{ include }}, #{{ slot.anchor }}-owner">Apply</button>
+    <button type="button" class="refresh" hx-get="{{ refresh_url }}" hx-target="#{{ slot.anchor }}-picker" hx-swap="innerHTML" hx-include="{{ include }}">Refresh</button>
+    <a href="{{ upload_url }}" target="_blank" rel="noopener">Upload new…</a>
+    <button type="button" class="close" hx-get="{{ close_url }}" hx-target="#{{ slot.anchor }}-picker" hx-swap="innerHTML">Close</button>
+  </p>
+  {% if owner_error %}<p class="errorlist">{{ owner_error }}</p>{% endif %}
+  {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+  {% if not owner_error and not engine_error %}
+  <ul class="picker-tiles">
+    {% for tile in tiles %}
+    <li class="tile{% if tile.in_use %} in-use{% endif %}">
+      <button type="button" hx-get="{{ tile.pick_url }}" hx-target="#{{ slot.anchor }}" hx-swap="outerHTML" hx-include="#{{ slot.anchor }}" title="Use {{ tile.asset.id }}">
+        {% if tile.thumbnail %}<img src="{{ tile.thumbnail }}" width="96" alt="{{ tile.asset.alt_text|default_if_none:'' }}">{% else %}<span class="video-tile">[video]</span>{% endif %}
+        <code>{{ tile.asset.id }}</code>
+        {% for kind, short in tile.subjects %}<small class="subject">{{ kind }} {{ short }}</small>{% endfor %}
+        {% if tile.in_use %}<strong class="in-use">in use</strong>{% endif %}
+      </button>
+    </li>
+    {% empty %}
+    <li>No live {{ slot.kind }}s{% if owner %} owned by <code>{{ owner }}</code>{% endif %}.</li>
+    {% endfor %}
+  </ul>
+  <p class="picker-paging">
+    {% if first_url %}<button type="button" hx-get="{{ first_url }}" hx-target="#{{ slot.anchor }}-picker" hx-swap="innerHTML" hx-include="{{ include }}">First page</button>{% endif %}
+    {% if next_url %}<button type="button" hx-get="{{ next_url }}" hx-target="#{{ slot.anchor }}-picker" hx-swap="innerHTML" hx-include="{{ include }}">Next page</button>{% endif %}
+  </p>
+  {% endif %}
+</div>

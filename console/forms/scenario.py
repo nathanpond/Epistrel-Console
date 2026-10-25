@@ -20,8 +20,9 @@ refused save all read the same state. A row is added or removed by an ``op`` but
 The sections Lite stores but does not use yet (``starting_state``'s states, clock, scheduled
 events, predicates, closed sets and rules) and ``drivers.planned_reveals`` are JSON boxes
 (:class:`~console.forms.fields.JsonBoxField`), parsed and type-checked before any call;
-``creation_rules.bounds`` too. The world seeds (``starting_state.seeded_memories``), the cast and
-``public_card.media`` are never in the form, so no write ever carries them.
+``creation_rules.bounds`` too. The world seeds (``starting_state.seeded_memories``) and the cast
+are never in the form, so no write ever carries them; ``public_card.media`` is #71's Media
+section (``console.forms.media_picker``), which the views set into the patch whole.
 
 Values are normalised the same way for the draft (:func:`draft_to_write`) and the form
 (:meth:`ScenarioEditor.write_doc`) before they are compared: CRLF → LF and surrounding whitespace
@@ -36,7 +37,7 @@ the field the path names.
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -860,9 +861,13 @@ class ScenarioEditor:
 
     # --- Engine errors ---------------------------------------------------------------------
 
-    def place_error(self, error: EngineError) -> int:
+    def place_error(
+        self, error: EngineError, *, extra: Callable[[str, str, str], bool] | None = None
+    ) -> int:
         """Place a 422/413's failures at their fields (rows by the index sent); the rest become
-        non-field errors naming the path. Returns how many landed on a field."""
+        non-field errors naming the path. ``extra`` (``path, message, code``) is offered each
+        failure first and places it elsewhere (#71's media slots) when it answers ``True``.
+        Returns how many landed on a field."""
         form = self.form
         if error.code == "draft_too_large" or error.http_status == 413:
             form.add_error(None, DRAFT_TOO_LARGE)
@@ -878,7 +883,8 @@ class ScenarioEditor:
         for failure in failures:
             path = failure.path.removeprefix(BODY_PREFIX)
             message = failure.message or error.message
-            if self._place(path, message):
+            placed_elsewhere = extra is not None and extra(failure.path, message, error.code)
+            if placed_elsewhere or self._place(path, message):
                 placed += 1
             else:
                 form.add_error(None, f"{path}: {message}")

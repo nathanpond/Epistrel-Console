@@ -13,6 +13,7 @@ from console.views import (
     engine_panel,
     history,
     media,
+    media_picker,
     media_proxy,
     models,
     operations,
@@ -191,6 +192,9 @@ media_patterns = (
     [
         path("", media.media_list, name="index"),
         path("upload/", media.media_upload, name="upload"),
+        # #71: the catalog editors' picker and slot-row partials (before the id routes).
+        path("picker/", media_picker.media_picker, name="picker"),
+        path("slot-row/", media_picker.media_slot_row, name="slot-row"),
         path("<str:media_id>/", media.media_detail, name="detail"),
         path("<str:media_id>/retire/", media.media_retire, name="retire"),
         path("<str:media_id>/content/", media_proxy.media_content, name="content"),

@@ -487,7 +487,9 @@ def test_a_422_on_save_places_each_error_at_its_field(
     form = refused.context["form"]
     assert form.errors["metadata__aliases"] == ["Line 2: duplicate alias"]
     assert form.errors[WARMTH_NUANCE] == ["too long"]
-    assert form.non_field_errors() == ["public_card.images.primary: not an image"]
+    # #71: an images path lands at its slot, not among the form's own errors.
+    assert form.non_field_errors() == []
+    assert refused.context["media"]["public_card_images"].single.errors == ("not an image",)
 
 
 def test_rating_retired_lands_on_the_rating(operator_client: Client, engine: FakeEngine) -> None:
