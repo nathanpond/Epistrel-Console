@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{{ asset.kind|capfirst }} {{ asset.id }} — Media — Epistrel Console{% endblock %}
+{% block heading %}{{ asset.kind|capfirst }} <code>{{ asset.id }}</code>{% if retired %} <span class="tag retired">Retired</span>{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{% url 'media:index' %}">Back to library</a></p>
+<div class="media-view">
+  {% if asset.kind == "video" %}
+  <video controls preload="metadata" src="{{ content_url }}"{% if poster_url %} poster="{{ poster_url }}"{% endif %} style="max-width: 640px"></video>
+  {% else %}
+  <img src="{{ image_url }}" style="max-width: 640px" alt="{{ asset.alt_text|default_if_none:'' }}">
+  {% endif %}
+  <p><a class="original" href="{{ content_url }}">Open original</a></p>
+</div>
+<dl class="media-asset">
+  <dt>Id</dt><dd><code>{{ asset.id }}</code></dd>
+  <dt>Kind</dt><dd>{{ asset.kind }}</dd>
+  <dt>State</dt><dd>{{ asset.state|humanise }}</dd>
+  <dt>Source</dt><dd>{{ asset.source|humanise }}</dd>
+  <dt>Owner</dt><dd>{{ asset.owner_principal|principal_link }}</dd>
+  <dt>MIME type</dt><dd><code>{{ asset.mime_type }}</code></dd>
+  <dt>Size</dt><dd><span title="{{ asset.size }} bytes">{{ size }}</span></dd>
+  {% if asset.kind == "video" %}
+  <dt>Duration</dt><dd>{{ duration }}</dd>
+  {% endif %}
+  <dt>Dimensions</dt><dd>{% if asset.width is not None and asset.height is not None %}{{ asset.width }} × {{ asset.height }} px{% else %}—{% endif %}</dd>
+  <dt>Checksum</dt><dd><code>{{ asset.checksum }}</code></dd>
+  <dt>Content rating</dt><dd>{{ rating }} <small class="muted">version <code>{{ asset.content_rating_version_id }}</code></small></dd>
+  <dt>Depicted subjects</dt>
+  <dd class="subjects">{% for subject in subjects %}
+    <span class="subject">{{ subject.kind|humanise }}: {% if subject.url %}<a href="{{ subject.url }}">{{ subject.name }}</a>{% else %}<code>{{ subject.name }}</code>{% endif %}{% if subject.error %} <span class="lookup-failed">(name unavailable: {{ subject.error }})</span>{% endif %}</span>{% if not forloop.last %}<br>{% endif %}
+    {% empty %}Nobody{% endfor %}</dd>
+  {% if asset.kind == "video" %}
+  <dt>Poster</dt><dd>{% if asset.poster_media_id %}<a href="{% url 'media:detail' asset.poster_media_id %}"><code>{{ asset.poster_media_id }}</code></a>{% if poster %} <small class="muted">{{ poster.status|humanise }}</small>{% endif %}{% else %}—{% endif %}</dd>
+  {% endif %}
+  <dt>Alt text</dt><dd>{{ asset.alt_text|default_if_none:"—" }}</dd>
+  <dt>Caption</dt><dd>{{ asset.caption|default_if_none:"—" }}</dd>
+  <dt>Created by</dt><dd>{{ asset.created_by|principal_link }}</dd>
+  <dt>Created</dt><dd>{{ asset.created_at|engine_time }}</dd>
+</dl>
+{% if asset.generation_metadata %}
+<details class="more"><summary>More</summary>
+  <h3>Generation metadata</h3>
+  <pre>{{ asset.generation_metadata|pretty_json }}</pre>
+</details>
+{% endif %}
+{% if not retired %}<p><a class="button danger retire" href="{{ retire_url }}">Retire</a></p>{% endif %}
+{% endblock %}

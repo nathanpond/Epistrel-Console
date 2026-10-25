@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Upload media — Epistrel Console{% endblock %}
+{% block heading %}Upload media{% endblock %}
+{% block content %}
+{% if refusals or form.non_field_errors %}
+<ul class="errorlist nonfield refusals" role="alert">
+  {% for refusal in refusals %}
+  <li class="refusal">{{ refusal.before }}{% if refusal.limit %} (<span title="{{ refusal.limit.raw }} bytes">{{ refusal.limit.text }}</span>){% endif %}{{ refusal.after }} <code>{{ refusal.code }}</code>
+    {% if refusal.details %}<dl>{% for key, value in refusal.details %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
+  </li>
+  {% endfor %}
+  {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if choose_again %}<p class="choose-again"><strong>{{ choose_again }}</strong></p>{% endif %}
+<form method="post" action="{% url 'media:upload' %}" enctype="multipart/form-data" class="media-upload">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <fieldset id="f-kind">
+    <legend>{{ form.kind.label }}</legend>
+    {{ form.kind }}
+    {{ form.kind.errors }}
+  </fieldset>
+  <p id="f-file">
+    <label for="{{ form.file.id_for_label }}">{{ form.file.label }}</label> {{ form.file }}
+    {{ form.file.errors }}
+  </p>
+  <p id="f-content_rating">
+    {% if form.can_submit %}
+    <label for="{{ form.content_rating.id_for_label }}">{{ form.content_rating.label }}</label> {{ form.content_rating }}
+    {{ form.content_rating.errors }}
+    {% else %}
+    Content rating: <span class="rating-unavailable">{{ form.ratings.unavailable_text }}</span>
+    {% endif %}
+  </p>
+  <fieldset id="f-subjects">
+    <legend>Depicted subjects</legend>
+    {% for notice in form.subject_options.notices %}<p class="notice subjects-notice">{{ notice }}</p>{% endfor %}
+    <p>
+      <label for="{{ form.subjects.id_for_label }}">Catalog characters and personas</label><br>{{ form.subjects }}
+      {{ form.subjects.errors }}
+    </p>
+    <p id="f-subjects_typed">
+      <label for="{{ form.subjects_typed.id_for_label }}">{{ form.subjects_typed.label }}</label><br>{{ form.subjects_typed }}
+      <small class="muted">{{ form.subjects_typed.help_text }}</small>
+      {{ form.subjects_typed.errors }}
+    </p>
+    <p id="f-depicts_nobody">
+      <label>{{ form.depicts_nobody }} {{ form.depicts_nobody.label }}</label>
+      {{ form.depicts_nobody.errors }}
+    </p>
+  </fieldset>
+  <p id="f-alt_text">
+    <label for="{{ form.alt_text.id_for_label }}">{{ form.alt_text.label }}</label> {{ form.alt_text }}
+    {{ form.alt_text.errors }}
+  </p>
+  <p id="f-caption">
+    <label for="{{ form.caption.id_for_label }}">{{ form.caption.label }}</label><br>{{ form.caption }}
+    {{ form.caption.errors }}
+  </p>
+  <p id="f-owner">
+    <label for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label> {{ form.owner }}
+    {{ form.owner.errors }}
+  </p>
+  <fieldset id="f-poster">
+    <legend>Video poster (optional)</legend>
+    <p>
+      <label for="{{ form.poster_file.id_for_label }}">{{ form.poster_file.label }}</label> {{ form.poster_file }}
+      {{ form.poster_file.errors }}
+    </p>
+    <p>
+      <label for="{{ form.poster.id_for_label }}">{{ form.poster.label }}</label> {{ form.poster }}
+      {% if poster_datalist %}<datalist id="poster-options">{% for media_id, alt in poster_datalist %}<option value="{{ media_id }}">{{ alt }}</option>{% endfor %}</datalist>{% endif %}
+      {{ form.poster.errors }}
+    </p>
+    <p class="muted">Leave both empty and the Engine takes the first frame (needs ffmpeg on the Engine)</p>
+  </fieldset>
+  <p><button type="submit"{% if not form.can_submit %} disabled{% endif %}>Upload</button></p>
+</form>
+{% endblock %}

@@ -656,11 +656,12 @@ def test_m3_sections_are_hidden_until_their_urls_exist(operator_client: Client) 
     nav = html[html.index('<nav class="shell">') : html.index("</nav>")]
     for label in ("Principals", "Erasure", "Profiles"):
         assert label not in nav
-    # #65 built the character list, #67 the personas and #68 the scenarios: the Catalog group
-    # shows with them.
+    # #65 built the character list, #67 the personas, #68 the scenarios and #70 the media
+    # library: the Catalog group shows with them.
     assert '<span class="nav-group-label">Catalog:</span> <a href="/catalog/characters/">' in nav
     assert '<a href="/catalog/scenarios/">Scenarios</a>' in nav
     assert '<a href="/personas/">Personas</a>' in nav
+    assert '<a href="/media/">Media</a>' in nav
     assert nav.index(">Engine<") < nav.index(">Operations<") < nav.index(">Admin<")
 
 
@@ -678,6 +679,7 @@ def test_m3_sections_show_in_order_once_their_urls_exist(operator_client: Client
         ">Characters<",
         ">Scenarios<",
         ">Personas<",
+        ">Media<",
         ">Principals<",
         ">Erasure<",
         ">Operations<",
@@ -709,6 +711,11 @@ def test_catalog_is_active_under_its_prefixes(rf: RequestFactory) -> None:
                     "label": "Personas",
                     "url": "/personas/",
                     "active": path.startswith("/personas/"),
+                },
+                {
+                    "label": "Media",
+                    "url": "/media/",
+                    "active": path.startswith("/media/"),
                 },
             ],
             "active": active,

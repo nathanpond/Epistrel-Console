@@ -855,3 +855,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A "Follows" helper type (`catalog_lifecycle.Follows`) is separate from #68's `CompanionLabel`, and the scenario detail converts one into the other. #66's Console-side refusal of a POST from an archived character's edit page (a flash, no call) stays. The forced-POST complement test sends a POST from a page rendered before the entry was archived, so the Engine's `entry_archived` panel shows for both entry types.
   **Why:** This avoids a circular import between the scenario and lifecycle views. An archived page's disabled character fields post their initial values, which make an empty patch, so only a stale page can reach the Engine.
   **Issue:** #69
+- **Decision:** `MediaUploadRequest` is a frozen dataclass whose `to_json()` leaves out every field that is `None` except `depicted_subjects`. It is not a pydantic model as planned.
+  **Why:** pydantic is not a dependency of the Console. The models are dataclasses, and adding a library to build one request body is out of scope (Rule 4). The behaviour is the planned `exclude_none=True`.
+  **Issue:** #70
+- **Decision:** `EngineClient._request` gains `files=` (multipart parts, streamed by httpx), and `@operation` gains a `record_body` hook. The recorder stores `hook(arguments)` as the row's request body. `upload_media` uses it to record `{metadata, file: {name, size, content_type}, poster_file}`.
+  **Why:** The recorder sees only `json=` today. A hook on the registration keeps file bytes out of the log without special-casing paths in `operation_log`.
+  **Issue:** #70
+- **Decision (drift):** The 413 *limit* also reads `details.threshold`, after `limit`, `media_max_bytes` and `media_multipart_threshold`. The Engine's `use_multipart` names its threshold `threshold` (`core/media/assets.py _use_multipart`), and `media_too_large` uses `limit`.
+  **Why:** Without it, the `use_multipart` message could never show its size. The Engine is authoritative.
+  **Issue:** #70
+- **Decision (drift):** The 415 "Poster:" prefix follows the plan: it shows when a string in `details` names `poster_file`. At this Engine version, a poster's 415 `details` (`reason`, `mime_type`, `declared`, `allowed`) does not name the part, so the real Engine shows the unprefixed message for a refused poster.
+  **Why:** The Console cannot tell the parts apart until the Engine names one. The rule costs nothing and starts working once the Engine names the part.
+  **Issue:** #70
+- **Decision:** The subject picker's sources and the media lookups are shared helpers in `console/engine/choices.py`: `subject_choices(client)` and `media_lookups(client, ids)`. The 500 cap counts items read, not distinct ids, so a page that repeats itself still ends. The catalog source reads `status=published` and then `status=draft` at 200 per page, and both statuses count toward one cap.
+  **Why:** #71 reuses the per-asset lookup. The picker is the shape #86's subject inputs need. Counting distinct ids looped forever on a repeating cursor.
+  **Issue:** #70
+- **Decision:** The tests answer the Engine through `FakeEngine` (`respond` and `side_effect`), not respx. The sample files are #65's `tests/fixtures/engine/media/sample.{png,mp4}`. New JSON fixtures are `get_media.json` and `upload_media.json`.
+  **Why:** The repo has no respx. FakeEngine validates canned bodies against the schema, and #65's samples are the one shared location (under `fixtures/engine/`).
+  **Issue:** #70
+- **Decision:** When the rating read fails, the upload form refuses a POST with the "Ratings unavailable" text as a non-field error, and no `POST /media` is made. The Upload button is also disabled.
+  **Why:** The rating is required and comes only from the select. A crafted POST would otherwise reach `metadata()` without one.
+  **Issue:** #70

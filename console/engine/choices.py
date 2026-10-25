@@ -7,13 +7,18 @@
   non-deleted profile, labelled by name, following cursors up to :data:`PROFILES_MAX`.
 - :func:`story_labels` names the stories a page mentions by id (at most ``cap`` reads, on the
   shared fan-out pool, ``console.engine.pool``).
+- :func:`subject_choices` is the depicted-subject picker's options (#70): catalog characters
+  (published and draft-only) and every persona, both read on the fan-out pool.
+- :func:`media_lookups` reads each asset's metadata on the fan-out pool (#70; #71 shows the
+  status of attached media with it).
 """
 
+from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from console.engine.client import EngineClient, EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import ContentRatingSummary, EngineProfileSummary
+from console.engine.models import ContentRatingSummary, EngineProfileSummary, MediaAsset
 from console.engine.pool import fan_out
 from console.entities import label
 
@@ -174,3 +179,148 @@ def story_labels(
     for story_id in skipped:
         labels[story_id] = StoryLabel(story_id, story_id, "not looked up")
     return labels
+
+
+# --- depicted subjects (#70) ----------------------------------------------------------------------
+
+SUBJECTS_MAX = 500  # each picker source follows cursors up to this many items
+SUBJECTS_PAGE = 200  # the Engine's largest page
+SUBJECTS_TOO_MANY = "Too many to list — enter the id below"
+DRAFT_ONLY = " (draft only)"
+CATALOG_CHARACTERS = "catalog characters"
+PERSONAS = "personas"
+
+
+@dataclass(frozen=True)
+class SubjectGroup:
+    """One source of the subject picker: an optgroup ``label``, its ``(kind:id, label)``
+    options, and the ``notice`` shown instead when its read failed or found too many."""
+
+    label: str
+    choices: list[tuple[str, str]] = field(default_factory=list)
+    notice: str = ""
+
+
+@dataclass(frozen=True)
+class SubjectChoices:
+    """The picker's groups: "Catalog characters" then "Personas"."""
+
+    groups: list[SubjectGroup]
+
+    @property
+    def choices(self) -> list[tuple[str, list[tuple[str, str]]]]:
+        """Django optgroup choices, groups without options left out."""
+        return [(g.label, g.choices) for g in self.groups if g.choices]
+
+    @property
+    def notices(self) -> list[str]:
+        return [g.notice for g in self.groups if g.notice]
+
+    @property
+    def values(self) -> list[str]:
+        """Every option value, in option order."""
+        return [value for g in self.groups for value, _ in g.choices]
+
+
+def _ordered(items: list[tuple[str, str, str]]) -> list[tuple[str, str]]:
+    """``(id, label, suffix)`` sorted by label (case-insensitive) then id, as ``(id, shown)``: a
+    label shared by several gets its last 6 id characters (#43), then the suffix."""
+    counts = Counter(name for _, name, _ in items)
+    ordered = sorted(items, key=lambda item: (item[1].casefold(), item[0]))
+    return [
+        (item_id, f"{name} (…{item_id[-6:]}){suffix}" if counts[name] > 1 else f"{name}{suffix}")
+        for item_id, name, suffix in ordered
+    ]
+
+
+def _catalog_subjects(client: EngineClient) -> list[tuple[str, str]] | None:
+    """Published and draft-only catalog characters (archived ones are not listed), de-duplicated
+    by id; ``None`` past :data:`SUBJECTS_MAX`."""
+    found: dict[str, tuple[str, str, str]] = {}
+    read = 0  # items read, so an answer that repeats itself still stops
+    for status in ("published", "draft"):
+        cursor: str | None = None
+        while True:
+            page = client.list_catalog_characters(status=status, cursor=cursor, limit=SUBJECTS_PAGE)
+            read += len(page.items)
+            for item in page.items:
+                suffix = DRAFT_ONLY if status == "draft" else ""
+                found.setdefault(item.id, (item.id, label(item.name, item.id), suffix))
+            if read > SUBJECTS_MAX:
+                return None
+            cursor = page.next_cursor
+            if not cursor:
+                break
+    return [(f"catalog_character:{i}", shown) for i, shown in _ordered(list(found.values()))]
+
+
+def _persona_subjects(client: EngineClient) -> list[tuple[str, str]] | None:
+    """Every owner's personas as "name (owner)"; ``None`` past :data:`SUBJECTS_MAX`."""
+    found: dict[str, tuple[str, str, str]] = {}
+    read = 0
+    cursor: str | None = None
+    while True:
+        items, cursor = client.list_personas(cursor=cursor, limit=SUBJECTS_PAGE)
+        read += len(items)
+        for p in items:
+            found.setdefault(p.id, (p.id, f"{p.name} ({p.owner_principal})", ""))
+        if read > SUBJECTS_MAX:
+            return None
+        if not cursor:
+            break
+    return [(f"persona:{i}", shown) for i, shown in _ordered(list(found.values()))]
+
+
+def subject_choices(client: EngineClient) -> SubjectChoices:
+    """The depicted-subject picker's options: catalog characters (published and draft-only, a
+    draft-only one labelled "<name> (draft only)") and every persona ("<name> (<owner>)"), by
+    name then id, values ``catalog_character:<id>`` / ``persona:<id>``. Both sources are read
+    at once on the fan-out pool, each following cursors up to :data:`SUBJECTS_MAX` items. A
+    source whose read failed, or that holds more, offers no options and a notice instead
+    ("Couldn't load personas: 503 …" / "Too many to list — enter the id below"). Never raises."""
+    reads = {CATALOG_CHARACTERS: _catalog_subjects, PERSONAS: _persona_subjects}
+    results = fan_out(lambda source: reads[source](client), list(reads))
+    groups: list[SubjectGroup] = []
+    for source, heading in ((CATALOG_CHARACTERS, "Catalog characters"), (PERSONAS, "Personas")):
+        result = results[source]
+        if isinstance(result, EngineClientError):
+            notice = f"Couldn't load {source}: {error_text(result)}"
+            groups.append(SubjectGroup(heading, notice=notice))
+        elif result is None:
+            groups.append(SubjectGroup(heading, notice=f"{heading}: {SUBJECTS_TOO_MANY}"))
+        else:
+            groups.append(SubjectGroup(heading, result))
+    return SubjectChoices(groups)
+
+
+# --- media lookups (#70; #71) ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MediaLookup:
+    """One asset's metadata as a page looked it up: ``asset``, or the read's ``error`` text."""
+
+    media_id: str
+    asset: MediaAsset | None = None
+    error: str | None = None
+
+    @property
+    def status(self) -> str:
+        """The asset's state (``live``, ``retired``…), or "unavailable (<status> <code>)"."""
+        if self.asset is not None:
+            return self.asset.state
+        return f"unavailable ({self.error})"
+
+
+def media_lookups(client: EngineClient, media_ids: Iterable[str]) -> dict[str, MediaLookup]:
+    """``GET /media/{id}`` for each distinct id, on the fan-out pool under its shared deadline.
+    Never raises for a failed read."""
+    results = fan_out(client.get_media, [m for m in media_ids if m])
+    return {
+        media_id: (
+            MediaLookup(media_id, error=error_text(result))
+            if isinstance(result, EngineClientError)
+            else MediaLookup(media_id, result)
+        )
+        for media_id, result in results.items()
+    }

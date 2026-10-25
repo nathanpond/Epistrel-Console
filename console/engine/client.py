@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, ParamSpec, Self, TypeVar
+from typing import IO, Any, ParamSpec, Self, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -47,6 +47,10 @@ from console.engine.models import (
     History,
     IngestResponse,
     ListingStatus,
+    MediaAsset,
+    MediaKind,
+    MediaPage,
+    MediaUploaded,
     Model,
     ModelConfig,
     ModelConfigItem,
@@ -82,13 +86,14 @@ from console.engine.models import (
     StorySettingsWrite,
     StoryStatusChange,
     StorySummary,
+    SubjectRef,
     SwapResult,
     TruncateResult,
     UntruncateResult,
     VariantChain,
     Variants,
 )
-from console.engine.timeouts import CATALOG_PUBLISH
+from console.engine.timeouts import CATALOG_PUBLISH, UPLOAD
 from console.entities import EntityType
 from console.version import VERSION
 
@@ -125,6 +130,10 @@ RESERVED_PRINCIPAL = "system"  # the Engine's background-work principal
 RESPONSE_PREFIX = "response:"  # ``@operation(entity_id="response:id")``: the id is in the answer
 # The headers ``_request`` sets itself; a caller's ``headers=`` never replaces them.
 OWN_HEADERS = frozenset({"user-agent", "accept", "authorization", PRINCIPAL_HEADER.lower()})
+
+# A multipart request's parts, in order: ``(name, (filename, content, content_type))``; a
+# ``None`` filename sends a plain field (an upload's ``metadata``, #70).
+type MultipartParts = list[tuple[str, tuple[str | None, IO[bytes] | bytes, str]]]
 
 # A request's query: a mapping, or ``(name, value)`` pairs where a name repeats (a catalog list's
 # ``label`` and ``relation``, #65).
@@ -233,6 +242,10 @@ class Operation:
     # id comes from, the name of a method argument or ``"response:<key>"`` for a create.
     entity: EntityType | None = None
     entity_id: str | None = None
+    # What the operation log stores as the request body, built from the call's arguments by
+    # name (#70: an upload's metadata and its files' names, sizes and types, never the bytes);
+    # ``None``: the JSON body as sent.
+    record_body: Callable[[Mapping[str, Any]], object] | None = None
 
     @property
     def is_recorded(self) -> bool:
@@ -298,6 +311,7 @@ def operation(
     recorded: bool | None = None,
     entity: EntityType | None = None,
     entity_id: str | None = None,
+    record_body: Callable[[Mapping[str, Any]], object] | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a client method as the Engine operation ``method path``.
 
@@ -318,6 +332,10 @@ def operation(
       path parameter, e.g. ``"character_id"``), or ``"response:<key>"`` to read it from the
       JSON answer (a create: ``"response:id"``). Both or neither of ``entity``/``entity_id``.
 
+    #70 adds ``record_body``: the redaction hook for a request whose body is not JSON (a
+    multipart upload). It is called with the method's arguments by name and returns what the
+    operation log stores as the request's body.
+
     Example::
 
         @operation("PATCH", "/catalog/characters/{character_id}", CharacterDetail,
@@ -333,7 +351,15 @@ def operation(
     def register(func: Callable[P, R]) -> Callable[P, R]:
         others = tuple(sorted((status_models or {}).items()))
         op = Operation(
-            method, path, response_model, schema_exempt, others, recorded, entity, entity_id
+            method,
+            path,
+            response_model,
+            schema_exempt,
+            others,
+            recorded,
+            entity,
+            entity_id,
+            record_body,
         )
         OPERATIONS[f"{method} {path}"] = op
         signature = inspect.signature(func)
@@ -347,7 +373,7 @@ def operation(
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             arguments: dict[str, Any] = {}
-            if entity_id is not None:
+            if entity_id is not None or record_body is not None:
                 try:
                     arguments = dict(signature.bind_partial(*args, **kwargs).arguments)
                 except TypeError:
@@ -406,6 +432,64 @@ def _principal_header(principal: str) -> bytes:
     if value == RESERVED_PRINCIPAL:
         raise ValueError(f"principal {RESERVED_PRINCIPAL!r} is reserved for the Engine")
     return raw
+
+
+@dataclass(frozen=True)
+class UploadPart:
+    """One file of a media upload (#70): its name as sent (the base name only), its part's
+    ``Content-Type``, its size and the open file the request streams it from."""
+
+    filename: str
+    content_type: str
+    size: int
+    file: IO[bytes] = field(repr=False)
+
+    def part(self) -> tuple[str, IO[bytes], str]:
+        return (self.filename, self.file, self.content_type)
+
+    def described(self) -> dict[str, object]:
+        """What the operation log keeps of it: name, size and type, never the bytes."""
+        return {"name": self.filename, "size": self.size, "content_type": self.content_type}
+
+
+@dataclass(frozen=True)
+class MediaUploadRequest:
+    """``POST /media``'s ``metadata`` part (``MediaUpload``). :meth:`to_json` leaves out every
+    field that is ``None``, except ``depicted_subjects``, which is always sent (``[]`` declares
+    that the asset depicts nobody)."""
+
+    kind: MediaKind
+    content_rating_id: str
+    depicted_subjects: list[SubjectRef]
+    owner: str | None = None
+    alt_text: str | None = None
+    caption: str | None = None
+    poster: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "kind": self.kind,
+            "content_rating_id": self.content_rating_id,
+            "depicted_subjects": [{"kind": s.kind, "id": s.id} for s in self.depicted_subjects],
+        }
+        for name in ("owner", "alt_text", "caption", "poster"):
+            value = getattr(self, name)
+            if value is not None:
+                body[name] = value
+        return body
+
+
+def upload_record(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """``upload_media``'s request as the operation log stores it (#70): the metadata, and each
+    file's name, size and type."""
+    metadata = arguments.get("metadata")
+    file = arguments.get("file")
+    poster = arguments.get("poster_file")
+    return {
+        "metadata": metadata.to_json() if isinstance(metadata, MediaUploadRequest) else None,
+        "file": file.described() if isinstance(file, UploadPart) else None,
+        "poster_file": poster.described() if isinstance(poster, UploadPart) else None,
+    }
 
 
 class EngineClient:
@@ -483,11 +567,14 @@ class EngineClient:
         params: QueryParams | None = None,
         json: object | None = None,
         headers: Mapping[str, str] | None = None,
+        files: MultipartParts | None = None,
     ) -> EngineResponse:
         """Send one request and return the raw response, whatever its status.
 
         ``json`` is the request body; ``headers`` adds request headers (``Idempotency-Key``,
         ``X-Epistrel-Expected-Revision``, ``Prefer``) but never replaces the client's own.
+        ``files`` sends a ``multipart/form-data`` body instead (#70), streamed from the parts'
+        file objects.
         """
         method = method.upper()
         wire = self._wire_headers(method, path, principal, headers, accept="application/json")
@@ -498,7 +585,12 @@ class EngineClient:
         try:
             with self._http(httpx.Timeout(timeout if timeout is not None else self.timeout)) as c:
                 return c.request(
-                    method, f"{self.base_url}{path}", headers=wire, params=query, json=json
+                    method,
+                    f"{self.base_url}{path}",
+                    headers=wire,
+                    params=query,
+                    json=json,
+                    files=files,
                 )
         except AssertionError:
             raise  # the fake Engine's signals reach the test
@@ -1750,6 +1842,82 @@ class EngineClient:
         page = _parse(response, EngineProfileSummaryPage)
         return page.items, page.next_cursor
 
+    # --- media (#70) ----------------------------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/media",
+        response_model=MediaUploaded,
+        entity="media",
+        entity_id="response:id",
+        record_body=upload_record,
+    )
+    def upload_media(
+        self,
+        metadata: MediaUploadRequest,
+        file: UploadPart,
+        poster_file: UploadPart | None = None,
+        *,
+        idempotency_key: str,
+    ) -> MediaUploaded:
+        """``POST /media`` as ``multipart/form-data``: the ``metadata`` JSON part, the ``file``
+        and, for a video, an optional ``poster_file``, in that order, streamed from the files.
+        60 s. Identical bytes and metadata answer the existing asset (201 as well)."""
+        payload = json.dumps(metadata.to_json(), ensure_ascii=False).encode("utf-8")
+        parts: MultipartParts = [
+            ("metadata", (None, payload, "application/json")),
+            ("file", file.part()),
+        ]
+        if poster_file is not None:
+            parts.append(("poster_file", poster_file.part()))
+        response = self._request(
+            "POST",
+            "/media",
+            files=parts,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=UPLOAD,
+        )
+        return _parse(response, MediaUploaded)
+
+    @operation("GET", "/media", response_model=MediaPage)
+    def list_media(
+        self,
+        *,
+        kind: str | None = None,
+        owner: str | None = None,
+        relations: Sequence[str] = (),
+        state: str | None = None,
+        cursor: str | None = None,
+        limit: int = CATALOG_PAGE,
+    ) -> tuple[list[MediaAsset], str | None]:
+        """``GET /media``: one page of assets, newest first, and the next cursor. ``state`` is
+        ``live`` (the Engine's default, not sent) or ``retired``; ``relations`` are sent as
+        repeated parameters. A blank filter is not sent."""
+        params: list[tuple[str, str]] = [("limit", str(limit))]
+        for name, value in (("kind", kind), ("owner", owner), ("state", state), ("cursor", cursor)):
+            if value:
+                params.append((name, value))
+        params.extend(("relation", relation) for relation in relations)
+        page = _parse(self._request("GET", "/media", params=params), MediaPage)
+        return page.items, page.next_cursor
+
+    @operation("GET", "/media/{media_id}", response_model=MediaAsset)
+    def get_media(self, media_id: str) -> MediaAsset:
+        """``GET /media/{id}``: the asset's metadata (a retired one too)."""
+        return _parse(self._request("GET", _media_path(media_id)), MediaAsset)
+
+    @operation("DELETE", "/media/{media_id}", entity="media", entity_id="media_id")
+    def retire_media(self, media_id: str, *, idempotency_key: str) -> None:
+        """``DELETE /media/{id}``: retire the asset (and a video's poster). 204, and a 204 no-op
+        on an asset already retired."""
+        response = self._request(
+            "DELETE",
+            _media_path(media_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
     # --- media content (#65's proxy) -------------------------------------------------------------
 
     @operation("GET", "/media/{media_id}/content")
@@ -1820,6 +1988,11 @@ def _scenario_path(scenario_id: str) -> str:
 def _persona_path(persona_id: str) -> str:
     """``/personas/<id>``, the id percent-encoded."""
     return f"/personas/{quote(persona_id, safe='')}"
+
+
+def _media_path(media_id: str) -> str:
+    """``/media/<id>``, the id percent-encoded."""
+    return f"/media/{quote(media_id, safe='')}"
 
 
 def turn_timeout(deadline_s: float | None) -> float:

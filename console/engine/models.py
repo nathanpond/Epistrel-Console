@@ -1977,3 +1977,65 @@ class ListingStatus(Model):
     id: str
     listing_status: str
     idempotency_key: str | None = None
+
+
+# --- media (#70) ----------------------------------------------------------------------------------
+
+SubjectKind = Literal["character", "catalog_character", "persona"]
+MediaKind = Literal["image", "video"]
+
+
+@dataclass(frozen=True)
+class SubjectRef(Model):
+    """``SubjectRef`` / ``DepictedSubject``: a story ``character``, a ``catalog_character`` or a
+    ``persona``, by id. One model for an asset's ``depicted_subjects`` and erasure's subject
+    (#86)."""
+
+    kind: SubjectKind
+    id: str
+
+
+@dataclass(frozen=True)
+class MediaAsset(Model):
+    """``MediaAsset``: an asset's metadata. ``width``/``height``/``duration_ms`` are ``None`` when
+    no probe could read them; ``state`` is ``live``, ``retired`` or (M8) ``candidate``, read as
+    an open string so a new state renders raw; ``poster_media_id`` names a video's poster."""
+
+    id: str
+    owner_principal: str
+    kind: MediaKind
+    mime_type: str
+    size: int
+    width: int | None
+    height: int | None
+    duration_ms: int | None
+    checksum: str
+    content_rating_id: str | None
+    content_rating_version_id: str
+    alt_text: str | None
+    caption: str | None
+    generation_metadata: dict[str, Any] | None
+    depicted_subjects: list[SubjectRef]
+    created_at: str
+    created_by: str
+    poster_media_id: str | None
+    # Open enums (``open_enum()``, spelled out so a subclass may add required fields).
+    source: str = field(metadata={OPEN_ENUM: True})
+    state: str = field(metadata={OPEN_ENUM: True})
+
+
+@dataclass(frozen=True)
+class MediaUploaded(MediaAsset):
+    """``MediaUploadedBody``: the asset an upload stored (or the existing one for identical
+    bytes), with the deployment's ``config_revision`` (unchanged) and the call's key."""
+
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class MediaPage(Model):
+    """``MediaListBody``: one page of assets, newest first; ``next_cursor`` reads the next."""
+
+    items: list[MediaAsset]
+    next_cursor: str | None

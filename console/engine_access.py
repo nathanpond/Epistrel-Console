@@ -23,9 +23,11 @@ from console import operation_log
 from console.acting import acting_principal
 from console.engine.client import (
     MUTATING,
+    Call,
     EngineClient,
     EngineResponse,
     EngineUnreachable,
+    MultipartParts,
     QueryParams,
     current_call,
 )
@@ -62,6 +64,7 @@ class RecordingEngineClient(EngineClient):
         params: QueryParams | None = None,
         json: object | None = None,
         headers: Mapping[str, str] | None = None,
+        files: MultipartParts | None = None,
     ) -> EngineResponse:
         call = current_call()
         recorded = call.operation.is_recorded if call is not None else method.upper() in MUTATING
@@ -74,6 +77,7 @@ class RecordingEngineClient(EngineClient):
                 params=params,
                 json=json,
                 headers=headers,
+                files=files,
             )
         started = time.monotonic()
         response: EngineResponse | None = None
@@ -87,6 +91,7 @@ class RecordingEngineClient(EngineClient):
                 params=params,
                 json=json,
                 headers=headers,
+                files=files,
             )
         except EngineUnreachable as exc:
             unreachable = exc.reason
@@ -100,7 +105,7 @@ class RecordingEngineClient(EngineClient):
                         http_method=method.upper(),
                         path=path.split("?", 1)[0],
                         params=params,
-                        body=json,
+                        body=_recorded_body(call, json),
                         headers=dict(headers or {}),
                         principal=principal if principal is not None else self.principal or "",
                         elapsed_ms=round((time.monotonic() - started) * 1000),
@@ -112,6 +117,15 @@ class RecordingEngineClient(EngineClient):
                 )
                 self.last_operation_id = row.pk if row is not None else None
         return response
+
+
+def _recorded_body(call: Call | None, json: object | None) -> object | None:
+    """The request body the row stores: the registration's ``record_body`` hook applied to the
+    call's arguments (#70: a multipart upload, whose bytes are never stored), else the JSON body
+    as sent."""
+    if call is not None and call.operation.record_body is not None:
+        return call.operation.record_body(call.arguments)
+    return json
 
 
 def engine_client_for(request: HttpRequest) -> RecordingEngineClient:

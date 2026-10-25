@@ -12,6 +12,7 @@ from console.views import (
     catalog_scenarios,
     engine_panel,
     history,
+    media,
     media_proxy,
     models,
     operations,
@@ -185,9 +186,13 @@ persona_patterns = (
     "personas",
 )
 
-# The media section (#70 adds its pages); #65 builds the proxy every M3 page shows media with.
+# The media library (#70), and #65's proxy every M3 page shows media with.
 media_patterns = (
     [
+        path("", media.media_list, name="index"),
+        path("upload/", media.media_upload, name="upload"),
+        path("<str:media_id>/", media.media_detail, name="detail"),
+        path("<str:media_id>/retire/", media.media_retire, name="retire"),
         path("<str:media_id>/content/", media_proxy.media_content, name="content"),
     ],
     "media",

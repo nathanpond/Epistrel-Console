@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{% block title %}{% if retired %}Retired media{% else %}Media{% endif %} — Epistrel Console{% endblock %}
+{% block heading %}{% if retired %}Retired media{% else %}Media{% endif %}{% endblock %}
+{% block content %}
+<p><a class="new upload" href="{% url 'media:upload' %}" target="_blank" rel="noopener">Upload</a></p>
+<form method="get" action="{% url 'media:index' %}" class="filters">
+  {{ form.non_field_errors }}
+  <p>
+    <label>{{ form.kind.label }} {{ form.kind }}</label>
+    {{ form.kind.errors }}
+    <label>{{ form.owner.label }} {{ form.owner }}</label>
+    {{ form.owner.errors }}
+  </p>
+  <p>
+    <label>{{ form.relation.label }} {{ form.relation }}</label>
+    <label>{{ form.relation_principal.label }} {{ form.relation_principal }}</label>
+    {{ form.relation.errors }}{{ form.relation_principal.errors }}
+  </p>
+  <p><label>{{ form.retired }} {{ form.retired.label }}</label> <small class="muted">Lists only retired media</small></p>
+  <button type="submit">Apply</button>
+  <a href="{% url 'media:index' %}">Clear</a>
+</form>
+
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% elif not form.errors %}
+{% if rows %}
+<table class="media">
+  <thead>
+    <tr><th>Thumbnail</th><th>Id</th><th>Kind</th><th>Rating</th><th>Owner</th><th>Subjects</th><th>State</th><th>Created</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr id="media-{{ row.asset.id }}">
+      <td><a href="{{ row.url }}">{% if row.thumbnail %}<img class="thumbnail" src="{{ row.thumbnail }}" style="max-width: 120px; max-height: 120px" alt="{{ row.asset.alt_text|default_if_none:'' }}">{% else %}[video]{% endif %}</a></td>
+      <td><a href="{{ row.url }}" title="{{ row.asset.id }}"><code>…{{ row.asset.id|slice:"-6:" }}</code></a></td>
+      <td>{{ row.asset.kind }}</td>
+      <td>{{ row.rating }}</td>
+      <td>{{ row.asset.owner_principal|principal_link }}</td>
+      <td class="subjects">{% for subject in row.subjects %}<span class="subject" title="{{ subject.id }}">{{ subject.kind }} {{ subject.short }}</span>{% if not forloop.last %}, {% endif %}{% empty %}nobody{% endfor %}</td>
+      <td>{{ row.asset.state|humanise }}</td>
+      <td>{{ row.asset.created_at|engine_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{% if any_filter %}No media match these filters.{% elif retired %}No retired media.{% else %}No media.{% endif %}</p>
+{% endif %}
+<p class="paging">
+  {% if paged %}<a href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}
