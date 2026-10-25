@@ -30,6 +30,7 @@ from console.views import (
     stories,
     story_characters,
     story_from_scenario,
+    story_rating,
     story_settings,
     timeline,
 )
@@ -85,6 +86,14 @@ story_patterns = (
             "<str:story_id>/characters/<str:character_id>/promote/",
             story_characters.character_promote,
             name="character-promote",
+        ),
+        # #80: change the story's rating, confirm a tighten, follow its check.
+        path("<str:story_id>/rating/", story_rating.rating_page, name="rating"),
+        path("<str:story_id>/rating/confirm/", story_rating.rating_confirm, name="rating-confirm"),
+        path(
+            "<str:story_id>/rating/checks/<str:job_id>/",
+            story_rating.rating_check,
+            name="rating-check",
         ),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),

@@ -1,0 +1,13 @@
+{% comment %}
+The paused-story banner (#80, console/story_pause.py). Context: pause_banner (PauseBanner). base.html
+renders it under the acting-as banner and the flash messages; the check view's ?banner=1 partial
+renders it again while it polls (hx-trigger only while polling, so a failed read stops it). A
+terminal check answers HX-Refresh instead, and the page reloads unpaused.
+{% endcomment %}<div id="pause-banner" class="banner banner-warning pause-banner" role="status"{% if pause_banner.polling %} hx-get="{{ pause_banner.poll_url }}" hx-trigger="{{ pause_banner.poll_trigger }}" hx-swap="outerHTML"{% endif %}>
+  <strong>{% if pause_banner.check_url %}<a class="pause-check" href="{{ pause_banner.check_url }}">{{ pause_banner.text }}</a>{% else %}{{ pause_banner.text }}{% endif %}</strong>
+  {% if not pause_banner.unavailable and not pause_banner.not_found %}{% if pause_banner.indeterminate %}<progress></progress>{% else %}<progress value="{{ pause_banner.done }}" max="{{ pause_banner.total }}">{{ pause_banner.done }}/{{ pause_banner.total }}</progress>{% endif %}{% endif %}
+  {% if pause_banner.retrying_text %}<span class="retrying">{{ pause_banner.retrying_text }}</span>{% endif %}
+  {% if pause_banner.not_found %}<span class="pause-error">No such check, or it expired (kept 30 days)</span>{% endif %}
+  {% if pause_banner.unavailable %}{% include "console/_engine_error.html" with engine_error=pause_banner.unavailable %}{% endif %}
+  {% if not pause_banner.polling %}<a class="refresh" href="{{ pause_banner.refresh_url }}">Refresh</a>{% endif %}
+</div>

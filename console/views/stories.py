@@ -45,7 +45,7 @@ from console.formset_rows import edit_rows, wants_edit
 from console.ids import new_ulid
 
 EMPTY = "—"
-PAUSED_NOTE = "Paused while a check runs"
+PAUSED_NOTE = "Paused while the check runs"  # #80's wording
 RATINGS_FIELD = "rating_choices"  # the select's options, signed, carried across re-renders
 RATINGS_SALT = "console.stories.rating_choices"
 # A 422 at these paths, or with this code, belongs beside the viewpoint field.

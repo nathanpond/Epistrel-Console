@@ -16,9 +16,9 @@
 {% endif %}
 <dl class="story-header">
   <dt>Id</dt><dd><code>{{ story.id }}</code></dd>
-  <dt>Status</dt><dd class="status">{{ story.status }}</dd>
+  <dt>Status</dt><dd class="status">{% if story.status == "paused" %}Paused{% else %}{{ story.status }}{% endif %}</dd>
   <dt>Timeline revision</dt><dd>{{ story.timeline_revision }}{% if timeline.undo %} {% if timeline.archived_note %}<button type="button" class="undo-rewind" disabled title="{{ timeline.archived_note }}">{{ timeline.undo.label }}</button>{% else %}<a class="button undo-rewind" href="{{ timeline.undo.url }}">{{ timeline.undo.label }}</a>{% endif %}{% endif %}{% if timeline.dormant %} <a class="dormant-chains" href="{{ timeline.variants_url }}">{{ timeline.dormant }} dormant chain{{ timeline.dormant|pluralize }}</a>{% endif %}</dd>
-  <dt>Content rating</dt><dd>{{ story.content_rating.name|default:"—" }}</dd>
+  <dt>Content rating</dt><dd><a class="rating-link" href="{{ rating_url }}">{{ story.content_rating.name|default:"—" }}</a></dd>
   <dt>Cast</dt>
   <dd>{% if cast_panel %}{% include "console/play/_cast_panel.html" %}{% elif cast %}<ul class="cast">{% for character in cast %}<li>{{ character.name }}{% if character.is_player %} (player){% endif %}</li>{% endfor %}</ul>{% else %}—{% endif %}</dd>
   <dt>Created</dt><dd>{{ story.created_at|engine_time }}</dd>

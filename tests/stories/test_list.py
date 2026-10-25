@@ -95,7 +95,7 @@ def test_paused_row_disables_archive(operator_client: Client, engine: FakeEngine
     serve(engine, summary(PAUSED, "Busy", "paused"))
     row = row_html(operator_client.get("/stories/").content.decode(), PAUSED)
     assert '<button type="button" disabled>Archive</button>' in row
-    assert "Paused while a check runs" in row
+    assert "Paused while the check runs" in row
     assert f"/stories/{PAUSED}/archive/" not in row
 
 
@@ -107,7 +107,7 @@ def test_active_row_archive_is_enabled(operator_client: Client, engine: FakeEngi
         in row
     )
     assert "disabled" not in row
-    assert "Paused while a check runs" not in row
+    assert "Paused while the check runs" not in row
 
 
 def test_archived_row_offers_unarchive_and_every_row_delete(

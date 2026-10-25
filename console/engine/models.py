@@ -834,10 +834,11 @@ class ForkResult(Model):
 
 
 @dataclass(frozen=True)
-class ReactivationCheck(Model):
-    """``RatingCheckStartedBody``: the 202 of untruncate, swap and fork when turns they would
-    make active must be re-checked under the current guardrails first. The story is paused
-    until check ``job_id`` ends (#81 follows it)."""
+class RatingCheckStarted(Model):
+    """``RatingCheckStartedBody``: a rating check started (202). A tightening rating change
+    answers it (#80), and so do untruncate, swap and fork when turns they would make active must
+    be re-checked under the current guardrails first (#81). The story is paused until check
+    ``job_id`` ends (``GET /stories/{id}/content-rating/checks/{job_id}``)."""
 
     timeline_revision: int
     job_id: str
@@ -845,6 +846,79 @@ class ReactivationCheck(Model):
     status: str
     config_revision: int
     idempotency_key: str | None = None
+
+
+# #53's name for the same 202 (a reactivation re-check started).
+ReactivationCheck = RatingCheckStarted
+
+
+@dataclass(frozen=True)
+class RatingApplied(Model):
+    """``RatingAppliedBody``: a story rating change applied at once (a relaxing one), or the
+    rating the story already has (``changed`` false, nothing written). ``rating_version`` is a
+    version id (a string), not the integer version."""
+
+    timeline_revision: int
+    applied: bool
+    changed: bool
+    content_rating_id: str
+    rating_version: str
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CheckProgress(Model):
+    """``CheckProgressBody``: records checked, of how many (``total`` 0: not counted yet)."""
+
+    done: int
+    total: int
+
+
+@dataclass(frozen=True)
+class CheckTarget(Model):
+    """``CheckTargetBody``: the rating a check evaluates and the version id it evaluates."""
+
+    rating_id: str
+    version: str
+
+
+@dataclass(frozen=True)
+class CheckViolation(Model):
+    """``CheckViolationBody``: one record breaking one policy. ``position`` stays raw
+    (``{turn, variant, beat}`` or ``{kind, id}``); a record that could not be checked has a
+    ``code`` and may lack the policy. Never the text: any other key the Engine adds is dropped
+    by the parse, so it can never render."""
+
+    position: dict[str, Any]
+    policy_id: str | None
+    policy_name: str | None
+    code: str | None = None
+
+
+@dataclass(frozen=True)
+class RatingCheck(Model):
+    """``RatingCheckBody``: a rating check (#80) or a reactivation re-check (#81), as ``GET
+    /stories/{id}/content-rating/checks/{job_id}`` answers it. ``status`` is ``checking`` until
+    it ends ``applied``, ``refused``, ``failed`` (or, for ``kind: reactivation``,
+    ``reactivated``). ``error`` (``{class, message}``) and ``outcome`` stay raw."""
+
+    kind: str
+    job_id: str
+    story_id: str
+    status: str
+    progress: CheckProgress
+    started_at: str
+    started_by: str
+    finished_at: str | None
+    target: CheckTarget
+    from_rating_id: str
+    operation_id: str | None
+    rating_version: str | None
+    config_revision: int | None
+    violations: list[CheckViolation]
+    error: dict[str, Any] | None
+    outcome: dict[str, Any] | None
 
 
 @dataclass(frozen=True)

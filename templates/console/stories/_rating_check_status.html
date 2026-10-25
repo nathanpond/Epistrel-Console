@@ -1,0 +1,45 @@
+{% load console_format %}
+{% comment %}
+A rating check's status (#80), polled inside console/_job_poll.html. Context: view (CheckView; None when
+the read failed), not_found/not_found_text, engine_error, not_changed, rating_url, story_url.
+{% endcomment %}{% if not_found %}<p class="notice check-not-found"><strong>{{ not_found_text }}</strong></p>
+{% elif engine_error %}{% include "console/_engine_error.html" %}
+{% elif view %}
+<dl class="check-status">
+  <dt>Status</dt><dd class="status status-{{ view.check.status }}">{{ view.check.status }}</dd>
+  <dt>Progress</dt><dd>{% if view.indeterminate %}<progress></progress>{% else %}<progress value="{{ view.check.progress.done }}" max="{{ view.check.progress.total }}">{{ view.progress }}</progress>{% endif %} {{ view.progress }}</dd>
+</dl>
+{% if view.check.status == "applied" %}
+<p class="notice check-applied"><strong>Rating changed to <em>{{ view.target_name }}</em></strong></p>
+<dl class="check-result">
+  <dt>Rating version</dt><dd>{% if view.applied_version is not None %}{{ view.applied_version }}{% else %}<code>{{ view.check.rating_version|default:"—" }}</code>{% endif %}</dd>
+  <dt>Config revision</dt><dd>{{ view.check.config_revision|default_if_none:"—" }}</dd>
+  <dt>Finished</dt><dd>{{ view.check.finished_at|engine_time }}</dd>
+</dl>
+{% elif view.check.status == "refused" %}
+<p class="notice check-refused"><strong>{{ not_changed }}</strong></p>
+<h2>Violations ({{ view.violations|length }})</h2>
+<table class="check-violations">
+  <thead><tr><th>Position</th><th>Policy</th><th>Name</th><th></th></tr></thead>
+  <tbody>
+    {% for row in view.violations %}
+    <tr>
+      <td>{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position }}</a>{% elif row.position_id %}{{ row.position }} <code>{{ row.position_id }}</code>{% else %}{{ row.position }}{% endif %}</td>
+      <td>{% if row.policy_id %}{% if row.policy_url %}<a href="{{ row.policy_url }}"><code>{{ row.policy_id }}</code></a>{% else %}<code>{{ row.policy_id }}</code>{% endif %}{% elif row.code %}— (could not be checked: <code>{{ row.code }}</code>){% else %}—{% endif %}</td>
+      <td>{{ row.policy_name|default:"—" }}{% if row.policy_id and row.code %} <small>(<code>{{ row.code }}</code>)</small>{% endif %}</td>
+      <td>{% if row.raw %}<details><summary>More</summary><pre>{{ row.raw }}</pre></details>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif view.check.status == "failed" %}
+<p class="notice check-failed"><strong>The check failed — {{ not_changed|lower }}</strong></p>
+<dl class="check-error">
+  <dt>Error class</dt><dd><code>{{ view.error_class }}</code></dd>
+  <dt>Message</dt><dd>{{ view.error_message }}</dd>
+</dl>
+{% elif view.check.status != "checking" %}
+<p class="notice check-unknown">Status <code>{{ view.check.status }}</code></p>
+{% endif %}
+{% if view.terminal %}<p class="check-back"><a href="{{ rating_url }}">Back to rating</a> · <a href="{{ story_url }}">Back to story</a></p>{% endif %}
+{% endif %}

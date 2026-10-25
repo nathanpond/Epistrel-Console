@@ -85,7 +85,9 @@ from console.ingest import (
 )
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
+from console.story_pause import TURN_NOTE, PauseBanner, pause_banner, paused_refusal
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
+from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
 from console.timeline import Basis, Link, TurnControls, turn_controls
 from console.turn_reports import (
     ViolationRow,
@@ -190,6 +192,18 @@ class PlayStory:
     def archived(self) -> bool:
         return self.status == "archived"
 
+    @property
+    def paused(self) -> bool:
+        """A check pauses the story (#80): the Engine refuses turns and timeline operations."""
+        return self.status == "paused"
+
+    @property
+    def timeline_note(self) -> str:
+        """Why the timeline controls are disabled ("" when they are not)."""
+        if self.paused:
+            return TIMELINE_PAUSED
+        return TIMELINE_ARCHIVED if self.archived else ""
+
     def default_form_viewpoint(self) -> str:
         """The viewpoint select's first choice: the story default, else the default actor."""
         if self.default_viewpoint:
@@ -263,6 +277,8 @@ class FormView:
 def _form_view(play: PlayStory, form: TurnForm, *, waiting: bool = False) -> FormView:
     if play.archived:
         return FormView(play.id, form, play.signed(), new_ulid(), True, ARCHIVED_NOTE)
+    if play.paused:
+        return FormView(play.id, form, play.signed(), new_ulid(), True, TURN_NOTE)
     note = "Waiting for the queued turn to finish." if waiting else ""
     return FormView(play.id, form, play.signed(), new_ulid(), waiting, note)
 
@@ -306,7 +322,15 @@ def timeline_basis(play_story: PlayStory, history: History, story: Story | None 
     else:
         rev, head = history.timeline_revision, history.as_of
     next_url = reverse("stories:detail", args=[play_story.id])
-    return Basis(play_story.id, rev, head, play_story.name or "", play_story.archived, next_url)
+    return Basis(
+        play_story.id,
+        rev,
+        head,
+        play_story.name or "",
+        play_story.archived,
+        next_url,
+        paused=play_story.paused,
+    )
 
 
 def _with_controls(
@@ -361,7 +385,7 @@ def _transcript(
         _with_controls(entries, play_story, basis, story),
         history.next_before_turn,
         start=turn_controls(basis, 0, chains=chains),
-        archived_note=TIMELINE_ARCHIVED if play_story.archived else "",
+        archived_note=play_story.timeline_note,
     )
 
 
@@ -374,6 +398,7 @@ class Inspector:
 
     title: str = ""
     notice: str = ""
+    notice_url: str = ""  # links the notice (#80: the check a 409 story_paused names)
     report: TurnReport | None = None
     reply: str = ""
     input_violations: tuple[ViolationRow, ...] = ()
@@ -424,6 +449,10 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
         "error_line": line,
     }
     retry = (("Retry after", f"{exc.retry_after} s"),) if exc.retry_after else ()
+    if exc.code == "story_paused":
+        story_id = details.get("story_id")
+        paused = paused_refusal(exc, story_id if isinstance(story_id, str) else None)
+        return Inspector(notice=paused.text, notice_url=paused.url, **base)
     if exc.code == "story_busy":
         reason = details.get("reason")
         if reason == "queue_full":
@@ -636,9 +665,12 @@ class PlayPage:
     fork_banner: ForkBanner | None = None
     cast_panel: CastPanel | None = None  # #72: Add character, Promote
     ownership: OwnershipPanel | None = None  # #79: owner and relations
+    pause_banner: PauseBanner | None = None  # #80: a check pauses the story
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "pause_banner": self.pause_banner,
+            "rating_url": reverse("stories:rating", args=[self.story.id]),
             "timeline": self.header,
             "fork_banner": self.fork_banner,
             "tab": self.tab,
@@ -672,7 +704,7 @@ class TimelineHeader:
     undo: Link | None
     dormant: int
     variants_url: str
-    archived_note: str
+    archived_note: str  # why Undo rewind is disabled: archived, or paused (#80)
 
 
 def _timeline_header(story: Story, play_story: PlayStory) -> TimelineHeader:
@@ -684,12 +716,13 @@ def _timeline_header(story: Story, play_story: PlayStory) -> TimelineHeader:
         story.name or "",
         play_story.archived,
         next_url,
+        paused=play_story.paused,
     )
     return TimelineHeader(
         undo=basis.undo() if story.undo_available else None,
         dormant=len(story.dormant_chains),
         variants_url=reverse("stories:history", args=[story.id]) + "#variants",
-        archived_note=TIMELINE_ARCHIVED if play_story.archived else "",
+        archived_note=play_story.timeline_note,
     )
 
 
@@ -769,6 +802,7 @@ def _page(
         _fork_banner(request, story_id),
         cast_panel(engine_client_for(request), story),
         _ownership(request, story),
+        pause_banner(story),
     )
     return render(request, "console/play/play.html", page.context(request))
 
@@ -954,7 +988,11 @@ def _ingest_view(
     play_story: PlayStory, formset: BaseIngestFormSet, viewpoint: str, **changes: Any
 ) -> IngestView:
     """The ingest tab for ``formset``: a fresh key, disabled while the story is archived."""
-    archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE} if play_story.archived else {}
+    archived: dict[str, Any] = {}
+    if play_story.archived:
+        archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE}
+    elif play_story.paused:
+        archived = {"disabled": True, "note": TURN_NOTE}
     return IngestView(
         play_story.id,
         formset,

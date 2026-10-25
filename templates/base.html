@@ -132,6 +132,7 @@
     {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>{% endfor %}
   </ul>
   {% endif %}
+  {% if pause_banner %}{% include "console/stories/_pause_banner.html" %}{% endif %}
   <header>{% block header %}<h1>{% block heading %}Epistrel Console{% endblock %}</h1>{% endblock %}</header>
   <main>{% block content %}{% endblock %}</main>
   <footer>{% block footer %}Epistrel Console {{ console_version }}{% endblock %}</footer>

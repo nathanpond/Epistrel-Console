@@ -41,7 +41,8 @@ from console.history import (
     summary_rows,
     turn_groups,
 )
-from console.timeline import ARCHIVED_NOTE, Basis, Link
+from console.story_pause import is_paused, pause_banner
+from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
 
 CONTROLS_TEMPLATE = "console/history/_controls.html"
 PAGE_TEMPLATE = "console/history/history.html"
@@ -155,6 +156,7 @@ def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) 
         story.name or "",
         story.status == "archived",
         request.get_full_path(),
+        paused=is_paused(story),
     )
     rows = []
     for chain in chains:
@@ -237,5 +239,7 @@ def history(request: HttpRequest, story_id: str) -> HttpResponse:
         "chains": _chain_rows(request, story, chains),
         "variants_error": variants_error,
         "archived_note": ARCHIVED_NOTE if story.status == "archived" else "",
+        "paused_note": PAUSED_NOTE if is_paused(story) else "",
+        "pause_banner": pause_banner(story),  # #80
     }
     return render(request, PAGE_TEMPLATE, context)

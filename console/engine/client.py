@@ -76,6 +76,9 @@ from console.engine.models import (
     ProfileVersionList,
     Promotion,
     QueuedTurn,
+    RatingApplied,
+    RatingCheck,
+    RatingCheckStarted,
     RatingVersion,
     RatingVersionList,
     ReactivationCheck,
@@ -824,6 +827,44 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         _raise_for_envelope(response)
+
+    # --- a story's content rating (#80) -----------------------------------------------------
+
+    @operation(
+        "PUT",
+        "/stories/{story_id}/content-rating",
+        response_model=RatingApplied,
+        status_models={202: RatingCheckStarted},
+    )
+    def set_story_content_rating(
+        self, story_id: str, content_rating_id: str, *, idempotency_key: str
+    ) -> RatingApplied | RatingCheckStarted:
+        """``PUT /stories/{id}/content-rating``: change the story's rating. A relaxing change
+        (or the current rating) is :class:`RatingApplied` (200); a tightening one pauses the
+        story and starts a history check, :class:`RatingCheckStarted` (202, the operation log
+        records it ``queued`` with its ``job_id``). 409 ``story_archived`` / ``story_paused`` /
+        ``revision_conflict``, 422 ``rating_retired``. The Engine holds the write behind a
+        running turn, so it waits the turn timeout (#64 convention 18)."""
+        response = self._request(
+            "PUT",
+            f"{_story_path(story_id)}/content-rating",
+            json={"content_rating_id": content_rating_id},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=turn_timeout(None),
+        )
+        if response.status_code == 202:
+            return _parse(response, RatingCheckStarted)
+        return _parse(response, RatingApplied)
+
+    @operation(
+        "GET", "/stories/{story_id}/content-rating/checks/{job_id}", response_model=RatingCheck
+    )
+    def get_rating_check(self, story_id: str, job_id: str) -> RatingCheck:
+        """``GET /stories/{id}/content-rating/checks/{job_id}``: a rating (or reactivation)
+        check's status, progress and, once it ends, its result. 404 ``not_found`` for a job that
+        is not one of the story's, or once the check's 30 days are up. Unrecorded."""
+        path = f"{_story_path(story_id)}/content-rating/checks/{quote(job_id, safe='')}"
+        return _parse(self._request("GET", path), RatingCheck)
 
     @operation("GET", "/admin/content-ratings", response_model=ContentRatingList)
     def list_content_ratings(self, include_retired: bool = False) -> list[ContentRatingSummary]:

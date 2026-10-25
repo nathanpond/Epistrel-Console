@@ -1020,3 +1020,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Every test fixture that renders an owned entity's page (catalog, play, timeline, history, stories, engine panel, personas, media, profiles, story characters, story-from-scenario) answers every relations read by default (`tests/fakes/ownership.py answer_relations`). One existing test (`test_one_render_posted_twice_sends_the_same_key`) drops the panel before picking the turn form's idempotency key, because the panel's add form carries its own key.
   **Why:** Every owned page now reads its relations. Without a default answer, the fake Engine fails every older page test.
   **Issue:** #79
+- **Decision:** #53's `ReactivationCheck` model becomes `RatingCheckStarted` (the Engine's `RatingCheckStartedBody`, which the rating PUT's 202 also answers); `ReactivationCheck` stays as an alias so #53's code is unchanged.
+  **Why:** One schema component, one model; the story names `RatingCheckStarted`.
+  **Issue:** #80
+- **Decision:** The check page's poll partial reads only the check, so the target rating's name and listed version travel as display-only query parameters on the poll URL (`t_name`, `t_vid`, `t_v`, like #43's `name=`). Other query parameters (#81's `op`) are kept on the poll URL. The pause banner's poll URL carries `cause=` for the same reason.
+  **Why:** The applied line ("Rating changed to X", integer version) needs names the check body does not hold, and the planner forbids extra reads per poll.
+  **Issue:** #80
+- **Decision:** Choosing the current rating is detected from a plain hidden `current` field (the rating the page showed), so it makes zero calls; a forged value can only skip a write. A POST naming any other rating re-reads the story, list and details before deciding relax or tighten.
+  **Why:** The test plan asks for zero calls when the current rating is chosen, and a fresh recompute for every real change.
+  **Issue:** #80
+- **Decision:** While paused, the play view also disables the ingest tab (with the turn form's note), and every #53 control, Fork included, on the transcript, the header's Undo rewind and the history page's Variants panel. Add character and Rebuild projections stay enabled (the Engine answers for them). #45's paused note on the story actions now reads "Paused while the check runs" (#80's wording), and its list test follows.
+  **Why:** The AC says the play view's mutation controls are disabled, and ingest changes the story's truth like a turn. The Engine refuses forks of a paused story with `story_paused`.
+  **Issue:** #80
+- **Decision:** A 409 `story_paused` refusal is rendered by one helper (`console.story_pause.paused_refusal`) everywhere: #48's turn inspector (and through it #53's refusal page and the ingest tab) and #54's settings refusals. It takes the story id from the error's `details.story_id` when no other story id is given. Inspector and settings `Refusal` gained a `notice_url` so the line links to the check.
+  **Why:** The Engine's `StoryPaused` details carry `story_id`, `job_id` and `progress`, and the inspector builder has no story id of its own.
+  **Issue:** #80
+- **Decision:** A refused check settles the #44 row with the full check body as its response; the violations model drops every key it does not know, so the stored body never holds violation text either.
+  **Why:** The planner says to store the full body. Storing the parsed model keeps the never-the-text guarantee for the operations log too.
+  **Issue:** #80
