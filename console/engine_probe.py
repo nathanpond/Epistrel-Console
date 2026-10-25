@@ -104,10 +104,30 @@ def degraded_reasons(checks: dict[str, Any]) -> list[str]:
         overdue = _number(checks.get(key))
         if overdue is not None and overdue > OVERDUE_ALERT_S:
             reasons.append(f"{label} overdue {int(overdue)} s")
-    pending = checks.get("erasure_pending")
-    if isinstance(pending, int) and not isinstance(pending, bool) and pending > 0:
-        reasons.append(f"erasure pending {pending}")
+    pending = erasure_reason(checks)
+    if pending:
+        reasons.append(pending)
     return reasons
+
+
+def erasure_pending(checks: dict[str, Any] | None) -> int | None:
+    """``checks.erasure_pending`` when it is an integer, else ``None``."""
+    pending = (checks or {}).get("erasure_pending")
+    return pending if isinstance(pending, int) and not isinstance(pending, bool) else None
+
+
+def erasure_reason(checks: dict[str, Any] | None) -> str:
+    """ "erasure pending: N" while erasures wait to be re-applied (#87), else ""; it goes last
+    in every state's reasons."""
+    pending = erasure_pending(checks)
+    return f"erasure pending: {pending}" if pending is not None and pending > 0 else ""
+
+
+def _with_erasure(reason: str | None, checks: dict[str, Any]) -> str | None:
+    pending = erasure_reason(checks)
+    if not pending or (reason and pending in reason):
+        return reason
+    return f"{reason}, {pending}" if reason else pending
 
 
 def classify(health: HealthResult) -> ProbeResult:
@@ -122,14 +142,18 @@ def classify(health: HealthResult) -> ProbeResult:
     logging_on = body.get("content_logging")
     content_logging = logging_on if isinstance(logging_on, bool) else None
     if code == 200 and status == "ok":
-        return ProbeResult("healthy", True, code, status, checks, None, latency_ms, content_logging)
+        reason_ok = _with_erasure(None, checks)
+        return ProbeResult(
+            "healthy", True, code, status, checks, reason_ok, latency_ms, content_logging
+        )
     if code == 200 and status == "degraded":
         reason = ", ".join(degraded_reasons(checks)) or f"status {status}"
         return ProbeResult(
             "degraded", True, code, status, checks, reason, latency_ms, content_logging
         )
-    reason = _failing_reason(status, checks) if code in (200, 503) else f"HTTP {code}"
-    return ProbeResult("unhealthy", True, code, status, checks, reason, latency_ms, content_logging)
+    failing = _failing_reason(status, checks) if code in (200, 503) else f"HTTP {code}"
+    shown = _with_erasure(failing, checks)
+    return ProbeResult("unhealthy", True, code, status, checks, shown, latency_ms, content_logging)
 
 
 def _unreachable(reason: str) -> ProbeResult:

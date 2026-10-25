@@ -4,7 +4,8 @@ operation-log rows an erasure is kept in (the Engine has no read-back by erasure
 - :func:`new_url` is ``/erasure/new/?kind=&subject=&scope=[&story=]``, or ``None`` while the
   page does not exist (a page links "Erase…" only once it does).
 - :func:`result_row` finds the #44 row of a real run by its ``erasure_id`` (newest first);
-  :func:`real_runs` lists every real run this Console made. Both runs are recorded as
+  :func:`real_runs` lists every real run that answered an erasure id, :func:`console_runs`
+  every real run whatever its outcome (#87). Both runs are recorded as
   ``kind="erase"`` and told apart by the request body's ``dry_run``.
 """
 
@@ -52,6 +53,14 @@ def real_runs() -> QuerySet[EngineOperation]:
         .exclude(response__erasure_id=None)
         .filter(response__erasure_id__isnull=False)
         .order_by("-created_at", "-id")
+    )
+
+
+def console_runs() -> QuerySet[EngineOperation]:
+    """Every real run (``dry_run`` false) this Console made, whatever its outcome, newest
+    first (#87's list)."""
+    return EngineOperation.objects.filter(kind=KIND, request__body__dry_run=False).order_by(
+        "-created_at", "-id"
     )
 
 

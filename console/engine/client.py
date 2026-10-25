@@ -43,7 +43,9 @@ from console.engine.models import (
     EffectiveConfig,
     EngineProfile,
     EngineProfilePage,
+    ErasureBoundary,
     ErasureResult,
+    ErasureStatus,
     ForkResult,
     HealthResponse,
     HealthResult,
@@ -94,6 +96,7 @@ from console.engine.models import (
     ReactivationCheck,
     RebuildQueued,
     RebuildResult,
+    ReconcileResult,
     RegenerateResult,
     RelationRecord,
     Relations,
@@ -129,6 +132,7 @@ from console.engine.timeouts import (
     ERASURE,
     OFFBOARDING,
     PROFILE_EDIT,
+    RECONCILE,
     SCENARIO_CREATE,
     STORY_CHARACTER_ADD,
     UPLOAD,
@@ -307,6 +311,9 @@ class Operation:
     # What the row is about when a static ``entity``/``entity_id`` cannot say it (#86: the
     # erasure's subject kind and id, and its scope's story), from the call's arguments.
     record_about: Callable[[Mapping[str, Any]], RecordedAbout | None] | None = None
+    # A 202 that answers once the work has ended (#87: reconcile), recorded ``ok`` at once
+    # instead of ``queued`` (no job follows it).
+    ended: bool = False
 
     @property
     def is_recorded(self) -> bool:
@@ -379,6 +386,7 @@ def operation(
     record_response: Callable[[object], object] | None = None,
     record_about: Callable[[Mapping[str, Any]], RecordedAbout | None] | None = None,
     listed: bool = True,
+    ended: bool = False,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Register a client method as the Engine operation ``method path``.
 
@@ -409,6 +417,9 @@ def operation(
     stores: an erasure dry run masks its candidates' snippets) and ``record_about`` (called with
     the method's arguments, returns a :class:`RecordedAbout` naming the row's entity and story
     when they depend on the arguments: an erasure's subject kind and its scope's story).
+
+    #87 adds ``ended``: the call's 202 answers once the work has ended (reconcile), so its row
+    is ``ok`` at once, never ``queued``.
 
     #75 adds ``listed``: ``False`` keeps the registration out of :data:`OPERATIONS` (keyed by
     method and path) for a second client method on an operation another method already lists
@@ -441,6 +452,7 @@ def operation(
             record_body,
             record_response,
             record_about,
+            ended,
         )
         if listed:
             OPERATIONS[f"{method} {path}"] = op
@@ -2118,6 +2130,36 @@ class EngineClient:
             "POST", "/admin/erasure", json=body, headers=headers, timeout=ERASURE
         )
         return _parse(response, ErasureResult)
+
+    # --- the erasure ledger (#87) ---------------------------------------------------------------
+
+    @operation("GET", "/admin/erasure/status", response_model=ErasureStatus)
+    def get_erasure_status(self) -> ErasureStatus:
+        """``GET /admin/erasure/status``: what is pending re-application after a restore, the
+        applied count, whether a reapply is running and the last run's time, error and
+        attempts."""
+        return _parse(self._request("GET", "/admin/erasure/status"), ErasureStatus)
+
+    @operation("GET", "/admin/erasure/boundary", response_model=ErasureBoundary)
+    def get_erasure_boundary(self) -> ErasureBoundary:
+        """``GET /admin/erasure/boundary``: what an erasure covers and cannot reach."""
+        return _parse(self._request("GET", "/admin/erasure/boundary"), ErasureBoundary)
+
+    @operation(
+        "POST",
+        "/admin/erasure/reconcile",
+        response_model=ReconcileResult,
+        recorded=True,
+        ended=True,
+    )
+    def reconcile_erasures(self) -> ReconcileResult:
+        """``POST /admin/erasure/reconcile``: re-apply every pending erasure now. It answers
+        (202) when the run has ended; ``ran`` is ``False`` when another process was running it.
+        No ``Idempotency-Key`` (re-running is harmless); recorded (#64 convention 9, a
+        principal-requiring POST that writes no story content of its own). Waits
+        :data:`~console.engine.timeouts.RECONCILE`."""
+        response = self._request("POST", "/admin/erasure/reconcile", timeout=RECONCILE)
+        return _parse(response, ReconcileResult)
 
     # --- catalog scenarios (#68) ----------------------------------------------------------------
 

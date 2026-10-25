@@ -1,19 +1,26 @@
 {% extends "base.html" %}
+{% load principals %}
 {% block title %}Erasure — Epistrel Console{% endblock %}
 {% block heading %}Erasure{% endblock %}
 {% block content %}
-<p><a class="button" href="{{ new_url }}">New erasure</a></p>
-<p class="muted">The erasures this Console ran (the Engine has no read-back; results are kept from the operations log).</p>
+<p><a class="button" href="{{ new_url }}">New erasure</a> · <a class="boundary-link" href="{{ boundary_url }}">What erasure does and doesn't cover</a></p>
+{% include "console/erasure/_ledger.html" %}
+<h2>Erasures this Console ran</h2>
+<p class="muted">The Engine has no read-back; results are kept from the operations log.</p>
 {% if rows %}
 <table class="erasures">
-  <thead><tr><th>Erasure</th><th>Subject</th><th>Scope</th><th>Residue</th><th>When</th></tr></thead>
+  <thead><tr><th>When</th><th>Operator</th><th>Principal</th><th>Subject</th><th>Scope</th><th>Story</th><th>Outcome</th><th>Residue</th><th>Erasure</th></tr></thead>
   <tbody>
   {% for r in rows %}
-    <tr><td><a href="{{ r.url }}"><code>{{ r.erasure_id }}</code></a></td>
+    <tr><td>{{ r.row.created_at }}</td>
+      <td>{{ r.row.operator_username|default:"—" }}</td>
+      <td>{{ r.row.principal|principal_link }}</td>
       <td>{% if r.subject %}{{ r.subject.kind }} <code>{{ r.subject.id }}</code>{% else %}—{% endif %}</td>
       <td>{{ r.scope }}</td>
-      <td><span class="residue {{ r.residue.css }}">{{ r.residue.text }}</span></td>
-      <td>{{ r.row.created_at }}</td></tr>
+      <td>{% if r.story_id %}<a href="{% url 'stories:detail' r.story_id %}"><code>{{ r.story_id }}</code></a>{% else %}—{% endif %}</td>
+      <td class="outcome">{{ r.row.outcome }}{% if r.row.error_code %} <code>{{ r.row.error_code }}</code>{% endif %}</td>
+      <td>{% if r.erasure_id %}<span class="residue {{ r.residue.css }}">{{ r.residue.text }}</span>{% else %}—{% endif %}</td>
+      <td>{% if r.url %}<a href="{{ r.url }}"><code>{{ r.erasure_id }}</code></a>{% else %}—{% endif %}{% if r.pending %} <span class="badge-pending">{{ pending_badge }}</span>{% endif %}</td></tr>
   {% endfor %}
   </tbody>
 </table>

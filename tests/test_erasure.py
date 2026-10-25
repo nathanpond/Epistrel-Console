@@ -35,6 +35,7 @@ from console.views.erasure import (
     residue,
 )
 from tests.fakes.engine import FakeEngine
+from tests.fakes.erasure_ledger import answer_status
 from tests.fixtures import engine_fixture
 from tests.ratings.helpers import error, text
 from tests.stories.helpers import summary
@@ -949,6 +950,7 @@ def test_an_unknown_erasure_id_is_404(operator_client: Client, engine: FakeEngin
 
 def test_the_list_shows_real_runs_only(operator_client: Client, engine: FakeEngine) -> None:
     run_to_result(operator_client, engine, story_run())
+    answer_status(engine)  # #87's ledger section
     html = operator_client.get("/erasure/").content.decode()
     assert html.count(f'href="/erasure/{ERASURE_ID}/"') == 1
     assert EngineOperation.objects.filter(kind="erase").count() == 2  # the dry run, the run

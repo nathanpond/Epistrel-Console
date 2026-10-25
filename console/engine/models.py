@@ -3260,3 +3260,71 @@ class ErasureResult(Model):
             and self.idempotency_results == 0
             and not self.candidates
         )
+
+
+# --- the erasure ledger (#87) ---------------------------------------------------------------------
+
+
+class KeepsExtra(Model):
+    """A model that keeps the keys it does not know (``extra``, for the page's "More"
+    ``<details>``) beside its schema fields. ``extra`` is no dataclass field, so the contract
+    test still compares the fields with the schema alone."""
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        parsed = super().from_json(obj)
+        if parsed is not None and isinstance(obj, dict):
+            known = {json_name(f) for f in fields(typing.cast(Any, cls))}
+            extra = {str(k): v for k, v in obj.items() if k not in known}
+            object.__setattr__(parsed, "_extra", extra)
+        return parsed
+
+    @property
+    def extra(self) -> dict[str, Any]:
+        found = getattr(self, "_extra", None)
+        return found if isinstance(found, dict) else {}
+
+
+@dataclass(frozen=True)
+class PendingErasure(Model):
+    """``PendingErasureBody``: an erasure the ledger holds and this database has not applied
+    yet; ``story_id`` is ``None`` for the catalog scope."""
+
+    erasure_id: str
+    story_id: str | None
+
+
+@dataclass(frozen=True)
+class ErasureStatus(KeepsExtra):
+    """``ErasureStatusBody``: the ledger's reconciliation. ``pending`` is the catalog scope
+    first, then oldest first; ``attempts`` counts failed reapplies per pending erasure id;
+    ``last_error`` is an exception class name (never a message)."""
+
+    pending: list[PendingErasure]
+    pending_count: int
+    applied_count: int
+    in_progress: bool
+    last_run_at: str | None
+    last_error: str | None
+    attempts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class ErasureBoundary(KeepsExtra):
+    """``ErasureBoundaryBody``: what an erasure covers, what it cannot reach, and the logs."""
+
+    in_scope: list[str]
+    out_of_scope: list[str]
+    logs: str
+
+
+@dataclass(frozen=True)
+class ReconcileResult(KeepsExtra):
+    """``ReconcileRunBody``: one reconcile run; ``ran`` is ``False`` when another process was
+    already running it."""
+
+    run_id: str
+    ran: bool
+    settled: int
+    failed: int
+    pending_count: int

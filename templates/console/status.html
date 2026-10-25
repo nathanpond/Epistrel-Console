@@ -29,6 +29,10 @@
   <dt>{{ label }}</dt>
   <dd>{{ label }}: {{ text }}</dd>
   {% endfor %}
+  {% if erasure_line %}
+  <dt>Erasure pending</dt>
+  <dd class="erasure-pending">{% if erasure_line.1 %}<a href="{{ erasure_line.1 }}">{{ erasure_line.0 }}</a>{% else %}{{ erasure_line.0 }}{% endif %}</dd>
+  {% endif %}
   {% if result.content_logging %}
   <dt>Content logging</dt>
   <dd>content logging: on</dd>

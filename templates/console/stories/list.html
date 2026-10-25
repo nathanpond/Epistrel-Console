@@ -26,14 +26,14 @@
   <tbody>
     {% for row in rows %}
     <tr>
-      <td><a href="{% url 'stories:detail' row.story.id %}">{{ row.story.name|default:"—" }}</a></td>
+      <td>{% if row.held %}<a href="{% url 'stories:detail' row.story.id %}">{% if row.story.name %}{{ row.story.name }}{% else %}{{ held_name }}{% endif %}</a>{% if row.story.name %} <span class="badge-held">held</span>{% endif %}{% else %}<a href="{% url 'stories:detail' row.story.id %}">{{ row.story.name|default:"—" }}</a>{% endif %}</td>
       <td><code>{{ row.story.id }}</code></td>
-      <td class="status">{{ row.story.status }}</td>
+      <td class="status">{% if row.held %}{{ held_status }}{% else %}{{ row.story.status }}{% endif %}</td>
       <td>{{ row.story.timeline_revision }}</td>
       <td>{{ row.story.content_rating.name|default:"—" }}</td>
       <td>{% if row.cast_size is None %}—{% else %}{{ row.cast_size }}{% endif %}</td>
       {% if profile_id %}<td class="profile-version">{{ row.profile_version }}</td>{% endif %}
-      <td><a class="history-link" href="{% url 'stories:history' row.story.id %}">History</a> {% include "console/stories/_actions.html" with story=row.story query=row.actions_query %}</td>
+      <td>{% if not row.held %}<a class="history-link" href="{% url 'stories:history' row.story.id %}">History</a> {% endif %}{% include "console/stories/_actions.html" with story=row.story query=row.actions_query %}</td>
     </tr>
     {% endfor %}
   </tbody>

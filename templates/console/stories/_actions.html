@@ -1,4 +1,4 @@
-{# A story's actions by status (#45): story (id, status), query (?name=…&next=…). #}
+{# A story's actions by status (#45): story (id, status), query (?name=…&next=…). A held story (#87) offers Delete alone. #}
 <span class="actions">
   {% if story.status == "active" %}<a class="button" href="{% url 'stories:archive' story.id %}?{{ query }}">Archive</a>
   {% elif story.status == "archived" %}<a class="button" href="{% url 'stories:unarchive' story.id %}?{{ query }}">Unarchive</a>

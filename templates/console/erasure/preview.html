@@ -3,6 +3,7 @@
 {% block heading %}Erasure preview{% endblock %}
 {% block content %}
 <p>Erasing {{ subject_kind|lower }} {{ subject_link }} — {{ scope_label }}{% if story_link %} ({{ story_link }}){% endif %} — dry run, nothing has been erased yet.</p>
+<p class="boundary-link"><a href="{% url 'erasure:boundary' %}">What erasure does and doesn't cover</a></p>
 <h2>What will go</h2>
 <table class="erasure-counts">
   <tbody>

@@ -1137,3 +1137,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** 503 `erasure_pending` shows #43's generic panel.
   **Why:** #64's held-records wrapper (convention 16) is #87's to build; until then the generic panel is the convention.
   **Issue:** #86
+- **Decision (drift):** The transcript changes live in `templates/console/history/_items.html` (and the play view's `play/_transcript.html`), not `templates/console/stories/_history_item.html`.
+  **Why:** #52 never built a `_history_item.html`; its items partial is `history/_items.html`. `mark_erased` and the "erased" badge also go on the play transcript, so erased text reads the same on both.
+  **Issue:** #87
+- **Decision:** `ErasureStatus`, `ErasureBoundary` and `ReconcileResult` keep unknown keys in an `extra` property (`KeepsExtra.from_json`), not a dataclass field.
+  **Why:** The contract test compares a model's dataclass fields with the schema's properties; an `extra` field would fail it. The property keeps the lenient "More" behaviour without widening the schema.
+  **Issue:** #87
+- **Decision:** `@operation(..., ended=True)` records a 202 as `ok` at once; `reconcile_erasures` sets it.
+  **Why:** The operation log records every 202 as `queued` until a job poll settles it; reconcile answers 202 only when its run has ended and has no job, so its row would stay `queued` forever.
+  **Issue:** #87
+- **Decision:** The stories status filter's "Held" option sends `status=blocked_by_erasure`, and the empty list reads "No held stories.".
+  **Why:** The Engine filters by its own status value; the option's label is the Console's wording. `?status=blocked_by_erasure` used to be ignored as unknown, so #45's fallback test now uses a truly unknown value.
+  **Issue:** #87
+- **Decision:** `HeldStoryMiddleware` covers every URL with a `story_id` kwarg, the Engine panel's rebuild (`/engine/rebuild/<story_id>/`) included.
+  **Why:** The plan names any view with a `story_id`, and a held story's rebuild is the same held condition. #50's rebuild test now uses `database_unavailable` for its "other refusal" case.
+  **Issue:** #87
+- **Decision:** Erasure markers are dropped unless the history read asked for audit. A marker with no turn goes under turn 0, which is created on the oldest page (`next_before_turn` null) when the page has no turn-0 group.
+  **Why:** Without this, the fallback router (audit-channel items in `items` when the answer has no `audit`) would show markers without omniscient audit. Turn 0 has no history row of its own when the opening has no items.
+  **Issue:** #87
+- **Decision:** The health reason now reads "erasure pending: N" (it was "erasure pending N"). It goes last in every state's reasons, healthy and unhealthy included.
+  **Why:** The plan sets this wording and says to show it whatever the badge state is. #43's probe tests were updated to match.
+  **Issue:** #87

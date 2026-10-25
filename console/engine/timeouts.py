@@ -12,6 +12,7 @@ Console-side fan-out reads (convention 12: N+1 lookups such as ``story_labels``)
 CATALOG_PUBLISH = 30.0  # publishing a catalog character or scenario
 SCENARIO_CREATE = 30.0  # creating a story from a scenario
 ERASURE = 60.0  # an erasure (or its dry run)
+RECONCILE = 60.0  # re-applying the erasure ledger now (#87): it answers when the run has ended
 UPLOAD = 60.0  # a media upload (each part, and completing it)
 OFFBOARDING = 30.0  # an offboarding: its dry run and its start (#77)
 STORY_CHARACTER_ADD = 30.0  # adding a character to a story (#72: input-gate model calls)

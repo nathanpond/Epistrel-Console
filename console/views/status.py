@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_not_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_safe
 
@@ -14,7 +15,7 @@ from console.context_processors import remember_probe
 from console.engine.client import EngineClient, EngineNotConfigured
 from console.engine_access import engine_client_unauthenticated
 from console.engine_api_check import ApiCheck
-from console.engine_probe import ProbeResult
+from console.engine_probe import ProbeResult, erasure_pending
 from console.engine_status import KeyCheck, probe_engine, status_reads
 from console.version import VERSION
 
@@ -71,6 +72,19 @@ def health_rows(checks: dict[str, Any] | None) -> list[tuple[str, str]]:
     return rows
 
 
+def erasure_line(checks: dict[str, Any] | None) -> tuple[str, str] | None:
+    """``("Erasure pending: N" or "Erasure pending: none", the ledger's URL)`` for a health body
+    with checks (#87); ``None`` without them."""
+    if not checks:
+        return None
+    pending = erasure_pending(checks)
+    try:
+        url = reverse("erasure:index")
+    except NoReverseMatch:
+        url = ""
+    return f"Erasure pending: {pending if pending else 'none'}", url
+
+
 @require_safe
 @never_cache
 def status(request: HttpRequest) -> HttpResponse:
@@ -82,6 +96,7 @@ def status(request: HttpRequest) -> HttpResponse:
         "result": result,
         "state_word": result.state_word,
         "health_rows": health_rows(result.checks),
+        "erasure_line": erasure_line(result.checks),
         "key_set": settings.ENGINE_SERVICE_KEY is not None,
         "key_check": key,
         "api": api,

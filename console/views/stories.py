@@ -42,6 +42,7 @@ from console.forms import (
     story_spec,
 )
 from console.formset_rows import edit_rows, wants_edit
+from console.held import HELD_PARAM, HELD_STATUS
 from console.ids import new_ulid
 
 EMPTY = "—"
@@ -64,12 +65,21 @@ def story_label(name: str | None, story_id: str) -> str:
 # --- List ---------------------------------------------------------------------------------------
 
 
+HELD_NAME = "(held — erasure pending)"  # a held story's list name when the Engine sends none
+HELD_STATUS_TEXT = "Held (erasure pending)"
+
+
 @dataclass(frozen=True)
 class StoryRow:
     story: StorySummary
-    cast_size: int | None  # None when the story's own read failed
+    cast_size: int | None  # None when the story's own read failed (or was skipped: held)
     actions_query: str  # ?name=…&next=… for the action links
     profile_version: int | None = None  # ?profile= only (#78): the version the story runs on
+
+    @property
+    def held(self) -> bool:
+        """Held by a pending erasure (#87): every read of it is 503 ``erasure_pending``."""
+        return self.story.status == HELD_STATUS
 
 
 def _cast_size(client: EngineClient, request: HttpRequest, story_id: str) -> int | None:
@@ -79,6 +89,17 @@ def _cast_size(client: EngineClient, request: HttpRequest, story_id: str) -> int
     except EngineClientError as exc:
         log_engine_error(request, exc)
         return None
+
+
+def _list_row(
+    client: EngineClient, request: HttpRequest, story: StorySummary, here: str
+) -> StoryRow:
+    """A held story's row skips its ``GET /stories/{id}`` back-fill (it would answer 503) and
+    its actions carry ``held=1`` (the delete confirm's id-only wording)."""
+    if story.status == HELD_STATUS:
+        query = f"{confirm_query(story.name, here)}&{HELD_PARAM}=1"
+        return StoryRow(story, None, query)
+    return StoryRow(story, _cast_size(client, request, story.id), confirm_query(story.name, here))
 
 
 @require_safe
@@ -94,15 +115,21 @@ def story_list(request: HttpRequest) -> HttpResponse:
         return _stories_using_profile(request, client, filters, status, profile_id)
     stories = client.list_stories(status=status)
     here = request.get_full_path()
-    rows = [
-        StoryRow(story, _cast_size(client, request, story.id), confirm_query(story.name, here))
-        for story in stories
-    ]
-    empty_text = f"No {status} stories." if status else "No stories yet"
+    rows = [_list_row(client, request, story, here) for story in stories]
+    empty_text = (
+        f"No {filters.status_label(status).lower()} stories." if status else "No stories yet"
+    )
     return render(
         request,
         "console/stories/list.html",
-        {"rows": rows, "filters": filters, "status": status or "", "empty_text": empty_text},
+        {
+            "rows": rows,
+            "filters": filters,
+            "status": status or "",
+            "empty_text": empty_text,
+            "held_name": HELD_NAME,
+            "held_status": HELD_STATUS_TEXT,
+        },
     )
 
 
@@ -180,6 +207,8 @@ def _stories_using_profile(
         "profile_url": entity_url("engine_profile", profile_id),
         "clear_query": clear.urlencode(),
         "unchecked": unchecked,
+        "held_name": HELD_NAME,
+        "held_status": HELD_STATUS_TEXT,
     }
     return render(request, "console/stories/list.html", context)
 
@@ -363,19 +392,27 @@ def story_unarchive(request: HttpRequest, story_id: str) -> HttpResponse:
     return confirm_action(request, page, perform)
 
 
+def _held_delete(request: HttpRequest) -> bool:
+    """The list row (or the held page) asked for a held story's id-only wording (#87)."""
+    source = request.POST if request.method == "POST" else request.GET
+    return source.get(HELD_PARAM) == "1"
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def story_delete(request: HttpRequest, story_id: str) -> HttpResponse:
-    name = shown_name(request)
+    held = _held_delete(request)
+    name = "" if held else shown_name(request)
     label = story_label(name, story_id)
+    hidden = {"name": name, HELD_PARAM: "1"} if held else {"name": name}
     page = ConfirmPage(
         title="Delete story",
-        question="Delete {name}?",
+        question="Delete held story {name}?" if held else "Delete {name}?",
         emphasis=label,
         lines=("This permanently deletes the story and all its history in the Engine.",),
         confirm_label="Delete",
         cancel_url=safe_next(request, _list_url()),
         facts=(("Story id", story_id),),
-        hidden={"name": name},
+        hidden=hidden,
         danger=True,
     )
 

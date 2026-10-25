@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{# A story held by a pending erasure (#87, #64 convention 16): only its id, Retry and Delete. #}
+{% block title %}Held story — Epistrel Console{% endblock %}
+{% block heading %}Story <code>{{ story_id }}</code>{% endblock %}
+{% block content %}
+<p class="warning held-message" role="status">{{ held_text }}</p>
+<p class="held-actions"><a class="retry" href="{{ retry_url }}">Retry</a> · <a class="button" href="{{ delete_url }}">Delete</a>{% if ledger_url %} · <a href="{{ ledger_url }}">Erasure ledger</a>{% endif %}</p>
+{% endblock %}

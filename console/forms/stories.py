@@ -16,6 +16,7 @@ STATUS_CHOICES = [
     ("active", "Active"),
     ("archived", "Archived"),
     ("paused", "Paused"),
+    ("blocked_by_erasure", "Held"),  # held until a pending erasure is re-applied (#87)
 ]
 
 
@@ -28,6 +29,10 @@ class StoryFilterForm(forms.Form):
         if self.is_valid():
             return self.cleaned_data["status"] or None
         return None
+
+    def status_label(self, status: str) -> str:
+        """The filter option's label for ``status`` ("Held" for ``blocked_by_erasure``)."""
+        return dict(STATUS_CHOICES).get(status, status)
 
 
 # --- New story (#45): POST /stories with a blank story's StorySpec ----------------------------

@@ -166,9 +166,10 @@ def test_a_busy_story_shows_the_busy_heading(operator_client: Client, engine: Fa
 
 
 def test_other_refusals_render_the_error_panel(operator_client: Client, engine: FakeEngine) -> None:
-    engine.respond("POST", REBUILD, 503, json=error("erasure_pending", "held"))
+    # (A 503 erasure_pending is the held message since #87: tests/test_history_erasure.py.)
+    engine.respond("POST", REBUILD, 503, json=error("database_unavailable", "down"))
     html = _post(operator_client).content.decode()
-    assert "Engine error 503 erasure_pending" in html
+    assert "Engine error 503 database_unavailable" in html
     assert "Story busy" not in html
 
 

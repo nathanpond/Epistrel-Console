@@ -1,5 +1,5 @@
-{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). #}
-{% load console_format %}
+{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). #}
+{% load console_format erasure %}
 {% if page.chain %}<p class="chain-line">Viewing chain {{ page.chain }} — <a href="{{ page.clear_chain_url }}">clear</a></p>{% endif %}
 {% if page.error %}
 {% include "console/_engine_error.html" with engine_error=page.error %}
@@ -10,7 +10,7 @@
 <section class="summary">
   <h2>Summary</h2>
   {% if page.summary %}
-  <ul>{% for segment in page.summary %}<li><strong>Level {{ segment.level }} · turns {{ segment.covers_from }}–{{ segment.covers_to }}</strong>: {{ segment.text }}</li>{% endfor %}</ul>
+  <ul>{% for segment in page.summary %}<li><strong>Level {{ segment.level }} · turns {{ segment.covers_from }}–{{ segment.covers_to }}</strong>: {{ segment.text|mark_erased }}</li>{% endfor %}</ul>
   {% else %}<p class="muted">No summary segments.</p>{% endif %}
 </section>
 {% endif %}
@@ -25,10 +25,10 @@
     <tr class="item channel-{{ row.item.channel }}">
       <td>{{ row.item.beat|default_if_none:"—" }}</td>
       <td><code>{{ row.item.kind }}</code></td>
-      <td><span class="badge-channel">{{ row.item.channel }}</span></td>
+      <td><span class="badge-channel">{{ row.item.channel }}</span>{% if row.item.redacted %} <span class="badge-erased">erased</span>{% endif %}</td>
       <td>{{ row.actor }}</td>
       <td>{% if row.render %}{{ row.render|join:", " }}{% else %}—{% endif %}</td>
-      <td>{{ row.item.text }}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
+      <td>{{ row.item.text|mark_erased }}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
       <td>{% if row.log_pk %}<a class="operation-link" href="{% url 'operations:detail' row.log_pk %}"><code>{{ row.item.operation_id }}</code></a>{% else %}<code>{{ row.item.operation_id }}</code>{% endif %}</td>
     </tr>
     {% if row.feedback %}<tr class="feedback-row"><td colspan="7">{% include "console/stories/_feedback.html" with fb=row.feedback %}</td></tr>{% endif %}
@@ -37,12 +37,16 @@
     <tr class="audit"><td colspan="7">
       {% for record in group.audit %}
       <div class="audit-record">
-        <p><strong>{{ record.policy_line }}</strong>{% if record.reason %} <small class="muted">{{ record.reason }}{% if record.attempt is not None %}, attempt {{ record.attempt }}{% endif %}</small>{% endif %}</p>
+        {% if record.marker %}
+        <p class="erasure-marker">Erasure marker: <code>{{ record.marker.subject_id }}</code>, {{ record.marker.scope_label }}{% if record.item.redacted %} <span class="badge-erased">erased</span>{% endif %}</p>
+        {% else %}
+        <p><strong>{{ record.policy_line }}</strong>{% if record.item.redacted %} <span class="badge-erased">erased</span>{% endif %}{% if record.reason %} <small class="muted">{{ record.reason }}{% if record.attempt is not None %}, attempt {{ record.attempt }}{% endif %}</small>{% endif %}</p>
         {% if record.policies %}
         <ul class="audit-policies">{% for policy in record.policies %}<li>{% if policy.resolved %}{{ policy.label }} {% endif %}<code>{{ policy.id }}</code>{% if policy.message %} — {{ policy.message }}{% endif %}</li>{% endfor %}</ul>
         {% endif %}
-        {% if record.draft is not None %}<details><summary>Rejected draft</summary><pre class="draft">{{ record.draft }}</pre></details>{% endif %}
-        {% if record.raw %}<pre>{{ record.raw }}</pre>{% endif %}
+        {% if record.draft is not None %}<details><summary>Rejected draft</summary><pre class="draft">{{ record.draft|mark_erased }}</pre></details>{% endif %}
+        {% if record.raw %}<pre class="audit-raw">{{ record.raw|mark_erased }}</pre>{% endif %}
+        {% endif %}
       </div>
       {% endfor %}
     </td></tr>

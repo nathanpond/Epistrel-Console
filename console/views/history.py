@@ -198,10 +198,13 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
             log_engine_error(request, exc)
             settings_error = panel_for(exc)
     links = operation_links(story.id, [i.operation_id for i in [*items, *audit_items]])
+    records = [audit_record(i, names) for i in audit_items]
+    if not query["include_audit"]:  # erasure markers show only with omniscient audit (#87)
+        records = [r for r in records if not r.is_marker]
     groups = turn_groups(
         history,
         items,
-        [audit_record(i, names) for i in audit_items],
+        records,
         labels=labels,
         links=links,
         actor_filtered=bool(query["actor_character_id"]),

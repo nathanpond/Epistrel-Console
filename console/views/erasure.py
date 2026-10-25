@@ -14,12 +14,18 @@
   result; no answer → "Retry" with the same payload and ticks (the same key).
 - ``/erasure/<erasure_id>/``: the result, read back from the operation log (#44; the Engine has
   none).
-- ``/erasure/``: the real runs this Console made, from the operation log.
+- ``/erasure/`` (#87): the erasure ledger (``GET /admin/erasure/status``: pending
+  re-applications after a restore, the reconciler's last run), polled while a re-apply runs
+  (``/erasure/status/``), "Re-apply now" (``/erasure/reconcile/``, POST), and the real runs this
+  Console made, from the operation log.
+- ``/erasure/boundary/`` (#87): what erasure covers and doesn't, as this Engine states it.
 """
 
 import dataclasses
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
@@ -28,6 +34,7 @@ from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
 from django.views.decorators.http import require_POST, require_safe
@@ -40,6 +47,7 @@ from console.engine.models import (
     CatalogScope,
     ErasureCandidate,
     ErasureResult,
+    ErasureStatus,
     StoryScope,
     SubjectRef,
     scope_from_json,
@@ -61,6 +69,7 @@ from console.forms.erasure import (
     story_options,
 )
 from console.ids import new_ulid
+from console.job_poll import POLL_TRIGGER, RETRYING_TEXT, poll_failure
 from console.models import EngineOperation
 
 TWO_STAGE = "erasure"  # the signed payload's kind (salt ``console.twostage.erasure``)
@@ -634,7 +643,172 @@ def erasure_detail(request: HttpRequest, erasure_id: str) -> HttpResponse:
     return _render_result(request, client, result)
 
 
-# --- the list -------------------------------------------------------------------------------------
+# --- the ledger (#87) -----------------------------------------------------------------------------
+
+PENDING_SHOWN = 100  # pending rows listed, then "…and N more"
+BANNER_ONE = (
+    "1 erasure is waiting to be re-applied after a restore; affected records are held until then"
+)
+BANNER_MANY = (
+    "{} erasures are waiting to be re-applied after a restore; affected records are held until then"
+)
+RUNNING = "Re-apply running now"
+IDLE = "Idle"
+NEVER = "never"
+NONE = "none"
+CATALOG = "catalog"
+REAPPLY_LABEL = "Re-apply now"
+RAN = "Re-apply ran: settled {settled}, failed {failed}, pending {pending} (run {run})"
+NOT_RAN = "A re-apply was already running — see status below"
+REAPPLY_NO_ANSWER = "The Engine didn't answer — the re-apply may still be running; see status below"
+REAPPLY_LEDGER_DOWN = "The erasure ledger is unavailable — nothing was re-applied"
+PENDING_BADGE = "pending re-apply"
+LEDGER_SECTION = "console/erasure/_ledger.html"
+
+
+@dataclass(frozen=True)
+class PendingRow:
+    erasure_id: str
+    url: str  # the result page when this Console ran it, else ""
+    story_id: str | None  # None: the catalog scope
+    story_url: str
+    attempts: int
+
+
+@dataclass(frozen=True)
+class Ledger:
+    """The ledger section: the status read, or the panel standing in for it."""
+
+    status: ErasureStatus | None = None
+    error: ErrorPanel | None = None
+    retrying: bool = False  # a poll that got no answer (or a 503): keep polling
+    rows: list[PendingRow] = dataclasses.field(default_factory=list)
+    more: int = 0
+    banner: str = ""
+    state: str = ""
+    last_run: str = NEVER
+    last_error: str | None = None
+    extra: list[tuple[str, str]] = dataclasses.field(default_factory=list)
+
+    @property
+    def polling(self) -> bool:
+        return self.retrying or (self.status is not None and self.status.in_progress)
+
+    @property
+    def pending_ids(self) -> frozenset[str] | None:
+        """The pending erasure ids, or ``None`` when the status read failed."""
+        if self.status is None:
+            return None
+        return frozenset(p.erasure_id for p in self.status.pending)
+
+
+def banner_text(pending_count: int) -> str:
+    if pending_count <= 0:
+        return ""
+    return BANNER_ONE if pending_count == 1 else BANNER_MANY.format(pending_count)
+
+
+def age_text(seconds: float) -> str:
+    """ "just now", "N s ago", "N min ago", "N h ago" or "N d ago"."""
+    whole = max(0, int(seconds))
+    if whole < 5:
+        return "just now"
+    for size, unit in ((86400, "d"), (3600, "h"), (60, "min")):
+        if whole >= size:
+            return f"{whole // size} {unit} ago"
+    return f"{whole} s ago"
+
+
+def last_run_text(value: str | None, now: datetime | None = None) -> str:
+    """``last_run_at`` in the Console's time zone with the zone named, plus its age; "never"
+    when null, the raw value when it is no ISO timestamp."""
+    if not value:
+        return NEVER
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    shown = timezone.localtime(moment).strftime("%Y-%m-%d %H:%M:%S %Z")
+    age = ((now or timezone.now()) - moment).total_seconds()
+    return f"{shown} ({age_text(age)})"
+
+
+def _story_url(story_id: str) -> str:
+    return reverse("stories:detail", args=[story_id])
+
+
+def ledger_of(status: ErasureStatus) -> Ledger:
+    """The section for a status read: the first :data:`PENDING_SHOWN` pending rows in the
+    Engine's order (each with its attempts, 0 when absent), "…and N more" from
+    ``pending_count``, and in "More" the unknown keys and attempts for erasures not pending."""
+    shown = status.pending[:PENDING_SHOWN]
+    recorded = {
+        str(r.response.get("erasure_id"))
+        for r in erasure.console_runs().filter(
+            response__erasure_id__in=[p.erasure_id for p in shown]
+        )
+        if isinstance(r.response, dict)
+    }
+    rows = [
+        PendingRow(
+            p.erasure_id,
+            erasure.result_url(p.erasure_id) if p.erasure_id in recorded else "",
+            p.story_id,
+            _story_url(p.story_id) if p.story_id else "",
+            status.attempts.get(p.erasure_id, 0),
+        )
+        for p in shown
+    ]
+    pending = {p.erasure_id for p in status.pending}
+    extra = [(key, json.dumps(value, indent=2)) for key, value in status.extra.items()]
+    others = {k: v for k, v in status.attempts.items() if k not in pending}
+    if others:
+        extra.append(("attempts (not pending)", json.dumps(others, indent=2)))
+    return Ledger(
+        status=status,
+        rows=rows,
+        more=max(0, status.pending_count - len(rows)),
+        banner=banner_text(status.pending_count),
+        state=RUNNING if status.in_progress else IDLE,
+        last_run=last_run_text(status.last_run_at),
+        last_error=status.last_error,
+        extra=extra,
+    )
+
+
+def read_ledger(request: HttpRequest, *, poll: bool = False) -> Ledger:
+    """``GET /admin/erasure/status`` as the section shows it. A failure is the error panel in
+    its place; while polling, no answer (or a 503) keeps polling instead (#64 convention 10)."""
+    try:
+        status = engine_client_for(request).get_erasure_status()
+    except EngineClientError as exc:
+        if poll:
+            failure = poll_failure(request, exc)
+            if failure.retry:
+                return Ledger(retrying=True)
+            return Ledger(error=failure.panel or panel_for(exc))
+        log_engine_error(request, exc)
+        return Ledger(error=panel_for(exc))
+    return ledger_of(status)
+
+
+def _ledger_context(ledger: Ledger) -> dict[str, Any]:
+    return {
+        "ledger": ledger,
+        "poll_url": reverse("erasure:status"),
+        "poll_trigger": POLL_TRIGGER,
+        "retrying_text": RETRYING_TEXT,
+        "refresh_url": reverse("erasure:index"),
+        "reapply_url": reverse("erasure:reconcile"),
+        "reapply_label": REAPPLY_LABEL,
+        "running_text": RUNNING,
+        "none_text": NONE,
+    }
+
+
+# --- the Console's runs ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -644,32 +818,105 @@ class ListRow:
     url: str
     subject: SubjectRef | None
     scope: str
+    story_id: str
     residue: Residue
+    pending: bool  # the ledger lists it as pending (never when the status read failed)
 
 
-def _list_row(row: EngineOperation) -> ListRow:
+def _list_row(row: EngineOperation, pending: frozenset[str] | None) -> ListRow:
+    """A real run as the list shows it: the subject, scope and story from what was sent; the
+    erasure id and residue from the answer (a failed run has neither, so it is unlinked)."""
     response = row.response if isinstance(row.response, dict) else {}
-    erasure_id = str(response.get("erasure_id"))
+    request = row.request if isinstance(row.request, dict) else {}
+    sent = request.get("body")
+    body: dict[str, Any] = sent if isinstance(sent, dict) else {}
+    found = response.get("erasure_id")
+    erasure_id = found if isinstance(found, str) and found else ""
+    scope = scope_from_json(body.get("scope"))
+    scope_name = _scope_name(scope) if scope is not None else ""
     raw = response.get("residue")
     return ListRow(
         row,
         erasure_id,
         erasure.result_url(erasure_id) if erasure_id else "",
-        SubjectRef.from_json(response.get("subject")),
-        SCOPE_LABELS.get(str(response.get("scope")), str(response.get("scope"))),
-        residue(raw if isinstance(raw, int) else None),
+        SubjectRef.from_json(body.get("subject")),
+        SCOPE_LABELS.get(scope_name, "—"),
+        scope.story if isinstance(scope, StoryScope) else "",
+        residue(raw if isinstance(raw, int) and not isinstance(raw, bool) else None),
+        bool(erasure_id) and pending is not None and erasure_id in pending,
     )
 
 
 @require_safe
 def erasure_index(request: HttpRequest) -> HttpResponse:
-    """The real runs this Console made, newest first, :data:`LIST_PAGE` per page. No Engine
-    calls."""
-    page = Paginator(erasure.real_runs(), LIST_PAGE).get_page(request.GET.get("page"))
+    """The ledger (``GET /admin/erasure/status``, its own section), "Re-apply now", and the real
+    runs this Console made (#44 rows, every outcome), newest first, :data:`LIST_PAGE` per
+    page. A failed status read replaces only the ledger section."""
+    ledger = read_ledger(request)
+    page = Paginator(erasure.console_runs(), LIST_PAGE).get_page(request.GET.get("page"))
     context = {
-        "rows": [_list_row(r) for r in page],
+        **_ledger_context(ledger),
+        "rows": [_list_row(r, ledger.pending_ids) for r in page],
         "page": page,
         "new_url": _new_url(),
+        "boundary_url": reverse("erasure:boundary"),
         "kinds": SUBJECT_KINDS,
+        "pending_badge": PENDING_BADGE,
     }
     return render(request, "console/erasure/index.html", context)
+
+
+@require_safe
+def erasure_status_partial(request: HttpRequest) -> HttpResponse:
+    """The ledger section alone, for its poll while a re-apply runs."""
+    ledger = read_ledger(request, poll=True)
+    return render(request, LEDGER_SECTION, _ledger_context(ledger))
+
+
+@require_POST
+def erasure_reconcile(request: HttpRequest) -> HttpResponse:
+    """ "Re-apply now": ``POST /admin/erasure/reconcile`` (one click, no confirm: re-running is
+    harmless), then back to ``/erasure/`` with what it did as a flash."""
+    try:
+        run = engine_client_for(request).reconcile_erasures()
+    except EngineUnreachable as exc:
+        log_engine_error(request, exc)
+        messages.error(request, REAPPLY_NO_ANSWER)
+    except EngineError as exc:
+        log_engine_error(request, exc)
+        if exc.code == "ledger_unavailable":
+            messages.error(request, REAPPLY_LEDGER_DOWN)
+        else:
+            messages.error(request, _panel_text(panel_for(exc)))
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        messages.error(request, _panel_text(panel_for(exc)))
+    else:
+        if not run.ran:
+            messages.info(request, NOT_RAN)
+        else:
+            text = RAN.format(
+                settled=run.settled, failed=run.failed, pending=run.pending_count, run=run.run_id
+            )
+            if run.failed:
+                messages.warning(request, text)
+            else:
+                messages.success(request, text)
+    return redirect("erasure:index")
+
+
+def _panel_text(panel: ErrorPanel) -> str:
+    return f"{panel.headline} — {panel.message}" if panel.message else panel.headline
+
+
+# --- the boundary ---------------------------------------------------------------------------------
+
+
+@require_safe
+def erasure_boundary(request: HttpRequest) -> HttpResponse:
+    """``GET /admin/erasure/boundary`` on every view (no cache); a failed read is the generic
+    panel (the middleware), with no fallback text."""
+    boundary = engine_client_for(request).get_erasure_boundary()
+    extra = [(key, json.dumps(value, indent=2)) for key, value in boundary.extra.items()]
+    context = {"boundary": boundary, "extra": extra, "index_url": reverse("erasure:index")}
+    return render(request, "console/erasure/boundary.html", context)

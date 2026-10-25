@@ -77,6 +77,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # An Engine error a view lets escape renders the shared error panel, never a 500.
     "console.middleware.EngineErrorMiddleware",
+    # ...except a story held by a pending erasure (503 erasure_pending): the held message (#87).
+    "console.middleware.HeldStoryMiddleware",
 ]
 
 # An erasure preview (#86) may list more candidate mentions than Django's default 1,000 fields,

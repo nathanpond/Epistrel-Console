@@ -247,6 +247,8 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
             # A replayed job 202 (#81): the first call's row is the job's ``queued`` one, so a
             # replay records no second (the same check page follows it).
             outcome, code = Outcome.OK, ""
+        elif status == 202 and observed.operation is not None and observed.operation.ended:
+            outcome, code = Outcome.OK, ""  # answered when the run ended (#87's reconcile)
         elif status == 202:  # a queued turn, or a checking job (#64, #80, #81 complete those)
             queued = isinstance(body, dict)
             outcome, code = (Outcome.QUEUED, "") if queued else (Outcome.ERROR, "bad_response")
