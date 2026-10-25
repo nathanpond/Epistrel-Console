@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from console.engine.models import TurnReport
-from console.operation_log import turn_report_json
+from console.operation_log import input_gate_spend, turn_report_json
 
 EMPTY = "—"
 
@@ -47,3 +47,14 @@ def stored_turn_report(value: object) -> TurnReport | None:
     """The turn report in a stored response (a turn, or a 422/503's ``error.details``)."""
     report = turn_report_json(value)
     return TurnReport.from_json(report) if report is not None else None
+
+
+def spend_text(calls: int, elapsed_ms: int) -> str:
+    """An input gate's spend: "1 model call, 3 ms"."""
+    return f"{calls} model call{'' if calls == 1 else 's'}, {elapsed_ms} ms"
+
+
+def input_gate_text(value: object) -> str:
+    """A refused input's gate spend (``spend_text``), or "" when the answer carries none."""
+    spend = input_gate_spend(value)
+    return spend_text(*spend) if spend is not None else ""

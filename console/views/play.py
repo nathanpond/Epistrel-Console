@@ -82,10 +82,15 @@ from console.ingest import (
     result_rows,
 )
 from console.models import EngineOperation
-from console.operation_log import input_violations, turn_report_json
+from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import Basis, Link, TurnControls, turn_controls
-from console.turn_reports import ViolationRow, stored_turn_report, violation_rows
+from console.turn_reports import (
+    ViolationRow,
+    input_gate_text,
+    stored_turn_report,
+    violation_rows,
+)
 
 TRANSCRIPT_LIMIT = 50
 POLL_GRACE_S = 30.0  # polling stops this long after the turn's deadline (planner)
@@ -392,6 +397,11 @@ def _report(value: object) -> TurnReport | None:
     return TurnReport.from_json(found) if found is not None else None
 
 
+def _inspectable(response: object) -> bool:
+    """A logged answer the inspector can show: a turn report, or a refused input's gate spend."""
+    return turn_report_json(response) is not None or input_gate_spend(response) is not None
+
+
 def _detail(details: dict[str, Any], key: str) -> str:
     value = details.get(key)
     return EMPTY if value is None else str(value)
@@ -423,12 +433,12 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
         facts = (("Operation", _detail(details, "operation_id")), *retry)
         return Inspector(notice=notice, facts=facts, **base)
     if exc.code == "guardrail_violation":
+        refused = {"error": {"details": details}}
+        spend = input_gate_text(refused)
         return Inspector(
             notice="Input rejected by a guardrail — no reply was added.",
-            input_violations=tuple(
-                violation_rows(input_violations({"error": {"details": details}}))
-            ),
-            report=_report({"error": {"details": details}}),
+            facts=(("Input gate", spend),) if spend else (),
+            input_violations=tuple(violation_rows(input_violations(refused))),
             **base,
         )
     if exc.code == "budget_below_safety_minimum":
@@ -490,10 +500,12 @@ def row_inspector(row: EngineOperation) -> Inspector:
     notice = "Input rejected by a guardrail — no reply was added." if violations else ""
     previous = row.response.get("previous_variant") if isinstance(row.response, dict) else None
     regenerated = isinstance(previous, int) and not isinstance(previous, bool)
+    spend = input_gate_text(row.response)
+    facts = (("Previous variant", str(previous)),) if regenerated else ()
     return Inspector(
         title=turn if not violations else "Rejected input",
         notice=notice,
-        facts=(("Previous variant", str(previous)),) if regenerated else (),
+        facts=(*facts, ("Input gate", spend)) if spend else facts,
         report=report,
         input_violations=violations,
         error_line=f"HTTP {row.http_status} {row.error_code}" if row.error_code else "",
@@ -511,7 +523,7 @@ def _latest_inspector(story_id: str) -> Inspector:
         kind__startswith=INGEST_KIND
     )
     for row in rows[:REPORT_SCAN]:
-        if turn_report_json(row.response) is not None:
+        if _inspectable(row.response):
             return row_inspector(row)
     return NOTHING_SELECTED
 
@@ -521,7 +533,7 @@ def selected_inspector(operation_id: str, origin: str = "") -> Inspector:
     rows = list(EngineOperation.objects.filter(engine_operation_id=operation_id)[:REPORT_SCAN])
     for row in rows:
         # An ingest's answer carries the input gate's model calls, not a turn report.
-        if not row.kind.startswith(INGEST_KIND) and turn_report_json(row.response) is not None:
+        if not row.kind.startswith(INGEST_KIND) and _inspectable(row.response):
             return row_inspector(row)
     ingested = origin == "ingested" or any(row.kind.startswith(INGEST_KIND) for row in rows)
     return Inspector(

@@ -26,6 +26,7 @@
 {% if input_violations %}
 <section class="guardrail-input">
   <h2>Input rejected</h2>
+  {% if input_gate %}<p class="input-gate">Input gate: {{ input_gate }}</p>{% endif %}
   {% include "console/_violations.html" with violations=input_violations %}
 </section>
 {% endif %}

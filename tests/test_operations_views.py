@@ -277,17 +277,40 @@ def test_detail_shows_output_violations_with_several_locators(
     assert "<code>a.b</code><br><code>c.d</code>" in html
 
 
-def test_a_422_with_model_calls_in_details_is_a_turn_row(
+def test_a_503_with_model_calls_in_details_is_a_turn_row(
     operator_client: Client, operator: Any
 ) -> None:
-    error = guardrail_error("p1")
-    error["error"]["details"].update(
-        model_calls=engine_fixture("respond")["model_calls"], elapsed_ms=40
-    )
-    row = make_row(outcome="error", error_code="guardrail_violation", response=error)
+    error = {
+        "error": {
+            "code": "model_unavailable",
+            "message": "The model is unavailable.",
+            "details": {"model_calls": engine_fixture("respond")["model_calls"], "elapsed_ms": 40},
+        }
+    }
+    row = make_row(outcome="error", http_status=503, error_code="model_unavailable", response=error)
     html = operator_client.get(f"/operations/{row.pk}/").content.decode()
     assert "Turn report" in html
     assert "40 ms" in html
+
+
+def test_a_live_input_rejection_shows_the_gate_spend_and_no_turn_panel(
+    operator_client: Client, operator: Any
+) -> None:
+    """#131: a 422 ``guardrail_violation``'s ``model_calls`` is the input gate's count."""
+    rejection = engine_fixture("respond_guardrail_violation")
+    row = make_row(
+        outcome="error",
+        http_status=422,
+        error_code="guardrail_violation",
+        response=rejection,
+        is_guardrail_rejection=True,
+    )
+    html = operator_client.get(f"/operations/{row.pk}/").content.decode()
+    section = html.split("<h2>Input rejected</h2>", 1)[1].split("</section>", 1)[0]
+    assert '<p class="input-gate">Input gate: 1 model call, 3 ms</p>' in section
+    assert "<code>minors_no_sexual_content</code>" in section
+    assert "could not be read" not in html
+    assert "Turn report" not in html
 
 
 def test_detail_of_an_unknown_row_is_404(operator_client: Client) -> None:

@@ -288,26 +288,17 @@ def test_a_busy_story_says_so(
 def test_an_input_guardrail_rejection_shows_violations_and_adds_nothing(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    rejection = engine_fixture("respond_guardrail_violation")
-    rejection["error"]["details"]["model_calls"] = [
-        {
-            "purpose": "guardrail_check",
-            "model": "openai/gpt-mini",
-            "attempt": 1,
-            "outcome": "ok",
-            "latency_ms": 90,
-            "tokens_in": 200,
-            "tokens_out": 4,
-        }
-    ]
-    rejection["error"]["details"]["elapsed_ms"] = 95
+    rejection = engine_fixture("respond_guardrail_violation")  # the live shape (#130)
+    assert rejection["error"]["details"]["model_calls"] == 1
     engine.respond("POST", RESPOND, 422, json=rejection)
     html = post_turn(operator_client, do="something the minors policy rejects")
     main = html.split('<div id="turn-status"')[0]
     assert "Input rejected by a guardrail — no reply was added." in main
     assert "<td><code>minors_no_sexual_content</code></td>" in main
     assert "Minors: no sexual content" in main
-    assert "<td>guardrail_check</td>" in main  # the model calls it consumed
+    # The model calls the input gate consumed: the Engine sends a count and the time (#130).
+    assert "<dt>Input gate</dt><dd>1 model call, 3 ms</dd>" in main
+    assert "could not be read" not in main
     # Complement: the transcript is not touched (no history read, no swap).
     assert calls(engine, "GET", HISTORY) == []
     assert oob(html, "transcript") == ""

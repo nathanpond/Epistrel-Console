@@ -34,7 +34,7 @@ from console.forms.ingest import (
     BaseIngestFormSet,
     IngestEventForm,
 )
-from console.turn_reports import violation_rows
+from console.turn_reports import spend_text, violation_rows
 
 if TYPE_CHECKING:
     from console.views.play import Inspector
@@ -122,8 +122,7 @@ class IngestView:
 
 
 def gate_line(response: IngestResponse) -> str:
-    calls = len(response.model_calls)
-    return f"Input gate: {calls} model call{'' if calls == 1 else 's'}, {response.elapsed_ms} ms"
+    return f"Input gate: {spend_text(len(response.model_calls), response.elapsed_ms)}"
 
 
 # --- Placing a refusal on the rows -----------------------------------------------------------
