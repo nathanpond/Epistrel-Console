@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "story_paused",
+    "message": "the story is paused",
+    "details": {}
+  }
+}

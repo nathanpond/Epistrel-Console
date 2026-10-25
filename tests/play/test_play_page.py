@@ -29,7 +29,7 @@ def test_header_and_two_columns(operator_client: Client, engine: FakeEngine) -> 
     html = operator_client.get(f"/stories/{STORY}/").content.decode()
     assert "<h1>Harbour</h1>" in html
     assert "<li>Mara (player)</li>" in html
-    assert "<li>Tobin</li>" in html
+    assert '<li>Tobin <a class="button promote"' in html  # #72: Promote on non-players
     assert "<dt>Timeline revision</dt><dd>1</dd>" in html
     assert "Teen" in html
     left = html.split('<section class="play-left">')[1].split('<section class="play-right">')[0]

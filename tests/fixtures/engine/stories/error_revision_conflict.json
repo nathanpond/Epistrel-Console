@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "revision_conflict",
+    "message": "the story is at revision 3",
+    "details": {
+      "current_revision": 3
+    }
+  }
+}

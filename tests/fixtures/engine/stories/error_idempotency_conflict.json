@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "idempotency_conflict",
+    "message": "the key was used for another request",
+    "details": {}
+  }
+}

@@ -23,6 +23,7 @@ from console.views import (
     ratings,
     status,
     stories,
+    story_characters,
     story_settings,
     timeline,
 )
@@ -59,6 +60,16 @@ story_patterns = (
             "<str:story_id>/settings/instructions/",
             story_settings.save_instructions,
             name="settings-instructions",
+        ),
+        path(
+            "<str:story_id>/characters/new/",
+            story_characters.character_new,
+            name="character-new",
+        ),
+        path(
+            "<str:story_id>/characters/<str:character_id>/promote/",
+            story_characters.character_promote,
+            name="character-promote",
         ),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),

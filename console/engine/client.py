@@ -65,6 +65,7 @@ from console.engine.models import (
     PolicyList,
     PolicyMutation,
     PolicyScope,
+    Promotion,
     QueuedTurn,
     RatingVersion,
     RatingVersionList,
@@ -80,6 +81,7 @@ from console.engine.models import (
     ScenarioPage,
     ScenarioStatus,
     Story,
+    StoryCharacterAdded,
     StoryCreated,
     StoryList,
     StorySettings,
@@ -93,7 +95,7 @@ from console.engine.models import (
     VariantChain,
     Variants,
 )
-from console.engine.timeouts import CATALOG_PUBLISH, UPLOAD
+from console.engine.timeouts import CATALOG_PUBLISH, STORY_CHARACTER_ADD, UPLOAD
 from console.entities import EntityType
 from console.version import VERSION
 
@@ -656,9 +658,84 @@ class EngineClient:
         return created
 
     @operation("GET", "/stories/{story_id}", response_model=Story)
-    def get_story(self, story_id: str) -> Story:
-        """``GET /stories/{id}``: one story with its cast and settings."""
-        return _parse(self._request("GET", _story_path(story_id)), Story)
+    def get_story(self, story_id: str, *, viewpoint: str | None = None) -> Story:
+        """``GET /stories/{id}``: one story with its cast and settings. ``viewpoint=omniscient``
+        (#72) adds each character's ``true_age`` and ``promoted_to``."""
+        params = {"viewpoint": viewpoint} if viewpoint else None
+        return _parse(self._request("GET", _story_path(story_id), params=params), Story)
+
+    # --- story characters (#72) -----------------------------------------------------------------
+
+    @operation("POST", "/stories/{story_id}/characters", response_model=StoryCharacterAdded)
+    def add_story_character(
+        self,
+        story_id: str,
+        *,
+        name: str,
+        definition: str,
+        true_age: int,
+        safe_fallback_text: str | None = None,
+        deflection_style: str | None = None,
+        images: Sequence[str] = (),
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> StoryCharacterAdded:
+        """``POST /stories/{id}/characters``: an ad-hoc character joins the running story's
+        cast (never a player character). The optional fields are sent only when given;
+        ``expected_revision`` (the revision the form was opened at) is sent as
+        ``X-Epistrel-Expected-Revision``. The definition and deflection style pass the input
+        gate, so the timeout allows for its model calls."""
+        body: dict[str, Any] = {"name": name, "definition": definition, "true_age": true_age}
+        if safe_fallback_text is not None:
+            body["safe_fallback_text"] = safe_fallback_text
+        if deflection_style is not None:
+            body["deflection_style"] = deflection_style
+        if images:
+            body["images"] = list(images)
+        headers = {"Idempotency-Key": idempotency_key}
+        if expected_revision is not None:
+            headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/characters",
+            json=body,
+            headers=headers,
+            timeout=STORY_CHARACTER_ADD,
+        )
+        return _parse(response, StoryCharacterAdded)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/characters/{character_id}/promote",
+        response_model=Promotion,
+        entity="character",
+        entity_id="response:catalog_id",
+    )
+    def promote_story_character(
+        self,
+        story_id: str,
+        character_id: str,
+        *,
+        name: str,
+        owner: str,
+        content_rating_id: str | None = None,
+        idempotency_key: str,
+    ) -> Promotion:
+        """``POST /stories/{id}/characters/{cid}/promote``: a new draft catalog character made
+        from the story's character. ``name`` and ``owner`` are always sent; without
+        ``content_rating_id`` the Engine applies the story's rating. The story's revision does
+        not move, so no expected revision is sent."""
+        body: dict[str, Any] = {"name": name, "owner": owner}
+        if content_rating_id is not None:
+            body["content_rating_id"] = content_rating_id
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/characters/{quote(character_id, safe='')}/promote",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, Promotion)
 
     @operation("POST", "/stories/{story_id}/archive", response_model=StoryStatusChange)
     def archive_story(self, story_id: str, *, idempotency_key: str) -> StoryStatusChange:

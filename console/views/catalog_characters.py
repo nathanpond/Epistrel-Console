@@ -31,6 +31,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from console.acting import acting_principal
+from console.catalog.readiness import Readiness, missing_for_publish
 from console.confirm import posted_idempotency_key
 from console.draft_stale import CHARACTER, stale_banner
 from console.engine.choices import RatingChoices, error_text, rating_choices
@@ -511,6 +512,8 @@ class EditSnapshot:
     # #71: the media sections as rendered (ids only) and each slot's looked-up metadata.
     media_original: dict[str, Any] = field(default_factory=dict)
     media: dict[str, Any] = field(default_factory=dict)
+    # #72: what the saved draft still needs before a publish (``Readiness.to_json``).
+    readiness: dict[str, Any] = field(default_factory=dict)
 
     def signed(self) -> str:
         return signing.dumps(asdict(self), salt=SNAPSHOT_SALT, compress=True)
@@ -575,6 +578,10 @@ def _read_snapshot(request: HttpRequest, client: EngineClient, character_id: str
     infos = slot_infos(client, media_ids(media_original))
     companion_revision, companion_error = _companion_revision(request, client, character_id)
     rating = original["metadata"]["content_rating_id"]
+    ratings = rating_choices(client, current=rating)
+    readiness = missing_for_publish(
+        draft, ratings, require_primary_image=_require_primary_image(request, client)
+    )
     return EditSnapshot(
         character_id=character_id,
         draft_revision=draft.draft_revision,
@@ -588,8 +595,19 @@ def _read_snapshot(request: HttpRequest, client: EngineClient, character_id: str
         companion_id=draft.companion_id,
         media_original=media_original,
         media=infos_to_snapshot(infos),
-        **_ratings_snapshot(rating_choices(client, current=rating)),
+        readiness=readiness.to_json(),
+        **_ratings_snapshot(ratings),
     )
+
+
+def _require_primary_image(request: HttpRequest, client: EngineClient) -> bool | None:
+    """The deployment's ``require_primary_image`` (#72's readiness banner); ``None`` when the
+    read failed (the banner then leaves the primary image out)."""
+    try:
+        return client.get_deployment_settings().require_primary_image
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None
 
 
 def _edit_url(character_id: str, **params: str) -> str:
@@ -682,6 +700,7 @@ def _render_edit(
         "archived_note": ARCHIVED_NOTE if snap.archived else "",
     }
     if not create:
+        context["readiness"] = Readiness.from_json(snap.readiness)
         context["lifecycle"] = lifecycle_for(
             request,
             None,  # the edit page reads nothing for its banner

@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "a player character plays a persona and cannot be promoted to the catalog",
+    "details": {
+      "field": "path.character_id",
+      "reason": "player_character"
+    }
+  }
+}

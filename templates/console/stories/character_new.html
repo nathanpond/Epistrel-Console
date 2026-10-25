@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% comment %}
+#72: add a character to a running story. Context: header (StoryHeader), form (AddCharacterForm,
+None when the story read failed), media (the images section), snapshot, idempotency_key,
+action_url, play_url, cast_max, refusal (console.views.story_settings.Refusal), engine_error.
+{% endcomment %}
+{% block title %}Add character — {{ header.name|default:header.story_id }} — Epistrel Console{% endblock %}
+{% block heading %}Add a character to {% if header.name %}{{ header.name }}{% else %}<code>{{ header.story_id }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ play_url }}">Back to the story</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% include "console/settings/_refusal.html" %}
+{% if form %}
+{% if header.revision is not None %}<p class="entry-header">Timeline revision {{ header.revision }}{% if header.cast_count is not None %} · Cast {{ header.cast_count }}/{{ cast_max }}{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="story-character-form">
+  {% csrf_token %}
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {{ form.expected_revision }}
+  {# Enter in a text input submits the first button: make it Add, not an image row button. #}
+  <button type="submit" class="default-submit" tabindex="-1" aria-hidden="true">Add character</button>
+  {{ form.non_field_errors }}
+  {% for field in form.visible_fields %}
+  <p class="field" id="{{ field.auto_id }}-row">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label><br>
+    {{ field }}
+    {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+    {{ field.errors }}
+  </p>
+  {% endfor %}
+  {% include "console/media/_slot_section.html" with section=media.images snap=None %}
+  <p class="actions"><button type="submit">Add character</button> <a href="{{ play_url }}">Cancel</a></p>
+</form>
+{% endif %}
+{% endblock %}

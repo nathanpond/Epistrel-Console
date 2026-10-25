@@ -891,3 +891,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A failed per-slot read shows "<id> unavailable (<status> <code>)" with no `<img>` (the Engine's 404 code is `not_found`). On detail pages, `<img alt>` is the read's alt text, else "". The scenario full read has only ids, so it uses the looked-up asset's alt text. #65's `characters/_image.html` was replaced by the shared `media/_shown.html`, and the generation-metadata `<details>` was kept.
   **Why:** The AC says never a broken image alone. `ScenarioMedia` has no alt text.
   **Issue:** #71
+- **Decision (drift):** A full cast is recognised by `details.cap == "cast_max"` as well as `reason: cast_full`, and a duplicate name by `reason: duplicate`. The fixtures `tests/fixtures/engine/stories/error_validation_error_{cast_full,duplicate}.json` record the Engine's real details.
+  **Why:** The Engine (`core.stories._cast_full` / `_name_taken`, b4adb1a) sends `{field: "body", cap: "cast_max", limit, actual}` and `{field: "body.name", reason: "duplicate"}`. There is no `reason: cast_full`, which the plan assumed.
+  **Issue:** #72
+- **Decision (drift):** The readiness banner leaves out "likes & dislikes". It adds the visual identity's preferred image model, base appearance prompt, negative prompt and seed when the draft has a visual identity.
+  **Why:** The Engine's publish check (`PUBLISH_REQUIRED`, `IDENTITY_REQUIRED` in `core.catalog.models`) does not require `likes_dislikes` (lists may be empty), but it does require those four identity fields. The banner promises "Before this can be published", so it follows what the publish actually refuses.
+  **Issue:** #72
+- **Decision:** The routes are named `stories:character-new` and `stories:character-promote`, not the planner's `story_character_new` / `story_character_promote`. The readiness banner is computed on the edit GET and carried in the edit snapshot, so a refused save re-renders it without new reads.
+  **Why:** The names follow the `stories` namespace's existing hyphenated style (`settings-pinned`, `undo-rewind`). Carrying the banner keeps it based on the saved draft, never on re-rendered input.
+  **Issue:** #72
+- **Decision:** The cast panel's omniscient read is one direct call after the play view's own reads, not a call on the #41 pool. If it fails, Promote still shows on every non-player character: `is_player` comes from the play view's normal read. A promote GET for a character not in the cast redirects with "This story has no character <id>".
+  **Why:** #48's reads are not pooled, so a one-key fan-out would only add a thread. The normal read already holds `is_player`, so a failed omniscient read only loses the "Promoted →" links. The plan had no wording for an unknown character id.
+  **Issue:** #72
+- **Decision:** The add form's images use a new `StoryImageFormSet`, which is #71's image-slot formset with the cap message "At most 20 images", plus a `STORY_CHARACTER_SECTIONS` spec (`images`) registered with #71's picker and slot-row endpoints. A 409 `revision_conflict` re-renders with the hidden expected revision moved to `details.current_revision`.
+  **Why:** #71's `ImageSlotFormSet` says "gallery images". Without moving the revision, the "check and submit again" line would conflict again on every submit.
+  **Issue:** #72

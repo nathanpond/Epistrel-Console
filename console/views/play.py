@@ -37,6 +37,7 @@ from django.views.decorators.http import require_POST, require_safe
 
 from console import cast as cast_helpers
 from console.cast import CastMember, character_of, viewpoint_for
+from console.cast_panel import CastPanel, cast_panel
 from console.confirm import confirm_query, posted_idempotency_key
 from console.engine.client import (
     DEFAULT_TURN_DEADLINE_S,
@@ -631,6 +632,7 @@ class PlayPage:
     tab: str = TURN_TAB
     header: TimelineHeader | None = None
     fork_banner: ForkBanner | None = None
+    cast_panel: CastPanel | None = None  # #72: Add character, Promote
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
@@ -640,6 +642,7 @@ class PlayPage:
             "iv": self.ingest_view,
             "story": self.story,
             "cast": self.story.cast,
+            "cast_panel": self.cast_panel,
             "actions_query": confirm_query(
                 self.story.name, reverse("stories:detail", args=[self.story.id])
             ),
@@ -754,6 +757,7 @@ def _page(
         INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
         _timeline_header(story, play),
         _fork_banner(request, story_id),
+        cast_panel(engine_client_for(request), story),
     )
     return render(request, "console/play/play.html", page.context(request))
 

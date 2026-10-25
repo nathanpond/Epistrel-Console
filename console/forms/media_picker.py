@@ -253,6 +253,10 @@ ReferenceImageFormSet = _formset(
 VideoFormSet = _formset(
     VideoForm, limit=LIST_MAX, over_limit=f"At most {LIST_MAX} videos", distinct=True
 )
+# #72: a character added to a running story shows ``images`` (one ordered list of images).
+StoryImageFormSet = _formset(
+    ImageSlotForm, limit=LIST_MAX, over_limit=f"At most {LIST_MAX} images", distinct=True
+)
 
 
 # --- the sections ---------------------------------------------------------------------------------
@@ -360,12 +364,24 @@ SCENARIO_SECTIONS: tuple[SectionSpec, ...] = (
     ),
 )
 
+STORY_IMAGES = "images"
+# #72: the add-character form's images (``POST /stories/{id}/characters`` ``images``).
+STORY_CHARACTER_SECTIONS: tuple[SectionSpec, ...] = (
+    SectionSpec(
+        STORY_IMAGES,
+        "Images",
+        None,
+        (ListSpec(STORY_IMAGES, "Images", IMAGE, StoryImageFormSet),),
+    ),
+)
+ALL_SECTIONS = (*CHARACTER_SECTIONS, *SCENARIO_SECTIONS, *STORY_CHARACTER_SECTIONS)
+
 
 def known_fields() -> dict[str, tuple[str, int | None]]:
     """Every slot field the picker and the row partial accept: name → (kind, list limit; ``None``
     for a single slot)."""
     found: dict[str, tuple[str, int | None]] = {}
-    for section in (*CHARACTER_SECTIONS, *SCENARIO_SECTIONS):
+    for section in ALL_SECTIONS:
         if section.single is not None:
             found[section.single.name] = (section.single.kind, None)
         for spec in section.lists:
@@ -374,7 +390,7 @@ def known_fields() -> dict[str, tuple[str, int | None]]:
 
 
 def list_spec(prefix: str) -> ListSpec | None:
-    for section in (*CHARACTER_SECTIONS, *SCENARIO_SECTIONS):
+    for section in ALL_SECTIONS:
         for spec in section.lists:
             if spec.prefix == prefix:
                 return spec

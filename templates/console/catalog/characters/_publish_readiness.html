@@ -1,0 +1,7 @@
+{% comment %}
+#72: what the saved draft still needs before it can publish (console.catalog.readiness.Readiness),
+each item linked to its form anchor; hidden once nothing is missing. Context: readiness.
+{% endcomment %}{% if readiness.shown %}<div class="banner banner-warning publish-readiness" role="status">
+  {% if readiness.items %}<p><strong>Before this can be published:</strong> {% for item in readiness.items %}<a href="#{{ item.field_id }}">{{ item.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% for note in readiness.notes %}<p class="muted readiness-note">{{ note }}</p>{% endfor %}
+</div>{% endif %}

@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "media asset 01JB2Z8Y5Q3W6K9M1N4P7R0M02 is not an image",
+    "details": {
+      "field": "body.images[1]",
+      "reason": "not_an_image"
+    }
+  }
+}

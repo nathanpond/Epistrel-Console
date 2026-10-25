@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "rating_retired",
+    "message": "the content rating is retired",
+    "details": {
+      "field": "body.content_rating_id"
+    }
+  }
+}

@@ -924,6 +924,18 @@ class StoryStatusChange(Model):
     idempotency_key: str | None = None
 
 
+@dataclass(frozen=True)
+class StoryCharacterAdded(Model):
+    """``StoryCharacterBody``: a character added to a running story (#72): its id, name, place
+    in the cast (``ordinal``) and the story's revision after the addition."""
+
+    timeline_revision: int
+    id: str
+    name: str
+    ordinal: int
+    idempotency_key: str | None = None
+
+
 # --- Content ratings (#45's select; #49 adds the detail and version models) -------------------
 
 
@@ -1342,6 +1354,19 @@ class ValidationReport(Model):
     @property
     def is_empty(self) -> bool:
         return not (self.errors or self.warnings or self.unavailable)
+
+
+@dataclass(frozen=True)
+class Promotion(Model):
+    """``PromotionBody``: a story character promoted to a new **draft** catalog character
+    (#72): its ``catalog_id`` and draft revision, the warnings (``definition_truncated``, an
+    image left out as ``media_retired``) and the story's unchanged ``timeline_revision``."""
+
+    timeline_revision: int
+    catalog_id: str
+    draft_revision: int
+    warnings: list[ReportEntry]
+    idempotency_key: str | None = None
 
 
 # --- Catalog characters (#65) --------------------------------------------------------------------

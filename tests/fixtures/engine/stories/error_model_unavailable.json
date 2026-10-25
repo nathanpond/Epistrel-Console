@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "model_unavailable",
+    "message": "the input gate's model is unavailable",
+    "details": {
+      "purpose": "guardrail",
+      "reason": "timeout",
+      "attempts": 2
+    }
+  }
+}

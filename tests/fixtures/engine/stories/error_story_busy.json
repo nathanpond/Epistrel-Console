@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "story_busy",
+    "message": "a turn is in flight",
+    "details": {
+      "reason": "in_flight",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0OP1"
+    }
+  }
+}
