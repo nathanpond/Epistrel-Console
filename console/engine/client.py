@@ -50,6 +50,7 @@ from console.engine.models import (
     HealthResponse,
     HealthResult,
     History,
+    HotSetBody,
     ImpactReport,
     IngestResponse,
     ListingStatus,
@@ -1093,6 +1094,15 @@ class EngineClient:
         if response.status_code == 202:
             return _parse(response, RebuildQueued)
         return _parse(response, RebuildResult)
+
+    # --- a story's hot set (#140) ---------------------------------------------------------------
+
+    @operation("GET", "/admin/stories/{story_id}/hot-set", response_model=HotSetBody)
+    def get_hot_set(self, story_id: str) -> HotSetBody:
+        """``GET /admin/stories/{id}/hot-set``: the story's hot-set counters (recounted now, and
+        as stored), budgets and pin ceilings, pins, open overflow episodes and latest 20
+        retirements. A read: nothing is written (and nothing recorded)."""
+        return _parse(self._request("GET", f"/admin{_story_path(story_id)}/hot-set"), HotSetBody)
 
     @operation("GET", "/admin/model-config", response_model=ModelConfig)
     def list_model_config(self) -> ModelConfig:

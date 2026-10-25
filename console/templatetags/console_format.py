@@ -106,3 +106,12 @@ def human_bytes(value: Any) -> str:
 def mib(value: int) -> str:
     """A byte count in MiB with one decimal (#70's upload limits): "8.0 MiB"."""
     return f"{value / MIB:.1f} MiB"
+
+
+@register.filter
+def count(value: Any) -> str:
+    """A count with thousands separators (#135 convention 5): ``12000`` → ``12,000``; "—" for
+    anything that is not an integer."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        return EMPTY
+    return f"{value:,}"

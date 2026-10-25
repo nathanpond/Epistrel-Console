@@ -35,6 +35,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, TypeGuard
+from urllib.parse import urlencode
+
+from django.urls import NoReverseMatch, reverse
 
 from console.engine.client import EngineError
 from console.engine.models import EffectiveConfig
@@ -351,3 +354,33 @@ def profile_flags(config: EffectiveConfig) -> str:
     return ", ".join(
         name for name, on in (("pinned", profile.pinned), ("deleted", profile.deleted)) if on
     )
+
+
+# --- shared M4 formatting and links (#135 conventions 2 and 3; first used by #140) --------------
+
+SHORT_ID = 8  # convention 2: an Engine id shows its last 8 characters
+
+
+def short_id(value: str) -> str:
+    """Convention 2's shown part of an Engine id: "…" and its last 8 characters (a shorter
+    value as given). The template filter ``engine_id`` wraps it in ``<code>`` with the full id
+    in ``title``."""
+    return f"…{value[-SHORT_ID:]}" if len(value) > SHORT_ID else value
+
+
+def history_turn_url(story_id: str, turn: int) -> str:
+    """Convention 3: the story's history at ``turn`` on the active chain: ``before_turn`` one
+    past it and the ``#turn-<turn>-0`` anchor of ``history/_items.html``."""
+    base = reverse("stories:history", args=[story_id])
+    return f"{base}?{urlencode({'before_turn': turn + 1})}#turn-{turn}-0"
+
+
+def retrieval_url(story_id: str, params: Mapping[str, str]) -> str | None:
+    """A link into the Retrieval explorer (#141) pre-filled with ``params`` (convention 11:
+    filters only, no read), or ``None`` while ``inspect:retrieval`` isn't registered (the
+    caller then omits the link)."""
+    try:
+        base = reverse(Tab.RETRIEVAL.url_name, args=[story_id])
+    except NoReverseMatch:
+        return None
+    return f"{base}?{urlencode(params)}" if params else base

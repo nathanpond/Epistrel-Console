@@ -1,7 +1,7 @@
 """The Console's routes with every Inspect tab registered (#135): each test tab calls
 ``inspect_page``, and its ``build`` makes one Engine read where :data:`READS` names one, so the
 shell's gate and its 409 ``module_off`` handling can be tested before the tabs' own stories
-land."""
+land. A tab its story has registered (:data:`REAL`) keeps its real view."""
 
 from typing import Any
 
@@ -34,10 +34,13 @@ def _view(tab: Tab) -> Any:
     return view
 
 
+# Tabs whose own story has registered them for real: those keep their real view.
+REAL = {Tab(p.name) for p in real.inspect_patterns[0] if isinstance(p, URLPattern) and p.name}
+
 inspect_patterns = (
     [
         *real.inspect_patterns[0],
-        *(path(f"{tab.value}/", _view(tab), name=tab.value) for tab in Tab if tab != Tab.OVERVIEW),
+        *(path(f"{tab.value}/", _view(tab), name=tab.value) for tab in Tab if tab not in REAL),
     ],
     "inspect",
 )

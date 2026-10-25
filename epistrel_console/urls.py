@@ -154,6 +154,7 @@ story_patterns = (
 inspect_patterns = (
     [
         path("", inspect.overview, name="overview"),
+        path("memory/", inspect.memory, name="memory"),
     ],
     "inspect",
 )

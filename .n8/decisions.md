@@ -1239,3 +1239,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A `verification:<level>` capability gets its label from a `verification` entry ("Verification") in `CAPABILITY_LABELS`. Any `<module>:<level>` with a known module reads "<Label> (<level>)". Budgets and models get "(always on)" only in their plain form.
   **Why:** The plan's general `<module>:<level>` rule needs a label for each module. No module is reported at a level in the always-on form.
   **Issue:** #151
+- **Decision:** The hot-set models take the schema's names as they are (`HotSetBody`, `HotSetBudgets`, `HotCountsBody`, `HotSetPins`, `EpisodeBody`, `RetirementBody`), as the story's artifacts name them, not the shorter names some older models use.
+  **Why:** The story names them so, and convention 12 says "named after the schema".
+  **Issue:** #140
+- **Decision:** Counts in the Memory tab's tables use a new shared `count` filter (`console_format`, thousands separators); budget values are still formatted in `console/hot_set.py`.
+  **Why:** Convention 5 wants separators on every count, and later M4 tabs need the same; the story only ruled out filters for the budget values.
+  **Issue:** #140
+- **Decision:** Shared M4 helpers live in `console/inspect.py` (`short_id`, `history_turn_url`, `retrieval_url`) and `inspect_tags` (`engine_id`), with a `_character.html` partial for convention 2's names. `history_turn_url` links the active chain only (no variant yet).
+  **Why:** Built once for the later Inspect stories; no #140 link names a variant.
+  **Issue:** #140
+- **Decision:** `tests/inspect/urls.py` now stubs only the tabs the real urlconf hasn't registered; a registered tab keeps its real view there.
+  **Why:** Otherwise the stub would shadow the real Memory view under the test urlconf, which the Retrieval-link tests need.
+  **Issue:** #140
+- **Decision:** In Counts, "over budget" sits in the Hot cell beside the count; in Pins, the marker column is headed "Status" ("—" without a marker).
+  **Why:** The story names the markers but not their cells or the column header.
+  **Issue:** #140
+- **Decision:** A 409 `module_off` from the hot-set read (the route doesn't declare one) goes up to the shell's greyed panel; `erasure_pending` goes up to #87's held wrapper. Every other failure stays inside the tab, so the Browse grid still renders.
+  **Why:** That keeps the shell's behaviour and meets the story's per-section rule.
+  **Issue:** #140
+- **Decision:** Counts rows judge every character against `memories_per_character`, although the Engine scales a minor's budget, which the hot-set answer doesn't report. Filed #168.
+  **Why:** The response doesn't carry the scaled budget, and adding it would change the API contract.
+  **Issue:** #140

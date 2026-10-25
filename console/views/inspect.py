@@ -44,14 +44,24 @@ from django.shortcuts import render
 from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_safe
 
-from console.engine.client import EngineClient, EngineClientError
+from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import EffectiveConfig, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
 from console.held import is_held, render_held
+from console.hot_set import (
+    REASON_LEGEND,
+    browse_rows,
+    budget_rows,
+    episode_rows,
+    hot_set_rows,
+    more,
+    retirement_rows,
+)
 from console.inspect import (
     CAPABILITY_MAP_LABEL,
     CAPABILITY_MAP_URL,
+    EPISODIC,
     PIPELINE,
     SETTINGS,
     Tab,
@@ -65,9 +75,11 @@ from console.inspect import (
     profile_flags,
     setting,
     tab_availability,
+    unavailable_for,
 )
 
 OVERVIEW_TEMPLATE = "console/inspect/overview.html"
+MEMORY_TEMPLATE = "console/inspect/memory.html"
 
 
 @dataclass(frozen=True)
@@ -192,3 +204,48 @@ def _overview(ctx: InspectContext) -> dict[str, Any]:
 def overview(request: HttpRequest, story_id: str) -> HttpResponse:
     """``inspect:overview``, the area's entry URL."""
     return inspect_page(request, story_id, Tab.OVERVIEW, OVERVIEW_TEMPLATE, _overview)
+
+
+def _memory(ctx: InspectContext) -> dict[str, Any]:
+    """The Memory tab (#140): one ``GET /admin/stories/{id}/hot-set`` read, its rows from
+    :mod:`console.hot_set` with the shell's cast (``None`` when the story read failed).
+
+    A failed read replaces the "As of" line and the sections: 404 ``not_found`` with convention
+    10's line, any other error with #43's panel; ``erasure_pending`` (and a 409 ``module_off``,
+    which the route doesn't declare) escape to #87's held wrapper (and the shell's panel). The
+    Browse grid renders either way. ``episodic: false`` shows #135's reason inline above the
+    sections, which still render (convention 7)."""
+    browse = browse_rows(ctx.story_id)
+    context: dict[str, Any] = {
+        "browse": browse,
+        "browse_links": all(link.url for row in browse for link in row.links),
+    }
+    try:
+        body = ctx.client.get_hot_set(ctx.story_id)
+    except EngineClientError as exc:
+        if is_held(exc) or is_module_off(exc):
+            raise
+        log_engine_error(ctx.request, exc)
+        if isinstance(exc, EngineError) and exc.http_status == 404:
+            context["hot_set_not_found"] = True
+        else:
+            context["hot_set_error"] = panel_for(exc)
+        return context
+    cast = ctx.story.cast if ctx.story is not None else None
+    context.update(
+        hot_set=body,
+        episodic_off=None if body.episodic else unavailable_for(EPISODIC, ctx.effective),
+        budgets=budget_rows(body.budgets),
+        rows=hot_set_rows(body, cast),
+        episodes=episode_rows(body.open_episodes, body.head_turn, cast),
+        retirements=retirement_rows(ctx.story_id, body.recent_retirements, cast),
+        reason_legend=REASON_LEGEND,
+        more=more(body),
+    )
+    return context
+
+
+@require_safe
+def memory(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:memory``, the story's hot set (#140)."""
+    return inspect_page(request, story_id, Tab.MEMORY, MEMORY_TEMPLATE, _memory)

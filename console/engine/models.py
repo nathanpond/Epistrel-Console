@@ -1184,6 +1184,88 @@ class RebuildQueued(Model):
     idempotency_key: str | None = None
 
 
+# --- a story's hot set (#140) ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HotSetBudgets(Model):
+    """``HotSetBudgets``: the story's ``memory.hot_set.*`` dials and the deployment's pin
+    ceilings."""
+
+    memories_per_character: int
+    vectors_per_story: int
+    importance_floor: float
+    retirement_max_lag: int
+    retain_retired_vectors: bool
+    retain_dormant_vectors: bool
+    max_pinned_per_character: int
+    max_pinned_per_story: int
+
+
+@dataclass(frozen=True)
+class HotCountsBody(Model):
+    """``HotCountsBody``: each character's unpinned hot memories (characters with none left out)
+    and the story's unpinned hot vectors."""
+
+    characters: dict[str, int]
+    story_vectors: int
+
+
+@dataclass(frozen=True)
+class HotSetPins(Model):
+    """``HotSetPins``: the story's memory pins (all, and per holding character) and its text
+    pins; the story ceiling counts both."""
+
+    memory_pins: int
+    text_pins: int
+    by_character: dict[str, int]
+
+
+@dataclass(frozen=True)
+class EpisodeBody(Model):
+    """``EpisodeBody``: one open overflow episode (``scope`` ``character`` or ``story``), its
+    fixed deadline turn and its excess."""
+
+    id: str
+    scope: str
+    scope_id: str
+    opened_turn: int
+    deadline_turn: int
+    excess_at_open: int
+    excess: int
+
+
+@dataclass(frozen=True)
+class RetirementBody(Model):
+    """``RetirementBody``: one retired memory, identifiers only (``reason`` ``covered``,
+    ``floor`` or ``uncovered``)."""
+
+    memory_id: str
+    reason: str | None
+    retired_turn: int | None
+    retired_at: str | None
+    holder_character_id: str | None
+
+
+@dataclass(frozen=True)
+class HotSetBody(Model):
+    """``HotSetBody``: ``GET /admin/stories/{id}/hot-set``. ``stored_counters`` is ``None``
+    until the Engine has stored counts (its next commit recounts); ``episodic`` false means
+    retirement doesn't run (the counters are kept anyway). ``recent_retirements`` holds the
+    latest 20, newest first."""
+
+    story_id: str
+    episodic: bool
+    counters: HotCountsBody
+    stored_counters: HotCountsBody | None
+    budgets: HotSetBudgets
+    pins: HotSetPins
+    head_turn: int
+    open_episodes: list[EpisodeBody]
+    recent_retirements: list[RetirementBody]
+    timeline_revision: int
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 

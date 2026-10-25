@@ -125,7 +125,11 @@ def test_a_tab_whose_url_is_not_registered_is_absent(
     answer_config(engine, structured())
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         tabs = bar(get(operator_client).content.decode())
-    assert tabs == f'<a class="active" aria-current="page" href="{URL}">Overview</a>'
+    # Registered for real so far: Overview (#151) and Memory (#140); the rest are absent.
+    assert tabs.startswith(f'<a class="active" aria-current="page" href="{URL}">Overview</a>')
+    assert f'href="{URL}memory/">Memory</a>' in tabs
+    for label in ("Retrieval", "Canon", "Predicates", "Ledger", "Scene"):
+        assert f">{label}<" not in tabs
 
 
 # --- a greyed tab opened directly -----------------------------------------------------------------

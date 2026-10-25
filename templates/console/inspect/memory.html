@@ -1,0 +1,129 @@
+{% extends "console/inspect/base.html" %}
+{% load console_format inspect_tags %}
+{% comment %}
+The Memory tab (#140): the story's hot set from one GET /admin/stories/{id}/hot-set read. Rows and
+markers come from console/hot_set.py. A failed read replaces the "As of" line and the five sections
+(not_found: convention 10's line; else #43's panel); the Browse grid always renders.
+{% endcomment %}
+{% block tab_content %}
+{% if hot_set_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif hot_set_error %}{% include "console/_engine_error.html" with engine_error=hot_set_error %}
+{% elif hot_set %}
+<p class="as-of">As of turn <code>{{ hot_set.head_turn }}</code> · revision <code>{{ hot_set.timeline_revision }}</code></p>
+{% if episodic_off %}{% include "console/inspect/_unavailable.html" with unavailable=episodic_off inline=True %}{% endif %}
+
+<h2>Budgets</h2>
+<table class="hot-set-budgets">
+  <thead><tr><th>Setting</th><th>Value</th><th>Source</th></tr></thead>
+  <tbody>
+  {% for b in budgets %}
+    <tr class="budget-{{ b.field }}">
+      <td>{{ b.label }}</td>
+      <td>{% if b.title %}<span title="{{ b.title }}">{{ b.value }}</span>{% else %}{{ b.value }}{% endif %}</td>
+      <td>{{ b.source }}{% if b.setting %} <code>{{ b.setting }}</code>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Counts</h2>
+<table class="hot-set-counts">
+  <thead><tr><th>Character</th><th>Hot (unpinned)</th><th>Budget</th><th>Headroom</th><th>Stored</th></tr></thead>
+  <tbody>
+  {% for row in rows.counts %}
+    <tr class="count-row">{% include "console/inspect/_memory_count.html" %}</tr>
+  {% empty %}
+    <tr class="count-none"><td colspan="5">No character holds hot memories.</td></tr>
+  {% endfor %}
+  {% with row=rows.story_vectors %}<tr class="count-story">{% include "console/inspect/_memory_count.html" %}</tr>{% endwith %}
+  </tbody>
+</table>
+{% if not hot_set.stored_counters %}<p class="stored-note">The Engine hasn't stored counts yet; its next commit recounts.</p>{% endif %}
+
+<h2>Pins</h2>
+<table class="hot-set-pins">
+  <thead><tr><th>Character</th><th>Memory pins</th><th>Ceiling</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for row in rows.pins %}
+    <tr class="pin-row">
+      <td>{% include "console/inspect/_character.html" with label=row.label character_id=row.character_id is_player=row.is_player %}</td>
+      <td>{{ row.pins|count }}</td>
+      <td>{{ row.ceiling|count }}</td>
+      <td>{% if row.marker %}<strong class="marker">{{ row.marker }}</strong>{% else %}—{% endif %}</td>
+    </tr>
+  {% empty %}
+    <tr class="pin-none"><td colspan="4">No memory pins.</td></tr>
+  {% endfor %}
+  {% if rows.story_pins.holderless %}
+    <tr class="pin-holderless"><td>Story-level (no holder)</td><td>{{ rows.story_pins.holderless|count }}</td><td>—</td><td>—</td></tr>
+  {% endif %}
+  </tbody>
+</table>
+{% with p=rows.story_pins %}
+<table class="hot-set-story-pins">
+  <tbody>
+    <tr><th scope="row">Memory pins</th><td>{{ p.memory_pins|count }}</td></tr>
+    <tr><th scope="row">Text pins <span class="hint">(the story's pinned-memory texts)</span></th><td>{{ p.text_pins|count }}</td></tr>
+    <tr class="pin-total"><th scope="row">Total</th><td>{{ p.total|count }} / {{ p.ceiling|count }}{% if p.marker %} <strong class="marker">{{ p.marker }}</strong>{% endif %}</td></tr>
+  </tbody>
+</table>
+{% endwith %}
+
+<h2>Overflow episodes</h2>
+{% if episodes %}
+<table class="hot-set-episodes">
+  <thead><tr><th>Scope</th><th>Scope id</th><th>Opened turn</th><th>Deadline turn</th><th>Due</th><th>Excess at open</th><th>Excess now</th></tr></thead>
+  <tbody>
+  {% for e in episodes %}
+    <tr class="episode">
+      <td>{% if e.scope_label %}<span title="{{ e.scope }}">{{ e.scope_label }}</span>{% else %}<code>{{ e.scope }}</code>{% endif %}</td>
+      <td>{% if e.is_story %}<span title="{{ e.scope_id }}">this story</span>{% else %}{% include "console/inspect/_character.html" with label=e.label character_id=e.scope_id is_player=e.is_player %}{% endif %}</td>
+      <td>{{ e.opened_turn }}</td>
+      <td>{{ e.deadline_turn }}</td>
+      <td class="episode-due">{% if e.due %}<strong class="marker">due</strong>{% if e.turns %} ({{ e.turns|count }} turn{{ e.turns|pluralize }} past){% endif %}{% else %}in {{ e.turns|count }} turn{{ e.turns|pluralize }}{% endif %}</td>
+      <td>{{ e.excess_at_open|count }}</td>
+      <td>{{ e.excess|count }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="episodes-none">None open.</p>{% endif %}
+
+<h2>Recent retirements</h2>
+{% if retirements %}
+<table class="hot-set-retirements">
+  <thead><tr><th>Memory</th><th>Holder</th><th>Reason</th><th>Retired turn</th><th>Retired at</th></tr></thead>
+  <tbody>
+  {% for r in retirements %}
+    <tr class="retirement">
+      <td>{% if r.memory_url %}<a class="memory-link" href="{{ r.memory_url }}">{{ r.memory_id|engine_id }}</a>{% else %}{{ r.memory_id|engine_id }}{% endif %}</td>
+      <td>{% if r.holder_id %}{% include "console/inspect/_character.html" with label=r.holder_label character_id=r.holder_id is_player=r.holder_is_player %}{% else %}story-level <span class="hint">(counts toward story vectors only)</span>{% endif %}</td>
+      <td>{% if r.reason_label %}<span title="{{ r.reason }}">{{ r.reason_label }}</span>{% elif r.reason %}<code>{{ r.reason }}</code>{% else %}—{% endif %}</td>
+      <td>{% if r.turn_url %}<a href="{{ r.turn_url }}">turn {{ r.retired_turn }}</a>{% else %}—{% endif %}</td>
+      <td>{{ r.retired_at|engine_time }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<dl class="legend reasons">
+  {% for reason, meaning in reason_legend.items %}<dt>{{ reason|capfirst }}</dt><dd>{{ meaning }}</dd>
+  {% endfor %}
+</dl>
+{% else %}<p class="retirements-none">None yet.</p>{% endif %}
+
+<details class="more"><summary>More</summary><pre>{{ more|pretty_json }}</pre></details>
+{% endif %}
+
+<h2>Browse memories</h2>
+<p>The Engine can't list a story's memories yet (nathanpond/Epistrel#531). Retrieval shows the memories a question retrieves, filtered by kind and tier.</p>
+{% if browse_links %}
+<table class="browse-memories">
+  <thead><tr><th>Kind</th><th>Hot</th><th>Retired</th></tr></thead>
+  <tbody>
+  {% for row in browse %}
+    <tr class="browse-{{ row.kind }}"><th scope="row">{{ row.label }}</th>{% for link in row.links %}<td><a href="{{ link.url }}">{{ link.label }}</a></td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
