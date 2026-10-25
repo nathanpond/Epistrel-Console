@@ -556,7 +556,8 @@ def test_when_ratings_are_unavailable_the_rating_is_kept(
 def test_an_archived_entry_is_read_only(operator_client: Client, engine: FakeEngine) -> None:
     response = edit_page(operator_client, engine, draft(status="archived"))
     html = response.content.decode()
-    assert "Archived — unarchive to save or publish." in html
+    # #69's shared banner replaced #66's note.
+    assert "Archived — this entry can be read but not edited, published" in html
     assert 'value="save" disabled' in html
     assert 'value="publish" disabled' in html
     data = {**form_data(response), WARMTH_NUANCE: "x", "action": "save"}

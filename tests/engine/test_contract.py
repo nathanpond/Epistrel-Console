@@ -21,6 +21,7 @@ from console.engine.models import (
     CatalogCharacterDraft,
     CatalogCharacterListItem,
     CatalogCharacterPage,
+    CatalogCharacterStatus,
     CatalogSource,
     CatalogVersion,
     CatalogVersionList,
@@ -64,6 +65,7 @@ from console.engine.models import (
     HistoryItem,
     InteractionStyle,
     LikesDislikes,
+    ListingStatus,
     Location,
     ModelCall,
     ModelConfig,
@@ -111,6 +113,7 @@ from console.engine.models import (
     ScenarioPage,
     ScenarioPolicy,
     ScenarioPublicCard,
+    ScenarioStatus,
     StartingState,
     StoredResult,
     Story,
@@ -352,6 +355,9 @@ def test_the_widening_only_adds_media_id() -> None:
         (ScenarioDraft, "ScenarioDraftBody"),
         (CatalogVersion, "ScenarioVersionBody"),
         (CatalogVersionList, "ScenarioVersionsBody"),
+        (CatalogCharacterStatus, "CharacterStatusBody"),
+        (ScenarioStatus, "ScenarioStatusBody"),
+        (ListingStatus, "ListingStatusBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

@@ -2,12 +2,13 @@
 
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import include, path
+from django.urls import URLPattern, include, path
 
 from console.auth import OperatorAuthenticationForm
 from console.views import (
     acting,
     catalog_characters,
+    catalog_lifecycle,
     catalog_scenarios,
     engine_panel,
     history,
@@ -118,6 +119,24 @@ engine_patterns = (
     "engine",
 )
 
+
+def lifecycle_patterns(entry: str) -> list[URLPattern]:
+    """Archive, unarchive, delete and listing status (#69): the same views for both entry types,
+    told apart by ``entry``."""
+    kwargs = {"entry": entry}
+    return [
+        path("<str:entry_id>/archive/", catalog_lifecycle.archive, kwargs, name="archive"),
+        path("<str:entry_id>/unarchive/", catalog_lifecycle.unarchive, kwargs, name="unarchive"),
+        path("<str:entry_id>/delete/", catalog_lifecycle.delete, kwargs, name="delete"),
+        path(
+            "<str:entry_id>/listing-status/",
+            catalog_lifecycle.listing_status,
+            kwargs,
+            name="listing-status",
+        ),
+    ]
+
+
 catalog_character_patterns = (
     [
         path("", catalog_characters.character_list, name="index"),
@@ -134,6 +153,7 @@ catalog_character_patterns = (
             catalog_characters.character_versions,
             name="versions",
         ),
+        *lifecycle_patterns(catalog_lifecycle.CHARACTER),
     ],
     "catalog_characters",
 )
@@ -149,6 +169,7 @@ scenario_patterns = (
             catalog_scenarios.scenario_versions,
             name="versions",
         ),
+        *lifecycle_patterns(catalog_lifecycle.SCENARIO),
     ],
     "scenarios",
 )

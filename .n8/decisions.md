@@ -843,3 +843,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** When the ratings read fails, the content-rating field is left out and the saved rating is kept, as #66 does, instead of a disabled select. The note "Ratings unavailable: … — reload to retry" shows in its place.
   **Why:** One behaviour across the catalog editors. A disabled field would post nothing and read as "cleared".
   **Issue:** #68
+- **Decision (drift):** Lifecycle routes are named inside the existing namespaces (`catalog_characters:archive|unarchive|delete|listing-status`, `scenarios:…`), not `catalog-<entry>-<action>`, and their path parameter is `entry_id`. The fixtures live in `tests/fixtures/engine/` (`catalog_characters_status.json`, `catalog_scenarios_status.json`, `catalog_listing_status.json`, `error_companion_follows_character.json`, `error_invalid_listing_status.json`), not `tests/fixtures/catalog/`.
+  **Why:** Convention 20 puts each root under its namespace and the repo has one fixture directory, which `engine_fixture()` reads.
+  **Issue:** #69
+- **Decision:** The archive and unarchive flashes add "(its companion follows)" when the response's `companion_id` is set. The delete and listing-status flashes, which get no such field back, use the posted `has_companion`. The suffix goes before the final period: "Archived *Name* (its companion follows)."
+  **Why:** The answer is the truth where there is one. The display data covers only the calls that return nothing about the companion.
+  **Issue:** #69
+- **Decision:** The edit pages make no read for the archived banner. A companion's banner names its character by id there; the detail page names it through the companion-of card read it already makes. The catalog test `engine` fixture now answers `/admin/settings` by default, since every full detail view reads it once for the listing-status select.
+  **Why:** #66 and #68 keep a re-rendered or invalid edit form at zero Engine calls, and the banner renders on those paths too.
+  **Issue:** #69
+- **Decision:** A "Follows" helper type (`catalog_lifecycle.Follows`) is separate from #68's `CompanionLabel`, and the scenario detail converts one into the other. #66's Console-side refusal of a POST from an archived character's edit page (a flash, no call) stays. The forced-POST complement test sends a POST from a page rendered before the entry was archived, so the Engine's `entry_archived` panel shows for both entry types.
+  **Why:** This avoids a circular import between the scenario and lifecycle views. An archived page's disabled character fields post their initial values, which make an empty patch, so only a stale page can reach the Engine.
+  **Issue:** #69

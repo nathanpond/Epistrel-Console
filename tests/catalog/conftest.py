@@ -10,16 +10,18 @@ from django.test import override_settings
 
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
-from console.views import catalog_characters, catalog_scenarios, media_proxy
+from console.views import catalog_characters, catalog_lifecycle, catalog_scenarios, media_proxy
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
+from tests.ratings.helpers import answer_settings
 
 
 @pytest.fixture
 def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngine]:
     """The fake Engine the catalog views (and the media proxy) talk to, through the real
     recording client. The companion's draft is answered by default (#66: the detail page's
-    Publish reads it); a test that cares registers its own."""
+    Publish reads it), and so is ``/admin/settings`` (#69: the detail page's listing-status
+    select reads it); a test that cares registers its own."""
     fake = FakeEngine()
     fake.respond(
         "GET",
@@ -27,6 +29,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
         200,
         json=engine_fixture("catalog_characters_companion_draft"),
     )
+    answer_settings(fake)
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)
@@ -36,5 +39,6 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     monkeypatch.setattr(catalog_characters, "engine_client_for", client_with_fake)
     monkeypatch.setattr(media_proxy, "engine_client_for", client_with_fake)
     monkeypatch.setattr(catalog_scenarios, "engine_client_for", client_with_fake)
+    monkeypatch.setattr(catalog_lifecycle, "engine_client_for", client_with_fake)
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake

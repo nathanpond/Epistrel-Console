@@ -10,7 +10,7 @@
 {% if not create %}
 <p class="entry-header">Status: {{ snap.status|humanise }} · Draft revision {{ snap.draft_revision|default_if_none:"—" }} · {% if snap.current_version %}latest v{{ snap.current_version }}{% else %}never published{% endif %} · Owner: {{ snap.owner|principal_link }} · <a href="{{ detail_url }}">View</a> · <a href="{{ versions_url }}">Versions</a></p>
 {% endif %}
-{% if archived_note %}<div class="banner banner-warning archived" role="status">{{ archived_note }}</div>{% endif %}
+{% if lifecycle %}{% include "console/catalog/_archived_banner.html" %}{% endif %}
 {% if stale %}<div class="banner banner-warning stale" role="alert">{{ stale }}</div>{% endif %}
 {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
 {% include "console/catalog/scenarios/_scenario_form.html" %}

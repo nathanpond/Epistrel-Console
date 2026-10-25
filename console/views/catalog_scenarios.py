@@ -54,6 +54,8 @@ from console.forms.scenario import (
 )
 from console.formset_rows import OP, OP_REFRESH, parse_op
 from console.ids import new_ulid
+from console.views.catalog_lifecycle import SCENARIO as LIFECYCLE_ENTRY
+from console.views.catalog_lifecycle import Follows, follows_label, lifecycle_for
 
 LIST_URL = "/catalog/scenarios/"
 NOT_PUBLISHED = "not_published"
@@ -340,8 +342,22 @@ def scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
             log_engine_error(request, exc)  # the note is left out
         else:
             differs = draft_differs(entry, current_draft)
+    follows: Follows | None = None
     if entry.companion_of:
-        context["companion"] = companion_labels(client, [entry.companion_of])[entry.companion_of]
+        companion = companion_labels(client, [entry.companion_of])[entry.companion_of]
+        context["companion"] = companion
+        follows = Follows(companion.character_id, companion.text, companion.url)
+    if isinstance(entry, Scenario):
+        context["lifecycle"] = lifecycle_for(
+            request,
+            client,
+            LIFECYCLE_ENTRY,
+            scenario_id,
+            name=entry.public_card.name,
+            status=entry.status,
+            listing_status=entry.listing_status,
+            follows=follows,
+        )
     if isinstance(entry, ScenarioCard):
         context["card_media"] = asdict(entry.media)
     else:
@@ -355,8 +371,7 @@ def scenario_detail(request: HttpRequest, scenario_id: str) -> HttpResponse:
             "full": isinstance(entry, Scenario),
             "is_draft": draft or never_published,
             "never_published": never_published,
-            "archived": entry.status == ARCHIVED,
-            "archived_note": ARCHIVED_NOTE,
+            "is_archived": entry.status == ARCHIVED,
             "name": label(
                 entry.name if isinstance(entry, ScenarioCard) else entry.public_card.name,
                 scenario_id,
@@ -556,6 +571,17 @@ def _render_edit(
     if create:
         context["action_url"] = reverse("scenarios:new")
     else:
+        # The banner names a companion's character by id: the edit page reads nothing for it.
+        context["lifecycle"] = lifecycle_for(
+            request,
+            None,
+            LIFECYCLE_ENTRY,
+            scenario_id,
+            name=snap.name,
+            status=snap.status,
+            listing_status="",
+            follows=follows_label(snap.companion_of) if snap.companion_of else None,
+        )
         context["action_url"] = _edit_url(scenario_id)
         context["detail_url"] = reverse("scenarios:detail", args=[scenario_id])
         context["versions_url"] = reverse("scenarios:versions", args=[scenario_id])

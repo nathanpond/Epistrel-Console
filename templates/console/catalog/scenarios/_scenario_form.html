@@ -79,7 +79,7 @@ create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url.
     {% if create %}
     <button type="submit" name="op" value="save">Create</button>
     {% else %}
-    <button type="submit" name="op" value="save"{% if archived_note %} disabled{% endif %}>Save</button>
+    <button type="submit" name="op" value="save"{% if archived_note %} disabled title="Archived — unarchive to edit"{% endif %}>Save</button>
     {% endif %}
   </p>
 </form>

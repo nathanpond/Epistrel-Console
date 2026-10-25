@@ -48,6 +48,8 @@ from console.forms.catalog_character import OWNER, CharacterForm, draft_to_write
 from console.forms.principal import remember_principals
 from console.ids import new_ulid
 from console.reports import LabelledReport, publish_reports
+from console.views.catalog_lifecycle import CHARACTER as LIFECYCLE_ENTRY
+from console.views.catalog_lifecycle import lifecycle_for
 
 LIST_URL = "/catalog/characters/"
 NOT_PUBLISHED = "not_published"
@@ -381,9 +383,20 @@ def character_detail(request: HttpRequest, character_id: str) -> HttpResponse:
             "images": _images(entry),
         }
     )
+    context["is_archived"] = entry.status == ARCHIVED
     if isinstance(entry, CatalogCharacter):
         context["references"] = _reference_images(entry)
         context["dispositions"] = _dispositions(entry)
+        context["lifecycle"] = lifecycle_for(
+            request,
+            client,
+            LIFECYCLE_ENTRY,
+            character_id,
+            name=entry.name,
+            status=entry.status,
+            listing_status=entry.listing_status,
+            has_companion=entry.companion_id is not None,
+        )
     return render(request, "console/catalog/characters/detail.html", context)
 
 
@@ -466,6 +479,7 @@ class EditSnapshot:
     companion_error: str = ""
     ratings: list[tuple[str, str]] = field(default_factory=list)
     ratings_error: str = ""
+    companion_id: str | None = None  # #69: the archived banner's unarchive link names it
 
     def signed(self) -> str:
         return signing.dumps(asdict(self), salt=SNAPSHOT_SALT, compress=True)
@@ -537,6 +551,7 @@ def _read_snapshot(request: HttpRequest, client: EngineClient, character_id: str
         current_version=draft.current_version,
         companion_revision=companion_revision,
         companion_error=companion_error,
+        companion_id=draft.companion_id,
         **_ratings_snapshot(rating_choices(client, current=rating)),
     )
 
@@ -592,6 +607,16 @@ def _render_edit(
         "archived_note": ARCHIVED_NOTE if snap.archived else "",
     }
     if not create:
+        context["lifecycle"] = lifecycle_for(
+            request,
+            None,  # the edit page reads nothing for its banner
+            LIFECYCLE_ENTRY,
+            character_id,
+            name=snap.name,
+            status=snap.status,
+            listing_status="",
+            has_companion=snap.companion_id is not None,
+        )
         context["detail_url"] = reverse("catalog_characters:detail", args=[character_id])
         context["versions_url"] = reverse("catalog_characters:versions", args=[character_id])
         context["action_url"] = reverse("catalog_characters:edit", args=[character_id])

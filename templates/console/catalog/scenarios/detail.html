@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load console_format principals %}
+{% load console_format principals catalog %}
 {% block title %}{% if name %}{{ name }}{% else %}{{ scenario_id }}{% endif %} — Scenarios — Epistrel Console{% endblock %}
 {% block heading %}{% if name %}{{ name }}{% else %}Scenario <code>{{ scenario_id }}</code>{% endif %}{% endblock %}
 {% block content %}
@@ -7,13 +7,15 @@
 {% if engine_error %}
 {% include "console/_engine_error.html" %}
 {% else %}
-<h2 class="version-heading">{{ heading }} · <a href="{{ versions_url }}">Versions</a> · {% if archived %}<span class="edit-disabled" title="{{ archived_note }}">Edit</span> <small class="muted">({{ archived_note }})</small>{% else %}<a class="edit" href="{{ edit_url }}">Edit</a>{% endif %}</h2>
+<h2 class="version-heading">{{ heading }} · <a href="{{ versions_url }}">Versions</a> · {% disabled_if_archived entry "edit" %}{% if not is_archived %}<a class="edit" href="{{ edit_url }}">Edit</a>{% endif %}</h2>
+{% if lifecycle %}{% include "console/catalog/_archived_banner.html" %}{% elif is_archived %}<p class="archived-tag"><strong>Archived</strong></p>{% endif %}
 {% if companion %}<p class="companion-of">Companion of <a href="{{ companion.url }}">{{ companion.text }}</a>{% if companion.error %} <span class="lookup-failed">(name unavailable: {{ companion.error }})</span>{% endif %}</p>{% endif %}
 {% if card %}
 <p class="view-mode"><strong>Public card view</strong> · <a href="{{ full_query }}">Back to full view</a></p>
 {% else %}
 <p class="view-mode"><a href="{{ card_query }}">View as public card</a>{% if not is_draft %} · <a href="{{ draft_query }}">View the draft</a>{% endif %}</p>
 {% endif %}
+{% if lifecycle %}{% include "console/catalog/_lifecycle_controls.html" %}{% endif %}
 {% if differs %}
 <p class="warning draft-differs">The draft differs from this published version — <a href="{{ draft_query }}">view the draft</a></p>
 {% endif %}

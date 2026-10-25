@@ -26,6 +26,7 @@ from console.engine.models import (
     CatalogCharacterCard,
     CatalogCharacterDraft,
     CatalogCharacterPage,
+    CatalogCharacterStatus,
     CatalogVersion,
     CatalogVersionList,
     CharacterPublished,
@@ -45,6 +46,7 @@ from console.engine.models import (
     HealthResult,
     History,
     IngestResponse,
+    ListingStatus,
     Model,
     ModelConfig,
     ModelConfigItem,
@@ -72,6 +74,7 @@ from console.engine.models import (
     ScenarioDraft,
     ScenarioListItem,
     ScenarioPage,
+    ScenarioStatus,
     Story,
     StoryCreated,
     StoryList,
@@ -1584,6 +1587,146 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         return _parse(response, ScenarioDraft)
+
+    # --- catalog lifecycle and listing status (#69) ---------------------------------------------
+    #
+    # Archive makes an entry readable but not editable or publishable; unarchive restores
+    # ``published`` (``draft`` if never published); both answer the entry unchanged when there
+    # is nothing to change. Delete removes every version. A character's companion follows it in
+    # all three and in its listing status; the companion alone is refused (422
+    # ``companion_follows_character``).
+
+    @operation(
+        "POST",
+        "/catalog/characters/{character_id}/archive",
+        response_model=CatalogCharacterStatus,
+        entity="character",
+        entity_id="character_id",
+    )
+    def archive_catalog_character(
+        self, character_id: str, *, idempotency_key: str
+    ) -> CatalogCharacterStatus:
+        """``POST /catalog/characters/{id}/archive`` (its companion is archived with it)."""
+        path = f"{_character_path(character_id)}/archive"
+        return _parse(self._post_empty(path, idempotency_key), CatalogCharacterStatus)
+
+    @operation(
+        "POST",
+        "/catalog/characters/{character_id}/unarchive",
+        response_model=CatalogCharacterStatus,
+        entity="character",
+        entity_id="character_id",
+    )
+    def unarchive_catalog_character(
+        self, character_id: str, *, idempotency_key: str
+    ) -> CatalogCharacterStatus:
+        """``POST /catalog/characters/{id}/unarchive`` (its companion is restored with it)."""
+        path = f"{_character_path(character_id)}/unarchive"
+        return _parse(self._post_empty(path, idempotency_key), CatalogCharacterStatus)
+
+    @operation(
+        "DELETE",
+        "/catalog/characters/{character_id}",
+        entity="character",
+        entity_id="character_id",
+    )
+    def delete_catalog_character(self, character_id: str, *, idempotency_key: str) -> None:
+        """``DELETE /catalog/characters/{id}``: the character, every version and its companion
+        (204). Stories created from it keep their snapshot."""
+        response = self._request(
+            "DELETE",
+            _character_path(character_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
+    @operation(
+        "PUT",
+        "/catalog/characters/{character_id}/listing-status",
+        response_model=ListingStatus,
+        entity="character",
+        entity_id="character_id",
+    )
+    def set_catalog_character_listing_status(
+        self, character_id: str, value: str, *, idempotency_key: str
+    ) -> ListingStatus:
+        """``PUT /catalog/characters/{id}/listing-status {value}``: one of the deployment's
+        ``listing_status_values`` (422 ``invalid_listing_status`` otherwise); its companion
+        follows."""
+        path = f"{_character_path(character_id)}/listing-status"
+        return _parse(self._put_value(path, value, idempotency_key), ListingStatus)
+
+    @operation(
+        "POST",
+        "/catalog/scenarios/{scenario_id}/archive",
+        response_model=ScenarioStatus,
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def archive_scenario(self, scenario_id: str, *, idempotency_key: str) -> ScenarioStatus:
+        """``POST /catalog/scenarios/{id}/archive``."""
+        path = f"{_scenario_path(scenario_id)}/archive"
+        return _parse(self._post_empty(path, idempotency_key), ScenarioStatus)
+
+    @operation(
+        "POST",
+        "/catalog/scenarios/{scenario_id}/unarchive",
+        response_model=ScenarioStatus,
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def unarchive_scenario(self, scenario_id: str, *, idempotency_key: str) -> ScenarioStatus:
+        """``POST /catalog/scenarios/{id}/unarchive``."""
+        path = f"{_scenario_path(scenario_id)}/unarchive"
+        return _parse(self._post_empty(path, idempotency_key), ScenarioStatus)
+
+    @operation(
+        "DELETE",
+        "/catalog/scenarios/{scenario_id}",
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def delete_scenario(self, scenario_id: str, *, idempotency_key: str) -> None:
+        """``DELETE /catalog/scenarios/{id}``: the scenario and every version (204)."""
+        response = self._request(
+            "DELETE",
+            _scenario_path(scenario_id),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
+    @operation(
+        "PUT",
+        "/catalog/scenarios/{scenario_id}/listing-status",
+        response_model=ListingStatus,
+        entity="scenario",
+        entity_id="scenario_id",
+    )
+    def set_scenario_listing_status(
+        self, scenario_id: str, value: str, *, idempotency_key: str
+    ) -> ListingStatus:
+        """``PUT /catalog/scenarios/{id}/listing-status {value}``."""
+        path = f"{_scenario_path(scenario_id)}/listing-status"
+        return _parse(self._put_value(path, value, idempotency_key), ListingStatus)
+
+    def _post_empty(self, path: str, idempotency_key: str) -> EngineResponse:
+        return self._request(
+            "POST",
+            path,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+
+    def _put_value(self, path: str, value: str, idempotency_key: str) -> EngineResponse:
+        return self._request(
+            "PUT",
+            path,
+            json={"value": value},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
 
     # --- engine profiles (a select's options; #78 builds the profile pages) ---------------------
 

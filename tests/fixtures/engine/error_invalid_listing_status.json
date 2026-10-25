@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "invalid_listing_status",
+    "message": "featured is not one of the deployment's listing status values.",
+    "details": {
+      "value": "featured",
+      "allowed_values": ["private", "in_review", "public"],
+      "field": "body.value"
+    }
+  }
+}

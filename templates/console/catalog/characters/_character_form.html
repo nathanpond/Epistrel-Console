@@ -46,8 +46,8 @@ rating_note, archived_note, action_url.
     {% if create %}
     <button type="submit">Create</button>
     {% else %}
-    <button type="submit" name="action" value="save"{% if archived_note %} disabled{% endif %}>Save</button>
-    <button type="submit" name="action" value="publish"{% if archived_note %} disabled{% endif %}>Save &amp; publish</button>
+    <button type="submit" name="action" value="save"{% if archived_note %} disabled title="Archived — unarchive to edit"{% endif %}>Save</button>
+    <button type="submit" name="action" value="publish"{% if archived_note %} disabled title="Archived — unarchive to publish"{% endif %}>Save &amp; publish</button>
     <label><input type="checkbox" name="with_companion"{% if with_companion %} checked{% endif %}{% if snap.companion_revision is None or archived_note %} disabled{% endif %}> Also publish the companion's draft</label>
     {% if snap.companion_error %}<small class="companion-unavailable">Companion draft unavailable: {{ snap.companion_error }}</small>{% endif %}
     {% endif %}

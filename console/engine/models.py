@@ -1929,3 +1929,51 @@ class EngineProfileSummary(Model):
 class EngineProfileSummaryPage(Model):
     items: list[EngineProfileSummary]
     next_cursor: str | None
+
+
+# --- catalog lifecycle and listing status (#69) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CatalogCharacterStatus(Model):
+    """``CharacterStatusBody``: a character after an archive or unarchive (a no-op answers the
+    same), with its companion scenario, which is archived and unarchived with it."""
+
+    config_revision: int
+    id: str
+    status: EntryStatus
+    listing_status: str
+    current_version: int | None
+    created_at: str
+    updated_at: str
+    published_at: str | None
+    companion_id: str | None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioStatus(Model):
+    """``ScenarioStatusBody``: a scenario after an archive or unarchive; ``companion_of`` names
+    the character a companion follows (``None`` for an authored scenario)."""
+
+    config_revision: int
+    id: str
+    status: EntryStatus
+    listing_status: str
+    current_version: int | None
+    created_at: str
+    updated_at: str
+    published_at: str | None
+    companion_of: str | None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ListingStatus(Model):
+    """``ListingStatusBody``: an entry's listing status after a ``PUT …/listing-status`` (one of
+    the deployment's values; Epistrel never interprets it). ``config_revision`` is unchanged."""
+
+    config_revision: int
+    id: str
+    listing_status: str
+    idempotency_key: str | None = None
