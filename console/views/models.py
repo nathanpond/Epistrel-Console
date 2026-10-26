@@ -7,7 +7,9 @@ key.
 without calling the Engine). A save that names a different model re-embeds every story, so it
 goes through #134's confirmed mode first.
 
-Every action redirects to ``/models/``. The edit page carries the purpose as it was read in a
+Every action redirects to ``/models/``, except a confirmed embedding model change, which lands
+on the re-embed run page (#150: ``/models/embedding/reembed/``, its stories' progress and a
+confirmed **Retry failed**). The edit page carries the purpose as it was read in a
 signed hidden field, so a re-render after the Console refuses input makes no Engine call. The
 API key is only ever sent in the ``PUT …/api-key`` body: the form never renders it back, flashes
 do not name it, and the operation log redacts it (#44).
@@ -32,10 +34,11 @@ from console.confirm import (
 from console.engine.client import EngineClientError, EngineError, EngineUnreachable
 from console.engine.models import ModelConfigItem
 from console.engine_access import engine_client_for
-from console.engine_errors import ErrorPanel, log_engine_error, panel_for
+from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.forms import STOP_MAX, ApiKeyForm, EmbeddingConfigForm, ModelConfigForm
 from console.ids import new_ulid
+from console.job_poll import RETRYING_TEXT
 from console.model_config import (
     NOT_SET,
     PARAM_LABELS,
@@ -49,6 +52,17 @@ from console.model_config import (
     parent_of,
     purpose_config,
     purposes,
+)
+from console.reembed import (
+    NO_RUN,
+    NO_STORIES,
+    NOTHING_TO_RETRY,
+    POLL_TRIGGER,
+    RETRY_LABEL,
+    RETRY_QUESTION,
+    read_run,
+    retried_text,
+    run_url,
 )
 
 SNAPSHOT_FIELD = "snapshot"
@@ -420,6 +434,7 @@ def _port_put(
             f"Embedding model changed — re-embedding started (config revision "
             f"{saved.config_revision})",
         )
+        return redirect(run_url())
     else:
         messages.success(
             request,
@@ -427,3 +442,58 @@ def _port_put(
             f"{saved.idempotency_key or key}",
         )
     return redirect(_list_url())
+
+
+# --- The re-embed run (#150) ------------------------------------------------------------------
+
+RUN_SECTION = "console/models/_reembed_run.html"
+
+
+@require_safe
+def reembed(request: HttpRequest) -> HttpResponse:
+    """``GET /admin/reembed/status`` (one page, ``limit=100``, ``after`` from the query) and
+    one story-list read. An HTMX request (the section's own 5 s poll) gets the run section
+    alone, which never renders flash messages."""
+    after = request.GET.get("after") or None
+    poll = is_htmx(request)
+    run = read_run(request, engine_client_for(request), after=after, poll=poll)
+    context: dict[str, Any] = {
+        "run": run,
+        "poll_url": run_url(after),
+        "poll_trigger": POLL_TRIGGER,
+        "retrying_text": RETRYING_TEXT,
+        "refresh_url": run_url(after),
+        "first_url": run_url(),
+        "next_url": run_url(run.status.next_cursor)
+        if run.status and run.status.next_cursor
+        else None,
+        "retry_url": reverse("models:reembed-retry"),
+        "retry_label": RETRY_LABEL,
+        "no_run_text": NO_RUN,
+        "no_stories_text": NO_STORIES,
+        "idempotency_key": new_ulid(),
+    }
+    return render(request, RUN_SECTION if poll else "console/models/reembed.html", context)
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def reembed_retry(request: HttpRequest) -> HttpResponse:
+    """**Retry failed**: #134's confirmed mode (no call on GET or on a POST without
+    ``confirmed=1``), then ``POST /admin/reembed/retry`` and back to the run's first page. An
+    Engine error on the POST renders #43's panel (``confirm_action``'s default)."""
+    page = ConfirmPage(
+        title="Retry failed re-embeds",
+        question=RETRY_QUESTION,
+        confirm_label=RETRY_LABEL,
+        cancel_url=run_url(),
+    )
+
+    def perform(key: str) -> HttpResponse:
+        retried = engine_client_for(request).retry_reembed(idempotency_key=key)
+        if retried.retried:
+            messages.success(request, retried_text(len(retried.retried)))
+        else:
+            messages.info(request, NOTHING_TO_RETRY)
+        return redirect(run_url())
+
+    return confirm_action(request, page, perform, require_confirmed=True)

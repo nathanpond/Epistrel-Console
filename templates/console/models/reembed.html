@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Re-embed run — Models — Epistrel Console{% endblock %}
+{% block heading %}Embedding re-embed run{% endblock %}
+{% block content %}
+<p><a href="{% url 'models:list' %}">All purposes</a> · <a href="{% url 'engine:home' %}">Engine</a></p>
+{% include "console/models/_reembed_run.html" %}
+{% endblock %}

@@ -188,6 +188,8 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     Recommendation,
+    ReembedRetry,
+    ReembedStatus,
     ReferenceImage,
     ReferencingStory,
     RegenerateResult,
@@ -240,6 +242,7 @@ from console.engine.models import (
     StoryPauseProgress,
     StoryProfileWrite,
     StoryRating,
+    StoryReembed,
     StorySettings,
     StorySettingsDefaults,
     StorySettingsWrite,
@@ -653,6 +656,10 @@ def test_the_widening_only_adds_media_id() -> None:
         (RelationshipBody, "RelationshipBody"),
         (PlacementBody, "PlacementBody"),
         (InventoryBody, "InventoryBody"),
+        # #150: the embedding re-embed run.
+        (ReembedStatus, "ReembedStatusBody"),
+        (StoryReembed, "StoryReembedBody"),
+        (ReembedRetry, "ReembedRetryBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

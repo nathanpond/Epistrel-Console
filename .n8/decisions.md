@@ -1551,3 +1551,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The edge smoke's "never posts to an embedding URL" is asserted from the operation log (no recorded row's path contains `/embedding`).
   **Why:** The live test has no fake call log; every Engine call the Console makes is recorded (#44).
   **Issue:** #59
+- **Decision:** The run page reads the story list only when the status page has stories (zero reads for the empty state or a run with no stories).
+  **Why:** Names are needed only for rows; the plan's "one read per render" is a ceiling, not a requirement.
+  **Issue:** #150
+- **Decision:** A failed status read on the full page renders #43's panel in the section and does not poll; only the section's own HTMX poll treats no answer or a 503 as "Engine unavailable — retrying".
+  **Why:** Matches #87's erasure ledger, the existing #64 convention 10 page; a first load has no running run to keep following.
+  **Issue:** #150
+- **Decision:** A run with no `started_at` but some stories counts as neither running nor finished (no poll, "—").
+  **Why:** The AC defines both states from `started_at`; the Engine sets it when the run starts, so this case shouldn't happen.
+  **Issue:** #150
+- **Decision:** The configuration-error panel kind gets a `config-error` class (amber border) and a `p.config-fix` line. A mismatch row on the run page uses the same `p.config-fix` line under the raw class.
+  **Why:** The plan asks for "configuration-error style" but doesn't name it. One style keeps the row and the panel consistent.
+  **Issue:** #150
+- **Decision:** The retry confirm page is titled "Retry failed re-embeds".
+  **Why:** The plan gives the question and buttons but no title.
+  **Issue:** #150

@@ -225,6 +225,8 @@ inspect_patterns = (
 model_patterns = (
     [
         path("", models.model_list, name="list"),
+        path("embedding/reembed/", models.reembed, name="reembed"),
+        path("embedding/reembed/retry/", models.reembed_retry, name="reembed-retry"),
         path("<str:purpose>/edit/", models.model_edit, name="edit"),
         path("<str:purpose>/drop/", models.model_drop, name="drop"),
         path("<str:purpose>/api-key/", models.model_api_key, name="api-key"),

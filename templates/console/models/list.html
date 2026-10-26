@@ -24,6 +24,7 @@
       <td class="api-key">{% if row.api_key_set %}set (fingerprint <code>{{ row.api_key_fingerprint|default:"—" }}</code>){% else %}not set{% endif %}</td>
       <td class="actions">
         <a class="button" href="{% url 'models:edit' row.name %}">Edit</a>
+        {% if row.is_port %}<a href="{% url 'models:reembed' %}">Re-embed run</a>{% endif %}
         {% if not row.is_default and not row.is_port %}<a class="button" href="{% url 'models:drop' row.name %}{{ next_query }}">Drop override</a>{% endif %}
       </td>
     </tr>

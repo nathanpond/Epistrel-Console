@@ -1,0 +1,39 @@
+{% load console_format inspect_tags %}{% comment %}
+The re-embed run section (#150): GET /admin/reembed/status, one page. Polled (every 5 s, keeping its cursor) only while the run is running; the finished render has no hx-trigger, so polling stops there. The poll swaps this whole section and never renders flash messages. Context: run (console.reembed.Run), poll_url, poll_trigger, retrying_text, refresh_url, first_url, next_url, retry_url, retry_label, no_run_text, no_stories_text, idempotency_key.
+{% endcomment %}<section id="reembed-run" class="reembed-run"{% if run.polling %} hx-get="{{ poll_url }}" hx-trigger="{{ poll_trigger }}" hx-swap="outerHTML"{% endif %}>
+  {% if run.retrying %}<p class="notice retrying" role="status">{{ retrying_text }}</p>
+  {% elif run.error %}{% include "console/_engine_error.html" with engine_error=run.error %}
+  {% elif run.empty %}<p class="empty">{{ no_run_text }}</p>
+  {% else %}{% with s=run.status %}
+  <dl class="run-facts">
+    <dt>From version</dt><dd class="from-version">{{ run.from_version }}</dd>
+    <dt>To version</dt><dd class="to-version">{{ s.to_version|default_if_none:"—" }}</dd>
+    <dt>Started</dt><dd class="started">{{ s.started_at|engine_time }}</dd>
+    <dt>Finished</dt><dd class="finished">{% if s.finished_at %}{{ s.finished_at|engine_time }}{% elif run.finished %}finished{% if run.no_stories %} <span class="no-stories">{{ no_stories_text }}</span>{% endif %}{% elif run.running %}running{% else %}—{% endif %}</dd>
+  </dl>
+  {% if s.stories %}
+  <p class="run-counts">Queued {{ run.counts.queued|count }} · Running {{ run.counts.running|count }} · Done {{ run.counts.done|count }} · Failed {{ run.counts.failed|count }}{% if run.paged %} on this page{% endif %}</p>
+  <table class="reembed-stories">
+    <thead><tr><th>Story</th><th>Status</th><th>Progress</th><th>Error</th></tr></thead>
+    <tbody>
+    {% for row in run.rows %}
+      <tr id="story-{{ row.story_id }}"{% if row.failed %} class="failed"{% endif %}>
+        <td class="story">{% if row.listed %}<a href="{{ row.url }}">{% if row.name %}{{ row.name }}{% else %}(unnamed) {{ row.story_id|engine_id }}{% endif %}</a>{% if row.archived %} (archived){% endif %}{% else %}{{ row.story_id|engine_id }}{% endif %}</td>
+        <td class="status" title="{{ row.status }}">{{ row.status|humanise|capfirst }}</td>
+        <td class="progress">{% if row.total %}<progress max="{{ row.total }}" value="{{ row.done }}"></progress> {% endif %}{{ row.done|count }} / {{ row.total|count }}</td>
+        <td class="error">{% if row.error %}<code>{{ row.error }}</code>{% if row.fix %}<p class="config-fix">{{ row.fix.text }} <a href="{{ row.fix.url }}">{{ row.fix.link }}</a></p>{% endif %}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if run.retry_shown %}
+  <form method="post" action="{{ retry_url }}" class="reembed-retry">{% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <button type="submit">{{ retry_label }}</button>
+  </form>
+  {% endif %}
+  {% if next_url or run.after %}<p class="paging">{% if run.after %}<a href="{{ first_url }}">First page</a>{% endif %}{% if next_url and run.after %} · {% endif %}{% if next_url %}<a href="{{ next_url }}">Next page</a>{% endif %}</p>{% endif %}
+  {% endwith %}{% endif %}
+  {% if run.polling %}<p class="refresh"><a href="{{ refresh_url }}">Refresh</a></p>{% endif %}
+</section>

@@ -2463,6 +2463,47 @@ class ModelConfigMutation(ModelConfigItem):
     idempotency_key: str | None = None
 
 
+# --- The embedding re-embed run (#150) ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StoryReembed(Model):
+    """``StoryReembedBody``: one story's re-embed. ``status`` is ``queued``, ``running``,
+    ``done`` or ``failed`` (an open set, humanised when unknown); ``done`` of ``total`` hot
+    active memories have a vector in the run's ``to_version``; ``error`` is a failed job's
+    exception class, never a message."""
+
+    story_id: str
+    total: int
+    done: int
+    status: str
+    error: str | None
+
+
+@dataclass(frozen=True)
+class ReembedStatus(Model):
+    """``ReembedStatusBody``: the last embedding-model change's re-embed run, one page of its
+    stories (``next_cursor`` is the body's ``next``, ``None`` on the last page). Every header
+    field is ``None`` before any model change; ``finished_at`` stays ``None`` for a run with no
+    stories. Times are the Engine's ISO strings (render them with ``engine_time``)."""
+
+    from_version: str | None
+    to_version: str | None
+    started_at: str | None
+    finished_at: str | None
+    stories: list[StoryReembed]
+    next_cursor: str | None = field(metadata={JSON_NAME: "next"})
+
+
+@dataclass(frozen=True)
+class ReembedRetry(Model):
+    """``ReembedRetryBody``: the stories a new re-embed job was enqueued for."""
+
+    retried: list[str]
+    config_revision: int
+    idempotency_key: str | None = None
+
+
 # --- Guardrail policies (#47; #54 adds story and character policies) ---------------------------
 
 # ``Scope-Output`` (the ``scope`` property's ``$ref``; the component was renamed once, #47).

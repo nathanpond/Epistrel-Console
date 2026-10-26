@@ -31,6 +31,14 @@ REEMBED = (
     "While a story re-embeds, its searches are lexical-only."
 )
 CHAT_PARAMS = ("temperature", "top_p", "max_tokens", "stop", "seed")
+NO_RUN: dict[str, Any] = {
+    "from_version": None,
+    "to_version": None,
+    "started_at": None,
+    "finished_at": None,
+    "stories": [],
+    "next": None,
+}
 OWN = {"base_url": "own", "model": "own", "api_key": "own", "params": {"timeout": "own"}}
 
 
@@ -239,7 +247,7 @@ def test_the_confirmed_post_sends_the_carried_key_and_the_full_replacement(
         URL, form(snapshot, model="mxbai-embed-large", base_url="", timeout="")
     )
     answer_put(engine, model="mxbai-embed-large")
-    answer_list(engine)
+    engine.respond("GET", "/admin/reembed/status", 200, json=NO_RUN)
     response = operator_client.post(
         URL, {**hidden(first.content.decode()), "temperature": "0.5"}, follow=True
     )
@@ -248,7 +256,7 @@ def test_the_confirmed_post_sends_the_carried_key_and_the_full_replacement(
     assert put.headers["Idempotency-Key"] == IDEMPOTENCY_KEY
     assert body(put) == {"base_url": None, "model": "mxbai-embed-large", "params": None}
     assert put.extensions["timeout"]["read"] == 30.0  # the probe runs inside the PUT
-    assert response.redirect_chain == [("/models/", 302)]
+    assert response.redirect_chain == [("/models/embedding/reembed/", 302)]  # #150's run page
     assert flashes(response) == [
         ("success", "Embedding model changed — re-embedding started (config revision 6)")
     ]

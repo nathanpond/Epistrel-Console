@@ -109,6 +109,8 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     ReconcileResult,
+    ReembedRetry,
+    ReembedStatus,
     RegenerateResult,
     RelationRecord,
     Relations,
@@ -1615,6 +1617,25 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         _raise_for_envelope(response)
+
+    # --- the embedding re-embed run (#150) -----------------------------------------------------
+
+    @operation("GET", "/admin/reembed/status", response_model=ReembedStatus)
+    def get_reembed_status(self, *, limit: int = 100, after: str | None = None) -> ReembedStatus:
+        """``GET /admin/reembed/status``: the last embedding-model change's run and one page of
+        its stories (``limit`` 1 to 200; ``after`` is the last page's ``next``, passed through
+        as given)."""
+        params = {"limit": str(limit)}
+        if after:
+            params["after"] = after
+        return _parse(self._request("GET", "/admin/reembed/status", params=params), ReembedStatus)
+
+    @operation("POST", "/admin/reembed/retry", response_model=ReembedRetry)
+    def retry_reembed(self, *, idempotency_key: str) -> ReembedRetry:
+        """``POST /admin/reembed/retry``: enqueue a new job for every story whose latest
+        re-embed job failed (deployment-wide: recorded with no entity)."""
+        response = self._post_empty("/admin/reembed/retry", idempotency_key)
+        return _parse(response, ReembedRetry)
 
     @operation("GET", "/admin/policies", response_model=PolicyList)
     def list_policies(
