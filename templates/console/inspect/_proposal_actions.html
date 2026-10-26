@@ -1,0 +1,9 @@
+{% comment %}A pending proposal's controls on the Predicates tab (#136; context `controls`, a ProposalControls, and `p`).{% endcomment %}
+{% if controls %}<p class="proposal-actions">
+  <a class="button" href="{{ controls.approve_all_url }}">Approve all</a>
+  {% if controls.selected_url %}<form id="select-{{ p.id }}" method="get" action="{{ controls.selected_url }}" class="approve-selected">
+    {% for name, value in controls.selected_hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <button type="submit">Approve selected</button>
+  </form>{% endif %}
+  <a class="button" href="{{ controls.reject_url }}">Reject</a>
+</p>{% endif %}

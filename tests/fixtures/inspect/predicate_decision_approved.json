@@ -1,0 +1,53 @@
+{
+  "timeline_revision": 12,
+  "predicate": {
+    "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR5",
+    "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+    "name": "guards",
+    "layer": "auto",
+    "subject_type": "any",
+    "object_type": "none",
+    "cardinality": "functional",
+    "max_cardinality": 1,
+    "key_qualifiers": [],
+    "qualifiers": null,
+    "set_object": false,
+    "temporal_kind": "fluent",
+    "exclusions": [],
+    "containment_of": null,
+    "implications": [],
+    "symmetric": false,
+    "inverse_of": null,
+    "owner": "engine",
+    "projection": null,
+    "docs": "",
+    "weak": true,
+    "pending_proposal": null
+  },
+  "proposal_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PP1",
+  "status": "approved",
+  "applied": {
+    "cardinality": "functional",
+    "max_cardinality": 1
+  },
+  "violations": [
+    {
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN1",
+      "proposition_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0FA1",
+        "01JB2Z8Y5Q3W6K9M1N4P7R0FA2"
+      ],
+      "rule": "cardinality"
+    },
+    {
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN2",
+      "proposition_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0FA3",
+        "01JB2Z8Y5Q3W6K9M1N4P7R0FA4"
+      ],
+      "rule": "cardinality"
+    }
+  ],
+  "config_revision": 8,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0K01"
+}

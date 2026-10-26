@@ -1,0 +1,43 @@
+{% load console_format inspect_tags %}
+{% comment %}
+One predicate (#136; context `row`, a console.predicates.PredicateRow, and `actions`, a template
+name or None, #135 convention 14). The Predicates tab sets `actions` to the proposal controls and
+`controls`; the decision page passes None. A pending proposal adds a sub-row under the row.
+{% endcomment %}
+{% with p=row.predicate %}
+<tr id="p-{{ p.id }}" class="predicate-row layer-{{ p.layer }}">
+  <td class="predicate-name"><strong>{{ p.name }}</strong></td>
+  <td><span class="badge {{ row.layer_class }}">{{ p.layer }}</span></td>
+  <td><code>{{ p.subject_type }}</code> → <code>{{ p.object_type }}</code></td>
+  <td>{{ row.cardinality }}</td>
+  <td>{{ row.key_qualifiers }}</td>
+  <td class="qualifiers">{% include "console/inspect/_predicate_value.html" with cell=row.qualifiers %}</td>
+  <td><span title="{{ p.temporal_kind }}">{{ p.temporal_kind|humanise|capfirst }}</span></td>
+  <td>{{ row.flags }}</td>
+  <td>{% for ref in row.inverse_of %}{% include "console/inspect/_predicate_ref.html" %}{% empty %}—{% endfor %}</td>
+  <td>{% for ref in row.containment_of %}{% include "console/inspect/_predicate_ref.html" %}{% empty %}—{% endfor %}</td>
+  <td>{% for ref in row.exclusions %}{% include "console/inspect/_predicate_ref.html" %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+  <td class="implications">{% for rule in row.implications %}{% include "console/inspect/_predicate_ref.html" with ref=rule.when %} ⇒ {% include "console/inspect/_predicate_ref.html" with ref=rule.then %}{% if rule.via %} via {% include "console/inspect/_predicate_ref.html" with ref=rule.via %}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+  <td>{{ p.projection|default:"—" }}</td>
+  <td>{{ p.owner|default:"—" }}</td>
+  <td>{% if p.docs %}<details><summary>docs</summary>{{ p.docs }}</details>{% else %}—{% endif %}</td>
+  <td><details class="more"><summary>More</summary><pre>{{ row.more|pretty_json }}</pre></details></td>
+</tr>
+{% if row.proposal %}{% with proposal=row.proposal %}
+<tr class="proposal-row">
+  <td colspan="16">
+    <p class="proposal-head">Proposal {{ proposal.proposal.id|engine_id }} · filed by {{ proposal.proposal.filed_by }}</p>
+    <table class="proposal-changes">
+      <thead><tr>{% if actions and proposal.selectable %}<th>Approve</th>{% endif %}<th>Field</th><th>Current</th><th>Proposed</th></tr></thead>
+      <tbody>
+      {% for f in proposal.fields %}
+        <tr class="proposal-field">{% if actions and proposal.selectable %}<td><input type="checkbox" name="field" value="{{ f.name }}" form="select-{{ p.id }}" aria-label="Approve {{ f.name }}"></td>{% endif %}<td><code>{{ f.name }}</code></td><td>{% include "console/inspect/_predicate_value.html" with cell=f.current %}</td><td>{% include "console/inspect/_predicate_value.html" with cell=f.proposed %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if proposal.max_note %}<p class="proposal-note">Also sets max cardinality to 1</p>{% endif %}
+    {% if actions %}{% include actions %}{% endif %}
+  </td>
+</tr>
+{% endwith %}{% endif %}
+{% endwith %}

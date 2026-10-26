@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% comment %}#136: convention 10's not-found text for a predicate decision (another 404, or a ?report= that isn't one), with the way back.{% endcomment %}
+{% block title %}Predicate decision — Epistrel Console{% endblock %}
+{% block heading %}Predicate decision{% endblock %}
+{% block content %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ text }}</strong></p></div>
+<p><a href="{{ back_url }}">← Predicates</a></p>
+{% endblock %}

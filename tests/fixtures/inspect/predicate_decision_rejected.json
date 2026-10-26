@@ -1,0 +1,33 @@
+{
+  "timeline_revision": 12,
+  "predicate": {
+    "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR5",
+    "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+    "name": "guards",
+    "layer": "auto",
+    "subject_type": "any",
+    "object_type": "none",
+    "cardinality": "multi",
+    "max_cardinality": null,
+    "key_qualifiers": [],
+    "qualifiers": null,
+    "set_object": false,
+    "temporal_kind": "fluent",
+    "exclusions": [],
+    "containment_of": null,
+    "implications": [],
+    "symmetric": false,
+    "inverse_of": null,
+    "owner": "engine",
+    "projection": null,
+    "docs": "",
+    "weak": true,
+    "pending_proposal": null
+  },
+  "proposal_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PP1",
+  "status": "rejected",
+  "applied": {},
+  "violations": [],
+  "config_revision": 7,
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0K01"
+}

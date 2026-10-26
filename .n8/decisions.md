@@ -1374,3 +1374,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** When the unlock time has passed, the withheld note reads "…, and refused that read; the window should have closed — try again shortly." It doesn't name the viewpoint. A not-committed turn shows the read-set section only when a read set is present.
   **Why:** Both follow the AC's wording literally.
   **Issue:** #139
+- **Decision:** On the Predicates tab, a predicate id whose row is on the page links `#p-<id>`; one the layer filter hides links the unfiltered tab (`?layer=all#p-<id>`); an id the registry doesn't hold is an unlinked short id.
+  **Why:** A bare fragment to a row the filter hid would go nowhere. The AC asks for `#p-<id>` links and the Discretion asks for unfiltered links from elsewhere; this does both.
+  **Issue:** #136
+- **Decision:** The confirm page's checkboxes are a plain checkbox list in `_predicate_fields.html`, not a `MultipleChoiceField`. The POST sends the ticked values that are among the posted `offered` fields, in `offered` order.
+  **Why:** With a `MultipleChoiceField`, a forged tick would make the form invalid. The AC says to drop it instead, and filtering by `offered` does that with less code.
+  **Issue:** #136
+- **Decision:** The approve-selected confirm question reads "Approve the ticked fields of the proposal for <name>? It proposes: a, b." and adds the "unticked are dropped" line. Approve all keeps the planned text.
+  **Why:** The planned "Approve the whole proposal" wording is wrong for a subset. The Discretion only gives the extra line for selected mode.
+  **Issue:** #136
+- **Decision:** On the tab, Approve selected's checkboxes sit in the proposal table and join the GET form through the HTML `form="select-<id>"` attribute.
+  **Why:** Each field's checkbox stays beside its current and proposed values, with no JavaScript.
+  **Issue:** #136
+- **Decision:** A 422 on decide re-renders the confirm page with a fresh key; a zero-tick POST keeps the posted key (no call was made). The result page on the POST response links "Link to this result" (`?report=<pk>`).
+  **Why:** After a 422 the operator may change the ticks. A changed body sent with the same key would get `idempotency_conflict`. The link makes the result page reachable again, as convention 8 asks.
+  **Issue:** #136
+- **Decision:** `console.predicates.predicate_names(request, client, story_id)` returns `{}` on any failed read (logged). Canon, Ledger, the fact form and beat traces use it for names; pages that also need the rows call `list_predicates` themselves.
+  **Why:** Convention 2 says a failed name read degrades to ids and never fails the page.
+  **Issue:** #136

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% comment %}
+A predicate proposal's decision (#136): rendered on the decide POST's response and again at
+inspect:predicate-decision?report=<pk> from the #44 row (no Engine read either way). Outside the
+Inspect tab shell.
+{% endcomment %}
+{% block title %}Predicate decision · {{ decision.predicate.name }} — Epistrel Console{% endblock %}
+{% block heading %}Predicate decision · {{ decision.predicate.name }}{% endblock %}
+{% block content %}
+<p class="inspect-back"><a href="{{ back_url }}">← Predicates</a> · <code>{{ story_id }}</code>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% if replayed %}<p class="notice replayed">Already decided — this is the Engine's recorded answer</p>{% endif %}
+<p class="decision-status">Status: <span title="{{ decision.status }}">{{ decision.status|humanise|capfirst }}</span></p>
+{% if approved %}
+<p class="decision-revision">Configuration revision {{ revision_before }} → {{ decision.config_revision }}</p>
+<h2>Applied</h2>
+{% if applied %}
+<table class="predicate-applied">
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+  {% for a in applied %}<tr><td><code>{{ a.field }}</code></td><td>{% include "console/inspect/_predicate_value.html" with cell=a.value %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p>None</p>{% endif %}
+{% else %}
+<p class="decision-rejected">Rejected; nothing changed</p>
+<p class="decision-revision">Configuration revision {{ decision.config_revision }}</p>
+{% endif %}
+
+<h2>The predicate now</h2>
+<table class="predicates">
+  {% include "console/inspect/_predicate_head.html" %}
+  <tbody>{% include "console/inspect/_predicate_row.html" %}</tbody>
+</table>
+
+{% if approved %}
+<h2>Flagged propositions</h2>
+{% include "console/inspect/_predicate_violations.html" with violations=decision.violations %}
+{% endif %}
+
+<details class="more"><summary>More</summary><pre>{{ more|pretty_json }}</pre></details>
+{% endblock %}

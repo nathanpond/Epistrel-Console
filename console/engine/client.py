@@ -80,6 +80,8 @@ from console.engine.models import (
     PolicyList,
     PolicyMutation,
     PolicyScope,
+    PredicateDecision,
+    PredicateList,
     PrincipalLinks,
     ProfileDeleted,
     ProfileEdit,
@@ -1148,6 +1150,67 @@ class EngineClient:
                 response.status_code,
             )
         return _parse(response, ConsolidationQueued)
+
+    # --- the predicate registry (#136) ---------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/predicates", response_model=PredicateList)
+    def list_predicates(self, story_id: str) -> PredicateList:
+        """``GET /stories/{id}/predicates``: the story's predicate registry (FR-PROP-3), the core
+        vocabulary first, its implication rules and its configuration revision. Served under
+        every profile. The single registry read: :meth:`PredicateList.names` gives the
+        predicate names other pages show (#135 convention 2)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/predicates"), PredicateList)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/predicates/{predicate_id}/approve",
+        response_model=PredicateDecision,
+    )
+    def approve_predicate(
+        self,
+        story_id: str,
+        predicate_id: str,
+        changes: Sequence[str] | None,
+        *,
+        idempotency_key: str,
+    ) -> PredicateDecision:
+        """``POST /stories/{id}/predicates/{pid}/approve``: approve the predicate's pending
+        proposal (FR-PROP-4), the whole of it (``changes`` ``None``: ``{}`` is sent) or the
+        fields named (``{"changes": [...]}``; an empty list is a ``ValueError``, the schema's
+        ``minItems`` 1). Approving a subset closes the whole proposal. 404 ``not_found``
+        (``details.reason: no_pending_proposal``), 422 ``validation_error``
+        (``details.reason: not_proposed``)."""
+        body: dict[str, Any] = {}
+        if changes is not None:
+            if not changes:
+                raise ValueError("approve_predicate: changes must name at least one field")
+            body["changes"] = list(changes)
+        response = self._request(
+            "POST",
+            _predicate_path(story_id, predicate_id, "approve"),
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PredicateDecision)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/predicates/{predicate_id}/reject",
+        response_model=PredicateDecision,
+    )
+    def reject_predicate(
+        self, story_id: str, predicate_id: str, *, idempotency_key: str
+    ) -> PredicateDecision:
+        """``POST /stories/{id}/predicates/{pid}/reject`` (no body): reject the pending proposal;
+        nothing changes and the Engine won't file the same proposal again."""
+        response = self._request(
+            "POST",
+            _predicate_path(story_id, predicate_id, "reject"),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PredicateDecision)
 
     # --- a story's hot set (#140) ---------------------------------------------------------------
 
@@ -3201,6 +3264,11 @@ def _story_path(story_id: str) -> str:
 def _memory_path(story_id: str, memory_id: str, action: str) -> str:
     """``/stories/<id>/memories/<mid>/<action>``, both ids percent-encoded."""
     return f"{_story_path(story_id)}/memories/{quote(memory_id, safe='')}/{action}"
+
+
+def _predicate_path(story_id: str, predicate_id: str, action: str) -> str:
+    """``/stories/<id>/predicates/<pid>/<action>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/predicates/{quote(predicate_id, safe='')}/{action}"
 
 
 def _feedback_path(story_id: str, message_id: str) -> str:

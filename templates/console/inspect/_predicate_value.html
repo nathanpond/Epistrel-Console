@@ -1,0 +1,1 @@
+{% if cell.refs %}{% for ref in cell.refs %}{% include "console/inspect/_predicate_ref.html" %}{% if not forloop.last %}, {% endif %}{% endfor %}{% elif cell.lines %}{% for line in cell.lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}{% else %}{{ cell.text }}{% endif %}

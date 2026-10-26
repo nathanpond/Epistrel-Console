@@ -17,6 +17,7 @@ from console.views import (
     history,
     inspect,
     inspect_memory,
+    inspect_predicates,
     media,
     media_picker,
     media_proxy,
@@ -159,6 +160,23 @@ inspect_patterns = (
         # #145: request consolidation of a turn window (form, confirm, call).
         path("memory/consolidate/", inspect_memory.consolidate, name="consolidate"),
         path("retrieval/", inspect.retrieval, name="retrieval"),
+        # #136: the predicate registry, a proposal's decision and its result page again.
+        path("predicates/", inspect_predicates.predicates, name="predicates"),
+        path(
+            "predicates/decision/",
+            inspect_predicates.decision_report,
+            name="predicate-decision",
+        ),
+        path(
+            "predicates/<str:predicate_id>/approve/",
+            inspect_predicates.approve,
+            name="predicate-approve",
+        ),
+        path(
+            "predicates/<str:predicate_id>/reject/",
+            inspect_predicates.reject,
+            name="predicate-reject",
+        ),
         # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
         path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
         path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),

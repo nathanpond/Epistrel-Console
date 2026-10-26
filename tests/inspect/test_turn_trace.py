@@ -443,12 +443,9 @@ def test_the_read_set_keys(operator_client: Client, engine: FakeEngine) -> None:
     assert "<code>harbour</code>" in html
     digest = structured_body()["read_set"]["keys"][0]["result_hash"]
     assert f'<code title="{digest}">9f2c1d0e8b7a…</code>' in html
-    # #136's Predicates tab isn't registered yet: the predicate is plain <code>.
-    assert "#p-" not in html
 
 
-@override_settings(ROOT_URLCONF="tests.inspect.urls")
-def test_a_predicate_links_the_predicates_tab_once_it_is_registered(
+def test_a_predicate_links_its_row_on_the_predicates_tab(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     html = fragment(operator_client)

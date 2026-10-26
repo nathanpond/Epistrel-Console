@@ -1,0 +1,40 @@
+{% extends "console/inspect/base.html" %}
+{% comment %}
+The Predicates tab (#136): the story's registry from one GET /stories/{id}/predicates read. Rows
+come from console/predicates.py (shared partial _predicate_row.html); `layer` filters the rows
+only, never the header or the rules. A failed read replaces the whole tab content.
+{% endcomment %}
+{% block tab_content %}
+{% if predicates_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif predicates_error %}{% include "console/_engine_error.html" with engine_error=predicates_error %}
+{% elif registry %}
+<p class="predicates-header">Configuration revision <code>{{ registry.config_revision }}</code> · {% if pending_url %}<a href="{{ pending_url }}">{{ pending_text }}</a>{% else %}{{ pending_text }}{% endif %}</p>
+
+<form method="get" action="{{ filter_url }}" class="layer-filter">
+  <label>Layer <select name="layer">{% for value in layers %}<option value="{{ value }}"{% if value == layer %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <button type="submit">Apply</button>
+</form>
+
+<h2>Predicates</h2>
+{% if rows %}
+<table class="predicates">
+  {% include "console/inspect/_predicate_head.html" %}
+  <tbody>
+  {% for tab_row in rows %}{% include "console/inspect/_predicate_row.html" with row=tab_row.row controls=tab_row.controls %}{% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="predicates-none">None</p>{% endif %}
+
+<h2>Implication rules</h2>
+{% if rules %}
+<table class="predicate-rules">
+  <thead><tr><th>When</th><th>Then</th><th>Via</th></tr></thead>
+  <tbody>
+  {% for rule in rules %}
+    <tr class="rule-row"><td>{% include "console/inspect/_predicate_ref.html" with ref=rule.when %}</td><td>⇒ {% include "console/inspect/_predicate_ref.html" with ref=rule.then %}</td><td>{% if rule.via %}{% include "console/inspect/_predicate_ref.html" with ref=rule.via %}{% else %}—{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="rules-none">None</p>{% endif %}
+{% endif %}
+{% endblock %}

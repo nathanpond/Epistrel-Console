@@ -1673,6 +1673,102 @@ class MemoryWritten(Model):
     idempotency_key: str | None = None
 
 
+# --- the predicate registry (#136) ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Implication(Model):
+    """``ImplicationBody``: a declared rule ``when(s, o) ⇒ then(s, o')``, the object carried over
+    or mapped through the ``via`` join."""
+
+    when: str
+    then: str
+    via: str | None = None
+
+
+@dataclass(frozen=True)
+class Proposal(Model):
+    """``ProposalBody``: an auto predicate's strengthening proposal. ``changes`` maps a
+    ``PredicateBody`` field to its proposed value (raw JSON: the schema leaves it untyped)."""
+
+    id: str
+    status: str
+    changes: dict[str, Any]
+    filed_by: str
+
+
+@dataclass(frozen=True)
+class Predicate(Model):
+    """``PredicateBody``: a registered predicate and its semantics (FR-PROP-3). ``layer``
+    (``core``, ``author``, ``auto``), ``cardinality`` (``functional``, ``multi``) and
+    ``temporal_kind`` (``permanent``, ``fluent``, ``event``) are plain strings in the schema.
+    ``qualifiers`` ``None`` is undeclared (an auto predicate's)."""
+
+    id: str
+    story_id: str | None
+    name: str
+    layer: str
+    subject_type: str
+    object_type: str
+    cardinality: str
+    max_cardinality: int | None
+    key_qualifiers: list[str]
+    qualifiers: dict[str, str] | None
+    set_object: bool
+    temporal_kind: str
+    exclusions: list[str]
+    containment_of: str | None
+    implications: list[Implication]
+    symmetric: bool
+    inverse_of: str | None
+    owner: str
+    projection: str | None
+    docs: str
+    weak: bool
+    pending_proposal: Proposal | None = None
+
+
+@dataclass(frozen=True)
+class PredicateList(Model):
+    """``PredicateListBody``: the story's registry (the core vocabulary first, then the story's
+    own predicates by name), its implication rules and its configuration revision."""
+
+    predicates: list[Predicate]
+    rules: list[Implication]
+    config_revision: int
+
+    def names(self) -> dict[str, str]:
+        """Predicate id → name (#135 convention 2's one registry read per page)."""
+        return {p.id: p.name for p in self.predicates}
+
+
+@dataclass(frozen=True)
+class PredicateViolation(Model):
+    """``ViolationBody``: a key the approved semantics find with too many objects over
+    overlapping time. The propositions are reported, never changed; ``rule`` is
+    ``cardinality``. (Named apart from the guardrail violation models.)"""
+
+    subject_id: str
+    proposition_ids: list[str]
+    rule: str
+
+
+@dataclass(frozen=True)
+class PredicateDecision(Model):
+    """``PredicateDecisionBody``: an approved or rejected proposal. ``predicate`` is the
+    predicate as it now is; ``applied`` maps each applied field to its value (raw JSON). An
+    approval moves ``config_revision`` by exactly one; a rejection moves nothing."""
+
+    timeline_revision: int
+    predicate: Predicate
+    proposal_id: str
+    status: str
+    applied: dict[str, Any]
+    violations: list[PredicateViolation]
+    config_revision: int
+    idempotency_key: str | None = None
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 

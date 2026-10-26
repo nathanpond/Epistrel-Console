@@ -125,12 +125,13 @@ def test_a_tab_whose_url_is_not_registered_is_absent(
     answer_config(engine, structured())
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         tabs = bar(get(operator_client).content.decode())
-    # Registered for real so far: Overview (#151), Memory (#140) and Retrieval (#141); the rest
-    # are absent.
+    # Registered for real so far: Overview (#151), Memory (#140), Retrieval (#141) and
+    # Predicates (#136); the rest are absent.
     assert tabs.startswith(f'<a class="active" aria-current="page" href="{URL}">Overview</a>')
     assert f'href="{URL}memory/">Memory</a>' in tabs
     assert f'href="{URL}retrieval/">Retrieval</a>' in tabs
-    for label in ("Canon", "Predicates", "Ledger", "Scene"):
+    assert f'href="{URL}predicates/">Predicates</a>' in tabs
+    for label in ("Canon", "Ledger", "Scene"):
         assert f">{label}<" not in tabs
 
 
