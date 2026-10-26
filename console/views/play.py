@@ -86,10 +86,16 @@ from console.ingest import (
     place_ingest_error,
     result_rows,
 )
-from console.inspect import STRUCTURED, history_turn_url
+from console.inspect import STRUCTURED, history_turn_url, is_structured_pipeline
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
-from console.story_config import ConfigBadge, badge_from_report, read_badge
+from console.story_config import (
+    ConfigBadge,
+    badge_from_report,
+    badge_or_unavailable,
+    read_badge,
+    read_effective_config,
+)
 from console.story_pause import TURN_NOTE, PauseBanner, pause_banner, paused_refusal
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
@@ -834,17 +840,21 @@ def _fork_banner(request: HttpRequest, story_id: str) -> ForkBanner | None:
         return None
 
 
-def _turn_inspector(transcript: Transcript, turn: int) -> Inspector | None:
+def _turn_inspector(
+    transcript: Transcript, turn: int, story_structured: bool = False
+) -> Inspector | None:
     """The inspector for turn ``turn`` of the transcript (``?turn=N``): its reply's operation,
     else any of its items'. Its "Explain retrieval" link (#142) is rebuilt from the transcript's
-    items for that turn, as history builds it, in place of the history-anchor link."""
+    items for that turn, as history builds it, in place of the history-anchor link;
+    ``story_structured`` (the story runs the structured pipeline) decides a turn whose shown
+    items don't (#181)."""
     items = [e.item for e in transcript.entries if e.item.turn == turn]
     replies = [i for i in items if i.channel == REPLY_CHANNEL]
     chosen = (replies or items)[-1:] if items else []
     if not chosen:
         return None
     found = selected_inspector(transcript.story_id, chosen[0].operation_id, chosen[0].origin)
-    query = explain_query(items, turn, chosen[0].variant)
+    query = explain_query(items, turn, chosen[0].variant, lambda: story_structured)
     link = explain_url(transcript.story_id, query) if query is not None else None
     return replace(found, explain_url=link or "", history_url="")
 
@@ -871,8 +881,10 @@ def _page(
     )
     chosen = viewpoint or play.resolve(form_viewpoint)
     shown = _transcript(request, play, chosen, story=story)
+    config = read_effective_config(engine_client_for(request), story_id)  # #85's header, #181
     if inspector is None and turn is not None:
-        inspector = _turn_inspector(shown, turn)
+        structured = config is not None and is_structured_pipeline(config.effective)
+        inspector = _turn_inspector(shown, turn, structured)
     page = PlayPage(
         story,
         play,
@@ -888,7 +900,7 @@ def _page(
         cast_panel(engine_client_for(request), story),
         _ownership(request, story),
         pause_banner(story),
-        read_badge(engine_client_for(request), story_id),
+        badge_or_unavailable(story_id, config),
     )
     return render(request, "console/play/play.html", page.context(request))
 

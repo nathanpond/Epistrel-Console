@@ -1635,3 +1635,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** In #135's shell, an effective-config 404 **together with** a story-read 404 now renders convention 10's not-found line in place of #43's panel, on every tab. An effective-config 404 alone still shows the panel.
   **Why:** A real Engine 404s effective-config first for an unknown story, so #58's story-404 branch was unreachable. #135's own convention 10 maps 404 `not_found` to that text. The two-read condition keeps #135's tested panel case intact. Cost if wrong: the Inspect error for a deleted story reads "Not found" in place of "Engine error 404 not_found".
   **Issue:** #177
+
+## /n8-exec M4 (second verification fixes) — 2026-10-26
+
+- **Decision:** `explain_query` keeps #172's item marker. When no shown item of the turn carries `propositions`, it now asks the story: does the effective config's `pipeline` equal `structured`? It asks only for a turn with a shown input, at turn ≥ 1.
+  **Why:** At a character viewpoint the Engine leaves out the `beat_*` items the viewer didn't perceive. A do-only input never carries `propositions`, so the page's items can't decide. #172 and #181 named this option. Keeping the item marker first means a page whose items already decide makes no new read. Cost if wrong: after a mid-story pipeline switch (M7 profile switching), a Lite-era do-only turn whose items don't decide would be judged by the story's current pipeline.
+  **Issue:** #181
+- **Decision:** History reads `GET /stories/{id}/effective-config` lazily, at most once per page, through a memoized callable. A failed read logs and gives no link. Play does not add a read. `_page` now reads the effective config once (`story_config.read_effective_config`), and that read feeds both #85's header badge (`badge_or_unavailable`) and the turn inspector.
+  **Why:** #142 called history's explain "zero Engine reads". The lazy read keeps that true wherever items decide. Sharing Play's existing header read avoids a duplicate call.
+  **Issue:** #181
+- **Decision:** `console.inspect._structured` was renamed to the public `is_structured_pipeline`, used by inspect, history and play.
+  **Why:** There is one definition of "the story runs the structured pipeline", the same as the Canon and Scene tabs' rule (#135).
+  **Issue:** #181
+- **Decision:** `tests/inspect/test_shell.py::test_the_history_page_links_inspect_after_play` now answers effective-config (the Lite default).
+  **Why:** Its fixture's Lite turn shows an input without `propositions`, so the history page now makes the read. The fake Engine refuses an unanswered call.
+  **Issue:** #181

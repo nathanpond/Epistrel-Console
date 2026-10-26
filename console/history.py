@@ -17,7 +17,7 @@
 
 import json
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
@@ -329,22 +329,30 @@ class ExplainQuery:
 
 
 def explain_query(
-    items: Sequence[HistoryItem], turn: int, variant: int | None
+    items: Sequence[HistoryItem],
+    turn: int,
+    variant: int | None,
+    story_structured: Callable[[], bool] | None = None,
 ) -> ExplainQuery | None:
     """The re-run for turn ``turn`` from its items as a page shows them, or ``None`` when there
-    is none to offer: turn 0, a Lite turn (no item of the turn carries ``propositions``), no
-    input on the page, a blank input or no actor.
+    is none to offer: turn 0, a Lite turn, no input on the page, a blank input or no actor.
 
     "Structured" is any item of the turn carrying ``propositions``: the Engine sets it on every
     ``beat_*`` item and on a ``player_input`` that has labels, so a do-only input (no labels, no
-    ``propositions``) still counts through its turn's beats (#172).
+    ``propositions``) still counts through its turn's beats (#172). When no shown item carries
+    it (a do-only input whose beats the viewpoint did not perceive, #181), ``story_structured``
+    decides: the story runs the structured pipeline. It is called only then.
 
     The input is the first ``player_input`` message's items (Engine order: say, then do; an
     ingest batch with several at one turn uses the first), their non-empty texts joined with
     ``"\n"`` as the Engine's ``joined_input`` does, cut to 2,000 code points. Redacted and
     quarantined items are used as they read; the explorer's banner is the caveat."""
     inputs = [i for i in items if i.kind == INPUT_KIND]
-    if turn < 1 or not inputs or not any(i.propositions is not None for i in items):
+    if turn < 1 or not inputs:
+        return None
+    if not any(i.propositions is not None for i in items) and not (
+        story_structured is not None and story_structured()
+    ):
         return None
     first = inputs[0]
     parts = [i for i in inputs if i.message_id == first.message_id]

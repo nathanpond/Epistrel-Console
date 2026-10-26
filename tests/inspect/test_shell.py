@@ -382,6 +382,9 @@ def test_the_history_page_links_inspect_after_play(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     history_helpers.answer(engine)
+    answer_effective_config(
+        engine
+    )  # #181: a Lite turn's input asks whether the story is structured
     html = history_helpers.page(operator_client)
     assert (
         f'<a href="/stories/{STORY}/">Play</a> · <a class="inspect-link" href="{URL}">Inspect</a>'
