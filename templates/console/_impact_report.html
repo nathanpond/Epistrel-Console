@@ -3,6 +3,8 @@ An ImpactReport (#109; #75 owns the partial, #84 extends it; #85 reuses it). Con
 - impact (console.engine.models.ImpactReport);
 - story_labels (optional dict story id -> StoryLabel: names in the per-story table);
 - mode (optional: "profile" for a profile change over its following stories, "story" for one story);
+- guarantees_href (optional, #57): the page whose guarantee table each lost guarantee links to
+  (``#g-<id>``, in a new tab so this page's signed payload survives); absent = raw ids;
 - apply_url, signed_payload, cancel_url, idempotency_key, show_apply (optional: show_apply renders
   #64's two-stage "Apply anyway" form; False/absent = read-only).
 Order: the warnings that hold the change, unmet recommendations, guarantees lost, then the
@@ -15,7 +17,7 @@ always in "story" mode, #85): fingerprint before -> after, capabilities and qual
   <h4>Recommendations unmet</h4>
   {% if impact.recommendations_unmet %}<ul class="recommendations-unmet">{% for r in impact.recommendations_unmet %}<li><code>{{ r.capability }}</code> — recommended by {% with url=r.recommended_by|scenario_version_url %}{% if url %}<a href="{{ url }}">{% endif %}<code>{{ r.recommended_by }}</code>{% if url %}</a>{% endif %}{% endwith %}</li>{% endfor %}</ul>{% else %}<p>—</p>{% endif %}
   <dl class="impact-summary">
-    <dt>Guarantees lost</dt><dd class="guarantees-lost">{% for g in impact.guarantees_lost %}<code>{{ g }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+    <dt>Guarantees lost</dt><dd class="guarantees-lost">{% for g in impact.guarantees_lost %}{% if guarantees_href %}<a href="{{ guarantees_href }}#g-{{ g }}" target="_blank" rel="noopener" title="Opens this row of the guarantee table in a new tab"><code>{{ g }}</code></a>{% else %}<code>{{ g }}</code>{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if mode == "profile" and impact.guarantees_lost %}<br><small class="muted guarantees-lost-note">Lost by at least one following story; a story with its own overrides can differ from this profile's table</small>{% endif %}</dd>
     <dt>Stories affected</dt><dd class="affected-count">{{ impact.affected_count }}</dd>
   </dl>
   {% if impact.affected_stories %}

@@ -1,0 +1,488 @@
+{
+  "profile_id": "00000000000000000000PRF001",
+  "version": 2,
+  "rows": [
+    {
+      "id": "context_assembly",
+      "step": "context assembly",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [],
+      "setting": null,
+      "purposes": [],
+      "provided": true,
+      "delivered_in": null
+    },
+    {
+      "id": "viewpoint_filtering",
+      "step": "viewpoint filtering",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [],
+      "setting": null,
+      "purposes": [],
+      "provided": true,
+      "delivered_in": null
+    },
+    {
+      "id": "structural_knowledge_separation",
+      "step": "structural knowledge separation (per-character partitions)",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "partitions",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": "M5"
+    },
+    {
+      "id": "proposition_normalization",
+      "step": "proposition normalization of declared structure",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "pipeline",
+          "level": "structured",
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "verification",
+      "step": "verification of the claims detected in an output against the record",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "verification",
+          "level": "declared",
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "contradiction_rules",
+      "step": "contradiction rules on normalized propositions",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "verification",
+          "level": "declared",
+          "exact": false
+        },
+        {
+          "module": "contradiction_checking",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "state_effect_validation",
+      "step": "State effect validation and permission checks",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "states",
+          "level": "on",
+          "exact": true
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": "M6"
+    },
+    {
+      "id": "audience_filtering",
+      "step": "perception routing and audience filtering",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "perception",
+          "level": "co_location",
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": "M5"
+    },
+    {
+      "id": "multi_character_isolation",
+      "step": "per-character render isolation",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "multi_character",
+          "level": "per_character",
+          "exact": true
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": "M6"
+    },
+    {
+      "id": "commitment_mechanics",
+      "step": "commitment and ledger mechanics",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "commitment",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "clock_pacing",
+      "step": "clock pacing and stops",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "clock",
+          "level": "on",
+          "exact": true
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": "M6"
+    },
+    {
+      "id": "timeline_concurrency",
+      "step": "timeline and concurrency operations",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [],
+      "setting": null,
+      "purposes": [],
+      "provided": true,
+      "delivered_in": null
+    },
+    {
+      "id": "claim_detectors",
+      "step": "deterministic claim detectors",
+      "kind": "deterministic",
+      "metric": null,
+      "requires": [
+        {
+          "module": "verification",
+          "level": "declared",
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "generation",
+      "step": "generation",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-7",
+      "requires": [],
+      "setting": null,
+      "purposes": [
+        "generation"
+      ],
+      "provided": true,
+      "delivered_in": null
+    },
+    {
+      "id": "claim_extraction",
+      "step": "model extraction of undeclared claims",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-10",
+      "requires": [
+        {
+          "module": "verification",
+          "level": "extraction",
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "extraction_backstop"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "salience",
+      "step": "salience",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-4",
+      "requires": [
+        {
+          "module": "commitment",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": {
+        "path": "commitment.salience",
+        "values": [
+          "rules_and_model"
+        ]
+      },
+      "purposes": [
+        "salience_detection"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "time_estimation",
+      "step": "time estimation",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-9",
+      "requires": [
+        {
+          "module": "clock",
+          "level": "on",
+          "exact": true
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "time_estimation"
+      ],
+      "provided": false,
+      "delivered_in": "M6"
+    },
+    {
+      "id": "entailment_fallback",
+      "step": "entailment fallback",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-2",
+      "requires": [
+        {
+          "module": "verification",
+          "level": "entailment",
+          "exact": true
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "entailment"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "belief_adjudication",
+      "step": "testimony acceptance and other belief adjudication",
+      "kind": "model_dependent",
+      "metric": "unmeasured",
+      "requires": [
+        {
+          "module": "partitions",
+          "level": null,
+          "exact": false
+        },
+        {
+          "module": "testimony",
+          "level": "model",
+          "exact": true
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "belief_adjudication"
+      ],
+      "provided": false,
+      "delivered_in": "M5"
+    },
+    {
+      "id": "repair_rendering",
+      "step": "repair rendering",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-14",
+      "requires": [
+        {
+          "module": "verification",
+          "level": "declared",
+          "exact": false
+        },
+        {
+          "module": "repair",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "regeneration"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "paraphrase_detection",
+      "step": "paraphrase/indirect-disclosure detection",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-1",
+      "requires": [
+        {
+          "module": "partitions",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [],
+      "provided": false,
+      "delivered_in": "M5"
+    },
+    {
+      "id": "rolling_summary",
+      "step": "the rolling summary",
+      "kind": "model_dependent",
+      "metric": "unmeasured",
+      "requires": [
+        {
+          "module": "rolling_summary",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "lite_summary"
+      ],
+      "provided": true,
+      "delivered_in": null
+    },
+    {
+      "id": "consolidation",
+      "step": "consolidation (summaries and reflections)",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-3",
+      "requires": [
+        {
+          "module": "consolidation",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "consolidation"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "importance_scoring",
+      "step": "importance scoring",
+      "kind": "model_dependent",
+      "metric": "unmeasured",
+      "requires": [
+        {
+          "module": "episodic",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "importance_scoring"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "embedding",
+      "step": "embedding",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-6",
+      "requires": [
+        {
+          "module": "episodic",
+          "level": null,
+          "exact": false
+        }
+      ],
+      "setting": null,
+      "purposes": [
+        "embedding"
+      ],
+      "provided": false,
+      "delivered_in": null
+    },
+    {
+      "id": "guardrail_check",
+      "step": "guardrail check",
+      "kind": "model_dependent",
+      "metric": "unmeasured",
+      "requires": [],
+      "setting": null,
+      "purposes": [
+        "guardrail_check"
+      ],
+      "provided": true,
+      "delivered_in": null
+    },
+    {
+      "id": "rating_suggestion",
+      "step": "rating suggestion",
+      "kind": "model_dependent",
+      "metric": "unmeasured",
+      "requires": [],
+      "setting": null,
+      "purposes": [
+        "rating_suggestion"
+      ],
+      "provided": null,
+      "delivered_in": null
+    },
+    {
+      "id": "quality_judge",
+      "step": "quality judge",
+      "kind": "model_dependent",
+      "metric": "NFR-QUAL-14",
+      "requires": [],
+      "setting": null,
+      "purposes": [
+        "quality_judge"
+      ],
+      "provided": null,
+      "delivered_in": null
+    }
+  ]
+}

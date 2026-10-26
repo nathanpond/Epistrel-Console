@@ -606,6 +606,11 @@ def test_applied_false_renders_the_impact_page(operator_client: Client, engine: 
     assert "Impact report" in shown
     assert "polish_off" in shown
     assert "G-PIN-1" in shown
+    # #57: the lost guarantee opens its row of the profile's table at the version loaded.
+    assert (
+        f'<a href="/profiles/{OTHER}/?version=3#g-G-PIN-1" target="_blank" rel="noopener"' in html
+    )
+    assert "Lost by at least one following story" in shown
     assert 'href="/catalog/scenarios/01JSCN0000000000000000000A/?version=2"' in html
     assert f'<a href="/stories/{STORY_A}/">Harbour <code>{STORY_A}</code></a>' in html
     assert (

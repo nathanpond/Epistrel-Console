@@ -22,6 +22,7 @@ from console.profile_schema import ABSENT, settings_view
 from console.views import profiles as profile_views
 from console.views import stories as story_views
 from tests.fakes.engine import FakeEngine, recorded_schema
+from tests.fakes.guarantees import answer_guarantees
 from tests.fakes.ownership import answer_one_relation, answer_relations, shows_panel
 from tests.fixtures import engine_fixture
 from tests.ratings.helpers import calls, error, text
@@ -96,6 +97,7 @@ def make_engine(
     def make(doc: dict[str, Any] | None = None) -> FakeEngine:
         fake = FakeEngine(doc)
         answer_relations(fake)  # #79: the profile page reads its relations
+        answer_guarantees(fake)  # #57: and its guarantee table
 
         def client_with_fake(request: HttpRequest) -> EngineClient:
             client = engine_client_for(request)

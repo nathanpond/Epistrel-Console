@@ -54,6 +54,7 @@ from console.engine.models import (
     FactListBody,
     FactWritten,
     ForkResult,
+    GuaranteeTable,
     HealthResponse,
     HealthResult,
     History,
@@ -2987,6 +2988,15 @@ class EngineClient:
         params = {"version": str(version)} if version is not None else None
         return _parse(self._request("GET", _profile_path(profile_id), params=params), EngineProfile)
 
+    @operation("GET", "/engine-profiles/{profile_id}/guarantees", response_model=GuaranteeTable)
+    def get_profile_guarantees(self, profile_id: str, version: int | None = None) -> GuaranteeTable:
+        """``GET /engine-profiles/{id}/guarantees``: the guarantee table of the profile's latest
+        version, or of ``version``, over the deployment's defaults with no overrides (#57; 404
+        for an unknown profile or version, a deleted one still answers)."""
+        params = {"version": str(version)} if version is not None else None
+        path = f"{_profile_path(profile_id)}/guarantees"
+        return _parse(self._request("GET", path, params=params), GuaranteeTable)
+
     @operation("GET", "/engine-profiles/{profile_id}/versions", response_model=ProfileVersionList)
     def list_engine_profile_versions(self, profile_id: str) -> list[ProfileVersion]:
         """``GET /engine-profiles/{id}/versions``: every version, in the Engine's order (oldest
@@ -3145,6 +3155,12 @@ class EngineClient:
         fingerprint, capabilities and quality status."""
         path = f"{_story_path(story_id)}/effective-config"
         return _parse(self._request("GET", path), EffectiveConfig)
+
+    @operation("GET", "/stories/{story_id}/guarantees", response_model=GuaranteeTable)
+    def get_story_guarantees(self, story_id: str) -> GuaranteeTable:
+        """``GET /stories/{id}/guarantees``: the guarantee table of the story's effective
+        configuration, its overrides included (#57)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/guarantees"), GuaranteeTable)
 
     @operation(
         "POST",

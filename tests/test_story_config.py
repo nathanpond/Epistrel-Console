@@ -22,6 +22,7 @@ from console.models import EngineOperation
 from console.story_settings import config_url as settings_config_url
 from console.views import play, story_config
 from tests.fakes.engine import FakeEngine
+from tests.fakes.guarantees import answer_guarantees
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import EFFECTIVE, effective_config
 from tests.play.helpers import (
@@ -106,6 +107,7 @@ def profiles_page(*items: dict[str, Any]) -> dict[str, Any]:
 def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngine]:
     fake = FakeEngine()
     answer_relations(fake)
+    answer_guarantees(fake)  # #57: the Config page reads the story's guarantee table
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)
@@ -357,6 +359,20 @@ def test_preview_sends_exactly_the_patch_and_no_write(
     row = EngineOperation.objects.get(kind="impact_preview")
     assert row.entity_type == "story"
     assert row.entity_id == STORY
+
+
+def test_the_preview_links_lost_guarantees_to_the_config_table(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    lost = ["verification", "contradiction_rules", "claim_detectors"]
+    report = impact(affected(), guarantees_lost=lost)
+    html = preview(operator_client, engine, report, **{field_of(WINDOW): "20"}).content.decode()
+    for g in lost:
+        assert (
+            f'<a href="{CONFIG}#g-{g}" target="_blank" rel="noopener" '
+            f'title="Opens this row of the guarantee table in a new tab"><code>{g}</code></a>'
+        ) in html
+    assert "Lost by at least one following story" not in html  # story mode
 
 
 def test_nothing_changed_makes_no_call(operator_client: Client, engine: FakeEngine) -> None:

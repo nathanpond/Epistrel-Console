@@ -3830,6 +3830,55 @@ class MissingDependency(Model):
     requires: list[RequiredModule]
 
 
+# --- the guarantee table (#57) --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GuaranteeRequiredModule(Model):
+    """``epistrel__core__profiles__guarantees__RequiredModule``: a module a guarantee step needs,
+    on at ``level`` or above (any level when ``None``; exactly ``level`` when ``exact``). Suffixed:
+    the validate schema's ``RequiredModule`` shares the name."""
+
+    module: str
+    level: str | None = None
+    exact: bool = False
+
+
+@dataclass(frozen=True)
+class RequiredSetting(Model):
+    """``RequiredSetting``: a setting a step also needs, at one of ``values``."""
+
+    path: str
+    values: list[Any]
+
+
+@dataclass(frozen=True)
+class GuaranteeStatus(Model):
+    """``GuaranteeStatus``: one row of the guarantee table (FR-VERIFY-15). ``provided`` is
+    ``None`` for a step that runs outside stories; ``delivered_in`` names the milestone of a
+    step this deployment hasn't delivered."""
+
+    id: str
+    step: str
+    kind: Literal["deterministic", "model_dependent"]
+    metric: str | None
+    requires: list[GuaranteeRequiredModule]
+    setting: RequiredSetting | None
+    purposes: list[str]
+    provided: bool | None
+    delivered_in: str | None
+
+
+@dataclass(frozen=True)
+class GuaranteeTable(Model):
+    """``GuaranteeTable``: the profile and version a configuration reads and every row, in
+    ``docs/guarantees.md`` order."""
+
+    profile_id: str
+    version: int
+    rows: list[GuaranteeStatus]
+
+
 @dataclass(frozen=True)
 class UndeliveredSetting(Model):
     """A setting naming a module, or a level of one, this deployment has not delivered:

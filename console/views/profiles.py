@@ -11,6 +11,9 @@
 - ``/profiles/<id>/versions/``: every version, newest first (the Engine sends oldest first),
   each linking to ``?version=N``; ``?viewed=N`` highlights the one the detail page showed.
 
+#57 adds the Guarantees section (``console.guarantees``): ``GET …/guarantees`` for the version
+shown, read on the same pool; its failure stays inside the section.
+
 The owner and relations panel is #79's. #84 adds Edit (hidden on a deleted profile; "Edit latest
 (vM)" on a past version), Copy (at the version viewed) and Delete (disabled for the deployment
 default); its views are ``console.views.profile_edit``.
@@ -28,11 +31,19 @@ from django.urls import reverse
 from django.views.decorators.http import require_safe
 
 from console.engine.client import EngineClient, EngineClientError
-from console.engine.models import DeploymentSettings, EngineProfile, ProfileSchema, ProfileVersion
+from console.engine.models import (
+    DeploymentSettings,
+    EngineProfile,
+    GuaranteeTable,
+    ProfileSchema,
+    ProfileVersion,
+)
 from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.forms.profiles import ProfileFilterForm
+from console.guarantees import race_note
+from console.guarantees import section as guarantees_section
 from console.profile_schema import get_profile_schema_cached, settings_view
 from console.views.ownership import ownership_context
 
@@ -154,6 +165,8 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
             "profile": lambda: client.get_engine_profile(profile_id, version=version),
             "settings": client.get_deployment_settings,
             "schema": lambda: get_profile_schema_cached(client),
+            # #57: the guarantee table of the version shown (an ignored ?version sends none).
+            "guarantees": lambda: client.get_profile_guarantees(profile_id, version=version),
         }
     )
     profile = results["profile"]
@@ -175,6 +188,9 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
         log_engine_error(request, schema)
         warnings.append(SCHEMA_UNREAD)
         schema = None
+    table = results["guarantees"]
+    race = version is None and isinstance(table, GuaranteeTable)
+    note = race_note(table, profile.version) if race else ""
     context = {
         "profile": profile,
         "view": settings_view(schema, profile.settings, defaults),
@@ -208,6 +224,7 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
             name=profile.name,
             owner=profile.owner_principal,
         ),
+        **guarantees_section(request, table, "profile", profile_name=profile.name, note=note),
     }
     return render(request, "console/profiles/detail.html", context)
 

@@ -89,6 +89,9 @@ from console.engine.models import (
     ForkCharacter,
     ForkedFrom,
     ForkResult,
+    GuaranteeRequiredModule,
+    GuaranteeStatus,
+    GuaranteeTable,
     GuardrailCalls,
     GuardrailViolation,
     HealthChecks,
@@ -202,6 +205,7 @@ from console.engine.models import (
     RelationshipBody,
     ReplyMessage,
     RequiredModule,
+    RequiredSetting,
     ResolutionBody,
     RespondResponse,
     RetirementBody,
@@ -660,6 +664,11 @@ def test_the_widening_only_adds_media_id() -> None:
         (ReembedStatus, "ReembedStatusBody"),
         (StoryReembed, "StoryReembedBody"),
         (ReembedRetry, "ReembedRetryBody"),
+        # #57: the guarantee table.
+        (GuaranteeTable, "GuaranteeTable"),
+        (GuaranteeStatus, "GuaranteeStatus"),
+        (GuaranteeRequiredModule, "epistrel__core__profiles__guarantees__RequiredModule"),
+        (RequiredSetting, "RequiredSetting"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

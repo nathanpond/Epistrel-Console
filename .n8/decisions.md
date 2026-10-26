@@ -1587,3 +1587,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Updated #141's tests: the More test now expects `position` only, and the `test_retrieval_rows.py` body builder sends a valid empty `context`.
   **Why:** #152 removes the interim More fields and types `context`, so `{}` no longer parses.
   **Issue:** #152
+- **Decision:** The Guarantees section's context comes from one helper, `console.guarantees.section(request, result, mode, profile_name=, note=)`. It turns an `EngineClientError` into `guarantees_error` (#43's `ErrorPanel`), or into `guarantees_missing` for a 404 on the profile route. The plan said `guarantees_error` is an `EngineError`, but the partial needs a panel, and timeouts and unreachable errors aren't `EngineError`s.
+  **Why:** Both pages share one partial, the 404 wording depends on the mode, and the error is logged once.
+  **Issue:** #57
+- **Decision:** Needs and caveat text are plain strings with backtick spans, rendered through #135's `code_spans` filter. They are not built as HTML in Python.
+  **Why:** `needs_text` and `caveats` can then be unit-tested as plain strings, and the escaping stays in one filter.
+  **Issue:** #57
+- **Decision:** The caption and the race note show only when there's a table. The docs link always shows, errors included. On Config, the "this story's effective configuration, overrides included" note follows the caption after " · ".
+  **Why:** A failed read has no `profile_id` or `version` to caption.
+  **Issue:** #57
+- **Decision:** In profile mode, the impact report's "Lost by at least one following story…" note shows only when `guarantees_lost` isn't empty.
+  **Why:** The note explains the listed ids, and "—" needs no explanation.
+  **Issue:** #57
+- **Decision:** The Config page reads the guarantee table only on the Config page itself (the `select=True` path of `_load`), not on the overrides form. The read's error is logged by its section, not by `_load`'s loop.
+  **Why:** The AC places the table on the Config page only, and this avoids logging the error twice.
+  **Issue:** #57
+- **Decision:** Engine `main`'s new `GuaranteeStatus.story_setting` field (`player_view = character` on `audience_filtering`) isn't in the recorded schema, so it isn't rendered. Filed #169 instead of re-recording.
+  **Why:** The AC doesn't need it, and the model ignores unknown keys. Re-recording would be a contract change outside this story.
+  **Issue:** #57
+- **Decision:** Existing fakes for the profile page and the Config page (`tests/profile_helpers.fake_engine`, `tests/test_profiles_browse.py`, `tests/test_story_config.py`) answer both guarantee routes by default through `tests/fakes/guarantees.answer_guarantees`.
+  **Why:** The fake Engine refuses a call that has no answer, and both pages now make the read.
+  **Issue:** #57

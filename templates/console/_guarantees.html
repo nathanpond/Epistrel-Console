@@ -1,0 +1,30 @@
+{% comment %}
+The guarantee table (#57, FR-VERIFY-15): the profile page's (#78) and a story's Config page's (#85)
+Guarantees section. Context from console.guarantees.section: guarantees (GuaranteeTable | None),
+guarantee_rows, guarantee_caveats, guarantees_error (ErrorPanel | None), guarantees_missing (the
+profile route's 404), guarantees_mode ("profile" | "story"), profile_name (optional),
+guarantees_note (after the caption), guarantees_docs_url / _label. Order: caption, docs link,
+caveats, table. Each row is <tr id="g-<id>">, the target of the impact report's lost guarantees.
+{% endcomment %}{% load inspect_tags %}<section class="guarantees">
+  <h2 id="guarantees">Guarantees</h2>
+  {% if guarantees %}<p class="guarantees-caption">Profile {% if profile_name %}{{ profile_name }} ({{ guarantees.profile_id|engine_id }}){% else %}{{ guarantees.profile_id|engine_id }}{% endif %} · version {{ guarantees.version }}{% if guarantees_note %} {% if guarantees_mode == "story" %}· {% endif %}{{ guarantees_note }}{% endif %}</p>{% endif %}
+  <p class="guarantees-docs"><a href="{{ guarantees_docs_url }}">{{ guarantees_docs_label }}</a></p>
+  {% if guarantees_missing %}<p class="guarantees-missing">{{ guarantees_missing_text }}</p>
+  {% elif guarantees_error %}{% include "console/_engine_error.html" with engine_error=guarantees_error %}
+  {% elif guarantees %}
+  {% if guarantee_rows %}
+  <div class="caveats">{% for sentence in guarantee_caveats %}<p>{{ sentence|code_spans }}</p>{% endfor %}</div>
+  <table class="guarantee-table">
+    <thead><tr><th>Step</th><th>Kind</th><th>Metric</th><th>Needs</th><th>Purposes</th><th>Status</th></tr></thead>
+    <tbody>{% for g in guarantee_rows %}<tr{% if g.anchor %} id="g-{{ g.anchor }}"{% endif %}{% if g.muted %} class="row-muted"{% endif %}>
+      <td>{{ g.row.step|capfirst }} <code class="muted">{{ g.row.id }}</code></td>
+      <td title="{{ g.row.kind }}">{{ g.kind_label }}</td>
+      <td>{% if g.row.metric is None %}—{% elif g.row.metric == "unmeasured" %}Unmeasured{% else %}<code>{{ g.row.metric }}</code>{% endif %}</td>
+      <td>{{ g.needs|code_spans }}</td>
+      <td>{% for p in g.row.purposes %}<code>{{ p }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+      <td class="status">{{ g.status }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p class="guarantees-empty">None</p>{% endif %}
+  {% endif %}
+</section>
