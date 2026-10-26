@@ -26,6 +26,7 @@ from console.forms.model_config import (
     TOP_P_MAX,
     TOP_P_MIN,
     ApiKeyForm,
+    EmbeddingConfigForm,
     ModelConfigForm,
 )
 from console.forms.stories import (
@@ -79,6 +80,7 @@ __all__ = [
     "BaseCharacterFormSet",
     "CharacterForm",
     "CharacterFormSet",
+    "EmbeddingConfigForm",
     "ModelConfigForm",
     "StoryFilterForm",
     "StoryForm",

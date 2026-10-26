@@ -1539,3 +1539,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Shell tests: `test_an_enabled_tab_calls_build` now asserts the real Scene view's read, and `test_a_tab_whose_url_is_not_registered_is_absent` checks all seven tabs on the real urlconf plus Retrieval absent under `tests.inspect.urls_without_retrieval`.
   **Why:** Scene was the last stubbed tab; this keeps both shell rules tested.
   **Issue:** #58
+- **Decision:** A port's other 422s (incl. `not_a_port_param`) go through `apply_engine_errors` only, without #46's extra "The Engine rejected the configuration" line.
+  **Why:** Convention 10 places the message on the named field or above the form; the extra line would repeat it.
+  **Issue:** #59
+- **Decision:** The confirm page carries the posted base URL, model and timeout as typed (raw strings) plus the snapshot; the Confirm POST re-validates them with the same form.
+  **Why:** One validation path for both posts; the no-change and model-change checks run again on the confirmed POST.
+  **Issue:** #59
+- **Decision:** `put_model_config` picks the 30 s `LONG_MUTATION_TIMEOUT_S` itself when the purpose is `embedding` (new client constant `EMBEDDING_PORT`), instead of the view passing a timeout.
+  **Why:** The probe runs inside that one route's call; keeps the client signature unchanged.
+  **Issue:** #59
+- **Decision:** The edge smoke's "never posts to an embedding URL" is asserted from the operation log (no recorded row's path contains `/embedding`).
+  **Why:** The live test has no fake call log; every Engine call the Console makes is recorded (#44).
+  **Issue:** #59

@@ -13,6 +13,7 @@ from tests.fixtures import engine_fixture
 from tests.models.helpers import (
     IDEMPOTENCY_KEY,
     ITEM,
+    KEY,
     LIST,
     answer_list,
     body,
@@ -121,36 +122,55 @@ def test_other_params_are_listed_read_only(operator_client: Client, engine: Fake
     assert cells(html, "quality_judge")[OTHER] == "—"
 
 
-# --- embedding: read-only --------------------------------------------------------------------
+# --- embedding: a port (#59) -----------------------------------------------------------------
 
 
-def test_embedding_row_is_read_only(operator_client: Client, engine: FakeEngine) -> None:
+def test_embedding_row_has_edit_and_no_drop(operator_client: Client, engine: FakeEngine) -> None:
+    """#59 made it editable: an Edit link, no Drop override, no "Configured in M4" note."""
     answer_list(engine)
     html = operator_client.get("/models/").content.decode()
     embedding = row(html, "embedding")
-    assert "Configured in M4 (#59)" in embedding
-    assert "/models/embedding/" not in html  # no edit, drop or key link anywhere
-    assert "<a" not in embedding
+    assert "Configured in M4" not in html
+    assert '<a class="button" href="/models/embedding/edit/">Edit</a>' in embedding
+    assert "/models/embedding/drop/" not in html
 
 
 EMBEDDING_URLS = [
     "/models/embedding/edit/",
-    "/models/embedding/drop/",
     "/models/embedding/api-key/",
-    "/models/embedding/api-key/clear/",
 ]
 
 
-@pytest.mark.parametrize("url", EMBEDDING_URLS)
 @pytest.mark.parametrize("method", ["get", "post"])
 def test_embedding_action_urls_answer_404_without_calling_the_engine(
-    operator_client: Client, engine: FakeEngine, url: str, method: str
+    operator_client: Client, engine: FakeEngine, method: str
 ) -> None:
-    data = {"model": "forced", "api_key": "sk-forced", "idempotency_key": IDEMPOTENCY_KEY}
-    response = getattr(operator_client, method)(url, data if method == "post" else None)
+    """Only the drop URL 404s with zero calls: a port has no override to drop."""
+    data = {"idempotency_key": IDEMPOTENCY_KEY, "confirmed": "1"}
+    response = getattr(operator_client, method)(
+        "/models/embedding/drop/", data if method == "post" else None
+    )
     assert response.status_code == 404
     assert engine.requests == []
     assert EngineOperation.objects.count() == 0
+
+
+@pytest.mark.parametrize("url", EMBEDDING_URLS)
+def test_embedding_edit_and_key_urls_call_the_engine(
+    operator_client: Client, engine: FakeEngine, url: str
+) -> None:
+    """Complement: the edit and api-key URLs read or write the embedding row."""
+    engine.respond("GET", ITEM, 200, json=item("embedding"))
+    engine.respond("PUT", KEY, 204)
+    data = {"api_key": "sk-embedding", "idempotency_key": IDEMPOTENCY_KEY}
+    if url.endswith("edit/"):
+        response = operator_client.get(url)
+        assert response.status_code == 200
+    else:
+        response = operator_client.post(url, data)
+        assert response.status_code == 302
+    assert all(r.url.path.startswith("/admin/model-config/embedding") for r in engine.requests)
+    assert engine.requests
 
 
 def test_other_purposes_edit_url_works(operator_client: Client, engine: FakeEngine) -> None:

@@ -164,6 +164,8 @@ OMNISCIENT_VIEWPOINT = "omniscient"  # the only viewpoint the retrieve read acce
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
 INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event (#51)
+# The model port whose PUT probes a new model before it answers (#59).
+EMBEDDING_PORT = "embedding"
 LONG_MUTATION_TIMEOUT_S = 30.0  # rebuild (#43's timeouts; fork uses the turn timeout since #81)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 CATALOG_PAGE = 50  # the same for catalog lists (#65)
@@ -1563,13 +1565,14 @@ class EngineClient:
         self, purpose: str, config: Mapping[str, Any], *, idempotency_key: str
     ) -> ModelConfigMutation:
         """``PUT /admin/model-config/{purpose}``: the purpose's own ``base_url``, ``model`` and
-        ``params``, replaced in full (an absent or ``null`` field inherits)."""
+        ``params``, replaced in full (an absent or ``null`` field inherits). The ``embedding``
+        port's PUT probes a new model inside the call, so it waits 30 s (#59)."""
         response = self._request(
             "PUT",
             _purpose_path(purpose),
             json=dict(config),
             headers={"Idempotency-Key": idempotency_key},
-            timeout=MUTATION_TIMEOUT_S,
+            timeout=LONG_MUTATION_TIMEOUT_S if purpose == EMBEDDING_PORT else MUTATION_TIMEOUT_S,
         )
         return _parse(response, ModelConfigMutation)
 

@@ -3,7 +3,9 @@
 {% block heading %}Model purpose: {{ purpose.name }}{% endblock %}
 {% block content %}
 <p><a href="{% url 'models:list' %}">All purposes</a>{% if config_revision is not None %} · config revision <strong>{{ config_revision }}</strong>{% endif %}</p>
-{% if purpose.is_default %}
+{% if purpose.is_port %}
+<p class="port-intro">The embedding port uses only its own settings: a blank field is unset, never taken from default.</p>
+{% elif purpose.is_default %}
 <p>Every other purpose inherits each field it leaves blank from <code>default</code>. A blank field here is unset.</p>
 {% else %}
 <p>A blank field inherits from {% if purpose.parent %}<code>{{ purpose.parent }}</code>, then {% endif %}<code>default</code> (shown as the field's placeholder).
@@ -12,6 +14,7 @@
 
 <h2>Configuration</h2>
 {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if engine_error_note %}<p class="note engine-error-note">{{ engine_error_note }}</p>{% endif %}
 <form method="post" action="{% url 'models:edit' purpose.name %}" class="model-config">
   {% csrf_token %}
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">

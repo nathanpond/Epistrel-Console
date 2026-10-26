@@ -108,6 +108,66 @@ class ModelConfigForm(forms.Form):
         return body
 
 
+TIMEOUT_HELP = (
+    "Seconds per embedding call. A model-change probe must answer within the Console's 30 s wait."
+)
+
+
+def base_url_key(value: str | None) -> str | None:
+    """A base URL as the Engine compares it: trimmed, trailing ``/`` removed (``None`` unset)."""
+    text = (value or "").strip().rstrip("/")
+    return text or None
+
+
+def _number(value: object) -> float | None:
+    """A timeout as a number (``30`` and ``30.0`` match); anything else is ``None``."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+class EmbeddingConfigForm(forms.Form):
+    """The ``embedding`` port's own row (#59): base URL, model and ``timeout`` only (its one
+    port param). Nothing is inherited, so a blank field is unset (``null``)."""
+
+    base_url = forms.CharField(
+        label="Base URL", max_length=BASE_URL_MAX, required=False, validators=[_http_url]
+    )
+    model = forms.CharField(label="Model", max_length=MODEL_MAX)
+    timeout = forms.FloatField(
+        label="timeout (seconds)",
+        required=False,
+        validators=[_above_zero, MaxValueValidator(TIMEOUT_MAX)],
+        help_text=TIMEOUT_HELP,
+    )
+
+    def replacement(self) -> dict[str, Any]:
+        """The full ``ConfigReplacement``: every field sent, a blank one as ``null``."""
+        data = self.cleaned_data
+        timeout = data["timeout"]
+        return {
+            "base_url": data["base_url"] or None,
+            "model": data["model"],
+            "params": None if timeout is None else {"timeout": timeout},
+        }
+
+    def model_changes(self, own_model: str | None) -> bool:
+        """The Engine's probe rule: the posted model differs from the row's own (exact, after
+        trimming)."""
+        posted: str = self.cleaned_data["model"]
+        return posted != own_model
+
+    def same_as(self, base_url: str | None, model: str | None, timeout: object) -> bool:
+        """Whether the posted values are the row's own: base URL as the Engine normalises it,
+        model exact after trimming, timeout as a number."""
+        data = self.cleaned_data
+        return (
+            base_url_key(data["base_url"]) == base_url_key(base_url)
+            and not self.model_changes(model)
+            and data["timeout"] == _number(timeout)
+        )
+
+
 class ApiKeyForm(forms.Form):
     """The key for ``PUT …/api-key``. Never rendered back (``render_value=False``)."""
 
