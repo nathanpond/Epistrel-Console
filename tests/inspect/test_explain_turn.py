@@ -94,8 +94,22 @@ def reply(turn: int, text: str = "Tobin shrugs.", *, variant: int = 1) -> dict[s
         channel="message",
         actor=None,
         message=f"01M5R0QNTZV2CSB478YYC5{turn:02d}R{variant}",
+        propositions=LITE,  # the Engine sets ``propositions`` on beats and inputs only
         variant=variant,
         beat=3,
+    )
+
+
+def beat(turn: int, text: str = "Tobin sits.", *, actor: str = TOBIN) -> dict[str, Any]:
+    """A structured turn's ``beat_do`` item: the Engine always sets its ``propositions``."""
+    return item(
+        turn,
+        text,
+        kind="beat_do",
+        channel="do",
+        actor=actor,
+        message=f"01M5R0QNTZV2CSB478YYC5{turn:02d}B1",
+        beat=2,
     )
 
 
@@ -107,6 +121,16 @@ def structured_turn(
         item(turn, say, actor=actor, variant=variant),
         item(turn, do, channel="do", actor=actor, variant=variant, beat=2),
         reply(turn, variant=variant),
+    ]
+
+
+def do_only_turn(turn: int, do: str = "Wren sits", *, actor: str = TOBIN) -> list[dict[str, Any]]:
+    """A structured turn whose input is do-only: the Engine sends the input without
+    ``propositions`` (it carries no labels), so only the turn's beat marks it structured."""
+    return [
+        item(turn, do, channel="do", actor=actor, propositions=LITE),
+        beat(turn, actor=actor),
+        reply(turn),
     ]
 
 
@@ -257,6 +281,13 @@ def test_no_variant_parameter_below_1(variant: int | None) -> None:
     assert query_of(url)["explain"] == ["7"]
 
 
+def test_a_do_only_structured_turn_links_its_do_text() -> None:
+    url = url_for(do_only_turn(7))
+    assert url is not None
+    assert query_of(url)["q"] == ["Wren sits"]
+    assert query_of(url)["actor"] == [TOBIN]
+
+
 def test_the_player_as_actor_is_sent_too() -> None:
     url = url_for(structured_turn(7, actor=MARA))
     assert url is not None
@@ -305,6 +336,10 @@ def test_an_ingest_batch_uses_its_first_input_message() -> None:
         pytest.param(structured_turn(7, say="  ", do="\n"), 7, id="whitespace input"),
         pytest.param([item(7, "say", actor=None)], 7, id="null actor"),
         pytest.param([reply(7)], 7, id="input hidden"),
+        pytest.param([beat(7), reply(7)], 7, id="input hidden, beat shown"),
+        pytest.param(
+            [item(7, "do", channel="do", propositions=LITE), reply(7)], 7, id="lite do-only turn"
+        ),
     ],
 )
 def test_no_link_without_a_structured_input(items: list[dict[str, Any]], turn: int) -> None:
@@ -330,15 +365,26 @@ def test_history_shows_explain_retrieval_in_the_turn_header(
     "items",
     [
         pytest.param([item(7, "say", propositions=LITE), reply(7)], id="lite"),
-        pytest.param([reply(7)], id="actor filter hides the input"),
+        # The Engine's actor filter leaves out Tobin's input; Mara's beat still marks the turn.
+        pytest.param([beat(7, actor=MARA), reply(7)], id="actor filter hides the input"),
     ],
 )
 def test_history_has_no_link_without_a_structured_input(
     operator_client: Client, engine: FakeEngine, items: list[dict[str, Any]]
 ) -> None:
     engine.respond("GET", HISTORY, 200, json=history_body(items))
-    html = get(operator_client, f"{HISTORY_URL}?actor={MARA}")
+    html = get(operator_client, f"{HISTORY_URL}?actor_character_id={MARA}")
+    (sent,) = [r for r in engine.requests if r.url.path == f"/stories/{STORY}/history"]
+    assert sent.url.params.get("actor_character_id") == MARA  # #178: the filter is driven
     assert explain_links(html) == []
+
+
+def test_history_links_a_do_only_structured_turn(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", HISTORY, 200, json=history_body(do_only_turn(7)))
+    (link,) = explain_links(get(operator_client, HISTORY_URL))
+    assert link == url_for(do_only_turn(7))
 
 
 def test_a_chain_view_has_no_link(operator_client: Client, engine: FakeEngine) -> None:
@@ -358,6 +404,14 @@ def test_the_transcript_turn_inspector_links_the_same_query(
     assert explain_links(inspector_of(html)) == [expected]
     assert history_links(inspector_of(html)) == []
     assert retrieve_calls(engine) == []
+
+
+def test_the_transcript_turn_inspector_links_a_do_only_structured_turn(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", HISTORY, 200, json=history_body(do_only_turn(7)))
+    html = get(operator_client, f"/stories/{STORY}/?turn=7")
+    assert explain_links(inspector_of(html)) == [url_for(do_only_turn(7))]
 
 
 def test_a_logged_transcript_turn_links_in_the_revisions_block(
