@@ -1195,6 +1195,16 @@ class RebuildQueued(Model):
     idempotency_key: str | None = None
 
 
+@dataclass(frozen=True)
+class ConsolidationQueued(Model):
+    """``ConsolidationQueuedResponse`` (202): a requested consolidation, handed to a worker job
+    (#145). The Engine reports no progress for that job."""
+
+    timeline_revision: int
+    job_id: str
+    idempotency_key: str | None = None
+
+
 # --- a story's hot set (#140) ---------------------------------------------------------------------
 
 

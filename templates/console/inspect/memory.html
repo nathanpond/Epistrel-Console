@@ -3,7 +3,8 @@
 {% comment %}
 The Memory tab (#140): the story's hot set from one GET /admin/stories/{id}/hot-set read. Rows and
 markers come from console/hot_set.py. A failed read replaces the "As of" line and the five sections
-(not_found: convention 10's line; else #43's panel); the Browse grid always renders.
+(not_found: convention 10's line; else #43's panel); the Browse grid always renders, and so does
+the last section, "Consolidate a window" (#145; context `consolidate`, a ConsolidateSection).
 {% endcomment %}
 {% block tab_content %}
 {% if hot_set_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
@@ -126,4 +127,16 @@ markers come from console/hot_set.py. A failed read replaces the "As of" line an
   </tbody>
 </table>
 {% endif %}
+
+{% with c=consolidate %}
+<section id="consolidate" class="consolidate">
+<h2>Consolidate a window</h2>
+<p>Ask the Engine to consolidate a window of turns into semantic facts and reflections now. It runs in the background, and the Engine doesn't report its progress.</p>
+{% if c.unavailable %}{% include "console/inspect/_unavailable.html" with unavailable=c.unavailable inline=True %}
+{% elif c.no_turns %}<p class="consolidate-no-turns">No turns yet — nothing to consolidate.</p>
+{% else %}{% include "console/inspect/_consolidate_form.html" with form=c.form idempotency_key=c.idempotency_key action=c.url %}
+{% endif %}
+{% if c.semantic_url or c.reflection_url %}<p class="consolidate-links">{% if c.semantic_url %}<a href="{{ c.semantic_url }}">Find semantic facts</a>{% endif %}{% if c.semantic_url and c.reflection_url %} · {% endif %}{% if c.reflection_url %}<a href="{{ c.reflection_url }}">Find reflections</a>{% endif %}</p>{% endif %}
+</section>
+{% endwith %}
 {% endblock %}

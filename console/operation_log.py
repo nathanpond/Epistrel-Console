@@ -304,18 +304,31 @@ def is_guardrail_rejection(error_code: str, response: object) -> bool:
 
 
 REBUILD_KIND = "rebuild_story"
+CONSOLIDATE_KIND = "consolidate_story"
+# Kinds whose 202 hands the work to a worker job the Engine reports nothing about, so the row
+# stays ``queued`` (``complete_job`` is never called for them).
+QUEUED_JOB_KINDS = frozenset({REBUILD_KIND, CONSOLIDATE_KIND})
 
 
-def rebuild_job_id(kind: str, http_status: int | None, response: object) -> str | None:
-    """The worker job a queued rebuild (202) was handed to (#50), else ``None``. The Engine has
-    no status read for it, so the row stays ``queued``."""
-    if kind != REBUILD_KIND or http_status != 202:
+def queued_job_id(row: EngineOperation) -> str | None:
+    """The worker job a queued rebuild (#50) or consolidation (#145) 202 was handed to, else
+    ``None``: the row's ``job_id`` column (#64), falling back to the stored ``response.job_id``
+    for rebuild rows written before that column existed."""
+    if row.kind not in QUEUED_JOB_KINDS or row.http_status != 202:
         return None
-    return _str(_dict(response), "job_id")
+    job_id = row.job_id or _str(_dict(row.response), "job_id")
+    return job_id or None
 
 
-def rebuild_job_text(job_id: str) -> str:
-    """What a queued rebuild says, stated honestly: nothing can be polled (#50)."""
+def queued_job_text(kind: str, job_id: str) -> str:
+    """What a queued job says, stated honestly, without a final period (callers add one):
+    nothing can be polled for either kind."""
+    if kind == CONSOLIDATE_KIND:
+        return (
+            f"Consolidation queued as job {job_id} — the Engine reports no progress for "
+            "consolidation jobs; its outputs appear in Retrieval as semantic facts and "
+            "reflections when it finishes"
+        )
     return (
         f"Rebuild running as job {job_id} — the Engine has no job status endpoint for "
         "rebuilds; check the Engine logs"

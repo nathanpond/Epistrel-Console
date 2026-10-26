@@ -33,10 +33,18 @@ is #43's error panel. A 200 the Console can't read flashes a warning. #44's reco
 call's row (``entity_type="story"``, kind = the client method); a sanitize's row keeps only
 lengths (``console.operation_log``), and its view is wrapped in ``sensitive_post_parameters`` so
 an error report never shows the span either.
+
+**Consolidate a window** (#145) lives here too: the Memory tab's GET form lands on
+``inspect:consolidate`` (no Engine call before the confirm), whose confirmed POST calls
+``POST /admin/stories/{id}/consolidate`` for the shared scope and redirects to the Memory tab at
+``#consolidate``. The job's #44 row stays ``queued``: the Engine reports no progress for it, so
+the Console never says a consolidation finished or wrote anything.
 """
 
+import dataclasses
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -48,19 +56,37 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods, require_POST
 
 from console.confirm import (
+    CONFIRMED_FIELD,
     ConfirmPage,
+    carried_idempotency_key,
     confirm_action,
     posted_idempotency_key,
+    render_confirm,
     safe_next,
 )
 from console.engine.client import EngineClient, EngineClientError, EngineError
-from console.engine.models import MemoryView, MemoryWritten
+from console.engine.models import ConsolidationQueued, MemoryView, MemoryWritten
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
-from console.forms.inspect import SANITIZE_MAX, QuarantineForm, RetrievalForm, SanitizeForm
+from console.forms.inspect import (
+    SANITIZE_MAX,
+    ConsolidateForm,
+    QuarantineForm,
+    RetrievalForm,
+    SanitizeForm,
+)
 from console.held import is_held, render_held
 from console.ids import new_ulid
-from console.inspect import Tab, is_module_off, module_off_unavailable, short_id
+from console.inspect import (
+    CONSOLIDATION,
+    Tab,
+    is_module_off,
+    module_off_unavailable,
+    short_id,
+    unavailable_for,
+)
+from console.models import EngineOperation
+from console.operation_log import CONSOLIDATE_KIND
 from console.story_pause import paused_refusal
 from console.turn_reports import ViolationRow, violation_rows
 
@@ -196,14 +222,31 @@ def _back(request: HttpRequest, story_id: str) -> str:
     return safe_next(request, reverse(Tab.RETRIEVAL.url_name, args=[story_id]))
 
 
-def _module_off(request: HttpRequest, exc: EngineError, story_id: str, back: str) -> HttpResponse:
-    """#135's greyed panel for a 409 ``module_off`` (``details.module``, else ``episodic``),
-    answered on the POST with status 409."""
+def _module_off(
+    request: HttpRequest,
+    exc: EngineError,
+    story_id: str,
+    back: str,
+    *,
+    module: str | None = None,
+    back_label: str = "",
+) -> HttpResponse:
+    """#135's greyed panel for a 409 ``module_off`` (``details.module``, else ``module``, else
+    ``episodic``), answered on the POST with status 409. With ``module`` (#145's consolidate) the
+    panel also says the configuration changed since the page loaded, with ``back`` to reload."""
+    named = exc.details.get("module")
+    if module is not None:
+        unavailable = unavailable_for(named if isinstance(named, str) and named else module)
+    else:
+        unavailable = module_off_unavailable(exc, Tab.RETRIEVAL)
     context = {
-        "unavailable": module_off_unavailable(exc, Tab.RETRIEVAL),
+        "unavailable": unavailable,
         "config_url": reverse("stories:config", args=[story_id]),
         "story_id": story_id,
         "next_url": back,
+        "back_label": back_label,
+        "config_changed": module is not None,
+        "reload_url": back,
     }
     return render(request, UNAVAILABLE_TEMPLATE, context, status=409)
 
@@ -500,5 +543,171 @@ def sanitize(request: HttpRequest, story_id: str, memory_id: str) -> HttpRespons
         request,
         sanitize_confirm(form, memory_id, back),
         lambda key: _sanitize_call(request, story_id, memory_id, form, key, context),
+        require_confirmed=True,
+    )
+
+
+# --- requesting consolidation (#145) -------------------------------------------------------------
+
+CONSOLIDATE_TEMPLATE = "console/inspect/consolidate.html"
+CONSOLIDATE_FRAGMENT = "consolidate"  # the Memory tab section's id
+SCOPE_MISMATCH = "scope_mismatch"
+SCOPE_MISMATCH_TEXT = (
+    "These turns span scopes no single consolidation may combine. Pick a narrower window."
+)
+CONSOLIDATE_LINES = (
+    "The Engine reads at most memory.consolidation.window_memories memories per run and snaps "
+    "to whole turns, so the outputs may cover fewer turns.",
+    "A window with nothing to consolidate still queues a job, which writes nothing.",
+)
+QUEUED_TEXT = (
+    "Consolidation queued (job {job_id}). Its semantic facts and reflections appear in Retrieval "
+    "when the worker finishes — use the links under Consolidate a window."
+)
+JOINED_TEXT = (
+    " This is the job your request of {when} joined: the Engine gives a repeated request the job "
+    "still waiting."
+)
+REPLAYED_TEXT = "Already queued (repeated submit) — job {job_id}."
+CONSOLIDATE_UNREADABLE = (
+    "Consolidation requested — the Engine's answer couldn't be read; its outputs, if any, appear "
+    "in Retrieval as semantic facts and reflections"
+)
+
+
+def _memory_url(story_id: str) -> str:
+    return reverse(Tab.MEMORY.url_name, args=[story_id])
+
+
+def _window(data: Mapping[str, Any]) -> str:
+    return f"turns {data['from_turn']}\u2013{data['to_turn']}"
+
+
+def consolidate_confirm(data: Mapping[str, Any], story_id: str) -> ConfirmPage:
+    """The confirm page (#134's confirmed mode) for a valid :class:`ConsolidateForm`; the
+    window and the carried ``head`` ride along hidden, so its POST re-checks them."""
+    window = _window(data)
+    head = data.get("head")
+    hidden = {"from_turn": str(data["from_turn"]), "to_turn": str(data["to_turn"])}
+    if head is not None:
+        hidden["head"] = str(head)
+    return ConfirmPage(
+        title=f"Consolidate {window}",
+        question=(
+            f"Consolidate {window} (shared scope)? A window already consolidated is rerun, and "
+            "its earlier outputs are superseded."
+        ),
+        confirm_label="Consolidate",
+        cancel_url=_memory_url(story_id),
+        lines=CONSOLIDATE_LINES,
+        facts=(("Story id", story_id), ("Window", window), ("Scope", "shared")),
+        hidden=hidden,
+        danger=True,
+    )
+
+
+def _shown_time(moment: datetime) -> str:
+    """#135 convention 4's datetime, as plain text: ``2026-10-24 14:03 UTC``."""
+    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def queued_flash(
+    request: HttpRequest, story_id: str, queued: ConsolidationQueued, key: str, pk: int | None
+) -> None:
+    """The flash for a 202. A replay (the #44 row ``pk`` the call just wrote says ``replayed``;
+    no row counts as fresh) says only "Already queued". A fresh answer whose ``job_id`` an
+    earlier ``consolidate_story`` row of this story holds under another key says it joined that
+    request's job (the Engine coalesces a repeat while the job waits)."""
+    row = EngineOperation.objects.filter(pk=pk).first() if pk is not None else None
+    if row is not None and row.replayed:
+        messages.info(request, REPLAYED_TEXT.format(job_id=queued.job_id))
+        return
+    text = QUEUED_TEXT.format(job_id=queued.job_id)
+    earlier_rows = EngineOperation.objects.filter(
+        kind=CONSOLIDATE_KIND, story_id=story_id, job_id=queued.job_id
+    ).exclude(idempotency_key=key)
+    if pk is not None:
+        earlier_rows = earlier_rows.exclude(pk=pk)
+    earlier = earlier_rows.order_by("-created_at", "-id").first()
+    if earlier is not None:
+        text += JOINED_TEXT.format(when=_shown_time(earlier.created_at))
+    messages.success(request, text)
+
+
+def _consolidate_call(
+    request: HttpRequest,
+    story_id: str,
+    form: ConsolidateForm,
+    key: str,
+    context: dict[str, Any],
+) -> HttpResponse:
+    """The confirmed request: the call, then the Memory tab at ``#consolidate`` with the
+    flash, or the consolidate page again (values kept, a fresh key) with the refusal."""
+    back = _memory_url(story_id)
+    data = form.cleaned_data
+    client = engine_client_for(request)
+    try:
+        queued = client.consolidate_story(
+            story_id, data["from_turn"], data["to_turn"], idempotency_key=key
+        )
+    except EngineClientError as exc:
+        if is_held(exc):
+            return render_held(request, story_id, exc)
+        log_engine_error(request, exc)
+        if isinstance(exc, EngineError):
+            if is_module_off(exc):
+                return _module_off(
+                    request, exc, story_id, back, module=CONSOLIDATION, back_label="Back to Memory"
+                )
+            if exc.code == BAD_RESPONSE and exc.http_status and 200 <= exc.http_status < 300:
+                messages.warning(request, CONSOLIDATE_UNREADABLE)
+                return redirect(f"{back}#{CONSOLIDATE_FRAGMENT}")
+        context["idempotency_key"] = new_ulid()  # the operator will change the window
+        status = 200
+        if isinstance(exc, EngineError) and exc.code == SCOPE_MISMATCH:
+            context.update(refusal=SCOPE_MISMATCH_TEXT, scopes=exc.details.get("scopes"))
+            status = 422
+        elif isinstance(exc, EngineError) and exc.code == VALIDATION_ERROR:
+            form.apply_engine_error(exc)
+            status = 422
+        elif isinstance(exc, EngineError) and (text := refusal_text(exc, story_id)) is not None:
+            context["refusal"] = text
+        else:
+            context["engine_error"] = panel_for(exc)
+        return render(request, CONSOLIDATE_TEMPLATE, context, status=status)
+    queued_flash(request, story_id, queued, key, client.last_operation_id)
+    return redirect(f"{back}#{CONSOLIDATE_FRAGMENT}")
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def consolidate(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:consolidate``: the Memory tab's GET form lands here (no Engine call): neither
+    turn given is the empty form; an invalid window re-renders the page with its errors; a valid
+    one renders the confirm page carrying the Memory tab's key. Its ``confirmed=1`` POST
+    re-checks the window and calls ``POST /admin/stories/{id}/consolidate`` (the shared scope)
+    with that key; a POST without it re-renders the confirm page (#134)."""
+    data = request.POST if request.method == "POST" else request.GET
+    key = carried_idempotency_key(data)
+    context: dict[str, Any] = {
+        "story_id": story_id,
+        "memory_url": _memory_url(story_id),
+        "consolidate_url": reverse("inspect:consolidate", args=[story_id]),
+        "idempotency_key": key,
+    }
+    if request.method != "POST" and "from_turn" not in data and "to_turn" not in data:
+        context["form"] = ConsolidateForm(initial={"from_turn": "1"})
+        return render(request, CONSOLIDATE_TEMPLATE, context)
+    form = ConsolidateForm(data)
+    context["form"] = form
+    if not form.is_valid():
+        return render(request, CONSOLIDATE_TEMPLATE, context)
+    page = consolidate_confirm(form.cleaned_data, story_id)
+    if request.method != "POST":
+        page = dataclasses.replace(page, hidden={**page.hidden, CONFIRMED_FIELD: "1"})
+        return render_confirm(request, page, idempotency_key=key)
+    return confirm_action(
+        request,
+        page,
+        lambda posted: _consolidate_call(request, story_id, form, posted, context),
         require_confirmed=True,
     )

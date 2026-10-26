@@ -156,6 +156,8 @@ inspect_patterns = (
     [
         path("", inspect.overview, name="overview"),
         path("memory/", inspect.memory, name="memory"),
+        # #145: request consolidation of a turn window (form, confirm, call).
+        path("memory/consolidate/", inspect_memory.consolidate, name="consolidate"),
         path("retrieval/", inspect.retrieval, name="retrieval"),
         # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
         path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),

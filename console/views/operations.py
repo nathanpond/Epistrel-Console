@@ -21,8 +21,8 @@ from console.operation_log import (
     is_turn,
     output_violations,
     policy_ids,
-    rebuild_job_id,
-    rebuild_job_text,
+    queued_job_id,
+    queued_job_text,
 )
 from console.reactivation import OP_NAMES, OP_PARAM
 from console.redaction import redact
@@ -124,10 +124,11 @@ def _viewpoint(row: EngineOperation) -> str | None:
     return viewpoint if isinstance(viewpoint, str) and viewpoint else None
 
 
-def _rebuild_job_text(row: EngineOperation) -> str:
-    """A queued rebuild's honest job message (#50); "" for anything else."""
-    job_id = rebuild_job_id(row.kind, row.http_status, row.response)
-    return rebuild_job_text(job_id) if job_id is not None else ""
+def _queued_job_text(row: EngineOperation) -> str:
+    """A queued rebuild's (#50) or consolidation's (#145) honest job message; "" for anything
+    else."""
+    job_id = queued_job_id(row)
+    return queued_job_text(row.kind, job_id) if job_id is not None else ""
 
 
 CHECK_KINDS = frozenset({"set_story_content_rating", *OP_NAMES})  # #80, #81
@@ -164,7 +165,7 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "input_violations": violation_rows(input_violations(row.response)),
         "input_gate": input_gate_text(row.response),
         "output_violations": violation_rows(output_violations(row.response)),
-        "job_text": _rebuild_job_text(row),
+        "job_text": _queued_job_text(row),
         "check_url": _check_url(row),
         "fetch_offered": fetch_offered(row),
     }

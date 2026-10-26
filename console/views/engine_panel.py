@@ -50,7 +50,7 @@ from console.forms.config_changes import ConfigChangeFilterForm
 from console.forms.deployment import DeploymentSettingsForm, profile_default_rows
 from console.ids import new_ulid
 from console.models import EngineOperation
-from console.operation_log import REBUILD_KIND, rebuild_job_id, rebuild_job_text
+from console.operation_log import REBUILD_KIND, queued_job_id, queued_job_text
 
 log = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ def rebuild(request: HttpRequest, story_id: str) -> HttpResponse:
             }
             return render(request, "console/engine/rebuild_busy.html", context)
         if isinstance(outcome, RebuildQueued):
-            messages.info(request, f"{label}: {rebuild_job_text(outcome.job_id)}.")
+            messages.info(request, f"{label}: {queued_job_text(REBUILD_KIND, outcome.job_id)}.")
         else:
             messages.success(
                 request,
@@ -270,7 +270,11 @@ def _render_result(
         "label": label,
         "row": row,
         "result": outcome if isinstance(outcome, RebuildResult) else None,
-        "job_text": rebuild_job_text(outcome.job_id) if isinstance(outcome, RebuildQueued) else "",
+        "job_text": (
+            queued_job_text(REBUILD_KIND, outcome.job_id)
+            if isinstance(outcome, RebuildQueued)
+            else ""
+        ),
         "back_url": next_url or HOME_URL,
         "back_label": "Back to story" if next_url else "Back to Engine",
     }
@@ -282,7 +286,7 @@ def rebuild_result(request: HttpRequest, pk: int) -> HttpResponse:
     """One rebuild's outcome, from the operation log's row (no Engine call)."""
     row = get_object_or_404(EngineOperation, pk=pk, kind=REBUILD_KIND)
     outcome: RebuildResult | RebuildQueued | None = None
-    job_id = rebuild_job_id(row.kind, row.http_status, row.response)
+    job_id = queued_job_id(row)
     if job_id is not None:
         outcome = RebuildQueued.from_json(row.response)
     elif row.http_status == 200:

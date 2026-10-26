@@ -77,8 +77,14 @@ def posted_idempotency_key(request: HttpRequest, field: str = KEY_FIELD) -> str:
     """The key the rendered page carried (in ``field``; a page with two writes carries two,
     #66), or a fresh one when it is missing or malformed (a POST that did not come from the
     page)."""
-    key = request.POST.get(field, "")
-    return key if _KEY.match(key) else new_ulid()
+    return carried_idempotency_key(request.POST, field)
+
+
+def carried_idempotency_key(data: Mapping[str, Any], field: str = KEY_FIELD) -> str:
+    """The key ``data`` carries in ``field`` (a POST, or a GET form's query string that carries
+    its page's key forward, #145), or a fresh one when it is missing or malformed."""
+    key = data.get(field, "")
+    return key if isinstance(key, str) and _KEY.match(key) else new_ulid()
 
 
 @dataclass(frozen=True)

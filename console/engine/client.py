@@ -33,6 +33,7 @@ from console.engine.models import (
     CharacterPublished,
     CompanionDraft,
     ConfigChanges,
+    ConsolidationQueued,
     ContentRating,
     ContentRatingList,
     ContentRatingMutation,
@@ -1099,6 +1100,54 @@ class EngineClient:
         if response.status_code == 202:
             return _parse(response, RebuildQueued)
         return _parse(response, RebuildResult)
+
+    # --- requesting consolidation (#145) --------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/consolidate",
+        status_models={202: ConsolidationQueued},
+        entity="story",
+        entity_id="story_id",
+    )
+    def consolidate_story(
+        self,
+        story_id: str,
+        from_turn: int,
+        to_turn: int,
+        *,
+        characters: Sequence[str] | None = None,
+        idempotency_key: str,
+    ) -> ConsolidationQueued:
+        """``POST /admin/stories/{id}/consolidate {from_turn, to_turn, scope?}``: consolidate
+        turns ``from_turn``..``to_turn`` into semantic facts and reflections now (FR-MEM-3,10),
+        rerunning a window already consolidated. ``characters`` ``None`` is the shared scope
+        (``scope`` not sent); otherwise ``{"scope": {"characters": [...]}}`` as given (the Engine
+        sorts, dedupes and caps at 50), and an empty list is a ``ValueError`` (the schema's
+        ``minItems`` 1). Handed to a worker: 202 :class:`ConsolidationQueued`, a job the Engine
+        reports no progress for (the same request while it waits is that job); any other 2xx is
+        ``bad_response``. 409 ``module_off``, 422 ``scope_mismatch``."""
+        body: dict[str, Any] = {"from_turn": from_turn, "to_turn": to_turn}
+        if characters is not None:
+            if not characters:
+                raise ValueError("consolidate_story: characters must name at least one character")
+            body["scope"] = {"characters": list(characters)}
+        response = self._request(
+            "POST",
+            f"/admin{_story_path(story_id)}/consolidate",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+        if response.status_code != 202:
+            raise EngineError(
+                "bad_response",
+                f"the Engine answered {response.status_code} to a consolidation request",
+                {},
+                response.status_code,
+            )
+        return _parse(response, ConsolidationQueued)
 
     # --- a story's hot set (#140) ---------------------------------------------------------------
 

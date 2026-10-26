@@ -21,6 +21,7 @@ A request with no ``q`` parameter at all (a filter-only link, #135 convention 11
 question: :meth:`RetrievalForm.filters_only` keeps only the ``kind``/``tier`` errors.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -336,5 +337,76 @@ class SanitizeForm(forms.Form):
         if exc.details.get("field") == "body.surrogate":
             self.add_error("surrogate", REWRITE_INVALID)
             return
+        if not apply_engine_errors(exc, self):
+            self.add_error(None, exc.message)
+
+
+# --- requesting consolidation (#145) -------------------------------------------------------------
+
+TURN_MAX = 2_147_483_647  # the Engine's ``ConsolidateRequest`` turn maximum
+ENTER_A_TURN = "Enter a turn."
+WHOLE_NUMBER = "Enter a whole number."
+TURNS_START = "Turns start at 1."
+TURN_TOO_HIGH = f"At most {TURN_MAX:,}."
+ENDS_BEFORE_START = "The window ends before it starts."
+_INTEGER = re.compile(r"^[+-]?\d+$")
+
+
+def past_head(to_turn: int, head: int) -> str:
+    return f"Turn {to_turn} is past the head (turn {head})"
+
+
+def _turn_widget() -> forms.NumberInput:
+    return forms.NumberInput(attrs={"min": 1, "max": TURN_MAX, "step": 1})
+
+
+class ConsolidateForm(forms.Form):
+    """The window a consolidation request covers (#145), checked before any Engine call: each
+    turn present, a whole number, 1 to 2,147,483,647, ``from_turn`` ≤ ``to_turn``, and
+    ``to_turn`` at most the hidden ``head`` (the Memory tab's ``head_turn`` at render) when one
+    is carried. ``head`` is lenient: a value that isn't a whole number ≥ 1 cleans to ``None`` and
+    drops the past-head check (a tampered head only loosens it; the Engine queues a past-head
+    window harmlessly). The shared scope only: the form never sends ``scope``."""
+
+    from_turn = forms.CharField(label="From turn", required=False, widget=_turn_widget())
+    to_turn = forms.CharField(label="To turn", required=False, widget=_turn_widget())
+    head = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    @staticmethod
+    def _turn(value: object) -> int:
+        typed = str(value or "").strip()
+        if not typed:
+            raise forms.ValidationError(ENTER_A_TURN)
+        if not _INTEGER.match(typed):
+            raise forms.ValidationError(WHOLE_NUMBER)
+        turn = int(typed)
+        if turn < 1:
+            raise forms.ValidationError(TURNS_START)
+        if turn > TURN_MAX:
+            raise forms.ValidationError(TURN_TOO_HIGH)
+        return turn
+
+    def clean_from_turn(self) -> int:
+        return self._turn(self.cleaned_data.get("from_turn"))
+
+    def clean_to_turn(self) -> int:
+        return self._turn(self.cleaned_data.get("to_turn"))
+
+    def clean_head(self) -> int | None:
+        typed = str(self.cleaned_data.get("head") or "").strip()
+        return int(typed) if typed.isascii() and typed.isdigit() and int(typed) >= 1 else None
+
+    def clean(self) -> dict[str, Any]:
+        data = super().clean() or {}
+        start, end, head = data.get("from_turn"), data.get("to_turn"), data.get("head")
+        if isinstance(start, int) and isinstance(end, int) and start > end:
+            self.add_error("to_turn", ENDS_BEFORE_START)
+        elif isinstance(end, int) and isinstance(head, int) and end > head:
+            self.add_error("to_turn", past_head(end, head))
+        return data
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422 ``validation_error`` on the field ``details.field`` names (``body.from_turn``,
+        ``body.to_turn``), else above the form."""
         if not apply_engine_errors(exc, self):
             self.add_error(None, exc.message)

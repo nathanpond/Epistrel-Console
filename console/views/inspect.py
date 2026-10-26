@@ -48,7 +48,7 @@ from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import EffectiveConfig, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
-from console.forms.inspect import QUESTION_FIELDS, RetrievalForm
+from console.forms.inspect import QUESTION_FIELDS, ConsolidateForm, RetrievalForm
 from console.held import is_held, render_held
 from console.hot_set import (
     REASON_LEGEND,
@@ -59,9 +59,11 @@ from console.hot_set import (
     more,
     retirement_rows,
 )
+from console.ids import new_ulid
 from console.inspect import (
     CAPABILITY_MAP_LABEL,
     CAPABILITY_MAP_URL,
+    CONSOLIDATION,
     EPISODIC,
     PIPELINE,
     SETTINGS,
@@ -247,7 +249,9 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
             context["hot_set_not_found"] = True
         else:
             context["hot_set_error"] = panel_for(exc)
+        context["consolidate"] = consolidate_section(ctx, None)
         return context
+    context["consolidate"] = consolidate_section(ctx, body.head_turn)
     cast = ctx.story.cast if ctx.story is not None else None
     context.update(
         hot_set=body,
@@ -260,6 +264,46 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
         more=more(body),
     )
     return context
+
+
+@dataclass(frozen=True)
+class ConsolidateSection:
+    """The Memory tab's "Consolidate a window" section (#145). ``unavailable`` (the
+    ``consolidation`` capability is off: #135's greyed note) wins over ``no_turns`` (head 0);
+    otherwise the GET ``form`` to ``url`` with the key minted at this render. The two
+    Retrieval links (convention 11: pre-filled, no read; ``None`` while that tab isn't
+    registered) show in every state."""
+
+    unavailable: Unavailable | None
+    no_turns: bool
+    form: ConsolidateForm | None
+    url: str
+    idempotency_key: str
+    semantic_url: str | None
+    reflection_url: str | None
+
+
+def consolidate_section(ctx: InspectContext, head: int | None) -> ConsolidateSection:
+    """The section for ``head`` (the hot set's ``head_turn``; ``None`` when that read failed:
+    the form then has no default "to" and no past-head check). The gate is the effective
+    config's ``capabilities`` (the Engine's own ``module_on``)."""
+    off = None if CONSOLIDATION in ctx.config.capabilities else unavailable_for(CONSOLIDATION)
+    no_turns = off is None and head == 0
+    form = None
+    if off is None and not no_turns:
+        initial: dict[str, Any] = {"from_turn": "1"}
+        if head is not None:
+            initial.update(to_turn=str(head), head=str(head))
+        form = ConsolidateForm(initial=initial)
+    return ConsolidateSection(
+        unavailable=off,
+        no_turns=no_turns,
+        form=form,
+        url=reverse("inspect:consolidate", args=[ctx.story_id]),
+        idempotency_key=new_ulid(),
+        semantic_url=retrieval_url(ctx.story_id, {"kind": "semantic"}),
+        reflection_url=retrieval_url(ctx.story_id, {"kind": "reflection"}),
+    )
 
 
 @require_safe

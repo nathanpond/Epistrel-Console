@@ -1335,3 +1335,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The detail page's "Re-reading the Engine's record isn't offered…" note takes the place of the Fetch button. It shows only on rows that name an Engine operation, because those are the only rows that ever had the button.
   **Why:** A refused sanitize has no Engine operation id, so it had nothing to re-read in the first place.
   **Issue:** #144
+- **Decision:** Offer the shared scope only. The consolidate form has no scope choice and never sends `scope`. `consolidate_story` still takes `characters`.
+  **Why:** This was the owner's round-two recommendation ("recs good"). In Engine M4 a characters scope finds no inputs.
+  **Issue:** #145
+- **Decision:** The Memory-tab form GETs `inspect:consolidate` carrying the tab's key. A valid GET renders the confirmed-mode confirm page directly through `render_confirm(..., idempotency_key=<carried key>)`, and the POST goes through `confirm_action(..., require_confirmed=True)`. New helper: `console.confirm.carried_idempotency_key(data)`, which `posted_idempotency_key` now uses.
+  **Why:** `confirm_action` mints a fresh key on GET. The AC requires the Engine call to use the key the Memory tab rendered.
+  **Issue:** #145
+- **Decision:** An Engine refusal re-renders the consolidate page with a fresh key, values kept. `scope_mismatch` and `validation_error` answer 422. Shared refusals (convention 10 text via `refusal_text`) and #43's panel answer 200. A 2xx that is not a readable 202 flashes a warning and redirects to the Memory tab.
+  **Why:** This matches #143/#144's quarantine and sanitize pages. The operator changes the window after a refusal, so a fresh key avoids `idempotency_conflict`.
+  **Issue:** #145
+- **Decision:** `_module_off` gains keyword-only `module` (the fallback when `details.module` is absent) and `back_label`. With `module` set, the panel also shows #135's "configuration changed — reload" line. `unavailable_page.html` takes `back_label` ("Back" by default).
+  **Why:** The consolidate 409 must name `consolidation` as the fallback, not the Retrieval tab's `episodic`, and must link back to Memory.
+  **Issue:** #145
+- **Decision:** An ignored (malformed) `head` is not carried onto the confirm page. The Memory tab renders a value-less hidden `head` when the hot-set read failed.
+  **Why:** The AC says a `head` that isn't an integer ≥ 1 is ignored. Carrying it forward would only re-ignore it.
+  **Issue:** #145
