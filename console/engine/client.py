@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import IO, Any, Literal, ParamSpec, Self, TypeVar
 from urllib.parse import quote
 
@@ -47,6 +48,7 @@ from console.engine.models import (
     ErasureBoundary,
     ErasureResult,
     ErasureStatus,
+    FactListBody,
     ForkResult,
     HealthResponse,
     HealthResult,
@@ -1211,6 +1213,45 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         return _parse(response, PredicateDecision)
+
+    # --- canon facts (#137) --------------------------------------------------------------------
+
+    @operation("GET", "/admin/stories/{story_id}/facts", response_model=FactListBody)
+    def list_facts(
+        self,
+        story_id: str,
+        *,
+        as_of_story_time: int | None = None,
+        as_of_record_time: datetime | None = None,
+        subject: str | None = None,
+        predicate: str | None = None,
+        include_superseded: bool = False,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> FactListBody:
+        """``GET /admin/stories/{id}/facts`` (FR-BITEMP-3): the story's current canon (at
+        ``as_of_record_time`` when given; true at story-minute ``as_of_story_time`` when given),
+        or with ``include_superseded`` every active version (the Engine then ignores
+        ``as_of_record_time`` and keeps versions whose valid-time may cover the minute). Ordered
+        by id, ``limit`` 1 to 500. Always ``viewpoint=omniscient`` (#135 convention 1). A ``None``
+        or ``False`` argument is left out; the record time is sent in UTC with ``Z``. 409
+        ``module_off`` for a Lite story."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if as_of_story_time is not None:
+            params["as_of_story_time"] = str(as_of_story_time)
+        if as_of_record_time is not None:
+            moment = as_of_record_time.astimezone(UTC)
+            params["as_of_record_time"] = moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        if subject:
+            params["subject"] = subject
+        if predicate:
+            params["predicate"] = predicate
+        if include_superseded:
+            params["include_superseded"] = "true"
+        if cursor:
+            params["cursor"] = cursor
+        response = self._request("GET", f"/admin{_story_path(story_id)}/facts", params=params)
+        return _parse(response, FactListBody)
 
     # --- a story's hot set (#140) ---------------------------------------------------------------
 

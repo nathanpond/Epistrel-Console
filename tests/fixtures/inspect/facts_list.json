@@ -1,0 +1,174 @@
+{
+  "facts": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0FA1",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0LA1",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QA1",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PA1",
+        "polarity": "affirmed",
+        "qualifiers": {},
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 10,
+            "inner": 12
+          },
+          "end": {
+            "outer": 40,
+            "inner": 38
+          }
+        }
+      },
+      "valid_from": 10,
+      "valid_to": 40,
+      "valid_from_inner": 12,
+      "valid_to_inner": 38,
+      "tx_from": "2026-10-24T14:03:05.123456Z",
+      "tx_to": "2026-10-24T15:00:00.000001Z",
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": 3,
+      "superseded_by": "01JB2Z8Y5Q3W6K9M1N4P7R0FB1",
+      "supersedes": [],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0FB1",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0LB1",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QB1",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PB1",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 40,
+            "inner": 40
+          },
+          "end": null
+        }
+      },
+      "valid_from": 40,
+      "valid_to": null,
+      "valid_from_inner": 40,
+      "valid_to_inner": null,
+      "tx_from": "2026-10-24T15:00:00.000001Z",
+      "tx_to": null,
+      "provenance": "author_commit",
+      "authority": "author",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": 4,
+      "superseded_by": null,
+      "supersedes": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0FA1"
+      ],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0FC1",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0LC1",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QC1",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+        "literal": {
+          "kind": "int",
+          "value": 40
+        },
+        "valid_time": {
+          "kind": "interval",
+          "start": null,
+          "end": null
+        }
+      },
+      "valid_from": null,
+      "valid_to": null,
+      "valid_from_inner": null,
+      "valid_to_inner": null,
+      "tx_from": "2026-10-24T14:03:05.123456Z",
+      "tx_to": "2026-10-24T16:30:00Z",
+      "provenance": "author_commit",
+      "authority": "author",
+      "author_locked": true,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": "01JB2Z8Y5Q3W6K9M1N4P7R0FX1",
+      "supersedes": [],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0FD1",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0LD1",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QD1",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR4",
+        "object_set": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+          "01JB2Z8Y5Q3W6K9M1N4P7R0PA1"
+        ],
+        "polarity": "negated",
+        "qualifiers": {
+          "oath": "blood",
+          "witness": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+          "count": 2,
+          "weight": 1.5,
+          "public": false,
+          "tags": [
+            "old",
+            "new"
+          ]
+        },
+        "event_id": "01JB2Z8Y5Q3W6K9M1N4P7R0EV1",
+        "valid_time": {
+          "kind": "instant",
+          "at": 60,
+          "granularity": "day",
+          "until": 1500
+        }
+      },
+      "valid_from": 60,
+      "valid_to": 1500,
+      "valid_from_inner": 60,
+      "valid_to_inner": 1500,
+      "tx_from": "2026-10-24T14:03:05.123456Z",
+      "tx_to": null,
+      "provenance": "author_commit",
+      "authority": "author",
+      "author_locked": false,
+      "visibility": {
+        "scope": "characters",
+        "characters": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+          "01JB2Z8Y5Q3W6K9M1N4P7R0PA1"
+        ]
+      },
+      "membership": "latent",
+      "narrative_turn": null,
+      "superseded_by": null,
+      "supersedes": [],
+      "anchored_to": "01JB2Z8Y5Q3W6K9M1N4P7R0FB1"
+    }
+  ],
+  "next_cursor": null,
+  "timeline_revision": 7
+}

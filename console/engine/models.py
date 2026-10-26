@@ -1769,6 +1769,107 @@ class PredicateDecision(Model):
     idempotency_key: str | None = None
 
 
+# --- canon facts (#137) -------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Bound(Model):
+    """``Bound``: one end of an interval in story-minutes; ``inner == outer`` when exact."""
+
+    inner: int
+    outer: int
+
+
+@dataclass(frozen=True)
+class Interval(Model):
+    """``Interval``: ``[start, end)`` in story-minutes; a ``None`` bound is open."""
+
+    kind: Literal["interval"] = "interval"
+    start: Bound | None = None
+    end: Bound | None = None
+
+
+@dataclass(frozen=True)
+class Instant(Model):
+    """``Instant``: a punctual time, ``at`` (the granule's first minute) to ``until``."""
+
+    at: int
+    until: int
+    granularity: str = open_enum()
+    kind: Literal["instant"] = "instant"
+
+
+@dataclass(frozen=True)
+class TypedLiteral(Model):
+    """``TypedLiteral``: a literal object, ``kind`` and ``value`` (a ``quantity`` has a ``unit``;
+    a ``date`` is an ISO date string; a ``duration`` is whole minutes)."""
+
+    value: int | float | str | bool
+    kind: str = open_enum()
+    unit: str | None = None
+
+
+@dataclass(frozen=True)
+class Visibility(Model):
+    """``Visibility``: who may read a fact (``scope``; ``characters`` for that scope)."""
+
+    scope: str = open_enum(default="objective")
+    characters: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class Proposition(Model):
+    """``Proposition`` (FR-PROP-1,2): subject, predicate, at most one object (entity id,
+    literal or set; none for an object-less predicate), polarity, qualifiers and valid-time."""
+
+    subject_id: str
+    predicate_id: str
+    valid_time: Interval | Instant
+    object_id: str | None = None
+    literal: TypedLiteral | None = None
+    object_set: list[str] | None = None
+    polarity: str = open_enum(default="affirmed")
+    qualifiers: dict[str, str | int | float | bool | list[str]] = field(default_factory=dict)
+    event_id: str | None = None
+
+
+@dataclass(frozen=True)
+class FactBody(Model):
+    """``FactBody``: one fact version (FR-BITEMP-1..5). ``tx_to`` and ``superseded_by`` record
+    its *first* closure and are never rewritten (whether it is still closed is
+    :func:`console.canon.fact_states`' question)."""
+
+    id: str
+    lineage_id: str
+    proposition_id: str
+    proposition: Proposition
+    valid_from: int | None
+    valid_to: int | None
+    valid_from_inner: int | None
+    valid_to_inner: int | None
+    tx_from: str
+    tx_to: str | None
+    provenance: str
+    authority: str
+    author_locked: bool
+    visibility: Visibility
+    membership: str
+    narrative_turn: int | None
+    superseded_by: str | None
+    supersedes: list[str]
+    anchored_to: str | None
+
+
+@dataclass(frozen=True)
+class FactListBody(Model):
+    """``FactListBody``: a page of the story's canon by id, the story's revision and the next
+    page's cursor (``None`` on the last)."""
+
+    facts: list[FactBody]
+    next_cursor: str | None
+    timeline_revision: int
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 

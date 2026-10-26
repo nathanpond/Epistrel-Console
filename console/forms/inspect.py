@@ -23,6 +23,7 @@ question: :meth:`RetrievalForm.filters_only` keeps only the ``kind``/``tier`` er
 
 import re
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from django import forms
@@ -30,7 +31,10 @@ from django.http import QueryDict
 
 from console.cast import Character, character_choices, default_actor
 from console.engine.client import EngineError
+from console.engine.models import Predicate
 from console.engine_form_errors import apply_engine_errors
+from console.ids import is_ulid
+from console.inspect import short_id
 from console.retrieval import KINDS, TIERS
 
 QUERY_TEXT_MAX = 4000  # the Engine's ``QUERY_TEXT_MAX`` (core/retrieval/pipeline.py)
@@ -409,4 +413,170 @@ class ConsolidateForm(forms.Form):
         """A 422 ``validation_error`` on the field ``details.field`` names (``body.from_turn``,
         ``body.to_turn``), else above the form."""
         if not apply_engine_errors(exc, self):
+            self.add_error(None, exc.message)
+
+
+# --- the Canon tab (#137) ------------------------------------------------------------------------
+
+MINUTE_MAX = 2**63 - 1  # the Engine stores story-minutes as a signed 64-bit integer
+SUBJECT_INVALID = "Enter a 26-character entity id (digits and capital letters, no I, L, O or U)"
+PREDICATE_INVALID = (
+    "Enter a 26-character predicate id (digits and capital letters, no I, L, O or U)"
+)
+MINUTE_INVALID = "Enter a whole number of minutes, 0 or more"
+MINUTE_TOO_LARGE = "That minute is too large"
+RECORD_TIME_INVALID = "Enter a date and time"
+BOTH_TIMES = (
+    "The Engine lists every version only in today's record — clear 'as recorded at' or "
+    "'include superseded'"
+)
+PREDICATES_UNAVAILABLE = "Predicate names unavailable — enter a predicate id"
+ANY_PREDICATE = "Any predicate"
+OMNISCIENT_TEXT = "This read needs the omniscient viewpoint"
+NOT_IN_REGISTRY = " (not in registry)"
+TICKED = frozenset({"on", "1", "true"})
+CANON_FIELDS = ("subject", "predicate", "as_of_story_time", "as_of_record_time")
+_LOCAL_MOMENT = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$")
+
+
+class TickBox(forms.CheckboxInput):
+    """A checkbox whose submitted ``on``, ``1`` or ``true`` (any case) counts as ticked; any
+    other value, or none, as unticked."""
+
+    def value_from_datadict(self, data: Any, files: Any, name: str) -> bool:
+        value = data.get(name)
+        return isinstance(value, str) and value.strip().lower() in TICKED
+
+
+def record_moment(typed: str) -> datetime | None:
+    """A ``datetime-local`` value (``YYYY-MM-DDTHH:MM`` or ``…:SS``) read as UTC, moved to the
+    end of that second (``…:SS.999999``: ``tx_from`` has microsecond precision); ``None`` when
+    it is not one."""
+    found = _LOCAL_MOMENT.match(typed)
+    if found is None:
+        return None
+    year, month, day, hour, minute, second = (int(p) if p else 0 for p in found.groups())
+    try:
+        return datetime(year, month, day, hour, minute, second, 999999, tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+class CanonForm(forms.Form):
+    """The Canon tab's GET filters; each name is the Engine's query parameter (see
+    ``console/views/inspect_canon.py``). ``registry`` (the predicates in registry order, or
+    ``None`` when the registry read failed) makes ``predicate`` a select or a free-text id
+    field. Subject and predicate are trimmed and upper-cased before validation, so the form
+    echoes the normalised values, then checked against the Engine's strict id pattern (no
+    other normalising: an ``l`` or ``O`` stays an error)."""
+
+    subject = forms.CharField(
+        required=False,
+        label="Subject",
+        widget=forms.TextInput(attrs={"list": "canon-cast", "size": 30}),
+    )
+    predicate = forms.CharField(required=False, label="Predicate")
+    as_of_story_time = forms.CharField(
+        required=False,
+        label="True at story-minute",
+        widget=forms.NumberInput(attrs={"min": 0, "step": 1}),
+    )
+    as_of_record_time = forms.CharField(
+        required=False,
+        label="As recorded at",
+        help_text="UTC",
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local", "step": 1}),
+    )
+    include_superseded = forms.BooleanField(
+        required=False, label="Include superseded", widget=TickBox
+    )
+
+    def __init__(
+        self, data: QueryDict | dict[str, Any], *, registry: Sequence[Predicate] | None
+    ) -> None:
+        bound = data.copy()
+        for name in ("subject", "predicate"):
+            value = bound.get(name)
+            if isinstance(value, str):
+                bound[name] = value.strip().upper()
+        super().__init__(bound)
+        self.registry = registry
+        if registry is None:
+            self.fields["predicate"].help_text = PREDICATES_UNAVAILABLE
+            self.fields["predicate"].widget.attrs["size"] = 30
+        else:
+            requested = bound.get("predicate") or ""
+            choices = [("", ANY_PREDICATE), *((p.id, f"{p.name} ({p.layer})") for p in registry)]
+            if requested and requested not in {p.id for p in registry}:
+                choices.append((requested, f"{short_id(requested)}{NOT_IN_REGISTRY}"))
+            self.fields["predicate"].widget = forms.Select(choices=choices)
+
+    def clean_subject(self) -> str:
+        subject: str = self.cleaned_data["subject"]
+        if subject and not is_ulid(subject):
+            raise forms.ValidationError(SUBJECT_INVALID)
+        return subject
+
+    def clean_predicate(self) -> str:
+        predicate: str = self.cleaned_data["predicate"]
+        if predicate and not is_ulid(predicate):
+            raise forms.ValidationError(PREDICATE_INVALID)
+        return predicate
+
+    def clean_as_of_story_time(self) -> int | None:
+        typed = str(self.cleaned_data.get("as_of_story_time") or "").strip()
+        if not typed:
+            return None
+        if not (typed.isascii() and typed.isdigit()):
+            raise forms.ValidationError(MINUTE_INVALID)
+        minute = int(typed)
+        if minute > MINUTE_MAX:
+            raise forms.ValidationError(MINUTE_TOO_LARGE)
+        return minute
+
+    def clean_as_of_record_time(self) -> datetime | None:
+        typed = str(self.cleaned_data.get("as_of_record_time") or "").strip()
+        if not typed:
+            return None
+        moment = record_moment(typed)
+        if moment is None:
+            raise forms.ValidationError(RECORD_TIME_INVALID)
+        return moment
+
+    def clean(self) -> dict[str, Any]:
+        data = super().clean() or {}
+        if self.data.get("as_of_record_time", "").strip() and data.get("include_superseded"):
+            self.add_error(None, BOTH_TIMES)
+        return data
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.list_facts``' filter arguments (valid form only; no cursor)."""
+        data = self.cleaned_data
+        return {
+            "subject": data["subject"] or None,
+            "predicate": data["predicate"] or None,
+            "as_of_story_time": data["as_of_story_time"],
+            "as_of_record_time": data["as_of_record_time"],
+            "include_superseded": bool(data["include_superseded"]),
+        }
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether the request sets any filter (the empty result's wording)."""
+        typed = any(str(self.data.get(name) or "").strip() for name in CANON_FIELDS)
+        return typed or bool(self["include_superseded"].value())
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422: ``viewpoint_unresolved`` → convention 10's line above the filters; a
+        ``validation_error`` beside the filter ``details.field`` names (``query.<name>``), else
+        above the filters."""
+        if exc.code == VIEWPOINT_UNRESOLVED:
+            self.add_error(None, OMNISCIENT_TEXT)
+            return
+        aliases = {f"query.{name}": name for name in self.fields}
+        field_name = exc.details.get("field")
+        if isinstance(field_name, str) and field_name in aliases:
+            self.add_error(aliases[field_name], exc.message)
+            return
+        if not apply_engine_errors(exc, self, aliases=aliases):
             self.add_error(None, exc.message)

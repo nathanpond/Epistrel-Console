@@ -16,6 +16,7 @@ from console.views import (
     feedback,
     history,
     inspect,
+    inspect_canon,
     inspect_memory,
     inspect_predicates,
     media,
@@ -160,6 +161,8 @@ inspect_patterns = (
         # #145: request consolidation of a turn window (form, confirm, call).
         path("memory/consolidate/", inspect_memory.consolidate, name="consolidate"),
         path("retrieval/", inspect.retrieval, name="retrieval"),
+        # #137: the story's canon facts on both time axes.
+        path("canon/", inspect_canon.canon, name="canon"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

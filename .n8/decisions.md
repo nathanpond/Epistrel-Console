@@ -1392,3 +1392,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `console.predicates.predicate_names(request, client, story_id)` returns `{}` on any failed read (logged). Canon, Ledger, the fact form and beat traces use it for names; pages that also need the rows call `list_predicates` themselves.
   **Why:** Convention 2 says a failed name read degrades to ids and never fails the page.
   **Issue:** #136
+- **Decision:** The Canon tab reads the full registry (`list_predicates`) itself instead of #136's `predicate_names`, since the predicate select needs each predicate's layer and the registry order.
+  **Why:** `predicate_names` returns names only; it is still one registry read per page (convention 2).
+  **Issue:** #137
+- **Decision:** `Polarity`, `LiteralKind`, `Granularity` and `Visibility.scope` are `open_enum` string fields, not bare `str`.
+  **Why:** The contract test refuses a bare `str` for a schema enum; `open_enum` keeps unknown values rendering raw, as the story asks.
+  **Issue:** #137
+- **Decision:** `_proposition.html` and `_fact_row.html` take the raw `Proposition` / `FactBody` and compute their cells through `{% load canon_tags %}` tags (`proposition_view`, `fact_view`); the row's "superseded by" comes from the `FactState` passed as `state` (`None` hides the State column).
+  **Why:** #146 and #147 can include them with their own reads, with no view-model to build first.
+  **Issue:** #137
+- **Decision:** `cast_names` maps a character id to its label with " (player)" already appended; a new partial `_entity.html` renders an id from it.
+  **Why:** The interface names one `cast_names` map; #140's `_character.html` needs a separate `is_player` flag.
+  **Issue:** #137
+- **Decision:** A record time that isn't `YYYY-MM-DDTHH:MM[:SS]` (or isn't a real date) is a field error, "Enter a date and time"; the minute is checked as ASCII digits (so "1.5" and "-1" are refused with the minute message).
+  **Why:** The story gives no wording for a malformed datetime; the strict check keeps a bad value from reaching the Engine.
+  **Issue:** #137
+- **Decision:** A failed current-set read (any Engine error, including 422) makes the closure "closed · not confirmed" with the failed reason; the facts page itself still renders.
+  **Why:** Discretion says "failed read → not confirmed"; there is no reason to fail the whole page over the secondary check.
+  **Issue:** #137
+- **Decision:** The unconfirmed notice reads "Couldn't confirm whether N closed version(s) is/are still closed: <reason>".
+  **Why:** Discretion fixes the first half and says "with the reason"; the reason follows a colon.
+  **Issue:** #137

@@ -1,0 +1,43 @@
+{% extends "console/inspect/base.html" %}
+{% comment %}
+The Canon tab (#137): the GET filters (names = the Engine's query params), then one page of
+GET /admin/stories/{id}/facts (viewpoint=omniscient) under a header naming the question asked.
+Rows are the shared _fact_row.html (state None hides the State column). The form stays above every
+error; a local error makes no facts call.
+{% endcomment %}
+{% block tab_content %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" action="{{ filter_url }}" class="canon-form">
+  <div class="field field-subject">{{ form.subject.label_tag }} {{ form.subject }}{{ form.subject.errors }}</div>
+  <datalist id="canon-cast">{% for id, label in cast_names.items %}<option value="{{ id }}">{{ label }}</option>{% endfor %}</datalist>
+  <div class="field field-predicate">{{ form.predicate.label_tag }} {{ form.predicate }}{% if form.predicate.help_text %} <small class="muted predicates-unavailable">{{ form.predicate.help_text }}</small>{% endif %}{{ form.predicate.errors }}</div>
+  <div class="field field-as_of_story_time">{{ form.as_of_story_time.label_tag }} {{ form.as_of_story_time }}{{ form.as_of_story_time.errors }}</div>
+  <div class="field field-as_of_record_time">{{ form.as_of_record_time.label_tag }} {{ form.as_of_record_time }} <small class="muted">{{ form.as_of_record_time.help_text }}</small>{{ form.as_of_record_time.errors }}</div>
+  <div class="field field-include_superseded"><label>{{ form.include_superseded }} Include superseded</label>{{ form.include_superseded.errors }}</div>
+  <button type="submit">Apply</button> <a class="canon-clear" href="{{ filter_url }}">Clear</a>
+</form>
+
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif facts_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif facts_error %}{% include "console/_engine_error.html" with engine_error=facts_error %}
+{% elif facts %}
+<h2 class="canon-question">{{ question }}</h2>
+{% if permanent_note %}<p class="notice permanent-note">{{ permanent_note }}</p>{% endif %}
+{% if cast_unavailable %}<p class="muted cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if unconfirmed_notice %}<p class="notice unconfirmed">{{ unconfirmed_notice }}</p>{% endif %}
+{% if rows %}
+<table class="canon-facts">
+  <thead><tr><th>Id</th><th>Proposition</th><th>Valid-time (min)</th><th>Tx-time</th>{% if show_state %}<th>State</th>{% endif %}<th>Visibility</th><th>Provenance</th><th>Authority</th><th><span aria-label="Lock">🔒</span></th><th>Links</th><th>More</th>{% if actions %}<th>Actions</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for fact, state in rows %}{% include "console/inspect/_fact_row.html" with timeline_revision=facts.timeline_revision %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="canon-none">{% if any_filter %}No facts match these filters{% else %}None{% endif %}</p>{% endif %}
+<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

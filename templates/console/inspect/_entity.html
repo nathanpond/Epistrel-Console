@@ -1,0 +1,5 @@
+{% load inspect_tags %}{% comment %}
+An entity id in a canon row (#137, console.canon.EntityRef; convention 2): the cast label with the
+full id in title (the player already marked in the label), else the short id. Context: ref. No
+trailing newline, so a list joins it with ", ".
+{% endcomment %}{% if ref.label %}<span class="character" title="{{ ref.id }}">{{ ref.label }}</span>{% else %}{{ ref.id|engine_id }}{% endif %}
