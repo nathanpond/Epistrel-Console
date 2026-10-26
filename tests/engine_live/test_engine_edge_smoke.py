@@ -174,6 +174,16 @@ def test_story_refusal_is_placed_beside_the_row_live(
     assert "The Engine rejected the story:" in page
 
 
+def logged_paths() -> list[str]:
+    """Every operation-log row's Engine path (the ``path`` column; ``request`` holds no path)."""
+    return [op.path for op in EngineOperation.objects.order_by("pk")]
+
+
+def embedding_writes() -> list[str]:
+    """The logged writes to the embedding purpose's model configuration (#59: never in a smoke)."""
+    return [p for p in logged_paths() if "/model-config/embedding" in p]
+
+
 def _model_row(html: str, purpose: str) -> str:
     match = re.search(rf'<tr id="purpose-{purpose}">(.*?)</tr>', html, re.S)
     assert match is not None, html
@@ -217,8 +227,9 @@ def test_model_purpose_edit_key_and_drop_live(
         row = _model_row(operator_client.get("/models/").content.decode(), purpose)
         assert "console-smoke" not in row
         assert "not set" in row
-        paths = [str(op.request.get("path", "")) for op in EngineOperation.objects.all()]
-        assert not [path for path in paths if "/embedding" in path]  # no embedding write
+        # The guard reads real rows: this test's own purpose writes are among them (#173).
+        assert [p for p in logged_paths() if p.endswith(f"/model-config/{purpose}")]
+        assert embedding_writes() == []  # no embedding write
 
 
 @pytest.mark.engine_auth
