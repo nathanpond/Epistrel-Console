@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "idempotency_conflict",
+    "message": "the operation's result was produced for another output viewpoint",
+    "details": {
+      "reason": "viewpoint"
+    }
+  }
+}

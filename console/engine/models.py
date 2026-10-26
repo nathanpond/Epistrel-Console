@@ -15,6 +15,7 @@ A JSON key that is not a valid Python name (``class``) is read into a field decl
 
 import types
 import typing
+from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from typing import Any, Literal, Self, Union
 
@@ -342,7 +343,276 @@ class OperationRecord(Model):
     stages: list[OperationStage] = field(default_factory=list)
 
 
-# --- Turns and history (#48; #51-#53 reuse them) ------------------------------------------------
+# --- Eval hooks and read sets (#139; #147 reuses them) ------------------------------------------
+#
+# #135 convention 12: ``OperationRecord.eval_hooks`` and ``.read_set`` stay raw JSON, and these
+# typed views are parsed beside them. The schema leaves verdict entries and repair rungs untyped
+# (``additionalProperties: true``), and the Console reads every part leniently: ``parse`` never
+# raises, a malformed entry is skipped (its raw value kept in ``skipped``), a named field of the
+# wrong type reads as missing (its raw value kept in ``extras``), and keys the Console does not
+# name are kept in ``extras`` too, for "More" (convention 13).
+
+
+def _int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _take(obj: dict[str, Any], key: str, ok: bool, extras: dict[str, Any]) -> Any:
+    """``obj[key]`` when it fits (``ok``), else ``None`` with a present value kept in
+    ``extras``."""
+    if key not in obj:
+        return None
+    if ok:
+        return obj[key]
+    extras[key] = obj[key]
+    return None
+
+
+def _str_or_none(obj: dict[str, Any], key: str, extras: dict[str, Any]) -> str | None:
+    value = obj.get(key)
+    taken = _take(obj, key, value is None or isinstance(value, str), extras)
+    return taken if isinstance(taken, str) else None
+
+
+def _unnamed(obj: dict[str, Any], named: tuple[str, ...]) -> dict[str, Any]:
+    return {k: v for k, v in obj.items() if k not in named}
+
+
+VERDICT_FIELDS = (
+    "claim_id",
+    "kind",
+    "reason",
+    "rule",
+    "evidence_ids",
+    "escalated",
+    "disposition",
+    "permission",
+    "cause",
+)
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """One verification verdict (the Engine's ``Verdict.as_payload``): a ``claim_id`` (may be
+    null), its ``kind``, ``reason``, ``rule``, ``evidence_ids``, whether it ``escalated`` (``None``
+    when the entry doesn't say), ``disposition``, ``permission`` (``permitted:<basis>`` or
+    ``denied:<reason>``) and, for a conflict, ``cause``. ``index`` is its 1-based position."""
+
+    index: int
+    claim_id: str | None = None
+    kind: str | None = None
+    reason: str | None = None
+    rule: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    escalated: bool | None = None
+    disposition: str | None = None
+    permission: str | None = None
+    cause: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object, index: int) -> Verdict | None:
+        """``None`` only when ``obj`` isn't an object; a missing field reads ``None``."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, VERDICT_FIELDS)
+        ids = obj.get("evidence_ids")
+        ids_ok = ids is None or (isinstance(ids, list) and all(isinstance(i, str) for i in ids))
+        evidence = _take(obj, "evidence_ids", ids_ok, extras)
+        escalated = obj.get("escalated")
+        flag = _take(obj, "escalated", escalated is None or isinstance(escalated, bool), extras)
+        texts = {
+            name: _str_or_none(obj, name, extras)
+            for name in ("claim_id", "kind", "reason", "rule", "disposition", "permission", "cause")
+        }
+        return cls(
+            index,
+            evidence_ids=tuple(evidence or ()),
+            escalated=flag if isinstance(flag, bool) else None,
+            extras=extras,
+            **texts,
+        )
+
+
+@dataclass(frozen=True)
+class RepairRung:
+    """One repaired beat's rung (``eval_hooks.repair_rungs``): its ``beat``, the ``rung``
+    accepted (4: the safe fallback, or a dropped beat) and whether a correction was ``accepted``
+    (``None`` when it isn't a bool). ``index`` is its 1-based position."""
+
+    index: int
+    beat: int
+    rung: int
+    accepted: bool | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object, index: int) -> RepairRung | None:
+        """``None`` when ``obj`` isn't an object or ``beat``/``rung`` isn't an integer."""
+        if not isinstance(obj, dict):
+            return None
+        beat, rung = _int(obj.get("beat")), _int(obj.get("rung"))
+        if beat is None or rung is None:
+            return None
+        extras = _unnamed(obj, ("beat", "rung", "accepted"))
+        accepted = obj.get("accepted")
+        flag = _take(obj, "accepted", accepted is None or isinstance(accepted, bool), extras)
+        return cls(index, beat, rung, flag if isinstance(flag, bool) else None, extras)
+
+
+QUERY_KEY_FIELDS = ("subject", "predicate", "object", "holder", "window", "result_hash")
+
+
+@dataclass(frozen=True)
+class QueryKey:
+    """``QueryKeyBody``: one query key of a read set. ``subject``, ``object`` and ``window``
+    stay raw JSON (the row renders each by its shape); ``index`` is its 1-based position."""
+
+    index: int
+    subject: Any = None
+    predicate: str | None = None
+    object: Any = None
+    holder: str | None = None
+    window: Any = None
+    result_hash: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object, index: int) -> QueryKey | None:
+        """``None`` only when ``obj`` isn't an object."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, QUERY_KEY_FIELDS)
+        return cls(
+            index,
+            subject=obj.get("subject"),
+            predicate=_str_or_none(obj, "predicate", extras),
+            object=obj.get("object"),
+            holder=_str_or_none(obj, "holder", extras),
+            window=obj.get("window"),
+            result_hash=_str_or_none(obj, "result_hash", extras),
+            extras=extras,
+        )
+
+
+def _entries[T](
+    raw: object, parse: Callable[[object, int], T | None]
+) -> tuple[tuple[T, ...], tuple[tuple[int, Any], ...]]:
+    """A list's parsed entries, and the skipped ones as ``(1-based index, raw)``."""
+    parsed: list[T] = []
+    skipped: list[tuple[int, Any]] = []
+    for index, entry in enumerate(raw if isinstance(raw, list) else [], start=1):
+        found = parse(entry, index)
+        if found is None:
+            skipped.append((index, entry))
+        else:
+            parsed.append(found)
+    return tuple(parsed), tuple(skipped)
+
+
+@dataclass(frozen=True)
+class ReadSet:
+    """``ReadSetBody``: ``keys_count``, ``retrieved_count`` (``None`` when not an integer) and
+    the ``keys``, which are ``None`` to a read that isn't omniscient."""
+
+    keys_count: int | None = None
+    retrieved_count: int | None = None
+    keys: tuple[QueryKey, ...] | None = None
+    skipped_keys: tuple[tuple[int, Any], ...] = ()
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object) -> ReadSet | None:
+        """``None`` when ``obj`` isn't an object (no read set recorded)."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, ("keys_count", "retrieved_count", "keys"))
+        counts = {}
+        for name in ("keys_count", "retrieved_count"):
+            value = obj.get(name)
+            counts[name] = _take(obj, name, value is None or _int(value) is not None, extras)
+        raw_keys = obj.get("keys")
+        keys = _take(obj, "keys", raw_keys is None or isinstance(raw_keys, list), extras)
+        parsed, skipped = _entries(keys, QueryKey.parse)
+        return cls(
+            counts["keys_count"],
+            counts["retrieved_count"],
+            parsed if isinstance(keys, list) else None,
+            skipped,
+            extras,
+        )
+
+
+EVAL_HOOK_FIELDS = (
+    "latency_ms_by_stage",
+    "model_calls_by_purpose",
+    "raw_render_event_ids",
+    "verdicts",
+    "repair_rungs",
+)
+
+
+def _counts(
+    obj: dict[str, Any], key: str, extras: dict[str, Any]
+) -> tuple[tuple[str, int], ...] | None:
+    """A ``{name: int}`` map as ``(name, value)`` pairs in the order received; ``None`` when it
+    isn't an object. A value that isn't an integer is left out, into ``extras[key]``."""
+    raw = obj.get(key)
+    if not isinstance(raw, dict):
+        if key in obj:
+            extras[key] = raw
+        return None
+    bad = {k: v for k, v in raw.items() if _int(v) is None}
+    if bad:
+        extras[key] = bad
+    return tuple((str(k), v) for k, v in raw.items() if _int(v) is not None)
+
+
+@dataclass(frozen=True)
+class EvalHooks:
+    """``EvalHooksBody``: a structured turn's eval hooks (FR-OBS-2), its ``verdicts`` expanded
+    from the report's ``verify`` and ``verify_follow_up`` sections, in the Engine's order.
+
+    ``latency_ms_by_stage`` and ``model_calls_by_purpose`` are ``(name, value)`` pairs in the
+    order received, ``None`` when the field isn't an object."""
+
+    latency_ms_by_stage: tuple[tuple[str, int], ...] | None = None
+    model_calls_by_purpose: tuple[tuple[str, int], ...] | None = None
+    raw_render_event_ids: tuple[str, ...] = ()
+    verdicts: tuple[Verdict, ...] = ()
+    repair_rungs: tuple[RepairRung, ...] = ()
+    skipped_verdicts: tuple[tuple[int, Any], ...] = ()
+    skipped_rungs: tuple[tuple[int, Any], ...] = ()
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object) -> EvalHooks | None:
+        """``None`` when ``obj`` isn't an object (no eval hooks recorded, or not shown)."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, EVAL_HOOK_FIELDS)
+        latency = _counts(obj, "latency_ms_by_stage", extras)
+        calls = _counts(obj, "model_calls_by_purpose", extras)
+        ids = obj.get("raw_render_event_ids")
+        if isinstance(ids, list):
+            event_ids = tuple(i for i in ids if isinstance(i, str))
+            if len(event_ids) != len(ids):
+                extras["raw_render_event_ids"] = [i for i in ids if not isinstance(i, str)]
+        else:
+            event_ids = ()
+            if "raw_render_event_ids" in obj:
+                extras["raw_render_event_ids"] = ids
+        for key in ("verdicts", "repair_rungs"):
+            if key in obj and not isinstance(obj[key], list):
+                extras[key] = obj[key]
+        verdicts, skipped_verdicts = _entries(obj.get("verdicts"), Verdict.parse)
+        rungs, skipped_rungs = _entries(obj.get("repair_rungs"), RepairRung.parse)
+        return cls(
+            latency, calls, event_ids, verdicts, rungs, skipped_verdicts, skipped_rungs, extras
+        )
+
+
+# --- Turns and history (#48; #51-#53 reuse them)------------------------------------------------
 
 Channel = Literal["say", "do", "think", "latent", "narration", "message", "audit"]
 

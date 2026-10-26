@@ -174,6 +174,12 @@ inspect_patterns = (
             inspect_memory.sanitize,
             name="memory-sanitize",
         ),
+        # #139: a turn's eval hooks and read set, the lazy block of the turn inspector and #44.
+        path(
+            "turns/<ulid:engine_operation_id>/trace/",
+            inspect.turn_trace,
+            name="turn-trace",
+        ),
     ],
     "inspect",
 )

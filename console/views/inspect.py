@@ -33,6 +33,8 @@ Every render answers 200, the held wrapper aside (503). A route that answers emp
 (``config_url`` is in every Inspect context).
 
 No polling and no HTMX: one static read per page load, full navigations between tabs.
+The one HTMX endpoint here is :func:`turn_trace` (#139), the lazy block the turn inspector and
+the #44 detail page load when the operator opens it; it is not a tab.
 """
 
 from collections.abc import Callable, Mapping
@@ -42,6 +44,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import NoReverseMatch, reverse
+from django.utils import timezone
 from django.views.decorators.http import require_safe
 
 from console.engine.client import EngineClient, EngineClientError, EngineError
@@ -49,7 +52,7 @@ from console.engine.models import EffectiveConfig, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
 from console.forms.inspect import QUESTION_FIELDS, ConsolidateForm, RetrievalForm
-from console.held import is_held, render_held
+from console.held import held_context, is_held, render_held
 from console.hot_set import (
     REASON_LEGEND,
     browse_rows,
@@ -93,6 +96,14 @@ from console.retrieval import (
     time_view,
 )
 from console.retrieval import more as retrieval_more
+from console.turn_trace import (
+    COMMITTED,
+    TURN_KIND,
+    TurnTrace,
+    read_turn_trace,
+    trace_view,
+    withheld,
+)
 
 OVERVIEW_TEMPLATE = "console/inspect/overview.html"
 MEMORY_TEMPLATE = "console/inspect/memory.html"
@@ -434,3 +445,65 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
 def retrieval(request: HttpRequest, story_id: str) -> HttpResponse:
     """``inspect:retrieval``, the retrieval explorer (#141)."""
     return inspect_page(request, story_id, Tab.RETRIEVAL, RETRIEVAL_TEMPLATE, _retrieval)
+
+
+# --- A turn's eval hooks and read set (#139) ----------------------------------------------------
+
+TURN_TRACE_TEMPLATE = "console/_turn_trace.html"
+NOT_FOUND = "not_found"
+
+
+def _trace_state(story_id: str, trace: TurnTrace) -> str:
+    """The partial's state, in #139's check order after the read: story mismatch, not a turn,
+    withheld, not committed, no hooks recorded, else ``hooks``."""
+    record = trace.operation
+    if record.story_id != story_id:
+        return NOT_FOUND
+    if record.kind != TURN_KIND:
+        return "not_turn"
+    if trace.withheld_for is not None:
+        return "withheld"
+    if record.status != COMMITTED:
+        return "not_committed"
+    return "no_hooks" if trace.eval_hooks is None else "hooks"
+
+
+def _settings_window(request: HttpRequest, client: EngineClient) -> int | None:
+    """The deployment's ``idempotency_result_window`` (one settings read, on the withheld path
+    only); ``None`` when the read fails (the note then assumes the default 24 h)."""
+    try:
+        return client.get_deployment_settings().idempotency_result_window
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None
+
+
+@require_safe
+def turn_trace(request: HttpRequest, story_id: str, engine_operation_id: str) -> HttpResponse:
+    """``inspect:turn-trace``: the turn inspector's and the #44 detail page's lazy "Eval hooks &
+    read set" block (a bare fragment, with or without ``HX-Request``). Every state answers 200,
+    errors included (convention 10: 404 → not found, 503 ``erasure_pending`` → #87's held
+    partial, others → #43's panel). The reads aren't recorded in #44."""
+    client = engine_client_for(request)
+    context: dict[str, Any] = {"story_id": story_id}
+    try:
+        trace = read_turn_trace(client, engine_operation_id)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        if is_held(exc):
+            retry = reverse("stories:detail", args=[story_id])
+            context.update(state="held", **held_context(story_id, exc.retry_after, retry))
+        elif isinstance(exc, EngineError) and exc.http_status == 404:
+            context["state"] = NOT_FOUND
+        else:
+            context.update(state="error", engine_error=panel_for(exc))
+        return render(request, TURN_TRACE_TEMPLATE, context)
+    state = _trace_state(story_id, trace)
+    context.update(state=state, operation=trace.operation)
+    if state in (NOT_FOUND, "not_turn"):
+        return render(request, TURN_TRACE_TEMPLATE, context)
+    if state == "withheld":
+        hours = _settings_window(request, client)
+        context["withheld"] = withheld(trace, hours, timezone.now())
+    context["trace"] = trace_view(story_id, trace)
+    return render(request, TURN_TRACE_TEMPLATE, context)

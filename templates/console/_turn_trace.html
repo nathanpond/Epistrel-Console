@@ -1,0 +1,96 @@
+{% comment %}
+#139: a turn's eval hooks and read set, the body of the lazy "Eval hooks & read set" block
+(console/_turn_trace_block.html). Context (console.views.inspect.turn_trace): state, story_id,
+operation (the record read), trace (console.turn_trace.TraceView), withheld (on that state),
+engine_error / the held context on errors. Verdict words follow #135 convention 9.
+{% endcomment %}{% load console_format inspect_tags %}<div class="turn-trace-content" data-state="{{ state }}">
+{% if state == "held" %}{% include "console/stories/_held.html" %}
+{% elif state == "error" %}{% include "console/_engine_error.html" with engine_error=engine_error %}
+{% elif state == "not_found" %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif state == "not_turn" %}<p class="not-turn">Not a turn — no eval hooks or read set</p>
+{% else %}
+{% if state == "withheld" %}
+<p class="notice withheld">The Engine shows eval hooks only to an omniscient read, and {% if withheld.passed %}refused that read; the window should have closed — try again shortly.{% else %}refuses that read{% if withheld.until %} until about <time datetime="{{ withheld.until|date:'c' }}" title="{{ withheld.until|date:'c' }} (estimated from the current setting)">{{ withheld.until|date:"Y-m-d H:i" }} UTC</time>{% endif %} for a turn produced for {% if withheld.character_id %}character {{ withheld.character_id|engine_id }}{% elif withheld.viewpoint == "omniscient" %}omniscient{% elif withheld.viewpoint %}<code>{{ withheld.viewpoint }}</code>{% else %}another viewpoint{% endif %}.{% endif %}{% if withheld.assumed_default %} (assuming the default 24 h window; deployment settings unreadable){% endif %}</p>
+<p class="muted">(A Lite turn has no eval hooks.)</p>
+{% elif state == "not_committed" %}
+<p class="no-hooks">No eval hooks: the turn is <span title="{{ operation.status }}">{{ operation.status|humanise }}</span></p>
+{% elif state == "no_hooks" %}
+<p class="no-hooks">No eval hooks recorded (a Lite turn, or one committed before the Engine recorded them)</p>
+{% else %}{% with hooks=trace.hooks %}
+<h4>Latency</h4>
+{% if hooks.latency and hooks.latency.rows %}
+<table class="trace-latency">
+  <thead><tr><th>Stage</th><th>ms</th></tr></thead>
+  <tbody>{% for row in hooks.latency.rows %}<tr><td title="{{ row.name }}">{{ row.label }}</td><td class="number">{{ row.value|count }}</td></tr>{% endfor %}</tbody>
+  <tfoot><tr class="total"><th>Total</th><td class="number">{{ hooks.latency.total|count }}</td></tr></tfoot>
+</table>
+{% else %}<p>None</p>{% endif %}
+<h4>Model calls</h4>
+{% if hooks.calls and hooks.calls.rows %}
+<table class="trace-calls">
+  <thead><tr><th>Purpose</th><th>Calls</th></tr></thead>
+  <tbody>{% for row in hooks.calls.rows %}<tr><td title="{{ row.name }}">{{ row.label }}</td><td class="number">{{ row.value|count }}</td></tr>{% endfor %}</tbody>
+  <tfoot><tr class="total"><th>Total</th><td class="number">{{ hooks.calls.total|count }}</td></tr></tfoot>
+</table>
+{% else %}<p>None</p>{% endif %}
+<h4>Verdicts</h4>
+{% if hooks.verdicts %}
+<p class="verdict-counts">{{ hooks.counts.claims|count }} claim{{ hooks.counts.claims|pluralize }} · {{ hooks.counts.deterministic|count }} decided without a model · {{ hooks.counts.escalated|count }} escalated</p>
+{% include "console/_verdict_legend.html" %}
+<table class="trace-verdicts">
+  <thead><tr><th>Claim</th><th>Beat</th><th>Kind</th><th>Escalated</th><th>Reason</th><th>Rule</th><th>Evidence</th><th>Disposition</th><th>Permission</th><th>Cause</th></tr></thead>
+  <tbody>{% for row in hooks.verdicts %}{% with v=row.verdict %}<tr class="verdict-row">
+    <td>{{ v.claim_id|engine_id }}</td>
+    <td>{{ row.beat|default:"—" }}</td>
+    <td>{% if v.kind is None %}not checked{% elif row.kind_known %}{{ v.kind }}{% else %}<code>{{ v.kind }}</code>{% endif %}</td>
+    <td>{% if v.escalated is True %}<strong>escalated</strong>{% elif v.escalated is False %}—{% else %}<span class="muted">not recorded</span>{% endif %}</td>
+    <td>{% if row.reason %}<span title="{{ row.reason.raw }}">{{ row.reason.text }}</span>{% else %}—{% endif %}</td>
+    <td>{% if v.rule %}<code>{{ v.rule }}</code>{% else %}—{% endif %}</td>
+    <td>{{ v.evidence_ids|length }}{% if v.evidence_ids %} <details class="evidence"><summary>ids</summary>{% for id in v.evidence_ids %}{{ id|engine_id }}{% if not forloop.last %}, {% endif %}{% endfor %}</details>{% endif %}</td>
+    <td>{% if row.disposition %}<span title="{{ row.disposition.raw }}">{{ row.disposition.text }}</span>{% else %}—{% endif %}</td>
+    <td>{% if row.permission %}<span title="{{ row.permission.raw }}">{{ row.permission.text }}</span>{% else %}—{% endif %}</td>
+    <td>{% if row.cause %}<span title="{{ row.cause.raw }}">{{ row.cause.text }}</span>{% else %}—{% endif %}</td>
+  </tr>{% endwith %}{% endfor %}</tbody>
+</table>
+{% else %}<p>None</p>{% endif %}
+<h4>Repairs</h4>
+{% if hooks.rungs %}
+<table class="trace-repairs">
+  <thead><tr><th>Beat</th><th>Rung</th><th>Accepted</th></tr></thead>
+  <tbody>{% for row in hooks.rungs %}<tr><td>beat {{ row.rung.beat }}</td><td>{{ row.label }}</td><td>{% if row.rung.accepted is True %}yes{% elif row.rung.accepted is False %}no{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p>None</p>{% endif %}
+{% endwith %}{% endif %}
+{% with rs=trace.read_set %}{% if rs or state != "not_committed" %}
+<h4>Read set</h4>
+{% if not rs %}<p class="no-read-set">No read set recorded</p>
+{% else %}
+<p class="read-set-counts">{{ rs.keys_count|count }} key{{ rs.keys_count|pluralize }} · {{ rs.retrieved_count|count }} retrieved</p>
+{% if rs.keys is None %}<p class="keys-withheld">Keys are shown to an omniscient read only</p>
+{% elif not rs.keys %}<p>None</p>
+{% else %}
+<table class="trace-keys">
+  <thead><tr><th>Subject</th><th>Predicate</th><th>Object</th><th>Holder</th><th>Window</th><th>Result hash</th></tr></thead>
+  <tbody>{% for row in rs.keys %}<tr class="key-row">
+    <td>{% include "console/_trace_cell.html" with cell=row.subject %}</td>
+    <td>{% if not row.key.predicate %}—{% elif row.predicate_url %}<a href="{{ row.predicate_url }}">{{ row.key.predicate|engine_id }}</a>{% else %}{{ row.key.predicate|engine_id }}{% endif %}</td>
+    <td>{% include "console/_trace_cell.html" with cell=row.object %}</td>
+    <td>{% include "console/_trace_cell.html" with cell=row.holder %}</td>
+    <td>{% if row.window %}{{ row.window }}{% elif row.window_json %}<code title="{{ row.window_json.full }}">{{ row.window_json.shown }}</code>{% else %}—{% endif %}</td>
+    <td>{% if row.key.result_hash %}<code title="{{ row.key.result_hash }}">{{ row.hash_short }}</code>{% else %}—{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endif %}{% endwith %}
+{% if trace.hooks.event_ids or trace.more %}
+<details class="more trace-more"><summary>More</summary>
+  {% if trace.hooks.event_ids %}<h5>Raw render event ids</h5>
+  <ul class="event-ids">{% for id in trace.hooks.event_ids %}<li><code>{{ id }}</code></li>{% endfor %}</ul>{% endif %}
+  {% for part in trace.more %}<h5>{{ part.label }}</h5>
+  <pre>{{ part.value|pretty_json }}</pre>
+  {% endfor %}
+</details>
+{% endif %}
+{% endif %}
+</div>

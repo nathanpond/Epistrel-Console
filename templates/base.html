@@ -138,6 +138,13 @@
     table.retrieved td.actions form { display: inline; } /* #143: the row's Pin and Unpin */
     pre.memory-text, div.confirm dd code { white-space: pre-wrap; } /* #144: copyable spans */
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
+    /* #139: a turn's eval hooks and read set */
+    details.turn-trace { margin: 0.8rem 0; }
+    details.turn-trace > summary { cursor: pointer; font-weight: 600; }
+    div.turn-trace-content td.number { text-align: right; }
+    div.turn-trace-content tr.total th, div.turn-trace-content tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    dl.verdict-legend { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.8rem; font-size: 0.9em; }
+    dl.verdict-legend dd { margin: 0; }
   </style>
 </head>
 <body hx-headers:inherited='{"X-CSRFToken": "{{ csrf_token }}"}'>

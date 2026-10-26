@@ -1,0 +1,176 @@
+{
+  "id": "01JB2Z8Y5Q3W6K9M1N4P7R0T7P",
+  "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "kind": "turn",
+  "status": "committed",
+  "narrative_turn": 7,
+  "turn_variant": 1,
+  "timeline_revision": 8,
+  "principal": "console:nate",
+  "started_at": "2026-10-24T14:02:58Z",
+  "committed_at": "2026-10-24T14:03:00Z",
+  "viewpoint": "omniscient",
+  "origin": "generated",
+  "batch_operation_ids": null,
+  "attempts": [],
+  "config_revisions": {
+    "story": 4
+  },
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KY7",
+  "queued_ms": null,
+  "first_call_offset_ms": null,
+  "label": null,
+  "stages": [],
+  "result": null,
+  "creation_report": null,
+  "eval_hooks": {
+    "raw_render_event_ids": [
+      "01JB2Z8Y5Q3W6K9M1N4P7R0EV1",
+      "01JB2Z8Y5Q3W6K9M1N4P7R0EV2"
+    ],
+    "verdicts": [
+      {
+        "claim_id": "d1.0",
+        "kind": "supported",
+        "reason": null,
+        "rule": "canon_match",
+        "evidence_ids": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0FA1",
+          "01JB2Z8Y5Q3W6K9M1N4P7R0ME1"
+        ],
+        "escalated": false,
+        "disposition": "canonized",
+        "permission": "permitted:owner_character"
+      },
+      {
+        "claim_id": "d3.1",
+        "kind": "novel",
+        "reason": null,
+        "rule": null,
+        "evidence_ids": [],
+        "escalated": true,
+        "disposition": "repaired",
+        "permission": "denied:player_authority",
+        "cause": "resolution_conflict"
+      },
+      {
+        "claim_id": null,
+        "kind": "uncertain",
+        "reason": "partial_coverage",
+        "rule": "window_overlap",
+        "evidence_ids": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0FA1"
+        ],
+        "disposition": null,
+        "permission": null,
+        "recall": {
+          "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0ME1"
+        }
+      },
+      {
+        "claim_id": "01JB2Z8Y5Q3W6K9M1N4P7R0CK1:4",
+        "kind": "contradicted",
+        "reason": null,
+        "rule": "canon_conflict",
+        "evidence_ids": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0FA1"
+        ],
+        "escalated": false,
+        "disposition": "dropped",
+        "permission": "permitted:canon"
+      }
+    ],
+    "repair_rungs": [
+      {
+        "beat": 2,
+        "rung": 1,
+        "accepted": true
+      },
+      {
+        "beat": 3,
+        "rung": 4,
+        "accepted": false
+      },
+      {
+        "beat": 4,
+        "rung": 7
+      }
+    ],
+    "model_calls_by_purpose": {
+      "generation": 1,
+      "extraction_backstop": 1
+    },
+    "latency_ms_by_stage": {
+      "warmup": 7,
+      "render": 3100,
+      "plan": 12,
+      "normalize": 0,
+      "detection": 25,
+      "verify": 40,
+      "entailment": 0,
+      "repair": 2210,
+      "composition": 5,
+      "commit": 18
+    }
+  },
+  "read_set": {
+    "keys_count": 4,
+    "retrieved_count": 9,
+    "keys": [
+      {
+        "subject": "*",
+        "predicate": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object": "*",
+        "holder": "canon",
+        "window": [
+          null,
+          null
+        ],
+        "result_hash": "9f2c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f10"
+      },
+      {
+        "subject": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0CH1",
+          "01JB2Z8Y5Q3W6K9M1N4P7R0CH2"
+        ],
+        "predicate": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object": {
+          "literal": "blue",
+          "unit": null
+        },
+        "holder": "utterance:01JB2Z8Y5Q3W6K9M1N4P7R0CH1",
+        "window": [
+          3,
+          null
+        ],
+        "result_hash": "9f2c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f10"
+      },
+      {
+        "subject": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0CH1"
+        ],
+        "predicate": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object": "01JB2Z8Y5Q3W6K9M1N4P7R0EN1",
+        "holder": "belief:01JB2Z8Y5Q3W6K9M1N4P7R0CH2",
+        "window": [
+          0,
+          12
+        ],
+        "result_hash": "abc"
+      },
+      {
+        "subject": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0CH2"
+        ],
+        "predicate": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object": "harbour",
+        "holder": "canon",
+        "window": [
+          5,
+          9
+        ],
+        "result_hash": "9f2c1d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f10"
+      }
+    ]
+  }
+}

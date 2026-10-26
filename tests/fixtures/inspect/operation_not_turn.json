@@ -1,0 +1,28 @@
+{
+  "id": "01JB2Z8Y5Q3W6K9M1N4P7R0T7P",
+  "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "kind": "genesis",
+  "status": "committed",
+  "narrative_turn": null,
+  "turn_variant": null,
+  "timeline_revision": 8,
+  "principal": "console:nate",
+  "started_at": "2026-10-24T14:02:58Z",
+  "committed_at": "2026-10-24T14:03:00Z",
+  "viewpoint": null,
+  "origin": "generated",
+  "batch_operation_ids": null,
+  "attempts": [],
+  "config_revisions": {
+    "story": 4
+  },
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KY7",
+  "queued_ms": null,
+  "first_call_offset_ms": null,
+  "label": null,
+  "stages": [],
+  "result": null,
+  "creation_report": null,
+  "eval_hooks": null,
+  "read_set": null
+}

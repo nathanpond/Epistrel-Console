@@ -8,6 +8,7 @@ from django.core.paginator import Paginator
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_safe
 
 from console.engine.client import EngineClientError
@@ -150,6 +151,17 @@ def _check_url(row: EngineOperation) -> str:
 NO_FETCH_KINDS = frozenset({SANITIZE_KIND})
 
 
+def trace_url(row: EngineOperation) -> str:
+    """#139: the lazy "Eval hooks & read set" block's URL for a turn row with an Engine
+    operation id and a story; "" for any other row (or while the route isn't registered)."""
+    if not (is_turn(row.response) and row.engine_operation_id and row.story_id):
+        return ""
+    try:
+        return reverse("inspect:turn-trace", args=[row.story_id, row.engine_operation_id])
+    except NoReverseMatch:
+        return ""
+
+
 def fetch_offered(row: EngineOperation) -> bool:
     """Whether the detail page offers the ``?fetch=1`` re-read of the Engine's record."""
     return row.kind not in NO_FETCH_KINDS
@@ -168,6 +180,7 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "job_text": _queued_job_text(row),
         "check_url": _check_url(row),
         "fetch_offered": fetch_offered(row),
+        "trace_url": trace_url(row),
     }
     if request.GET.get("fetch") == "1" and row.engine_operation_id and context["fetch_offered"]:
         fetched: OperationRecord | None = None

@@ -1350,3 +1350,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** An ignored (malformed) `head` is not carried onto the confirm page. The Memory tab renders a value-less hidden `head` when the hot-set read failed.
   **Why:** The AC says a `head` that isn't an integer ≥ 1 is ignored. Carrying it forward would only re-ignore it.
   **Issue:** #145
+- **Decision:** The just-played inspector (`result_inspector`) also offers the "Eval hooks & read set" block, besides `row_inspector` and `selected_inspector`.
+  **Why:** The story is for any committed turn, and Demo 1 opens the block right after playing a turn. The block reads nothing until it is opened.
+  **Issue:** #139
+- **Decision:** `selected_inspector` now takes `story_id` first, and `row_inspector` takes an optional `story_id` (the page's). `Inspector.trace_shown` requires `trace_offered`, a story id, an operation id and no `error`/`error_line`.
+  **Why:** The inspector needs the story id to build the trace URL. Keeping the error and id checks in one property means a builder only sets `trace_offered`.
+  **Issue:** #139
+- **Decision:** The lenient models (`EvalHooks`, `Verdict`, `RepairRung`, `ReadSet`, `QueryKey`) are plain frozen dataclasses with `parse`, not `Model` subclasses. A named field of the wrong type reads as missing and its raw value goes to `extras` ("More").
+  **Why:** `Model.from_json` returns `None` for the whole object on one bad field. Convention 12 asks for skip-the-entry, keep-the-rest parsing.
+  **Issue:** #139
+- **Decision:** A read-set object that is a ULID shows as a convention-2 id. Any other string is a literal and shows verbatim in `<code>`. A `belief:<id>` holder shows like `utterance:<id>` ("belief · <id>").
+  **Why:** The Engine's key `object` is an entity id, a literal or `*`, so shortening a literal would garble it. `belief:` holders come from Engine #159, which the story's Discretion doesn't list.
+  **Issue:** #139
+- **Decision:** Latency lists only the stages the Engine sent (in `STAGES` order, unknown ones after). A missing stage gets no row.
+  **Why:** The Engine always sends all nine. A row for an absent stage would claim a 0 or "—" the Engine never reported.
+  **Issue:** #139
+- **Decision:** The held state's fragment uses a new `templates/console/stories/_held.html`, factored out of #87's `held.html`, with `held.held_context(...)`. Its Retry goes to the story page.
+  **Why:** #87 had no held partial. A fragment can't retry itself in place, so Retry goes to the story page.
+  **Issue:** #139
+- **Decision:** The lazy block sets `hx-status:4xx`/`5xx="swap:none"` and shows the retry line on `htmx:error` and `htmx:response:error`.
+  **Why:** The vendored htmx 4 swaps error responses by default. That would replace the retry line with an error page.
+  **Issue:** #139
+- **Decision:** When the unlock time has passed, the withheld note reads "…, and refused that read; the window should have closed — try again shortly." It doesn't name the viewpoint. A not-committed turn shows the read-set section only when a read set is present.
+  **Why:** Both follow the AC's wording literally.
+  **Issue:** #139

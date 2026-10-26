@@ -23,6 +23,7 @@ ERASURE_PENDING = "erasure_pending"  # the 503's code
 HELD_TEXT = "Held until the erasure ledger is re-applied"
 HELD_PARAM = "held"  # ``?held=1`` on the delete confirm: the id-only wording
 TEMPLATE = "console/stories/held.html"
+FRAGMENT_TEMPLATE = "console/stories/_held.html"  # the message and actions alone (#139)
 
 
 def is_held(exc: object) -> TypeGuard[EngineError]:
@@ -55,6 +56,18 @@ def _ledger_url() -> str:
         return ""
 
 
+def held_context(story_id: str, retry_after: str | None, retry_url: str) -> dict[str, str]:
+    """What ``_held.html`` shows: the held text, Retry (``retry_url``), Delete and the ledger
+    link."""
+    return {
+        "story_id": story_id,
+        "held_text": held_text(retry_after),
+        "retry_url": retry_url,
+        "delete_url": delete_url(story_id),
+        "ledger_url": _ledger_url(),
+    }
+
+
 def render_held(request: HttpRequest, story_id: str, exc: EngineClientError) -> HttpResponse:
     log_engine_error(request, exc)
     retry_after = exc.retry_after if isinstance(exc, EngineError) else None
@@ -63,13 +76,8 @@ def render_held(request: HttpRequest, story_id: str, exc: EngineClientError) -> 
         response = HttpResponse(status=200)
         response["HX-Redirect"] = detail
         return response
-    context = {
-        "story_id": story_id,
-        "held_text": held_text(retry_after),
-        "retry_url": request.get_full_path() if request.method in ("GET", "HEAD") else detail,
-        "delete_url": delete_url(story_id),
-        "ledger_url": _ledger_url(),
-    }
+    retry_url = request.get_full_path() if request.method in ("GET", "HEAD") else detail
+    context = held_context(story_id, retry_after, retry_url)
     response = render(request, TEMPLATE, context, status=503)
     if retry_seconds(retry_after) is not None:
         response["Retry-After"] = str(retry_seconds(retry_after))
