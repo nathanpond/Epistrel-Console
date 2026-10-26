@@ -1,0 +1,2 @@
+{# #142: a transcript turn's "Explain retrieval" (into the Retrieval explorer), else a reported turn's anchor in history, where that link lives. Context: inspector. #}
+{% if inspector.explain_url %}<a class="explain-link" href="{{ inspector.explain_url }}">Explain retrieval</a>{% else %}<a class="explain-history-link" href="{{ inspector.history_url }}">Explain retrieval in history</a>{% endif %}

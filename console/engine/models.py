@@ -11,12 +11,17 @@ A field typed ``Any`` holds raw JSON (any value), for parts the Console shows on
 
 A JSON key that is not a valid Python name (``class``) is read into a field declared with
 ``field(metadata={JSON_NAME: "class"})`` (:func:`json_name`).
+
+A field typed ``datetime`` reads an ISO 8601 string with its offset as an aware datetime (#149);
+a string without an offset, or one that doesn't parse, fails the field.
 """
 
 import types
 import typing
+from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
-from typing import Any, Literal, Self, Union
+from datetime import datetime
+from typing import Any, ClassVar, Literal, Self, Union
 
 from console.entities import EntityType
 
@@ -45,6 +50,8 @@ def _parse(tp: Any, value: object) -> tuple[bool, object]:
         return ok, float(value) if ok else None  # type: ignore[arg-type]
     if tp is str:
         return isinstance(value, str), value
+    if tp is datetime:
+        return _aware(value)
     if origin is dict:
         _, item_tp = typing.get_args(tp)
         if not isinstance(value, dict):
@@ -73,7 +80,29 @@ def _parse(tp: Any, value: object) -> tuple[bool, object]:
     raise TypeError(f"unsupported model annotation {tp!r}")
 
 
+def _aware(value: object) -> tuple[bool, object]:
+    """``(True, moment)`` for an ISO 8601 string with an offset, else ``(False, None)``."""
+    if not isinstance(value, str):
+        return False, None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return False, None
+    return (True, moment) if moment.tzinfo is not None else (False, None)
+
+
 JSON_NAME = "json"
+
+
+OPEN_ENUM = "open_enum"
+"""Field metadata: a ``str`` field the schema types as a string enum. Read as a plain string so
+a value the Console does not know yet renders raw (#64 convention 17) instead of failing the
+whole answer; the contract test compares it with the enum's members."""
+
+
+def open_enum(**kwargs: Any) -> Any:
+    """``field(...)`` for an :data:`OPEN_ENUM` string."""
+    return field(metadata={OPEN_ENUM: True}, **kwargs)
 
 
 def json_name(f: Field[Any]) -> str:
@@ -331,7 +360,276 @@ class OperationRecord(Model):
     stages: list[OperationStage] = field(default_factory=list)
 
 
-# --- Turns and history (#48; #51-#53 reuse them) ------------------------------------------------
+# --- Eval hooks and read sets (#139; #147 reuses them) ------------------------------------------
+#
+# #135 convention 12: ``OperationRecord.eval_hooks`` and ``.read_set`` stay raw JSON, and these
+# typed views are parsed beside them. The schema leaves verdict entries and repair rungs untyped
+# (``additionalProperties: true``), and the Console reads every part leniently: ``parse`` never
+# raises, a malformed entry is skipped (its raw value kept in ``skipped``), a named field of the
+# wrong type reads as missing (its raw value kept in ``extras``), and keys the Console does not
+# name are kept in ``extras`` too, for "More" (convention 13).
+
+
+def _int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _take(obj: dict[str, Any], key: str, ok: bool, extras: dict[str, Any]) -> Any:
+    """``obj[key]`` when it fits (``ok``), else ``None`` with a present value kept in
+    ``extras``."""
+    if key not in obj:
+        return None
+    if ok:
+        return obj[key]
+    extras[key] = obj[key]
+    return None
+
+
+def _str_or_none(obj: dict[str, Any], key: str, extras: dict[str, Any]) -> str | None:
+    value = obj.get(key)
+    taken = _take(obj, key, value is None or isinstance(value, str), extras)
+    return taken if isinstance(taken, str) else None
+
+
+def _unnamed(obj: dict[str, Any], named: tuple[str, ...]) -> dict[str, Any]:
+    return {k: v for k, v in obj.items() if k not in named}
+
+
+VERDICT_FIELDS = (
+    "claim_id",
+    "kind",
+    "reason",
+    "rule",
+    "evidence_ids",
+    "escalated",
+    "disposition",
+    "permission",
+    "cause",
+)
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """One verification verdict (the Engine's ``Verdict.as_payload``): a ``claim_id`` (may be
+    null), its ``kind``, ``reason``, ``rule``, ``evidence_ids``, whether it ``escalated`` (``None``
+    when the entry doesn't say), ``disposition``, ``permission`` (``permitted:<basis>`` or
+    ``denied:<reason>``) and, for a conflict, ``cause``. ``index`` is its 1-based position."""
+
+    index: int
+    claim_id: str | None = None
+    kind: str | None = None
+    reason: str | None = None
+    rule: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    escalated: bool | None = None
+    disposition: str | None = None
+    permission: str | None = None
+    cause: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object, index: int) -> Verdict | None:
+        """``None`` only when ``obj`` isn't an object; a missing field reads ``None``."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, VERDICT_FIELDS)
+        ids = obj.get("evidence_ids")
+        ids_ok = ids is None or (isinstance(ids, list) and all(isinstance(i, str) for i in ids))
+        evidence = _take(obj, "evidence_ids", ids_ok, extras)
+        escalated = obj.get("escalated")
+        flag = _take(obj, "escalated", escalated is None or isinstance(escalated, bool), extras)
+        texts = {
+            name: _str_or_none(obj, name, extras)
+            for name in ("claim_id", "kind", "reason", "rule", "disposition", "permission", "cause")
+        }
+        return cls(
+            index,
+            evidence_ids=tuple(evidence or ()),
+            escalated=flag if isinstance(flag, bool) else None,
+            extras=extras,
+            **texts,
+        )
+
+
+@dataclass(frozen=True)
+class RepairRung:
+    """One repaired beat's rung (``eval_hooks.repair_rungs``): its ``beat``, the ``rung``
+    accepted (4: the safe fallback, or a dropped beat) and whether a correction was ``accepted``
+    (``None`` when it isn't a bool). ``index`` is its 1-based position."""
+
+    index: int
+    beat: int
+    rung: int
+    accepted: bool | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object, index: int) -> RepairRung | None:
+        """``None`` when ``obj`` isn't an object or ``beat``/``rung`` isn't an integer."""
+        if not isinstance(obj, dict):
+            return None
+        beat, rung = _int(obj.get("beat")), _int(obj.get("rung"))
+        if beat is None or rung is None:
+            return None
+        extras = _unnamed(obj, ("beat", "rung", "accepted"))
+        accepted = obj.get("accepted")
+        flag = _take(obj, "accepted", accepted is None or isinstance(accepted, bool), extras)
+        return cls(index, beat, rung, flag if isinstance(flag, bool) else None, extras)
+
+
+QUERY_KEY_FIELDS = ("subject", "predicate", "object", "holder", "window", "result_hash")
+
+
+@dataclass(frozen=True)
+class QueryKey:
+    """``QueryKeyBody``: one query key of a read set. ``subject``, ``object`` and ``window``
+    stay raw JSON (the row renders each by its shape); ``index`` is its 1-based position."""
+
+    index: int
+    subject: Any = None
+    predicate: str | None = None
+    object: Any = None
+    holder: str | None = None
+    window: Any = None
+    result_hash: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object, index: int) -> QueryKey | None:
+        """``None`` only when ``obj`` isn't an object."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, QUERY_KEY_FIELDS)
+        return cls(
+            index,
+            subject=obj.get("subject"),
+            predicate=_str_or_none(obj, "predicate", extras),
+            object=obj.get("object"),
+            holder=_str_or_none(obj, "holder", extras),
+            window=obj.get("window"),
+            result_hash=_str_or_none(obj, "result_hash", extras),
+            extras=extras,
+        )
+
+
+def _entries[T](
+    raw: object, parse: Callable[[object, int], T | None]
+) -> tuple[tuple[T, ...], tuple[tuple[int, Any], ...]]:
+    """A list's parsed entries, and the skipped ones as ``(1-based index, raw)``."""
+    parsed: list[T] = []
+    skipped: list[tuple[int, Any]] = []
+    for index, entry in enumerate(raw if isinstance(raw, list) else [], start=1):
+        found = parse(entry, index)
+        if found is None:
+            skipped.append((index, entry))
+        else:
+            parsed.append(found)
+    return tuple(parsed), tuple(skipped)
+
+
+@dataclass(frozen=True)
+class ReadSet:
+    """``ReadSetBody``: ``keys_count``, ``retrieved_count`` (``None`` when not an integer) and
+    the ``keys``, which are ``None`` to a read that isn't omniscient."""
+
+    keys_count: int | None = None
+    retrieved_count: int | None = None
+    keys: tuple[QueryKey, ...] | None = None
+    skipped_keys: tuple[tuple[int, Any], ...] = ()
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object) -> ReadSet | None:
+        """``None`` when ``obj`` isn't an object (no read set recorded)."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, ("keys_count", "retrieved_count", "keys"))
+        counts = {}
+        for name in ("keys_count", "retrieved_count"):
+            value = obj.get(name)
+            counts[name] = _take(obj, name, value is None or _int(value) is not None, extras)
+        raw_keys = obj.get("keys")
+        keys = _take(obj, "keys", raw_keys is None or isinstance(raw_keys, list), extras)
+        parsed, skipped = _entries(keys, QueryKey.parse)
+        return cls(
+            counts["keys_count"],
+            counts["retrieved_count"],
+            parsed if isinstance(keys, list) else None,
+            skipped,
+            extras,
+        )
+
+
+EVAL_HOOK_FIELDS = (
+    "latency_ms_by_stage",
+    "model_calls_by_purpose",
+    "raw_render_event_ids",
+    "verdicts",
+    "repair_rungs",
+)
+
+
+def _counts(
+    obj: dict[str, Any], key: str, extras: dict[str, Any]
+) -> tuple[tuple[str, int], ...] | None:
+    """A ``{name: int}`` map as ``(name, value)`` pairs in the order received; ``None`` when it
+    isn't an object. A value that isn't an integer is left out, into ``extras[key]``."""
+    raw = obj.get(key)
+    if not isinstance(raw, dict):
+        if key in obj:
+            extras[key] = raw
+        return None
+    bad = {k: v for k, v in raw.items() if _int(v) is None}
+    if bad:
+        extras[key] = bad
+    return tuple((str(k), v) for k, v in raw.items() if _int(v) is not None)
+
+
+@dataclass(frozen=True)
+class EvalHooks:
+    """``EvalHooksBody``: a structured turn's eval hooks (FR-OBS-2), its ``verdicts`` expanded
+    from the report's ``verify`` and ``verify_follow_up`` sections, in the Engine's order.
+
+    ``latency_ms_by_stage`` and ``model_calls_by_purpose`` are ``(name, value)`` pairs in the
+    order received, ``None`` when the field isn't an object."""
+
+    latency_ms_by_stage: tuple[tuple[str, int], ...] | None = None
+    model_calls_by_purpose: tuple[tuple[str, int], ...] | None = None
+    raw_render_event_ids: tuple[str, ...] = ()
+    verdicts: tuple[Verdict, ...] = ()
+    repair_rungs: tuple[RepairRung, ...] = ()
+    skipped_verdicts: tuple[tuple[int, Any], ...] = ()
+    skipped_rungs: tuple[tuple[int, Any], ...] = ()
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def parse(cls, obj: object) -> EvalHooks | None:
+        """``None`` when ``obj`` isn't an object (no eval hooks recorded, or not shown)."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, EVAL_HOOK_FIELDS)
+        latency = _counts(obj, "latency_ms_by_stage", extras)
+        calls = _counts(obj, "model_calls_by_purpose", extras)
+        ids = obj.get("raw_render_event_ids")
+        if isinstance(ids, list):
+            event_ids = tuple(i for i in ids if isinstance(i, str))
+            if len(event_ids) != len(ids):
+                extras["raw_render_event_ids"] = [i for i in ids if not isinstance(i, str)]
+        else:
+            event_ids = ()
+            if "raw_render_event_ids" in obj:
+                extras["raw_render_event_ids"] = ids
+        for key in ("verdicts", "repair_rungs"):
+            if key in obj and not isinstance(obj[key], list):
+                extras[key] = obj[key]
+        verdicts, skipped_verdicts = _entries(obj.get("verdicts"), Verdict.parse)
+        rungs, skipped_rungs = _entries(obj.get("repair_rungs"), RepairRung.parse)
+        return cls(
+            latency, calls, event_ids, verdicts, rungs, skipped_verdicts, skipped_rungs, extras
+        )
+
+
+# --- Turns and history (#48; #51-#53 reuse them)------------------------------------------------
 
 Channel = Literal["say", "do", "think", "latent", "narration", "message", "audit"]
 
@@ -1184,6 +1482,983 @@ class RebuildQueued(Model):
     idempotency_key: str | None = None
 
 
+@dataclass(frozen=True)
+class ConsolidationQueued(Model):
+    """``ConsolidationQueuedResponse`` (202): a requested consolidation, handed to a worker job
+    (#145). The Engine reports no progress for that job."""
+
+    timeline_revision: int
+    job_id: str
+    idempotency_key: str | None = None
+
+
+# --- a story's hot set (#140) ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HotSetBudgets(Model):
+    """``HotSetBudgets``: the story's ``memory.hot_set.*`` dials and the deployment's pin
+    ceilings."""
+
+    memories_per_character: int
+    vectors_per_story: int
+    importance_floor: float
+    retirement_max_lag: int
+    retain_retired_vectors: bool
+    retain_dormant_vectors: bool
+    max_pinned_per_character: int
+    max_pinned_per_story: int
+
+
+@dataclass(frozen=True)
+class HotCountsBody(Model):
+    """``HotCountsBody``: each character's unpinned hot memories (characters with none left out)
+    and the story's unpinned hot vectors."""
+
+    characters: dict[str, int]
+    story_vectors: int
+
+
+@dataclass(frozen=True)
+class HotSetPins(Model):
+    """``HotSetPins``: the story's memory pins (all, and per holding character) and its text
+    pins; the story ceiling counts both."""
+
+    memory_pins: int
+    text_pins: int
+    by_character: dict[str, int]
+
+
+@dataclass(frozen=True)
+class EpisodeBody(Model):
+    """``EpisodeBody``: one open overflow episode (``scope`` ``character`` or ``story``), its
+    fixed deadline turn and its excess."""
+
+    id: str
+    scope: str
+    scope_id: str
+    opened_turn: int
+    deadline_turn: int
+    excess_at_open: int
+    excess: int
+
+
+@dataclass(frozen=True)
+class RetirementBody(Model):
+    """``RetirementBody``: one retired memory, identifiers only (``reason`` ``covered``,
+    ``floor`` or ``uncovered``)."""
+
+    memory_id: str
+    reason: str | None
+    retired_turn: int | None
+    retired_at: str | None
+    holder_character_id: str | None
+
+
+@dataclass(frozen=True)
+class HotSetBody(Model):
+    """``HotSetBody``: ``GET /admin/stories/{id}/hot-set``. ``stored_counters`` is ``None``
+    until the Engine has stored counts (its next commit recounts); ``episodic`` false means
+    retirement doesn't run (the counters are kept anyway). ``recent_retirements`` holds the
+    latest 20, newest first."""
+
+    story_id: str
+    episodic: bool
+    counters: HotCountsBody
+    stored_counters: HotCountsBody | None
+    budgets: HotSetBudgets
+    pins: HotSetPins
+    head_turn: int
+    open_episodes: list[EpisodeBody]
+    recent_retirements: list[RetirementBody]
+    timeline_revision: int
+
+
+@dataclass(frozen=True)
+class MentionBody(Model):
+    """``MentionBody``: a mention the resolve stage found: its character ``span`` (``[start,
+    end)`` in code points of the query), its ``kind``, the entity it resolved to (or ``None``)
+    and, when unresolved, the ``reason`` code."""
+
+    span: list[int]
+    kind: str
+    entity_id: str | None
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class ResolutionBody(Model):
+    """``ResolutionBody``: the resolve stage's mentions, resolved entities and event type, the
+    time ``window`` in story-minutes (``[start, end)``, an open bound ``None``) with the
+    ``turns`` it maps to, and why the time did not resolve (``time_reason``)."""
+
+    mentions: list[MentionBody]
+    entities: list[str]
+    event_type: str | None
+    window: list[int | None] | None
+    turns: list[int | None] | None
+    time_reason: str | None
+
+
+@dataclass(frozen=True)
+class RetrievedMemoryBody(Model):
+    """``RetrievedMemoryBody``: one returned memory. ``retrieval_tier`` ``retired`` means it was
+    rehydrated for this query (its tier unchanged); a ranked memory carries its ``score`` and the
+    terms it came from (fused ``similarity``, ``recency``, ``decayed_importance``), an episode or
+    assessment ``None`` for them. ``arms`` are the searches that found it, in the Engine's
+    order."""
+
+    id: str
+    kind: str
+    text: str
+    narrative_turn: int | None
+    beat: int | None
+    character_id: str | None
+    event_type: str | None
+    participants: list[str]
+    retrieval_tier: str
+    importance: float | None
+    arms: list[str]
+    score: float | None
+    similarity: float | None
+    recency: float | None
+    decayed_importance: float | None
+    quarantined: bool = False
+
+
+@dataclass(frozen=True)
+class CanonBody(Model):
+    """``CanonBody``: a canon fact about a resolved entity (#152): its subject, predicate and
+    object, which is one of an entity (``object_id``), a set of entities (``object_set``) or a
+    ``literal`` (untyped in the schema; in practice ``{kind, value, unit}``, kept raw)."""
+
+    fact_id: str
+    subject_id: str
+    predicate_id: str
+    object_id: str | None
+    object_set: list[str] | None
+    literal: Any
+    polarity: str
+
+
+@dataclass(frozen=True)
+class ContextItemBody(Model):
+    """``ContextItemBody``: an item placed in the context: its ``tier`` (1 ledger and pins, 2
+    occasions, 3 profiles and canon, 4 ranked memories), ``kind``, id, text and ``tokens``."""
+
+    tier: int
+    kind: str
+    item_id: str
+    text: str
+    tokens: int
+
+
+@dataclass(frozen=True)
+class DroppedBody(Model):
+    """``DroppedBody``: an item the context left out, and why (``budget``, ``pin_cap`` or
+    ``duplicate``, a plain string in the schema)."""
+
+    tier: int
+    kind: str
+    item_id: str
+    tokens: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class ContextBody(Model):
+    """``ContextBody``: the context assembled within ``budget`` tokens (``used`` of them)."""
+
+    budget: int
+    used: int
+    items: list[ContextItemBody]
+    dropped: list[DroppedBody]
+
+
+@dataclass(frozen=True)
+class RetrievalBody(Model):
+    """``RetrievalBody``: ``GET /stories/{id}/retrieve``, what a structured render would retrieve
+    for a query (FR-RET-2..7). ``position`` is ``(as_of + 1, 0)``. ``skipped`` names the stages
+    that did not run (``episodic`` when the module is off: everything else is then empty).
+
+    ``from_json`` reads ``canon``, ``profiles``, ``context.items`` and ``context.dropped`` entry
+    by entry (#135 convention 12): an entry that doesn't parse is left out, and ``unparsed``
+    keeps that section's raw list (by its dotted name) for its "More", so one bad entry never
+    fails the page. ``unparsed`` is the Console's, not the schema's (not a dataclass field)."""
+
+    position: list[int]
+    resolution: ResolutionBody
+    episodes: list[RetrievedMemoryBody]
+    participants: list[str]
+    assessments: list[RetrievedMemoryBody]
+    memories: list[RetrievedMemoryBody]
+    profiles: list[EntityProfileBody]
+    canon: list[CanonBody]
+    context: ContextBody
+    rehydrated: list[str]
+    degradation: list[str]
+    skipped: list[str]
+    model_calls: int
+    embedding_model_version: str | None
+    timings: dict[str, float]
+
+    unparsed: ClassVar[dict[str, list[Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        if not isinstance(obj, dict):
+            return None
+        obj = dict(obj)
+        if isinstance(obj.get("context"), dict):
+            obj["context"] = dict(obj["context"])
+        unparsed: dict[str, list[Any]] = {}
+        lenient: tuple[tuple[str, type[Model]], ...] = (
+            ("canon", CanonBody),
+            ("profiles", EntityProfileBody),
+            ("context.items", ContextItemBody),
+            ("context.dropped", DroppedBody),
+        )
+        for name, model in lenient:
+            *outer, key = name.split(".")
+            holder = obj.get(outer[0]) if outer else obj
+            if not isinstance(holder, dict) or not isinstance(holder.get(key), list):
+                continue
+            raw = holder[key]
+            kept = [entry for entry in raw if model.from_json(entry) is not None]
+            if len(kept) < len(raw):
+                holder[key] = kept
+                unparsed[name] = raw
+        parsed = _from_json(cls, obj)
+        if not isinstance(parsed, cls):
+            return None
+        if unparsed:
+            object.__setattr__(parsed, "unparsed", unparsed)
+        return parsed
+
+
+@dataclass(frozen=True)
+class MemoryView(Model):
+    """``MemoryView``: a memory as the omniscient admin reads it (#143): its pin, its quarantine
+    state, its retrieval tier (``hot``/``retired``, and why it was retired). ``provenance`` and
+    ``visibility`` stay raw JSON (shown in "More")."""
+
+    id: str
+    kind: str = field(metadata={OPEN_ENUM: True})
+    text: str
+    provenance: Any
+    membership: str = field(metadata={OPEN_ENUM: True})
+    pinned: bool = False
+    pinned_by: str | None = None
+    quarantined: bool = False
+    quarantine_reason: str | None = None
+    quarantined_at: str | None = None
+    quarantined_by: str | None = None
+    retrieval_tier: str = open_enum(default="hot")
+    retired_reason: str | None = None
+    holder_character_id: str | None = None
+    character_id: str | None = None
+    narrative_turn: int | None = None
+    beat: int | None = None
+    implication_count: int = 0
+    embedded: bool = False
+    visibility: Any = None
+
+
+@dataclass(frozen=True)
+class MemoryWritten(Model):
+    """``MemoryWritten``: a memory pin, unpin, quarantine or release (#143). ``memory`` is the
+    memory after the call; ``operation_id`` is ``None`` when nothing changed (the memory was
+    already in that state)."""
+
+    memory: MemoryView
+    operation_id: str | None
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+# --- the predicate registry (#136) ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Implication(Model):
+    """``ImplicationBody``: a declared rule ``when(s, o) ⇒ then(s, o')``, the object carried over
+    or mapped through the ``via`` join."""
+
+    when: str
+    then: str
+    via: str | None = None
+
+
+@dataclass(frozen=True)
+class Proposal(Model):
+    """``ProposalBody``: an auto predicate's strengthening proposal. ``changes`` maps a
+    ``PredicateBody`` field to its proposed value (raw JSON: the schema leaves it untyped)."""
+
+    id: str
+    status: str
+    changes: dict[str, Any]
+    filed_by: str
+
+
+@dataclass(frozen=True)
+class Predicate(Model):
+    """``PredicateBody``: a registered predicate and its semantics (FR-PROP-3). ``layer``
+    (``core``, ``author``, ``auto``), ``cardinality`` (``functional``, ``multi``) and
+    ``temporal_kind`` (``permanent``, ``fluent``, ``event``) are plain strings in the schema.
+    ``qualifiers`` ``None`` is undeclared (an auto predicate's)."""
+
+    id: str
+    story_id: str | None
+    name: str
+    layer: str
+    subject_type: str
+    object_type: str
+    cardinality: str
+    max_cardinality: int | None
+    key_qualifiers: list[str]
+    qualifiers: dict[str, str] | None
+    set_object: bool
+    temporal_kind: str
+    exclusions: list[str]
+    containment_of: str | None
+    implications: list[Implication]
+    symmetric: bool
+    inverse_of: str | None
+    owner: str
+    projection: str | None
+    docs: str
+    weak: bool
+    pending_proposal: Proposal | None = None
+
+
+@dataclass(frozen=True)
+class PredicateList(Model):
+    """``PredicateListBody``: the story's registry (the core vocabulary first, then the story's
+    own predicates by name), its implication rules and its configuration revision."""
+
+    predicates: list[Predicate]
+    rules: list[Implication]
+    config_revision: int
+
+    def names(self) -> dict[str, str]:
+        """Predicate id → name (#135 convention 2's one registry read per page)."""
+        return {p.id: p.name for p in self.predicates}
+
+
+@dataclass(frozen=True)
+class PredicateViolation(Model):
+    """``ViolationBody``: a key the approved semantics find with too many objects over
+    overlapping time. The propositions are reported, never changed; ``rule`` is
+    ``cardinality``. (Named apart from the guardrail violation models.)"""
+
+    subject_id: str
+    proposition_ids: list[str]
+    rule: str
+
+
+@dataclass(frozen=True)
+class PredicateDecision(Model):
+    """``PredicateDecisionBody``: an approved or rejected proposal. ``predicate`` is the
+    predicate as it now is; ``applied`` maps each applied field to its value (raw JSON). An
+    approval moves ``config_revision`` by exactly one; a rejection moves nothing."""
+
+    timeline_revision: int
+    predicate: Predicate
+    proposal_id: str
+    status: str
+    applied: dict[str, Any]
+    violations: list[PredicateViolation]
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+# --- canon facts (#137) -------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Bound(Model):
+    """``Bound``: one end of an interval in story-minutes; ``inner == outer`` when exact."""
+
+    inner: int
+    outer: int
+
+
+@dataclass(frozen=True)
+class Interval(Model):
+    """``Interval``: ``[start, end)`` in story-minutes; a ``None`` bound is open."""
+
+    kind: Literal["interval"] = "interval"
+    start: Bound | None = None
+    end: Bound | None = None
+
+
+@dataclass(frozen=True)
+class Instant(Model):
+    """``Instant``: a punctual time, ``at`` (the granule's first minute) to ``until``."""
+
+    at: int
+    until: int
+    granularity: str = open_enum()
+    kind: Literal["instant"] = "instant"
+
+
+@dataclass(frozen=True)
+class TypedLiteral(Model):
+    """``TypedLiteral``: a literal object, ``kind`` and ``value`` (a ``quantity`` has a ``unit``;
+    a ``date`` is an ISO date string; a ``duration`` is whole minutes)."""
+
+    value: int | float | str | bool
+    kind: str = open_enum()
+    unit: str | None = None
+
+
+@dataclass(frozen=True)
+class Visibility(Model):
+    """``Visibility``: who may read a fact (``scope``; ``characters`` for that scope)."""
+
+    scope: str = open_enum(default="objective")
+    characters: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class Proposition(Model):
+    """``Proposition`` (FR-PROP-1,2): subject, predicate, at most one object (entity id,
+    literal or set; none for an object-less predicate), polarity, qualifiers and valid-time."""
+
+    subject_id: str
+    predicate_id: str
+    valid_time: Interval | Instant
+    object_id: str | None = None
+    literal: TypedLiteral | None = None
+    object_set: list[str] | None = None
+    polarity: str = open_enum(default="affirmed")
+    qualifiers: dict[str, str | int | float | bool | list[str]] = field(default_factory=dict)
+    event_id: str | None = None
+
+
+# --- Structured beats (#147) --------------------------------------------------------------------
+#
+# #135 convention 12: ``HistoryItem.labels``, ``.visibility``, ``.propositions`` and ``.detected``
+# stay raw JSON, and these typed views are parsed beside them, as #139's eval-hook entries are:
+# ``from_json`` never raises and returns ``None`` for an entry it can't read (the raw value then
+# goes to the beat's "More"), and keys the Console does not name are kept in ``extras``.
+
+UTTERANCE_INTENTS = ("sincere", "deceptive", "joking", "unspecified")
+BELIEF_RELATIONS = ("consistent", "inconsistent", "unknown")
+OBJECTIVE_RELATIONS = ("true", "false", "unresolved")
+BEAT_SCOPES = ("objective", "public", "characters")
+UTTERANCE_LABEL_FIELDS = ("intent", "belief_relation", "objective_relation")
+
+
+@dataclass(frozen=True)
+class UtteranceLabels:
+    """``UtteranceLabelsModel``: a ``say``-channel item's three independent labels (FR-TURN-6).
+    Later Engine fields (``classification``, ``intent_corrected``) land in ``extras``."""
+
+    intent: str
+    belief_relation: str
+    objective_relation: str
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> UtteranceLabels | None:
+        """``None`` unless ``obj`` is an object holding all three labels, each a value its
+        schema enum lists."""
+        if not isinstance(obj, dict):
+            return None
+        values = [obj.get(name) for name in UTTERANCE_LABEL_FIELDS]
+        allowed = (UTTERANCE_INTENTS, BELIEF_RELATIONS, OBJECTIVE_RELATIONS)
+        if not all(v in a for v, a in zip(values, allowed, strict=True)):
+            return None
+        intent, belief, objective = (str(v) for v in values)
+        return cls(intent, belief, objective, _unnamed(obj, UTTERANCE_LABEL_FIELDS))
+
+
+@dataclass(frozen=True)
+class BeatVisibility:
+    """``BeatVisibilityModel``: a ``beat_latent`` item's scope and, for ``characters``, who."""
+
+    scope: str
+    characters: tuple[str, ...] = ()
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> BeatVisibility | None:
+        """``None`` unless ``scope`` is one of the three and ``characters`` (when present) is a
+        list of ids."""
+        if not isinstance(obj, dict) or obj.get("scope") not in BEAT_SCOPES:
+            return None
+        characters = obj.get("characters", [])
+        if not isinstance(characters, list) or not all(isinstance(c, str) for c in characters):
+            return None
+        return cls(str(obj["scope"]), tuple(characters), _unnamed(obj, ("scope", "characters")))
+
+
+@dataclass(frozen=True)
+class BeatProposition:
+    """``BeatPropositionModel``: a proposition the beat asserted and its verdict (``None``: not
+    checked). ``proposition`` is the parsed :class:`Proposition`, ``None`` when ``raw`` doesn't
+    parse (the row then shows ``raw`` as JSON). ``index`` is its 1-based position."""
+
+    index: int
+    raw: Any
+    proposition: Proposition | None
+    verdict: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object, index: int) -> BeatProposition | None:
+        """``None`` only when ``obj`` isn't an object."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, ("proposition", "verdict"))
+        raw = obj.get("proposition")
+        return cls(
+            index,
+            raw,
+            Proposition.from_json(raw),
+            _str_or_none(obj, "verdict", extras),
+            extras,
+        )
+
+
+@dataclass(frozen=True)
+class DetectedClaim:
+    """``DetectedClaimModel``: a claim detection found in the beat that it didn't declare, as a
+    ``[start, end)`` span of the item's text (code points), its ``category`` and ``verdict``
+    (``None``: not checked). ``index`` is its 1-based position."""
+
+    index: int
+    start: int
+    end: int
+    category: str
+    verdict: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object, index: int) -> DetectedClaim | None:
+        """``None`` when ``obj`` isn't an object, ``start``/``end`` isn't an integer or
+        ``category`` isn't a string. The span isn't checked against the text here."""
+        if not isinstance(obj, dict):
+            return None
+        start, end, category = _int(obj.get("start")), _int(obj.get("end")), obj.get("category")
+        if start is None or end is None or not isinstance(category, str):
+            return None
+        extras = _unnamed(obj, ("start", "end", "category", "verdict"))
+        return cls(index, start, end, category, _str_or_none(obj, "verdict", extras), extras)
+
+
+def beat_entries[T](
+    raw: object, parse: Callable[[object, int], T | None]
+) -> tuple[tuple[T, ...], tuple[tuple[int, Any], ...]]:
+    """A beat's list field parsed (:func:`_entries`): the entries, and the skipped ones as
+    ``(1-based index, raw)``."""
+    return _entries(raw, parse)
+
+
+@dataclass(frozen=True)
+class FactBody(Model):
+    """``FactBody``: one fact version (FR-BITEMP-1..5). ``tx_to`` and ``superseded_by`` record
+    its *first* closure and are never rewritten (whether it is still closed is
+    :func:`console.canon.fact_states`' question)."""
+
+    id: str
+    lineage_id: str
+    proposition_id: str
+    proposition: Proposition
+    valid_from: int | None
+    valid_to: int | None
+    valid_from_inner: int | None
+    valid_to_inner: int | None
+    tx_from: str
+    tx_to: str | None
+    provenance: str
+    authority: str
+    author_locked: bool
+    visibility: Visibility
+    membership: str
+    narrative_turn: int | None
+    superseded_by: str | None
+    supersedes: list[str]
+    anchored_to: str | None
+
+
+@dataclass(frozen=True)
+class FactListBody(Model):
+    """``FactListBody``: a page of the story's canon by id, the story's revision and the next
+    page's cursor (``None`` on the last)."""
+
+    facts: list[FactBody]
+    next_cursor: str | None
+    timeline_revision: int
+
+
+# --- author canon writes (#146) ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FactWarning(Model):
+    """``FactWarning``: what an author fact's deterministic check found that did not stop it:
+    ``uncertain`` (``reason``, may be ``None``) or ``contradicted`` (the ``rules`` the write
+    didn't resolve by superseding)."""
+
+    kind: str = open_enum()
+    reason: str | None = None
+    rules: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class FactWritten(Model):
+    """``FactWritten``: an author fact's commit, lock, unlock or supersede. ``fact`` is the new
+    version (or, unchanged, the version as it is); ``superseded`` the versions it closed;
+    ``memory_id`` the author memory written (``None`` without episodic memory or when nothing
+    changed); ``operation_id`` ``None`` when nothing changed."""
+
+    timeline_revision: int
+    fact: FactBody
+    superseded: list[str]
+    memory_id: str | None
+    warnings: list[FactWarning]
+    operation_id: str | None
+    idempotency_key: str | None = None
+
+
+# --- commitments: thunks and the promissory ledger (#148) ---------------------------------------
+
+
+@dataclass(frozen=True)
+class Position(Model):
+    """``PositionBody``: a narrative position, the turn, its variant and the beat (each ``None``
+    when position-less)."""
+
+    turn: int | None
+    variant: int | None
+    beat: int | None
+
+
+@dataclass(frozen=True)
+class RejectedBinding(Model):
+    """``RejectedBindingBody`` (FR-COMMIT-14): a binding reconciliation rejected: the claim and
+    beat that made it, the entity it bound and the records (fact ids) it conflicted with."""
+
+    claim_id: str | None = None
+    beat: int | None = None
+    bound_entity: str | None = None
+    conflicting_records: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Thunk(Model):
+    """``ThunkBody``: one introduced-but-undetermined reference. ``sketch`` stays raw JSON (the
+    schema leaves it untyped); :meth:`ThunkSketch.from_json` is its typed view (convention 12).
+    ``state``, ``open_slot`` and ``resolution_level`` are plain strings in the schema."""
+
+    id: str
+    sketch: dict[str, Any]
+    description: str
+    open_slot: str
+    state: str
+    position: Position
+    salient: bool
+    valid_time: int | None
+    resolved_fact_id: str | None
+    resolution_level: str | None = None
+    rejected_bindings: list[RejectedBinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class LedgerItem(Model):
+    """``LedgerItemBody``: one promissory-ledger entry, owed on a thunk (``thunk_id``) or on a
+    hidden fact's proposition (``proposition_id``), and the operation that discharged it and
+    how (both ``None`` while undischarged). It carries no turn."""
+
+    id: str
+    thunk_id: str | None
+    proposition_id: str | None
+    kind: str
+    introduced_position: Position
+    discharged_by_operation: str | None
+    discharged_mode: str | None
+
+
+@dataclass(frozen=True)
+class Ledger(Model):
+    """``LedgerBody``: a page of the story's thunks by id with their ledger entries (the first
+    page also holds the entries on hidden facts' propositions), the story's revision and the
+    next page's ``after_id`` (``None`` on the last)."""
+
+    thunks: list[Thunk]
+    ledger: list[LedgerItem]
+    revision: int
+    next_after_id: str | None
+
+
+# --- eval reports (#149) -------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class YieldCluster(Model):
+    """``YieldClusterBody``: one escalation-yield cluster, a gate reason, a predicate shape
+    (``layer|cardinality|temporal|polarity``) or both (``None`` for the key a table doesn't
+    group by, and in the ``totals`` cluster). ``flip_rate`` and ``weighted_flip_rate`` are
+    ``None`` when ``valid`` is 0."""
+
+    escalations: int
+    skipped: int
+    valid: int
+    flips: int
+    flip_rate: float | None
+    weighted_flip_rate: float | None
+    gate_reason: str | None = None
+    shape: str | None = None
+
+
+@dataclass(frozen=True)
+class EscalationYield(Model):
+    """``EscalationYieldBody`` (NFR-PERF-5): escalation yield over the window the Engine used
+    (``from`` inclusive, ``to`` exclusive), its clusters in the Engine's order, and the overall
+    rate (``None`` when no claim was checked) beside its reference baseline."""
+
+    window_from: datetime = field(metadata={JSON_NAME: "from"})
+    window_to: datetime = field(metadata={JSON_NAME: "to"})
+    by_gate_reason: list[YieldCluster]
+    by_shape: list[YieldCluster]
+    by_gate_reason_shape: list[YieldCluster]
+    totals: YieldCluster
+    claims: int
+    escalated: int
+    escalation_rate: float | None
+    reference_baseline: float
+    is_gate: bool
+
+
+@dataclass(frozen=True)
+class ShadowSample(Model):
+    """``ShadowSampleBody``: one shadow sample, a sampled turn's render or composed message.
+    ``status`` is ``sampled`` or ``failed`` (an open set, shown raw when unknown)."""
+
+    id: str
+    story_id: str
+    operation_id: str
+    narrative_turn: int | None
+    status: str
+    extraction_claims: int
+    missed_count: int
+    missed_by_category: dict[str, int]
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ExtractionShadow(Model):
+    """``ExtractionShadowBody`` (FR-OBS-4): claim detection's shadow report over the window the
+    Engine used (inclusive at both ends): the whole window's counts, then one page of samples
+    (``next_cursor`` is the body's ``next``, ``None`` on the last page)."""
+
+    window_from: datetime = field(metadata={JSON_NAME: "from"})
+    window_to: datetime = field(metadata={JSON_NAME: "to"})
+    story_id: str | None
+    samples: int
+    failed: int
+    extraction_claims: int
+    missed: int
+    missed_by_category: dict[str, int]
+    miss_rate: float | None
+    detected_total: int
+    checked_total: int
+    items: list[ShadowSample]
+    next_cursor: str | None = field(metadata={JSON_NAME: "next"})
+
+
+# --- the scene and an entity's standing profile (#58; #152 reuses them) -------------------------
+
+
+@dataclass(frozen=True)
+class EntityBody(Model):
+    """``EntityBody``: an entity of the story, its id, its ``kind`` (a free string: ``place``,
+    ``person``, ``object``…) and its canonical ``name`` ("" when the Engine has no entity row
+    for the id)."""
+
+    entity_id: str
+    kind: str
+    name: str
+
+
+@dataclass(frozen=True)
+class SceneBody(Model):
+    """``SceneBody`` (FR-STORE-3): the scene as of ``turn`` (its active ``variant``, ``None`` at
+    turn 0) for ``viewpoint``: the player character's ``location`` (``None`` when unknown to the
+    viewpoint) and the entities ``present`` there, sorted by entity id."""
+
+    turn: int
+    variant: int | None
+    viewpoint: str
+    location: EntityBody | None
+    present: list[EntityBody]
+
+
+@dataclass(frozen=True)
+class RelationshipBody(Model):
+    """``RelationshipBody``: one relationship of a profiled entity. ``direction`` is ``out``
+    (the entity is the subject, or the predicate is symmetric) or ``in``, a plain string in the
+    schema; the valid-time bounds are story-minutes (``None`` open); ``source_fact_id`` is set
+    only for ``omniscient``."""
+
+    predicate_id: str
+    predicate: str
+    direction: str
+    other: EntityBody
+    qualifiers: dict[str, Any]
+    valid_from: int | None
+    valid_to: int | None
+    source_fact_id: str | None
+
+
+@dataclass(frozen=True)
+class PlacementBody(Model):
+    """``PlacementBody``: at a ``location`` (with the places containing it, nearest first,
+    ``within``) or in a ``container``; valid-time bounds and, for ``omniscient``, the fact."""
+
+    location: EntityBody | None
+    container: EntityBody | None
+    within: list[EntityBody]
+    valid_from: int | None
+    valid_to: int | None
+    source_fact_id: str | None
+
+
+@dataclass(frozen=True)
+class InventoryBody(Model):
+    """``InventoryBody``: an item the entity holds and, for ``omniscient``, the fact."""
+
+    item: EntityBody
+    source_fact_id: str | None
+
+
+@dataclass(frozen=True)
+class EntityProfileBody(Model):
+    """``EntityProfileBody`` (FR-RET-6): ``entity``'s standing profile as of turn ``as_of`` for
+    ``viewpoint``: its relationships both ways, its ``placement`` (``None`` when it has none the
+    viewpoint can read) and its inventory."""
+
+    entity: EntityBody
+    as_of: int
+    relationships: list[RelationshipBody]
+    placement: PlacementBody | None
+    inventory: list[InventoryBody]
+    viewpoint: str
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+@dataclass(frozen=True)
+class SketchCandidate:
+    """A possible value of a thunk's open slot (the Engine's ``Candidate``): an entity, or a
+    text with no entity yet, and how likely it is. ``index`` is its 1-based position."""
+
+    index: int
+    entity_id: str | None
+    text: str
+    confidence: float
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object, index: int) -> SketchCandidate | None:
+        """``None`` unless ``obj`` is an object whose ``confidence`` is a number and whose
+        ``entity_id`` / ``text`` (when present) are strings (``entity_id`` may be null)."""
+        if not isinstance(obj, dict):
+            return None
+        entity, text = obj.get("entity_id"), obj.get("text", "")
+        confidence = _number(obj.get("confidence", 0.0))
+        if confidence is None or not isinstance(text, str):
+            return None
+        if entity is not None and not isinstance(entity, str):
+            return None
+        extras = _unnamed(obj, ("entity_id", "text", "confidence"))
+        return cls(index, entity, text, confidence, extras)
+
+
+SKETCH_TEXTS = ("subject_text", "relation_text", "object_text", "time_text")
+SKETCH_IDS = ("subject_id", "object_id", "parent_fact_id")
+SKETCH_FIELDS = (
+    *SKETCH_TEXTS,
+    "predicate_id",
+    *SKETCH_IDS,
+    "literal",
+    "polarity",
+    "open_slot",
+    "candidates",
+    "span",
+)
+
+
+@dataclass(frozen=True)
+class ThunkSketch:
+    """``ThunkBody.sketch`` typed (the Engine's ``core.commit.sketch.ThunkSketch``): the texts as
+    said, the predicate and the known arguments by id (``literal`` a :class:`TypedLiteral`), the
+    polarity, the sketch's own ``open_slot``, the candidates, the ``(beat, start, end)`` span and
+    an incidental detail's ``parent_fact_id``. A text or id of the wrong type lands in
+    ``extras`` and a candidate that doesn't parse in ``skipped_candidates`` (both for "More")."""
+
+    predicate_id: str
+    open_slot: str
+    subject_text: str | None = None
+    relation_text: str | None = None
+    object_text: str | None = None
+    time_text: str | None = None
+    subject_id: str | None = None
+    object_id: str | None = None
+    parent_fact_id: str | None = None
+    literal: TypedLiteral | None = None
+    polarity: str = "affirmed"
+    candidates: tuple[SketchCandidate, ...] = ()
+    skipped_candidates: tuple[tuple[int, Any], ...] = ()
+    span: tuple[int, ...] | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> ThunkSketch | None:
+        """``None`` (the malformed case: the row shows the description and the raw sketch) unless
+        ``obj`` is an object with a string ``predicate_id`` and ``open_slot``, a ``literal`` that
+        is null, absent or a :class:`TypedLiteral` (``kind`` and ``value``), and ``candidates``
+        absent or a list. A text, id, polarity or span of the wrong type goes to ``extras``."""
+        if not isinstance(obj, dict):
+            return None
+        predicate, slot = obj.get("predicate_id"), obj.get("open_slot")
+        if not isinstance(predicate, str) or not isinstance(slot, str):
+            return None
+        raw_literal = obj.get("literal")
+        literal = None if raw_literal is None else TypedLiteral.from_json(raw_literal)
+        if raw_literal is not None and literal is None:
+            return None
+        raw_candidates = obj.get("candidates", [])
+        if not isinstance(raw_candidates, list):
+            return None
+        candidates, skipped = _entries(raw_candidates, SketchCandidate.from_json)
+        extras = _unnamed(obj, SKETCH_FIELDS)
+        texts = {name: _str_or_none(obj, name, extras) for name in (*SKETCH_TEXTS, *SKETCH_IDS)}
+        polarity = _str_or_none(obj, "polarity", extras)
+        span = obj.get("span")
+        span_ok = span is None or (
+            isinstance(span, list) and all(_int(n) is not None for n in span)
+        )
+        kept_span = _take(obj, "span", span_ok, extras)
+        return cls(
+            predicate,
+            slot,
+            literal=literal,
+            polarity=polarity or "affirmed",
+            candidates=candidates,
+            skipped_candidates=skipped,
+            span=tuple(kept_span) if isinstance(kept_span, list) else None,
+            extras=extras,
+            **texts,
+        )
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 
@@ -1271,6 +2546,47 @@ class ModelConfigItem(ModelConfigEntry):
 class ModelConfigMutation(ModelConfigItem):
     """``ModelConfigMutation``: one purpose after a write, with the revision it produced."""
 
+    idempotency_key: str | None = None
+
+
+# --- The embedding re-embed run (#150) ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StoryReembed(Model):
+    """``StoryReembedBody``: one story's re-embed. ``status`` is ``queued``, ``running``,
+    ``done`` or ``failed`` (an open set, humanised when unknown); ``done`` of ``total`` hot
+    active memories have a vector in the run's ``to_version``; ``error`` is a failed job's
+    exception class, never a message."""
+
+    story_id: str
+    total: int
+    done: int
+    status: str
+    error: str | None
+
+
+@dataclass(frozen=True)
+class ReembedStatus(Model):
+    """``ReembedStatusBody``: the last embedding-model change's re-embed run, one page of its
+    stories (``next_cursor`` is the body's ``next``, ``None`` on the last page). Every header
+    field is ``None`` before any model change; ``finished_at`` stays ``None`` for a run with no
+    stories. Times are the Engine's ISO strings (render them with ``engine_time``)."""
+
+    from_version: str | None
+    to_version: str | None
+    started_at: str | None
+    finished_at: str | None
+    stories: list[StoryReembed]
+    next_cursor: str | None = field(metadata={JSON_NAME: "next"})
+
+
+@dataclass(frozen=True)
+class ReembedRetry(Model):
+    """``ReembedRetryBody``: the stories a new re-embed job was enqueued for."""
+
+    retried: list[str]
+    config_revision: int
     idempotency_key: str | None = None
 
 
@@ -1452,17 +2768,7 @@ class Promotion(Model):
 # answers; ``CatalogCharacter`` is ``CharacterFull`` (``projection=full``), private fields
 # included. ``CardImage`` and ``CardRating`` are shared with the scenario pages (#68).
 
-OPEN_ENUM = "open_enum"
-"""Field metadata: a ``str`` field the schema types as a string enum. Read as a plain string so
-a value the Console does not know yet renders raw (#64 convention 17) instead of failing the
-whole answer; the contract test compares it with the enum's members."""
-
 EntryStatus = Literal["draft", "published", "archived"]
-
-
-def open_enum(**kwargs: Any) -> Any:
-    """``field(...)`` for an :data:`OPEN_ENUM` string."""
-    return field(metadata={OPEN_ENUM: True}, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -2522,6 +3828,55 @@ class MissingDependency(Model):
     module: str
     level: str
     requires: list[RequiredModule]
+
+
+# --- the guarantee table (#57) --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GuaranteeRequiredModule(Model):
+    """``epistrel__core__profiles__guarantees__RequiredModule``: a module a guarantee step needs,
+    on at ``level`` or above (any level when ``None``; exactly ``level`` when ``exact``). Suffixed:
+    the validate schema's ``RequiredModule`` shares the name."""
+
+    module: str
+    level: str | None = None
+    exact: bool = False
+
+
+@dataclass(frozen=True)
+class RequiredSetting(Model):
+    """``RequiredSetting``: a setting a step also needs, at one of ``values``."""
+
+    path: str
+    values: list[Any]
+
+
+@dataclass(frozen=True)
+class GuaranteeStatus(Model):
+    """``GuaranteeStatus``: one row of the guarantee table (FR-VERIFY-15). ``provided`` is
+    ``None`` for a step that runs outside stories; ``delivered_in`` names the milestone of a
+    step this deployment hasn't delivered."""
+
+    id: str
+    step: str
+    kind: Literal["deterministic", "model_dependent"]
+    metric: str | None
+    requires: list[GuaranteeRequiredModule]
+    setting: RequiredSetting | None
+    purposes: list[str]
+    provided: bool | None
+    delivered_in: str | None
+
+
+@dataclass(frozen=True)
+class GuaranteeTable(Model):
+    """``GuaranteeTable``: the profile and version a configuration reads and every row, in
+    ``docs/guarantees.md`` order."""
+
+    profile_id: str
+    version: int
+    rows: list[GuaranteeStatus]
 
 
 @dataclass(frozen=True)

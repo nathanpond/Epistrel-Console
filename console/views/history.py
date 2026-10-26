@@ -10,13 +10,19 @@ every view is a shareable URL. Reads, each degrading its own section:
 - ``GET /stories/{id}/history`` — only when the controls are valid; a refusal (422 ``as_of``
   beyond head, 403 ``omniscient_required``) replaces the items area and header line with the
   error panel, the controls and the variants panel still render;
-- ``GET /stories/{id}/settings`` — only when audit records are shown, for policy names.
+- ``GET /stories/{id}/settings`` — only when audit records are shown, for policy names;
+- ``GET /stories/{id}/predicates`` — once, only when the page shows a structured beat (#147),
+  for the propositions' predicate names (a failure shows ids);
+- ``GET /operations/{id}?viewpoint=omniscient`` — only with "Show all traces" (#147): once per
+  structured turn on the page, the first 20, on a local pool with a shared deadline
+  (:func:`turn_traces`); a failure marks that turn's beats unavailable and lists it.
 
 An HTMX request (the viewpoint select's ``change``) gets the controls fragment alone, so the
 audit box enables and disables live; without JavaScript the form refuses audit server-side.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from urllib.parse import urlencode
 
@@ -26,28 +32,45 @@ from django.urls import reverse
 from django.views.decorators.http import require_safe
 
 from console import cast as cast_helpers
-from console.engine.client import EngineClient, EngineClientError
-from console.engine.models import History, Story, SummarySegment, VariantChain
+from console.canon import cast_names
+from console.engine.client import EngineClient, EngineClientError, EngineError, EngineUnreachable
+from console.engine.models import History, HistoryItem, Story, SummarySegment, VariantChain
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.feedback import FeedbackWidget, collapsed, first_parts
 from console.forms.history import HistoryForm, as_of_options
 from console.history import (
+    NOT_LOADED,
+    UNAVAILABLE,
+    BeatTrace,
     TurnGroup,
     audit_record,
+    beat_trace,
     chain_key,
     chain_tip,
+    explain_query,
+    explain_url,
+    is_structured,
     operation_links,
     policy_names,
     split_audit,
     summary_rows,
     turn_groups,
+    turn_label,
 )
+from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
 from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
+from console.turn_trace import TurnTrace, read_turn_trace
 
 CONTROLS_TEMPLATE = "console/history/_controls.html"
 PAGE_TEMPLATE = "console/history/history.html"
+TRACE_TURNS_MAX = 20  # turns whose trace one page reads (#147)
+TRACE_WORKERS = 4
+TRACE_DEADLINE_S = 10.0  # shared by every trace read of one page
+TRACE_CAP_NOTE = f"Escalation and repair loaded for the first {TRACE_TURNS_MAX} turns on this page."
+TIMEOUT = "timeout"
+WITHHELD = "withheld: produced for another viewpoint"
 
 
 @dataclass(frozen=True)
@@ -87,6 +110,9 @@ class Page:
     chain: str = ""  # the variant parameter, when set
     clear_chain_url: str = ""
     settings_error: ErrorPanel | None = None
+    legend: bool = False  # a structured beat is shown: the verdict legend (#147)
+    trace_cap_note: str = ""
+    trace_failures: str = ""  # "Turn trace unavailable: T3 (timeout), …"
 
 
 def _url(story_id: str, params: QueryDict) -> str:
@@ -210,8 +236,11 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         actor_filtered=bool(query["actor_character_id"]),
     )
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
-    older = history.next_before_turn
     variant = query["variant"] or ""
+    if not variant:  # a chain view isn't the active timeline (#142)
+        _with_explain(story.id, groups)
+    traces = _with_traces(client, request, story, groups, load=form.show_traces)
+    older = history.next_before_turn
     return Page(
         history=history,
         viewpoint_label=cast_helpers.viewpoint_label(history.output_viewpoint, cast),
@@ -224,7 +253,135 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         chain=variant,
         clear_chain_url=_url(story.id, _with(request, variant=None)) if variant else "",
         settings_error=settings_error,
+        legend=traces.legend,
+        trace_cap_note=traces.cap_note,
+        trace_failures=traces.failures,
     )
+
+
+# --- Beat traces (#147) -------------------------------------------------------------------------
+
+
+def _failure(exc: EngineClientError) -> str:
+    """A failed trace read's reason in the page notice."""
+    if isinstance(exc, EngineError):
+        return f"HTTP {exc.http_status} {exc.code}" if exc.code else f"HTTP {exc.http_status}"
+    if isinstance(exc, EngineUnreachable):
+        return "unreachable"
+    return "error"
+
+
+def turn_traces(
+    client: EngineClient,
+    operation_ids: Sequence[str],
+    *,
+    request: HttpRequest | None = None,
+) -> dict[str, TurnTrace | str]:
+    """Each operation's trace (#139's :func:`read_turn_trace`), or why it is unavailable: the
+    notice reason ("timeout", "HTTP 503 database_unavailable", "unreachable", "withheld: …").
+
+    The reads run on a pool of 4 local to this call, under one deadline for all of them; reads
+    still running then are abandoned (they end on the client's own read timeout) and the page
+    renders. Only Engine reads run in the workers; errors are logged here, after the wait."""
+    found: dict[str, TurnTrace | str] = {}
+    if not operation_ids:
+        return found
+    executor = ThreadPoolExecutor(max_workers=TRACE_WORKERS)
+    try:
+        futures: dict[str, Future[TurnTrace]] = {
+            op_id: executor.submit(read_turn_trace, client, op_id) for op_id in operation_ids
+        }
+        wait(futures.values(), timeout=TRACE_DEADLINE_S)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    for op_id, future in futures.items():
+        if not future.done() or future.cancelled():
+            found[op_id] = TIMEOUT
+            continue
+        exc = future.exception()
+        if isinstance(exc, EngineClientError):
+            if request is not None:
+                log_engine_error(request, exc)
+            found[op_id] = _failure(exc)
+        elif exc is not None:
+            raise exc
+        else:
+            trace = future.result()
+            found[op_id] = WITHHELD if trace.withheld_for is not None else trace
+    return found
+
+
+@dataclass(frozen=True)
+class Traces:
+    legend: bool = False
+    cap_note: str = ""
+    failures: str = ""
+
+
+def _with_traces(
+    client: EngineClient,
+    request: HttpRequest,
+    story: Story,
+    groups: list[TurnGroup],
+    *,
+    load: bool,
+) -> Traces:
+    """Give each structured beat its trace (#147). The registry is read once when the page has
+    a structured beat; with ``load``, each structured generated turn's trace too (the first
+    :data:`TRACE_TURNS_MAX`, in page order)."""
+    items = [row.item for group in groups for row in group.rows]
+    if not any(is_structured(i) for i in items):
+        return Traces()
+    names = predicate_names(request, client, story.id)
+    cast = cast_names(story.cast)
+    operations: dict[str, str] = {}  # op id → turn label, page order
+    for item in items:
+        if is_structured(item) and item.origin == "generated":
+            operations.setdefault(item.operation_id, turn_label(item.turn, item.variant))
+    wanted = list(operations)[:TRACE_TURNS_MAX] if load else []
+    read = turn_traces(client, wanted, request=request)
+    for group in groups:
+        group.rows = [
+            replace(row, trace=_trace(row.item, read, story.id, cast, names, load=load))
+            for row in group.rows
+        ]
+    failed = [f"{operations[op]} ({why})" for op, why in read.items() if isinstance(why, str)]
+    return Traces(
+        legend=True,
+        cap_note=TRACE_CAP_NOTE if load and len(operations) > TRACE_TURNS_MAX else "",
+        failures=f"Turn trace unavailable: {', '.join(failed)}" if failed else "",
+    )
+
+
+def _trace(
+    item: HistoryItem,
+    read: Mapping[str, TurnTrace | str],
+    story_id: str,
+    cast: Mapping[str, str],
+    names: Mapping[str, str],
+    *,
+    load: bool,
+) -> BeatTrace | None:
+    found = read.get(item.operation_id)
+    trace = found if isinstance(found, TurnTrace) else None
+    state = UNAVAILABLE if isinstance(found, str) else NOT_LOADED
+    return beat_trace(
+        item,
+        trace,
+        state,
+        story_id=story_id,
+        cast_names=cast,
+        predicate_names=names,
+        open_trace=load,
+    )
+
+
+def _with_explain(story_id: str, groups: list[TurnGroup]) -> None:
+    """Give each structured turn whose input the page shows its "Explain retrieval" link (#142),
+    built from the page's items only (zero Engine reads)."""
+    for group in groups:
+        found = explain_query([row.item for row in group.rows], group.turn, group.variant)
+        group.explain_url = explain_url(story_id, found) if found is not None else None
 
 
 def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidget]) -> None:

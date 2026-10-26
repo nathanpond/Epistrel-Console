@@ -1,0 +1,34 @@
+{% load canon_tags console_format inspect_tags %}{% comment %}
+One fact version (#137): the shared row of the Canon tab (#138's lineage view and #146's fact
+writes reuse it). Context: fact (a console.engine.models.FactBody); state (a
+console.canon.FactState, or None: the State column is hidden and nothing is styled superseded);
+predicate_names, cast_names (convention 2's name maps); actions (#135 convention 14: a template
+name for an extra Actions cell, rendered with fact and state in context, or None; #146 sets it).
+Only a superseded state greys the row (class fact-superseded) and strikes the proposition.
+Fact ids link #138's lineage view (convention 3): the row's id, supersedes, superseded by and first
+closed by with the row's subject and predicate; "Anchored to" by id alone.
+{% endcomment %}{% fact_view fact cast_names as v %}{% with subject=fact.proposition.subject_id predicate=fact.proposition.predicate_id %}<tr id="f-{{ fact.id }}" class="fact-row{% if state.superseded %} fact-superseded{% endif %}">
+  <td class="fact-id"><a href="{% lineage_url fact.id subject predicate %}">{{ fact.id|engine_id }}</a></td>
+  <td class="proposition">{% include "console/inspect/_proposition.html" with proposition=fact.proposition %}</td>
+  <td class="valid-time">{{ v.valid_time }}</td>
+  <td class="tx-time"><time datetime="{{ v.tx_from.raw }}" title="{{ v.tx_from.raw }}">{{ v.tx_from.shown }}</time> → {% if v.tx_to %}<time datetime="{{ v.tx_to.raw }}" title="First closure (never rewritten): {{ v.tx_to.raw }}">{{ v.tx_to.shown }}</time>{% else %}current{% endif %}</td>
+  {% if state %}<td class="state state-{{ state.key }}"{% if state.title %} title="{{ state.title }}"{% endif %}>{{ state.label }}{% if state.note %}<br><small class="muted">{{ state.note }}</small>{% endif %}</td>{% endif %}
+  <td class="visibility"><span title="{{ v.scope }}">{{ v.scope|humanise|capfirst }}</span>{% if v.characters is not None %}: {% for c in v.characters %}{% include "console/inspect/_entity.html" with ref=c %}{% if not forloop.last %}, {% endif %}{% empty %}none listed{% endfor %}{% endif %}</td>
+  <td><span title="{{ fact.provenance }}">{{ fact.provenance|humanise|capfirst }}</span></td>
+  <td><span title="{{ fact.authority }}">{{ fact.authority|humanise|capfirst }}</span></td>
+  <td class="lock">{% if fact.author_locked %}<span title="Author-locked" aria-label="locked">🔒</span>{% endif %}</td>
+  <td class="links">{% if fact.supersedes or state.superseded %}{% if fact.supersedes %}supersedes {% for s in fact.supersedes %}<a href="{% lineage_url s subject predicate %}">{{ s|engine_id }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if state.superseded %}{% if fact.supersedes %}<br>{% endif %}{% if state.superseded_by %}superseded by {% for s in state.superseded_by %}<a href="{% lineage_url s subject predicate %}">{{ s|engine_id }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% elif state.first_closed_by %}first closed by <a href="{% lineage_url state.first_closed_by subject predicate %}">{{ state.first_closed_by|engine_id }}</a>{% endif %}{% endif %}{% else %}—{% endif %}</td>
+  <td class="more"><details><summary>More</summary><dl>
+    <dt>Id</dt><dd><code>{{ fact.id }}</code></dd>
+    <dt>Membership</dt><dd><span title="{{ fact.membership }}">{{ fact.membership|humanise|capfirst }}</span></dd>
+    <dt>Turn</dt><dd>{% if fact.narrative_turn is None %}—{% elif v.turn_url %}<a href="{{ v.turn_url }}">turn {{ fact.narrative_turn }}</a>{% else %}turn {{ fact.narrative_turn }}{% endif %}</dd>
+    <dt>Anchored to</dt><dd>{% if fact.anchored_to %}<a href="{% lineage_url fact.anchored_to %}">{{ fact.anchored_to|engine_id }}</a>{% else %}—{% endif %}</dd>
+    <dt>Lineage</dt><dd><code>{{ fact.lineage_id }}</code></dd>
+    <dt>Proposition</dt><dd><code>{{ fact.proposition_id }}</code></dd>
+    <dt>Event</dt><dd>{% if fact.proposition.event_id %}<code>{{ fact.proposition.event_id }}</code>{% else %}—{% endif %}</dd>
+    <dt>Proposition valid-time</dt><dd>{{ v.proposition_time }}</dd>
+    <dt>Stored superseded by</dt><dd>{% if fact.superseded_by %}<code>{{ fact.superseded_by }}</code>{% else %}—{% endif %}</dd>
+    {% if timeline_revision is not None %}<dt>Timeline revision (page)</dt><dd><code>{{ timeline_revision }}</code></dd>{% endif %}
+  </dl></details></td>
+  {% if actions %}<td class="actions">{% include actions %}</td>{% endif %}
+</tr>{% endwith %}

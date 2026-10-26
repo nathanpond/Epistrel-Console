@@ -1,0 +1,37 @@
+{
+  "from_version": "stub:sha256:64",
+  "to_version": "stub:embed-v2:sha256:64",
+  "started_at": "2026-10-24T14:03:27.123456Z",
+  "finished_at": null,
+  "stories": [
+    {
+      "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0R06",
+      "total": 80,
+      "done": 80,
+      "status": "done",
+      "error": null
+    },
+    {
+      "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0R07",
+      "total": 15,
+      "done": 0,
+      "status": "failed",
+      "error": "EmbeddingVersionMismatch"
+    },
+    {
+      "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0R08",
+      "total": 10,
+      "done": 10,
+      "status": "done",
+      "error": null
+    },
+    {
+      "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0RX9",
+      "total": 3,
+      "done": 3,
+      "status": "done",
+      "error": null
+    }
+  ],
+  "next": null
+}

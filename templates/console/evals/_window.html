@@ -1,0 +1,2 @@
+{% comment %}One section's datetime-local inputs (context `window`): each with its own errors.{% endcomment %}{% for box in window.inputs %}
+  <div class="field field-{{ box.name }}"><label for="id_{{ box.name }}">{{ box.label }}</label> <input type="datetime-local" step="60" name="{{ box.name }}" id="id_{{ box.name }}" value="{{ box.value }}">{% if box.errors %}<ul class="errorlist">{% for e in box.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endfor %}

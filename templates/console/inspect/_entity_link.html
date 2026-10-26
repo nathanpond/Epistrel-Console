@@ -1,0 +1,5 @@
+{% comment %}
+An entity as #58 links it (console.scene.EntityLink): its name linked to its profile page at the
+resolved turn and viewpoint, the full id in title; "" shows a muted "(unnamed)". Unlinked when
+the id can't be a page URL. Context: e. No trailing newline, so lists join it.
+{% endcomment %}{% if e.url %}<a class="entity" href="{{ e.url }}" title="{{ e.id }}">{% else %}<span class="entity" title="{{ e.id }}">{% endif %}{% if e.name %}{{ e.name }}{% else %}<span class="muted">(unnamed)</span>{% endif %}{% if e.url %}</a>{% else %}</span>{% endif %}

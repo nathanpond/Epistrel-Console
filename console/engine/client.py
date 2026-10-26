@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import IO, Any, Literal, ParamSpec, Self, TypeVar
 from urllib.parse import quote
 
@@ -33,6 +34,7 @@ from console.engine.models import (
     CharacterPublished,
     CompanionDraft,
     ConfigChanges,
+    ConsolidationQueued,
     ContentRating,
     ContentRatingList,
     ContentRatingMutation,
@@ -43,20 +45,29 @@ from console.engine.models import (
     EffectiveConfig,
     EngineProfile,
     EngineProfilePage,
+    EntityProfileBody,
     ErasureBoundary,
     ErasureResult,
     ErasureStatus,
+    EscalationYield,
+    ExtractionShadow,
+    FactListBody,
+    FactWritten,
     ForkResult,
+    GuaranteeTable,
     HealthResponse,
     HealthResult,
     History,
+    HotSetBody,
     ImpactReport,
     IngestResponse,
+    Ledger,
     ListingStatus,
     MediaAsset,
     MediaKind,
     MediaPage,
     MediaUploaded,
+    MemoryWritten,
     MessageFeedback,
     Model,
     ModelConfig,
@@ -77,6 +88,8 @@ from console.engine.models import (
     PolicyList,
     PolicyMutation,
     PolicyScope,
+    PredicateDecision,
+    PredicateList,
     PrincipalLinks,
     ProfileDeleted,
     ProfileEdit,
@@ -97,10 +110,13 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     ReconcileResult,
+    ReembedRetry,
+    ReembedStatus,
     RegenerateResult,
     RelationRecord,
     Relations,
     RespondResponse,
+    RetrievalBody,
     Scenario,
     ScenarioCard,
     ScenarioDraft,
@@ -108,6 +124,7 @@ from console.engine.models import (
     ScenarioPage,
     ScenarioPublished,
     ScenarioStatus,
+    SceneBody,
     Story,
     StoryCharacterAdded,
     StoryCreated,
@@ -143,9 +160,15 @@ from console.version import VERSION
 USER_AGENT = f"epistrel-console/{VERSION}"
 DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
 MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
+# A retrieve read may embed its query and runs five search arms (#141).
+RETRIEVE_TIMEOUT_S = 10.0
+EVAL_TIMEOUT_S = 10.0  # the eval reports aggregate a window's records (#149)
+OMNISCIENT_VIEWPOINT = "omniscient"  # the only viewpoint the retrieve read accepts
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
 INGEST_PER_EVENT_S = 1.0  # an ingest waits its turn timeout plus this per event (#51)
+# The model port whose PUT probes a new model before it answers (#59).
+EMBEDDING_PORT = "embedding"
 LONG_MUTATION_TIMEOUT_S = 30.0  # rebuild (#43's timeouts; fork uses the turn timeout since #81)
 CONFIG_CHANGES_PAGE = 50  # #43's paging: Engine cursor lists ask for 50
 CATALOG_PAGE = 50  # the same for catalog lists (#65)
@@ -1094,6 +1117,442 @@ class EngineClient:
             return _parse(response, RebuildQueued)
         return _parse(response, RebuildResult)
 
+    # --- requesting consolidation (#145) --------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/consolidate",
+        status_models={202: ConsolidationQueued},
+        entity="story",
+        entity_id="story_id",
+    )
+    def consolidate_story(
+        self,
+        story_id: str,
+        from_turn: int,
+        to_turn: int,
+        *,
+        characters: Sequence[str] | None = None,
+        idempotency_key: str,
+    ) -> ConsolidationQueued:
+        """``POST /admin/stories/{id}/consolidate {from_turn, to_turn, scope?}``: consolidate
+        turns ``from_turn``..``to_turn`` into semantic facts and reflections now (FR-MEM-3,10),
+        rerunning a window already consolidated. ``characters`` ``None`` is the shared scope
+        (``scope`` not sent); otherwise ``{"scope": {"characters": [...]}}`` as given (the Engine
+        sorts, dedupes and caps at 50), and an empty list is a ``ValueError`` (the schema's
+        ``minItems`` 1). Handed to a worker: 202 :class:`ConsolidationQueued`, a job the Engine
+        reports no progress for (the same request while it waits is that job); any other 2xx is
+        ``bad_response``. 409 ``module_off``, 422 ``scope_mismatch``."""
+        body: dict[str, Any] = {"from_turn": from_turn, "to_turn": to_turn}
+        if characters is not None:
+            if not characters:
+                raise ValueError("consolidate_story: characters must name at least one character")
+            body["scope"] = {"characters": list(characters)}
+        response = self._request(
+            "POST",
+            f"/admin{_story_path(story_id)}/consolidate",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+        if response.status_code != 202:
+            raise EngineError(
+                "bad_response",
+                f"the Engine answered {response.status_code} to a consolidation request",
+                {},
+                response.status_code,
+            )
+        return _parse(response, ConsolidationQueued)
+
+    # --- the predicate registry (#136) ---------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/predicates", response_model=PredicateList)
+    def list_predicates(self, story_id: str) -> PredicateList:
+        """``GET /stories/{id}/predicates``: the story's predicate registry (FR-PROP-3), the core
+        vocabulary first, its implication rules and its configuration revision. Served under
+        every profile. The single registry read: :meth:`PredicateList.names` gives the
+        predicate names other pages show (#135 convention 2)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/predicates"), PredicateList)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/predicates/{predicate_id}/approve",
+        response_model=PredicateDecision,
+    )
+    def approve_predicate(
+        self,
+        story_id: str,
+        predicate_id: str,
+        changes: Sequence[str] | None,
+        *,
+        idempotency_key: str,
+    ) -> PredicateDecision:
+        """``POST /stories/{id}/predicates/{pid}/approve``: approve the predicate's pending
+        proposal (FR-PROP-4), the whole of it (``changes`` ``None``: ``{}`` is sent) or the
+        fields named (``{"changes": [...]}``; an empty list is a ``ValueError``, the schema's
+        ``minItems`` 1). Approving a subset closes the whole proposal. 404 ``not_found``
+        (``details.reason: no_pending_proposal``), 422 ``validation_error``
+        (``details.reason: not_proposed``)."""
+        body: dict[str, Any] = {}
+        if changes is not None:
+            if not changes:
+                raise ValueError("approve_predicate: changes must name at least one field")
+            body["changes"] = list(changes)
+        response = self._request(
+            "POST",
+            _predicate_path(story_id, predicate_id, "approve"),
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PredicateDecision)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/predicates/{predicate_id}/reject",
+        response_model=PredicateDecision,
+    )
+    def reject_predicate(
+        self, story_id: str, predicate_id: str, *, idempotency_key: str
+    ) -> PredicateDecision:
+        """``POST /stories/{id}/predicates/{pid}/reject`` (no body): reject the pending proposal;
+        nothing changes and the Engine won't file the same proposal again."""
+        response = self._request(
+            "POST",
+            _predicate_path(story_id, predicate_id, "reject"),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, PredicateDecision)
+
+    # --- canon facts (#137) --------------------------------------------------------------------
+
+    @operation("GET", "/admin/stories/{story_id}/facts", response_model=FactListBody)
+    def list_facts(
+        self,
+        story_id: str,
+        *,
+        as_of_story_time: int | None = None,
+        as_of_record_time: datetime | None = None,
+        subject: str | None = None,
+        predicate: str | None = None,
+        include_superseded: bool = False,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> FactListBody:
+        """``GET /admin/stories/{id}/facts`` (FR-BITEMP-3): the story's current canon (at
+        ``as_of_record_time`` when given; true at story-minute ``as_of_story_time`` when given),
+        or with ``include_superseded`` every active version (the Engine then ignores
+        ``as_of_record_time`` and keeps versions whose valid-time may cover the minute). Ordered
+        by id, ``limit`` 1 to 500. Always ``viewpoint=omniscient`` (#135 convention 1). A ``None``
+        or ``False`` argument is left out; the record time is sent in UTC with ``Z``. 409
+        ``module_off`` for a Lite story."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if as_of_story_time is not None:
+            params["as_of_story_time"] = str(as_of_story_time)
+        if as_of_record_time is not None:
+            moment = as_of_record_time.astimezone(UTC)
+            params["as_of_record_time"] = moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        if subject:
+            params["subject"] = subject
+        if predicate:
+            params["predicate"] = predicate
+        if include_superseded:
+            params["include_superseded"] = "true"
+        if cursor:
+            params["cursor"] = cursor
+        response = self._request("GET", f"/admin{_story_path(story_id)}/facts", params=params)
+        return _parse(response, FactListBody)
+
+    # --- commitments: thunks and the promissory ledger (#148) --------------------------------
+
+    @operation("GET", "/stories/{story_id}/inspect/ledger", response_model=Ledger)
+    def inspect_ledger(
+        self,
+        story_id: str,
+        *,
+        state: str | None,
+        discharged: bool | None,
+        after_id: str | None,
+        limit: int = 100,
+    ) -> Ledger:
+        """``GET /stories/{id}/inspect/ledger`` (FR-COMMIT-7,13): a page of the story's thunks by
+        id (``limit`` 1 to 500, ``after_id`` continues), only those in ``state`` when given,
+        with their ledger entries (``discharged`` keeps the discharged or the undischarged ones;
+        every thunk on the page still comes back); the first page also holds the entries on
+        hidden facts' propositions. Always ``viewpoint=omniscient`` (#135 convention 1). A
+        ``None`` argument is left out; ``after_id`` is passed through as given. 409
+        ``module_off`` for a story that doesn't run commitment."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if state is not None:
+            params["state"] = state
+        if discharged is not None:
+            params["discharged"] = "true" if discharged else "false"
+        if after_id:
+            params["after_id"] = after_id
+        response = self._request("GET", f"{_story_path(story_id)}/inspect/ledger", params=params)
+        return _parse(response, Ledger)
+
+    # --- the scene and an entity's standing profile (#58) -------------------------------------
+
+    @operation("GET", "/stories/{story_id}/scene", response_model=SceneBody)
+    def get_scene(
+        self, story_id: str, *, as_of: int | None = None, viewpoint: str | None = None
+    ) -> SceneBody:
+        """``GET /stories/{id}/scene`` (FR-STORE-3): the player character's location at the end
+        of turn ``as_of`` (default the head) and the entities there, for ``viewpoint``
+        (``omniscient`` or ``character:<id>``; default the story's default output viewpoint).
+        One of the two M4 reads that may send a character viewpoint (#135 convention 1). A
+        ``None`` argument is left out. 422 ``validation_error`` (``query.as_of``, with
+        ``details.head``) past the head; 422 ``viewpoint_unresolved`` for a viewpoint outside the
+        cast or none resolved."""
+        response = self._request(
+            "GET", f"{_story_path(story_id)}/scene", params=_scene_params(as_of, viewpoint)
+        )
+        return _parse(response, SceneBody)
+
+    @operation(
+        "GET", "/stories/{story_id}/entities/{entity_id}/profile", response_model=EntityProfileBody
+    )
+    def get_entity_profile(
+        self,
+        story_id: str,
+        entity_id: str,
+        *,
+        as_of: int | None = None,
+        viewpoint: str | None = None,
+    ) -> EntityProfileBody:
+        """``GET /stories/{id}/entities/{eid}/profile`` (FR-RET-6): the entity's relationships
+        both ways, its placement and its inventory as of turn ``as_of``, for ``viewpoint`` (the
+        same parameters and 422s as :meth:`get_scene`); 404 ``not_found`` for an entity that
+        isn't the story's."""
+        response = self._request(
+            "GET",
+            f"{_story_path(story_id)}/entities/{quote(entity_id, safe='')}/profile",
+            params=_scene_params(as_of, viewpoint),
+        )
+        return _parse(response, EntityProfileBody)
+
+    # --- eval reports (#149) ---------------------------------------------------------------
+
+    @operation("GET", "/admin/evals/escalation-yield", response_model=EscalationYield)
+    def get_escalation_yield(
+        self, window_from: datetime | None, window_to: datetime | None
+    ) -> EscalationYield:
+        """``GET /admin/evals/escalation-yield`` (NFR-PERF-5): escalation yield over ``from``
+        (inclusive) .. ``to`` (exclusive). An omitted ``to`` is now and an omitted ``from`` is
+        30 days before ``to``; the answer echoes the window used. ``from`` after ``to`` is 422
+        ``validation_error`` (``details.field`` ``from``). A 10 s read, never recorded."""
+        response = self._request(
+            "GET",
+            "/admin/evals/escalation-yield",
+            params=_window(window_from, window_to),
+            timeout=EVAL_TIMEOUT_S,
+        )
+        return _parse(response, EscalationYield)
+
+    @operation("GET", "/admin/evals/extraction-shadow", response_model=ExtractionShadow)
+    def get_extraction_shadow(
+        self,
+        window_from: datetime | None,
+        window_to: datetime | None,
+        *,
+        story_id: str | None = None,
+        limit: int = 100,
+        after: str | None = None,
+    ) -> ExtractionShadow:
+        """``GET /admin/evals/extraction-shadow`` (FR-OBS-4): claim detection's shadow report
+        over ``from`` .. ``to`` (both inclusive; the same defaults as the yield report), for
+        every story or one ``story_id``, with one page of samples (``limit`` 1 to 200;
+        ``after`` is the last page's ``next``, passed through as given). A 10 s read, never
+        recorded."""
+        params = _window(window_from, window_to)
+        if story_id:
+            params["story_id"] = story_id
+        params["limit"] = str(limit)
+        if after:
+            params["after"] = after
+        response = self._request(
+            "GET", "/admin/evals/extraction-shadow", params=params, timeout=EVAL_TIMEOUT_S
+        )
+        return _parse(response, ExtractionShadow)
+
+    # --- author canon writes (#146) ------------------------------------------------------------
+
+    @operation("POST", "/admin/stories/{story_id}/facts", response_model=FactWritten)
+    def commit_fact(
+        self, story_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> FactWritten:
+        """``POST /admin/stories/{id}/facts`` (``FactRequest``, sent as given): write an author
+        fact (FR-GUARD-4's canonize). The deterministic check runs first; a current fact of the
+        same functional key, or of the opposite polarity, is superseded (``superseded``), and an
+        ``uncertain`` verdict or an unresolved contradiction comes back in ``warnings``. 409
+        ``module_off`` for a Lite story; 422 ``unknown_predicate`` / ``validation_error``. The
+        Engine holds the write behind a running turn, so it waits the turn timeout (#64
+        convention 18)."""
+        path = f"/admin{_story_path(story_id)}/facts"
+        return self._fact_write("POST", path, idempotency_key, body)
+
+    @operation("POST", "/admin/stories/{story_id}/facts/{fact_id}/lock", response_model=FactWritten)
+    def lock_fact(self, story_id: str, fact_id: str, *, idempotency_key: str) -> FactWritten:
+        """``POST /admin/stories/{id}/facts/{fid}/lock`` (no body): set ``author_locked`` on
+        current version ``fact_id`` by writing a successor of the same proposition. A locked
+        version answers unchanged (``operation_id`` null). 404 ``fact_not_found``; 409
+        ``fact_superseded`` / ``fact_inactive``."""
+        return self._fact_write("POST", _fact_path(story_id, fact_id, "lock"), idempotency_key)
+
+    @operation(
+        "DELETE", "/admin/stories/{story_id}/facts/{fact_id}/lock", response_model=FactWritten
+    )
+    def unlock_fact(self, story_id: str, fact_id: str, *, idempotency_key: str) -> FactWritten:
+        """``DELETE /admin/stories/{id}/facts/{fid}/lock``: clear the lock (a successor, as for
+        the lock); an unlocked version answers unchanged."""
+        return self._fact_write("DELETE", _fact_path(story_id, fact_id, "lock"), idempotency_key)
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/facts/{fact_id}/supersede",
+        response_model=FactWritten,
+    )
+    def supersede_fact(
+        self, story_id: str, fact_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> FactWritten:
+        """``POST /admin/stories/{id}/facts/{fid}/supersede`` (``SupersedeRequest``, sent as
+        given): close current version ``fact_id`` and write ``proposition`` as its successor in
+        the same lineage. Visibility, the lock and ``anchored_to`` carry over unless given; the
+        valid-time is the new proposition's own unless ``valid_from``/``valid_to`` are given.
+        422 ``key_mismatch`` when the subject, predicate or key qualifiers change."""
+        path = _fact_path(story_id, fact_id, "supersede")
+        return self._fact_write("POST", path, idempotency_key, body)
+
+    def _fact_write(
+        self, method: str, path: str, idempotency_key: str, body: Mapping[str, Any] | None = None
+    ) -> FactWritten:
+        response = self._request(
+            method,
+            path,
+            json=dict(body) if body is not None else None,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, FactWritten)
+
+    # --- a story's hot set (#140) ---------------------------------------------------------------
+
+    @operation("GET", "/admin/stories/{story_id}/hot-set", response_model=HotSetBody)
+    def get_hot_set(self, story_id: str) -> HotSetBody:
+        """``GET /admin/stories/{id}/hot-set``: the story's hot-set counters (recounted now, and
+        as stored), budgets and pin ceilings, pins, open overflow episodes and latest 20
+        retirements. A read: nothing is written (and nothing recorded)."""
+        return _parse(self._request("GET", f"/admin{_story_path(story_id)}/hot-set"), HotSetBody)
+
+    # --- the retrieval explorer (#141) ----------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/retrieve", response_model=RetrievalBody)
+    def retrieve(
+        self,
+        story_id: str,
+        *,
+        q: str,
+        as_of: int | None = None,
+        actor_character_id: str | None = None,
+        include_quarantined: bool = False,
+    ) -> RetrievalBody:
+        """``GET /stories/{id}/retrieve``: what a structured render would retrieve for the text
+        ``q`` asked by ``actor_character_id`` (default the player) just after turn ``as_of``
+        (default the head). Always ``viewpoint=omniscient`` (#135 convention 1: the route is
+        omniscient-only). ``include_quarantined`` shows quarantined memories, marked. A
+        ``None`` or ``False`` argument is left out of the query. A read: no operation, and no
+        memory's access time moves."""
+        params: dict[str, str] = {"q": q, "viewpoint": OMNISCIENT_VIEWPOINT}
+        if as_of is not None:
+            params["as_of"] = str(as_of)
+        if actor_character_id:
+            params["actor_character_id"] = actor_character_id
+        if include_quarantined:
+            params["include_quarantined"] = "true"
+        response = self._request(
+            "GET", f"{_story_path(story_id)}/retrieve", params=params, timeout=RETRIEVE_TIMEOUT_S
+        )
+        return _parse(response, RetrievalBody)
+
+    # --- memory pins and quarantine (#143) -------------------------------------------------------
+
+    @operation("POST", "/stories/{story_id}/memories/{memory_id}/pin", response_model=MemoryWritten)
+    def pin_memory(self, story_id: str, memory_id: str, *, idempotency_key: str) -> MemoryWritten:
+        """``POST /stories/{id}/memories/{mid}/pin``: pin the memory (outside the hot-set budgets,
+        never retired, in every structured render's context). 422 ``pin_limit_exceeded`` when the
+        pin would pass a ceiling; a pinned memory answers unchanged (``operation_id`` null)."""
+        return self._memory_write("POST", _memory_path(story_id, memory_id, "pin"), idempotency_key)
+
+    @operation(
+        "DELETE", "/stories/{story_id}/memories/{memory_id}/pin", response_model=MemoryWritten
+    )
+    def unpin_memory(self, story_id: str, memory_id: str, *, idempotency_key: str) -> MemoryWritten:
+        """``DELETE /stories/{id}/memories/{mid}/pin``: remove the pin (an unpin above budget
+        opens an overflow episode); an unpinned memory answers unchanged."""
+        path = _memory_path(story_id, memory_id, "pin")
+        return self._memory_write("DELETE", path, idempotency_key)
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/memories/{memory_id}/quarantine",
+        response_model=MemoryWritten,
+    )
+    def quarantine_memory(
+        self, story_id: str, memory_id: str, reason: str, *, idempotency_key: str
+    ) -> MemoryWritten:
+        """``POST /admin/stories/{id}/memories/{mid}/quarantine {reason}``: never retrieve,
+        consolidate or place the memory in context until released. ``reason`` is 1 to 500
+        characters (``repeated_implication`` is reserved: 422). 409 ``module_off`` without
+        episodic memory; a quarantined memory answers unchanged."""
+        path = "/admin" + _memory_path(story_id, memory_id, "quarantine")
+        return self._memory_write("POST", path, idempotency_key, {"reason": reason})
+
+    @operation(
+        "DELETE",
+        "/admin/stories/{story_id}/memories/{memory_id}/quarantine",
+        response_model=MemoryWritten,
+    )
+    def release_memory(
+        self, story_id: str, memory_id: str, *, idempotency_key: str
+    ) -> MemoryWritten:
+        """``DELETE /admin/stories/{id}/memories/{mid}/quarantine``: release the quarantine; a
+        memory that isn't quarantined answers unchanged. 409 ``module_off`` as quarantine."""
+        path = "/admin" + _memory_path(story_id, memory_id, "quarantine")
+        return self._memory_write("DELETE", path, idempotency_key)
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/memories/{memory_id}/sanitize",
+        response_model=MemoryWritten,
+    )
+    def sanitize_memory(
+        self, story_id: str, memory_id: str, span: str, surrogate: str, *, idempotency_key: str
+    ) -> MemoryWritten:
+        """``POST /admin/stories/{id}/memories/{mid}/sanitize {span, surrogate}`` (#144): replace
+        every occurrence of the exact ``span`` (1 to 2,000 characters) by ``surrogate`` (0 to
+        2,000; it passes the input gate), then re-index and re-embed. 422 ``span_not_found``,
+        ``guardrail_violation`` or ``validation_error`` (``body.surrogate``: the rewritten text
+        would be blank or over 2,000); 409 ``module_off`` as quarantine. Never unchanged. The
+        operation log keeps only the lengths (``console.operation_log``)."""
+        path = "/admin" + _memory_path(story_id, memory_id, "sanitize")
+        body = {"span": span, "surrogate": surrogate}
+        return self._memory_write("POST", path, idempotency_key, body)
+
+    def _memory_write(
+        self, method: str, path: str, idempotency_key: str, body: Mapping[str, Any] | None = None
+    ) -> MemoryWritten:
+        response = self._request(
+            method,
+            path,
+            json=dict(body) if body is not None else None,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, MemoryWritten)
+
     @operation("GET", "/admin/model-config", response_model=ModelConfig)
     def list_model_config(self) -> ModelConfig:
         """``GET /admin/model-config``: every purpose's effective configuration (#46)."""
@@ -1109,13 +1568,14 @@ class EngineClient:
         self, purpose: str, config: Mapping[str, Any], *, idempotency_key: str
     ) -> ModelConfigMutation:
         """``PUT /admin/model-config/{purpose}``: the purpose's own ``base_url``, ``model`` and
-        ``params``, replaced in full (an absent or ``null`` field inherits)."""
+        ``params``, replaced in full (an absent or ``null`` field inherits). The ``embedding``
+        port's PUT probes a new model inside the call, so it waits 30 s (#59)."""
         response = self._request(
             "PUT",
             _purpose_path(purpose),
             json=dict(config),
             headers={"Idempotency-Key": idempotency_key},
-            timeout=MUTATION_TIMEOUT_S,
+            timeout=LONG_MUTATION_TIMEOUT_S if purpose == EMBEDDING_PORT else MUTATION_TIMEOUT_S,
         )
         return _parse(response, ModelConfigMutation)
 
@@ -1158,6 +1618,25 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         _raise_for_envelope(response)
+
+    # --- the embedding re-embed run (#150) -----------------------------------------------------
+
+    @operation("GET", "/admin/reembed/status", response_model=ReembedStatus)
+    def get_reembed_status(self, *, limit: int = 100, after: str | None = None) -> ReembedStatus:
+        """``GET /admin/reembed/status``: the last embedding-model change's run and one page of
+        its stories (``limit`` 1 to 200; ``after`` is the last page's ``next``, passed through
+        as given)."""
+        params = {"limit": str(limit)}
+        if after:
+            params["after"] = after
+        return _parse(self._request("GET", "/admin/reembed/status", params=params), ReembedStatus)
+
+    @operation("POST", "/admin/reembed/retry", response_model=ReembedRetry)
+    def retry_reembed(self, *, idempotency_key: str) -> ReembedRetry:
+        """``POST /admin/reembed/retry``: enqueue a new job for every story whose latest
+        re-embed job failed (deployment-wide: recorded with no entity)."""
+        response = self._post_empty("/admin/reembed/retry", idempotency_key)
+        return _parse(response, ReembedRetry)
 
     @operation("GET", "/admin/policies", response_model=PolicyList)
     def list_policies(
@@ -2509,6 +2988,15 @@ class EngineClient:
         params = {"version": str(version)} if version is not None else None
         return _parse(self._request("GET", _profile_path(profile_id), params=params), EngineProfile)
 
+    @operation("GET", "/engine-profiles/{profile_id}/guarantees", response_model=GuaranteeTable)
+    def get_profile_guarantees(self, profile_id: str, version: int | None = None) -> GuaranteeTable:
+        """``GET /engine-profiles/{id}/guarantees``: the guarantee table of the profile's latest
+        version, or of ``version``, over the deployment's defaults with no overrides (#57; 404
+        for an unknown profile or version, a deleted one still answers)."""
+        params = {"version": str(version)} if version is not None else None
+        path = f"{_profile_path(profile_id)}/guarantees"
+        return _parse(self._request("GET", path, params=params), GuaranteeTable)
+
     @operation("GET", "/engine-profiles/{profile_id}/versions", response_model=ProfileVersionList)
     def list_engine_profile_versions(self, profile_id: str) -> list[ProfileVersion]:
         """``GET /engine-profiles/{id}/versions``: every version, in the Engine's order (oldest
@@ -2667,6 +3155,12 @@ class EngineClient:
         fingerprint, capabilities and quality status."""
         path = f"{_story_path(story_id)}/effective-config"
         return _parse(self._request("GET", path), EffectiveConfig)
+
+    @operation("GET", "/stories/{story_id}/guarantees", response_model=GuaranteeTable)
+    def get_story_guarantees(self, story_id: str) -> GuaranteeTable:
+        """``GET /stories/{id}/guarantees``: the guarantee table of the story's effective
+        configuration, its overrides included (#57)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/guarantees"), GuaranteeTable)
 
     @operation(
         "POST",
@@ -3023,9 +3517,52 @@ def _config_change_params(
     return params
 
 
+def _iso_z(moment: datetime) -> str:
+    """An aware datetime as ISO 8601 in UTC with ``Z``: ``2026-10-17T14:03:00Z`` (microseconds
+    only when present)."""
+    utc = moment.astimezone(UTC)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.%fZ" if utc.microsecond else "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _window(window_from: datetime | None, window_to: datetime | None) -> dict[str, str]:
+    """An eval report's ``from`` / ``to`` query params (#149), each left out when ``None``."""
+    params: dict[str, str] = {}
+    if window_from is not None:
+        params["from"] = _iso_z(window_from)
+    if window_to is not None:
+        params["to"] = _iso_z(window_to)
+    return params
+
+
+def _scene_params(as_of: int | None, viewpoint: str | None) -> dict[str, str]:
+    """The scene and profile reads' query (#58): each of ``as_of`` and ``viewpoint`` only when
+    given."""
+    params: dict[str, str] = {}
+    if as_of is not None:
+        params["as_of"] = str(as_of)
+    if viewpoint is not None:
+        params["viewpoint"] = viewpoint
+    return params
+
+
 def _story_path(story_id: str) -> str:
     """``/stories/<id>``, the id percent-encoded (an unknown id still reaches the Engine)."""
     return f"/stories/{quote(story_id, safe='')}"
+
+
+def _memory_path(story_id: str, memory_id: str, action: str) -> str:
+    """``/stories/<id>/memories/<mid>/<action>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/memories/{quote(memory_id, safe='')}/{action}"
+
+
+def _fact_path(story_id: str, fact_id: str, action: str) -> str:
+    """``/admin/stories/<id>/facts/<fid>/<action>``, both ids percent-encoded."""
+    return f"/admin{_story_path(story_id)}/facts/{quote(fact_id, safe='')}/{action}"
+
+
+def _predicate_path(story_id: str, predicate_id: str, action: str) -> str:
+    """``/stories/<id>/predicates/<pid>/<action>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/predicates/{quote(predicate_id, safe='')}/{action}"
 
 
 def _feedback_path(story_id: str, message_id: str) -> str:

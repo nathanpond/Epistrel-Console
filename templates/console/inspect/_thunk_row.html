@@ -1,0 +1,24 @@
+{% load console_format inspect_tags %}{% comment %}
+One thunk (#148, console.ledger.ThunkRow) and, in a colspan row under it, the ledger entries owed
+on it. Context: row, story_id. Entity ids (known arguments, candidates, bound entities) are cast
+names or short ids, unlinked; fact ids link #138's lineage view; the predicate links #136.
+{% endcomment %}{% with t=row.thunk s=row.sketch %}<tr id="t-{{ t.id }}" class="thunk-row">
+  <td class="thunk-id">{{ t.id|engine_id }}</td>
+  <td class="description">{{ t.description }}</td>
+  <td class="open-slot"><span title="{{ t.open_slot }}">{{ t.open_slot|humanise|capfirst }}</span></td>
+  <td class="proposition">{% if s %}<span class="line">{% include "console/inspect/_predicate_ref.html" with ref=row.predicate %}{% if row.negated %} <span class="badge negated" title="negated">negated</span>{% endif %}</span>
+    {% for a in row.known %}<span class="line known">{{ a.slot }}={% if a.entity %}{% include "console/inspect/_entity.html" with ref=a.entity %}{% else %}<span{% if a.literal.title %} title="{{ a.literal.title }}"{% endif %}>{{ a.literal.text }}</span> ({{ a.literal.kind }}){% endif %}</span>
+    {% endfor %}{% for c in row.candidates %}<span class="line candidate">{% if c.text %}{{ c.text }}{% if c.entity %} ({% include "console/inspect/_entity.html" with ref=c.entity %}){% endif %}{% elif c.entity %}{% include "console/inspect/_entity.html" with ref=c.entity %}{% else %}—{% endif %} {{ c.confidence|decimal3 }}</span>
+    {% endfor %}{% if row.more_candidates %}<span class="line muted">+{{ row.more_candidates }} more</span>{% endif %}{% else %}—{% endif %}</td>
+  <td class="state"><span class="badge {{ row.state_class }}" title="{{ t.state }}">{{ t.state|humanise|capfirst }}</span></td>
+  <td class="introduced">{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position }}</a>{% else %}{{ row.position|default:"—" }}{% endif %}</td>
+  <td class="salient">{% if t.salient %}yes{% else %}no{% endif %}</td>
+  <td class="valid-time">{% if t.valid_time is None %}—{% else %}{{ t.valid_time }} min{% endif %}</td>
+  <td class="resolved">{% if row.resolved %}{% if row.resolved.url %}<a href="{{ row.resolved.url }}">{{ row.resolved.id|engine_id }}</a>{% else %}{{ row.resolved.id|engine_id }}{% endif %}{% else %}—{% endif %}</td>
+  <td class="level">{% if t.resolution_level %}<span title="{{ t.resolution_level }}">{{ t.resolution_level|humanise|capfirst }}</span>{% else %}—{% endif %}</td>
+  <td class="bindings">{% if row.bindings %}<details class="rejected-bindings"><summary>{{ row.bindings|length }} rejected</summary><ul>
+    {% for b in row.bindings %}<li>claim {{ b.claim_id|engine_id }} · {% if b.beat is None %}beat —{% else %}beat {{ b.beat }}{% endif %} · bound {% if b.entity %}{% include "console/inspect/_entity.html" with ref=b.entity %}{% else %}—{% endif %} · conflicts with {% for f in b.conflicting %}{% if f.url %}<a href="{{ f.url }}">{{ f.id|engine_id }}</a>{% else %}{{ f.id|engine_id }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</li>
+    {% endfor %}</ul></details>{% else %}—{% endif %}</td>
+  <td class="more"><details><summary>More</summary>{% if row.parent %}<p class="parent-fact">Parent fact: {% if row.parent.url %}<a href="{{ row.parent.url }}">{{ row.parent.id|engine_id }}</a>{% else %}{{ row.parent.id|engine_id }}{% endif %}</p>{% endif %}<pre>{{ row.more|pretty_json }}</pre></details></td>
+</tr>
+<tr class="ledger-entries" data-thunk="{{ t.id }}"><td colspan="12">{% if row.entries %}{% include "console/inspect/_ledger_entries.html" with entries=row.entries %}{% else %}<span class="muted no-entries">No ledger entries</span>{% endif %}</td></tr>{% endwith %}

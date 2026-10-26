@@ -1,0 +1,47 @@
+{% extends "console/inspect/base.html" %}
+{% load console_format %}
+{% comment %}
+The Ledger tab (#148): the GET filters (state, discharged; Apply drops after_id), then one page of
+GET /stories/{id}/inspect/ledger (viewpoint=omniscient, limit=100): the counts beside the story's
+revision, one row per thunk (_thunk_row.html) with its entries under it, then the "Owed on hidden
+facts" group (first page only) and "Entries for thunks not on this page". The form stays above
+every error; an invalid filter makes no ledger call. Rows come from console/ledger.py.
+{% endcomment %}
+{% block tab_content %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" action="{{ filter_url }}" class="ledger-form">
+  <div class="field field-state">{{ form.state.label_tag }} {{ form.state }}{{ form.state.errors }}</div>
+  <div class="field field-discharged">{{ form.discharged.label_tag }} {{ form.discharged }}{{ form.discharged.errors }}</div>
+  <button type="submit">Apply</button> <a class="ledger-clear" href="{{ filter_url }}">Clear</a>
+</form>
+
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif ledger_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif ledger_error %}{% include "console/_engine_error.html" with engine_error=ledger_error %}
+{% elif ledger %}{% with c=ledger.counts %}
+<p class="ledger-counts">Story revision {{ ledger.revision }} · <span class="thunk-counts">Thunks{% if c.label %} {{ c.label }}{% endif %}: {% for state, n in c.states %}{{ state }} {{ n|count }}{% if not forloop.last %} · {% endif %}{% endfor %}{% if c.other %} · other {{ c.other|count }}{% endif %}</span> · <span class="entry-counts">Entries{% if c.label %} {{ c.label }}{% endif %}: discharged {{ c.discharged|count }} · undischarged {{ c.undischarged|count }}</span></p>
+{% endwith %}
+{% if cast_unavailable %}<p class="muted cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if ledger.rows %}
+<table class="ledger">
+  <thead><tr><th>Thunk</th><th>Description</th><th>Open slot</th><th>Proposition</th><th>State</th><th>Introduced</th><th>Salient</th><th>Valid time</th><th>Resolved by</th><th>Level</th><th>Rejected bindings</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in ledger.rows %}{% include "console/inspect/_thunk_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="ledger-none">{{ empty.text }}</p>{% endif %}
+{% if ledger.hidden %}
+<h2>Owed on hidden facts</h2>
+{% include "console/inspect/_ledger_entries.html" with entries=ledger.hidden proposition=True %}
+{% endif %}
+{% if ledger.orphans %}
+<h2>Entries for thunks not on this page</h2>
+{% include "console/inspect/_ledger_entries.html" with entries=ledger.orphans thunk=True %}
+{% endif %}
+{% endif %}
+{% if not omniscient_required and not ledger_not_found and not ledger_error %}<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>{% endif %}
+{% endblock %}

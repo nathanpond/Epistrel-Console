@@ -1,0 +1,4 @@
+{% comment %}
+#139: one read-set key cell (console.turn_trace.Cell): "any" for `*`, convention-2 ids, a literal
+in <code>, "canon", "utterance · <id>", or inline JSON for another shape.
+{% endcomment %}{% load inspect_tags %}{% if cell.kind == "any" %}any{% elif cell.kind == "ids" %}{% for id in cell.ids %}{{ id|engine_id }}{% if not forloop.last %}, {% endif %}{% endfor %}{% elif cell.kind == "code" %}<code>{{ cell.text }}</code>{% elif cell.kind == "canon" %}canon{% elif cell.kind == "holder" %}{{ cell.text }} · {{ cell.ids.0|engine_id }}{% elif cell.kind == "json" %}<code title="{{ cell.json.full }}">{{ cell.json.shown }}</code>{% else %}—{% endif %}

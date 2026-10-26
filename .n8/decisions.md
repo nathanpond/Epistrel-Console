@@ -1206,3 +1206,405 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** M3 had already been executed (#155, #165 merged), so this run implemented only the open verify bug #166, on `milestone/m3-catalog-verify-fixes-2`. The tests drive the HTMX poll partial (`?op=swap`) after a held swap. The ended case uses `refused` with `progress {0, 0}`.
   **Why:** The poll partial reads only the check, so it isolates the progress line. `refused` is one of the endings the issue names. A scratch worktree with the #81 half of #165 reverse-applied fails the ended test, so it is a real gate. The starting test passes on both trees: the issue asks for it as the paired assertion, and that behaviour predates #165.
   **Issue:** #166
+
+## /n8-exec M4 — 2026-10-25
+
+- **Decision:** Executed M4 on one branch, `milestone/m4-inspectors`. A fresh agent ran each story in dependency order, sequentially, from a shared brief.
+  **Why:** 22 detailed stories and a 7-minute suite. A fresh context per story keeps each one reading its full spec. Running them one at a time avoids conflicts in the shared `client.py`, `models.py`, `urls.py` and `base.html`.
+  **Issue:** M4
+- **Decision:** The confirm page's error line uses the existing red `errorlist` class (`<p class="errorlist confirm-error">`) rather than a new style rule.
+  **Why:** base.html already styles `.errorlist` red. `.error` is styled only inside `ul.messages`.
+  **Issue:** #134
+- **Decision:** A 409 `module_off` with no `details.module` on a tab that has no rule (Overview, Predicates) reads "Needs a module that is off under this story's configuration" (`Unavailable("", None, …)`). Ledger's fallback module is `commitment`. `module_off_unavailable` takes an optional `effective`, so a `pipeline` answer can name the level the story runs.
+  **Why:** The plan gives a fallback only for tabs with a rule. Ledger's own route is commitment's, and the rule already names `pipeline` before `build` runs on a Lite story.
+  **Issue:** #135
+- **Decision:** The greyed tab is `<span class="disabled" …>`, following pass 2's markup, not the earlier `class="tab disabled"`.
+  **Why:** The two plan notes disagree. Pass 2 is the later, more detailed one, and its CSS rule is `nav.tabs span.disabled`.
+  **Issue:** #135
+- **Decision:** A 503 `erasure_pending` on the effective-config read returns `render_held` straight away, without the `get_story` read. Every other effective-config failure still runs `get_story`, so the header keeps the name.
+  **Why:** The held wrapper shows only the story id, and the story read would get the same 503.
+  **Issue:** #135
+- **Decision:** The filters are in `console/templatetags/inspect_tags.py` (`code_spans`, `no_backticks`). The library is not named `inspect`.
+  **Why:** `{% load inspect %}` would be a library sharing its name with the stdlib module. `console/inspect.py` keeps the name the plan gives it.
+  **Issue:** #135
+- **Decision:** The shell tests register every tab through a test urlconf (`tests/inspect/urls.py`). Its builds read `GET …/retrieve` and `GET …/inspect/ledger`, so the gate's zero-call rule and the 409 path can be tested before the tabs' own stories land.
+  **Why:** #135 registers only `inspect:overview`. The real urlconf is used to show that unregistered tabs are absent.
+  **Issue:** #135
+- **Decision:** The Overview's fingerprint uses a new `overview_fingerprint` in `console/inspect.py` rather than #85's `short_fingerprint`.
+  **Why:** The plan shows the `sha256:` prefix when present and "—" when empty. `short_fingerprint` drops the prefix and returns "", which the story header still relies on.
+  **Issue:** #151
+- **Decision:** A switch with an unexpected type (`<code>` verbatim) is tested by calling `module_rows` and rendering the template directly, not through the fake Engine.
+  **Why:** The fake validates responses against the OpenAPI schema and refuses a mistyped switch, so a page-level test can't send one.
+  **Issue:** #151
+- **Decision:** A `verification:<level>` capability gets its label from a `verification` entry ("Verification") in `CAPABILITY_LABELS`. Any `<module>:<level>` with a known module reads "<Label> (<level>)". Budgets and models get "(always on)" only in their plain form.
+  **Why:** The plan's general `<module>:<level>` rule needs a label for each module. No module is reported at a level in the always-on form.
+  **Issue:** #151
+- **Decision:** The hot-set models take the schema's names as they are (`HotSetBody`, `HotSetBudgets`, `HotCountsBody`, `HotSetPins`, `EpisodeBody`, `RetirementBody`), as the story's artifacts name them, not the shorter names some older models use.
+  **Why:** The story names them so, and convention 12 says "named after the schema".
+  **Issue:** #140
+- **Decision:** Counts in the Memory tab's tables use a new shared `count` filter (`console_format`, thousands separators); budget values are still formatted in `console/hot_set.py`.
+  **Why:** Convention 5 wants separators on every count, and later M4 tabs need the same; the story only ruled out filters for the budget values.
+  **Issue:** #140
+- **Decision:** Shared M4 helpers live in `console/inspect.py` (`short_id`, `history_turn_url`, `retrieval_url`) and `inspect_tags` (`engine_id`), with a `_character.html` partial for convention 2's names. `history_turn_url` links the active chain only (no variant yet).
+  **Why:** Built once for the later Inspect stories; no #140 link names a variant.
+  **Issue:** #140
+- **Decision:** `tests/inspect/urls.py` now stubs only the tabs the real urlconf hasn't registered; a registered tab keeps its real view there.
+  **Why:** Otherwise the stub would shadow the real Memory view under the test urlconf, which the Retrieval-link tests need.
+  **Issue:** #140
+- **Decision:** In Counts, "over budget" sits in the Hot cell beside the count; in Pins, the marker column is headed "Status" ("—" without a marker).
+  **Why:** The story names the markers but not their cells or the column header.
+  **Issue:** #140
+- **Decision:** A 409 `module_off` from the hot-set read (the route doesn't declare one) goes up to the shell's greyed panel; `erasure_pending` goes up to #87's held wrapper. Every other failure stays inside the tab, so the Browse grid still renders.
+  **Why:** That keeps the shell's behaviour and meets the story's per-section rule.
+  **Issue:** #140
+- **Decision:** Counts rows judge every character against `memories_per_character`, although the Engine scales a minor's budget, which the hot-set answer doesn't report. Filed #168.
+  **Why:** The response doesn't carry the scaled budget, and adding it would change the API contract.
+  **Issue:** #140
+- **Decision:** `retrieve` sends `include_quarantined=true` (only when checked) and the form accepts any checked value (`1`, `on`), so #140's `include_quarantined=1` links work. `q` goes to the Engine exactly as typed, with no stripping.
+  **Why:** The Engine's flag is a boolean query parameter. The AC says "exactly as entered", and the Engine checks `len(q)` on the raw text.
+  **Issue:** #141
+- **Decision:** With the cast known, a blank `actor` is filled with `cast.default_actor` before the form is bound, so the select shows the default and the id links keep `actor`. The player is still never sent.
+  **Why:** This keeps the form sticky the way the history form fills in `limit`. The Engine call doesn't change.
+  **Issue:** #141
+- **Decision:** `explain`/`explain_variant` are not form fields yet. The `{% if explain_banner %}` slot includes `console/inspect/_explain_banner.html`, which #142 creates.
+  **Why:** The plan says #142 owns them. A hidden pass-through with no meaning yet would only prejudge #142's design.
+  **Issue:** #141
+- **Decision:** With `skipped: ["episodic"]`, #135's reason renders inline above the results. The Resolution section still renders, and Candidates shows only its heading (no tables, no "retrieved no memories" line).
+  **Why:** Convention 7 puts the notice above the empty results, and the AC says "instead of empty tables".
+  **Issue:** #141
+- **Decision:** "This question retrieved no memories." shows whenever the three tables hold no candidates at all, filter or not. The `memory` filter also accepts the shown short form with its leading "…".
+  **Why:** Both are true whenever they apply, and the operator can then paste an id straight from a table.
+  **Issue:** #141
+- **Decision:** A mention's `<mark>` title carries the full entity id when the cast doesn't name it (the table shows the short id). The number goes in a `<sup>` after the mark, with `data-mention` on the mark.
+  **Why:** The AC says "resolved name/id" for the title, and a title is where a full id belongs (convention 2). The mark's text stays exactly the span.
+  **Issue:** #141
+- **Decision:** Shared helpers added: `position_text` (convention 4) in `console/inspect.py`, the `decimal3` filter in `inspect_tags`, and the partials `_memory_table.html`/`_memory_row.html` (with convention 14's `actions`) plus `_score_legend.html`. `_character.html` lost its trailing newline so comma-joined lists don't show a stray space.
+  **Why:** #142/#143/#145/#152 reuse the rows. Without the fix, participants rendered "Mara (player) , Tobin".
+  **Issue:** #141
+- **Decision:** With Retrieval registered, #140's link tests run against the real urlconf. A new `tests/inspect/urls_without_retrieval.py` keeps the "links omitted" path tested. `tests/inspect/urls.py` no longer lists a stub read for Retrieval.
+  **Why:** The links now render for real, and #140's AC expects them there.
+  **Issue:** #141
+- **Decision:** `history_turn_url` stays in `console/inspect.py` (built by #140) and gains an optional `variant` for the `#turn-N-<variant>` fragment, instead of a second copy in `console/history.py`; `explain_query`/`explain_url` are in `console/history.py` as planned.
+  **Why:** One convention-3 helper; existing callers keep the active-chain `-0` anchor.
+  **Issue:** #142
+- **Decision:** `explain_banner(cleaned_data, story_id, actor_label)` takes the story id and the asked actor's label rather than the story, and runs after the retrieve call.
+  **Why:** The banner needs only those; running after the call means a 422 on `query.as_of` (which removes `as_of` from `cleaned_data`) drops the banner with no extra check.
+  **Issue:** #142
+- **Decision:** `result_inspector` now takes `story_id` first; just-played and logged-row inspectors get the history-anchor link via `_with_history_link`. An inspector with `error` or `error_line` gets none.
+  **Why:** The history link needs the story; `error_line` marks a logged refusal, which the AC counts as an error.
+  **Issue:** #142
+- **Decision:** In the inspector the link sits in the revisions block after "Engine operation" (`<dt>Retrieval</dt>`); when the inspector has no revisions block (a transcript turn not played here) it renders as a line on its own.
+  **Why:** A transcript turn played elsewhere has `revisions=False`, but the AC still gives it the link.
+  **Issue:** #142
+- **Decision:** `<mid>` uses the existing `<ulid:memory_id>` path converter (`console.ids.UlidConverter`) instead of a new `re_path`.
+  **Why:** It is the same Engine ULID pattern, and it already 404s any other id before the view runs.
+  **Issue:** #143
+- **Decision:** `QuarantineForm.clean_reason` does the newline normalising and the length, blank and reserved checks, not the view.
+  **Why:** The checks are still local, and the form re-renders the raw typed value either way. The field is still `CharField(strip=False, max_length=None)`, as planned.
+  **Issue:** #143
+- **Decision:** Shared mutation refusals on a memory write (404, `story_archived`, `revision_conflict`, `idempotency_conflict`, `erased_subject_referenced`, `story_paused`, `story_busy`) use short texts in `console/views/inspect_memory.py` (`REFUSALS`, `refusal_text`): an error flash for row actions, above the form on the quarantine page. Any other error goes to #43's panel. On the quarantine page that panel renders above the kept form.
+  **Why:** #43 has no central code-to-text map. The paused and busy texts reuse `paused_refusal` and the busy wording from ownership.py.
+  **Issue:** #143
+- **Decision:** The pin-limit flash keeps the AC's literal backticks around `details.cap`. A scope other than `story`, or `character` without a `character_id`, uses the "Pin limit reached." fallback.
+  **Why:** The AC gives the exact text, and the flash is plain text. Neither case is named, so there is no holder to show.
+  **Issue:** #143
+- **Decision:** `MemoryView.kind`, `membership` and `retrieval_tier` are open enums (`OPEN_ENUM`). `OPEN_ENUM`/`open_enum` moved to the top of `console/engine/models.py` so earlier models can use them.
+  **Why:** The contract test needs enum-typed schema fields declared as open enums. The models that use them are defined above the old location.
+  **Issue:** #143
+- **Decision (Rule 3):** `tests/inspect/urls.py` builds `REAL` only from inspect routes named after a `Tab`.
+  **Why:** The new `memory-*` routes in `inspect_patterns` aren't tabs, and `Tab(name)` raised on them.
+  **Issue:** #143
+- **Decision:** The explorer passes `actions_next` (the request's full path) next to `actions`, and the quarantine and release links get theirs from the `{% memory_action_url %}` tag (`console.inspect.memory_action_url`, which applies the 2,000-character fallback).
+  **Why:** The row partial needs the explorer's path, and the fallback depends on each row's memory id.
+  **Issue:** #143
+- **Decision:** The Sanitize… link carries only `next` (#143's `memory_action_url`); the sanitize page reads the explorer's question (`q`, `as_of`, `actor`, `include_quarantined`) back out of `next`, and only when `next` is this story's Retrieval path.
+  **Why:** `next` already holds exactly those parameters, so a second copy in the link would only drift. A `next` that fell back (over 2,000 characters) has no `q`, so the page says "Text not shown".
+  **Issue:** #144
+- **Decision:** The page re-asks the question with `RetrievalForm(..., cast=None)`, so a chosen actor is sent as `actor_character_id` even when it is the player. No `get_story` read is made.
+  **Why:** Sending the player's id explicitly gives the same answer as leaving it out, and it saves a second read on every page load.
+  **Issue:** #144
+- **Decision:** `ConfirmPage` gains `buttons_template` (rendered after Confirm, before Cancel) for the sanitize confirm page's Edit button.
+  **Why:** The planner puts Edit after Confirm, and `fields_template` renders before the buttons. Other confirm pages don't change.
+  **Issue:** #144
+- **Decision:** The Console's own refusal texts for sanitize are "Enter the span to replace." (empty span) and "At most 2,000 characters (this one has N)." (span or surrogate too long).
+  **Why:** The AC doesn't give these texts. The wording follows the quarantine form and the question-length text.
+  **Issue:** #144
+- **Decision:** The redaction is two kind-keyed maps in `console/operation_log.py` (`REQUEST_REDUCERS` and `RESPONSE_REDUCERS`, only `sanitize_memory` for now). The client's per-operation `record_body` / `record_response` hooks aren't used for it.
+  **Why:** This is where the planner put it, and the response reducer needs the span as it was sent, which `record_response` isn't given. The guardrail flag is computed on the answer before it is reduced.
+  **Issue:** #144
+- **Decision:** The detail page's "Re-reading the Engine's record isn't offered…" note takes the place of the Fetch button. It shows only on rows that name an Engine operation, because those are the only rows that ever had the button.
+  **Why:** A refused sanitize has no Engine operation id, so it had nothing to re-read in the first place.
+  **Issue:** #144
+- **Decision:** Offer the shared scope only. The consolidate form has no scope choice and never sends `scope`. `consolidate_story` still takes `characters`.
+  **Why:** This was the owner's round-two recommendation ("recs good"). In Engine M4 a characters scope finds no inputs.
+  **Issue:** #145
+- **Decision:** The Memory-tab form GETs `inspect:consolidate` carrying the tab's key. A valid GET renders the confirmed-mode confirm page directly through `render_confirm(..., idempotency_key=<carried key>)`, and the POST goes through `confirm_action(..., require_confirmed=True)`. New helper: `console.confirm.carried_idempotency_key(data)`, which `posted_idempotency_key` now uses.
+  **Why:** `confirm_action` mints a fresh key on GET. The AC requires the Engine call to use the key the Memory tab rendered.
+  **Issue:** #145
+- **Decision:** An Engine refusal re-renders the consolidate page with a fresh key, values kept. `scope_mismatch` and `validation_error` answer 422. Shared refusals (convention 10 text via `refusal_text`) and #43's panel answer 200. A 2xx that is not a readable 202 flashes a warning and redirects to the Memory tab.
+  **Why:** This matches #143/#144's quarantine and sanitize pages. The operator changes the window after a refusal, so a fresh key avoids `idempotency_conflict`.
+  **Issue:** #145
+- **Decision:** `_module_off` gains keyword-only `module` (the fallback when `details.module` is absent) and `back_label`. With `module` set, the panel also shows #135's "configuration changed — reload" line. `unavailable_page.html` takes `back_label` ("Back" by default).
+  **Why:** The consolidate 409 must name `consolidation` as the fallback, not the Retrieval tab's `episodic`, and must link back to Memory.
+  **Issue:** #145
+- **Decision:** An ignored (malformed) `head` is not carried onto the confirm page. The Memory tab renders a value-less hidden `head` when the hot-set read failed.
+  **Why:** The AC says a `head` that isn't an integer ≥ 1 is ignored. Carrying it forward would only re-ignore it.
+  **Issue:** #145
+- **Decision:** The just-played inspector (`result_inspector`) also offers the "Eval hooks & read set" block, besides `row_inspector` and `selected_inspector`.
+  **Why:** The story is for any committed turn, and Demo 1 opens the block right after playing a turn. The block reads nothing until it is opened.
+  **Issue:** #139
+- **Decision:** `selected_inspector` now takes `story_id` first, and `row_inspector` takes an optional `story_id` (the page's). `Inspector.trace_shown` requires `trace_offered`, a story id, an operation id and no `error`/`error_line`.
+  **Why:** The inspector needs the story id to build the trace URL. Keeping the error and id checks in one property means a builder only sets `trace_offered`.
+  **Issue:** #139
+- **Decision:** The lenient models (`EvalHooks`, `Verdict`, `RepairRung`, `ReadSet`, `QueryKey`) are plain frozen dataclasses with `parse`, not `Model` subclasses. A named field of the wrong type reads as missing and its raw value goes to `extras` ("More").
+  **Why:** `Model.from_json` returns `None` for the whole object on one bad field. Convention 12 asks for skip-the-entry, keep-the-rest parsing.
+  **Issue:** #139
+- **Decision:** A read-set object that is a ULID shows as a convention-2 id. Any other string is a literal and shows verbatim in `<code>`. A `belief:<id>` holder shows like `utterance:<id>` ("belief · <id>").
+  **Why:** The Engine's key `object` is an entity id, a literal or `*`, so shortening a literal would garble it. `belief:` holders come from Engine #159, which the story's Discretion doesn't list.
+  **Issue:** #139
+- **Decision:** Latency lists only the stages the Engine sent (in `STAGES` order, unknown ones after). A missing stage gets no row.
+  **Why:** The Engine always sends all nine. A row for an absent stage would claim a 0 or "—" the Engine never reported.
+  **Issue:** #139
+- **Decision:** The held state's fragment uses a new `templates/console/stories/_held.html`, factored out of #87's `held.html`, with `held.held_context(...)`. Its Retry goes to the story page.
+  **Why:** #87 had no held partial. A fragment can't retry itself in place, so Retry goes to the story page.
+  **Issue:** #139
+- **Decision:** The lazy block sets `hx-status:4xx`/`5xx="swap:none"` and shows the retry line on `htmx:error` and `htmx:response:error`.
+  **Why:** The vendored htmx 4 swaps error responses by default. That would replace the retry line with an error page.
+  **Issue:** #139
+- **Decision:** When the unlock time has passed, the withheld note reads "…, and refused that read; the window should have closed — try again shortly." It doesn't name the viewpoint. A not-committed turn shows the read-set section only when a read set is present.
+  **Why:** Both follow the AC's wording literally.
+  **Issue:** #139
+- **Decision:** On the Predicates tab, a predicate id whose row is on the page links `#p-<id>`; one the layer filter hides links the unfiltered tab (`?layer=all#p-<id>`); an id the registry doesn't hold is an unlinked short id.
+  **Why:** A bare fragment to a row the filter hid would go nowhere. The AC asks for `#p-<id>` links and the Discretion asks for unfiltered links from elsewhere; this does both.
+  **Issue:** #136
+- **Decision:** The confirm page's checkboxes are a plain checkbox list in `_predicate_fields.html`, not a `MultipleChoiceField`. The POST sends the ticked values that are among the posted `offered` fields, in `offered` order.
+  **Why:** With a `MultipleChoiceField`, a forged tick would make the form invalid. The AC says to drop it instead, and filtering by `offered` does that with less code.
+  **Issue:** #136
+- **Decision:** The approve-selected confirm question reads "Approve the ticked fields of the proposal for <name>? It proposes: a, b." and adds the "unticked are dropped" line. Approve all keeps the planned text.
+  **Why:** The planned "Approve the whole proposal" wording is wrong for a subset. The Discretion only gives the extra line for selected mode.
+  **Issue:** #136
+- **Decision:** On the tab, Approve selected's checkboxes sit in the proposal table and join the GET form through the HTML `form="select-<id>"` attribute.
+  **Why:** Each field's checkbox stays beside its current and proposed values, with no JavaScript.
+  **Issue:** #136
+- **Decision:** A 422 on decide re-renders the confirm page with a fresh key; a zero-tick POST keeps the posted key (no call was made). The result page on the POST response links "Link to this result" (`?report=<pk>`).
+  **Why:** After a 422 the operator may change the ticks. A changed body sent with the same key would get `idempotency_conflict`. The link makes the result page reachable again, as convention 8 asks.
+  **Issue:** #136
+- **Decision:** `console.predicates.predicate_names(request, client, story_id)` returns `{}` on any failed read (logged). Canon, Ledger, the fact form and beat traces use it for names; pages that also need the rows call `list_predicates` themselves.
+  **Why:** Convention 2 says a failed name read degrades to ids and never fails the page.
+  **Issue:** #136
+- **Decision:** The Canon tab reads the full registry (`list_predicates`) itself instead of #136's `predicate_names`, since the predicate select needs each predicate's layer and the registry order.
+  **Why:** `predicate_names` returns names only; it is still one registry read per page (convention 2).
+  **Issue:** #137
+- **Decision:** `Polarity`, `LiteralKind`, `Granularity` and `Visibility.scope` are `open_enum` string fields, not bare `str`.
+  **Why:** The contract test refuses a bare `str` for a schema enum; `open_enum` keeps unknown values rendering raw, as the story asks.
+  **Issue:** #137
+- **Decision:** `_proposition.html` and `_fact_row.html` take the raw `Proposition` / `FactBody` and compute their cells through `{% load canon_tags %}` tags (`proposition_view`, `fact_view`); the row's "superseded by" comes from the `FactState` passed as `state` (`None` hides the State column).
+  **Why:** #146 and #147 can include them with their own reads, with no view-model to build first.
+  **Issue:** #137
+- **Decision:** `cast_names` maps a character id to its label with " (player)" already appended; a new partial `_entity.html` renders an id from it.
+  **Why:** The interface names one `cast_names` map; #140's `_character.html` needs a separate `is_player` flag.
+  **Issue:** #137
+- **Decision:** A record time that isn't `YYYY-MM-DDTHH:MM[:SS]` (or isn't a real date) is a field error, "Enter a date and time"; the minute is checked as ASCII digits (so "1.5" and "-1" are refused with the minute message).
+  **Why:** The story gives no wording for a malformed datetime; the strict check keeps a bad value from reaching the Engine.
+  **Issue:** #137
+- **Decision:** A failed current-set read (any Engine error, including 422) makes the closure "closed · not confirmed" with the failed reason; the facts page itself still renders.
+  **Why:** Discretion says "failed read → not confirmed"; there is no reason to fail the whole page over the secondary check.
+  **Issue:** #137
+- **Decision:** The unconfirmed notice reads "Couldn't confirm whether N closed version(s) is/are still closed: <reason>".
+  **Why:** Discretion fixes the first half and says "with the reason"; the reason follows a colon.
+  **Issue:** #137
+- **Decision:** The lineage view's reads run effective config → `get_story` → facts reads → `list_predicates`, not the planned config → facts → `get_story` → predicates.
+  **Why:** #135's `inspect_page` reads the story before any tab's `build`; changing the shell for one view isn't worth it, and the registry read still comes after the facts reads and runs on every render the gate allows.
+  **Issue:** #138
+- **Decision:** With subject/predicate params whose lineage read lacks the fact, the view always makes one `find_fact` read; if it finds the fact under the same pair, a capped read gives the "beyond the first 2,000" message and a complete read gives the not-in-timeline one.
+  **Why:** The AC asks for one `find_fact` when the fact isn't in the read; this order also lets a capped read tell "beyond" from "stale params".
+  **Issue:** #138
+- **Decision:** The incomplete-read warning is left out when the view shows the "beyond the first 2,000" message, and the header names the subject and predicate only once they are confirmed (the fact is in the lineage read, or `find_fact` returned it).
+  **Why:** The two messages say the same thing, and stale params shouldn't be shown as the fact's subject.
+  **Issue:** #138
+- **Decision:** A capped lineage read's unconfirmed closures use a new state-rule reason `LINEAGE_CAPPED` ("More than 2,000 versions of this subject and predicate…") instead of #137's current-set "capped" wording. `lineage_states` reuses `fact_states`, with a stand-in current set (every version of the component when the read is complete).
+  **Why:** The lineage view makes no current-set read, so #137's wording would be wrong; reusing `fact_states` keeps one state rule.
+  **Issue:** #138
+- **Decision:** 422 on a lineage read shows #43's generic panel in place of the rows; `viewpoint_unresolved` and 403 `omniscient_required` show "This read needs the omniscient viewpoint", the same as the Canon tab.
+  **Why:** The lineage view has no form to place a field error on; this keeps convention 10's text the same as #137's.
+  **Issue:** #138
+- **Decision:** `_fact_row.html` and `_lineage_row.html` link "first closed by" ids to the lineage view (with the row's subject and predicate), as well as the id, supersedes and superseded-by ids. No other Console page renders fact ids yet (#139's read set holds entity ids), so no other links were added.
+  **Why:** Convention 3 says every fact id links the lineage view; a truncated closer then gets the not-in-timeline message.
+  **Issue:** #138
+- **Decision:** A version whose `tx_from` doesn't parse has no tx bar ("—"); its text columns still render.
+  **Why:** The Engine always sends ISO datetimes, but the page shouldn't fail on a bad one.
+  **Issue:** #138
+- **Decision:** The new-fact, supersede and result pages render inside #135's Inspect shell (Canon tab). `inspect_page` gained two small extension points: a build may name another template under `TEMPLATE_KEY`, and a build may return an `HttpResponse` (a redirect or the not-found page).
+  **Why:** A greyed Canon tab then makes zero fact calls, and the page gets convention 2's `get_story` read for free. The result page replaces the form on the POST response without a second view.
+  **Issue:** #146
+- **Decision:** The result page's `?report=` URL is `inspect:canon-written` (`canon/written/?report=<pk>`). It accepts only `ok` `commit_fact` / `supersede_fact` rows of the story; for any other `pk` it renders convention 10's not-found line in the tab.
+  **Why:** The story names convention 8's `?report=` but no URL. This follows #136's `decision_report`.
+  **Issue:** #146
+- **Decision:** With the registry read OK but no predicate chosen (or an id the registry doesn't hold), the new-fact page shows only the predicate select and a prompt. The main form, JSON box included, appears once a registry predicate is chosen.
+  **Why:** The AC says the predicate comes first and gates the form. A free-text predicate exists only when the registry is unavailable.
+  **Issue:** #146
+- **Decision:** An entity-kind predicate with `set_object: true` offers both an entity id and a set. `any` offers entity id and literal, plus a set when `set_object` is true.
+  **Why:** I read the Discretion's "entity id, or a set when set_object is true" as adding the set option, not replacing the entity one.
+  **Issue:** #146
+- **Decision:** `console.canon.locate_fact` returns `find_fact`'s version together with the page's `timeline_revision`, and `find_fact` now wraps it.
+  **Why:** The supersede page's `fact_states` check runs `read_current_set`, which needs that revision for its race check. It still makes one id-only read.
+  **Issue:** #146
+- **Decision:** The supersede snapshot (`canon_supersede`, `twostage.sign`) holds the AC's identity fields in `body`, and in `base` the display-only carry-over values (visibility, lock, `anchored_to`), the Instant note and the pre-fill body. On POST the snapshot is checked before the shell runs, so a tampered or expired one renders a bare message page with zero Engine calls (the shell reads included). A snapshot for another fact or story counts as tampered.
+  **Why:** The AC asks for zero calls and the read-only `<pre>` of the pre-fill body after a local failure, and nothing is re-read on POST.
+  **Issue:** #146
+- **Decision:** In a free qualifier row, a key with a blank value is not sent (as in a declared row). An undeclared predicate's stored qualifiers pre-fill the supersede rows with a type inferred from the JSON value (id-shaped string → `id`, list → `ids`).
+  **Why:** The AC says nothing about these cases. This keeps both row modes consistent.
+  **Issue:** #146
+- **Decision:** Canon refusals reuse #143's `refusal_text` but override the memory-worded texts: `story_archived`, `revision_conflict` and `erased_subject_referenced` get canon wording (`CANON_REFUSALS`).
+  **Why:** #143's texts mention memories.
+  **Issue:** #146
+- **Decision (Rule 2):** `base.html` renders a flash tagged `safe` without escaping. Only the `fact_superseded` flash uses the tag, and it is built with `format_html`.
+  **Why:** The AC asks for a lineage link in that flash. Message storage drops `SafeString`, so the template has to know.
+  **Issue:** #146
+- **Decision:** The Lite goldens (`tests/fixtures/inspect/golden/`) were recorded in #147's own commit, from the branch's templates before any #147 edit, not in the branch's first commit.
+  **Why:** The branch already had 13 commits when #147 ran. Against `origin/main`, `_items.html` differs only by #142's explain link, which a Lite page never shows, so the goldens match main's Lite markup. They cover the history page's items section and the play page's `#transcript` (turn controls and Rate links included), rendered through the views.
+  **Issue:** #147
+- **Decision:** `beat_trace(item, trace, state, *, story_id, cast_names, predicate_names, inspector_hint, open_trace)` takes the caller's state only when there is no trace (`not_loaded` or `unavailable`). With a trace, the state comes from the read: withheld is `unavailable`, no hooks is `no_hooks`, otherwise `loaded`. An ingested item is always `none`.
+  **Why:** The AC lists the five states but not who decides each. This way the view never has to work out hook state itself.
+  **Issue:** #147
+- **Decision:** The repair line checks in this order: no beat gives "—", then any matching repair entries give their phrases, then no declared verdicts gives "None", otherwise "Not repaired".
+  **Why:** The AC lists the wordings without an order. A repair entry for a beat whose verdicts aren't on the page is still worth showing.
+  **Issue:** #147
+- **Decision:** A detected claim's mark title and table use the verdict verbatim, "not checked" for null. The declared table shows "—" for `escalated` false or missing.
+  **Why:** That is what the AC says ("escalated bold / —"). #139's turn-level table still tells false apart from missing.
+  **Issue:** #147
+- **Decision:** "M detected" counts every `detected` entry, including ones too malformed to parse. Those go to the beat's "More" ("detected N"), the same way skipped propositions do.
+  **Why:** The AC says M counts every entry, and convention 13 keeps the raw values.
+  **Issue:** #147
+- **Decision:** `UtteranceLabels` keeps later Engine label fields (`classification`, `intent_corrected`, which Engine main added after M4) in `extras`. Those, or labels that don't parse, put the raw `labels` in "More".
+  **Why:** The recorded schema has only the three labels. Engine main already sends more on omniscient reads.
+  **Issue:** #147
+- **Decision:** `console.turn_trace.declared_beat(claim_id) -> int | None` is the parse of `d<beat>.<n>`, and `beat_of` now uses it.
+  **Why:** #147 needs the beat number, #139 needs the "beat N" text, and the two shouldn't parse it differently.
+  **Issue:** #147
+- **Decision:** `turn_traces` catches only `EngineClientError` from a worker and re-raises anything else. Errors are logged on the request thread after the wait.
+  **Why:** The AC's failure reasons are all Engine errors. A Console bug should still surface. Only Engine reads run in the workers.
+  **Issue:** #147
+- **Decision:** #142's explain-retrieval test fixture now answers `GET /stories/{id}/predicates`. Its structured history page makes #147's one registry read.
+  **Why:** The new read is in the AC. Without an answer the schema-validating fake fails the page.
+  **Issue:** #147
+- **Decision:** The Ledger tab's predicate and story-name reads run only after the ledger read answers; an invalid filter or a failed ledger read makes no registry read either.
+  **Why:** Nothing on the page needs names without rows, and it keeps "zero ledger calls" pages to the shell's two reads.
+  **Issue:** #148
+- **Decision:** Cast names come from the shell's own `get_story` read (`ctx.story`), not a second read.
+  **Why:** Convention 2 allows one `get_story` per page and `inspect_page` already makes it.
+  **Issue:** #148
+- **Decision:** The "Entries for thunks not on this page" table adds a Thunk column (the entry's `thunk_id`, short id); an entry with neither `thunk_id` nor `proposition_id` also lands there.
+  **Why:** Without the thunk id those entries can't be told apart; the AC lists the other five columns only.
+  **Issue:** #148
+- **Decision:** The thunks table has a 12th column, "More", after Rejected bindings (the sub-rows use `colspan="12"`).
+  **Why:** Convention 13's "More" (full id, sketch texts, span, parent fact, further candidates) needs a cell; the planned header list didn't name one.
+  **Issue:** #148
+- **Decision:** A hidden-fact entry the Engine returns on a page reached by `after_id` is left out, not shown.
+  **Why:** The AC says the group renders on the first page only; the Engine shouldn't send them there anyway.
+  **Issue:** #148
+- **Decision:** `test_shell.py::test_other_errors_from_build_are_the_error_panel` now uses a 503 `database_unavailable` on the ledger route instead of a 404.
+  **Why:** The real Ledger tab renders a 404 as convention 10's not-found line; a 503 still exercises #43's panel.
+  **Issue:** #148
+- **Decision:** Response models can type a field `datetime`: `_parse` reads an ISO 8601 string with an offset as an aware datetime (no offset fails the field), and the contract checker maps `datetime` to `string` `format: date-time`. The eval models use it for `from`/`to`/`created_at`.
+  **Why:** The plan asks for aware datetimes in the model; every earlier model kept times as strings, so the model layer had no datetime type.
+  **Issue:** #149
+- **Decision:** The eval page's GET params are parsed by small dataclasses in `console/evals.py` (`TimeInput`, `Window`), not a Django form.
+  **Why:** The prefill-only-when-the-key-is-absent rule and the "exactly as submitted" hidden carry-over are simpler on the raw QueryDict than through a bound form.
+  **Issue:** #149
+- **Decision:** The shadow section's "Next page" link pins `s_from`/`s_to` to the values that page sent (the prefill included); "First page" keeps every other param and shows whenever `s_after` is set, a refused cursor's 422 included.
+  **Why:** With absent keys the prefill is "now", which moves between clicks; a cursor should page the same window.
+  **Issue:** #149
+- **Decision:** The echoed window renders to the minute (`2026-10-17 14:03 UTC`) and adds seconds only when the bound has them; sample `created_at` uses the shared `engine_time` (to the second).
+  **Why:** The AC's window text is minute precision, but the Engine's own defaults carry seconds, which shouldn't be hidden.
+  **Issue:** #149
+- **Decision:** A null escalation rate reads "0 claims, 0 escalated · No claims checked in this window · reference 20.0%, not a gate"; a `s_story` id not in the story list gets its own selected option "…last8 (not in the list)" so it is still sent.
+  **Why:** The AC fixes the words but not the separators; the extra option keeps a bookmarked or typed id from being dropped by the select.
+  **Issue:** #149
+- **Decision:** Added the shared `percent` filter to `console_format` (one decimal with `%`, "—" for non-numbers) and `local_moment` to `console/forms/inspect.py` (`record_moment` now wraps it).
+  **Why:** No rate formatter existed yet; the datetime-local parse was private to the canon form.
+  **Issue:** #149
+- **Decision:** `InspectContext` gained `story_error` (the story read's failure, default `None`), so the Scene tab can tell a story 404 from other failures without a second `get_story` read.
+  **Why:** #58 maps a `get_story` 404 to the story-level not-found before any scene or profile call; the shell kept only `story is None`.
+  **Issue:** #58
+- **Decision:** Profile predicate names link `predicates.row_url` (`?layer=all#p-<id>`), not the bare `#p-<id>` on the default tab.
+  **Why:** #136 notes that is the right mode for other tabs: the default layer filter can hide the row.
+  **Issue:** #58
+- **Decision:** A 422 placed on the form (Turn or Viewpoint) also shows "Fix the form above to read the scene." in the panel area; a `query.as_of` 422 without `details.head` shows the Engine's message beside Turn.
+  **Why:** the panel area otherwise stays blank after a refused read; convention 10 puts a `details.field` error on that field.
+  **Issue:** #58
+- **Decision:** Non-string qualifier values render as compact JSON (`0.8`, `true`, `["a","b"]`), strings in `<code>`, a ULID string as a short id.
+  **Why:** the plan says dicts and lists render as JSON and doesn't name numbers or booleans; JSON spelling matches #136's `scalar`.
+  **Issue:** #58
+- **Decision:** Shell tests: `test_an_enabled_tab_calls_build` now asserts the real Scene view's read, and `test_a_tab_whose_url_is_not_registered_is_absent` checks all seven tabs on the real urlconf plus Retrieval absent under `tests.inspect.urls_without_retrieval`.
+  **Why:** Scene was the last stubbed tab; this keeps both shell rules tested.
+  **Issue:** #58
+- **Decision:** A port's other 422s (incl. `not_a_port_param`) go through `apply_engine_errors` only, without #46's extra "The Engine rejected the configuration" line.
+  **Why:** Convention 10 places the message on the named field or above the form; the extra line would repeat it.
+  **Issue:** #59
+- **Decision:** The confirm page carries the posted base URL, model and timeout as typed (raw strings) plus the snapshot; the Confirm POST re-validates them with the same form.
+  **Why:** One validation path for both posts; the no-change and model-change checks run again on the confirmed POST.
+  **Issue:** #59
+- **Decision:** `put_model_config` picks the 30 s `LONG_MUTATION_TIMEOUT_S` itself when the purpose is `embedding` (new client constant `EMBEDDING_PORT`), instead of the view passing a timeout.
+  **Why:** The probe runs inside that one route's call; keeps the client signature unchanged.
+  **Issue:** #59
+- **Decision:** The edge smoke's "never posts to an embedding URL" is asserted from the operation log (no recorded row's path contains `/embedding`).
+  **Why:** The live test has no fake call log; every Engine call the Console makes is recorded (#44).
+  **Issue:** #59
+- **Decision:** The run page reads the story list only when the status page has stories (zero reads for the empty state or a run with no stories).
+  **Why:** Names are needed only for rows; the plan's "one read per render" is a ceiling, not a requirement.
+  **Issue:** #150
+- **Decision:** A failed status read on the full page renders #43's panel in the section and does not poll; only the section's own HTMX poll treats no answer or a 503 as "Engine unavailable — retrying".
+  **Why:** Matches #87's erasure ledger, the existing #64 convention 10 page; a first load has no running run to keep following.
+  **Issue:** #150
+- **Decision:** A run with no `started_at` but some stories counts as neither running nor finished (no poll, "—").
+  **Why:** The AC defines both states from `started_at`; the Engine sets it when the run starts, so this case shouldn't happen.
+  **Issue:** #150
+- **Decision:** The configuration-error panel kind gets a `config-error` class (amber border) and a `p.config-fix` line. A mismatch row on the run page uses the same `p.config-fix` line under the raw class.
+  **Why:** The plan asks for "configuration-error style" but doesn't name it. One style keeps the row and the panel consistent.
+  **Issue:** #150
+- **Decision:** The retry confirm page is titled "Retry failed re-embeds".
+  **Why:** The plan gives the question and buttons but no title.
+  **Issue:** #150
+- **Decision:** `RetrievalBody.from_json` parses `canon`, `profiles`, `context.items` and `context.dropped` entry by entry. A bad entry is left out, and the raw list goes in `RetrievalBody.unparsed`, which is a `ClassVar`-declared attribute rather than a schema field.
+  **Why:** The plan says one bad entry must not fail the page. A dataclass field would break the contract test against `RetrievalBody`'s schema.
+  **Issue:** #152
+- **Decision:** Timings show the story's seven stages, then `total`. Engine `main` now also reports a `beliefs` stage. It shows as an unknown stage in response order, before `total`.
+  **Why:** The AC names seven stages and says unknown stages go before `total`. Adding `beliefs` to the known order is for a later story.
+  **Issue:** #152
+- **Decision:** Canon polarity is humanised from the Engine's `affirmed`/`negated`. The #141 fixture's `positive` was corrected to `affirmed`.
+  **Why:** Those are the Engine's `Polarity` values.
+  **Issue:** #152
+- **Decision:** Canon predicates link #136's `row_url` (`?layer=all#p-<id>`), as #58's profile partial does. Canon fact ids, and context `canon` ids whose fact is in the same answer, link #138's lineage with `subject` and `predicate`.
+  **Why:** An unfiltered row link always finds the row. Passing subject and predicate saves the lineage view a read.
+  **Issue:** #152
+- **Decision:** Canon entity and predicate cells reuse `_predicate_ref.html` through a generic `retrieval.Ref(id, name, url)`. The degradation warning's whole text is the link to the run page. Run facts lists the same texts.
+  **Why:** That partial already renders "name linked, else linked short id". One text per cause keeps the two places consistent.
+  **Issue:** #152
+- **Decision:** Each profile gets an `<h3>` "<name> (<kind>)" heading inside the Profiles `<h2>` section. #58's partial keeps its own `<h2>` sub-sections.
+  **Why:** The partial is shared with the entity page, so it was not changed for this page.
+  **Issue:** #152
+- **Decision:** Updated #141's tests: the More test now expects `position` only, and the `test_retrieval_rows.py` body builder sends a valid empty `context`.
+  **Why:** #152 removes the interim More fields and types `context`, so `{}` no longer parses.
+  **Issue:** #152
+- **Decision:** The Guarantees section's context comes from one helper, `console.guarantees.section(request, result, mode, profile_name=, note=)`. It turns an `EngineClientError` into `guarantees_error` (#43's `ErrorPanel`), or into `guarantees_missing` for a 404 on the profile route. The plan said `guarantees_error` is an `EngineError`, but the partial needs a panel, and timeouts and unreachable errors aren't `EngineError`s.
+  **Why:** Both pages share one partial, the 404 wording depends on the mode, and the error is logged once.
+  **Issue:** #57
+- **Decision:** Needs and caveat text are plain strings with backtick spans, rendered through #135's `code_spans` filter. They are not built as HTML in Python.
+  **Why:** `needs_text` and `caveats` can then be unit-tested as plain strings, and the escaping stays in one filter.
+  **Issue:** #57
+- **Decision:** The caption and the race note show only when there's a table. The docs link always shows, errors included. On Config, the "this story's effective configuration, overrides included" note follows the caption after " · ".
+  **Why:** A failed read has no `profile_id` or `version` to caption.
+  **Issue:** #57
+- **Decision:** In profile mode, the impact report's "Lost by at least one following story…" note shows only when `guarantees_lost` isn't empty.
+  **Why:** The note explains the listed ids, and "—" needs no explanation.
+  **Issue:** #57
+- **Decision:** The Config page reads the guarantee table only on the Config page itself (the `select=True` path of `_load`), not on the overrides form. The read's error is logged by its section, not by `_load`'s loop.
+  **Why:** The AC places the table on the Config page only, and this avoids logging the error twice.
+  **Issue:** #57
+- **Decision:** Engine `main`'s new `GuaranteeStatus.story_setting` field (`player_view = character` on `audience_filtering`) isn't in the recorded schema, so it isn't rendered. Filed #169 instead of re-recording.
+  **Why:** The AC doesn't need it, and the model ignores unknown keys. Re-recording would be a contract change outside this story.
+  **Issue:** #57
+- **Decision:** Existing fakes for the profile page and the Config page (`tests/profile_helpers.fake_engine`, `tests/test_profiles_browse.py`, `tests/test_story_config.py`) answer both guarantee routes by default through `tests/fakes/guarantees.answer_guarantees`.
+  **Why:** The fake Engine refuses a call that has no answer, and both pages now make the read.
+  **Issue:** #57

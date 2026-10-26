@@ -2,7 +2,8 @@
 {% comment %}
 A story's effective configuration (#85, console/views/story_config.py): the profile it runs on,
 each setting's three layers with the effective one highlighted, capabilities, fingerprint and
-quality status; the assign-profile select; a link to the overrides form.
+quality status; the assign-profile select; a link to the overrides form; the story's guarantee
+table (#57, console/_guarantees.html).
 {% endcomment %}
 {% block title %}Config — {{ story_name }} — Epistrel Console{% endblock %}
 {% block heading %}Config — {{ story_name }}{% endblock %}
@@ -56,4 +57,5 @@ quality status; the assign-profile select; a link to the overrides form.
   </section>
   {% endif %}
 </section>
+{% if guarantees_mode %}{% include "console/_guarantees.html" %}{% endif %}
 {% endblock %}

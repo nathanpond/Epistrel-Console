@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load console_format inspect_tags %}{% comment %}
+Request consolidation of a turn window (#145): a bare #64-shell page (no Inspect tab bar), no
+Engine call on GET. A GET form to itself: a valid window renders the confirm page instead, and only
+its Confirm calls the Engine. The shared scope only.
+Context: story_id, memory_url, form (ConsolidateForm), idempotency_key (the Memory tab's, carried
+forward); after a refused call: refusal (above the form; scopes for scope_mismatch's "More") or
+engine_error (#43's panel).
+{% endcomment %}
+{% block title %}Consolidate a window — Epistrel Console{% endblock %}
+{% block heading %}Consolidate a window{% endblock %}
+{% block content %}<p><a href="{{ memory_url }}#consolidate">← Back to Memory</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<div class="confirm consolidate">
+  <p>Ask the Engine to consolidate a window of turns into semantic facts and reflections now. It runs in the background, and the Engine doesn't report its progress.</p>
+  {% if refusal %}<p class="errorlist consolidate-refusal">{{ refusal }}</p>{% endif %}
+  {% if scopes %}<details class="more"><summary>More</summary><pre>{{ scopes|pretty_json }}</pre></details>{% endif %}
+  {% include "console/inspect/_consolidate_form.html" with action=consolidate_url %}
+</div>
+{% endblock %}

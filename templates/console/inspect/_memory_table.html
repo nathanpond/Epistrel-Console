@@ -1,0 +1,14 @@
+{% comment %}
+One candidate table of the Retrieval tab (#141, console.retrieval.CandidateTable): its heading,
+"(N of M)" when a display filter hides rows, and one _memory_row.html per row. Context: table,
+actions (#135 convention 14: a row-actions template name, or None; #143 sets it).
+{% endcomment %}<h3 class="candidates-{{ table.key }}">{{ table.title }}{% if table.hidden %} ({{ table.rows|length }} of {{ table.total }}){% endif %}</h3>
+{% if table.rows %}
+<table class="retrieved retrieved-{{ table.key }}">
+  <thead><tr><th>Id</th><th>Kind</th><th>Tier</th><th>Importance</th><th>Score</th><th>Similarity</th><th>Recency</th><th>Decayed importance</th><th>Arms</th><th>Actor</th><th>Participants</th><th>Event type</th><th>Position</th><th>Text</th>{% if actions %}<th>Actions</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for row in table.rows %}{% include "console/inspect/_memory_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="retrieved-none">None</p>{% endif %}

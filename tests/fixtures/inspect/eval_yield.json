@@ -1,0 +1,22 @@
+{
+  "from": "2026-10-17T14:03:00Z",
+  "to": "2026-10-24T14:03:00Z",
+  "by_gate_reason": [
+    {"gate_reason": "low_margin", "shape": null, "escalations": 30, "skipped": 2, "valid": 28, "flips": 6, "flip_rate": 0.2142857, "weighted_flip_rate": 0.1607143},
+    {"gate_reason": "no_rule", "shape": null, "escalations": 11, "skipped": 0, "valid": 9, "flips": 1, "flip_rate": 0.1111111, "weighted_flip_rate": 0.0277778}
+  ],
+  "by_shape": [
+    {"gate_reason": null, "shape": "core|functional|fluent|affirmed", "escalations": 12, "skipped": 0, "valid": 12, "flips": 4, "flip_rate": 0.3333333, "weighted_flip_rate": 0.25},
+    {"gate_reason": null, "shape": "author|set|permanent|negated", "escalations": 2, "skipped": 2, "valid": 0, "flips": 0, "flip_rate": null, "weighted_flip_rate": null}
+  ],
+  "by_gate_reason_shape": [
+    {"gate_reason": "low_margin", "shape": "core|functional|fluent|affirmed", "escalations": 10, "skipped": 0, "valid": 10, "flips": 3, "flip_rate": 0.3, "weighted_flip_rate": 0.225},
+    {"gate_reason": "no_rule", "shape": null, "escalations": 1, "skipped": 0, "valid": 1, "flips": 0, "flip_rate": 0.0, "weighted_flip_rate": 0.0}
+  ],
+  "totals": {"gate_reason": null, "shape": null, "escalations": 41, "skipped": 2, "valid": 37, "flips": 7, "flip_rate": 0.1891892, "weighted_flip_rate": 0.1291892},
+  "claims": 312,
+  "escalated": 41,
+  "escalation_rate": 0.1314103,
+  "reference_baseline": 0.2,
+  "is_gate": false
+}

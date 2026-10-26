@@ -1,0 +1,203 @@
+{
+  "thunks": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH1",
+      "description": "a stranger is at the harbour",
+      "sketch": {
+        "subject_text": "a stranger",
+        "relation_text": "is at",
+        "object_text": "the harbour",
+        "time_text": null,
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "subject_id": null,
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PA1",
+        "literal": null,
+        "polarity": "affirmed",
+        "open_slot": "subject",
+        "candidates": [
+          {
+            "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+            "text": "",
+            "confidence": 0.2
+          },
+          {
+            "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+            "text": "the tall man",
+            "confidence": 0.85
+          },
+          {
+            "entity_id": null,
+            "text": "the ferryman",
+            "confidence": 0.4
+          }
+        ],
+        "span": [
+          2,
+          4,
+          14
+        ],
+        "parent_fact_id": null
+      },
+      "open_slot": "subject",
+      "state": "open",
+      "position": {
+        "turn": 3,
+        "variant": null,
+        "beat": 2
+      },
+      "salient": true,
+      "valid_time": 120,
+      "resolved_fact_id": null,
+      "resolution_level": null,
+      "rejected_bindings": [
+        {
+          "claim_id": "01JB2Z8Y5Q3W6K9M1N4P7R0CL1",
+          "beat": 2,
+          "bound_entity": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+          "conflicting_records": [
+            "01JB2Z8Y5Q3W6K9M1N4P7R0FC1",
+            "01JB2Z8Y5Q3W6K9M1N4P7R0FC2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH2",
+      "description": "Mara does not hold ?",
+      "sketch": {
+        "subject_text": "Mara",
+        "relation_text": "holds",
+        "object_text": "some coins",
+        "time_text": "at dawn",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+        "object_id": null,
+        "literal": null,
+        "polarity": "negated",
+        "open_slot": "literal",
+        "candidates": [],
+        "span": null,
+        "parent_fact_id": null
+      },
+      "open_slot": "literal",
+      "state": "resolved",
+      "position": {
+        "turn": 4,
+        "variant": 2,
+        "beat": 1
+      },
+      "salient": false,
+      "valid_time": 0,
+      "resolved_fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0FR1",
+      "resolution_level": "consequential",
+      "rejected_bindings": []
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH3",
+      "description": "someone holds 40",
+      "sketch": {
+        "subject_text": "someone",
+        "relation_text": "holds",
+        "object_text": "40 kg",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+        "subject_id": null,
+        "object_id": null,
+        "literal": {
+          "kind": "quantity",
+          "value": 40,
+          "unit": "kg"
+        },
+        "polarity": "affirmed",
+        "open_slot": "subject",
+        "candidates": [
+          {
+            "text": "a crate",
+            "confidence": 0.5
+          }
+        ],
+        "parent_fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0FP1"
+      },
+      "open_slot": "subject",
+      "state": "expired",
+      "position": {
+        "turn": null,
+        "variant": null,
+        "beat": null
+      },
+      "salient": false,
+      "valid_time": null,
+      "resolved_fact_id": null,
+      "resolution_level": "incidental",
+      "rejected_bindings": []
+    }
+  ],
+  "ledger": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN1",
+      "thunk_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH1",
+      "proposition_id": null,
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": 3,
+        "variant": null,
+        "beat": 2
+      },
+      "discharged_by_operation": null,
+      "discharged_mode": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN2",
+      "thunk_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH2",
+      "proposition_id": null,
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": 4,
+        "variant": 2,
+        "beat": 1
+      },
+      "discharged_by_operation": "01JB2Z8Y5Q3W6K9M1N4P7R0QP1",
+      "discharged_mode": "dependence"
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN3",
+      "thunk_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH2",
+      "proposition_id": null,
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": 4,
+        "variant": null,
+        "beat": 1
+      },
+      "discharged_by_operation": "01JB2Z8Y5Q3W6K9M1N4P7R0QP2",
+      "discharged_mode": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN4",
+      "thunk_id": null,
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PP9",
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": 2,
+        "variant": null,
+        "beat": 0
+      },
+      "discharged_by_operation": null,
+      "discharged_mode": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN5",
+      "thunk_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH9",
+      "proposition_id": null,
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": null,
+        "variant": null,
+        "beat": null
+      },
+      "discharged_by_operation": "01JB2Z8Y5Q3W6K9M1N4P7R0QP3",
+      "discharged_mode": "render"
+    }
+  ],
+  "revision": 9,
+  "next_after_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH3"
+}

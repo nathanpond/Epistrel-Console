@@ -1,0 +1,5 @@
+{% comment %}Inside the confirm form (#136): the proposal's offered fields, and in selected mode one checkbox per field (pre-ticked from the tab).{% endcomment %}
+{% for f in offered %}<input type="hidden" name="offered" value="{{ f }}">
+{% endfor %}{% if selected %}<fieldset class="predicate-fields"><legend>Fields to approve</legend>
+{% for f in offered %}<label><input type="checkbox" name="field" value="{{ f }}"{% if f in ticked %} checked{% endif %}> <code>{{ f }}</code></label><br>
+{% endfor %}</fieldset>{% endif %}

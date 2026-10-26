@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load inspect_tags %}{% comment %}
+Quarantine one memory (#143): a bare #43-style page (no Inspect shell), no Engine call on GET.
+Context: story_id, memory_id, memory_short, form (QuarantineForm), idempotency_key, next_url;
+refusal (an Engine refusal's text, above the form) or engine_error (#43's panel) after a POST.
+{% endcomment %}
+{% block title %}Quarantine memory {{ memory_short }} — Epistrel Console{% endblock %}
+{% block heading %}<span title="{{ memory_id }}">Quarantine memory {{ memory_short }}</span>{% endblock %}
+{% block content %}{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<div class="confirm quarantine">
+  <p>A quarantined memory is never retrieved, consolidated or put into context until it is released.</p>
+  <dl>
+    <dt>Memory id</dt><dd><code>{{ memory_id }}</code></dd>
+    <dt>Story id</dt><dd><code>{{ story_id }}</code></dd>
+  </dl>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {% if refusal %}<p class="errorlist quarantine-refusal">{{ refusal }}</p>{% endif %}
+    {% for error in form.non_field_errors %}<p class="errorlist">{{ error|code_spans }}</p>{% endfor %}
+    <p>
+      <label for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label><br>
+      {{ form.reason }}
+      {% for error in form.reason.errors %}<span class="errorlist field-error">{{ error|code_spans }}</span>{% endfor %}
+    </p>
+    <button type="submit">Quarantine</button>
+    <a href="{{ next_url }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

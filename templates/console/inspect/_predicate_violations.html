@@ -1,0 +1,12 @@
+{% load inspect_tags %}
+{% comment %}The existing propositions an approval flags (#136; context `violations`, PredicateViolation list). Never changed; no positions, so no history links.{% endcomment %}
+{% if violations %}
+<table class="predicate-violations">
+  <thead><tr><th>Subject</th><th>Rule</th><th>Propositions</th></tr></thead>
+  <tbody>
+  {% for v in violations %}
+    <tr class="violation-row"><td>{{ v.subject_id|engine_id }}</td><td>{{ v.rule }}</td><td>{% for pid in v.proposition_ids %}{{ pid|engine_id }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="no-violations">No existing propositions are flagged</p>{% endif %}

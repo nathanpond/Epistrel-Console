@@ -1,0 +1,129 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Is the ferry late?",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM11",
+      "origin": "generated"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "checks the timetable",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM11",
+      "origin": "generated"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "Tobin: \"Late again.\"\nThe gulls cry.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP1",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM12",
+      "origin": "generated"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "<script>alert(1)</script> & more",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP2",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM21",
+      "origin": "generated",
+      "quarantined": true
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 2,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "channel": "message",
+      "text": "[erased] waved from the pier.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP2",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM22",
+      "origin": "generated",
+      "redacted": true
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "An old note, ingested.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP3",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM31",
+      "origin": "ingested"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "narration",
+      "actor_character_id": null,
+      "render_character_ids": null,
+      "channel": "narration",
+      "text": "Rain on the harbour.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NP3",
+      "message_id": "01M5R0QNTZV2CSB478YYC5NM32",
+      "origin": "ingested"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R0QNTZV2CSB478YYC5NM12",
+        "text": "Tobin: \"Late again.\"\nThe gulls cry."
+      }
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": {
+        "message_id": "01M5R0QNTZV2CSB478YYC5NM22",
+        "text": "[erased] waved from the pier."
+      }
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": null
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "as_of": 3,
+  "timeline_revision": 4,
+  "next_before_turn": null
+}

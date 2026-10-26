@@ -1,0 +1,35 @@
+{
+  "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "episodic": false,
+  "counters": {
+    "characters": {
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 7
+    },
+    "story_vectors": 7
+  },
+  "stored_counters": {
+    "characters": {
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 7
+    },
+    "story_vectors": 7
+  },
+  "budgets": {
+    "memories_per_character": 2000,
+    "vectors_per_story": 50000,
+    "importance_floor": 0.15,
+    "retirement_max_lag": 10,
+    "retain_retired_vectors": false,
+    "retain_dormant_vectors": true,
+    "max_pinned_per_character": 5,
+    "max_pinned_per_story": 20
+  },
+  "pins": {
+    "memory_pins": 0,
+    "text_pins": 0,
+    "by_character": {}
+  },
+  "head_turn": 3,
+  "open_episodes": [],
+  "recent_retirements": [],
+  "timeline_revision": 4
+}

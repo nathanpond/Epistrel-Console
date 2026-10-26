@@ -6,7 +6,11 @@
   text, which the Engine fills with the event payload's canonical JSON; an ``erasure_marker``
   (#87) read from its ``[erasure marker: <id>, <scope>]`` text;
 - :func:`policy_names`: policy id → name from ``GET /stories/{id}/settings``;
-- :func:`operation_links`: Engine operation id → the Console's operation-log row (#44).
+- :func:`operation_links`: Engine operation id → the Console's operation-log row (#44);
+- :func:`explain_query` / :func:`explain_url`: a structured turn's "Explain retrieval" link
+  into the Retrieval explorer (#142), rebuilt from the turn's transcript items;
+- :func:`beat_trace`: a structured beat's labels, visibility, highlighted detected claims and
+  Trace (#147), from the item and, when loaded, its turn's eval hooks (#139).
 
 #53 builds its timeline controls onto these groups.
 """
@@ -15,16 +19,30 @@ import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
+
+from django.urls import reverse
 
 from console.engine.models import (
+    BeatProposition,
+    BeatVisibility,
+    DetectedClaim,
     History,
     HistoryItem,
+    RepairRung,
     StorySettings,
     SummarySegment,
+    UtteranceLabels,
     VariantChain,
+    Verdict,
+    beat_entries,
 )
+from console.inspect import retrieval_url
 from console.models import EngineOperation
+from console.retrieval import humanised
+from console.turn_trace import MorePart, TurnTrace, declared_beat, inline_json
 
 if TYPE_CHECKING:
     from console.feedback import FeedbackWidget
@@ -36,6 +54,8 @@ REPLY_CHANNELS = frozenset({"message", "narration"})
 REPLY_KIND = "message_rendered"
 NAME_WITHHELD = "(name withheld — erasure pending)"
 MARKER_KIND = "erasure_marker"  # an audit item a deleted record left (#87, Engine brief §8)
+INPUT_KIND = "player_input"  # a turn's input: a ``say`` item, then a ``do`` item
+EXPLAIN_QUERY_MAX = 2000  # the turn pipeline's retrieval query cut (structured/pipeline.py)
 MARKER_TEXT = re.compile(r"^\[erasure marker: (?P<id>[^,\]]+), (?P<scope>[^\]]+)\]$")
 INGEST_SCAN = 500  # newest ingest rows of the story looked through for a batch's operations
 
@@ -219,6 +239,7 @@ class Row:
     log_pk: int | None  # the operation-log row its operation id links to
     same_message: bool = False  # shares message_id with the row before it (say + do)
     feedback: FeedbackWidget | None = None  # the "Rate" control (#83, set by the view)
+    trace: BeatTrace | None = None  # a structured beat's trace (#147, set by the view)
 
 
 @dataclass
@@ -228,6 +249,7 @@ class TurnGroup:
     rows: list[Row] = field(default_factory=list)
     audit: list[AuditRecord] = field(default_factory=list)
     no_reply: bool = False
+    explain_url: str | None = None  # "Explain retrieval" (#142, set by the view)
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:
@@ -289,6 +311,338 @@ def turn_groups(
             not actor_filtered and g.turn >= 1 and not any(is_reply(r.item) for r in g.rows)
         )
     return ordered
+
+
+# --- Explain retrieval (#142) -------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExplainQuery:
+    """A past turn's retrieval, re-run: the turn's input as the question, asked as the character
+    who acted, as of just before the turn."""
+
+    q: str
+    as_of: int
+    actor: str
+    turn: int
+    variant: int | None
+
+
+def explain_query(
+    items: Sequence[HistoryItem], turn: int, variant: int | None
+) -> ExplainQuery | None:
+    """The re-run for turn ``turn`` from its items as a page shows them, or ``None`` when there
+    is none to offer: turn 0, a Lite turn (no ``player_input`` item carries ``propositions``),
+    no input on the page, a blank input or no actor.
+
+    The input is the first ``player_input`` message's items (Engine order: say, then do; an
+    ingest batch with several at one turn uses the first), their non-empty texts joined with
+    ``"\n"`` as the Engine's ``joined_input`` does, cut to 2,000 code points. Redacted and
+    quarantined items are used as they read; the explorer's banner is the caveat."""
+    inputs = [i for i in items if i.kind == INPUT_KIND]
+    if turn < 1 or not any(i.propositions is not None for i in inputs):
+        return None
+    first = inputs[0]
+    parts = [i for i in inputs if i.message_id == first.message_id]
+    q = "\n".join(i.text for i in parts if i.text)[:EXPLAIN_QUERY_MAX]
+    if not q.strip() or first.actor_character_id is None:
+        return None
+    return ExplainQuery(q, turn - 1, first.actor_character_id, turn, variant)
+
+
+def explain_url(story_id: str, query: ExplainQuery) -> str | None:
+    """The explorer pre-filled with ``query`` (``q``, ``as_of``, ``actor``, ``explain``, then
+    ``explain_variant`` for a variant ≥ 1), or ``None`` while ``inspect:retrieval`` isn't
+    registered. Following it makes the one retrieve read; building it makes none."""
+    params = {
+        "q": query.q,
+        "as_of": str(query.as_of),
+        "actor": query.actor,
+        "explain": str(query.turn),
+    }
+    if query.variant is not None and query.variant >= 1:
+        params["explain_variant"] = str(query.variant)
+    return retrieval_url(story_id, params)
+
+
+# --- Beat traces (#147) -------------------------------------------------------------------------
+
+# A beat trace's ``state``: what is known of its turn's escalation and repair.
+LOADED = "loaded"  # the turn's eval hooks were read
+NO_HOOKS = "no_hooks"  # the read succeeded and the turn recorded no eval hooks
+NOT_LOADED = "not_loaded"  # no read was made ("Show all traces" off, past the cap, the play page)
+UNAVAILABLE = "unavailable"  # the read failed, missed the deadline or was withheld
+NO_TRACE = "none"  # an ingested operation: nothing was verified or repaired
+NOT_CHECKED = "not checked"  # convention 9: a null verdict
+SAY_CHANNEL = "say"
+DO_CHANNEL = "do"
+SAFE_FALLBACK_RUNG = 4  # the repair ladder's last rung (orchestrator/repair/ladder)
+REPAIRED_RUNGS = (1, 2, 3)
+EN_DASH = "\u2013"  # between the bounds of "(invalid span 12-40)"
+
+
+@dataclass(frozen=True)
+class LabelTag:
+    """One utterance label as a tag: the humanised value, ``title`` "intent: sincere"."""
+
+    text: str
+    title: str
+
+
+@dataclass(frozen=True)
+class Segment:
+    """A run of a beat's text and the detected claims covering all of it (Engine order,
+    duplicates kept); no claims: plain text."""
+
+    text: str
+    claims: tuple[DetectedClaim, ...] = ()
+
+    @property
+    def title(self) -> str:
+        """``<category> · <verdict or not checked>`` per covering claim, joined with "; "."""
+        return "; ".join(f"{c.category} · {c.verdict or NOT_CHECKED}" for c in self.claims)
+
+
+@dataclass(frozen=True)
+class DetectedRow:
+    """A detected claim's Trace row: the span's text, or ``note`` when it isn't shown."""
+
+    claim: DetectedClaim
+    span: str | None
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class Person:
+    """A character a latent beat is visible to: the cast label, ``None`` for a non-cast id."""
+
+    id: str
+    name: str | None
+
+
+@dataclass(frozen=True)
+class BeatTrace:
+    """What one structured beat shows (``_beat_trace.html``). ``declared`` and ``repairs`` are
+    the turn's eval-hook entries for this beat, read only in ``state`` :data:`LOADED`."""
+
+    story_id: str
+    item: HistoryItem
+    state: str
+    tags: tuple[LabelTag, ...]
+    visibility: BeatVisibility | None
+    visibility_json: str | None  # a ``visibility`` that doesn't parse, as compact JSON
+    visible_to: tuple[Person, ...]
+    segments: tuple[Segment, ...]  # empty on a redacted item (its text shows as read)
+    propositions: tuple[BeatProposition, ...]
+    detected: tuple[DetectedRow, ...]
+    detected_count: int  # every ``detected`` entry, readable or not
+    declared: tuple[Verdict, ...]
+    repairs: tuple[RepairRung, ...]
+    repair_line: str
+    shared_with_say: bool  # a player input's ``do`` part, which repeats the ``say`` part's
+    unavailable_url: str  # the turn in the play page's inspector (#139's trace block)
+    more: tuple[MorePart, ...]
+    predicate_names: Mapping[str, str] = field(default_factory=dict)
+    cast_names: Mapping[str, str] = field(default_factory=dict)
+    inspector_hint: bool = False  # the play page: escalation and repair live in the inspector
+    open: bool = False  # "Show all traces": the Trace starts open
+
+    @property
+    def summary(self) -> str:
+        """ "Trace · N proposition(s) · M detected"."""
+        n = len(self.propositions)
+        return f"Trace · {n} proposition{'' if n == 1 else 's'} · {self.detected_count} detected"
+
+    @property
+    def beat_known(self) -> bool:
+        return self.item.beat is not None
+
+
+def label_tags(labels: UtteranceLabels) -> tuple[LabelTag, ...]:
+    """Intent · belief · objective, humanised (convention 5), the raw value in ``title``."""
+    pairs = (
+        ("intent", labels.intent),
+        ("belief", labels.belief_relation),
+        ("objective", labels.objective_relation),
+    )
+    return tuple(LabelTag(humanised(value), f"{name}: {value}") for name, value in pairs)
+
+
+def valid_span(claim: DetectedClaim, text: str) -> bool:
+    """``0 ≤ start < end ≤ len(text)`` (Python indices: code points, as the Engine's)."""
+    return 0 <= claim.start < claim.end <= len(text)
+
+
+def segments(text: str, claims: Sequence[DetectedClaim]) -> tuple[Segment, ...]:
+    """``text`` cut at every valid span's bounds; each run carries every claim covering it, in
+    Engine order. Invalid spans are ignored; adjacent unmarked runs merge."""
+    valid = [c for c in claims if valid_span(c, text)]
+    bounds = sorted({0, len(text), *(c.start for c in valid), *(c.end for c in valid)})
+    found: list[Segment] = []
+    for low, high in pairwise(bounds):
+        covering = tuple(c for c in valid if c.start <= low and high <= c.end)
+        run = text[low:high]
+        if not covering and found and not found[-1].claims:
+            found[-1] = Segment(found[-1].text + run)
+        else:
+            found.append(Segment(run, covering))
+    return tuple(found)
+
+
+def detected_rows(
+    text: str, claims: Sequence[DetectedClaim], *, redacted: bool
+) -> tuple[DetectedRow, ...]:
+    rows = []
+    for c in claims:
+        if redacted:
+            rows.append(DetectedRow(c, None, "(span unavailable: redacted)"))
+        elif valid_span(c, text):
+            rows.append(DetectedRow(c, text[c.start : c.end]))
+        else:
+            rows.append(DetectedRow(c, None, f"(invalid span {c.start}{EN_DASH}{c.end})"))
+    return tuple(rows)
+
+
+def repair_line(
+    beat: int | None, declared: Sequence[Verdict], repairs: Sequence[RepairRung]
+) -> str:
+    """One phrase per repair entry, joined with "; "; "Not repaired" when the beat declared
+    claims and none was repaired, "None" when it declared none, "—" for an item with no beat."""
+    if beat is None:
+        return "—"
+    if repairs:
+        return "; ".join(_rung_phrase(r) for r in repairs)
+    return "Not repaired" if declared else "None"
+
+
+def _rung_phrase(rung: RepairRung) -> str:
+    if rung.rung in REPAIRED_RUNGS and rung.accepted is True:
+        return f"Repaired at rung {rung.rung} (accepted)"
+    if rung.rung == SAFE_FALLBACK_RUNG:
+        return f"Safe fallback (rung {SAFE_FALLBACK_RUNG})"
+    return f"Rung {rung.rung}"
+
+
+def turn_label(turn: int | None, variant: int | None) -> str:
+    """The transcript's turn label: "T3", "T3.2" for a variant other than 1."""
+    label = f"T{turn or 0}"
+    return f"{label}.{variant}" if variant and variant != 1 else label
+
+
+def inspector_url(story_id: str, item: HistoryItem) -> str:
+    """The turn selected in the play page's inspector, where #139's trace block reads it."""
+    base = reverse("stories:detail", args=[story_id])
+    return f"{base}?{urlencode({'operation': item.operation_id, 'origin': item.origin})}"
+
+
+def _state(item: HistoryItem, trace: TurnTrace | None, state: str) -> str:
+    if item.origin == "ingested":
+        return NO_TRACE
+    if trace is None:
+        return state
+    if trace.withheld_for is not None:
+        return UNAVAILABLE
+    return LOADED if trace.eval_hooks is not None else NO_HOOKS
+
+
+def _more(
+    item: HistoryItem,
+    labels: UtteranceLabels | None,
+    visibility: BeatVisibility | None,
+    propositions: Sequence[BeatProposition],
+    skipped_propositions: Sequence[tuple[int, Any]],
+    claims: Sequence[DetectedClaim],
+    skipped_claims: Sequence[tuple[int, Any]],
+) -> tuple[MorePart, ...]:
+    """Convention 13: the raw parts the Trace doesn't name."""
+    parts: list[MorePart] = []
+    if item.labels is not None and (labels is None or labels.extras):
+        parts.append(MorePart("labels", item.labels))
+    if visibility is not None and visibility.extras:
+        parts.append(MorePart("visibility", item.visibility))
+    for name, raw, parsed, skipped in (
+        ("proposition", item.propositions, propositions, skipped_propositions),
+        ("detected", item.detected, claims, skipped_claims),
+    ):
+        if raw is not None and not isinstance(raw, list):
+            parts.append(MorePart(f"{name}s" if name == "proposition" else name, raw))
+        entries = [(e.index, e.extras) for e in parsed if e.extras] + list(skipped)
+        parts += [MorePart(f"{name} {i}", v) for i, v in sorted(entries, key=lambda p: p[0])]
+    return tuple(parts)
+
+
+def beat_trace(
+    item: HistoryItem,
+    trace: TurnTrace | None,
+    state: str = NOT_LOADED,
+    *,
+    story_id: str,
+    cast_names: Mapping[str, str] | None = None,
+    predicate_names: Mapping[str, str] | None = None,
+    inspector_hint: bool = False,
+    open_trace: bool = False,
+) -> BeatTrace | None:
+    """``None`` for an item that isn't a structured beat (``propositions`` absent). Otherwise
+    the beat's trace. ``state`` is the caller's (:data:`NOT_LOADED`, :data:`UNAVAILABLE`) when
+    there is no ``trace``; with one it follows the read (withheld: unavailable; no hooks;
+    loaded). An ingested item is always :data:`NO_TRACE`."""
+    if item.propositions is None:
+        return None
+    names = cast_names or {}
+    labels = UtteranceLabels.from_json(item.labels) if item.labels is not None else None
+    visibility = BeatVisibility.from_json(item.visibility) if item.visibility is not None else None
+    propositions, skipped_propositions = beat_entries(item.propositions, BeatProposition.from_json)
+    claims, skipped_claims = beat_entries(item.detected, DetectedClaim.from_json)
+    shown = _state(item, trace, state)
+    hooks = trace.eval_hooks if trace is not None and shown == LOADED else None
+    beat = item.beat
+    declared: tuple[Verdict, ...] = ()
+    repairs: tuple[RepairRung, ...] = ()
+    if hooks is not None and beat is not None:
+        declared = tuple(v for v in hooks.verdicts if declared_beat(v.claim_id) == beat)
+        repairs = tuple(r for r in hooks.repair_rungs if r.beat == beat)
+    return BeatTrace(
+        story_id=story_id,
+        item=item,
+        state=shown,
+        tags=label_tags(labels) if labels is not None else (),
+        visibility=visibility,
+        visibility_json=(
+            inline_json(item.visibility).full
+            if item.visibility is not None and visibility is None
+            else None
+        ),
+        visible_to=tuple(Person(c, names.get(c)) for c in visibility.characters)
+        if visibility is not None
+        else (),
+        segments=() if item.redacted else segments(item.text, claims),
+        propositions=propositions,
+        detected=detected_rows(item.text, claims, redacted=item.redacted),
+        detected_count=len(claims) + len(skipped_claims),
+        declared=declared,
+        repairs=repairs,
+        repair_line=repair_line(beat, declared, repairs),
+        shared_with_say=item.kind == INPUT_KIND and item.channel == DO_CHANNEL,
+        unavailable_url=inspector_url(story_id, item),
+        more=_more(
+            item,
+            labels,
+            visibility,
+            propositions,
+            skipped_propositions,
+            claims,
+            skipped_claims,
+        ),
+        predicate_names=predicate_names or {},
+        cast_names=names,
+        inspector_hint=inspector_hint,
+        open=open_trace,
+    )
+
+
+def is_structured(item: HistoryItem) -> bool:
+    """A structured beat: ``propositions`` is set (possibly ``[]``)."""
+    return item.propositions is not None
 
 
 def summary_rows(segments: Sequence[SummarySegment] | None) -> list[SummarySegment]:

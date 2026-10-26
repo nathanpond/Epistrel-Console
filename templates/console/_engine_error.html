@@ -1,4 +1,4 @@
-<div class="engine-error" role="alert">
+<div class="engine-error{% if engine_error.kind == 'config' %} config-error{% endif %}" role="alert">
   <p><strong>{{ engine_error.headline }}</strong></p>
   {% if engine_error.code %}
   <dl>
@@ -19,4 +19,5 @@
     </dd>
   </dl>
   {% endif %}
+  {% if engine_error.fix %}<p class="config-fix">{{ engine_error.fix.text }} <a href="{{ engine_error.fix.url }}">{{ engine_error.fix.link }}</a></p>{% endif %}
 </div>

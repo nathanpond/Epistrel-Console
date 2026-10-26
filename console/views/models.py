@@ -1,9 +1,15 @@
 """Models (#46): every model purpose the Engine lists, which model each uses and where each value
 comes from; editing a purpose (``PUT``), dropping its override, and setting or clearing its API
-key. ``embedding`` is read-only here (configured in M4, #59): its action URLs answer 404 without
-calling the Engine.
+key.
 
-Every action redirects to ``/models/``. The edit page carries the purpose as it was read in a
+``embedding`` is a model port (#59): its own row only, so its form is base URL, model and
+``timeout`` with a blank field unset, and it has no override to drop (the drop URL answers 404
+without calling the Engine). A save that names a different model re-embeds every story, so it
+goes through #134's confirmed mode first.
+
+Every action redirects to ``/models/``, except a confirmed embedding model change, which lands
+on the re-embed run page (#150: ``/models/embedding/reembed/``, its stories' progress and a
+confirmed **Retry failed**). The edit page carries the purpose as it was read in a
 signed hidden field, so a re-render after the Console refuses input makes no Engine call. The
 API key is only ever sent in the ``PUT …/api-key`` body: the form never renders it back, flashes
 do not name it, and the operation log redacts it (#44).
@@ -19,24 +25,44 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
-from console.confirm import ConfirmPage, confirm_action, posted_idempotency_key, safe_next
-from console.engine.client import EngineClientError, EngineError
+from console.confirm import (
+    ConfirmPage,
+    confirm_action,
+    posted_idempotency_key,
+    safe_next,
+)
+from console.engine.client import EngineClientError, EngineError, EngineUnreachable
 from console.engine.models import ModelConfigItem
 from console.engine_access import engine_client_for
-from console.engine_errors import ErrorPanel, log_engine_error, panel_for
+from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
-from console.forms import STOP_MAX, ApiKeyForm, ModelConfigForm
+from console.forms import STOP_MAX, ApiKeyForm, EmbeddingConfigForm, ModelConfigForm
 from console.ids import new_ulid
+from console.job_poll import RETRYING_TEXT
 from console.model_config import (
+    NOT_SET,
     PARAM_LABELS,
     PARAMS,
+    PORT_NA,
+    PORTS,
     PurposeConfig,
     engine_version,
     guide_link,
-    is_read_only,
+    is_port,
     parent_of,
     purpose_config,
     purposes,
+)
+from console.reembed import (
+    NO_RUN,
+    NO_STORIES,
+    NOTHING_TO_RETRY,
+    POLL_TRIGGER,
+    RETRY_LABEL,
+    RETRY_QUESTION,
+    read_run,
+    retried_text,
+    run_url,
 )
 
 SNAPSHOT_FIELD = "snapshot"
@@ -47,10 +73,31 @@ ALIASES = {f"params.{name}": name for name in PARAMS} | {
 }
 
 
-def _editable(purpose: str) -> None:
-    """Read-only purposes have no edit, drop or key URLs (no Engine call is made)."""
-    if is_read_only(purpose):
-        raise Http404(f"{purpose} is read-only here")
+# #59's embedding texts.
+NO_CHANGE = "No change — embedding already uses these values"
+UNREACHABLE = (
+    "The Engine couldn't reach that embedding model ({reason}). The model was not changed."
+)
+REEMBED = (
+    "Changing the embedding model re-embeds every story's hot memories in the background. A "
+    "model with a different vector dimension retypes the deployment's vector column. While a "
+    "story re-embeds, its searches are lexical-only."
+)
+MAY_STILL_APPLY = (
+    "The Engine may still apply this change — check Models and the re-embed run before saving "
+    "again."
+)
+PORT_KEY_CLEARED = (
+    "The embedding model will then be called without a key: the port never uses default's key."
+)
+
+type PurposeForm = ModelConfigForm | EmbeddingConfigForm
+
+
+def _droppable(purpose: str) -> None:
+    """A port has no override to drop: its drop URL 404s before any Engine call."""
+    if is_port(purpose):
+        raise Http404(PORTS[purpose])
 
 
 def _list_url() -> str:
@@ -82,6 +129,7 @@ def model_list(request: HttpRequest) -> HttpResponse:
             "config": config,
             "rows": purposes(config),
             "param_labels": [PARAM_LABELS[name] for name in PARAMS],
+            "port_na": PORT_NA,
             "guide": guide_link(version),
             "next_query": f"?next={_list_url()}",
         },
@@ -129,14 +177,17 @@ def _render_edit(
     request: HttpRequest,
     item: ModelConfigItem,
     *,
-    form: ModelConfigForm | None = None,
+    form: PurposeForm | None = None,
     key_form: ApiKeyForm | None = None,
     engine_error: ErrorPanel | None = None,
+    engine_error_note: str = "",
     key_missing: bool = False,
     key_engine_error: ErrorPanel | None = None,
 ) -> HttpResponse:
     config = purpose_config(item.purpose, item)
-    if form is None:
+    if form is None and config.is_port:
+        form = EmbeddingConfigForm(initial=_initial(config))
+    elif form is None:
         form = ModelConfigForm(initial=_initial(config), placeholders=_placeholders(config))
     context: dict[str, Any] = {
         "purpose": config,
@@ -144,6 +195,7 @@ def _render_edit(
         "form": form,
         "key_form": key_form or ApiKeyForm(),
         "engine_error": engine_error,
+        "engine_error_note": engine_error_note,
         "key_missing": key_missing,  # 503 config_key_missing, shown above the key form
         "key_engine_error": key_engine_error,
         # One fresh key per form, minted at each render (#43).
@@ -158,12 +210,14 @@ def _render_edit(
 @require_http_methods(["GET", "HEAD", "POST"])
 def model_edit(request: HttpRequest, purpose: str) -> HttpResponse:
     """GET: the purpose's form (its own values filled, inherited ones as placeholders). POST:
-    validate, then ``PUT`` the full replacement and return to the list."""
-    _editable(purpose)
+    validate, then ``PUT`` the full replacement and return to the list (a port: see
+    :func:`_port_edit`)."""
     if request.method != "POST":
         return _render_edit(request, engine_client_for(request).get_model_config(purpose))
 
     item = _item(request, purpose)
+    if is_port(purpose):
+        return _port_edit(request, item)
     config = purpose_config(purpose, item)
     form = ModelConfigForm(request.POST, placeholders=_placeholders(config))
     if not form.is_valid():
@@ -195,7 +249,6 @@ def _key_missing(exc: EngineClientError) -> bool:
 @require_http_methods(["GET", "HEAD", "POST"])
 def model_api_key(request: HttpRequest, purpose: str) -> HttpResponse:
     """POST: ``PUT /admin/model-config/{purpose}/api-key`` with the posted key (204)."""
-    _editable(purpose)
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
     item = _item(request, purpose)
@@ -224,13 +277,13 @@ def model_api_key(request: HttpRequest, purpose: str) -> HttpResponse:
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def model_api_key_clear(request: HttpRequest, purpose: str) -> HttpResponse:
-    _editable(purpose)
     fallback = parent_of(purpose) or "default"
-    consequence = (
-        "Purposes without a key of their own will have none."
-        if purpose == "default"
-        else f"Calls will use {fallback}'s key, or fail if it has none."
-    )
+    if is_port(purpose):
+        consequence = PORT_KEY_CLEARED
+    elif purpose == "default":
+        consequence = "Purposes without a key of their own will have none."
+    else:
+        consequence = f"Calls will use {fallback}'s key, or fail if it has none."
     page = ConfirmPage(
         title="Clear API key",
         question=f"Clear the API key for {{name}}? {consequence}",
@@ -258,8 +311,8 @@ def model_api_key_clear(request: HttpRequest, purpose: str) -> HttpResponse:
 @require_http_methods(["GET", "HEAD", "POST"])
 def model_drop(request: HttpRequest, purpose: str) -> HttpResponse:
     """Drop the purpose's own row. ``default`` has no button; a forced POST shows the Engine's
-    refusal (409) in the error panel."""
-    _editable(purpose)
+    refusal (409) in the error panel. A port has no drop (404, no call)."""
+    _droppable(purpose)
     parent = parent_of(purpose)
     falls_back = (
         f"Every field falls back to its parent purpose ({parent}) or default."
@@ -290,3 +343,157 @@ def model_drop(request: HttpRequest, purpose: str) -> HttpResponse:
         return redirect(_list_url())
 
     return confirm_action(request, page, perform)
+
+
+# --- The embedding port (#59) -----------------------------------------------------------------
+
+
+def _shown(value: object) -> str:
+    return NOT_SET if value is None else str(value)
+
+
+def _change(old: object, new: object) -> str:
+    return f"{_shown(old)} → {_shown(new)}"
+
+
+def _port_confirm(
+    request: HttpRequest, item: ModelConfigItem, form: EmbeddingConfigForm
+) -> ConfirmPage:
+    """#134's confirm page for a model change: old → new for each field, the posted values
+    and the snapshot riding along so the Confirm POST re-validates them."""
+    data = form.cleaned_data
+    hidden = {name: request.POST.get(name, "") for name in ("base_url", "model", "timeout")}
+    return ConfirmPage(
+        title="Change the embedding model",
+        question="Change the embedding model to {name}?",
+        emphasis=data["model"],
+        lines=(REEMBED,),
+        confirm_label="Change model and re-embed",
+        cancel_url=_edit_url(item.purpose),
+        facts=(
+            ("Model", _change(item.model, data["model"])),
+            ("Base URL", _change(item.base_url, data["base_url"] or None)),
+            ("timeout (s)", _change(item.params.get("timeout"), data["timeout"])),
+        ),
+        hidden={**hidden, SNAPSHOT_FIELD: _snapshot(item)},
+    )
+
+
+def _port_edit(request: HttpRequest, item: ModelConfigItem) -> HttpResponse:
+    """POST for a port: field validation, then the no-change check (no call), then, for a
+    different model, the confirm page (a POST without ``confirmed=1`` always re-renders it),
+    then the ``PUT``. No fresh read first: the Engine probes against its row at write time."""
+    form = EmbeddingConfigForm(request.POST)
+    if not form.is_valid():
+        return _render_edit(request, item, form=form)
+    if form.same_as(item.base_url, item.model, item.params.get("timeout")):
+        messages.info(request, NO_CHANGE)
+        return redirect(_list_url())
+    changes_model = form.model_changes(item.model)
+
+    def perform(key: str) -> HttpResponse:
+        return _port_put(request, item, form, key, changes_model=changes_model)
+
+    if not changes_model:
+        return perform(posted_idempotency_key(request))
+    return confirm_action(
+        request, _port_confirm(request, item, form), perform, require_confirmed=True
+    )
+
+
+def _port_put(
+    request: HttpRequest,
+    item: ModelConfigItem,
+    form: EmbeddingConfigForm,
+    key: str,
+    *,
+    changes_model: bool,
+) -> HttpResponse:
+    try:
+        saved = engine_client_for(request).put_model_config(
+            item.purpose, form.replacement(), idempotency_key=key
+        )
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        if isinstance(exc, EngineError) and exc.code == "embedding_unreachable":
+            reason = exc.details.get("reason") or "unknown"
+            form.add_error(None, UNREACHABLE.format(reason=reason))
+            return _render_edit(request, item, form=form)
+        if isinstance(exc, EngineError) and exc.http_status == 422:
+            apply_engine_errors(exc, form, aliases=ALIASES)
+            return _render_edit(request, item, form=form)
+        note = MAY_STILL_APPLY if isinstance(exc, EngineUnreachable) else ""
+        return _render_edit(
+            request, item, form=form, engine_error=panel_for(exc), engine_error_note=note
+        )
+    if saved.config_revision == item.config_revision:
+        messages.info(request, NO_CHANGE)
+    elif changes_model:
+        messages.success(
+            request,
+            f"Embedding model changed — re-embedding started (config revision "
+            f"{saved.config_revision})",
+        )
+        return redirect(run_url())
+    else:
+        messages.success(
+            request,
+            f"Saved {item.purpose} — config revision {saved.config_revision}, idempotency key "
+            f"{saved.idempotency_key or key}",
+        )
+    return redirect(_list_url())
+
+
+# --- The re-embed run (#150) ------------------------------------------------------------------
+
+RUN_SECTION = "console/models/_reembed_run.html"
+
+
+@require_safe
+def reembed(request: HttpRequest) -> HttpResponse:
+    """``GET /admin/reembed/status`` (one page, ``limit=100``, ``after`` from the query) and
+    one story-list read. An HTMX request (the section's own 5 s poll) gets the run section
+    alone, which never renders flash messages."""
+    after = request.GET.get("after") or None
+    poll = is_htmx(request)
+    run = read_run(request, engine_client_for(request), after=after, poll=poll)
+    context: dict[str, Any] = {
+        "run": run,
+        "poll_url": run_url(after),
+        "poll_trigger": POLL_TRIGGER,
+        "retrying_text": RETRYING_TEXT,
+        "refresh_url": run_url(after),
+        "first_url": run_url(),
+        "next_url": run_url(run.status.next_cursor)
+        if run.status and run.status.next_cursor
+        else None,
+        "retry_url": reverse("models:reembed-retry"),
+        "retry_label": RETRY_LABEL,
+        "no_run_text": NO_RUN,
+        "no_stories_text": NO_STORIES,
+        "idempotency_key": new_ulid(),
+    }
+    return render(request, RUN_SECTION if poll else "console/models/reembed.html", context)
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def reembed_retry(request: HttpRequest) -> HttpResponse:
+    """**Retry failed**: #134's confirmed mode (no call on GET or on a POST without
+    ``confirmed=1``), then ``POST /admin/reembed/retry`` and back to the run's first page. An
+    Engine error on the POST renders #43's panel (``confirm_action``'s default)."""
+    page = ConfirmPage(
+        title="Retry failed re-embeds",
+        question=RETRY_QUESTION,
+        confirm_label=RETRY_LABEL,
+        cancel_url=run_url(),
+    )
+
+    def perform(key: str) -> HttpResponse:
+        retried = engine_client_for(request).retry_reembed(idempotency_key=key)
+        if retried.retried:
+            messages.success(request, retried_text(len(retried.retried)))
+        else:
+            messages.info(request, NOTHING_TO_RETRY)
+        return redirect(run_url())
+
+    return confirm_action(request, page, perform, require_confirmed=True)

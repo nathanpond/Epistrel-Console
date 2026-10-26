@@ -63,12 +63,15 @@
     table.model-calls { font-size: 0.85em; }
     .degraded { background: #fff3cd; font-weight: 700; }
     .muted { color: #57606a; }
+    tr.row-muted td { color: #57606a; }
+    .caveats { border-left: 3px solid #d0d7de; padding-left: 0.75em; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     tr.revision th { background: #f6f8fa; }
     .settings-form .field { margin: 0.5rem 0; }
     nav.tabs { margin: 1rem 0 0.5rem; border-bottom: 1px solid #d0d7de; }
     nav.tabs a { display: inline-block; padding: 0.3rem 0.9rem; }
-    nav.tabs a[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
+    nav.tabs span.disabled { display: inline-block; padding: 0.3rem 0.9rem; color: #8c959f; cursor: default; }
+    nav.tabs a[aria-current="page"], nav.tabs span[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
     .ingest-form fieldset.event { border: 1px solid #d0d7de; margin: 0.5rem 0; }
     .ingest-form .field { margin: 0.3rem 0; }
     .ingest-form textarea { width: 100%; }
@@ -123,7 +126,76 @@
     .quality-stale { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
     table.effective-config td.effective { background: #fff8c5; font-weight: 600; }
     table.effective-config td pre { margin: 0; }
+    tr.quarantined td { background: #ffebe9; }
+    .badge.quarantined { font-size: 0.8em; padding: 0 0.3rem; color: #a40e26; border-color: #cf222e; background: #ffebe9; }
+    .badge.layer-core, .badge.layer-author, .badge.layer-auto, .badge.layer-other { font-size: 0.8em; padding: 0 0.3rem; }
+    .badge.layer-core { color: #57606a; border-color: #8c959f; background: #f6f8fa; }
+    .badge.layer-author { color: #0a3069; border-color: #0969da; background: #ddf4ff; }
+    .badge.layer-auto { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    tr.proposal-row > td { background: #fffbea; padding-left: 2rem; }
+    .badge.state-open, .badge.state-resolved, .badge.state-expired, .badge.state-other { font-size: 0.8em; padding: 0 0.3rem; }
+    .badge.state-open { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    .badge.state-resolved { color: #116329; border-color: #1a7f37; background: #dafbe1; }
+    .badge.state-expired { color: #57606a; border-color: #8c959f; background: #f6f8fa; }
+    .badge.negated { font-size: 0.8em; padding: 0 0.3rem; color: #a40e26; border-color: #cf222e; }
+    tr.ledger-entries > td { background: #f6f8fa; padding-left: 2rem; }
+    table.ledger td.proposition span.line { display: block; }
+    tr.fact-superseded td { color: #8c959f; }
+    tr.fact-superseded td.proposition { text-decoration: line-through; }
+    table.canon-facts td.more dl { margin: 0; }
+    table.lineage td.more dl { margin: 0; }
+    table.lineage th.track-head, table.lineage td.track { width: 240px; min-width: 240px; }
+    table.lineage div.track { position: relative; width: 240px; height: 1rem; background: #f6f8fa; }
+    table.lineage span.bar { position: absolute; top: 0; bottom: 0; box-sizing: border-box; font-size: 0.75em; line-height: 1rem; overflow: hidden; }
+    table.lineage span.bar span.open-start { position: absolute; left: 2px; }
+    table.lineage span.bar span.open-end { position: absolute; right: 2px; }
+    span.bar-current { background: #0969da; color: #fff; }
+    span.bar-closure_undone { background: #0969da; color: #fff; outline: 2px dashed #0a3069; outline-offset: -2px; }
+    span.bar-superseded { background: #8c959f; color: #fff; }
+    span.bar-unconfirmed { background: transparent; border: 1px solid #8c959f; color: #57606a; }
+    tr.this-version td { background: #fff8c5; }
+    p.proposal-actions form { display: inline; }
+    mark.mention { background: #ddf4ff; border-bottom: 2px solid #0969da; }
+    sup.mention-number { color: #0969da; font-size: 0.7em; }
+    .arm { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; white-space: nowrap; }
+    .arm-vector { color: #0a3069; border-color: #0969da; background: #ddf4ff; }
+    .arm-lexical { color: #116329; border-color: #1a7f37; background: #dafbe1; }
+    .arm-alias { color: #6639ba; border-color: #8250df; background: #fbefff; }
+    .arm-occasion { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    .arm-assessment { color: #953800; border-color: #bc4c00; background: #fff1e5; }
+    table.retrieved td.memory-text { white-space: normal; min-width: 20rem; }
+    table.retrieved td.actions form { display: inline; } /* #143: the row's Pin and Unpin */
+    table.canon-facts td.actions form, table.lineage td.actions form { display: inline; } /* #146 */
+    form.fact-form fieldset { margin: 0.6rem 0; } form.fact-form div.field { margin: 0.3rem 0; }
+    form.fact-form div.object-choice { margin: 0.2rem 0; }
+    pre.memory-text, div.confirm dd code { white-space: pre-wrap; } /* #144: copyable spans */
+    /* #152: what a retrieval placed */
+    p.notice.warn { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
+    table.context-items td.number, table.context-dropped td.number, table.retrieval-timings td.number { text-align: right; }
+    table.retrieval-timings tr.total th, table.retrieval-timings tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    table.retrieval-canon span.chip { padding: 0 0.3rem; border: 1px solid #d0d7de; border-radius: 3px; background: #f6f8fa; }
+    strong.over-budget { color: #cf222e; }
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
+    /* #139: a turn's eval hooks and read set */
+    details.turn-trace { margin: 0.8rem 0; }
+    details.turn-trace > summary { cursor: pointer; font-weight: 600; }
+    div.turn-trace-content td.number { text-align: right; }
+    table.yield-clusters td.number, table.miss-categories td.number, table.shadow-samples td.number { text-align: right; }
+    table.yield-clusters tr.total th, table.yield-clusters tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    table.shadow-samples tr.failed td { color: #8c959f; }
+    table.reembed-stories tr.failed td.status, table.reembed-stories tr.failed td.error code { color: #cf222e; }
+    .config-error { border-color: #9a6700; background: #fff8c5; }
+    p.config-fix { color: #7d4e00; margin: 0.3rem 0; }
+    div.turn-trace-content tr.total th, div.turn-trace-content tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    dl.verdict-legend { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.8rem; font-size: 0.9em; }
+    dl.verdict-legend dd { margin: 0; }
+    span.beat-text { white-space: pre-line; }
+    span.beat-text mark { background: #fff8c5; border-bottom: 2px solid #bf8700; }
+    span.beat-label { font-size: 0.85em; padding: 0 0.3rem; border: 1px solid #d0d7de; border-radius: 3px; background: #f6f8fa; }
+    span.beat-visibility { font-size: 0.85em; color: #57606a; }
+    details.beat-trace { margin: 0.3rem 0; font-size: 0.9em; }
+    details.beat-trace > summary { cursor: pointer; color: #57606a; }
+    details.beat-trace code.raw-proposition { white-space: pre-wrap; }
   </style>
 </head>
 <body hx-headers:inherited='{"X-CSRFToken": "{{ csrf_token }}"}'>
@@ -144,7 +216,7 @@
   {% endif %}
   {% if messages %}
   <ul class="messages">
-    {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>{% endfor %}
+    {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{% if "safe" in message.extra_tags.split %}{{ message|safe }}{% else %}{{ message }}{% endif %}</li>{% endfor %}
   </ul>
   {% endif %}
   {% if pause_banner %}{% include "console/stories/_pause_banner.html" %}{% endif %}

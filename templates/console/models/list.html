@@ -19,14 +19,13 @@
       <td><code>{{ row.name }}</code></td>
       <td>{% include "console/models/_value.html" with value=row.base_url %}</td>
       <td>{% include "console/models/_value.html" with value=row.model %}</td>
-      {% for name, value in row.params %}<td class="param-{{ name }}">{% include "console/models/_value.html" with value=value %}</td>{% endfor %}
+      {% for name, value in row.param_cells %}<td class="param-{{ name }}">{% if value is None %}{{ port_na }}{% else %}{% include "console/models/_value.html" with value=value %}{% endif %}</td>{% endfor %}
       <td>{% for name, text in row.other_params %}<code>{{ name }}</code>: {{ text }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
       <td class="api-key">{% if row.api_key_set %}set (fingerprint <code>{{ row.api_key_fingerprint|default:"—" }}</code>){% else %}not set{% endif %}</td>
       <td class="actions">
-        {% if row.read_only %}{{ row.read_only_note }}{% else %}
         <a class="button" href="{% url 'models:edit' row.name %}">Edit</a>
-        {% if not row.is_default %}<a class="button" href="{% url 'models:drop' row.name %}{{ next_query }}">Drop override</a>{% endif %}
-        {% endif %}
+        {% if row.is_port %}<a href="{% url 'models:reembed' %}">Re-embed run</a>{% endif %}
+        {% if not row.is_default and not row.is_port %}<a class="button" href="{% url 'models:drop' row.name %}{{ next_query }}">Drop override</a>{% endif %}
       </td>
     </tr>
     {% endfor %}

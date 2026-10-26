@@ -1,0 +1,89 @@
+{
+  "entity": {
+    "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TB1",
+    "kind": "person",
+    "name": "Tobin"
+  },
+  "as_of": 3,
+  "relationships": [
+    {
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+      "predicate": "knows",
+      "direction": "out",
+      "other": {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0MM1",
+        "kind": "person",
+        "name": "Mara"
+      },
+      "qualifiers": {
+        "since": "childhood",
+        "trust": 0.8,
+        "witness": "01JB2Z8Y5Q3W6K9M1N4P7R0MM1",
+        "tags": [
+          "old",
+          "close"
+        ],
+        "secret": true
+      },
+      "valid_from": 0,
+      "valid_to": null,
+      "source_fact_id": null
+    },
+    {
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR3",
+      "predicate": "distrusts",
+      "direction": "in",
+      "other": {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0GH1",
+        "kind": "person",
+        "name": ""
+      },
+      "qualifiers": {},
+      "valid_from": null,
+      "valid_to": 120,
+      "source_fact_id": null
+    }
+  ],
+  "placement": {
+    "location": {
+      "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0CE1",
+      "kind": "place",
+      "name": "The cellar"
+    },
+    "container": null,
+    "within": [
+      {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NN1",
+        "kind": "place",
+        "name": "The inn"
+      },
+      {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TW1",
+        "kind": "place",
+        "name": "Harbour town"
+      }
+    ],
+    "valid_from": 0,
+    "valid_to": null,
+    "source_fact_id": null
+  },
+  "inventory": [
+    {
+      "item": {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KY1",
+        "kind": "object",
+        "name": "brass key"
+      },
+      "source_fact_id": null
+    },
+    {
+      "item": {
+        "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0CN1",
+        "kind": "object",
+        "name": "coin"
+      },
+      "source_fact_id": null
+    }
+  ],
+  "viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+}

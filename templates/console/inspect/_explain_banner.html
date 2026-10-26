@@ -1,0 +1,5 @@
+{% comment %}
+#142's reconstruction banner, between the Retrieval form and its results: this re-runs a past
+turn's retrieval now, and differs from what the turn itself retrieved. Context: explain_banner
+(console.views.inspect.ExplainBanner).
+{% endcomment %}<p class="notice explain-banner"><strong>Reconstructed now, not recorded at the time.</strong> Memories, consolidation and pins may have changed since {{ explain_banner.position }}. The turn itself retrieved once per rendering character, asked as that character at its own viewpoint with its last beats added to the input, and, when it narrated, once as the narrator at the omniscient viewpoint. This re-run asks at the omniscient viewpoint as {{ explain_banner.actor_label }} with the input alone. <a class="explain-back" href="{{ explain_banner.history_url }}">Back to {{ explain_banner.position }} in history</a>.</p>

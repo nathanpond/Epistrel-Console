@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% load inspect_tags %}{% comment %}
+Sanitize one memory's text (#144): a bare #43-style page (no Inspect shell). Its GET's one read is
+the explorer's question asked again, for the text (`text`, None when not shown). A valid POST
+renders the confirm page; only its Confirm calls the Engine.
+Context: story_id, memory_id, memory_short, form (SanitizeForm), text, idempotency_key, next_url;
+after a refused call: refusal (convention 10's text), violations (#47's rows) or engine_error
+(#43's panel), all above the fields.
+{% endcomment %}
+{% block title %}Sanitize memory {{ memory_short }} — Epistrel Console{% endblock %}
+{% block heading %}<span title="{{ memory_id }}">Sanitize memory {{ memory_short }}</span>{% endblock %}
+{% block content %}<p><a href="{{ next_url }}">← Back to the explorer</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+<div class="confirm sanitize">
+  <p>Every occurrence of the span in the memory's text is replaced by the surrogate, which passes the input gate first. The memory is re-indexed and re-embedded.</p>
+  <dl>
+    <dt>Memory id</dt><dd><code>{{ memory_id }}</code></dd>
+    <dt>Story id</dt><dd><code>{{ story_id }}</code></dd>
+  </dl>
+  {% if text is not None %}
+  <h2>Text <small>as the explorer's question retrieves it now</small></h2>
+  <pre class="memory-text">{{ text }}</pre>
+  {% else %}
+  <p class="text-not-shown">Text not shown — see the explorer</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {{ form.shown_text }}
+    {% if refusal %}<p class="errorlist sanitize-refusal">{{ refusal }}</p>{% endif %}
+    {% if violations %}<div class="sanitize-violations"><p class="errorlist">The surrogate breaks a policy; nothing was changed.</p>{% include "console/_violations.html" %}</div>{% endif %}
+    {% for error in form.non_field_errors %}<p class="errorlist">{{ error|code_spans }}</p>{% endfor %}
+    <p>
+      <label for="{{ form.span.id_for_label }}">{{ form.span.label }}</label><br>
+      {{ form.span }}
+      {% for error in form.span.errors %}<span class="errorlist field-error">{{ error|code_spans }}</span>{% endfor %}
+    </p>
+    <p>
+      <label for="{{ form.surrogate.id_for_label }}">{{ form.surrogate.label }}</label><br>
+      {{ form.surrogate }}<br><small class="helptext">{{ form.surrogate.help_text }}</small>
+      {% for error in form.surrogate.errors %}<span class="errorlist field-error">{{ error|code_spans }}</span>{% endfor %}
+    </p>
+    <button type="submit">Sanitize…</button>
+    <a href="{{ next_url }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

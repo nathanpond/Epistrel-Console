@@ -1,0 +1,1 @@
+{% load inspect_tags %}{% if ref.name %}{% if ref.url %}<a href="{{ ref.url }}" title="{{ ref.id }}">{{ ref.name }}</a>{% else %}<span title="{{ ref.id }}">{{ ref.name }}</span>{% endif %}{% elif ref.url %}<a href="{{ ref.url }}">{{ ref.id|engine_id }}</a>{% else %}{{ ref.id|engine_id }}{% endif %}

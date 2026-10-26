@@ -1,0 +1,12 @@
+{% load inspect_tags %}{% comment %}
+Why an Inspect tab or section can't be served (#135, console.inspect.Unavailable). Context:
+unavailable, config_url (in every Inspect context); config_changed and reload_url for a 409
+module_off on a tab the rules enabled. inline=True: one line above a route's empty or skipped
+answer, instead of the panel.
+{% endcomment %}{% if inline %}<p class="notice unavailable">{{ unavailable.reason|code_spans }} — <a href="{{ config_url }}">Change it on the story's Config page</a></p>
+{% else %}<div class="panel unavailable">
+  <h2>Not available for this story</h2>
+  <p>{{ unavailable.reason|code_spans }}</p>
+  {% if config_changed %}<p class="config-changed">The story's configuration changed since this page loaded — <a href="{{ reload_url }}">reload</a></p>{% endif %}
+  <p><a href="{{ config_url }}">Change it on the story's Config page</a></p>
+</div>{% endif %}

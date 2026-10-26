@@ -1,0 +1,8 @@
+{% load console_format %}{% comment %}
+One Counts row of the Memory tab (#140, console.hot_set.CountRow): a character, or the Story
+vectors row (character_id empty). Stored is "not stored yet" when the Engine has stored none.
+{% endcomment %}<td>{% if row.character_id %}{% include "console/inspect/_character.html" with label=row.label character_id=row.character_id is_player=row.is_player %}{% else %}{{ row.label }}{% endif %}</td>
+<td>{{ row.hot|count }}{% if row.marker %} <strong class="marker">{{ row.marker }}</strong>{% endif %}</td>
+<td>{{ row.budget|count }}</td>
+<td>{{ row.headroom }}</td>
+<td>{% if row.stored is None %}not stored yet{% else %}{{ row.stored|count }}{% if row.differs %} <strong class="marker">{{ row.differs }}</strong>{% endif %}{% endif %}</td>

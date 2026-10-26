@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% comment %}#146: convention 10's not-found text for a fact write whose story is gone (404 not_found), with the way back.{% endcomment %}
+{% block title %}Canon — Epistrel Console{% endblock %}
+{% block heading %}Canon{% endblock %}
+{% block content %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ text }}</strong></p></div>
+<p><a href="{{ back_url }}">Back to Canon</a></p>
+{% endblock %}

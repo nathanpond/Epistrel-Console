@@ -1,0 +1,160 @@
+{
+  "predicates": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+      "story_id": null,
+      "name": "located_at",
+      "layer": "core",
+      "subject_type": "entity",
+      "object_type": "place",
+      "cardinality": "functional",
+      "max_cardinality": 1,
+      "key_qualifiers": [
+        "frame"
+      ],
+      "qualifiers": {
+        "frame": "string",
+        "since": "time"
+      },
+      "set_object": false,
+      "temporal_kind": "fluent",
+      "exclusions": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0PX9"
+      ],
+      "containment_of": "01JB2Z8Y5Q3W6K9M1N4P7R0PR3",
+      "implications": [
+        {
+          "when": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+          "then": "01JB2Z8Y5Q3W6K9M1N4P7R0PR3",
+          "via": null
+        }
+      ],
+      "symmetric": false,
+      "inverse_of": null,
+      "owner": "engine",
+      "projection": "location",
+      "docs": "Where an entity is.",
+      "weak": false,
+      "pending_proposal": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+      "story_id": null,
+      "name": "holds",
+      "layer": "core",
+      "subject_type": "entity",
+      "object_type": "item",
+      "cardinality": "multi",
+      "max_cardinality": 3,
+      "key_qualifiers": [],
+      "qualifiers": {},
+      "set_object": true,
+      "temporal_kind": "permanent",
+      "exclusions": [],
+      "containment_of": null,
+      "implications": [],
+      "symmetric": false,
+      "inverse_of": null,
+      "owner": "engine",
+      "projection": null,
+      "docs": "",
+      "weak": false,
+      "pending_proposal": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR3",
+      "story_id": null,
+      "name": "contained_in",
+      "layer": "core",
+      "subject_type": "entity",
+      "object_type": "place",
+      "cardinality": "multi",
+      "max_cardinality": null,
+      "key_qualifiers": [],
+      "qualifiers": {},
+      "set_object": false,
+      "temporal_kind": "event",
+      "exclusions": [],
+      "containment_of": null,
+      "implications": [],
+      "symmetric": false,
+      "inverse_of": null,
+      "owner": "engine",
+      "projection": null,
+      "docs": "",
+      "weak": false,
+      "pending_proposal": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR4",
+      "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+      "name": "sworn_to",
+      "layer": "author",
+      "subject_type": "character",
+      "object_type": "character",
+      "cardinality": "multi",
+      "max_cardinality": null,
+      "key_qualifiers": [],
+      "qualifiers": {},
+      "set_object": false,
+      "temporal_kind": "fluent",
+      "exclusions": [],
+      "containment_of": null,
+      "implications": [],
+      "symmetric": true,
+      "inverse_of": "01JB2Z8Y5Q3W6K9M1N4P7R0PR5",
+      "owner": "author",
+      "projection": null,
+      "docs": "An oath.",
+      "weak": false,
+      "pending_proposal": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR5",
+      "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+      "name": "guards",
+      "layer": "auto",
+      "subject_type": "any",
+      "object_type": "none",
+      "cardinality": "multi",
+      "max_cardinality": null,
+      "key_qualifiers": [],
+      "qualifiers": null,
+      "set_object": false,
+      "temporal_kind": "fluent",
+      "exclusions": [],
+      "containment_of": null,
+      "implications": [],
+      "symmetric": false,
+      "inverse_of": null,
+      "owner": "engine",
+      "projection": null,
+      "docs": "",
+      "weak": true,
+      "pending_proposal": {
+        "id": "01JB2Z8Y5Q3W6K9M1N4P7R0PP1",
+        "status": "pending",
+        "filed_by": "engine",
+        "changes": {
+          "cardinality": "functional",
+          "qualifiers": {
+            "role": "string"
+          }
+        }
+      }
+    }
+  ],
+  "rules": [
+    {
+      "when": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+      "then": "01JB2Z8Y5Q3W6K9M1N4P7R0PR3",
+      "via": null
+    },
+    {
+      "when": "01JB2Z8Y5Q3W6K9M1N4P7R0PR4",
+      "then": "01JB2Z8Y5Q3W6K9M1N4P7R0PR5",
+      "via": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2"
+    }
+  ],
+  "config_revision": 7
+}

@@ -1,0 +1,99 @@
+{
+  "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+  "episodic": true,
+  "counters": {
+    "characters": {
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 2003,
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3B": 2000,
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T9Z": 4
+    },
+    "story_vectors": 12345
+  },
+  "stored_counters": null,
+  "budgets": {
+    "memories_per_character": 2000,
+    "vectors_per_story": 50000,
+    "importance_floor": 0.15,
+    "retirement_max_lag": 10,
+    "retain_retired_vectors": false,
+    "retain_dormant_vectors": true,
+    "max_pinned_per_character": 5,
+    "max_pinned_per_story": 20
+  },
+  "pins": {
+    "memory_pins": 9,
+    "text_pins": 3,
+    "by_character": {
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3A": 5,
+      "01JB2Z8Y5Q3W6K9M1N4P7R0T3B": 2
+    }
+  },
+  "head_turn": 40,
+  "open_episodes": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+      "scope": "story",
+      "scope_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2V",
+      "opened_turn": 30,
+      "deadline_turn": 40,
+      "excess_at_open": 12,
+      "excess": 3
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0E02",
+      "scope": "character",
+      "scope_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "opened_turn": 35,
+      "deadline_turn": 45,
+      "excess_at_open": 5,
+      "excess": 3
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0E03",
+      "scope": "character",
+      "scope_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "opened_turn": 38,
+      "deadline_turn": 41,
+      "excess_at_open": 1,
+      "excess": 1
+    }
+  ],
+  "recent_retirements": [
+    {
+      "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M01",
+      "reason": "floor",
+      "retired_turn": 39,
+      "retired_at": "2026-10-24T14:03:00Z",
+      "holder_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+    },
+    {
+      "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M02",
+      "reason": "covered",
+      "retired_turn": 38,
+      "retired_at": "2026-10-24T13:00:00Z",
+      "holder_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T9Z"
+    },
+    {
+      "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M03",
+      "reason": "uncovered",
+      "retired_turn": null,
+      "retired_at": null,
+      "holder_character_id": null
+    },
+    {
+      "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M04",
+      "reason": "mystery_reason",
+      "retired_turn": 37,
+      "retired_at": "2026-10-24T12:00:00Z",
+      "holder_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+    },
+    {
+      "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M05",
+      "reason": null,
+      "retired_turn": 36,
+      "retired_at": "2026-10-24T11:00:00Z",
+      "holder_character_id": null
+    }
+  ],
+  "timeline_revision": 57
+}

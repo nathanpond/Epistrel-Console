@@ -1,5 +1,6 @@
 """The operation log (#44): every Engine operation this Console performed, with filters, and
-one operation's full record with the Engine's current view of it on request."""
+one operation's full record with the Engine's current view of it on request. Also the eval
+reports page (#149), under Operations."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -8,20 +9,38 @@ from django.core.paginator import Paginator
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import NoReverseMatch, reverse
+from django.utils import timezone
 from django.views.decorators.http import require_safe
 
-from console.engine.client import EngineClientError
-from console.engine.models import OperationRecord
+from console.engine.client import EngineClient, EngineClientError, EngineError
+from console.engine.models import OperationRecord, StorySummary
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
+from console.evals import (
+    BLANK_HINT,
+    EVAL_RUNS_ISSUE,
+    NO_SAMPLES,
+    SAMPLE_LIMIT,
+    SHAPE_TITLE,
+    STORIES_UNAVAILABLE,
+    ShadowSection,
+    YieldSection,
+    default_now,
+    paging,
+    sample_rows,
+    shadow_section,
+    yield_section,
+)
 from console.models import EngineOperation
 from console.operation_log import (
+    SANITIZE_KIND,
     input_violations,
     is_turn,
     output_violations,
     policy_ids,
-    rebuild_job_id,
-    rebuild_job_text,
+    queued_job_id,
+    queued_job_text,
 )
 from console.reactivation import OP_NAMES, OP_PARAM
 from console.redaction import redact
@@ -123,10 +142,11 @@ def _viewpoint(row: EngineOperation) -> str | None:
     return viewpoint if isinstance(viewpoint, str) and viewpoint else None
 
 
-def _rebuild_job_text(row: EngineOperation) -> str:
-    """A queued rebuild's honest job message (#50); "" for anything else."""
-    job_id = rebuild_job_id(row.kind, row.http_status, row.response)
-    return rebuild_job_text(job_id) if job_id is not None else ""
+def _queued_job_text(row: EngineOperation) -> str:
+    """A queued rebuild's (#50) or consolidation's (#145) honest job message; "" for anything
+    else."""
+    job_id = queued_job_id(row)
+    return queued_job_text(row.kind, job_id) if job_id is not None else ""
 
 
 CHECK_KINDS = frozenset({"set_story_content_rating", *OP_NAMES})  # #80, #81
@@ -143,6 +163,27 @@ def _check_url(row: EngineOperation) -> str:
     return check_url(row.entity_id, row.job_id, **params)
 
 
+# Kinds whose Engine record would show what the row itself never keeps (#144: the Engine's
+# ``sanitized`` event holds the surrogate, and the memory read back holds its text).
+NO_FETCH_KINDS = frozenset({SANITIZE_KIND})
+
+
+def trace_url(row: EngineOperation) -> str:
+    """#139: the lazy "Eval hooks & read set" block's URL for a turn row with an Engine
+    operation id and a story; "" for any other row (or while the route isn't registered)."""
+    if not (is_turn(row.response) and row.engine_operation_id and row.story_id):
+        return ""
+    try:
+        return reverse("inspect:turn-trace", args=[row.story_id, row.engine_operation_id])
+    except NoReverseMatch:
+        return ""
+
+
+def fetch_offered(row: EngineOperation) -> bool:
+    """Whether the detail page offers the ``?fetch=1`` re-read of the Engine's record."""
+    return row.kind not in NO_FETCH_KINDS
+
+
 @require_safe
 def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     row = get_object_or_404(EngineOperation, pk=pk)
@@ -153,10 +194,12 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "input_violations": violation_rows(input_violations(row.response)),
         "input_gate": input_gate_text(row.response),
         "output_violations": violation_rows(output_violations(row.response)),
-        "job_text": _rebuild_job_text(row),
+        "job_text": _queued_job_text(row),
         "check_url": _check_url(row),
+        "fetch_offered": fetch_offered(row),
+        "trace_url": trace_url(row),
     }
-    if request.GET.get("fetch") == "1" and row.engine_operation_id:
+    if request.GET.get("fetch") == "1" and row.engine_operation_id and context["fetch_offered"]:
         fetched: OperationRecord | None = None
         fetch_error: ErrorPanel | None = None
         try:
@@ -175,3 +218,88 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             fetched_report=stored_turn_report(result_body),
         )
     return render(request, "console/operation_detail.html", context)
+
+
+# --- eval reports (#149) -------------------------------------------------------------------------
+
+
+def _stories(request: HttpRequest, client: EngineClient) -> list[StorySummary] | None:
+    """The page's one ``list_stories()`` read (the story select and the samples' story names);
+    ``None`` when it failed (a free-text story id, and stories shown as ids)."""
+    try:
+        return client.list_stories()
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None
+
+
+def _section_error(
+    request: HttpRequest, exc: EngineClientError, section: YieldSection | ShadowSection
+) -> None:
+    """Convention 10 per section: a 422 beside the section's form, anything else #43's panel
+    inside the section."""
+    log_engine_error(request, exc)
+    if isinstance(exc, EngineError) and exc.http_status == 422:
+        section.window.apply_engine_error(exc)
+    else:
+        section.error = panel_for(exc)
+
+
+def _read_yield(request: HttpRequest, client: EngineClient, section: YieldSection) -> None:
+    if not section.window.valid:
+        return
+    try:
+        section.report = client.get_escalation_yield(
+            section.window.start.moment, section.window.end.moment
+        )
+    except EngineClientError as exc:
+        _section_error(request, exc, section)
+
+
+def _read_shadow(
+    request: HttpRequest,
+    client: EngineClient,
+    section: ShadowSection,
+    stories: list[StorySummary] | None,
+) -> None:
+    if not section.window.valid:
+        return
+    try:
+        report = client.get_extraction_shadow(
+            section.window.start.moment,
+            section.window.end.moment,
+            story_id=section.story or None,
+            limit=SAMPLE_LIMIT,
+            after=section.after,
+        )
+    except EngineClientError as exc:
+        _section_error(request, exc, section)
+        return
+    section.report = report
+    section.rows = sample_rows(report.items, stories)
+    section.pages = paging(request.GET, section.window, report.next_cursor)
+
+
+@require_safe
+def evals(request: HttpRequest) -> HttpResponse:
+    """``operations:evals``: the escalation-yield and claim-detection shadow reports over a
+    window (#149). Reads, in sequence: the story list (even when a section has a form error),
+    then each report whose window parsed; either failing still renders the other. GETs, never
+    recorded."""
+    client = engine_client_for(request)
+    now = default_now(timezone.now())
+    stories = _stories(request, client)
+    escalation = yield_section(request.GET, now)
+    shadow = shadow_section(request.GET, now, stories)
+    _read_yield(request, client, escalation)
+    _read_shadow(request, client, shadow, stories)
+    context = {
+        "escalation": escalation,
+        "shadow": shadow,
+        "blank_hint": BLANK_HINT,
+        "no_samples": NO_SAMPLES,
+        "shape_title": SHAPE_TITLE,
+        "stories_unavailable": STORIES_UNAVAILABLE,
+        "eval_runs_issue": EVAL_RUNS_ISSUE,
+    }
+    return render(request, "console/operations_evals.html", context)

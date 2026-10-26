@@ -5,6 +5,10 @@ The Engine reports a source per field (``own | inherited | default``; ``params``
 which purpose ``inherited`` means, so :data:`PARENTS` mirrors the Engine's ``parent_of`` (each
 purpose's registry ``default_model_key``, FR-MODEL-2). A param no row sets has no source; it
 shows as ``default`` with no value.
+
+A **port** (``embedding``, #59) is different: it has its own row only and nothing falls back to
+``default``, so every value is its own (no source marker), it takes only :data:`PORT_PARAMS`,
+and it has no override to drop.
 """
 
 import re
@@ -20,8 +24,11 @@ PARENTS = {
     "rating_suggestion": "guardrail_check",
     "regeneration": "generation",
 }
-# Purposes shown read-only, with the note shown in their place (owner decision B).
-READ_ONLY = {"embedding": "Configured in M4 (#59)"}
+# The Engine's model ports (``PORTS``): own row only, why they have no drop.
+PORTS = {"embedding": "The embedding port has no default to fall back to"}
+# The only params a port takes (the Engine's ``PORT_PARAMS``); a chat param is 422.
+PORT_PARAMS = ("timeout",)
+PORT_NA = "n/a"
 # The parameters the Console edits, in display order.
 PARAMS = ("temperature", "top_p", "max_tokens", "timeout", "stop", "seed")
 PARAM_LABELS = {
@@ -43,8 +50,8 @@ def parent_of(purpose: str) -> str | None:
     return PARENTS.get(purpose)
 
 
-def is_read_only(purpose: str) -> bool:
-    return purpose in READ_ONLY
+def is_port(purpose: str) -> bool:
+    return purpose in PORTS
 
 
 def value_text(value: object) -> str:
@@ -91,15 +98,22 @@ class PurposeConfig:
     other_params: tuple[tuple[str, str], ...]  # keys beyond PARAMS, read-only
     api_key_set: bool
     api_key_fingerprint: str | None
-    read_only_note: str
 
     @property
     def is_default(self) -> bool:
         return self.name == DEFAULT
 
     @property
-    def read_only(self) -> bool:
-        return bool(self.read_only_note)
+    def is_port(self) -> bool:
+        return is_port(self.name)
+
+    @property
+    def param_cells(self) -> tuple[tuple[str, Sourced | None], ...]:
+        """The list's param columns; ``None`` where a port takes no such param ("n/a")."""
+        return tuple(
+            (key, None if self.is_port and key not in PORT_PARAMS else value)
+            for key, value in self.params
+        )
 
     def param(self, name: str) -> Sourced:
         return dict(self.params)[name]
@@ -108,6 +122,8 @@ class PurposeConfig:
 def _sourced(purpose: str, value: object, source: str | None) -> Sourced:
     if purpose == DEFAULT:
         return Sourced(value, None, DEFAULT, "")
+    if is_port(purpose):  # every port field is its own: no marker
+        return Sourced(value, "own", purpose, "")
     if source == "own":
         return Sourced(value, "own", purpose, "own")
     if source == "inherited":
@@ -135,7 +151,6 @@ def purpose_config(name: str, entry: ModelConfigEntry) -> PurposeConfig:
         other_params=others,
         api_key_set=entry.api_key_set,
         api_key_fingerprint=entry.api_key_fingerprint,
-        read_only_note=READ_ONLY.get(name, ""),
     )
 
 

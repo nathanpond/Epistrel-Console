@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% comment %}#146: a supersede POST whose signed snapshot is tampered with or expired: only the message and a link back (no Engine call).{% endcomment %}
+{% block title %}Supersede — Epistrel Console{% endblock %}
+{% block heading %}Supersede{% endblock %}
+{% block content %}
+<p class="errorlist snapshot-expired" role="alert">{{ text }}</p>
+<p><a href="{{ back_url }}">Back</a></p>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load console_format inspect_tags %}
+{% comment %}
+The eval reports page (#149): escalation yield, then claim detection's shadow report. Each section
+is its own GET form (console/evals.py): its window inputs, hidden inputs carrying the other
+section's params as submitted, "Last 7 days" and the blank-field hint; then the Engine's echoed
+window and the report, a 422 beside the form, or #43's panel inside the section. Either section
+failing still renders the other.
+{% endcomment %}
+{% block title %}Eval reports · Epistrel Console{% endblock %}
+{% block heading %}Eval reports{% endblock %}
+{% block content %}
+<p class="scope"><a href="{% url 'operations:list' %}">← Operations</a></p>
+<p class="muted eval-runs">Eval runs aren't served by the Engine yet (<a href="{{ eval_runs_issue }}">nathanpond/Epistrel#532</a>).</p>
+
+<section id="escalation-yield">
+<h2>Escalation yield</h2>
+{% with section=escalation %}
+{% if section.window.errors %}<div class="errors" role="alert"><ul class="errorlist">{% for e in section.window.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<form method="get" action="{% url 'operations:evals' %}" class="eval-form yield-form">
+  {% for name, value in section.hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  {% include "console/evals/_window.html" with window=section.window %}
+  <button type="submit">Apply</button> <a class="last-days" href="{{ section.last_days_url }}">Last 7 days</a>
+  <p class="muted hint">{{ blank_hint }}</p>
+</form>
+{% if section.error %}{% include "console/_engine_error.html" with engine_error=section.error %}
+{% elif section.report %}
+<p class="window">{{ section.window_text }}</p>
+<p class="yield-summary">{{ section.summary }}</p>
+{% for table in section.tables %}{% include "console/evals/_cluster_table.html" %}{% endfor %}
+{% endif %}
+{% endwith %}
+</section>
+
+<section id="extraction-shadow">
+<h2>Claim-detection shadow</h2>
+{% with section=shadow %}
+{% if section.window.errors %}<div class="errors" role="alert"><ul class="errorlist">{% for e in section.window.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<form method="get" action="{% url 'operations:evals' %}" class="eval-form shadow-form">
+  {% for name, value in section.hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  {% include "console/evals/_window.html" with window=section.window %}
+  {% if section.options is None %}
+  <div class="field field-s_story"><label for="id_s_story">Story</label> <input type="text" name="s_story" id="id_s_story" value="{{ section.story }}" size="28"> <span class="muted stories-unavailable">{{ stories_unavailable }}</span></div>
+  {% else %}
+  <div class="field field-s_story"><label for="id_s_story">Story</label> <select name="s_story" id="id_s_story">{% for o in section.options %}<option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>{% endfor %}</select></div>
+  {% endif %}
+  <button type="submit">Apply</button> <a class="last-days" href="{{ section.last_days_url }}">Last 7 days</a>
+  <p class="muted hint">{{ blank_hint }}</p>
+</form>
+{% if section.error %}{% include "console/_engine_error.html" with engine_error=section.error %}
+{% elif section.report %}
+<p class="window">{{ section.window_text }}</p>
+<p class="shadow-summary"><strong>Whole window:</strong> {{ section.summary }}</p>
+<h3>Misses by category</h3>
+{% if section.categories %}
+<table class="miss-categories">
+  <thead><tr><th>Category</th><th>Missed</th></tr></thead>
+  <tbody>{% for c in section.categories %}<tr><td><span title="{{ c.raw }}">{{ c.label }}</span></td><td class="number">{{ c.count|count }}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p class="none">None</p>{% endif %}
+<h3>Samples</h3>
+{% if section.rows %}
+<table class="shadow-samples">
+  <thead><tr><th>Created at</th><th>Story</th><th>Turn</th><th>Operation</th><th>Status</th><th>Extraction claims</th><th>Missed</th><th>Misses by category</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in section.rows %}{% with s=row.sample %}
+  <tr id="sample-{{ s.id }}" class="sample{% if row.failed %} failed{% endif %}">
+    <td class="created-at">{{ s.created_at|engine_time }}</td>
+    <td class="story">{% if row.story_url %}<a href="{{ row.story_url }}" title="{{ s.story_id }}">{{ row.story_label }}</a>{% else %}{{ s.story_id|engine_id }}{% endif %}</td>
+    <td class="turn">{% if row.turn_url %}<a href="{{ row.turn_url }}">turn {{ s.narrative_turn }}</a>{% else %}—{% endif %}</td>
+    <td class="operation">{% if row.operation_pk %}<a href="{% url 'operations:detail' row.operation_pk %}">{{ s.operation_id|engine_id }}</a>{% else %}{{ s.operation_id|engine_id }}{% endif %}</td>
+    <td class="status"><span title="{{ s.status }}">{{ row.status_label }}</span></td>
+    <td class="number">{{ s.extraction_claims|count }}</td>
+    <td class="number">{{ s.missed_count|count }}</td>
+    <td class="misses">{{ row.misses }}</td>
+    <td class="more"><details><summary>More</summary><dl><dt>Sample id</dt><dd><code>{{ s.id }}</code></dd><dt>Story id</dt><dd><code>{{ s.story_id }}</code></dd><dt>Operation id</dt><dd><code>{{ s.operation_id }}</code></dd></dl></details></td>
+  </tr>{% endwith %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="none no-samples">{{ no_samples }}</p>{% endif %}
+{% endif %}
+{% if section.pages.paged or section.pages.next_url %}<p class="paging">
+  {% if section.pages.paged %}<a class="first-page" href="{{ section.pages.first_url }}">First page</a>{% endif %}
+  {% if section.pages.next_url %}<a class="next-page" href="{{ section.pages.next_url }}">Next page</a>{% endif %}
+</p>{% endif %}
+{% endwith %}
+</section>
+{% endblock %}

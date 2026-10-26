@@ -1,5 +1,6 @@
 """Rendering Engine values that are not plain strings (health checks hold objects and numbers),
-and the engine-wide ``engine_time`` / ``pretty_json`` filters (#43)."""
+and the engine-wide ``engine_time`` / ``pretty_json`` filters (#43); ``new_idempotency_key`` for a
+page with one form per row (#143)."""
 
 import json
 from datetime import UTC, datetime
@@ -8,6 +9,8 @@ from typing import Any
 from django import template
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
+
+from console.ids import new_ulid
 
 register = template.Library()
 
@@ -106,3 +109,28 @@ def human_bytes(value: Any) -> str:
 def mib(value: int) -> str:
     """A byte count in MiB with one decimal (#70's upload limits): "8.0 MiB"."""
     return f"{value / MIB:.1f} MiB"
+
+
+@register.filter
+def count(value: Any) -> str:
+    """A count with thousands separators (#135 convention 5): ``12000`` → ``12,000``; "—" for
+    anything that is not an integer."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        return EMPTY
+    return f"{value:,}"
+
+
+@register.filter
+def percent(value: Any) -> str:
+    """A rate as a percentage with one decimal (#135 convention 5): ``0.1309`` → ``13.1%``; "—"
+    for ``None`` or anything that is not a number (#149)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return EMPTY
+    return f"{value * 100:.1f}%"
+
+
+@register.simple_tag
+def new_idempotency_key() -> str:
+    """A fresh ULID per call (#43's per-render key, #135 convention 8), for a page that renders
+    several write forms (#143's memory row buttons): ``{% new_idempotency_key as key %}``."""
+    return new_ulid()

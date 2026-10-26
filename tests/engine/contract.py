@@ -6,7 +6,8 @@ Type mapping: ``str``/``int``/``float``/``bool`` ↔ ``string``/``integer``/``nu
 (or ``nullable``); a nested dataclass ↔ a ``$ref`` to the component of the same shape; ``Any``
 (raw JSON) ↔ any schema, and ``dict[str, Any]`` ↔ an object with ``additionalProperties: true``
 (#44); a field flagged ``OPEN_ENUM`` (``str``, #65) ↔ a string enum, compared as its ``Literal``;
-a response whose schema is an ``anyOf`` of components ↔ a model matching one of them (#65).
+a response whose schema is an ``anyOf`` of components ↔ a model matching one of them (#65);
+``datetime`` ↔ ``string`` with ``format: date-time`` (#149).
 Compared:
 type, enum, properties, required (a field is required when it has no default). Ignored: title,
 description, examples, default.
@@ -15,6 +16,7 @@ description, examples, default.
 import types
 import typing
 from dataclasses import MISSING, fields, is_dataclass
+from datetime import datetime
 from typing import Any, Literal, Union
 
 from console.engine.client import Operation
@@ -72,6 +74,10 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
         if node.get("type") != expected:
             problems.append(f"{where}: type {node.get('type')} != {expected}")
         return problems
+    if tp is datetime:
+        if node.get("type") == "string" and node.get("format") == "date-time":
+            return []
+        return [f"{where}: model is a datetime but the schema is not a date-time string"]
     if tp in JSON_TYPES:
         problems = (
             []

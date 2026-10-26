@@ -17,6 +17,7 @@ from console.engine.models import ProfileSchema
 from console.engine_access import engine_client_for
 from console.views import engine_panel, profile_defaults, profile_edit, profiles, stories
 from tests.fakes.engine import FakeEngine
+from tests.fakes.guarantees import answer_guarantees
 from tests.fakes.ownership import answer_relations
 from tests.fixtures import engine_fixture
 
@@ -162,6 +163,7 @@ def fake_engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeEngine]:
     recording client, answering the settings, the schema and the Lite profile by default."""
     fake = FakeEngine()
     answer_relations(fake)
+    answer_guarantees(fake)  # #57: the profile page reads its guarantee table
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)

@@ -13,6 +13,7 @@ from console.engine.client import EngineClient
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from console.ids import new_ulid
+from console.models import EngineOperation
 from tests.plugins.engine_live import live_key, live_url
 
 pytestmark = pytest.mark.engine_live
@@ -204,7 +205,10 @@ def test_model_purpose_edit_key_and_drop_live(
             assert "own" in row
             assert "set (fingerprint" in row
             assert secret not in listing
-            assert "Configured in M4 (#59)" in _model_row(listing, "embedding")
+            # #59: embedding is editable, but the smoke never saves it (no real re-embed).
+            embedding = _model_row(listing, "embedding")
+            assert 'href="/models/embedding/edit/"' in embedding
+            assert "Configured in M4" not in listing
         finally:
             dropped = operator_client.post(
                 f"/models/{purpose}/drop/", {"idempotency_key": new_ulid()}
@@ -213,6 +217,8 @@ def test_model_purpose_edit_key_and_drop_live(
         row = _model_row(operator_client.get("/models/").content.decode(), purpose)
         assert "console-smoke" not in row
         assert "not set" in row
+        paths = [str(op.request.get("path", "")) for op in EngineOperation.objects.all()]
+        assert not [path for path in paths if "/embedding" in path]  # no embedding write
 
 
 @pytest.mark.engine_auth

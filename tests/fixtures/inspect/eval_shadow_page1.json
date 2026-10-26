@@ -1,0 +1,19 @@
+{
+  "from": "2026-10-17T14:03:00Z",
+  "to": "2026-10-24T14:03:00Z",
+  "story_id": null,
+  "samples": 12,
+  "failed": 1,
+  "extraction_claims": 55,
+  "missed": 4,
+  "missed_by_category": {"place": 1, "age": 2, "inner_state": 1},
+  "miss_rate": 0.0727273,
+  "detected_total": 340,
+  "checked_total": 298,
+  "items": [
+    {"id": "01JB2Z8Y5Q3W6K9M1N4P7R0SA1", "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0S00", "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QP1", "narrative_turn": 3, "status": "sampled", "extraction_claims": 5, "missed_count": 3, "missed_by_category": {"place": 1, "age": 2}, "created_at": "2026-10-23T09:15:42Z"},
+    {"id": "01JB2Z8Y5Q3W6K9M1N4P7R0SA2", "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0SX9", "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QP2", "narrative_turn": null, "status": "failed", "extraction_claims": 0, "missed_count": 0, "missed_by_category": {}, "created_at": "2026-10-22T18:00:05Z"},
+    {"id": "01JB2Z8Y5Q3W6K9M1N4P7R0SA3", "story_id": "01JB2Z8Y5Q3W6K9M1N4P7R0S00", "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QP3", "narrative_turn": 4, "status": "sampled", "extraction_claims": 4, "missed_count": 1, "missed_by_category": {"inner_state": 1}, "created_at": "2026-10-21T07:30:00Z"}
+  ],
+  "next": "01JB2Z8Y5Q3W6K9M1N4P7R0SA3"
+}

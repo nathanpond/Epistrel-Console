@@ -118,3 +118,17 @@ def test_an_unreachable_engine_shows_its_reason_and_no_rows(
     assert "health-detail" not in html
     # The rest of the page still works.
     assert "Rebuild projections" in html
+
+
+def test_the_page_links_the_re_embed_run(
+    operator_client: Client, stories: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#150: "Re-embed run" always shows beside Deployment settings · Config changes."""
+    _probe(monkeypatch, ProbeResult("unreachable", False, None, None, None, "timeout", None))
+
+    html = operator_client.get("/engine/").content.decode()
+
+    assert (
+        '<a href="/engine/config-changes/">Config changes</a> · '
+        '<a href="/models/embedding/reembed/">Re-embed run</a></p>' in html
+    )

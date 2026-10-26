@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% comment %}
+#135's greyed panel on its own (#143): a memory write's 409 module_off, answered on the POST.
+Context: unavailable, config_url, story_id, next_url (back to the explorer, or #145's Memory tab),
+back_label (the link's words, "Back" when empty); config_changed and reload_url (#145).
+{% endcomment %}
+{% block title %}Not available — Epistrel Console{% endblock %}
+{% block heading %}Not available for this story{% endblock %}
+{% block content %}{% include "console/inspect/_unavailable.html" %}
+<p><a href="{{ next_url }}">{{ back_label|default:"Back" }}</a></p>
+{% endblock %}

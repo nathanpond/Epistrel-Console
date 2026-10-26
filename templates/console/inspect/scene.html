@@ -1,0 +1,32 @@
+{% extends "console/inspect/base.html" %}
+{% load inspect_tags console_format %}
+{% comment %}
+The Scene tab (#58): the GET form (_scene_form.html), then GET /stories/{id}/scene at its turn and
+viewpoint: the header "Turn N · vM · as <viewpoint>", the player character's location and the
+entities present there (Engine order), each linked to its profile at the response's turn and
+viewpoint. The form stays above every error; an invalid form makes no scene call.
+{% endcomment %}
+{% block tab_content %}
+{% include "console/inspect/_scene_form.html" %}
+{% if not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif fix_form %}<p class="fix-form">{{ fix_form }}</p>
+{% elif read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}
+{% elif scene %}
+<section class="scene">
+<h2 class="scene-header">{{ scene.header }}</h2>
+{% if scene.location %}{% with e=scene.location %}<p class="scene-location">Location: {% include "console/inspect/_entity_link.html" %} ({% include "console/inspect/_entity_kind.html" %}) {{ e.id|engine_id }}</p>{% endwith %}
+{% else %}<p class="scene-location none">Location unknown to this viewpoint</p>{% endif %}
+<h3>Present</h3>
+{% if scene.present %}
+<table class="scene-present">
+  <thead><tr><th>Name</th><th>Kind</th><th>Id</th></tr></thead>
+  <tbody>
+  {% for e in scene.present %}<tr class="present" data-entity="{{ e.id }}"><td class="name">{% include "console/inspect/_entity_link.html" %}</td><td class="kind">{% include "console/inspect/_entity_kind.html" %}</td><td class="id">{{ e.id|engine_id }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="present-none none">None visible to this viewpoint</p>{% endif %}
+</section>
+<details class="more"><summary>More</summary><pre>{{ more|pretty_json }}</pre></details>
+{% endif %}
+{% endblock %}

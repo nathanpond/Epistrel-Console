@@ -1,0 +1,18 @@
+{% load inspect_tags %}{% comment %}
+The consolidation window's GET form (#145), shared by the Memory tab's section and the consolidate
+page. Context: form (ConsolidateForm), idempotency_key, action (the inspect:consolidate path).
+{% endcomment %}<form method="get" action="{{ action }}" class="consolidate-form">
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {{ form.head }}
+  {% for error in form.non_field_errors %}<p class="errorlist">{{ error|code_spans }}</p>{% endfor %}
+  <p>
+    <label for="{{ form.from_turn.id_for_label }}">{{ form.from_turn.label }}</label>
+    {{ form.from_turn }}
+    {% for error in form.from_turn.errors %}<span class="errorlist field-error">{{ error }}</span>{% endfor %}
+    <label for="{{ form.to_turn.id_for_label }}">{{ form.to_turn.label }}</label>
+    {{ form.to_turn }}
+    {% for error in form.to_turn.errors %}<span class="errorlist field-error">{{ error }}</span>{% endfor %}
+  </p>
+  <p class="consolidate-scope">Shared scope</p>
+  <button type="submit">Consolidate…</button>
+</form>

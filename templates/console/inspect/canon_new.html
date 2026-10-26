@@ -1,0 +1,31 @@
+{% extends "console/inspect/base.html" %}
+{% comment %}
+A new author fact (#146, console/views/inspect_canon.py's new_fact), in the Canon tab. The predicate
+comes first: a GET form (the registry's predicates, "name (layer)") reloads the page as
+?predicate=<id>, and the main form below is gated by it (console.forms.canon.FactForm). Without the
+registry the main form carries a free-text predicate id and no gating. A refusal or #43's panel
+stays above the form; the result page (canon_written.html) replaces this page on success.
+{% endcomment %}
+{% block title %}Inspect · New fact · {{ story_name }}{% endblock %}
+{% block tab_content %}
+<p class="canon-back"><a href="{{ back_url }}">Back to Canon</a></p>
+<h2>New fact</h2>
+{% if registry %}
+<form method="get" action="" class="predicate-choice">
+  <label for="id_choice_predicate">Predicate</label>
+  <select name="predicate" id="id_choice_predicate">{% if not form %}<option value="">—</option>{% endif %}{% for p in registry.predicates %}<option value="{{ p.id }}"{% if p.id == chosen %} selected{% endif %}>{{ p.name }} ({{ p.layer }})</option>{% endfor %}</select>
+  {% if choice_subject %}<input type="hidden" name="subject" value="{{ choice_subject }}">{% endif %}
+  <button type="submit">Use this predicate</button>
+</form>
+{% else %}<p class="muted predicates-unavailable">{{ predicates_unavailable }}</p>{% endif %}
+{% if predicate_unknown %}<p class="errorlist predicate-unknown">{{ predicate_unknown }}</p>{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist fact-refusal" role="alert">{{ refusal }}</p>{% endif %}
+{% if form %}
+<form method="post" action="{{ action_url }}" class="fact-form">
+  {% csrf_token %}
+  {% include "console/inspect/_fact_form.html" %}
+  <p><button type="submit" class="fact-commit">Commit</button> <a href="{{ back_url }}">Cancel</a></p>
+</form>
+{% else %}<p class="choose-predicate">{{ choose_predicate }}</p>{% endif %}
+{% endblock %}

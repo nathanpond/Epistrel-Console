@@ -6,7 +6,13 @@ import pytest
 from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory
 
-from console.confirm import ConfirmPage, confirm_action, posted_idempotency_key, safe_next
+from console.confirm import (
+    ConfirmPage,
+    confirm_action,
+    posted_idempotency_key,
+    render_confirm,
+    safe_next,
+)
 
 PAGE = ConfirmPage(title="T", question="Do {name}?", emphasis="it", confirm_label="Go",
                    cancel_url="/back/")  # fmt: skip
@@ -54,3 +60,88 @@ def test_get_renders_and_post_performs(rf: RequestFactory, admin_user: Any) -> N
     assert confirm_action(post, PAGE, perform).content == b"done"
     assert calls == ["k1"]
     assert confirm_action(rf.put("/x/"), PAGE, perform).status_code == 405
+
+
+def _req(rf: RequestFactory, user: Any, method: str, data: dict[str, str] | None = None) -> Any:
+    request = rf.post("/x/", data or {}) if method == "POST" else rf.get("/x/")
+    request.user = user
+    return request
+
+
+class Recorder:
+    """A ``perform`` that records the keys it was called with."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def __call__(self, key: str) -> HttpResponse:
+        self.calls.append(key)
+        return HttpResponse("done")
+
+
+@pytest.mark.django_db
+def test_confirmed_mode_get_carries_confirmed_flag(rf: RequestFactory, admin_user: Any) -> None:
+    perform = Recorder()
+    get = _req(rf, admin_user, "GET")
+    html = confirm_action(get, PAGE, perform, require_confirmed=True).content.decode()
+    assert '<input type="hidden" name="confirmed" value="1">' in html
+    assert perform.calls == []
+
+
+@pytest.mark.django_db
+def test_confirmed_mode_unconfirmed_post_rerenders_with_the_posted_key(
+    rf: RequestFactory, admin_user: Any
+) -> None:
+    perform = Recorder()
+    post = _req(rf, admin_user, "POST", {"idempotency_key": "first-render-key"})
+    response = confirm_action(post, PAGE, perform, require_confirmed=True)
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert '<input type="hidden" name="idempotency_key" value="first-render-key">' in html
+    assert '<input type="hidden" name="confirmed" value="1">' in html
+    assert "incomplete" not in html
+    assert perform.calls == []  # complement: an unconfirmed POST never performs
+
+
+@pytest.mark.django_db
+def test_confirmed_mode_confirmed_post_performs_once_with_the_carried_key(
+    rf: RequestFactory, admin_user: Any
+) -> None:
+    perform = Recorder()
+    post = _req(rf, admin_user, "POST", {"idempotency_key": "first-render-key", "confirmed": "1"})
+    assert confirm_action(post, PAGE, perform, require_confirmed=True).content == b"done"
+    assert perform.calls == ["first-render-key"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("key", ["", "no spaces"])
+def test_confirmed_mode_bad_key_rerenders_fresh_with_an_error(
+    rf: RequestFactory, admin_user: Any, key: str
+) -> None:
+    perform = Recorder()
+    post = _req(rf, admin_user, "POST", {"idempotency_key": key, "confirmed": "1"})
+    response = confirm_action(post, PAGE, perform, require_confirmed=True)
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert "This confirmation was incomplete — confirm again" in html
+    assert 'name="idempotency_key" value="no spaces"' not in html
+    assert perform.calls == []
+
+
+@pytest.mark.django_db
+def test_default_mode_post_without_confirmed_still_performs(
+    rf: RequestFactory, admin_user: Any
+) -> None:
+    perform = Recorder()
+    post = _req(rf, admin_user, "POST", {"idempotency_key": "k2"})
+    assert confirm_action(post, PAGE, perform).content == b"done"
+    assert perform.calls == ["k2"]
+    html = confirm_action(_req(rf, admin_user, "GET"), PAGE, perform).content.decode()
+    assert 'name="confirmed"' not in html
+
+
+@pytest.mark.django_db
+def test_render_confirm_uses_a_given_key(rf: RequestFactory, admin_user: Any) -> None:
+    get = _req(rf, admin_user, "GET")
+    html = render_confirm(get, PAGE, idempotency_key="given").content.decode()
+    assert '<input type="hidden" name="idempotency_key" value="given">' in html

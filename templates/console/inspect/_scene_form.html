@@ -1,0 +1,14 @@
+{% comment %}
+The Scene tab's and the entity page's GET form (#58, console.forms.inspect.SceneForm): Turn
+(as_of; blank = the head, with #52's datalist) and Viewpoint, Apply (no HTMX). Context: form,
+form_action, m4_clock. Errors land beside their field; others above the form.
+{% endcomment %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" action="{{ form_action }}" class="scene-form">
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">blank = head{% if form.head is not None %} ({{ form.head }}){% endif %}</small>
+    {% if form.options %}<datalist id="scene-turns">{% for turn in form.options %}<option value="{{ turn }}">{% if turn == 0 %}0 (genesis){% elif turn == form.head %}{{ turn }} (head){% else %}{{ turn }}{% endif %}</option>{% endfor %}</datalist>{% endif %}
+    {{ form.as_of.errors }}</div>
+  <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{{ form.viewpoint.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+<p class="muted m4-clock">{{ m4_clock }}</p>

@@ -1,0 +1,66 @@
+{
+  "timeline_revision": 8,
+  "fact": {
+    "id": "01JB2Z8Y5Q3W6K9M1N4P7R0FW2",
+    "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KW1",
+    "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QW2",
+    "proposition": {
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PW1",
+      "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PC1",
+      "polarity": "affirmed",
+      "qualifiers": {
+        "frame": "inside"
+      },
+      "valid_time": {
+        "kind": "interval",
+        "start": {
+          "outer": 40,
+          "inner": 40
+        },
+        "end": null
+      }
+    },
+    "valid_from": 40,
+    "valid_to": null,
+    "valid_from_inner": 40,
+    "valid_to_inner": null,
+    "tx_from": "2026-10-25T09:00:00Z",
+    "tx_to": null,
+    "provenance": "author_commit",
+    "authority": "author",
+    "author_locked": true,
+    "visibility": {
+      "scope": "objective",
+      "characters": null
+    },
+    "membership": "canon",
+    "narrative_turn": null,
+    "superseded_by": null,
+    "supersedes": [
+      "01JB2Z8Y5Q3W6K9M1N4P7R0FB1"
+    ],
+    "anchored_to": null
+  },
+  "superseded": [
+    "01JB2Z8Y5Q3W6K9M1N4P7R0FB1"
+  ],
+  "memory_id": "01JB2Z8Y5Q3W6K9M1N4P7R0MW1",
+  "warnings": [
+    {
+      "kind": "uncertain",
+      "reason": "no_rule_applies",
+      "rules": []
+    },
+    {
+      "kind": "contradicted",
+      "reason": null,
+      "rules": [
+        "exclusion",
+        "inverse_cardinality"
+      ]
+    }
+  ],
+  "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7R0XW1",
+  "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0K01"
+}

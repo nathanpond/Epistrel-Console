@@ -1,0 +1,52 @@
+{% extends "console/inspect/base.html" %}
+{% load console_format inspect_tags %}
+{% comment %}
+The Inspect area's entry tab (#135; content #151): what the story runs with, from the shell's one
+effective-config read. Header line, the pipeline level, the capabilities the Engine reports (labels
+from console/inspect.py, unknown values as <code>), the capability-map link, the module table.
+{% endcomment %}
+{% block tab_content %}
+<p class="overview-header">Profile <code>{{ config.profile.id }}</code> v{{ config.profile.version }}{% if profile_flags %} ({{ profile_flags }}){% endif %}
+  · fingerprint {% if config.fingerprint %}<code title="{{ config.fingerprint }}">{{ fingerprint_short }}</code>{% else %}—{% endif %}
+  · <span title="{{ config.quality_status.status }}">{{ config.quality_status.status|humanise|capfirst }}</span>
+  · <a href="{{ config_url }}">Config</a></p>
+{% if pipeline is not None %}<p class="overview-pipeline"><code>pipeline</code>: {{ pipeline }}</p>{% endif %}
+
+<h2>Capabilities</h2>
+{% if capabilities %}
+<ul class="capabilities">
+  {% for capability in capabilities %}<li>{% if capability.label %}<span title="{{ capability.value }}">{{ capability.label }}</span>{% else %}<code>{{ capability.value }}</code>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% else %}<p>None</p>{% endif %}
+<p>What each capability guarantees: <a class="capability-map" href="{{ capability_map_url }}">{{ capability_map_label }}</a></p>
+
+<h2>Modules</h2>
+{% if modules %}
+<table class="modules">
+  <thead><tr><th>Module</th><th>State</th><th>Setting</th></tr></thead>
+  <tbody>
+  {% for row in modules %}
+    <tr class="module-{{ row.module }}{% if row.off %} muted{% endif %}">
+      <td>{{ row.module }}</td>
+      <td>{% if row.kind == "level" %}{{ row.value }}{% elif row.kind == "attempts" %}on · {{ row.value }} attempt{{ row.value|pluralize }}{% elif row.kind == "raw" %}<code>{{ row.value }}</code>{% else %}{{ row.kind }}{% endif %}</td>
+      <td><code>{{ row.path }}</code></td>
+    </tr>
+    {% if row.module == "pipeline" and dials %}
+    <tr class="pipeline-dials">
+      <td colspan="3">
+        <div class="dials">Structured pipeline dials{% if pipeline == "lite" %} (unused under lite){% endif %}
+          <ul>
+            {% for dial in dials %}<li><code>{{ dial.path }}</code>: {{ dial.shown }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </td>
+    </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p>None</p>{% endif %}
+<p>Every effective setting: <a href="{{ config_url }}">Config</a></p>
+{% endblock %}

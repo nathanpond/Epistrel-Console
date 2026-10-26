@@ -590,6 +590,8 @@ def _impact_page(
         "impact": impact,
         "story_labels": story_labels(client, ids) if ids else {},
         "mode": "profile",
+        # #57: lost guarantees link the profile page's table at the version loaded.
+        "guarantees_href": detail_url(facts.profile_id, facts.version),
         "apply_url": reverse("profiles:apply", args=[facts.profile_id]),
         "signed_payload": token,
         "cancel_url": edit_url(facts.profile_id),

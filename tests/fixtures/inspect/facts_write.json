@@ -1,0 +1,53 @@
+{
+  "facts": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0FW1",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KW1",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QW1",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PW1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PA1",
+        "polarity": "affirmed",
+        "qualifiers": {
+          "frame": "inside",
+          "since": 3
+        },
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 10,
+            "inner": 12
+          },
+          "end": {
+            "outer": 40,
+            "inner": 38
+          }
+        },
+        "event_id": "01JB2Z8Y5Q3W6K9M1N4P7R0EV1"
+      },
+      "valid_from": 10,
+      "valid_to": 40,
+      "valid_from_inner": 12,
+      "valid_to_inner": 38,
+      "tx_from": "2026-10-24T15:00:00.000001Z",
+      "tx_to": null,
+      "provenance": "author_commit",
+      "authority": "author",
+      "author_locked": true,
+      "visibility": {
+        "scope": "characters",
+        "characters": [
+          "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+        ]
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": null,
+      "supersedes": [],
+      "anchored_to": "01JB2Z8Y5Q3W6K9M1N4P7R0FB1"
+    }
+  ],
+  "next_cursor": null,
+  "timeline_revision": 7
+}

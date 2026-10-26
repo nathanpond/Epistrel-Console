@@ -4,7 +4,8 @@
   page), then on #41's pool the running profile version (``GET /engine-profiles/{id}?version=N``,
   the profile column), every page of ``GET /engine-profiles`` (the assign select, under #64's
   500-item cap), the profile schema (cached) and the story (its name). Each read that fails
-  degrades its part only. The select posts to ``…/config/profile/``.
+  degrades its part only. The select posts to ``…/config/profile/``. #57 reads the story's
+  guarantee table in the same wave (its failure stays in the Guarantees section).
 - ``/stories/<id>/config/overrides/``: GET the overrides form (#84's schema form rooted at
   ``overrides``, :class:`~console.forms.story_overrides.OverridesForm`); POST previews: only the
   merge patch is sent, ``POST …/impact-preview {overrides}``; nothing changed is "Nothing to
@@ -46,6 +47,7 @@ from console.engine.client import (
 from console.engine.models import (
     EffectiveConfig,
     EngineProfile,
+    GuaranteeTable,
     ImpactReport,
     ProfileSchema,
     ProfileValidation,
@@ -63,6 +65,8 @@ from console.forms.profile_schema_form import (
     undelivered_text,
 )
 from console.forms.story_overrides import OverridesForm
+from console.guarantees import CONFIG_SCOPE
+from console.guarantees import section as guarantees_section
 from console.ids import new_ulid
 from console.impact import quality_class, short_fingerprint
 from console.profile_schema import get_profile_schema_cached
@@ -157,13 +161,15 @@ def _reads(reads: Mapping[str, Callable[[], Any]]) -> dict[str, Any]:
 @dataclass(frozen=True)
 class Loaded:
     """Config's reads: the effective configuration and, each ``None`` when it failed, the
-    running profile version, the schema and the story."""
+    running profile version, the schema and the story; on the Config page also the guarantee
+    table or its failure (#57)."""
 
     config: EffectiveConfig
     profile: EngineProfile | None
     profile_error: str
     schema: ProfileSchema | None
     story: Story | None
+    guarantees: GuaranteeTable | EngineClientError | None = None
 
 
 def _load(
@@ -179,9 +185,10 @@ def _load(
     }
     if select:
         reads["profiles"] = lambda: profile_select(client, config.profile.id)
+        reads["guarantees"] = lambda: client.get_story_guarantees(story_id)
     results = _reads(reads)
-    for value in results.values():
-        if isinstance(value, EngineClientError):
+    for name, value in results.items():
+        if isinstance(value, EngineClientError) and name != "guarantees":  # logged by its section
             log_engine_error(request, value)
     profile = results["profile"]
     profile_error = ""
@@ -199,6 +206,7 @@ def _load(
         profile_error,
         schema if isinstance(schema, ProfileSchema) else None,
         story if isinstance(story, Story) else None,
+        results.get("guarantees"),
     )
     if not select:
         return loaded, None
@@ -254,6 +262,13 @@ def _config_page(
         "story_url": reverse("stories:detail", args=[story_id]),
         "history_url": reverse("stories:history", args=[story_id]),
     }
+    if loaded.guarantees is not None:
+        name = loaded.profile.name if loaded.profile is not None else ""
+        context.update(
+            guarantees_section(
+                request, loaded.guarantees, "story", profile_name=name, note=CONFIG_SCOPE
+            )
+        )
     return render(request, "console/stories/config.html", context)
 
 
@@ -311,6 +326,7 @@ def _preview_page(request: HttpRequest, preview: Preview, impact: ImpactReport) 
         "apply_label": "Apply anyway" if warned else "Apply",
         "cancel_url": back,
         "config_url": config_url(preview.story_id),
+        "guarantees_href": config_url(preview.story_id),  # #57: lost guarantees link their rows
         "idempotency_key": new_ulid(),  # the confirming POST's own key (#64 convention 3)
         "archived_note": ARCHIVED_APPLY if preview.archived else "",
     }

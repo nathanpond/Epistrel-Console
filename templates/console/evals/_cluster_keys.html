@@ -1,0 +1,1 @@
+{% load console_format %}{% if table.by_reason %}<td class="gate-reason">{% if c.gate_reason %}<span title="{{ c.gate_reason }}">{{ c.gate_reason|humanise|capfirst }}</span>{% else %}—{% endif %}</td>{% endif %}{% if table.by_shape %}<td class="shape">{% if c.shape %}<code title="{{ shape_title }}">{{ c.shape }}</code>{% else %}—{% endif %}</td>{% endif %}

@@ -15,6 +15,12 @@ from console.views import (
     erasure,
     feedback,
     history,
+    inspect,
+    inspect_canon,
+    inspect_ledger,
+    inspect_memory,
+    inspect_predicates,
+    inspect_scene,
     media,
     media_picker,
     media_proxy,
@@ -47,6 +53,7 @@ operation_patterns = (
     [
         path("", operations.operation_list, name="list"),
         path("<int:pk>/", operations.operation_detail, name="detail"),
+        path("evals/", operations.evals, name="evals"),
     ],
     "operations",
 )
@@ -147,9 +154,79 @@ story_patterns = (
     "stories",
 )
 
+# A story's Inspect area (#135, console/views/inspect.py): Overview at ``inspect/``, each other tab
+# at ``inspect/<tab value>/`` named ``<tab value>`` (console.inspect.Tab). A tab registers here
+# when its story lands; the bar shows only the tabs that resolve.
+inspect_patterns = (
+    [
+        path("", inspect.overview, name="overview"),
+        path("memory/", inspect.memory, name="memory"),
+        # #145: request consolidation of a turn window (form, confirm, call).
+        path("memory/consolidate/", inspect_memory.consolidate, name="consolidate"),
+        path("retrieval/", inspect.retrieval, name="retrieval"),
+        # #137: the story's canon facts on both time axes.
+        path("canon/", inspect_canon.canon, name="canon"),
+        # #138: one fact's lineage across supersedes (``<ulid:…>``: any other id is a 404).
+        path("canon/<ulid:fact_id>/lineage/", inspect_canon.lineage, name="canon-lineage"),
+        # #146: write author canon (commit and its result page again; lock, unlock, supersede).
+        path("canon/new/", inspect_canon.new_fact, name="canon-new"),
+        path("canon/written/", inspect_canon.written, name="canon-written"),
+        path("canon/<ulid:fact_id>/lock/", inspect_canon.lock, name="canon-lock"),
+        path("canon/<ulid:fact_id>/unlock/", inspect_canon.unlock, name="canon-unlock"),
+        path("canon/<ulid:fact_id>/supersede/", inspect_canon.supersede, name="canon-supersede"),
+        # #136: the predicate registry, a proposal's decision and its result page again.
+        path("predicates/", inspect_predicates.predicates, name="predicates"),
+        path(
+            "predicates/decision/",
+            inspect_predicates.decision_report,
+            name="predicate-decision",
+        ),
+        path(
+            "predicates/<str:predicate_id>/approve/",
+            inspect_predicates.approve,
+            name="predicate-approve",
+        ),
+        path(
+            "predicates/<str:predicate_id>/reject/",
+            inspect_predicates.reject,
+            name="predicate-reject",
+        ),
+        # #148: the story's thunks and promissory ledger.
+        path("ledger/", inspect_ledger.ledger, name="ledger"),
+        # #58: the scene at a turn and viewpoint, and an entity's profile (``<ulid:…>``: any
+        # other id is a 404), both in the Scene tab.
+        path("scene/", inspect_scene.scene, name="scene"),
+        path("entities/<ulid:entity_id>/", inspect_scene.entity, name="entity"),
+        # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
+        path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
+        path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),
+        path(
+            "memories/<ulid:memory_id>/quarantine/",
+            inspect_memory.quarantine,
+            name="memory-quarantine",
+        ),
+        path("memories/<ulid:memory_id>/release/", inspect_memory.release, name="memory-release"),
+        # #144: sanitize a memory's text (form, confirm, call).
+        path(
+            "memories/<ulid:memory_id>/sanitize/",
+            inspect_memory.sanitize,
+            name="memory-sanitize",
+        ),
+        # #139: a turn's eval hooks and read set, the lazy block of the turn inspector and #44.
+        path(
+            "turns/<ulid:engine_operation_id>/trace/",
+            inspect.turn_trace,
+            name="turn-trace",
+        ),
+    ],
+    "inspect",
+)
+
 model_patterns = (
     [
         path("", models.model_list, name="list"),
+        path("embedding/reembed/", models.reembed, name="reembed"),
+        path("embedding/reembed/retry/", models.reembed_retry, name="reembed-retry"),
         path("<str:purpose>/edit/", models.model_edit, name="edit"),
         path("<str:purpose>/drop/", models.model_drop, name="drop"),
         path("<str:purpose>/api-key/", models.model_api_key, name="api-key"),
@@ -392,6 +469,7 @@ urlpatterns = [
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("acting-as/", acting.acting_as, name="acting-as"),
     path("operations/", include(operation_patterns)),
+    path("stories/<str:story_id>/inspect/", include(inspect_patterns)),
     path("stories/", include(story_patterns)),
     path("models/", include(model_patterns)),
     path("guardrails/policies/", include(policy_patterns)),
