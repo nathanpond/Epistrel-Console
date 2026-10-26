@@ -4,6 +4,8 @@ from typing import Any
 
 import pytest
 from django.http import HttpRequest, HttpResponse
+from django.template import engines
+from django.template.loader import get_template
 from django.test import RequestFactory
 
 from console.confirm import (
@@ -145,3 +147,49 @@ def test_render_confirm_uses_a_given_key(rf: RequestFactory, admin_user: Any) ->
     get = _req(rf, admin_user, "GET")
     html = render_confirm(get, PAGE, idempotency_key="given").content.decode()
     assert '<input type="hidden" name="idempotency_key" value="given">' in html
+
+
+# ``_confirm.html`` as it stood before #134 (67cee2a): a default-mode page renders it byte for byte.
+PRE_134_CONFIRM = """<div class="confirm">
+  <p class="question">{% if has_emphasis %}{{ question_before }}<em>{{ page.emphasis }}</em>{{ question_after }}{% else %}{{ page.question }}{% endif %}</p>
+  {% for line in page.lines %}<p>{{ line }}</p>{% endfor %}
+  {% if page.facts %}
+  <dl>
+    {% for label, value in page.facts %}<dt>{{ label }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}
+  </dl>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {% for name, value in page.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    {% if page.fields_template %}{% include page.fields_template %}{% endif %}
+    <button type="submit"{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>
+    <a href="{{ next_url }}">Cancel</a>
+  </form>
+</div>
+"""  # noqa: E501
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        PAGE,
+        ConfirmPage(title="T", question="Drop it?", confirm_label="Drop", cancel_url="/b/",
+                    lines=("One", "Two"), facts=(("Id", "x1"),), hidden={"a": "1"},
+                    danger=True),
+    ],
+)  # fmt: skip
+def test_a_default_mode_page_renders_byte_for_byte_as_before_134(page: ConfirmPage) -> None:
+    """#179: #134's AC2. The added error and buttons lines leave nothing in default mode. A
+    fixed ``csrf_token`` stands in for the request's (masked afresh on every render)."""
+    context = {
+        "page": page,
+        "has_emphasis": False,
+        "idempotency_key": "k1",
+        "next_url": "/back/",
+        "csrf_token": "fixed-token",
+    }
+    before = engines["django"].from_string(PRE_134_CONFIRM).render(context)
+    assert get_template("console/_confirm.html").render(context) == before

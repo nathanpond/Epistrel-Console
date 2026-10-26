@@ -27,9 +27,11 @@ import httpx
 import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
+from django.utils.html import escape
 
+from console.canon import STRING_SHOWN, literal_view
 from console.engine.client import EngineClient
-from console.engine.models import ThunkSketch
+from console.engine.models import ThunkSketch, TypedLiteral
 from console.engine_access import engine_client_for
 from console.models import EngineOperation
 from console.views import inspect as views
@@ -374,6 +376,20 @@ def test_a_boolean_literal_reads_true(operator_client: Client, engine: FakeEngin
     sketch["literal"] = {"kind": "bool", "value": True}
     engine.respond("GET", LEDGER, 200, json=page1(thunks=[thunk(TH3, sketch=sketch)]))
     assert "literal=<span>true</span> (bool)" in tab(operator_client)
+
+
+def test_a_long_string_literal_shows_its_full_value_as_title(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#174: the cut text, with the full quoted value as its ``title``."""
+    long = "x" * (STRING_SHOWN + 5)
+    sketch = thunk(TH3)["sketch"]
+    sketch["literal"] = {"kind": "str", "value": long}
+    engine.respond("GET", LEDGER, 200, json=page1(thunks=[thunk(TH3, sketch=sketch)]))
+    shown = literal_view(TypedLiteral(kind="str", value=long))
+    assert shown.full == f'"{long}"'
+    expected = f'literal=<span title="{escape(shown.full)}">{escape(shown.text)}</span> (str)'
+    assert expected in tab(operator_client)
 
 
 def test_a_literal_without_kind_falls_back_to_the_description(

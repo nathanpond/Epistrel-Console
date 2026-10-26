@@ -9,6 +9,7 @@ import pytest
 from django.test import Client
 
 from console.models import EngineOperation
+from tests.engine_live.test_engine_edge_smoke import embedding_writes
 from tests.fakes.engine import FakeEngine
 from tests.models.helpers import (
     IDEMPOTENCY_KEY,
@@ -290,6 +291,18 @@ def test_a_kept_model_puts_directly(operator_client: Client, engine: FakeEngine)
     assert flashes(response) == [
         ("success", "Saved embedding — config revision 6, idempotency key 01SAVED")
     ]
+
+
+def test_the_live_smokes_guard_catches_a_logged_embedding_write(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#173: the live smoke's "never writes to an embedding URL" guard can fail. It reads the
+    operation log's ``path`` column, which holds a real embedding write."""
+    snapshot = open_edit(operator_client, engine)
+    answer_put(engine, base_url="http://embedder:8080/v1")
+    answer_list(engine)
+    operator_client.post(URL, form(snapshot, base_url="http://embedder:8080/v1"))
+    assert embedding_writes() == ["/admin/model-config/embedding"]
 
 
 def test_a_put_answering_the_snapshots_revision_is_no_change(

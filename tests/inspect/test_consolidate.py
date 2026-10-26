@@ -124,7 +124,7 @@ def value(html: str, name: str) -> str | None:
 
 
 def field_errors(html: str) -> list[str]:
-    return re.findall(r'<span class="errorlist field-error">([^<]*)</span>', html)
+    return re.findall(r'<span (?:id="[^"]*" )?class="errorlist field-error">([^<]*)</span>', html)
 
 
 def ask(client: Client, **params: str) -> Any:
@@ -259,6 +259,11 @@ def test_a_refused_window_makes_no_call(
     html = response.content.decode()
     assert response.status_code == 200
     assert field_errors(html) == errors
+    # #175: each input's aria-describedby names an element on the page.
+    described = re.findall(r'aria-describedby="([^"]+)"', html)
+    assert described
+    for name in described:
+        assert f'id="{name}"' in html, name
     assert '<form method="get"' in html
     assert hidden(html, "idempotency_key") == KEY
     assert "Shared scope" in html

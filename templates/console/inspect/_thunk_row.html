@@ -7,7 +7,7 @@ names or short ids, unlinked; fact ids link #138's lineage view; the predicate l
   <td class="description">{{ t.description }}</td>
   <td class="open-slot"><span title="{{ t.open_slot }}">{{ t.open_slot|humanise|capfirst }}</span></td>
   <td class="proposition">{% if s %}<span class="line">{% include "console/inspect/_predicate_ref.html" with ref=row.predicate %}{% if row.negated %} <span class="badge negated" title="negated">negated</span>{% endif %}</span>
-    {% for a in row.known %}<span class="line known">{{ a.slot }}={% if a.entity %}{% include "console/inspect/_entity.html" with ref=a.entity %}{% else %}<span{% if a.literal.title %} title="{{ a.literal.title }}"{% endif %}>{{ a.literal.text }}</span> ({{ a.literal.kind }}){% endif %}</span>
+    {% for a in row.known %}<span class="line known">{{ a.slot }}={% if a.entity %}{% include "console/inspect/_entity.html" with ref=a.entity %}{% else %}<span{% if a.literal.full %} title="{{ a.literal.full }}"{% endif %}>{{ a.literal.text }}</span> ({{ a.literal.kind }}){% endif %}</span>
     {% endfor %}{% for c in row.candidates %}<span class="line candidate">{% if c.text %}{{ c.text }}{% if c.entity %} ({% include "console/inspect/_entity.html" with ref=c.entity %}){% endif %}{% elif c.entity %}{% include "console/inspect/_entity.html" with ref=c.entity %}{% else %}—{% endif %} {{ c.confidence|decimal3 }}</span>
     {% endfor %}{% if row.more_candidates %}<span class="line muted">+{{ row.more_candidates }} more</span>{% endif %}{% else %}—{% endif %}</td>
   <td class="state"><span class="badge {{ row.state_class }}" title="{{ t.state }}">{{ t.state|humanise|capfirst }}</span></td>

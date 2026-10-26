@@ -8,10 +8,10 @@ page. Context: form (ConsolidateForm), idempotency_key, action (the inspect:cons
   <p>
     <label for="{{ form.from_turn.id_for_label }}">{{ form.from_turn.label }}</label>
     {{ form.from_turn }}
-    {% for error in form.from_turn.errors %}<span class="errorlist field-error">{{ error }}</span>{% endfor %}
+    {% if form.from_turn.errors %}<span id="{{ form.from_turn.auto_id }}_error" class="errorlist field-error">{% for error in form.from_turn.errors %}{{ error }}{% if not forloop.last %} {% endif %}{% endfor %}</span>{% endif %}
     <label for="{{ form.to_turn.id_for_label }}">{{ form.to_turn.label }}</label>
     {{ form.to_turn }}
-    {% for error in form.to_turn.errors %}<span class="errorlist field-error">{{ error }}</span>{% endfor %}
+    {% if form.to_turn.errors %}<span id="{{ form.to_turn.auto_id }}_error" class="errorlist field-error">{% for error in form.to_turn.errors %}{{ error }}{% if not forloop.last %} {% endif %}{% endfor %}</span>{% endif %}
   </p>
   <p class="consolidate-scope">Shared scope</p>
   <button type="submit">Consolidate…</button>

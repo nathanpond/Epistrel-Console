@@ -507,6 +507,19 @@ def test_a_story_404_is_the_story_level_not_found_with_no_scene_call(
     assert "Not found (it may have been deleted or truncated)" in html
 
 
+@pytest.mark.parametrize("url", [TAB, entity_page()], ids=["scene", "entity"])
+def test_an_unknown_story_is_the_not_found_text_as_a_real_engine_answers(
+    operator_client: Client, engine: FakeEngine, url: str
+) -> None:
+    """#177: a real Engine 404s the shell's effective-config read before the story read."""
+    engine.respond("GET", EFFECTIVE, 404, json=error_json("not_found", "no story"))
+    engine.respond("GET", STORY_PATH, 404, json=error_json("not_found", "no story"))
+    html = page(operator_client, url)
+    assert reads(engine) == []
+    assert "Not found (it may have been deleted or truncated)" in html
+    assert "Engine error 404" not in html
+
+
 def test_a_failed_story_read_degrades_the_form(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", STORY_PATH, 503, json=error_json("database_unavailable", "down"))
     html = page(operator_client, query=f"?as_of=9&viewpoint=character:{TOBIN}")

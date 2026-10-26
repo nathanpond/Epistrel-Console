@@ -1608,3 +1608,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Existing fakes for the profile page and the Config page (`tests/profile_helpers.fake_engine`, `tests/test_profiles_browse.py`, `tests/test_story_config.py`) answer both guarantee routes by default through `tests/fakes/guarantees.answer_guarantees`.
   **Why:** The fake Engine refuses a call that has no answer, and both pages now make the read.
   **Issue:** #57
+
+## /n8-exec M4 (verification fixes) — 2026-10-26
+
+- **Decision:** On a 409 `module_off` the lineage read no longer escapes to the shell. `_lineage_error` returns `lineage_unavailable`, and the template includes `_unavailable.html` with `config_changed=True` in place of the rows. The shell's own `unavailable` key is left unset, so `tab_content` (header, Back) stays.
+  **Why:** #138 AC4 keeps the header and Back above every failed read. #135's panel and note are reused, not restated.
+  **Issue:** #171
+- **Decision:** "Structured turn" for Explain retrieval now means any item of the turn carries `propositions`, not only the `player_input`. An input item is still required. The fix uses the Console-side marker, not an Engine change.
+  **Why:** Engine `core/history.py` `_structured()` always sets `propositions` on `beat_*` items but omits it on a label-less (do-only) input. The turn's beats are already on the page, so no extra read is needed. Lite items never carry it. Cost if wrong: a structured turn whose beats are all hidden from the viewpoint, and whose input is do-only, still gets no link.
+  **Issue:** #172
+- **Decision:** The `test_explain_turn.py` fixtures now follow the Engine: `reply()` (a `message_rendered`) no longer carries `propositions`. New `beat()` and `do_only_turn()` helpers were added.
+  **Why:** With the wider marker, a reply carrying `propositions` would have turned every Lite fixture structured. The real Engine never sends it on replies.
+  **Issue:** #172
+- **Decision:** The actor-filter complement's body is Mara's beat plus the reply, with no input. It asserts the Engine request carried `actor_character_id`.
+  **Why:** Under #172's marker, that's the exact page the case names: a structured turn whose input the filter hid.
+  **Issue:** #178
+- **Decision:** The live smoke's helper `embedding_writes()` lives in the smoke module. The regular-suite complement (`tests/models/test_embedding.py`) imports it and proves it against a real operation-log row from the embedding edit view.
+  **Why:** The engine_live module never runs in the default suite. Importing the helper keeps one definition, and the test proves the guard can fail.
+  **Issue:** #173
+- **Decision:** The byte-for-byte test for #179 embeds the 67cee2a `_confirm.html` text as a constant and renders both templates with a fixed `csrf_token` and no request.
+  **Why:** The request's CSRF token is re-masked on every render. Embedding the old text makes the AC's "as before" a concrete comparison.
+  **Issue:** #179
+- **Decision:** The lazy eval-hooks block's swap specs all carry `ignoreTitle:true`. The status overrides use the quoted form, `swap:"none ignoreTitle:true"`. This was verified in a browser with the vendored htmx on a 404 that has a `<title>`: old markup → the title changed, new → kept, a 200 still swaps.
+  **Why:** htmx 4 builds the main swap task even under `swap:none` and applies `document.title` unless `swapSpec.ignoreTitle` is set.
+  **Issue:** #176
+- **Decision:** In #135's shell, an effective-config 404 **together with** a story-read 404 now renders convention 10's not-found line in place of #43's panel, on every tab. An effective-config 404 alone still shows the panel.
+  **Why:** A real Engine 404s effective-config first for an unknown story, so #58's story-404 branch was unreachable. #135's own convention 10 maps 404 `not_found` to that text. The two-read condition keeps #135's tested panel case intact. Cost if wrong: the Inspect error for a deleted story reads "Not found" in place of "Engine error 404 not_found".
+  **Issue:** #177

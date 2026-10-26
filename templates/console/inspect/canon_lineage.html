@@ -11,6 +11,7 @@ an error replaces the rows (no partial lineage). actions (convention 14) is #146
 <h2 class="lineage-heading">Lineage of <code title="{{ fact_id }}">{{ fact_short }}</code>{% if subject_ref %} · <span class="subject">{% include "console/inspect/_entity.html" with ref=subject_ref %}</span> <span class="predicate">{% include "console/inspect/_predicate_ref.html" with ref=predicate_ref %}</span>{% endif %}{% if rows %} <small class="muted lineage-count">{{ rows|length }} version{{ rows|length|pluralize }}</small>{% endif %}</h2>
 {% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
 {% elif lineage_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif lineage_unavailable %}{% include "console/inspect/_unavailable.html" with unavailable=lineage_unavailable config_changed=True inline=False %}
 {% elif lineage_error %}{% include "console/_engine_error.html" with engine_error=lineage_error %}
 {% elif lineage %}
 {% if incomplete %}<p class="notice lineage-incomplete">{{ incomplete }}</p>{% endif %}

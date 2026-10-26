@@ -2,8 +2,9 @@
 #139: the lazy "Eval hooks & read set" block of the turn inspector (#48) and the #44 detail page.
 Context: trace_url (inspect:turn-trace). Collapsed, it costs no Engine read: opening it once loads
 console/_turn_trace.html into the body. A failed request (no answer, or an HTTP error, which htmx
-would otherwise swap in) replaces the placeholder with the retry line.
-{% endcomment %}<details class="turn-trace" hx-get="{{ trace_url }}" hx-trigger="toggle once" hx-target="find .turn-trace-body" hx-swap="innerHTML" hx-status:4xx="swap:none" hx-status:5xx="swap:none" data-error="Couldn't load eval hooks — reload the page to retry." hx-on:htmx:error="this.querySelector('.turn-trace-body').textContent = this.dataset.error" hx-on:htmx:response:error="this.querySelector('.turn-trace-body').textContent = this.dataset.error">
+would otherwise swap in) replaces the placeholder with the retry line. Every swap spec carries
+ignoreTitle: htmx 4 applies a response's <title> even under swap:none, and an error page has one.
+{% endcomment %}<details class="turn-trace" hx-get="{{ trace_url }}" hx-trigger="toggle once" hx-target="find .turn-trace-body" hx-swap="innerHTML ignoreTitle:true" hx-status:4xx='swap:"none ignoreTitle:true"' hx-status:5xx='swap:"none ignoreTitle:true"' data-error="Couldn't load eval hooks — reload the page to retry." hx-on:htmx:error="this.querySelector('.turn-trace-body').textContent = this.dataset.error" hx-on:htmx:response:error="this.querySelector('.turn-trace-body').textContent = this.dataset.error">
   <summary>Eval hooks &amp; read set</summary>
   <div class="turn-trace-body"><p class="muted">Loading eval hooks…</p></div>
 </details>

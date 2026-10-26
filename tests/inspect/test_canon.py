@@ -1112,6 +1112,11 @@ def test_module_off_on_the_lineage_read_renders_the_greyed_panel(
     html = open_lineage(operator_client, KV3, KEY)
     assert '<div class="panel unavailable">' in html
     assert 'class="config-changed"' in html
+    assert "Needs the structured pipeline" in html
+    # #171: in place of the rows only; the header, Back and convention 2's name read stay.
+    assert "Lineage of" in html
+    assert f'<a href="{TAB}">Back to Canon</a>' in html
+    assert any(r.url.path == f"/stories/{STORY}/predicates" for r in engine.requests)
 
 
 def test_a_greyed_canon_tab_makes_no_lineage_read(

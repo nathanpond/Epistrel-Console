@@ -279,6 +279,23 @@ def test_effective_config_error_replaces_the_bar(
         assert "built" not in response.context
 
 
+def test_an_unknown_story_is_convention_10s_not_found_on_every_tab(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#177: both shell reads 404 (the story is gone): the not-found line, not #43's panel."""
+    engine.respond("GET", EFFECTIVE, 404, json=error_json("not_found", "no story"))
+    engine.respond("GET", STORY_PATH, 404, json=error_json("not_found", "no story"))
+    for tab in Tab:
+        engine.reset()
+        response = get(operator_client, tab)
+        html = response.content.decode()
+        assert '<p class="not-found">Not found (it may have been deleted or truncated)</p>' in html
+        assert "Engine error" not in html
+        assert 'aria-label="Inspect tabs"' not in html
+        assert paths(engine) == [f"/stories/{STORY}/effective-config", f"/stories/{STORY}"]
+        assert "built" not in response.context
+
+
 def test_effective_config_unreachable_replaces_the_bar(
     operator_client: Client, engine: FakeEngine
 ) -> None:

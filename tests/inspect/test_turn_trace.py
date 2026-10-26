@@ -655,6 +655,10 @@ def test_the_inspector_offers_the_block_without_reading(
     assert "Loading eval hooks…" in selected
     assert "Couldn't load eval hooks — reload the page to retry." in selected
     assert 'hx-on:htmx:error="' in selected
+    # #176: no answer's <title> (a Django 404/500 page's) replaces the host page's.
+    assert 'hx-swap="innerHTML ignoreTitle:true"' in selected
+    for status in ("4xx", "5xx"):
+        assert f"""hx-status:{status}='swap:"none ignoreTitle:true"'""" in selected
     no_trace_reads(engine)
 
 
