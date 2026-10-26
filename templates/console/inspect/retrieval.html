@@ -3,9 +3,9 @@
 {% comment %}
 The Retrieval tab (#141): the GET form, then what one GET /stories/{id}/retrieve read returns for
 the question (viewpoint=omniscient). Rows come from console/retrieval.py. The form stays above every
-error; the results are Resolution and Candidates (#152 adds Canon, Profiles, Context and Run facts
-after them, replacing "More"'s raw JSON). explain_banner is #142's reconstruction banner slot,
-between the form and the results.
+error; the results are the degradation warnings, Resolution, Candidates, then #152's Canon,
+Profiles, Context and Run facts (_retrieval_context.html; none of them under skipped: episodic)
+and "More". explain_banner is #142's reconstruction banner slot, between the form and the results.
 {% endcomment %}
 {% block tab_content %}
 {% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
@@ -35,7 +35,8 @@ between the form and the results.
 {% elif retrieval %}
 <p class="retrieval-header">As {{ actor_label }} · after {% if as_of is not None %}turn {{ as_of }}{% elif head is not None and head >= 0 %}turn {{ head }} (head){% else %}the head{% endif %} · quarantined {% if form.cleaned_data.include_quarantined %}shown{% else %}hidden{% endif %}
   · participants {% for p in participants %}{% include "console/inspect/_character.html" with label=p.label character_id=p.id is_player=p.is_player %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
-{% if episodic_off %}{% include "console/inspect/_unavailable.html" with unavailable=episodic_off inline=True %}{% endif %}
+{% for d in placed.run.degradations %}<p class="notice warn degradation" title="{{ d.cause }}">{% if d.url %}<a href="{{ d.url }}">{{ d.text }}</a>{% else %}{{ d.text }}{% endif %}</p>
+{% endfor %}{% if episodic_off %}{% include "console/inspect/_unavailable.html" with unavailable=episodic_off inline=True %}{% endif %}
 
 <section class="retrieval-resolution">
   <h2>Resolution</h2>
@@ -79,6 +80,8 @@ between the form and the results.
   {% endwith %}
   {% endif %}
 </section>
+
+{% if not episodic_off %}{% include "console/inspect/_retrieval_context.html" %}{% endif %}
 
 <details class="more"><summary>More</summary><pre>{{ more|pretty_json }}</pre></details>
 {% endif %}

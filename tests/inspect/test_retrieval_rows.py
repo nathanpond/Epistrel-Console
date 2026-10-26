@@ -97,7 +97,7 @@ def body(**lists: list[RetrievedMemoryBody]) -> RetrievalBody:
             "memories": [],
             "profiles": [],
             "canon": [],
-            "context": {},
+            "context": {"budget": 0, "used": 0, "items": [], "dropped": []},
             "rehydrated": [],
             "degradation": [],
             "skipped": [],

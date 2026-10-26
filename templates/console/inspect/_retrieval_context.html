@@ -1,0 +1,98 @@
+{% load console_format inspect_tags %}{% comment %}
+What the retrieval read placed (#152): the Canon, Profiles, Context and Run facts sections, from
+the same answer as the rest of the explorer (no further Engine read; the display filters never
+touch them). Context: placed (console.retrieval.Placed), story_id. Rows come from
+console/retrieval.py. A section whose entries failed to parse shows their raw list in its own
+"More".
+{% endcomment %}{% with canon=placed.canon budget=placed.context run=placed.run %}
+<section class="retrieval-canon">
+  <h2>Canon</h2>
+  {% if canon %}
+  <table class="retrieval-canon">
+    <thead><tr><th>Fact</th><th>Subject</th><th>Predicate</th><th>Object</th><th>Polarity</th></tr></thead>
+    <tbody>
+    {% for row in canon %}<tr class="canon-row">
+      <td class="fact-id">{% include "console/inspect/_source_fact.html" with source=row.fact %}</td>
+      <td class="subject">{% include "console/inspect/_predicate_ref.html" with ref=row.subject %}</td>
+      <td class="predicate">{% include "console/inspect/_predicate_ref.html" with ref=row.predicate %}</td>
+      <td class="object">{% if row.entity %}{% include "console/inspect/_predicate_ref.html" with ref=row.entity %}{% elif row.entities is not None %}{% for e in row.entities %}<span class="chip">{% include "console/inspect/_predicate_ref.html" with ref=e %}</span>{% if not forloop.last %} {% endif %}{% empty %}—{% endfor %}{% elif row.literal %}{% if row.literal.title %}<span class="literal" title="{{ row.literal.title }}">{{ row.literal.text }}</span>{% else %}<code class="literal">{{ row.literal.text }}</code>{% endif %}{% else %}—{% endif %}</td>
+      <td class="polarity"><span title="{{ row.polarity }}">{{ row.polarity_label }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">None</p>{% endif %}
+  {% if placed.canon_more %}<details class="more"><summary>More</summary><pre>{{ placed.canon_more|pretty_json }}</pre></details>{% endif %}
+</section>
+
+<section class="retrieval-profiles">
+  <h2>Profiles</h2>
+  {% for p in placed.profiles %}
+  <article class="retrieval-profile" id="profile-{{ p.entity.entity_id }}">
+    <h3>{% if p.entity.name %}{{ p.entity.name }}{% else %}<span class="muted">(unnamed)</span>{% endif %} (<span title="{{ p.entity.kind }}">{{ p.entity.kind|humanise|capfirst }}</span>)</h3>
+    {% include "console/inspect/_entity_profile.html" with profile=p link_as_of=p.as_of link_viewpoint="omniscient" %}
+  </article>
+  {% empty %}<p class="none">None</p>
+  {% endfor %}
+  {% if placed.profiles_more %}<details class="more"><summary>More</summary><pre>{{ placed.profiles_more|pretty_json }}</pre></details>{% endif %}
+</section>
+
+<section class="retrieval-context">
+  <h2>Context</h2>
+  <p class="context-used">Used {{ budget.used|count }} / {{ budget.budget|count }} tokens{% if budget.over_budget %} <strong class="over-budget">(over budget)</strong>{% endif %}</p>
+  {% for group in budget.tiers %}
+  <h3 class="context-tier" id="tier-{{ group.tier }}">{{ group.title }}</h3>
+  {% if group.rows %}
+  <table class="context-items" data-tier="{{ group.tier }}">
+    <thead><tr><th>Kind</th><th>Id</th><th>Tokens</th><th>Text</th></tr></thead>
+    <tbody>
+    {% for row in group.rows %}<tr class="context-item">
+      <td class="kind"><span title="{{ row.kind }}">{{ row.kind_label }}</span></td>
+      <td class="id">{% if row.url %}<a class="context-id" href="{{ row.url }}">{{ row.id|engine_id }}</a>{% else %}{{ row.id|engine_id }}{% endif %}</td>
+      <td class="number">{{ row.tokens|count }}</td>
+      <td class="text"><details><summary>{{ row.summary }}</summary><pre class="memory-text">{{ row.text }}</pre></details></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">None</p>{% endif %}
+  {% endfor %}
+  <h3 class="context-dropped">Dropped</h3>
+  {% if budget.dropped %}
+  <table class="context-dropped">
+    <thead><tr><th>Tier</th><th>Kind</th><th>Id</th><th>Tokens</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for row in budget.dropped %}<tr class="dropped-item">
+      <td class="number">{{ row.tier }}</td>
+      <td class="kind"><span title="{{ row.kind }}">{{ row.kind_label }}</span></td>
+      <td class="id">{% if row.url %}<a class="context-id" href="{{ row.url }}">{{ row.id|engine_id }}</a>{% else %}{{ row.id|engine_id }}{% endif %}</td>
+      <td class="number">{{ row.tokens|count }}</td>
+      <td class="reason">{% if row.reason_text %}<span title="{{ row.reason }}">{{ row.reason_text }}</span>{% else %}<code>{{ row.reason }}</code>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">None</p>{% endif %}
+  {% if placed.context_more %}<details class="more"><summary>More</summary><pre>{{ placed.context_more|pretty_json }}</pre></details>{% endif %}
+</section>
+
+<section class="retrieval-run">
+  <h2>Run facts</h2>
+  <dl class="run-facts">
+    <dt>Degradation</dt><dd class="run-degradation">{% for d in run.degradations %}<span title="{{ d.cause }}">{{ d.text }}</span>{% if not forloop.last %}; {% endif %}{% empty %}None{% endfor %}</dd>
+    <dt>Skipped stages</dt><dd class="run-skipped">{% if run.skipped %}<ul>{% for s in run.skipped %}<li><span title="{{ s.stage }}">{{ s.label }}</span>{% if s.note %} — {{ s.note }}{% endif %}</li>{% endfor %}</ul>{% else %}None{% endif %}</dd>
+    <dt>Rehydrated</dt><dd class="run-rehydrated">{% for r in run.rehydrated %}{% if r.url %}<a class="rehydrated-id" href="{{ r.url }}">{{ r.id|engine_id }}</a>{% else %}{{ r.id|engine_id }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}{% if run.rehydrated %} <span class="hint">{{ run.rehydrated_note }}</span>{% endif %}</dd>
+    <dt>Model calls</dt><dd class="run-model-calls">{{ run.model_calls }}</dd>
+    <dt>Timings</dt><dd class="run-timings">
+      <table class="retrieval-timings">
+        <thead><tr><th>Stage</th><th>ms</th></tr></thead>
+        <tbody>
+        {% for t in run.timings %}<tr class="timing{% if t.total %} total{% endif %}"><th scope="row">{{ t.stage }}</th><td class="number">{{ t.ms }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </dd>
+    <dt>Embedding model version</dt><dd class="run-embedding-version">{% if run.embedding_model_version %}<code>{{ run.embedding_model_version }}</code>{% else %}—{% endif %}</dd>
+  </dl>
+</section>
+{% endwith %}

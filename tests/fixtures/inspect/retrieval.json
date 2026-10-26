@@ -206,72 +206,139 @@
         "kind": "character",
         "name": "Tobin"
       },
-      "as_of": 5,
-      "relationships": [],
-      "placement": null,
-      "inventory": [],
+      "as_of": 4,
+      "relationships": [
+        {
+          "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+          "predicate": "located in",
+          "direction": "out",
+          "other": {
+            "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+            "kind": "place",
+            "name": "The tavern"
+          },
+          "qualifiers": {},
+          "valid_from": 0,
+          "valid_to": null,
+          "source_fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01"
+        }
+      ],
+      "placement": {
+        "location": {
+          "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+          "kind": "place",
+          "name": "The tavern"
+        },
+        "container": null,
+        "within": [
+          {
+            "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TWN",
+            "kind": "place",
+            "name": "Riverton"
+          }
+        ],
+        "valid_from": 0,
+        "valid_to": null,
+        "source_fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01"
+      },
+      "inventory": [
+        {
+          "item": {
+            "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KY1",
+            "kind": "object",
+            "name": "Brass key"
+          },
+          "source_fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F03"
+        }
+      ],
       "viewpoint": "omniscient"
     }
   ],
   "canon": [
     {
       "fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01",
-      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
-      "predicate_id": "owned_by",
-      "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+      "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
       "object_set": null,
       "literal": null,
-      "polarity": "positive"
+      "polarity": "affirmed"
+    },
+    {
+      "fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F02",
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0E01",
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+      "object_id": null,
+      "object_set": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+      ],
+      "literal": null,
+      "polarity": "affirmed"
+    },
+    {
+      "fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F03",
+      "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KY1",
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR3",
+      "object_id": null,
+      "object_set": null,
+      "literal": {
+        "kind": "quantity",
+        "value": 3,
+        "unit": "kg"
+      },
+      "polarity": "negated"
     }
   ],
   "context": {
-    "budget": 2000,
-    "used": 420,
+    "budget": 3000,
+    "used": 1840,
     "items": [
       {
         "tier": 1,
-        "kind": "episode",
-        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0ME1",
-        "text": "Mara and Tobin shared a drink at the tavern.",
-        "tokens": 12
-      },
-      {
-        "tier": 2,
-        "kind": "canon",
-        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01",
-        "text": "The tavern is owned by Tobin.",
-        "tokens": 8
-      },
-      {
-        "tier": 3,
-        "kind": "memory",
+        "kind": "pin",
         "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M01",
         "text": "Mara asked Tobin about the tavern fire.",
         "tokens": 10
+      },
+      {
+        "tier": 3,
+        "kind": "profile",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "text": "Tobin is located in the tavern. Tobin holds the brass key. Tobin is in Riverton, within the old quarter by the river.",
+        "tokens": 1200
+      },
+      {
+        "tier": 3,
+        "kind": "canon",
+        "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01",
+        "text": "Tobin is located in the tavern.",
+        "tokens": 630
       }
     ],
     "dropped": [
       {
-        "tier": 3,
+        "tier": 4,
         "kind": "memory",
         "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M03",
         "tokens": 11,
         "reason": "budget"
       },
       {
-        "tier": 3,
+        "tier": 4,
         "kind": "memory",
         "item_id": "01JB2Z8Y5Q3W6K9M1N4P7R0M04",
         "tokens": 9,
-        "reason": "budget"
+        "reason": "spill_over"
       }
     ]
   },
   "rehydrated": [
-    "01JB2Z8Y5Q3W6K9M1N4P7R0M03",
-    "01JB2Z8Y5Q3W6K9M1N4P7R0ME2"
+    "01JB2Z8Y5Q3W6K9M1N4P7R0M03"
   ],
-  "degradation": [],
+  "degradation": [
+    "embedding_pending"
+  ],
   "skipped": [],
   "model_calls": 1,
   "embedding_model_version": "text-embed-3@1",
@@ -280,8 +347,9 @@
     "occasion": 2.25,
     "vector": 4.0,
     "lexical": 1.0,
-    "rank": 0.5,
+    "fuse": 0.5,
     "profiles": 1.25,
-    "assemble": 0.75
+    "assemble": 0.75,
+    "total": 1234.5678
   }
 }

@@ -634,28 +634,16 @@ def test_episodic_skipped_shows_the_reason_instead_of_the_tables(
     assert "participants —" in text(html)
 
 
-def test_more_holds_the_sections_still_to_come(operator_client: Client, engine: FakeEngine) -> None:
+def test_more_keeps_only_the_position(operator_client: Client, engine: FakeEngine) -> None:
+    """#152 turned the other fields into sections; a non-episodic ``skipped`` is in Run facts."""
     body = fixture()
     body["skipped"] = ["occasion"]
     engine.respond("GET", RETRIEVE, 200, json=body)
     html = ask(operator_client)
-    found = re.search(r'<details class="more"><summary>More</summary><pre>(.*?)</pre>', html, re.S)
-    assert found is not None
-    more = json.loads(found.group(1).replace("&quot;", '"').replace("&#x27;", "'"))
-    assert set(more) == {
-        "canon",
-        "profiles",
-        "context",
-        "timings",
-        "degradation",
-        "rehydrated",
-        "model_calls",
-        "embedding_model_version",
-        "position",
-        "skipped",
-    }
-    assert more["skipped"] == ["occasion"]
-    assert more["position"] == [6, 0]
+    found = re.findall(r'<details class="more"><summary>More</summary><pre>(.*?)</pre>', html, re.S)
+    assert len(found) == 1
+    more = json.loads(found[0].replace("&quot;", '"').replace("&#x27;", "'"))
+    assert more == {"position": [6, 0]}
 
 
 def test_a_422_on_as_of_names_the_head(operator_client: Client, engine: FakeEngine) -> None:

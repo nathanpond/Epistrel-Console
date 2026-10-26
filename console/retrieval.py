@@ -16,6 +16,15 @@ stays a short id. ``cast`` is ``None`` when the story read failed.
 tables and nothing else; they combine with AND. ``memory`` matches case-insensitively on the full
 id or a suffix of at least 8 characters (the shown "…last 8", its "…" optional). An unknown kind
 or tier never matches a set filter.
+
+**What the read placed** (#152): Canon, Profiles, Context and Run facts come from the same
+answer, with no further Engine read, and the display filters never touch them. Entity names come
+from the response's profiles (the profiled entity, a relationship's other end, a placement's
+places and container, an inventory item), then the cast; a predicate's name from a profile
+relationship with the same id (no registry read on this page). Every entity links #58's entity
+page at the retrieval's turn (``position[0] - 1``) and ``omniscient``. A context id of a memory
+kind and a rehydrated id link back to this explorer with the same question and ``memory=<id>``
+(``kind``/``tier`` dropped).
 """
 
 import json
@@ -23,8 +32,20 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from console.cast import Character, character_labels
-from console.engine.models import MentionBody, ResolutionBody, RetrievalBody, RetrievedMemoryBody
+from django.urls import NoReverseMatch
+
+from console.cast import OMNISCIENT, Character, character_labels
+from console.engine.models import (
+    CanonBody,
+    ContextBody,
+    EntityBody,
+    EntityProfileBody,
+    MentionBody,
+    ResolutionBody,
+    RetrievalBody,
+    RetrievedMemoryBody,
+)
+from console.engine_errors import degradation_message
 from console.inspect import (
     SHORT_ID,
     history_turn_url,
@@ -32,6 +53,9 @@ from console.inspect import (
     retrieval_url,
     setting,
 )
+from console.ledger import FactLink, fact_link
+from console.predicates import row_url
+from console.scene import entity_url
 
 EMPTY = "—"
 OPEN_BOUND = "…"
@@ -62,18 +86,8 @@ HALF_LIFE = "memory.episodic.recency_half_life_turns"
 NOT_RETRIEVED = "That memory isn't among what this question retrieves."
 HIDDEN_BY_FILTER = "That memory is retrieved, but the kind/tier filter hides it."
 
-# The answer's fields #141 doesn't show as sections (#152 replaces them), for "More".
-MORE_FIELDS: tuple[str, ...] = (
-    "canon",
-    "profiles",
-    "context",
-    "timings",
-    "degradation",
-    "rehydrated",
-    "model_calls",
-    "embedding_model_version",
-    "position",
-)
+# The answer's fields no section shows, for "More" (#152 turned the rest into sections).
+MORE_FIELDS: tuple[str, ...] = ("position",)
 
 
 def humanised(value: str) -> str:
@@ -437,10 +451,416 @@ def episodic_skipped(body: RetrievalBody) -> bool:
 
 
 def more(body: RetrievalBody) -> dict[str, Any]:
-    """Convention 13's "More": the fields #152 will show as sections, and any ``skipped``
-    stage other than ``episodic``."""
-    found = {name: getattr(body, name) for name in MORE_FIELDS}
-    skipped = [s for s in body.skipped if s != EPISODIC_SKIPPED]
-    if skipped:
-        found["skipped"] = skipped
+    """Convention 13's "More": the fields no section shows (``position``)."""
+    return {name: getattr(body, name) for name in MORE_FIELDS}
+
+
+# --- what the read placed (#152) ------------------------------------------------------------------
+
+# The explorer parameters an id link back keeps ("the same query"); ``memory`` is then added.
+KEEP_FIELDS: tuple[str, ...] = (
+    "q",
+    "as_of",
+    "actor",
+    "include_quarantined",
+    "explain",
+    "explain_variant",
+)
+
+
+@dataclass(frozen=True)
+class Ref:
+    """An id as ``console/inspect/_predicate_ref.html`` shows it: the name (``None``: the short
+    id) linked to ``url`` when there is one, the full id in ``title``."""
+
+    id: str
+    name: str | None
+    url: str | None
+
+
+def retrieval_turn(body: RetrievalBody) -> int | None:
+    """The turn the read retrieved at: ``position[0] - 1`` (``None`` when it isn't one)."""
+    if not body.position or body.position[0] < 1:
+        return None
+    return body.position[0] - 1
+
+
+def _profile_entities(profile: EntityProfileBody) -> list[EntityBody]:
+    found = [profile.entity, *(r.other for r in profile.relationships)]
+    placement = profile.placement
+    if placement is not None:
+        found += [e for e in (placement.location, placement.container) if e is not None]
+        found += placement.within
+    found += [i.item for i in profile.inventory]
     return found
+
+
+class ResponseNames:
+    """Names for the ids the canon table shows, from the response alone (convention 2): entity
+    names from the profiles (a non-empty ``EntityBody.name``), else the cast's labels; predicate
+    names from the profiles' relationships."""
+
+    def __init__(self, body: RetrievalBody, names: Names) -> None:
+        self.names = names
+        self.entities: dict[str, str] = {}
+        self.predicates: dict[str, str] = {}
+        for profile in body.profiles:
+            for entity in _profile_entities(profile):
+                if entity.name:
+                    self.entities.setdefault(entity.entity_id, entity.name)
+            for r in profile.relationships:
+                if r.predicate:
+                    self.predicates.setdefault(r.predicate_id, r.predicate)
+
+    def entity(self, entity_id: str) -> str | None:
+        return self.entities.get(entity_id) or self.names.label(entity_id)
+
+    def predicate(self, predicate_id: str) -> str | None:
+        return self.predicates.get(predicate_id)
+
+
+@dataclass(frozen=True)
+class LiteralText:
+    """A canon literal as shown: ``text``, with the literal's kind in ``title`` (``None`` for a
+    value shown as JSON)."""
+
+    text: str
+    title: str | None = None
+
+
+def _value_text(value: object) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def literal_text(value: Any) -> LiteralText:
+    """A dict with ``kind`` and ``value`` reads "value unit" (kind in ``title``); anything else
+    compact JSON, untruncated."""
+    if isinstance(value, dict) and "kind" in value and "value" in value:
+        unit = value.get("unit")
+        text = _value_text(value["value"])
+        if unit not in (None, ""):
+            text = f"{text} {_value_text(unit)}"
+        return LiteralText(text, _value_text(value["kind"]))
+    return LiteralText(json.dumps(value, ensure_ascii=False, separators=(", ", ": ")))
+
+
+@dataclass(frozen=True)
+class CanonRow:
+    """One canon table row. The object is ``entity``, else ``entities`` (a set), else
+    ``literal``; all three ``None`` reads "—"."""
+
+    fact: FactLink
+    subject: Ref
+    predicate: Ref
+    entity: Ref | None
+    entities: list[Ref] | None
+    literal: LiteralText | None
+    polarity: str
+
+    @property
+    def polarity_label(self) -> str:
+        return humanised(self.polarity)
+
+
+def _entity_ref(story_id: str, entity_id: str, turn: int | None, names: ResponseNames) -> Ref:
+    url = entity_url(story_id, entity_id, turn, OMNISCIENT) if turn is not None else None
+    return Ref(entity_id, names.entity(entity_id), url)
+
+
+def _predicate_link(story_id: str, predicate_id: str) -> str | None:
+    try:
+        return row_url(story_id, predicate_id)
+    except NoReverseMatch:
+        return None
+
+
+def canon_rows(story_id: str, body: RetrievalBody, names: ResponseNames) -> list[CanonRow]:
+    """The canon table in the Engine's order."""
+    turn = retrieval_turn(body)
+
+    def row(fact: CanonBody) -> CanonRow:
+        literal = None
+        if fact.object_id is None and fact.object_set is None and fact.literal is not None:
+            literal = literal_text(fact.literal)
+        return CanonRow(
+            fact=fact_link(story_id, fact.fact_id, fact.subject_id, fact.predicate_id),
+            subject=_entity_ref(story_id, fact.subject_id, turn, names),
+            predicate=Ref(
+                fact.predicate_id,
+                names.predicate(fact.predicate_id),
+                _predicate_link(story_id, fact.predicate_id),
+            ),
+            entity=(
+                _entity_ref(story_id, fact.object_id, turn, names)
+                if fact.object_id is not None
+                else None
+            ),
+            entities=(
+                [_entity_ref(story_id, e, turn, names) for e in fact.object_set]
+                if fact.object_id is None and fact.object_set is not None
+                else None
+            ),
+            literal=literal,
+            polarity=fact.polarity,
+        )
+
+    return [row(fact) for fact in body.canon]
+
+
+# --- context --------------------------------------------------------------------------------------
+
+TIER_TITLES: Mapping[int, str] = {
+    1: "1 · Ledger and pins",
+    2: "2 · Occasions",
+    3: "3 · Profiles and canon",
+    4: "4 · Ranked memories",
+}
+MEMORY_KINDS: frozenset[str] = frozenset({"memory", "episode", "assessment", "pin"})
+DROP_REASONS: Mapping[str, str] = {
+    "budget": "over the remaining budget",
+    "pin_cap": "pins over their 40% share",
+    "duplicate": "already placed at a higher tier",
+}
+SUMMARY_MAX = 80
+
+
+@dataclass(frozen=True)
+class ContextRow:
+    """A placed item (``text`` set) or a dropped one (``reason`` set) as the tables show it.
+    ``url`` is the id's link (``None``: plain ``<code>``)."""
+
+    tier: int
+    kind: str
+    id: str
+    url: str | None
+    tokens: int
+    text: str | None = None
+    reason: str | None = None
+
+    @property
+    def kind_label(self) -> str:
+        return humanised(self.kind)
+
+    @property
+    def summary(self) -> str:
+        """The text's first 80 characters, "…" when cut (the closed ``<details>``'s summary)."""
+        text = self.text or ""
+        return text if len(text) <= SUMMARY_MAX else f"{text[:SUMMARY_MAX]}…"
+
+    @property
+    def reason_text(self) -> str | None:
+        """A known drop reason's explanation; ``None`` for an unknown one (shown as code)."""
+        return DROP_REASONS.get(self.reason or "")
+
+
+@dataclass(frozen=True)
+class TierGroup:
+    tier: int
+    title: str
+    rows: list[ContextRow]
+
+
+@dataclass(frozen=True)
+class ContextView:
+    """The Context section: used/budget, the placed items by tier (the four known tiers
+    always, then any other tier ascending) and the dropped items, each in the Engine's order."""
+
+    used: int
+    budget: int
+    tiers: list[TierGroup]
+    dropped: list[ContextRow]
+
+    @property
+    def over_budget(self) -> bool:
+        return self.used > self.budget
+
+
+def id_url(
+    story_id: str,
+    kind: str,
+    item_id: str,
+    keep: Mapping[str, str],
+    canon: Mapping[str, CanonBody],
+) -> str | None:
+    """A context id's link: memory kinds → this explorer with ``memory=<id>``; ``canon`` → #138's
+    lineage view (subject and predicate when this answer's canon carries the fact); anything
+    else (``ledger``, ``profile``, unknown kinds) none."""
+    if kind in MEMORY_KINDS:
+        return retrieval_url(story_id, {**keep, "memory": item_id})
+    if kind == "canon":
+        fact = canon.get(item_id)
+        if fact is not None:
+            return fact_link(story_id, item_id, fact.subject_id, fact.predicate_id).url
+        return fact_link(story_id, item_id).url
+    return None
+
+
+def context_view(story_id: str, body: RetrievalBody, keep: Mapping[str, str]) -> ContextView:
+    context: ContextBody = body.context
+    canon = {fact.fact_id: fact for fact in body.canon}
+
+    def url(kind: str, item_id: str) -> str | None:
+        return id_url(story_id, kind, item_id, keep, canon)
+
+    placed: dict[int, list[ContextRow]] = {tier: [] for tier in TIER_TITLES}
+    for item in context.items:
+        row = ContextRow(
+            item.tier, item.kind, item.item_id, url(item.kind, item.item_id), item.tokens, item.text
+        )
+        placed.setdefault(item.tier, []).append(row)
+    tiers = [TierGroup(tier, TIER_TITLES[tier], placed[tier]) for tier in TIER_TITLES]
+    tiers += [
+        TierGroup(tier, f"Other tier {tier}", placed[tier])
+        for tier in sorted(placed)
+        if tier not in TIER_TITLES
+    ]
+    dropped = [
+        ContextRow(d.tier, d.kind, d.item_id, url(d.kind, d.item_id), d.tokens, reason=d.reason)
+        for d in context.dropped
+    ]
+    return ContextView(context.used, context.budget, tiers, dropped)
+
+
+# --- run facts ------------------------------------------------------------------------------------
+
+STAGE_ORDER: tuple[str, ...] = (
+    "resolve",
+    "occasion",
+    "vector",
+    "lexical",
+    "fuse",
+    "profiles",
+    "assemble",
+)
+TOTAL = "total"
+DEGRADATIONS: Mapping[str, str] = {
+    "embedding_unavailable": "Embedding unavailable — vector arm skipped",
+}
+SKIP_NOTES: Mapping[str, str] = {
+    "occasion": "no time window or event type in the question",
+    "vector": "arm did not run",
+    "lexical": "arm did not run",
+    "alias": "arm did not run",
+}
+REHYDRATED_NOTE = "Rehydrated for this read only; nothing was stored."
+
+
+@dataclass(frozen=True)
+class DegradationLine:
+    """A degradation cause's text (#150's for ``embedding_pending``, with its run page link)."""
+
+    cause: str
+    text: str
+    url: str | None = None
+
+
+def degradation_line(cause: str) -> DegradationLine:
+    found = degradation_message(cause)
+    if found is not None:
+        return DegradationLine(cause, found.text, found.url)
+    return DegradationLine(cause, DEGRADATIONS.get(cause, humanised(cause)))
+
+
+@dataclass(frozen=True)
+class Skipped:
+    stage: str
+    note: str | None
+
+    @property
+    def label(self) -> str:
+        return humanised(self.stage)
+
+
+@dataclass(frozen=True)
+class TimingRow:
+    stage: str
+    ms: str  # 3 decimals with thousands separators, "—" when missing
+
+    @property
+    def total(self) -> bool:
+        return self.stage == TOTAL
+
+
+def ms_text(value: float | None) -> str:
+    return EMPTY if value is None else f"{value:,.3f}"
+
+
+def timing_rows(timings: Mapping[str, float]) -> list[TimingRow]:
+    """The Engine's stages in order (a missing one "—"), then unknown stages in the response's
+    order, then ``total``."""
+    rows = [TimingRow(stage, ms_text(timings.get(stage))) for stage in STAGE_ORDER]
+    rows += [
+        TimingRow(stage, ms_text(value))
+        for stage, value in timings.items()
+        if stage not in STAGE_ORDER and stage != TOTAL
+    ]
+    rows.append(TimingRow(TOTAL, ms_text(timings.get(TOTAL))))
+    return rows
+
+
+@dataclass(frozen=True)
+class RunFacts:
+    degradations: list[DegradationLine]
+    skipped: list[Skipped]
+    rehydrated: list[Ref]
+    model_calls: int
+    timings: list[TimingRow]
+    embedding_model_version: str | None
+    rehydrated_note: str = REHYDRATED_NOTE
+
+
+def run_facts(story_id: str, body: RetrievalBody, keep: Mapping[str, str]) -> RunFacts:
+    return RunFacts(
+        degradations=[degradation_line(cause) for cause in body.degradation],
+        skipped=[
+            Skipped(stage, SKIP_NOTES.get(stage))
+            for stage in body.skipped
+            if stage != EPISODIC_SKIPPED
+        ],
+        rehydrated=[
+            Ref(memory_id, None, retrieval_url(story_id, {**keep, "memory": memory_id}))
+            for memory_id in body.rehydrated
+        ],
+        model_calls=body.model_calls,
+        timings=timing_rows(body.timings),
+        embedding_model_version=body.embedding_model_version,
+    )
+
+
+@dataclass(frozen=True)
+class Placed:
+    """The four #152 sections' rows, and ``unparsed``: the raw lists of entries that failed to
+    parse, by dotted name (each section's "More")."""
+
+    canon: list[CanonRow]
+    profiles: list[EntityProfileBody]
+    context: ContextView
+    run: RunFacts
+    unparsed: Mapping[str, list[Any]]
+
+    def unparsed_of(self, *names: str) -> dict[str, list[Any]]:
+        return {name: self.unparsed[name] for name in names if name in self.unparsed}
+
+    @property
+    def canon_more(self) -> dict[str, list[Any]]:
+        return self.unparsed_of("canon")
+
+    @property
+    def profiles_more(self) -> dict[str, list[Any]]:
+        return self.unparsed_of("profiles")
+
+    @property
+    def context_more(self) -> dict[str, list[Any]]:
+        return self.unparsed_of("context.items", "context.dropped")
+
+
+def placed(story_id: str, body: RetrievalBody, names: Names, keep: Mapping[str, str]) -> Placed:
+    """The Canon, Profiles, Context and Run facts sections from the one read. ``keep``: the
+    question's parameters (:data:`KEEP_FIELDS`) an id link back keeps."""
+    return Placed(
+        canon=canon_rows(story_id, body, ResponseNames(body, names)),
+        profiles=list(body.profiles),
+        context=context_view(story_id, body, keep),
+        run=run_facts(story_id, body, keep),
+        unparsed=body.unparsed,
+    )

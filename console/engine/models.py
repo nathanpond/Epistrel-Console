@@ -21,7 +21,7 @@ import typing
 from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from datetime import datetime
-from typing import Any, Literal, Self, Union
+from typing import Any, ClassVar, Literal, Self, Union
 
 from console.entities import EntityType
 
@@ -1627,11 +1627,64 @@ class RetrievedMemoryBody(Model):
 
 
 @dataclass(frozen=True)
+class CanonBody(Model):
+    """``CanonBody``: a canon fact about a resolved entity (#152): its subject, predicate and
+    object, which is one of an entity (``object_id``), a set of entities (``object_set``) or a
+    ``literal`` (untyped in the schema; in practice ``{kind, value, unit}``, kept raw)."""
+
+    fact_id: str
+    subject_id: str
+    predicate_id: str
+    object_id: str | None
+    object_set: list[str] | None
+    literal: Any
+    polarity: str
+
+
+@dataclass(frozen=True)
+class ContextItemBody(Model):
+    """``ContextItemBody``: an item placed in the context: its ``tier`` (1 ledger and pins, 2
+    occasions, 3 profiles and canon, 4 ranked memories), ``kind``, id, text and ``tokens``."""
+
+    tier: int
+    kind: str
+    item_id: str
+    text: str
+    tokens: int
+
+
+@dataclass(frozen=True)
+class DroppedBody(Model):
+    """``DroppedBody``: an item the context left out, and why (``budget``, ``pin_cap`` or
+    ``duplicate``, a plain string in the schema)."""
+
+    tier: int
+    kind: str
+    item_id: str
+    tokens: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class ContextBody(Model):
+    """``ContextBody``: the context assembled within ``budget`` tokens (``used`` of them)."""
+
+    budget: int
+    used: int
+    items: list[ContextItemBody]
+    dropped: list[DroppedBody]
+
+
+@dataclass(frozen=True)
 class RetrievalBody(Model):
     """``RetrievalBody``: ``GET /stories/{id}/retrieve``, what a structured render would retrieve
-    for a query (FR-RET-2..7). ``position`` is ``(as_of + 1, 0)``. ``canon``, ``profiles`` and
-    ``context`` stay raw JSON until #152 types them; ``skipped`` names the stages that did not
-    run (``episodic`` when the module is off: everything else is then empty)."""
+    for a query (FR-RET-2..7). ``position`` is ``(as_of + 1, 0)``. ``skipped`` names the stages
+    that did not run (``episodic`` when the module is off: everything else is then empty).
+
+    ``from_json`` reads ``canon``, ``profiles``, ``context.items`` and ``context.dropped`` entry
+    by entry (#135 convention 12): an entry that doesn't parse is left out, and ``unparsed``
+    keeps that section's raw list (by its dotted name) for its "More", so one bad entry never
+    fails the page. ``unparsed`` is the Console's, not the schema's (not a dataclass field)."""
 
     position: list[int]
     resolution: ResolutionBody
@@ -1639,15 +1692,48 @@ class RetrievalBody(Model):
     participants: list[str]
     assessments: list[RetrievedMemoryBody]
     memories: list[RetrievedMemoryBody]
-    profiles: Any
-    canon: Any
-    context: Any
+    profiles: list[EntityProfileBody]
+    canon: list[CanonBody]
+    context: ContextBody
     rehydrated: list[str]
     degradation: list[str]
     skipped: list[str]
     model_calls: int
     embedding_model_version: str | None
     timings: dict[str, float]
+
+    unparsed: ClassVar[dict[str, list[Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        if not isinstance(obj, dict):
+            return None
+        obj = dict(obj)
+        if isinstance(obj.get("context"), dict):
+            obj["context"] = dict(obj["context"])
+        unparsed: dict[str, list[Any]] = {}
+        lenient: tuple[tuple[str, type[Model]], ...] = (
+            ("canon", CanonBody),
+            ("profiles", EntityProfileBody),
+            ("context.items", ContextItemBody),
+            ("context.dropped", DroppedBody),
+        )
+        for name, model in lenient:
+            *outer, key = name.split(".")
+            holder = obj.get(outer[0]) if outer else obj
+            if not isinstance(holder, dict) or not isinstance(holder.get(key), list):
+                continue
+            raw = holder[key]
+            kept = [entry for entry in raw if model.from_json(entry) is not None]
+            if len(kept) < len(raw):
+                holder[key] = kept
+                unparsed[name] = raw
+        parsed = _from_json(cls, obj)
+        if not isinstance(parsed, cls):
+            return None
+        if unparsed:
+            object.__setattr__(parsed, "unparsed", unparsed)
+        return parsed
 
 
 @dataclass(frozen=True)

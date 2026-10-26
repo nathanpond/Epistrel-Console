@@ -89,12 +89,14 @@ from console.inspect import (
     unavailable_for,
 )
 from console.retrieval import (
+    KEEP_FIELDS,
     Filters,
     Names,
     candidates,
     episodic_skipped,
     legend,
     mention_rows,
+    placed,
     time_view,
 )
 from console.retrieval import more as retrieval_more
@@ -416,7 +418,8 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
     above the form; 403 ``omniscient_required`` and 404 render convention 10's lines, any other
     failure #43's panel, each below the form; ``erasure_pending`` (and a 409 ``module_off``)
     escape to #87's held wrapper (and the shell's panel). ``skipped: ["episodic"]`` shows #135's
-    reason inline instead of the candidate tables."""
+    reason inline instead of the candidate tables (and of #152's sections). ``placed`` holds
+    #152's Canon, Profiles, Context and Run facts from the same answer."""
     if not form.is_valid():
         return
     query = form.query()
@@ -436,6 +439,7 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
             context["retrieval_error"] = panel_for(exc)
         return
     keep = {name: form.value(name) for name in QUESTION_FIELDS if form.value(name)}
+    back = {name: form.value(name) for name in KEEP_FIELDS if form.value(name)}
     filters = Filters(
         form.filter_value("kind"), form.filter_value("tier"), form.filter_value("memory")
     )
@@ -450,6 +454,7 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
         time=time_view(body.resolution),
         episodic_off=unavailable_for(EPISODIC, ctx.effective) if episodic_skipped(body) else None,
         candidates=candidates(ctx.story_id, body, names, filters, keep),
+        placed=placed(ctx.story_id, body, names, back),
         actions=MEMORY_ACTIONS_TEMPLATE,  # convention 14: #143's row actions
         actions_next=ctx.request.get_full_path(),  # where a row action returns
         more=retrieval_more(body),

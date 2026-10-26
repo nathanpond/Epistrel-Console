@@ -1566,3 +1566,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The retry confirm page is titled "Retry failed re-embeds".
   **Why:** The plan gives the question and buttons but no title.
   **Issue:** #150
+- **Decision:** `RetrievalBody.from_json` parses `canon`, `profiles`, `context.items` and `context.dropped` entry by entry. A bad entry is left out, and the raw list goes in `RetrievalBody.unparsed`, which is a `ClassVar`-declared attribute rather than a schema field.
+  **Why:** The plan says one bad entry must not fail the page. A dataclass field would break the contract test against `RetrievalBody`'s schema.
+  **Issue:** #152
+- **Decision:** Timings show the story's seven stages, then `total`. Engine `main` now also reports a `beliefs` stage. It shows as an unknown stage in response order, before `total`.
+  **Why:** The AC names seven stages and says unknown stages go before `total`. Adding `beliefs` to the known order is for a later story.
+  **Issue:** #152
+- **Decision:** Canon polarity is humanised from the Engine's `affirmed`/`negated`. The #141 fixture's `positive` was corrected to `affirmed`.
+  **Why:** Those are the Engine's `Polarity` values.
+  **Issue:** #152
+- **Decision:** Canon predicates link #136's `row_url` (`?layer=all#p-<id>`), as #58's profile partial does. Canon fact ids, and context `canon` ids whose fact is in the same answer, link #138's lineage with `subject` and `predicate`.
+  **Why:** An unfiltered row link always finds the row. Passing subject and predicate saves the lineage view a read.
+  **Issue:** #152
+- **Decision:** Canon entity and predicate cells reuse `_predicate_ref.html` through a generic `retrieval.Ref(id, name, url)`. The degradation warning's whole text is the link to the run page. Run facts lists the same texts.
+  **Why:** That partial already renders "name linked, else linked short id". One text per cause keeps the two places consistent.
+  **Issue:** #152
+- **Decision:** Each profile gets an `<h3>` "<name> (<kind>)" heading inside the Profiles `<h2>` section. #58's partial keeps its own `<h2>` sub-sections.
+  **Why:** The partial is shared with the entity page, so it was not changed for this page.
+  **Issue:** #152
+- **Decision:** Updated #141's tests: the More test now expects `position` only, and the `test_retrieval_rows.py` body builder sends a valid empty `context`.
+  **Why:** #152 removes the interim More fields and types `context`, so `{}` no longer parses.
+  **Issue:** #152
