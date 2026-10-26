@@ -1317,3 +1317,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The explorer passes `actions_next` (the request's full path) next to `actions`, and the quarantine and release links get theirs from the `{% memory_action_url %}` tag (`console.inspect.memory_action_url`, which applies the 2,000-character fallback).
   **Why:** The row partial needs the explorer's path, and the fallback depends on each row's memory id.
   **Issue:** #143
+- **Decision:** The Sanitize… link carries only `next` (#143's `memory_action_url`); the sanitize page reads the explorer's question (`q`, `as_of`, `actor`, `include_quarantined`) back out of `next`, and only when `next` is this story's Retrieval path.
+  **Why:** `next` already holds exactly those parameters, so a second copy in the link would only drift. A `next` that fell back (over 2,000 characters) has no `q`, so the page says "Text not shown".
+  **Issue:** #144
+- **Decision:** The page re-asks the question with `RetrievalForm(..., cast=None)`, so a chosen actor is sent as `actor_character_id` even when it is the player. No `get_story` read is made.
+  **Why:** Sending the player's id explicitly gives the same answer as leaving it out, and it saves a second read on every page load.
+  **Issue:** #144
+- **Decision:** `ConfirmPage` gains `buttons_template` (rendered after Confirm, before Cancel) for the sanitize confirm page's Edit button.
+  **Why:** The planner puts Edit after Confirm, and `fields_template` renders before the buttons. Other confirm pages don't change.
+  **Issue:** #144
+- **Decision:** The Console's own refusal texts for sanitize are "Enter the span to replace." (empty span) and "At most 2,000 characters (this one has N)." (span or surrogate too long).
+  **Why:** The AC doesn't give these texts. The wording follows the quarantine form and the question-length text.
+  **Issue:** #144
+- **Decision:** The redaction is two kind-keyed maps in `console/operation_log.py` (`REQUEST_REDUCERS` and `RESPONSE_REDUCERS`, only `sanitize_memory` for now). The client's per-operation `record_body` / `record_response` hooks aren't used for it.
+  **Why:** This is where the planner put it, and the response reducer needs the span as it was sent, which `record_response` isn't given. The guardrail flag is computed on the answer before it is reduced.
+  **Issue:** #144
+- **Decision:** The detail page's "Re-reading the Engine's record isn't offered…" note takes the place of the Fetch button. It shows only on rows that name an Engine operation, because those are the only rows that ever had the button.
+  **Why:** A refused sanitize has no Engine operation id, so it had nothing to re-read in the first place.
+  **Issue:** #144

@@ -96,6 +96,7 @@ class ConfirmPage:
     hidden: Mapping[str, str] = field(default_factory=dict)  # posted back with Confirm
     danger: bool = False  # a permanent action: the Confirm button is styled as such
     fields_template: str = ""  # extra inputs inside the Confirm form
+    buttons_template: str = ""  # extra buttons after Confirm (#144's Edit)
     error: str = ""  # shown above the buttons (#134)
 
 

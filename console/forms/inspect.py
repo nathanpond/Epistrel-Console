@@ -236,3 +236,105 @@ class QuarantineForm(forms.Form):
         the form."""
         if not apply_engine_errors(exc, self):
             self.add_error(None, exc.message)
+
+
+# --- sanitizing a memory (#144) ------------------------------------------------------------------
+
+SANITIZE_MAX = 2000  # the Engine's ``SanitizeRequest`` span/surrogate maxLength, and a text's
+SPAN_REQUIRED = "Enter the span to replace."
+SPAN_ABSENT = "This span isn't in the memory's text"
+SPAN_CHANGED = " (it may have changed since this page loaded)"
+SURROGATE_SAME = "The surrogate is the same as the span; nothing would change"
+REWRITE_INVALID = "The sanitized text must be 1\u20132,000 characters and not blank"
+SURROGATE_HELP = "Empty removes the span"
+SPAN_NOT_FOUND = "span_not_found"
+
+
+def sanitize_too_long(length: int) -> str:
+    return f"At most {SANITIZE_MAX:,} characters (this one has {length:,})."
+
+
+def _lf(value: object) -> str:
+    """A posted textarea's value with ``\\r\\n`` as ``\\n`` (what a browser sends for a newline)."""
+    return str(value or "").replace("\r\n", "\n")
+
+
+class SanitizeForm(forms.Form):
+    """The sanitize page (#144): a ``span`` and its ``surrogate``, taken exactly as typed
+    (``\\r\\n`` becomes ``\\n`` first, nothing is stripped), and the hidden ``shown_text`` (the
+    memory's text as the explorer's question retrieved it; display and local checks only, never
+    sent; dropped when blank or over 2,000 characters).
+
+    Refused here, before any Engine call: an empty span, a span or surrogate over 2,000 code
+    points (``len``, as the Engine counts; no HTML ``maxlength``, which counts UTF-16 units), a
+    surrogate equal to the span and, when the text is known, a span not in it (Python ``in``, the
+    Engine's ``str.count``) or a rewrite that would be blank or over 2,000 characters."""
+
+    span = forms.CharField(
+        label="Span",
+        required=False,
+        strip=False,
+        widget=forms.Textarea(attrs={"rows": 3, "cols": 80}),
+    )
+    surrogate = forms.CharField(
+        label="Surrogate",
+        required=False,
+        strip=False,
+        help_text=SURROGATE_HELP,
+        widget=forms.Textarea(attrs={"rows": 3, "cols": 80}),
+    )
+    shown_text = forms.CharField(required=False, strip=False, widget=forms.HiddenInput)
+
+    def clean_span(self) -> str:
+        span = _lf(self.cleaned_data.get("span"))
+        if not span:
+            raise forms.ValidationError(SPAN_REQUIRED)
+        if len(span) > SANITIZE_MAX:
+            raise forms.ValidationError(sanitize_too_long(len(span)))
+        return span
+
+    def clean_surrogate(self) -> str:
+        surrogate = _lf(self.cleaned_data.get("surrogate"))
+        if len(surrogate) > SANITIZE_MAX:
+            raise forms.ValidationError(sanitize_too_long(len(surrogate)))
+        return surrogate
+
+    def clean_shown_text(self) -> str:
+        text = _lf(self.cleaned_data.get("shown_text"))
+        return text if text.strip() and len(text) <= SANITIZE_MAX else ""
+
+    def clean(self) -> dict[str, Any]:
+        data = super().clean() or {}
+        span, surrogate = data.get("span"), data.get("surrogate")
+        if span is None or surrogate is None:
+            return data
+        text = data.get("shown_text") or ""
+        if surrogate == span:
+            self.add_error("surrogate", SURROGATE_SAME)
+        elif text and span not in text:
+            self.add_error("span", SPAN_ABSENT)
+        elif text:
+            rewritten = text.replace(span, surrogate)
+            if not rewritten.strip() or len(rewritten) > SANITIZE_MAX:
+                self.add_error("surrogate", REWRITE_INVALID)
+        return data
+
+    @property
+    def text(self) -> str | None:
+        """The shown text once cleaned (``None`` when not shown)."""
+        cleaned = getattr(self, "cleaned_data", {})
+        return cleaned.get("shown_text") or None
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """422 ``span_not_found`` on the span (noting the text may have changed when the local
+        check had passed); a ``validation_error`` on the field ``details.field`` names
+        (``body.surrogate`` with the Console's rewrite text, ``body.span`` with the Engine's),
+        else above the form."""
+        if exc.code == SPAN_NOT_FOUND:
+            self.add_error("span", SPAN_ABSENT + (SPAN_CHANGED if self.text else ""))
+            return
+        if exc.details.get("field") == "body.surrogate":
+            self.add_error("surrogate", REWRITE_INVALID)
+            return
+        if not apply_engine_errors(exc, self):
+            self.add_error(None, exc.message)

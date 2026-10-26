@@ -446,7 +446,7 @@ def test_a_ranked_memory_row(operator_client: Client, engine: FakeEngine) -> Non
         "Conversation",
         "turn 5 · beat 2",
         "Mara asked Tobin about the tavern fire.",
-        "Pin Unpin Quarantine",  # #143's row actions
+        "Pin Unpin Quarantine Sanitize…",  # #143's row actions, #144's Sanitize…
     ]
     assert '<span class="arm arm-vector">vector</span> <span class="arm arm-lexical">' in found[8]
     assert (

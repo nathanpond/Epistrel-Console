@@ -15,6 +15,7 @@
     {% if page.fields_template %}{% include page.fields_template %}{% endif %}
     {% if page.error %}<p class="errorlist confirm-error">{{ page.error }}</p>{% endif %}
     <button type="submit"{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>
+    {% if page.buttons_template %}{% include page.buttons_template %}{% endif %}
     <a href="{{ next_url }}">Cancel</a>
   </form>
 </div>

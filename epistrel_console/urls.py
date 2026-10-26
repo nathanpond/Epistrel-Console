@@ -166,6 +166,12 @@ inspect_patterns = (
             name="memory-quarantine",
         ),
         path("memories/<ulid:memory_id>/release/", inspect_memory.release, name="memory-release"),
+        # #144: sanitize a memory's text (form, confirm, call).
+        path(
+            "memories/<ulid:memory_id>/sanitize/",
+            inspect_memory.sanitize,
+            name="memory-sanitize",
+        ),
     ],
     "inspect",
 )

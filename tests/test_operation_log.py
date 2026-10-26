@@ -1,8 +1,10 @@
 """The operation log's recorder (#44): every mutating call made through
 ``engine_client_for(request)`` writes one row; reads write none; secrets never land in it."""
 
+import contextlib
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -13,6 +15,7 @@ from django.test import RequestFactory, override_settings
 from console.engine.client import (
     Call,
     EngineClient,
+    EngineError,
     EngineUnreachable,
     Operation,
     calling,
@@ -444,3 +447,162 @@ def test_existing_rows_migrate_and_name_their_story() -> None:
     new = executor.loader.project_state(after).apps.get_model("console", "EngineOperation")
     rows = {r.kind: (r.entity_type, r.entity_id, r.job_id) for r in new.objects.all()}
     assert rows == {"respond": ("story", STORY, None), "put_settings": (None, None, None)}
+
+
+# --- a sanitize keeps only lengths (#144) --------------------------------------------------------
+
+MEMORY = "01JA0000000000000000000ME1"
+SANITIZE = "/admin/stories/{story_id}/memories/{memory_id}/sanitize"
+SPAN = "the vault code is 4471"
+SURROGATE = "…"
+
+
+def sanitize_written(text: str) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads(
+        (Path(__file__).parent / "fixtures" / "inspect" / "memory_written.json").read_text()
+    )
+    body["memory"].update(id=MEMORY, text=text)
+    return body
+
+
+def sanitize_refusal(code: str) -> dict[str, Any]:
+    if code == "span_not_found":
+        details: dict[str, Any] = {"memory_id": MEMORY}
+        message = f"span not found in memory {MEMORY}"
+    else:
+        details = {
+            "violations": [
+                {
+                    "policy_id": "no_codes",
+                    "name": "No codes",
+                    "message": f"The surrogate quotes a code: {SURROGATE!r} near {SPAN!r}",
+                    "kind": "forbidden_content",
+                }
+            ],
+            "model_calls": 1,
+            "elapsed_ms": 3,
+        }
+        message = f"The input breaks a policy: {SPAN}"
+    return {"error": {"code": code, "message": message, "details": details}}
+
+
+def sanitize(operator: Any, fake: FakeEngine, span: str = SPAN, surrogate: str = SURROGATE) -> None:
+    client = client_for(operator, fake.transport)
+    with contextlib.suppress(EngineError):  # a refusal is still recorded
+        client.sanitize_memory(STORY, MEMORY, span, surrogate, idempotency_key=KEY)
+
+
+def stored(row: EngineOperation) -> str:
+    return json.dumps(row.request) + json.dumps(row.response)
+
+
+def test_a_sanitize_stores_only_the_lengths_of_span_and_surrogate(
+    operator: Any, fake_engine: FakeEngine
+) -> None:
+    fake_engine.respond("POST", SANITIZE, 200, json=sanitize_written("The safe is locked: …."))
+    sanitize(operator, fake_engine)
+    (sent,) = fake_engine.requests
+    assert json.loads(sent.content) == {"span": SPAN, "surrogate": SURROGATE}
+    (row,) = EngineOperation.objects.all()
+    assert row.kind == "sanitize_memory"
+    assert (row.entity_type, row.entity_id) == ("story", STORY)
+    assert row.path == f"/admin/stories/{STORY}/memories/{MEMORY}/sanitize"
+    assert row.request["body"] == {"span_length": 22, "surrogate_length": 1}
+    assert row.response is not None
+    assert row.response["memory"]["text"] == {"text_length": 22}
+    assert row.response["memory"]["id"] == MEMORY  # the rest of the answer is kept
+    assert row.engine_operation_id == "01JB2Z8Y5Q3W6K9M1N4P7R0P01"
+    assert SPAN not in stored(row)
+
+
+@pytest.mark.parametrize("code", ["span_not_found", "guardrail_violation"])
+def test_a_refused_sanitize_keeps_codes_and_policies_but_no_text(
+    operator: Any, fake_engine: FakeEngine, code: str
+) -> None:
+    fake_engine.respond("POST", SANITIZE, 422, json=sanitize_refusal(code))
+    sanitize(operator, fake_engine)
+    (row,) = EngineOperation.objects.all()
+    assert (row.outcome, row.error_code) == ("error", code)
+    assert row.request["body"] == {"span_length": 22, "surrogate_length": 1}
+    assert SPAN not in stored(row)
+    assert row.response is not None
+    error = row.response["error"]
+    assert set(error["message"]) == {"text_length"}
+    if code == "guardrail_violation":
+        assert row.is_guardrail_rejection is True
+        (violation,) = error["details"]["violations"]
+        assert violation["policy_id"] == "no_codes"
+        assert (violation["name"], violation["kind"]) == ("No codes", "forbidden_content")
+        assert set(violation["message"]) == {"text_length"}
+        assert SURROGATE not in stored(row)
+        assert error["details"]["model_calls"] == 1
+    else:
+        assert error["details"] == {"memory_id": MEMORY}
+
+
+def test_a_surrogate_containing_the_span_leaves_no_span_in_the_row(
+    operator: Any, fake_engine: FakeEngine
+) -> None:
+    fake_engine.respond("POST", SANITIZE, 200, json=sanitize_written("Bobby met Ann."))
+    sanitize(operator, fake_engine, "Bob", "Bobby")
+    row = EngineOperation.objects.get()
+    assert row.request["body"] == {"span_length": 3, "surrogate_length": 5}
+    assert "Bob" not in stored(row)
+    assert row.response is not None
+    assert row.response["memory"]["text"] == {"text_length": 14}
+
+
+def test_a_malformed_sanitize_body_stores_null_lengths() -> None:
+    from console.operation_log import sanitize_request
+
+    assert sanitize_request({"span": 3, "surrogate": "x"}) == {
+        "span_length": None,
+        "surrogate_length": None,
+    }
+    assert sanitize_request("Bob") == {"span_length": None, "surrogate_length": None}
+
+
+def test_other_kinds_are_stored_unchanged(operator: Any, fake_engine: FakeEngine) -> None:
+    fake_engine.respond("POST", "/stories/{story_id}/respond", 200, json=engine_fixture("respond"))
+    respond(client_for(operator, fake_engine.transport))
+    (row,) = EngineOperation.objects.all()
+    assert row.request["body"] == {"actor_character_id": "c1", "player_input": {"say": "hi"}}
+    assert row.response == engine_fixture("respond")
+
+
+@pytest.mark.parametrize("answer", ["ok", "span_not_found", "guardrail_violation"])
+def test_the_operations_pages_show_only_lengths_and_offer_no_fetch(
+    operator: Any,
+    operator_client: Any,
+    fake_engine: FakeEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str,
+) -> None:
+    from console.views import operations
+
+    if answer == "ok":
+        fake_engine.respond("POST", SANITIZE, 200, json=sanitize_written("The safe: …."))
+    else:
+        fake_engine.respond("POST", SANITIZE, 422, json=sanitize_refusal(answer))
+    sanitize(operator, fake_engine)
+    row = EngineOperation.objects.get()
+    reads = FakeEngine()
+
+    def reading_client(request: HttpRequest) -> EngineClient:
+        client = engine_client_for(request)
+        client._transport = reads.transport
+        return client
+
+    monkeypatch.setattr(operations, "engine_client_for", reading_client)
+    listing = operator_client.get("/operations/").content.decode()
+    detail = operator_client.get(f"/operations/{row.pk}/").content.decode()
+    fetched = operator_client.get(f"/operations/{row.pk}/?fetch=1").content.decode()
+    for html in (listing, detail, fetched):
+        assert SPAN not in html
+        assert "4471" not in html
+    for html in (detail, fetched):
+        assert "Fetch from Engine" not in html
+        if answer == "ok":  # the row names an Engine operation: the note stands in its place
+            assert "Re-reading the Engine's record isn't offered for sanitize calls" in html
+    assert "span_length" in detail
+    assert reads.requests == []

@@ -1185,6 +1185,24 @@ class EngineClient:
         path = "/admin" + _memory_path(story_id, memory_id, "quarantine")
         return self._memory_write("DELETE", path, idempotency_key)
 
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/memories/{memory_id}/sanitize",
+        response_model=MemoryWritten,
+    )
+    def sanitize_memory(
+        self, story_id: str, memory_id: str, span: str, surrogate: str, *, idempotency_key: str
+    ) -> MemoryWritten:
+        """``POST /admin/stories/{id}/memories/{mid}/sanitize {span, surrogate}`` (#144): replace
+        every occurrence of the exact ``span`` (1 to 2,000 characters) by ``surrogate`` (0 to
+        2,000; it passes the input gate), then re-index and re-embed. 422 ``span_not_found``,
+        ``guardrail_violation`` or ``validation_error`` (``body.surrogate``: the rewritten text
+        would be blank or over 2,000); 409 ``module_off`` as quarantine. Never unchanged. The
+        operation log keeps only the lengths (``console.operation_log``)."""
+        path = "/admin" + _memory_path(story_id, memory_id, "sanitize")
+        body = {"span": span, "surrogate": surrogate}
+        return self._memory_write("POST", path, idempotency_key, body)
+
     def _memory_write(
         self, method: str, path: str, idempotency_key: str, body: Mapping[str, Any] | None = None
     ) -> MemoryWritten:

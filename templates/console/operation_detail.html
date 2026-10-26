@@ -49,7 +49,10 @@
 <h2>Response</h2>
 {% if row.response is not None %}<pre>{{ row.response|pretty_json }}</pre>{% else %}<p>—</p>{% endif %}
 
-{% if row.engine_operation_id %}
+{% if row.engine_operation_id and not fetch_offered %}
+<h2>Engine's view</h2>
+<p class="no-fetch">Re-reading the Engine's record isn't offered for sanitize calls: it would show the memory's text.</p>
+{% elif row.engine_operation_id %}
 <h2>Engine's view</h2>
 <form method="get" action="">
   <input type="hidden" name="fetch" value="1">

@@ -21,6 +21,7 @@ from django.test import Client, override_settings
 
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
+from console.forms.inspect import REWRITE_INVALID
 from console.held import held_text
 from console.models import EngineOperation
 from console.views import inspect as views
@@ -46,6 +47,8 @@ QUARANTINE = "/admin/stories/{story_id}/memories/{memory_id}/quarantine"
 PIN_PATH = f"/stories/{STORY}/memories/{MID}/pin"
 QUARANTINE_PATH = f"/admin/stories/{STORY}/memories/{MID}/quarantine"
 RELEASE_PATH = f"/admin/stories/{STORY}/memories/{QUARANTINED}/quarantine"
+SANITIZE = "/admin/stories/{story_id}/memories/{memory_id}/sanitize"
+SANITIZE_PATH = f"/admin/stories/{STORY}/memories/{MID}/sanitize"
 KEY = "01JB2Z8Y5Q3W6K9M1N4P7R0K99"
 
 
@@ -91,6 +94,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
         "POST", QUARANTINE, 200, json=written(quarantined=True, quarantine_reason="contradicts")
     )
     fake.respond("DELETE", QUARANTINE, 200, json=written(id=QUARANTINED))
+    fake.respond("POST", SANITIZE, 200, json=written(text="Mara asked the stranger about it."))
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
 
@@ -648,3 +652,389 @@ def test_a_refused_write_records_an_error_row(operator_client: Client, engine: F
         "not_found",
     )
     assert recorded.entity_type == "story"
+
+
+# --- sanitize (#144) -----------------------------------------------------------------------------
+
+TEXT = "Mara asked Tobin about the tavern fire."  # MID's text in retrieval.json
+
+
+def sanitize_post(client: Client, **data: str) -> Any:
+    """A sanitize form POST (``confirmed="1"`` for the confirm page's Confirm)."""
+    fields = {"span": "Tobin", "surrogate": "the stranger", "shown_text": TEXT, **data}
+    return post(client, "sanitize", **fields)
+
+
+def retrieves(engine: FakeEngine) -> list[httpx.Request]:
+    return [r for r in engine.requests if r.url.path.endswith("/retrieve")]
+
+
+def hidden(html: str, name: str) -> str:
+    found = re.search(rf'<input type="hidden" name="{name}"(?: value="([^"]*)")?', html)
+    assert found is not None, name
+    return found.group(1) or ""
+
+
+def test_each_row_ends_with_a_sanitize_link(operator_client: Client, engine: FakeEngine) -> None:
+    html = explorer(operator_client, as_of="5")
+    cell = row(html, MID)
+    link = re.search(r'<a class="button memory-sanitize" href="([^"]+)">Sanitize…</a>', cell)
+    assert link is not None
+    assert cell.index("memory-sanitize") > cell.index("memory-quarantine")  # the last control
+    assert link.group(1).startswith(url("sanitize") + "?next=")
+    assert "as_of%3D5" in link.group(1)
+
+
+def test_the_sanitize_page_shows_the_text_the_question_retrieves(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = operator_client.get(f"{url('sanitize')}?{urlencode({'next': EXPLORER_NEXT})}")
+    html = response.content.decode()
+    assert response.status_code == 200
+    (read,) = retrieves(engine)
+    assert (read.url.params["q"], read.url.params["as_of"]) == (QUESTION, "5")
+    assert read.url.params["viewpoint"] == "omniscient"
+    assert writes(engine) == []
+    assert f"Sanitize memory {SHORT}" in html
+    assert "as the explorer's question retrieves it now" in html
+    assert f'<pre class="memory-text">{TEXT}</pre>' in html
+    assert hidden(html, "shown_text") == TEXT
+    assert f'name="next" value="{EXPLORER_NEXT.replace("&", "&amp;")}"' in html
+    assert "Empty removes the span" in html
+    for textarea in re.findall(r"<textarea[^>]*>", html):
+        assert "maxlength" not in textarea  # the server counts code points
+    assert "← Back to the explorer" in html
+
+
+@pytest.mark.parametrize("case", ["no question", "failed read", "not retrieved", "other page"])
+def test_the_sanitize_page_without_a_text_says_so(
+    operator_client: Client, engine: FakeEngine, case: str
+) -> None:
+    back = EXPLORER_NEXT
+    memory_id = MID
+    if case == "no question":
+        back = f"{EXPLORER}?memory={MID}"
+    elif case == "failed read":
+        engine.respond("GET", RETRIEVE, 503, json=error_json("database_unavailable", "down"))
+    elif case == "not retrieved":
+        memory_id = f"{M}99"
+    else:
+        back = f"/stories/{STORY}/history/?{urlencode({'q': QUESTION})}"
+    html = operator_client.get(
+        f"{url('sanitize', memory_id)}?{urlencode({'next': back})}"
+    ).content.decode()
+    assert "Text not shown — see the explorer" in html
+    assert 'class="memory-text"' not in html
+    assert hidden(html, "shown_text") == ""
+    expected_reads = 1 if case in ("failed read", "not retrieved") else 0
+    assert len(retrieves(engine)) == expected_reads
+
+
+def test_a_valid_sanitize_post_renders_the_confirm_page_with_no_call(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = sanitize_post(operator_client).content.decode()
+    assert engine.requests == []
+    assert (
+        "Every occurrence is replaced. The original is kept only in the Engine&#x27;s audit record."
+        in html
+    )
+    assert 'class="danger"' in html
+    assert hidden(html, "idempotency_key") == KEY  # the sanitize form's key, carried forward
+    assert hidden(html, "confirmed") == "1"
+    assert (hidden(html, "span"), hidden(html, "surrogate")) == ("Tobin", "the stranger")
+    for fact in (MID, "Tobin", "the stranger", "Mara asked the stranger about the tavern fire."):
+        assert f"<code>{fact}</code>" in html
+    assert "<dt>Occurrences</dt><dd><code>1</code></dd>" in html
+    assert 'name="edit" value="1"' in html
+    assert "contains the span" not in html
+
+
+def test_the_confirm_page_escapes_and_names_an_empty_surrogate(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = sanitize_post(
+        operator_client, span="<b>x</b>", surrogate="", shown_text="a <b>x</b> b"
+    ).content.decode()
+    assert "<code>&lt;b&gt;x&lt;/b&gt;</code>" in html
+    assert "<b>x</b>" not in html
+    assert "<code>(empty — removes the span)</code>" in html
+    assert engine.requests == []
+
+
+def test_a_surrogate_containing_the_span_is_allowed_with_a_note(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = sanitize_post(operator_client, surrogate="Tobin Smith").content.decode()
+    assert "The surrogate contains the span, so the span stays in the text." in html
+    assert engine.requests == []
+
+
+def test_a_confirmed_sanitize_sends_the_rendered_key_and_returns_to_the_explorer(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = operator_client.get(f"{url('sanitize')}?{urlencode({'next': EXPLORER_NEXT})}")
+    key = hidden(page.content.decode(), "idempotency_key")
+    confirm = operator_client.post(
+        url("sanitize"),
+        {
+            "idempotency_key": key,
+            "next": EXPLORER_NEXT,
+            "span": "Tobin",
+            "surrogate": "the stranger",
+            "shown_text": TEXT,
+        },
+    ).content.decode()
+    assert hidden(confirm, "idempotency_key") == key
+    assert writes(engine) == []
+    response = operator_client.post(
+        url("sanitize"),
+        {
+            "idempotency_key": key,
+            "next": EXPLORER_NEXT,
+            "span": "Tobin",
+            "surrogate": "the stranger",
+            "shown_text": TEXT,
+            "confirmed": "1",
+        },
+    )
+    (sent,) = writes(engine)
+    assert (sent.method, sent.url.path) == ("POST", SANITIZE_PATH)
+    assert json.loads(sent.content) == {"span": "Tobin", "surrogate": "the stranger"}
+    assert sent.headers["Idempotency-Key"] == key
+    assert response.status_code == 302
+    assert response["Location"] == EXPLORER_NEXT
+    assert flashes(response) == [
+        ("success", f"Sanitized memory {SHORT} — pinned · not quarantined · tier hot")
+    ]
+
+
+def test_a_sanitize_with_no_operation_id_still_flashes_as_a_success(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("POST", SANITIZE, 200, json=unchanged())
+    response = sanitize_post(operator_client, confirmed="1")
+    assert flashes(response)[0][0] == "success"
+
+
+def test_crlf_newlines_are_sent_as_lf(operator_client: Client, engine: FakeEngine) -> None:
+    sanitize_post(
+        operator_client,
+        span="Tobin\r\nabout",
+        surrogate="him\r\nabout",
+        shown_text="Mara asked Tobin\r\nabout the fire.",
+        confirmed="1",
+    )
+    (sent,) = writes(engine)
+    assert json.loads(sent.content) == {"span": "Tobin\nabout", "surrogate": "him\nabout"}
+
+
+@pytest.mark.parametrize(
+    ("data", "field", "message"),
+    [
+        ({"span": ""}, "span", "Enter the span to replace."),
+        (
+            {"span": "x" * 2001, "shown_text": ""},
+            "span",
+            "At most 2,000 characters (this one has 2,001).",
+        ),
+        ({"surrogate": "x" * 2001}, "surrogate", "At most 2,000 characters (this one has 2,001)."),
+        (
+            {"surrogate": "Tobin"},
+            "surrogate",
+            "The surrogate is the same as the span; nothing would change",
+        ),
+        ({"span": "tobin"}, "span", "This span isn&#x27;t in the memory&#x27;s text"),
+        (
+            {"span": TEXT, "surrogate": "   "},
+            "surrogate",
+            REWRITE_INVALID,
+        ),
+        (
+            {"span": "a", "surrogate": "x" * 200, "shown_text": "a" * 20},
+            "surrogate",
+            REWRITE_INVALID,
+        ),
+    ],
+)
+def test_a_local_refusal_makes_no_call_and_keeps_the_key(
+    operator_client: Client, engine: FakeEngine, data: dict[str, str], field: str, message: str
+) -> None:
+    for confirmed in ({}, {"confirmed": "1"}):
+        html = sanitize_post(operator_client, **data, **confirmed).content.decode()
+        assert message in html
+        assert hidden(html, "idempotency_key") == KEY
+        assert "Every occurrence is replaced." not in html  # the form, not the confirm page
+    assert engine.requests == []
+
+
+def test_an_unshown_text_skips_the_presence_check(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = sanitize_post(operator_client, span="absent", shown_text="").content.decode()
+    assert "Every occurrence is replaced." in html
+    assert "<dt>Occurrences</dt>" not in html
+    assert engine.requests == []
+
+
+def test_edit_rerenders_the_form_with_the_inputs_and_no_call(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = sanitize_post(
+        operator_client, surrogate="him\nthere", confirmed="1", edit="1"
+    ).content.decode()
+    assert engine.requests == []
+    assert "Every occurrence is replaced." not in html
+    assert ">\nTobin</textarea>" in html
+    assert ">\nhim\nthere</textarea>" in html
+    assert hidden(html, "idempotency_key") == KEY
+    assert f'<pre class="memory-text">{TEXT}</pre>' in html
+
+
+def test_a_sanitize_is_405_for_other_methods(operator_client: Client, engine: FakeEngine) -> None:
+    assert operator_client.put(url("sanitize")).status_code == 405
+    assert operator_client.delete(url("sanitize")).status_code == 405
+    assert operator_client.head(url("sanitize")).status_code == 200
+
+
+def test_the_sanitize_view_marks_its_text_fields_sensitive(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = sanitize_post(operator_client)
+    assert tuple(response.wsgi_request.sensitive_post_parameters) == (
+        "span",
+        "surrogate",
+        "shown_text",
+    )
+
+
+@pytest.mark.parametrize("shown", [TEXT, ""])
+def test_span_not_found_lands_on_the_span_with_a_fresh_key(
+    operator_client: Client, engine: FakeEngine, shown: str
+) -> None:
+    engine.respond("POST", SANITIZE, 422, json=error_json("span_not_found", "nope", memory_id=MID))
+    html = sanitize_post(operator_client, shown_text=shown, confirmed="1").content.decode()
+    suffix = " (it may have changed since this page loaded)"
+    expected = "This span isn&#x27;t in the memory&#x27;s text" + (suffix if shown else "")
+    assert f'<span class="errorlist field-error">{expected}</span>' in html
+    assert hidden(html, "idempotency_key") not in ("", KEY)
+    assert ">\nTobin</textarea>" in html
+
+
+@pytest.mark.parametrize(
+    ("field", "message", "shown"),
+    [
+        ("body.surrogate", REWRITE_INVALID, "field"),
+        ("body.span", "the Engine&#x27;s words", "field"),
+        (None, "the Engine&#x27;s words", "above"),
+    ],
+)
+def test_a_validation_error_lands_on_its_field(
+    operator_client: Client, engine: FakeEngine, field: str | None, message: str, shown: str
+) -> None:
+    details = {"field": field} if field else {}
+    engine.respond(
+        "POST", SANITIZE, 422, json=error_json("validation_error", "the Engine's words", **details)
+    )
+    html = sanitize_post(operator_client, confirmed="1").content.decode()
+    if shown == "field":
+        assert f'<span class="errorlist field-error">{message}</span>' in html
+    else:
+        assert f'<p class="errorlist">{message}</p>' in html
+    assert hidden(html, "idempotency_key") != KEY
+
+
+def test_a_guardrail_violation_shows_above_the_fields_with_the_inputs_kept(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    violation = {
+        "policy_id": "no_slurs",
+        "name": "No slurs",
+        "message": "The surrogate uses a slur",
+        "kind": "forbidden_content",
+    }
+    engine.respond(
+        "POST",
+        SANITIZE,
+        422,
+        json=error_json(
+            "guardrail_violation", "refused", violations=[violation], model_calls=1, elapsed_ms=2
+        ),
+    )
+    html = sanitize_post(operator_client, confirmed="1").content.decode()
+    assert '<table class="violations">' in html
+    assert "<code>no_slurs</code>" in html
+    assert "The surrogate uses a slur" in html
+    assert html.index("violations") < html.index('name="span"')
+    assert ">\nthe stranger</textarea>" in html
+    assert hidden(html, "idempotency_key") != KEY
+
+
+def test_sanitize_module_off_renders_the_greyed_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("POST", SANITIZE, 409, json=error_json("module_off", "off", module="episodic"))
+    response = sanitize_post(operator_client, confirmed="1")
+    assert response.status_code == 409
+    assert "Not available for this story" in response.content.decode()
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "text"),
+    [
+        (404, "not_found", "Not found (it may have been deleted or truncated)"),
+        (409, "story_archived", "This story is archived"),
+        (409, "idempotency_conflict", "That form was already used for another request"),
+    ],
+)
+def test_a_sanitize_refusal_shows_above_the_form(
+    operator_client: Client, engine: FakeEngine, status: int, code: str, text: str
+) -> None:
+    engine.respond("POST", SANITIZE, status, json=error_json(code, "gone"))
+    html = sanitize_post(operator_client, confirmed="1").content.decode()
+    assert '<p class="errorlist sanitize-refusal">' + text in html
+    assert hidden(html, "idempotency_key") != KEY
+    assert ">\nTobin</textarea>" in html
+
+
+def test_sanitize_erasure_pending_is_the_held_wrapper(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond(
+        "POST", SANITIZE, 503, json=error_json("erasure_pending", "held", story_id=STORY)
+    )
+    response = sanitize_post(operator_client, confirmed="1")
+    assert response.status_code == 503
+    assert held_text(None) in response.content.decode()
+
+
+@pytest.mark.parametrize("failure", ["503", "unreachable"])
+def test_a_sanitize_failure_renders_the_panel_above_the_form(
+    operator_client: Client, engine: FakeEngine, failure: str
+) -> None:
+    if failure == "503":
+        engine.respond("POST", SANITIZE, 503, json=error_json("database_unavailable", "down"))
+        expected = "database_unavailable"
+    else:
+        engine.fail("POST", SANITIZE, httpx.ConnectError("down"))
+        expected = "Engine unreachable"
+    html = sanitize_post(operator_client, confirmed="1").content.decode()
+    assert expected in html
+    assert ">\nTobin</textarea>" in html
+    assert hidden(html, "idempotency_key") != KEY
+
+
+def test_a_sanitize_records_one_row_with_only_lengths(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    sanitize_post(operator_client, confirmed="1")
+    (recorded,) = EngineOperation.objects.all()
+    assert (recorded.kind, recorded.http_method, recorded.path) == (
+        "sanitize_memory",
+        "POST",
+        SANITIZE_PATH,
+    )
+    assert (recorded.entity_type, recorded.entity_id, recorded.story_id) == ("story", STORY, STORY)
+    assert recorded.idempotency_key == KEY
+    assert recorded.request["body"] == {"span_length": 5, "surrogate_length": 12}
+    assert "Tobin" not in json.dumps(recorded.request) + json.dumps(recorded.response)

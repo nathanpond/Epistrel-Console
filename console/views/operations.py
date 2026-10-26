@@ -16,6 +16,7 @@ from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.models import EngineOperation
 from console.operation_log import (
+    SANITIZE_KIND,
     input_violations,
     is_turn,
     output_violations,
@@ -143,6 +144,16 @@ def _check_url(row: EngineOperation) -> str:
     return check_url(row.entity_id, row.job_id, **params)
 
 
+# Kinds whose Engine record would show what the row itself never keeps (#144: the Engine's
+# ``sanitized`` event holds the surrogate, and the memory read back holds its text).
+NO_FETCH_KINDS = frozenset({SANITIZE_KIND})
+
+
+def fetch_offered(row: EngineOperation) -> bool:
+    """Whether the detail page offers the ``?fetch=1`` re-read of the Engine's record."""
+    return row.kind not in NO_FETCH_KINDS
+
+
 @require_safe
 def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     row = get_object_or_404(EngineOperation, pk=pk)
@@ -155,8 +166,9 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "output_violations": violation_rows(output_violations(row.response)),
         "job_text": _rebuild_job_text(row),
         "check_url": _check_url(row),
+        "fetch_offered": fetch_offered(row),
     }
-    if request.GET.get("fetch") == "1" and row.engine_operation_id:
+    if request.GET.get("fetch") == "1" and row.engine_operation_id and context["fetch_offered"]:
         fetched: OperationRecord | None = None
         fetch_error: ErrorPanel | None = None
         try:

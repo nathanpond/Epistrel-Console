@@ -4,12 +4,17 @@ row, and reading guardrail facts back out of a stored response.
 The recorder (``console.engine_access.RecordingEngineClient``) observes; this module decides
 what the row says. Writing a row never masks the Engine's answer: a failed write is logged at
 ERROR (kind and status only, never a body) and swallowed.
+
+Some kinds never store what they carried (#144): :data:`REQUEST_REDUCERS` maps a kind to what
+its request body becomes and :data:`RESPONSE_REDUCERS` to what its JSON answer becomes, both
+before the row is written. A sanitize keeps only the span's and the surrogate's lengths and,
+in its answer, the memory text's and every message's length (see :func:`sanitize_response`).
 """
 
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,11 +56,96 @@ class Observed:
     call: Call | None = None  # the running client method (its arguments name the entity, #64)
 
 
+# --- kinds that keep only lengths (#144) ---------------------------------------------------------
+
+SANITIZE_KIND = "sanitize_memory"
+TEXT_LENGTH = "text_length"
+
+
+def _length(text: str) -> dict[str, int]:
+    return {TEXT_LENGTH: len(text)}
+
+
+def _span(body: object) -> str | None:
+    """The sanitize request's ``span`` as sent (``None`` for a body of another shape)."""
+    span = body.get("span") if isinstance(body, dict) else None
+    return span if isinstance(span, str) and span else None
+
+
+def sanitize_request(body: object) -> dict[str, int | None]:
+    """A sanitize's stored request body: ``{"span_length", "surrogate_length"}`` (``len`` in
+    code points, as the Engine counts), both ``None`` for a body of another shape, never the
+    body itself."""
+    span = body.get("span") if isinstance(body, dict) else None
+    surrogate = body.get("surrogate") if isinstance(body, dict) else None
+    if isinstance(span, str) and isinstance(surrogate, str):
+        return {"span_length": len(span), "surrogate_length": len(surrogate)}
+    return {"span_length": None, "surrogate_length": None}
+
+
+def _messages(value: Any) -> Any:
+    """``value`` with every string ``message`` (at any depth) replaced by its length."""
+    if isinstance(value, dict):
+        return {
+            k: _length(v) if k == "message" and isinstance(v, str) else _messages(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_messages(item) for item in value]
+    return value
+
+
+def _scrub(value: Any, span: str) -> Any:
+    """``value`` with every string that contains ``span`` replaced by its length."""
+    if isinstance(value, str):
+        return _length(value) if span in value else value
+    if isinstance(value, dict):
+        return {k: _scrub(v, span) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub(item, span) for item in value]
+    return value
+
+
+def sanitize_response(body: object, request_body: object) -> object:
+    """A sanitize's stored answer: the ``MemoryWritten`` with ``memory.text`` as
+    ``{"text_length": N}``; a refusal keeps ``error.code`` and the violations' policy ids, names
+    and kinds, with ``error.message`` and every ``message`` inside ``error.details`` as lengths
+    (a guardrail message may quote the surrogate). Then any string left anywhere that contains
+    the request's span becomes its length too."""
+    reduced: Any = body
+    if isinstance(reduced, dict):
+        reduced = dict(reduced)
+        memory = reduced.get("memory")
+        if isinstance(memory, dict) and isinstance(memory.get("text"), str):
+            reduced["memory"] = {**memory, "text": _length(memory["text"])}
+        error = reduced.get("error")
+        if isinstance(error, dict):
+            error = dict(error)
+            if isinstance(error.get("message"), str):
+                error["message"] = _length(error["message"])
+            if "details" in error:
+                error["details"] = _messages(error["details"])
+            reduced["error"] = error
+    span = _span(request_body)
+    return _scrub(reduced, span) if span is not None else reduced
+
+
+# kind → what its request body is stored as (before ``redact``).
+REQUEST_REDUCERS: Mapping[str, Callable[[object], object]] = {SANITIZE_KIND: sanitize_request}
+# kind → what its JSON answer is stored as, given the request body as sent.
+RESPONSE_REDUCERS: Mapping[str, Callable[[object, object], object]] = {
+    SANITIZE_KIND: sanitize_response
+}
+
+
 def request_json(observed: Observed) -> dict[str, Any]:
-    """``{"body", "headers"[, "query"]}``, redacted; Authorization and the principal never."""
+    """``{"body", "headers"[, "query"]}``, redacted; Authorization and the principal never. A
+    kind in :data:`REQUEST_REDUCERS` stores its reduced body."""
     sent = {name.lower(): value for name, value in observed.headers.items()}
     kept = {name: sent[name.lower()] for name in KEPT_REQUEST_HEADERS if name.lower() in sent}
-    stored: dict[str, Any] = {"body": observed.body, "headers": kept}
+    reducer = REQUEST_REDUCERS.get(observed.kind)
+    body = reducer(observed.body) if reducer is not None else observed.body
+    stored: dict[str, Any] = {"body": body, "headers": kept}
     if observed.params:
         stored["query"] = dict(observed.params)
     redacted: dict[str, Any] = redact(stored)
@@ -266,6 +356,10 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     hook = observed.operation.record_response if observed.operation else None
     if hook is not None and stored is not None:
         stored = hook(stored)  # #86: an erasure dry run's snippets become "***"
+    rejected = is_guardrail_rejection(code, stored)  # on the answer before any reduction
+    reducer = RESPONSE_REDUCERS.get(observed.kind)
+    if reducer is not None and stored is not None:
+        stored = reducer(stored, observed.body)  # #144: a sanitize keeps only lengths
     job_id = _str(obj, "job_id") if status == 202 else None
     return {
         "job_id": job_id[:64] if job_id else None,
@@ -279,7 +373,7 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
         "idempotency_key": _fit(key, 255),
         "replayed": replayed,
         "story_id": _ulid_or_blank(story_id(observed.path, obj)),
-        "is_guardrail_rejection": is_guardrail_rejection(code, stored),
+        "is_guardrail_rejection": rejected,
     }
 
 
