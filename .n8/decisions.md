@@ -1413,3 +1413,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The unconfirmed notice reads "Couldn't confirm whether N closed version(s) is/are still closed: <reason>".
   **Why:** Discretion fixes the first half and says "with the reason"; the reason follows a colon.
   **Issue:** #137
+- **Decision:** The lineage view's reads run effective config → `get_story` → facts reads → `list_predicates`, not the planned config → facts → `get_story` → predicates.
+  **Why:** #135's `inspect_page` reads the story before any tab's `build`; changing the shell for one view isn't worth it, and the registry read still comes after the facts reads and runs on every render the gate allows.
+  **Issue:** #138
+- **Decision:** With subject/predicate params whose lineage read lacks the fact, the view always makes one `find_fact` read; if it finds the fact under the same pair, a capped read gives the "beyond the first 2,000" message and a complete read gives the not-in-timeline one.
+  **Why:** The AC asks for one `find_fact` when the fact isn't in the read; this order also lets a capped read tell "beyond" from "stale params".
+  **Issue:** #138
+- **Decision:** The incomplete-read warning is left out when the view shows the "beyond the first 2,000" message, and the header names the subject and predicate only once they are confirmed (the fact is in the lineage read, or `find_fact` returned it).
+  **Why:** The two messages say the same thing, and stale params shouldn't be shown as the fact's subject.
+  **Issue:** #138
+- **Decision:** A capped lineage read's unconfirmed closures use a new state-rule reason `LINEAGE_CAPPED` ("More than 2,000 versions of this subject and predicate…") instead of #137's current-set "capped" wording. `lineage_states` reuses `fact_states`, with a stand-in current set (every version of the component when the read is complete).
+  **Why:** The lineage view makes no current-set read, so #137's wording would be wrong; reusing `fact_states` keeps one state rule.
+  **Issue:** #138
+- **Decision:** 422 on a lineage read shows #43's generic panel in place of the rows; `viewpoint_unresolved` and 403 `omniscient_required` show "This read needs the omniscient viewpoint", the same as the Canon tab.
+  **Why:** The lineage view has no form to place a field error on; this keeps convention 10's text the same as #137's.
+  **Issue:** #138
+- **Decision:** `_fact_row.html` and `_lineage_row.html` link "first closed by" ids to the lineage view (with the row's subject and predicate), as well as the id, supersedes and superseded-by ids. No other Console page renders fact ids yet (#139's read set holds entity ids), so no other links were added.
+  **Why:** Convention 3 says every fact id links the lineage view; a truncated closer then gets the not-in-timeline message.
+  **Issue:** #138
+- **Decision:** A version whose `tx_from` doesn't parse has no tx bar ("—"); its text columns still render.
+  **Why:** The Engine always sends ISO datetimes, but the page shouldn't fail on a bad one.
+  **Issue:** #138

@@ -1,0 +1,218 @@
+{
+  "facts": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV1",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV1",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QV1",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PA1",
+        "polarity": "affirmed",
+        "qualifiers": {
+          "mood": "calm"
+        },
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 50,
+            "inner": 50
+          },
+          "end": {
+            "outer": 60,
+            "inner": 60
+          }
+        }
+      },
+      "valid_from": 50,
+      "valid_to": 60,
+      "valid_from_inner": 50,
+      "valid_to_inner": 60,
+      "tx_from": "2026-10-24T14:05:00.000000Z",
+      "tx_to": null,
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": null,
+      "supersedes": [],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV3",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KK7",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QV3",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PB1",
+        "polarity": "affirmed",
+        "qualifiers": {},
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 10,
+            "inner": 10
+          },
+          "end": {
+            "outer": 30,
+            "inner": 30
+          }
+        }
+      },
+      "valid_from": 10,
+      "valid_to": 30,
+      "valid_from_inner": 10,
+      "valid_to_inner": 30,
+      "tx_from": "2026-10-24T14:10:00.000000Z",
+      "tx_to": "2026-10-24T14:20:00.000000Z",
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": "01JB2Z8Y5Q3W6K9M1N4P7R0KV5",
+      "supersedes": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0KV7"
+      ],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV5",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV5",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QV5",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PC1",
+        "polarity": "affirmed",
+        "qualifiers": {},
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 25,
+            "inner": 25
+          },
+          "end": null
+        }
+      },
+      "valid_from": 25,
+      "valid_to": null,
+      "valid_from_inner": 25,
+      "valid_to_inner": null,
+      "tx_from": "2026-10-24T14:20:00.000000Z",
+      "tx_to": null,
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": null,
+      "supersedes": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0KV3"
+      ],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV6",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV6",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QV6",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PB1",
+        "polarity": "negated",
+        "qualifiers": {
+          "part": "remainder"
+        },
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 10,
+            "inner": 10
+          },
+          "end": {
+            "outer": 25,
+            "inner": 25
+          }
+        }
+      },
+      "valid_from": 10,
+      "valid_to": 25,
+      "valid_from_inner": 10,
+      "valid_to_inner": 25,
+      "tx_from": "2026-10-24T14:20:00.000000Z",
+      "tx_to": null,
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": null,
+      "supersedes": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0KV3"
+      ],
+      "anchored_to": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0KV7",
+      "lineage_id": "01JB2Z8Y5Q3W6K9M1N4P7R0KK7",
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0QV7",
+      "proposition": {
+        "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PA1",
+        "polarity": "affirmed",
+        "qualifiers": {},
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 0,
+            "inner": 0
+          },
+          "end": {
+            "outer": 10,
+            "inner": 10
+          }
+        }
+      },
+      "valid_from": 0,
+      "valid_to": 10,
+      "valid_from_inner": 0,
+      "valid_to_inner": 10,
+      "tx_from": "2026-10-24T14:00:00.000000Z",
+      "tx_to": "2026-10-24T14:10:00.000000Z",
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": null,
+      "superseded_by": "01JB2Z8Y5Q3W6K9M1N4P7R0KV3",
+      "supersedes": [],
+      "anchored_to": null
+    }
+  ],
+  "next_cursor": null,
+  "timeline_revision": 7
+}

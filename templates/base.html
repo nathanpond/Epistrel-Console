@@ -134,6 +134,17 @@
     tr.fact-superseded td { color: #8c959f; }
     tr.fact-superseded td.proposition { text-decoration: line-through; }
     table.canon-facts td.more dl { margin: 0; }
+    table.lineage td.more dl { margin: 0; }
+    table.lineage th.track-head, table.lineage td.track { width: 240px; min-width: 240px; }
+    table.lineage div.track { position: relative; width: 240px; height: 1rem; background: #f6f8fa; }
+    table.lineage span.bar { position: absolute; top: 0; bottom: 0; box-sizing: border-box; font-size: 0.75em; line-height: 1rem; overflow: hidden; }
+    table.lineage span.bar span.open-start { position: absolute; left: 2px; }
+    table.lineage span.bar span.open-end { position: absolute; right: 2px; }
+    span.bar-current { background: #0969da; color: #fff; }
+    span.bar-closure_undone { background: #0969da; color: #fff; outline: 2px dashed #0a3069; outline-offset: -2px; }
+    span.bar-superseded { background: #8c959f; color: #fff; }
+    span.bar-unconfirmed { background: transparent; border: 1px solid #8c959f; color: #57606a; }
+    tr.this-version td { background: #fff8c5; }
     p.proposal-actions form { display: inline; }
     mark.mention { background: #ddf4ff; border-bottom: 2px solid #0969da; }
     sup.mention-number { color: #0969da; font-size: 0.7em; }

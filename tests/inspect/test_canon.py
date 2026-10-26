@@ -27,13 +27,19 @@ from django.test import Client, override_settings
 
 from console.canon import (
     CURRENT_STATE,
+    Bars,
     CurrentSet,
+    Span,
+    bar_spans,
     bound_text,
     fact_states,
+    find_fact,
+    lineage_component,
     literal_view,
     proposition_time_text,
     qualifier_items,
     question_text,
+    ulid_predecessor,
 )
 from console.engine.client import EngineClient
 from console.engine.models import FactBody, FactListBody, Instant, Interval, TypedLiteral
@@ -388,7 +394,11 @@ def test_a_set_object_polarity_qualifiers_and_visibility(
     assert "instant at 60 min (granularity day, until 1500 min)" in d
     assert f"<code>{P}EV1</code>" in d
     assert '<span title="latent">Latent</span>' in d
-    assert f'<dt>Anchored to</dt><dd><code title="{FB1}">…4P7R0FB1</code></dd>' in d
+    # Convention 3: "Anchored to" links the lineage view by id alone (#138).
+    assert (
+        f'<dt>Anchored to</dt><dd><a href="{TAB}{FB1}/lineage/">'
+        f'<code title="{FB1}">…4P7R0FB1</code></a></dd>'
+    ) in d
 
 
 def test_characters_visibility_without_characters_reads_none_listed(
@@ -771,3 +781,469 @@ def test_a_parsed_fact_keeps_unknown_enum_values() -> None:
     assert parsed is not None
     assert parsed.proposition.polarity == "hedged"
     assert parsed.visibility.scope == "rumour"
+
+
+# --- the lineage view (#138) ---------------------------------------------------------------------
+#
+# ``facts_lineage.json`` holds every version of ``located_at(Tobin)``, in id order:
+#
+# - ``KV1``: no supersede link to the others (``mood=calm``): never in their lineage;
+# - ``KV7`` (tx 14:00, lineage ``KK7``) closed by ``KV3``'s explicit supersede (same lineage);
+# - ``KV3`` (tx 14:10) closed by ``KV5``, an automatic supersede (its own ``lineage_id``), with
+#   ``KV6`` its remainder (tx 14:20 too, NOT, its own ``lineage_id``).
+
+KV1, KV3, KV5, KV6, KV7 = (P + s for s in ("KV1", "KV3", "KV5", "KV6", "KV7"))
+NOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)
+NOT_IN_TIMELINE = "That fact version isn&#x27;t in the active timeline (it may have been truncated)"
+BEYOND = (
+    "This fact version is beyond the first 2,000 versions of its subject and predicate; its "
+    "lineage can&#x27;t be drawn"
+)
+INCOMPLETE = (
+    "This subject and predicate have more than 2,000 versions; only the first 2,000 were read, "
+    "so this lineage may be incomplete."
+)
+
+
+def lineage_page(*ids: str, next_cursor: str | None = None) -> dict[str, Any]:
+    """A ``FactListBody`` of ``facts_lineage.json``'s versions ``ids`` (default: all five)."""
+    shown = fixture("facts_lineage")["facts"]
+    if ids:
+        shown = [f for f in shown if f["id"] in ids]
+    return page(*shown, next_cursor=next_cursor) if shown else page_of_none(next_cursor)
+
+
+def page_of_none(next_cursor: str | None = None) -> dict[str, Any]:
+    return {"facts": [], "next_cursor": next_cursor, "timeline_revision": 7}
+
+
+def version(fid: str, **over: Any) -> dict[str, Any]:
+    found: dict[str, Any]
+    (found,) = lineage_page(fid)["facts"]
+    found.update(over)
+    return found
+
+
+def lineage_path(fid: str) -> str:
+    return f"{TAB}{fid}/lineage/"
+
+
+def open_lineage(client: Client, fid: str, query: str = "") -> str:
+    response = client.get(f"{lineage_path(fid)}{query}")
+    assert response.status_code == 200
+    return response.content.decode()
+
+
+KEY = f"?subject={TOBIN}&predicate={LOC}"
+
+
+def lineage_rows(html: str) -> list[str]:
+    return re.findall(r'<tr id="f-([^"]+)" class="lineage-row', html)
+
+
+def lineage_row(html: str, fid: str) -> str:
+    found = re.search(rf'<tr id="f-{fid}" class="lineage-row[^"]*">(.*?)</tr>', html, re.S)
+    assert found is not None, fid
+    return found.group(0)
+
+
+def bar(row_html: str, track: str) -> tuple[str, str]:
+    found = re.search(
+        rf'<td class="track {track}-track"><div class="track"><span class="bar [^"]*" '
+        r'style="left: ([\d.]+)%; width: ([\d.]+)%"',
+        row_html,
+    )
+    assert found is not None, track
+    return found.group(1), found.group(2)
+
+
+@pytest.fixture
+def now(monkeypatch: pytest.MonkeyPatch) -> datetime:
+    from django.utils import timezone
+
+    monkeypatch.setattr(timezone, "now", lambda: NOW)
+    return NOW
+
+
+def test_the_lineage_follows_supersede_links_across_lineage_ids(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    answer(engine, lineage_page())
+    html = open_lineage(operator_client, KV3, KEY)
+    (call,) = reads(engine)
+    assert sent(call) == {
+        "viewpoint": "omniscient",
+        "limit": "500",
+        "subject": TOBIN,
+        "predicate": LOC,
+        "include_superseded": "true",
+    }
+    # The automatic-supersede successor (another lineage_id) and the remainder are in; KV1,
+    # same subject and predicate but no supersede link, is out. Ordered by tx_from, then id.
+    assert lineage_rows(html) == [KV7, KV3, KV5, KV6]
+    # Read order: the shell's two reads, the facts read, then convention 2's registry read.
+    paths = [r.url.path for r in engine.requests]
+    assert paths == [
+        f"/stories/{STORY}/effective-config",
+        f"/stories/{STORY}",
+        FACTS_PATH,
+        f"/stories/{STORY}/predicates",
+    ]
+    assert "<title>Inspect · Canon lineage · Harbour</title>" in html
+    heading = re.search(r'<h2 class="lineage-heading">.*?</h2>', html, re.S)
+    assert heading is not None
+    assert text(heading.group(0)) == "Lineage of …4P7R0KV3 · Tobin located_at 4 versions"
+    assert f'<a href="{TAB}">Back to Canon</a>' in html
+    # The Canon tab stays selected.
+    assert f'<a class="active" aria-current="page" href="{TAB}">Canon</a>' in html
+
+
+def test_lineage_states_and_links(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    answer(engine, lineage_page())
+    html = open_lineage(operator_client, KV3, KEY)
+    states = {fid: text(cell(lineage_row(html, fid), "state")) for fid in lineage_rows(html)}
+    assert states == {
+        KV7: "superseded",
+        KV3: "superseded ← this version",
+        KV5: "current",
+        KV6: "current",
+    }
+    this = lineage_row(html, KV3)
+    assert 'class="lineage-row state-superseded this-version"' in this
+    assert text(cell(this, "links")) == ("supersedes …4P7R0KV7 superseded by …4P7R0KV5, …4P7R0KV6")
+    key = f"?subject={TOBIN}&amp;predicate={LOC}"
+    for fid in (KV3, KV7, KV5, KV6):
+        assert f'<a href="{lineage_path(fid)}{key}">' in this
+    assert "No other versions." not in html
+
+
+def test_the_bars_are_proportional(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    answer(engine, lineage_page())
+    html = open_lineage(operator_client, KV3, KEY)
+    # Valid axis 0..30 min; tx axis 14:00 .. now (15:00).
+    assert bar(lineage_row(html, KV7), "valid") == ("0.00", "33.33")
+    assert bar(lineage_row(html, KV3), "valid") == ("33.33", "66.67")
+    assert bar(lineage_row(html, KV5), "valid") == ("83.33", "16.67")  # open end: to 100%
+    assert bar(lineage_row(html, KV7), "tx") == ("0.00", "16.67")
+    assert bar(lineage_row(html, KV3), "tx") == ("16.67", "16.67")  # ends where KV5 starts
+    assert bar(lineage_row(html, KV5), "tx") == ("33.33", "66.67")  # current: to now
+    assert '<span class="open-end">…</span>' in lineage_row(html, KV5)
+    assert "0 min … 30 min" in html
+    assert "2026-10-24 14:00 UTC … now" in html
+    assert 'title="Recorded 2026-10-24 14:10:00 UTC → 2026-10-24 14:20:00 UTC"' in html
+
+
+def test_the_complement_makes_no_current_set_read(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    answer(engine, lineage_page())
+    open_lineage(operator_client, KV7, KEY)
+    assert [sent(r).get("include_superseded") for r in reads(engine)] == ["true"]
+
+
+def test_a_fact_id_only_link_resolves_through_one_limit_1_read(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    answer(engine, lineage_page(KV3), lineage_page())
+    html = open_lineage(operator_client, KV3)
+    find, read = reads(engine)
+    assert sent(find) == {
+        "viewpoint": "omniscient",
+        "limit": "1",
+        "include_superseded": "true",
+        "cursor": P + "KV2",  # the predecessor: "after this id" is KV3 itself
+    }
+    assert (sent(read)["subject"], sent(read)["predicate"]) == (TOBIN, LOC)
+    assert lineage_rows(html) == [KV7, KV3, KV5, KV6]
+
+
+@pytest.mark.parametrize(
+    "query", ["", f"?subject={TOBIN}", f"?subject={TOBIN.lower()}&predicate={LOC}", "?predicate=x"]
+)
+def test_missing_or_malformed_params_resolve_by_id(
+    operator_client: Client, engine: FakeEngine, now: datetime, query: str
+) -> None:
+    answer(engine, lineage_page(KV3), lineage_page())
+    open_lineage(operator_client, KV3, query)
+    assert sent(reads(engine)[0])["limit"] == "1"
+
+
+@pytest.mark.parametrize("found", [lineage_page(KV5), page_of_none()])
+def test_a_fact_the_resolve_doesnt_return_is_not_in_the_timeline(
+    operator_client: Client, engine: FakeEngine, found: dict[str, Any]
+) -> None:
+    answer(engine, found, lineage_page())
+    html = open_lineage(operator_client, KV3)
+    assert len(reads(engine)) == 1  # no further facts read
+    assert NOT_IN_TIMELINE in html
+    assert lineage_rows(html) == []
+    assert f'<a href="{TAB}">Back to Canon</a>' in html
+    # Convention 2's name reads still run.
+    assert any(r.url.path == f"/stories/{STORY}/predicates" for r in engine.requests)
+
+
+def test_stale_params_find_the_fact_then_read_its_lineage(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    answer(engine, page(fact(FC1)), lineage_page(KV3), lineage_page())
+    html = open_lineage(operator_client, KV3, f"?subject={MARA}&predicate={HOLDS}")
+    stale, find, read = reads(engine)
+    assert (sent(stale)["subject"], sent(stale)["predicate"]) == (MARA, HOLDS)
+    assert sent(find)["limit"] == "1"
+    assert (sent(read)["subject"], sent(read)["predicate"]) == (TOBIN, LOC)
+    assert lineage_rows(html) == [KV7, KV3, KV5, KV6]
+
+
+def test_stale_params_and_a_fact_not_found(operator_client: Client, engine: FakeEngine) -> None:
+    answer(engine, page(fact(FC1)), page_of_none())
+    html = open_lineage(operator_client, KV3, f"?subject={MARA}&predicate={HOLDS}")
+    assert len(reads(engine)) == 2
+    assert NOT_IN_TIMELINE in html
+
+
+def test_a_non_ulid_fact_id_is_a_404_with_no_engine_call(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    for bad in (KV3.lower(), KV3[:-1], KV3[:-1] + "U"):
+        assert operator_client.get(lineage_path(bad)).status_code == 404
+    assert engine.requests == []
+
+
+def test_a_lineage_read_past_four_pages_is_flagged_incomplete(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    capped = [
+        lineage_page(KV7, KV3, next_cursor=KV3),
+        page(fact(FB1, id=P + "KW1", supersedes=[]), next_cursor=P + "KW1"),
+        page(fact(FB1, id=P + "KW2", supersedes=[]), next_cursor=P + "KW2"),
+        page(fact(FB1, id=P + "KW3", supersedes=[]), next_cursor=P + "KW3"),
+    ]
+    answer(engine, *capped)
+    html = open_lineage(operator_client, KV7, KEY)
+    calls = reads(engine)
+    assert [sent(r).get("cursor") for r in calls] == [None, KV3, P + "KW1", P + "KW2"]
+    assert INCOMPLETE in html
+    assert html.index(INCOMPLETE) < html.index('<table class="lineage">')
+    # KV3 is closed and nothing read names it: with a capped read it can't be confirmed.
+    assert text(cell(lineage_row(html, KV3), "state")) == "closed · not confirmed"
+    assert bar(lineage_row(html, KV3), "tx") == ("16.67", "16.67")  # ends at its tx_to
+
+
+def test_a_fact_beyond_the_first_2000_versions(operator_client: Client, engine: FakeEngine) -> None:
+    capped = [
+        page(fact(FB1, id=P + f"KW{i}", supersedes=[]), next_cursor=P + f"KW{i}") for i in range(4)
+    ]
+    answer(engine, *capped, lineage_page(KV5))
+    html = open_lineage(operator_client, KV5, KEY)
+    assert len(reads(engine)) == 5  # the capped lineage read, then one find_fact
+    assert BEYOND in html
+    assert NOT_IN_TIMELINE not in html
+    assert INCOMPLETE not in html
+
+
+def test_an_id_only_link_beyond_the_first_2000_versions(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    capped = [
+        page(fact(FB1, id=P + f"KW{i}", supersedes=[]), next_cursor=P + f"KW{i}") for i in range(4)
+    ]
+    answer(engine, lineage_page(KV5), *capped)
+    html = open_lineage(operator_client, KV5)
+    assert len(reads(engine)) == 5
+    assert BEYOND in html
+
+
+def test_a_closure_no_row_names_in_a_complete_read_is_undone(
+    operator_client: Client, engine: FakeEngine, now: datetime
+) -> None:
+    # KV7 alone: closed (tx_to 14:10), and the complete read holds nothing that closes it.
+    answer(engine, lineage_page(KV7, KV1))
+    html = open_lineage(operator_client, KV7, KEY)
+    assert lineage_rows(html) == [KV7]
+    r = lineage_row(html, KV7)
+    assert text(cell(r, "state")).startswith("current (closure undone) ← this version")
+    assert "state-closure_undone" in r
+    assert bar(r, "tx") == ("0.00", "100.00")  # drawn to now
+    assert "2026-10-24 14:10:00 UTC" in cell(r, "tx-time")  # the stored tx_to stays in the text
+    assert "No other versions." in html
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "shown"),
+    [
+        (404, error_json("not_found", "gone"), NOT_FOUND),
+        (422, error_json("validation_error", "bad"), "validation_error"),
+        (503, error_json("ledger_unavailable", "down"), "ledger_unavailable"),
+        (
+            422,
+            error_json("viewpoint_unresolved", "who?"),
+            "This read needs the omniscient viewpoint",
+        ),
+        (403, error_json("omniscient_required", "no"), "This read needs the omniscient viewpoint"),
+    ],
+)
+def test_a_failed_lineage_read_shows_the_error_in_place_of_the_rows(
+    operator_client: Client, engine: FakeEngine, status: int, body: dict[str, Any], shown: str
+) -> None:
+    engine.respond_sequence(
+        "GET",
+        FACTS,
+        [
+            {"status": 200, "json": lineage_page(KV3, KV7, next_cursor=KV7)},
+            {"status": status, "json": body},
+        ],
+    )
+    html = open_lineage(operator_client, KV3, KEY)
+    assert shown in html
+    assert lineage_rows(html) == []  # no partial lineage
+    assert f'<a href="{TAB}">Back to Canon</a>' in html
+    assert "Lineage of" in html
+    assert any(r.url.path == f"/stories/{STORY}/predicates" for r in engine.requests)
+
+
+def test_module_off_on_the_lineage_read_renders_the_greyed_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", FACTS, 409, json=error_json("module_off", "lite", module="pipeline"))
+    html = open_lineage(operator_client, KV3, KEY)
+    assert '<div class="panel unavailable">' in html
+    assert 'class="config-changed"' in html
+
+
+def test_a_greyed_canon_tab_makes_no_lineage_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=lite())
+    html = open_lineage(operator_client, KV3, KEY)
+    assert reads(engine) == []
+    assert '<div class="panel unavailable">' in html
+
+
+def test_the_canon_tab_links_fact_ids_to_the_lineage(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    answer(engine, page(), current(FC1))
+    html = tab(operator_client, "?include_superseded=on")
+    key = f"?subject={TOBIN}&amp;predicate={LOC}"
+    a = row(html, FA1)
+    assert f'<td class="fact-id"><a href="{lineage_path(FA1)}{key}">' in a
+    assert f'superseded by <a href="{lineage_path(FB1)}{key}">' in a
+    assert f'supersedes <a href="{lineage_path(FA1)}{key}">' in row(html, FB1)
+
+
+# --- the lineage helpers -------------------------------------------------------------------------
+
+
+def test_ulid_predecessor_decrements_with_borrow() -> None:
+    assert ulid_predecessor(P + "KV3") == P + "KV2"
+    assert ulid_predecessor(P + "KV0") == P + "KTZ"  # borrow (no U in Crockford)
+    assert ulid_predecessor(P + "K00") == P + "JZZ"  # no I or L either
+    assert ulid_predecessor("1" + "0" * 25) == "0" + "Z" * 25
+    assert ulid_predecessor("0" * 26) is None  # no predecessor: sent without a cursor
+    assert ulid_predecessor("not an id") is None
+
+
+def test_the_all_zero_id_resolves_without_a_cursor() -> None:
+    zero = "0" * 26
+    fake = FakeEngine()
+    fake.respond("GET", FACTS, 200, json=page(fact(FB1, id=zero)))
+    client = EngineClient("http://engine.test", "key", transport=fake.transport)
+    found = find_fact(client, STORY, zero)
+    assert found is not None
+    assert found.id == zero
+    assert "cursor" not in sent(reads(fake)[0])
+
+
+def facts_of(*bodies: dict[str, Any]) -> list[FactBody]:
+    body = FactListBody.from_json(page(*bodies))
+    assert body is not None
+    return body.facts
+
+
+def test_the_lineage_component_excludes_unlinked_versions() -> None:
+    versions = facts_of(*fixture("facts_lineage")["facts"])
+    assert [f.id for f in lineage_component(versions, KV6)] == [KV7, KV3, KV5, KV6]
+    assert [f.id for f in lineage_component(versions, KV1)] == [KV1]
+    assert lineage_component(versions, FA1) == []
+    # A stored superseded_by naming a version not in the read links nothing.
+    dangling = facts_of(fact(FC1), fact(FB1, supersedes=[]))
+    assert [f.id for f in lineage_component(dangling, FC1)] == [FC1]
+
+
+def spans(*bodies: dict[str, Any], now: datetime = NOW, to_now: tuple[str, ...] = ()) -> Bars:
+    return bar_spans(facts_of(*bodies), now, to_now)
+
+
+def at(minute: int) -> str:
+    return f"2026-10-24T14:{minute:02d}:00.000000Z"
+
+
+def test_bar_spans_are_proportional_with_open_edges() -> None:
+    bars = spans(
+        version(KV7, valid_from=None, valid_to=10),
+        version(KV3, valid_from=10, valid_to=30),
+        version(KV5, valid_from=20, valid_to=None),
+        now=datetime(2026, 10, 24, 14, 40, tzinfo=UTC),
+    )
+    assert (bars.valid_start, bars.valid_end) == ("10 min", "30 min")
+    assert bars.valid[KV7] == Span("0.00", "1.00", "Valid-time […, 10) min", True, False)
+    assert (bars.valid[KV3].left, bars.valid[KV3].width) == ("0.00", "100.00")
+    assert (bars.valid[KV5].left, bars.valid[KV5].width, bars.valid[KV5].open_end) == (
+        "50.00",
+        "50.00",
+        True,
+    )
+    # Tx: 14:00 .. now (14:40); KV5 is open, drawn to now.
+    assert (bars.tx[KV7].left, bars.tx[KV7].width) == ("0.00", "25.00")
+    assert (bars.tx[KV5].left, bars.tx[KV5].width) == ("50.00", "50.00")
+    assert bars.tx[KV5].title == "Recorded 2026-10-24 14:20:00 UTC → now"
+    assert (bars.tx_start, bars.tx_end) == ("2026-10-24 14:00 UTC", "now")
+
+
+def test_bar_spans_of_a_single_version() -> None:
+    bars = spans(version(KV3), now=datetime(2026, 10, 24, 14, 30, tzinfo=UTC))
+    assert (bars.valid[KV3].left, bars.valid[KV3].width) == ("0.00", "100.00")
+    # Closed at 14:20, axis to now (14:30): the bar ends at its tx_to.
+    assert (bars.tx[KV3].left, bars.tx[KV3].width) == ("0.00", "50.00")
+
+
+def test_bar_spans_with_no_finite_bound_are_always() -> None:
+    bars = spans(version(KV5, valid_from=None, valid_to=None))
+    assert bars.always
+    assert bars.valid[KV5] == Span("0.00", "100.00", "Valid-time […, …) min: always", True, True)
+
+
+def test_equal_bounds_make_an_axis_of_that_minute_plus_or_minus_one() -> None:
+    bars = spans(version(KV3, valid_from=5, valid_to=5))
+    assert (bars.valid_start, bars.valid_end) == ("4 min", "6 min")
+    assert (bars.valid[KV3].left, bars.valid[KV3].width) == ("50.00", "1.00")  # the 1% minimum
+
+
+def test_a_minimum_width_bar_at_the_right_edge_is_shifted_left() -> None:
+    bars = spans(version(KV7, valid_from=0, valid_to=10), version(KV3, valid_from=10, valid_to=10))
+    assert (bars.valid[KV3].left, bars.valid[KV3].width) == ("99.00", "1.00")
+
+
+def test_a_zero_length_tx_axis_spans_one_second() -> None:
+    moment = datetime(2026, 10, 24, 14, 10, tzinfo=UTC)
+    bars = spans(version(KV5, tx_from=at(10)), now=moment)
+    assert (bars.tx[KV5].left, bars.tx[KV5].width) == ("0.00", "1.00")
+
+
+def test_a_tx_from_later_than_now_extends_the_axis() -> None:
+    early = datetime(2026, 10, 24, 14, 0, tzinfo=UTC)
+    bars = spans(version(KV7), version(KV5, tx_from=at(20)), now=early)
+    assert bars.tx_end == "2026-10-24 14:20 UTC"
+    assert (bars.tx[KV7].left, bars.tx[KV7].width) == ("0.00", "50.00")
+    # KV5 is open but starts after now: a minimum-width bar at the right edge.
+    assert (bars.tx[KV5].left, bars.tx[KV5].width) == ("99.00", "1.00")
+
+
+def test_a_closure_undone_is_drawn_to_now() -> None:
+    bars = spans(version(KV3), now=datetime(2026, 10, 24, 14, 30, tzinfo=UTC), to_now=(KV3,))
+    assert (bars.tx[KV3].left, bars.tx[KV3].width) == ("0.00", "100.00")
+    assert bars.tx[KV3].title == "Recorded 2026-10-24 14:10:00 UTC → now"

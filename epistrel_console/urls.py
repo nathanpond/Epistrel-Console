@@ -163,6 +163,8 @@ inspect_patterns = (
         path("retrieval/", inspect.retrieval, name="retrieval"),
         # #137: the story's canon facts on both time axes.
         path("canon/", inspect_canon.canon, name="canon"),
+        # #138: one fact's lineage across supersedes (``<ulid:…>``: any other id is a 404).
+        path("canon/<ulid:fact_id>/lineage/", inspect_canon.lineage, name="canon-lineage"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(
