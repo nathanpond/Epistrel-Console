@@ -320,10 +320,14 @@ class LineageRow:
 
 
 def _lineage_error(ctx: InspectContext, exc: EngineClientError) -> dict[str, Any]:
-    """Convention 10 in place of the rows (held and ``module_off`` escape to the shell)."""
-    if is_held(exc) or is_module_off(exc):
+    """Convention 10 in place of the rows (held escapes to the shell). A ``module_off`` (the
+    gate passed, then the configuration changed) is #135's greyed panel in place of the rows,
+    under the header and "Back to Canon" (#171)."""
+    if is_held(exc):
         raise exc
     log_engine_error(ctx.request, exc)
+    if is_module_off(exc):
+        return {"lineage_unavailable": module_off_unavailable(exc, Tab.CANON, ctx.config.effective)}
     if isinstance(exc, EngineError) and exc.code in (OMNISCIENT_REQUIRED, VIEWPOINT_UNRESOLVED):
         return {"omniscient_required": OMNISCIENT_TEXT}
     if isinstance(exc, EngineError) and exc.http_status == 404:
