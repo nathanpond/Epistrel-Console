@@ -168,6 +168,13 @@
     div.turn-trace-content tr.total th, div.turn-trace-content tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
     dl.verdict-legend { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.8rem; font-size: 0.9em; }
     dl.verdict-legend dd { margin: 0; }
+    span.beat-text { white-space: pre-line; }
+    span.beat-text mark { background: #fff8c5; border-bottom: 2px solid #bf8700; }
+    span.beat-label { font-size: 0.85em; padding: 0 0.3rem; border: 1px solid #d0d7de; border-radius: 3px; background: #f6f8fa; }
+    span.beat-visibility { font-size: 0.85em; color: #57606a; }
+    details.beat-trace { margin: 0.3rem 0; font-size: 0.9em; }
+    details.beat-trace > summary { cursor: pointer; color: #57606a; }
+    details.beat-trace code.raw-proposition { white-space: pre-wrap; }
   </style>
 </head>
 <body hx-headers:inherited='{"X-CSRFToken": "{{ csrf_token }}"}'>

@@ -36,6 +36,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST, require_safe
 
 from console import cast as cast_helpers
+from console.canon import cast_names
 from console.cast import CastMember, character_of, viewpoint_for
 from console.cast_panel import CastPanel, cast_panel
 from console.confirm import confirm_query, posted_idempotency_key
@@ -72,7 +73,7 @@ from console.forms.ingest import (
 )
 from console.forms.play import DEADLINE_MAX, ERROR_PATHS, STORY_DEFAULT, TurnForm
 from console.formset_rows import edit_rows, wants_edit
-from console.history import explain_query, explain_url
+from console.history import NOT_LOADED, BeatTrace, beat_trace, explain_query, explain_url
 from console.ids import new_ulid
 from console.ingest import (
     ERASED_EVENT,
@@ -296,6 +297,7 @@ class Entry:
     speaker: str
     controls: TurnControls | None = None  # on the last item of each turn (#53)
     feedback: FeedbackWidget | None = None  # the "Rate" control on a generated message (#83)
+    trace: BeatTrace | None = None  # a structured beat's trace, item-level only (#147)
 
 
 @dataclass(frozen=True)
@@ -308,6 +310,7 @@ class Transcript:
     error: ErrorPanel | None = None
     start: TurnControls | None = None  # turn 0: "Rewind to start", "Fork from here" (#53)
     archived_note: str = ""
+    legend: bool = False  # a structured beat is shown: the verdict legend (#147)
 
 
 def _speaker(item: HistoryItem, labels: dict[str, str]) -> str:
@@ -383,8 +386,14 @@ def _transcript(
     basis = timeline_basis(play_story, history, story)
     items = history.entries
     widget = collapsed(play_story.id, "play", reverse("stories:detail", args=[play_story.id]))
+    names = cast_names(cast)
     entries = [
-        Entry(item, _speaker(item, labels), feedback=widget(item.message_id) if rate else None)
+        Entry(
+            item,
+            _speaker(item, labels),
+            feedback=widget(item.message_id) if rate else None,
+            trace=_beat_trace(play_story.id, item, names),
+        )
         for item, rate in zip(items, first_parts(items), strict=True)
     ]
     chains = story.variant_chains if story is not None else []
@@ -396,6 +405,21 @@ def _transcript(
         history.next_before_turn,
         start=turn_controls(basis, 0, chains=chains),
         archived_note=play_story.timeline_note,
+        legend=any(e.trace is not None for e in entries),
+    )
+
+
+def _beat_trace(story_id: str, item: HistoryItem, names: dict[str, str]) -> BeatTrace | None:
+    """#147's item-level trace: no trace or registry read on the play page (it refreshes on
+    every turn), so predicates show ids and escalation and repair point to the inspector."""
+    return beat_trace(
+        item,
+        None,
+        NOT_LOADED,
+        story_id=story_id,
+        cast_names=names,
+        predicate_names={},
+        inspector_hint=True,
     )
 
 

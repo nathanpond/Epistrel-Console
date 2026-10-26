@@ -1,18 +1,19 @@
-{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector; a generated message carries its "Rate" control (#83). After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. #}
+{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector; a generated message carries its "Rate" control (#83). After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. A structured beat shows its trace (#147), under the verdict legend. #}
 {% load erasure %}<div id="transcript"{% if oob %} hx-swap-oob="true"{% endif %}>
   <h2>Transcript <small>as {{ transcript.viewpoint_label }}</small></h2>
   {% if transcript.error %}{% include "console/_engine_error.html" with engine_error=transcript.error %}
   {% else %}
   {% if transcript.older_before_turn is not None %}<p><a href="{% url 'stories:history' transcript.story_id %}?before_turn={{ transcript.older_before_turn }}{% if transcript.viewpoint %}&amp;viewpoint={{ transcript.viewpoint|urlencode }}{% endif %}">Older →</a></p>{% endif %}
   {% if transcript.archived_note %}<p class="warning timeline-archived">{{ transcript.archived_note }}</p>{% endif %}
-  {% if transcript.entries %}
+  {% if transcript.entries %}{% if transcript.legend %}
+  {% include "console/_verdict_legend.html" %}{% endif %}
   <ol class="transcript">
     {% if transcript.start %}{% include "console/timeline/_turn_controls.html" with c=transcript.start %}{% endif %}
     {% for entry in transcript.entries %}
     <li class="item channel-{{ entry.item.channel }}" data-operation="{{ entry.item.operation_id }}">
       <a href="{% url 'stories:detail' transcript.story_id %}?operation={{ entry.item.operation_id }}&amp;origin={{ entry.item.origin }}" hx-get="{% url 'stories:inspector' transcript.story_id %}?operation={{ entry.item.operation_id }}&amp;origin={{ entry.item.origin }}" hx-target="#inspector" title="Show this turn's report">T{{ entry.item.turn|default_if_none:"0" }}{% if entry.item.variant and entry.item.variant != 1 %}.{{ entry.item.variant }}{% endif %}</a>
       <span class="channel">{{ entry.item.channel }}</span>{% if entry.item.redacted %} <span class="badge-erased">erased</span>{% endif %}
-      {% if entry.speaker %}<strong>{{ entry.speaker }}</strong>:{% endif %} <span class="text">{{ entry.item.text|mark_erased }}</span>
+      {% if entry.speaker %}<strong>{{ entry.speaker }}</strong>:{% endif %} {% if entry.trace %}{% include "console/history/_beat_trace.html" with t=entry.trace %}{% else %}<span class="text">{{ entry.item.text|mark_erased }}</span>{% endif %}
       {% if entry.item.origin == "ingested" %}<small class="source">ingested</small>{% endif %}
       {% if entry.feedback %}{% include "console/stories/_feedback.html" with fb=entry.feedback %}{% endif %}
     </li>

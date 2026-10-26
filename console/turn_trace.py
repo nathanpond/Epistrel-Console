@@ -264,14 +264,22 @@ def permission_cell(value: str | None) -> Coded | None:
     return coded(value)
 
 
-def beat_of(claim_id: str | None) -> str | None:
-    """``d3.1`` → "beat 3"; any other claim id (an Engine id, ``01J…:4``) → ``None``."""
-    if not claim_id or not claim_id.startswith("d"):
+def declared_beat(claim_id: object) -> int | None:
+    """The beat a declared claim id ``d<beat>.<n>`` (``structured/pipeline.py``) names: ``d3.1``
+    → 3. Any other claim id (a detected claim's ``<operation>:<n>``, ``d2``, ``dX.y``, a
+    non-string) → ``None``."""
+    if not isinstance(claim_id, str) or not claim_id.startswith("d"):
         return None
     beat, dot, rest = claim_id[1:].partition(".")
     if dot and beat.isascii() and beat.isdigit() and rest.isascii() and rest.isdigit():
-        return f"beat {int(beat)}"
+        return int(beat)
     return None
+
+
+def beat_of(claim_id: str | None) -> str | None:
+    """``d3.1`` → "beat 3"; any other claim id (an Engine id, ``01J…:4``) → ``None``."""
+    beat = declared_beat(claim_id)
+    return f"beat {beat}" if beat is not None else None
 
 
 def rung_label(rung: int) -> str:

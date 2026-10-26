@@ -1461,3 +1461,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (Rule 2):** `base.html` renders a flash tagged `safe` without escaping. Only the `fact_superseded` flash uses the tag, and it is built with `format_html`.
   **Why:** The AC asks for a lineage link in that flash. Message storage drops `SafeString`, so the template has to know.
   **Issue:** #146
+- **Decision:** The Lite goldens (`tests/fixtures/inspect/golden/`) were recorded in #147's own commit, from the branch's templates before any #147 edit, not in the branch's first commit.
+  **Why:** The branch already had 13 commits when #147 ran. Against `origin/main`, `_items.html` differs only by #142's explain link, which a Lite page never shows, so the goldens match main's Lite markup. They cover the history page's items section and the play page's `#transcript` (turn controls and Rate links included), rendered through the views.
+  **Issue:** #147
+- **Decision:** `beat_trace(item, trace, state, *, story_id, cast_names, predicate_names, inspector_hint, open_trace)` takes the caller's state only when there is no trace (`not_loaded` or `unavailable`). With a trace, the state comes from the read: withheld is `unavailable`, no hooks is `no_hooks`, otherwise `loaded`. An ingested item is always `none`.
+  **Why:** The AC lists the five states but not who decides each. This way the view never has to work out hook state itself.
+  **Issue:** #147
+- **Decision:** The repair line checks in this order: no beat gives "—", then any matching repair entries give their phrases, then no declared verdicts gives "None", otherwise "Not repaired".
+  **Why:** The AC lists the wordings without an order. A repair entry for a beat whose verdicts aren't on the page is still worth showing.
+  **Issue:** #147
+- **Decision:** A detected claim's mark title and table use the verdict verbatim, "not checked" for null. The declared table shows "—" for `escalated` false or missing.
+  **Why:** That is what the AC says ("escalated bold / —"). #139's turn-level table still tells false apart from missing.
+  **Issue:** #147
+- **Decision:** "M detected" counts every `detected` entry, including ones too malformed to parse. Those go to the beat's "More" ("detected N"), the same way skipped propositions do.
+  **Why:** The AC says M counts every entry, and convention 13 keeps the raw values.
+  **Issue:** #147
+- **Decision:** `UtteranceLabels` keeps later Engine label fields (`classification`, `intent_corrected`, which Engine main added after M4) in `extras`. Those, or labels that don't parse, put the raw `labels` in "More".
+  **Why:** The recorded schema has only the three labels. Engine main already sends more on omniscient reads.
+  **Issue:** #147
+- **Decision:** `console.turn_trace.declared_beat(claim_id) -> int | None` is the parse of `d<beat>.<n>`, and `beat_of` now uses it.
+  **Why:** #147 needs the beat number, #139 needs the "beat N" text, and the two shouldn't parse it differently.
+  **Issue:** #147
+- **Decision:** `turn_traces` catches only `EngineClientError` from a worker and re-raises anything else. Errors are logged on the request thread after the wait.
+  **Why:** The AC's failure reasons are all Engine errors. A Console bug should still surface. Only Engine reads run in the workers.
+  **Issue:** #147
+- **Decision:** #142's explain-retrieval test fixture now answers `GET /stories/{id}/predicates`. Its structured history page makes #147's one registry read.
+  **Why:** The new read is in the AC. Without an answer the schema-validating fake fails the page.
+  **Issue:** #147

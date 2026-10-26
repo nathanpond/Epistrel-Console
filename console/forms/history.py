@@ -4,6 +4,9 @@ Each control maps to exactly one ``GET /stories/{id}/history`` query parameter
 (:meth:`HistoryForm.query`); an optional control left blank sends nothing. The page size is
 required (50, 200 or 1000; default 50) and always sent as ``limit``.
 
+"Show all traces" (``traces``, #147) is the one control that isn't a history parameter: it
+asks the page to read each structured turn's trace (:attr:`HistoryForm.show_traces`).
+
 Input the form refuses makes no history call: a page size outside the three, a non-integer or
 negative turn, and audit records asked for without the omniscient viewpoint (the Engine's
 403 ``omniscient_required``, refused here first). A well-formed ``as_of`` above the head passes
@@ -34,6 +37,9 @@ class HistoryForm(forms.Form):
     actor_character_id = forms.ChoiceField(required=False, label="Actor")
     include_audit = forms.BooleanField(required=False, label="Include audit")
     include_summary = forms.BooleanField(required=False, label="Include summary")
+    # #147: open every beat's Trace and load each turn's escalation and repair. A page control,
+    # not an Engine parameter: :meth:`query` leaves it out.
+    traces = forms.BooleanField(required=False, label="Show all traces")
     limit = forms.TypedChoiceField(
         choices=[(str(n), str(n)) for n in PAGE_SIZES],
         coerce=int,
@@ -85,6 +91,11 @@ class HistoryForm(forms.Form):
         """The submitted (raw) value of a control, for links that keep it."""
         found = self.data.get(name, "")
         return found if isinstance(found, str) else ""
+
+    @property
+    def show_traces(self) -> bool:
+        """ "Show all traces" is ticked (valid form only)."""
+        return bool(self.cleaned_data.get("traces"))
 
     @property
     def omniscient(self) -> bool:

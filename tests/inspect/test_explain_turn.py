@@ -161,6 +161,9 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake.respond("GET", VARIANTS, 200, json=engine_fixture("list_variants"))
     fake.respond("GET", SETTINGS, 200, json=engine_fixture("get_story_settings"))
     fake.respond("GET", HISTORY, 200, json=history_body(structured_turn(7)))
+    # #147: a page showing a structured beat reads the predicate registry once.
+    registry = json.loads((FIXTURES / "predicates_list.json").read_text())
+    fake.respond("GET", "/stories/{story_id}/predicates", 200, json=registry)
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
 

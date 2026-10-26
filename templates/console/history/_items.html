@@ -1,4 +1,4 @@
-{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). A structured turn's header links "Explain retrieval" (#142). #}
+{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). A structured turn's header links "Explain retrieval" (#142). A structured beat's Text cell is its trace (#147), under the verdict legend and the trace notices. #}
 {% load console_format erasure %}
 {% if page.chain %}<p class="chain-line">Viewing chain {{ page.chain }} — <a href="{{ page.clear_chain_url }}">clear</a></p>{% endif %}
 {% if page.error %}
@@ -15,7 +15,10 @@
 </section>
 {% endif %}
 {% if page.settings_error %}<p class="warning">Policy names unavailable — showing ids.</p>{% include "console/_engine_error.html" with engine_error=page.settings_error %}{% endif %}
-{% if page.groups %}
+{% if page.legend %}{% include "console/_verdict_legend.html" %}
+{% endif %}{% if page.trace_cap_note %}<p class="warning trace-notice">{{ page.trace_cap_note }}</p>
+{% endif %}{% if page.trace_failures %}<p class="warning trace-notice">{{ page.trace_failures }}</p>
+{% endif %}{% if page.groups %}
 <table class="history">
   <thead><tr><th>Beat</th><th>Kind</th><th>Channel</th><th>Actor</th><th>Render</th><th>Text</th><th>Operation</th></tr></thead>
   {% for group in page.groups %}
@@ -28,7 +31,7 @@
       <td><span class="badge-channel">{{ row.item.channel }}</span>{% if row.item.redacted %} <span class="badge-erased">erased</span>{% endif %}</td>
       <td>{{ row.actor }}</td>
       <td>{% if row.render %}{{ row.render|join:", " }}{% else %}—{% endif %}</td>
-      <td>{{ row.item.text|mark_erased }}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
+      <td>{% if row.trace %}{% include "console/history/_beat_trace.html" with t=row.trace %}{% else %}{{ row.item.text|mark_erased }}{% endif %}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
       <td>{% if row.log_pk %}<a class="operation-link" href="{% url 'operations:detail' row.log_pk %}"><code>{{ row.item.operation_id }}</code></a>{% else %}<code>{{ row.item.operation_id }}</code>{% endif %}</td>
     </tr>
     {% if row.feedback %}<tr class="feedback-row"><td colspan="7">{% include "console/stories/_feedback.html" with fb=row.feedback %}</td></tr>{% endif %}

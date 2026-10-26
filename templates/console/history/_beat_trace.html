@@ -1,0 +1,41 @@
+{% load erasure inspect_tags console_format %}{% comment %}
+#147: one structured beat (history's Text cell, the play transcript's item). Context: t (a
+console.history.BeatTrace). In order: the utterance labels, a latent beat's visibility, the text
+with detected claims marked, the quarantine note and the closed-by-default Trace. Verdicts render
+verbatim (#135 convention 9); a null verdict reads "not checked".
+{% endcomment %}{% if t.tags %}<span class="beat-labels">{% for tag in t.tags %}<span class="beat-label" title="{{ tag.title }}">{{ tag.text }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}</span><br>{% endif %}{% if t.visibility %}<span class="beat-visibility">Latent · visible to {% if t.visibility.scope == "objective" %}everyone (objective){% elif t.visibility.scope == "public" %}public{% else %}{% for p in t.visible_to %}{% if p.name %}<span title="{{ p.id }}">{{ p.name }}</span>{% else %}{{ p.id|engine_id }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}no character{% endfor %}{% endif %}</span><br>{% elif t.visibility_json %}<span class="beat-visibility">Latent · visibility <code>{{ t.visibility_json }}</code></span><br>{% endif %}<span class="beat-text">{% if t.item.redacted %}{{ t.item.text|mark_erased }}{% else %}{% for s in t.segments %}{% if s.claims %}<mark title="{{ s.title }}">{{ s.text }}</mark>{% else %}{{ s.text }}{% endif %}{% endfor %}{% endif %}</span>{% if t.item.quarantined %} <small class="quarantined-source">Source of a quarantined memory</small>{% endif %}
+<details class="beat-trace"{% if t.open %} open{% endif %}><summary>{{ t.summary }}</summary>
+{% if t.shared_with_say %}<p class="muted shared-propositions">Same propositions as this input's say part</p>{% endif %}
+<h5>Propositions</h5>
+{% if t.propositions %}
+<table class="beat-propositions">
+  <thead><tr><th>Proposition</th><th>Verdict</th></tr></thead>
+  <tbody>{% for p in t.propositions %}<tr><td class="proposition">{% if p.proposition %}{% include "console/inspect/_proposition.html" with proposition=p.proposition predicate_names=t.predicate_names cast_names=t.cast_names story_id=t.story_id %}{% else %}<code class="raw-proposition">{{ p.raw|pretty_json }}</code>{% endif %}</td><td class="verdict">{% if p.verdict is None %}not checked{% else %}{{ p.verdict }}{% endif %}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p>None</p>{% endif %}
+<h5>Detected claims</h5>
+{% if t.detected %}
+<table class="beat-detected">
+  <thead><tr><th>Span</th><th>Category</th><th>Verdict</th></tr></thead>
+  <tbody>{% for row in t.detected %}<tr><td class="span">{% if row.span is not None %}{{ row.span }}{% else %}<span class="muted">{{ row.note }}</span>{% endif %}</td><td>{{ row.claim.category }}</td><td class="verdict">{% if row.claim.verdict is None %}not checked{% else %}{{ row.claim.verdict }}{% endif %}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p>None</p>{% endif %}
+<h5>Declared claims and repair</h5>
+{% if t.state == "loaded" %}
+{% if not t.beat_known %}<p class="declared-claims">—</p>
+{% elif t.declared %}
+<table class="beat-declared">
+  <thead><tr><th>Claim</th><th>Kind</th><th>Escalated</th></tr></thead>
+  <tbody>{% for v in t.declared %}<tr><td>{{ v.claim_id|engine_id }}</td><td class="verdict">{% if v.kind is None %}not checked{% else %}{{ v.kind }}{% endif %}</td><td>{% if v.escalated is True %}<strong>escalated</strong>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p class="declared-claims">None</p>{% endif %}
+<p class="repair-line">Repair: {{ t.repair_line }}</p>
+{% elif t.state == "not_loaded" %}<p class="trace-state">{% if t.inspector_hint %}Escalation and repair: open this turn's inspector → Eval hooks &amp; read set{% else %}Tick Show all traces to load escalation and repair{% endif %}</p>
+{% elif t.state == "no_hooks" %}<p class="trace-state">No eval hooks recorded for this turn</p>
+{% elif t.state == "unavailable" %}<p class="trace-state">Escalation and repair <a href="{{ t.unavailable_url }}">unavailable (see turn trace)</a></p>
+{% else %}<p class="trace-state">—</p>{% endif %}
+{% if t.more %}<details class="more beat-more"><summary>More</summary>
+{% for part in t.more %}<h6>{{ part.label }}</h6>
+<pre>{{ part.value|pretty_json }}</pre>
+{% endfor %}</details>{% endif %}
+</details>

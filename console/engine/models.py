@@ -1833,6 +1833,126 @@ class Proposition(Model):
     event_id: str | None = None
 
 
+# --- Structured beats (#147) --------------------------------------------------------------------
+#
+# #135 convention 12: ``HistoryItem.labels``, ``.visibility``, ``.propositions`` and ``.detected``
+# stay raw JSON, and these typed views are parsed beside them, as #139's eval-hook entries are:
+# ``from_json`` never raises and returns ``None`` for an entry it can't read (the raw value then
+# goes to the beat's "More"), and keys the Console does not name are kept in ``extras``.
+
+UTTERANCE_INTENTS = ("sincere", "deceptive", "joking", "unspecified")
+BELIEF_RELATIONS = ("consistent", "inconsistent", "unknown")
+OBJECTIVE_RELATIONS = ("true", "false", "unresolved")
+BEAT_SCOPES = ("objective", "public", "characters")
+UTTERANCE_LABEL_FIELDS = ("intent", "belief_relation", "objective_relation")
+
+
+@dataclass(frozen=True)
+class UtteranceLabels:
+    """``UtteranceLabelsModel``: a ``say``-channel item's three independent labels (FR-TURN-6).
+    Later Engine fields (``classification``, ``intent_corrected``) land in ``extras``."""
+
+    intent: str
+    belief_relation: str
+    objective_relation: str
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> UtteranceLabels | None:
+        """``None`` unless ``obj`` is an object holding all three labels, each a value its
+        schema enum lists."""
+        if not isinstance(obj, dict):
+            return None
+        values = [obj.get(name) for name in UTTERANCE_LABEL_FIELDS]
+        allowed = (UTTERANCE_INTENTS, BELIEF_RELATIONS, OBJECTIVE_RELATIONS)
+        if not all(v in a for v, a in zip(values, allowed, strict=True)):
+            return None
+        intent, belief, objective = (str(v) for v in values)
+        return cls(intent, belief, objective, _unnamed(obj, UTTERANCE_LABEL_FIELDS))
+
+
+@dataclass(frozen=True)
+class BeatVisibility:
+    """``BeatVisibilityModel``: a ``beat_latent`` item's scope and, for ``characters``, who."""
+
+    scope: str
+    characters: tuple[str, ...] = ()
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> BeatVisibility | None:
+        """``None`` unless ``scope`` is one of the three and ``characters`` (when present) is a
+        list of ids."""
+        if not isinstance(obj, dict) or obj.get("scope") not in BEAT_SCOPES:
+            return None
+        characters = obj.get("characters", [])
+        if not isinstance(characters, list) or not all(isinstance(c, str) for c in characters):
+            return None
+        return cls(str(obj["scope"]), tuple(characters), _unnamed(obj, ("scope", "characters")))
+
+
+@dataclass(frozen=True)
+class BeatProposition:
+    """``BeatPropositionModel``: a proposition the beat asserted and its verdict (``None``: not
+    checked). ``proposition`` is the parsed :class:`Proposition`, ``None`` when ``raw`` doesn't
+    parse (the row then shows ``raw`` as JSON). ``index`` is its 1-based position."""
+
+    index: int
+    raw: Any
+    proposition: Proposition | None
+    verdict: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object, index: int) -> BeatProposition | None:
+        """``None`` only when ``obj`` isn't an object."""
+        if not isinstance(obj, dict):
+            return None
+        extras = _unnamed(obj, ("proposition", "verdict"))
+        raw = obj.get("proposition")
+        return cls(
+            index,
+            raw,
+            Proposition.from_json(raw),
+            _str_or_none(obj, "verdict", extras),
+            extras,
+        )
+
+
+@dataclass(frozen=True)
+class DetectedClaim:
+    """``DetectedClaimModel``: a claim detection found in the beat that it didn't declare, as a
+    ``[start, end)`` span of the item's text (code points), its ``category`` and ``verdict``
+    (``None``: not checked). ``index`` is its 1-based position."""
+
+    index: int
+    start: int
+    end: int
+    category: str
+    verdict: str | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object, index: int) -> DetectedClaim | None:
+        """``None`` when ``obj`` isn't an object, ``start``/``end`` isn't an integer or
+        ``category`` isn't a string. The span isn't checked against the text here."""
+        if not isinstance(obj, dict):
+            return None
+        start, end, category = _int(obj.get("start")), _int(obj.get("end")), obj.get("category")
+        if start is None or end is None or not isinstance(category, str):
+            return None
+        extras = _unnamed(obj, ("start", "end", "category", "verdict"))
+        return cls(index, start, end, category, _str_or_none(obj, "verdict", extras), extras)
+
+
+def beat_entries[T](
+    raw: object, parse: Callable[[object, int], T | None]
+) -> tuple[tuple[T, ...], tuple[tuple[int, Any], ...]]:
+    """A beat's list field parsed (:func:`_entries`): the entries, and the skipped ones as
+    ``(1-based index, raw)``."""
+    return _entries(raw, parse)
+
+
 @dataclass(frozen=True)
 class FactBody(Model):
     """``FactBody``: one fact version (FR-BITEMP-1..5). ``tx_to`` and ``superseded_by`` record
