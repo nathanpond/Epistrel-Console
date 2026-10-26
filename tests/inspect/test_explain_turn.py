@@ -134,6 +134,12 @@ def do_only_turn(turn: int, do: str = "Wren sits", *, actor: str = TOBIN) -> lis
     ]
 
 
+def unseen_do_only_turn(turn: int, do: str = "Wren sits") -> list[dict[str, Any]]:
+    """#181: a do-only turn at a character viewpoint that perceived none of its beats: the
+    Engine leaves the ``beat_*`` items out, so no shown item carries ``propositions``."""
+    return [item(turn, do, channel="do", actor=MARA, propositions=LITE), reply(turn)]
+
+
 def history_body(items: list[dict[str, Any]]) -> dict[str, Any]:
     body: dict[str, Any] = engine_fixture("get_history")
     turns = sorted({(i["turn"], i["variant"]) for i in items})
@@ -346,6 +352,33 @@ def test_no_link_without_a_structured_input(items: list[dict[str, Any]], turn: i
     assert explain_query(parsed(items), turn, 1) is None
 
 
+def test_a_structured_story_links_a_do_only_turn_with_no_beat_in_view() -> None:
+    found = explain_query(parsed(unseen_do_only_turn(7)), 7, 1, lambda: True)
+    assert found == ExplainQuery("Wren sits", 6, MARA, 7, 1)
+
+
+def test_a_lite_story_leaves_a_do_only_turn_unlinked() -> None:
+    assert explain_query(parsed(unseen_do_only_turn(7)), 7, 1, lambda: False) is None
+
+
+@pytest.mark.parametrize(
+    ("items", "turn"),
+    [
+        pytest.param(structured_turn(7), 7, id="propositions in view"),
+        pytest.param(do_only_turn(7), 7, id="beat in view"),
+        pytest.param([reply(7)], 7, id="no input"),
+        pytest.param(unseen_do_only_turn(0), 0, id="turn 0"),
+    ],
+)
+def test_the_story_is_asked_only_when_the_items_do_not_say(
+    items: list[dict[str, Any]], turn: int
+) -> None:
+    def never() -> bool:
+        raise AssertionError("the story's pipeline was read")
+
+    explain_query(parsed(items), turn, 1, never)
+
+
 # --- History ------------------------------------------------------------------------------------
 
 
@@ -387,6 +420,60 @@ def test_history_links_a_do_only_structured_turn(
     assert link == url_for(do_only_turn(7))
 
 
+CHARACTER_VIEW = f"viewpoint=character:{MARA}"
+
+
+def effective_calls(engine: FakeEngine) -> list[httpx.Request]:
+    return [r for r in engine.requests if r.url.path == f"/stories/{STORY}/effective-config"]
+
+
+def test_history_links_a_do_only_turn_with_no_beat_in_view_on_a_structured_story(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=structured())
+    engine.respond("GET", HISTORY, 200, json=history_body(unseen_do_only_turn(7)))
+    (link,) = explain_links(get(operator_client, f"{HISTORY_URL}?{CHARACTER_VIEW}"))
+    assert query_of(link)["q"] == ["Wren sits"]
+    assert query_of(link)["actor"] == [MARA]
+    assert len(effective_calls(engine)) == 1
+
+
+def test_history_reads_the_story_config_once_for_several_unseen_turns(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=structured())
+    items = [*unseen_do_only_turn(5, "Mara waits"), *unseen_do_only_turn(7)]
+    engine.respond("GET", HISTORY, 200, json=history_body(items))
+    links = explain_links(get(operator_client, f"{HISTORY_URL}?{CHARACTER_VIEW}"))
+    assert [query_of(u)["q"] for u in links] == [["Mara waits"], ["Wren sits"]]
+    assert len(effective_calls(engine)) == 1
+
+
+def test_history_reads_no_story_config_when_the_items_say(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    (link,) = explain_links(get(operator_client, HISTORY_URL))
+    assert link == url_for(structured_turn(7))
+    assert effective_calls(engine) == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param({}, id="lite story"),
+        pytest.param({"status": 503}, id="config read fails"),
+    ],
+)
+def test_history_leaves_a_do_only_turn_with_no_beat_in_view_unlinked(
+    operator_client: Client, engine: FakeEngine, answer: dict[str, Any]
+) -> None:
+    if answer:
+        body = error_json("database_unavailable", "down")
+        engine.respond("GET", EFFECTIVE, answer["status"], json=body)
+    engine.respond("GET", HISTORY, 200, json=history_body(unseen_do_only_turn(7)))
+    assert explain_links(get(operator_client, f"{HISTORY_URL}?{CHARACTER_VIEW}")) == []
+
+
 def test_a_chain_view_has_no_link(operator_client: Client, engine: FakeEngine) -> None:
     html = get(operator_client, f"{HISTORY_URL}?variant=7:2")
     assert "Viewing chain 7:2" in html
@@ -412,6 +499,25 @@ def test_the_transcript_turn_inspector_links_a_do_only_structured_turn(
     engine.respond("GET", HISTORY, 200, json=history_body(do_only_turn(7)))
     html = get(operator_client, f"/stories/{STORY}/?turn=7")
     assert explain_links(inspector_of(html)) == [url_for(do_only_turn(7))]
+
+
+def test_the_transcript_turn_inspector_links_a_do_only_turn_with_no_beat_in_view(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=structured())
+    engine.respond("GET", HISTORY, 200, json=history_body(unseen_do_only_turn(7)))
+    html = get(operator_client, f"/stories/{STORY}/?turn=7&{CHARACTER_VIEW}")
+    (link,) = explain_links(inspector_of(html))
+    assert query_of(link)["q"] == ["Wren sits"]
+    assert len(effective_calls(engine)) == 1  # the header's read, shared (#85)
+
+
+def test_the_transcript_turn_inspector_leaves_it_unlinked_on_a_lite_story(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", HISTORY, 200, json=history_body(unseen_do_only_turn(7)))
+    html = get(operator_client, f"/stories/{STORY}/?turn=7&{CHARACTER_VIEW}")
+    assert explain_links(inspector_of(html)) == []
 
 
 def test_a_logged_transcript_turn_links_in_the_revisions_block(

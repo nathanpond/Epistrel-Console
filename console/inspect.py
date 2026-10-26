@@ -107,7 +107,8 @@ def _on(effective: Mapping[str, Any], module: str) -> bool:
     return setting(effective, SETTINGS[module]) is True
 
 
-def _structured(effective: Mapping[str, Any]) -> bool:
+def is_structured_pipeline(effective: Mapping[str, Any]) -> bool:
+    """The story runs the structured pipeline (``pipeline == "structured"``)."""
     return setting(effective, SETTINGS[PIPELINE]) == STRUCTURED
 
 
@@ -128,7 +129,7 @@ def unavailable_for(module: str, effective: Mapping[str, Any] | None = None) -> 
 
 
 def _ledger(effective: Mapping[str, Any]) -> Unavailable | None:
-    if not _structured(effective):
+    if not is_structured_pipeline(effective):
         return unavailable_for(PIPELINE, effective)
     return None if _on(effective, COMMITMENT) else unavailable_for(COMMITMENT, effective)
 
@@ -137,7 +138,7 @@ def tab_availability(effective: Mapping[str, Any]) -> dict[Tab, Unavailable | No
     """Every tab, mapped to why it is greyed for ``effective`` (``None``: served). The rules are
     the module docstring's."""
     episodic = None if _on(effective, EPISODIC) else unavailable_for(EPISODIC, effective)
-    structured = None if _structured(effective) else unavailable_for(PIPELINE, effective)
+    structured = None if is_structured_pipeline(effective) else unavailable_for(PIPELINE, effective)
     return {
         Tab.OVERVIEW: None,
         Tab.MEMORY: episodic,

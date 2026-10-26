@@ -227,13 +227,23 @@ def badge_for(config: EffectiveConfig) -> ConfigBadge:
     )
 
 
+def read_effective_config(client: EngineClient, story_id: str) -> EffectiveConfig | None:
+    """An effective-config read (3 s), ``None`` when it fails."""
+    try:
+        return client.get_effective_config(story_id)
+    except EngineClientError:
+        return None
+
+
+def badge_or_unavailable(story_id: str, config: EffectiveConfig | None) -> ConfigBadge:
+    """The header block from ``config``; no config (a failed read) is "config unavailable"."""
+    return badge_for(config) if config is not None else ConfigBadge(story_id, unavailable=True)
+
+
 def read_badge(client: EngineClient, story_id: str) -> ConfigBadge:
     """The header block from an effective-config read (3 s); a failed read degrades to
     "config unavailable"."""
-    try:
-        return badge_for(client.get_effective_config(story_id))
-    except EngineClientError:
-        return ConfigBadge(story_id, unavailable=True)
+    return badge_or_unavailable(story_id, read_effective_config(client, story_id))
 
 
 def badge_from_report(story_id: str, report: TurnReport | None) -> ConfigBadge | None:

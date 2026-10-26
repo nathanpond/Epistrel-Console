@@ -13,6 +13,9 @@ every view is a shareable URL. Reads, each degrading its own section:
 - ``GET /stories/{id}/settings`` — only when audit records are shown, for policy names;
 - ``GET /stories/{id}/predicates`` — once, only when the page shows a structured beat (#147),
   for the propositions' predicate names (a failure shows ids);
+- ``GET /stories/{id}/effective-config`` — at most once, only when a turn's input is shown but
+  none of its shown items carries ``propositions`` (#181): whether the story runs the structured
+  pipeline, for "Explain retrieval" (a failure: no link);
 - ``GET /operations/{id}?viewpoint=omniscient`` — only with "Show all traces" (#147): once per
   structured turn on the page, the first 20, on a local pool with a shared deadline
   (:func:`turn_traces`); a failure marks that turn's beats unavailable and lists it.
@@ -58,6 +61,7 @@ from console.history import (
     turn_groups,
     turn_label,
 )
+from console.inspect import is_structured_pipeline
 from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
 from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
@@ -238,7 +242,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     variant = query["variant"] or ""
     if not variant:  # a chain view isn't the active timeline (#142)
-        _with_explain(story.id, groups)
+        _with_explain(story.id, groups, _story_structured(client, request, story.id))
     traces = _with_traces(client, request, story, groups, load=form.show_traces)
     older = history.next_before_turn
     return Page(
@@ -376,11 +380,36 @@ def _trace(
     )
 
 
-def _with_explain(story_id: str, groups: list[TurnGroup]) -> None:
+def _story_structured(
+    client: EngineClient, request: HttpRequest, story_id: str
+) -> Callable[[], bool]:
+    """Whether the story runs the structured pipeline, read from its effective config on the
+    first call only (#181); a failed read logs and answers ``False``."""
+    found: list[bool] = []
+
+    def structured() -> bool:
+        if not found:
+            try:
+                found.append(
+                    is_structured_pipeline(client.get_effective_config(story_id).effective)
+                )
+            except EngineClientError as exc:
+                log_engine_error(request, exc)
+                found.append(False)
+        return found[0]
+
+    return structured
+
+
+def _with_explain(
+    story_id: str, groups: list[TurnGroup], story_structured: Callable[[], bool]
+) -> None:
     """Give each structured turn whose input the page shows its "Explain retrieval" link (#142),
-    built from the page's items only (zero Engine reads)."""
+    built from the page's items. ``story_structured`` reads the effective config, once, only for
+    a turn whose shown items don't say (a do-only input with no beat in view, #181)."""
     for group in groups:
-        found = explain_query([row.item for row in group.rows], group.turn, group.variant)
+        rows = [row.item for row in group.rows]
+        found = explain_query(rows, group.turn, group.variant, story_structured)
         group.explain_url = explain_url(story_id, found) if found is not None else None
 
 
