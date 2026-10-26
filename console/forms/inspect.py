@@ -29,10 +29,11 @@ from typing import Any
 from django import forms
 from django.http import QueryDict
 
-from console.cast import Character, character_choices, default_actor
+from console.cast import OMNISCIENT, Character, character_choices, default_actor, viewpoint_for
 from console.engine.client import EngineError
 from console.engine.models import Predicate
 from console.engine_form_errors import apply_engine_errors
+from console.forms.history import as_of_options
 from console.ids import is_ulid
 from console.inspect import short_id
 from console.retrieval import KINDS, TIERS
@@ -658,5 +659,123 @@ class LedgerForm(forms.Form):
         field_name = exc.details.get("field")
         if isinstance(field_name, str) and field_name in aliases:
             self.add_error(aliases[field_name], exc.message)
+            return
+        self.add_error(None, exc.message)
+
+
+# --- the Scene tab and the entity page (#58) -----------------------------------------------------
+
+SCENE_TURN_INVALID = "Enter a whole number, 0 or more."
+VIEWPOINT_NOT_IN_CAST = "That viewpoint isn't one of this story's cast"
+OMNISCIENT_LABEL = "Omniscient"
+SCENE_FIELDS = ("as_of", "viewpoint")
+
+
+def turn_too_high(head: int) -> str:
+    return f"Turn must be 0\u2013{head}"
+
+
+class SceneForm(forms.Form):
+    """The Scene tab's and the entity page's GET form (#58): **Turn** (``as_of``; blank = the
+    head, not sent) and **Viewpoint** (always sent: "Omniscient" first, then each cast member as
+    ``character:<id>`` in the Engine's cast order, the player marked; no "story default" entry,
+    since the story default can't be ``omniscient`` and may be unset, and either would 422).
+
+    ``cast`` is ``None`` when the page's story read failed: the select then offers "Omniscient"
+    and the requested value shown raw, and the upper bound isn't checked (the Engine's 422 covers
+    it). ``head`` is the active chain's last turn (``None`` disables the upper bound).
+    ``default_viewpoint`` is the story's ``settings.default_output_viewpoint``: the initial
+    viewpoint when it names a cast member, else ``omniscient``.
+
+    A non-integer, negative or past-head turn and a viewpoint outside the select are errors
+    beside their field, and the views then make no scene or profile call."""
+
+    as_of = forms.IntegerField(
+        required=False,
+        min_value=0,
+        label="Turn",
+        error_messages={"invalid": SCENE_TURN_INVALID, "min_value": SCENE_TURN_INVALID},
+        widget=forms.NumberInput(attrs={"list": "scene-turns", "min": 0}),
+    )
+    viewpoint = forms.ChoiceField(
+        label="Viewpoint",
+        error_messages={"invalid_choice": VIEWPOINT_NOT_IN_CAST, "required": VIEWPOINT_NOT_IN_CAST},
+    )
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        head: int | None,
+        default_viewpoint: str | None,
+    ) -> None:
+        bound = data.copy()
+        self.cast = cast
+        self.head = head
+        self.choices = self._choices(cast, bound.get("viewpoint") or "")
+        self.initial_viewpoint = OMNISCIENT
+        if default_viewpoint in {value for value, _ in self.choices} and cast is not None:
+            self.initial_viewpoint = default_viewpoint or OMNISCIENT
+        if "viewpoint" not in bound:
+            bound["viewpoint"] = self.initial_viewpoint  # a first visit reads at once
+        super().__init__(bound)
+        viewpoint = self.fields["viewpoint"]
+        if isinstance(viewpoint, forms.ChoiceField):
+            viewpoint.choices = self.choices
+        if head is not None:
+            self.fields["as_of"].widget.attrs["max"] = head
+
+    @staticmethod
+    def _choices(cast: Sequence[Character] | None, requested: str) -> list[tuple[str, str]]:
+        choices = [(OMNISCIENT, OMNISCIENT_LABEL)]
+        if cast is None:
+            if requested and requested != OMNISCIENT:
+                choices.append((requested, requested))
+            return choices
+        players = {c.id for c in cast if c.is_player}
+        return [
+            *choices,
+            *(
+                (viewpoint_for(cid), f"{label}{PLAYER_SUFFIX}" if cid in players else label)
+                for cid, label in character_choices(cast)
+            ),
+        ]
+
+    def clean_as_of(self) -> int | None:
+        as_of: int | None = self.cleaned_data.get("as_of")
+        if as_of is not None and self.head is not None and as_of > self.head:
+            raise forms.ValidationError(turn_too_high(self.head))
+        return as_of
+
+    def query(self) -> dict[str, Any]:
+        """``get_scene``'s / ``get_entity_profile``'s keyword arguments (valid form only)."""
+        return {"as_of": self.cleaned_data["as_of"], "viewpoint": self.cleaned_data["viewpoint"]}
+
+    def value(self, name: str) -> str:
+        """The submitted (raw) value of a control ("" when absent)."""
+        found = self.data.get(name, "")
+        return found if isinstance(found, str) else ""
+
+    @property
+    def options(self) -> list[int]:
+        """The Turn datalist (#52's :func:`console.forms.history.as_of_options`); none when the
+        head is unknown."""
+        return as_of_options(self.head) if self.head is not None else []
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422: ``query.as_of`` with ``details.head`` → "Turn must be 0\u2013<head>" beside Turn
+        (without a head, the Engine's message there); ``viewpoint_unresolved`` or any 422 on
+        ``query.viewpoint`` → beside Viewpoint; anything else above the form."""
+        field_name = exc.details.get("field")
+        if exc.code == VIEWPOINT_UNRESOLVED or field_name == "query.viewpoint":
+            self.add_error("viewpoint", VIEWPOINT_NOT_IN_CAST)
+            return
+        if field_name == "query.as_of":
+            head = exc.details.get("head")
+            if isinstance(head, int) and not isinstance(head, bool):
+                self.add_error("as_of", turn_too_high(head))
+            else:
+                self.add_error("as_of", exc.message)
             return
         self.add_error(None, exc.message)

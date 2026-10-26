@@ -1,0 +1,23 @@
+{% extends "console/inspect/base.html" %}
+{% load inspect_tags console_format %}
+{% comment %}
+An entity's standing profile (#58), in the Scene tab: "← Scene" (at the profile's resolved turn
+and viewpoint, else the submitted ones), the entity's header and context line, the GET form
+(it submits to this page), then _entity_profile.html's three sections. The form stays above
+every error; an invalid form makes no profile call.
+{% endcomment %}
+{% block tab_content %}
+<p class="back"><a class="scene-back" href="{{ back_url }}">← Scene</a></p>
+{% if entity %}{% with e=entity %}<h2 class="entity-header">{% if e.name %}{{ e.name }}{% else %}<span class="muted">(unnamed)</span>{% endif %} ({% include "console/inspect/_entity_kind.html" %}) {{ e.id|engine_id }}</h2>{% endwith %}
+<p class="context-line">{{ context_line }}</p>
+{% else %}<h2 class="entity-header">Entity <code title="{{ entity_id }}">{{ entity_short }}</code></h2>{% endif %}
+{% include "console/inspect/_scene_form.html" %}
+{% if not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif fix_form %}<p class="fix-form">{{ fix_form }}</p>
+{% elif entity_not_found %}<p class="not-found">{{ entity_not_found }}</p>
+{% elif read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}
+{% elif profile %}
+{% include "console/inspect/_entity_profile.html" %}
+<details class="more"><summary>More</summary><pre>{{ more|pretty_json }}</pre></details>
+{% endif %}
+{% endblock %}

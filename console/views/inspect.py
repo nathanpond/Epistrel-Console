@@ -126,6 +126,9 @@ class InspectContext:
     config: EffectiveConfig
     story: Story | None
     story_name: str
+    # Why ``story`` is ``None`` (the story read's failure), for a tab that maps it (#58: a 404
+    # is the story-level not-found).
+    story_error: EngineClientError | None = None
 
     @property
     def effective(self) -> dict[str, Any]:
@@ -167,12 +170,12 @@ def tab_links(
     return links
 
 
-def _story(request: HttpRequest, client: EngineClient, story_id: str) -> Story | None:
+def _story(request: HttpRequest, client: EngineClient, story_id: str) -> Story | EngineClientError:
     try:
         return client.get_story(story_id)
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return None
+        return exc
 
 
 def inspect_page(
@@ -188,7 +191,8 @@ def inspect_page(
             return render_held(request, story_id, exc)
         log_engine_error(request, exc)
         config = exc
-    story = _story(request, client, story_id)
+    read = _story(request, client, story_id)
+    story = read if isinstance(read, Story) else None
     story_name = story.name if story is not None and story.name else story_id
     context: dict[str, Any] = {
         "story_id": story_id,
@@ -208,7 +212,8 @@ def inspect_page(
     if unavailable is not None:
         context["unavailable"] = unavailable
         return render(request, template, context)
-    ctx = InspectContext(request, client, story_id, tab, config, story, story_name)
+    story_error = read if isinstance(read, EngineClientError) else None
+    ctx = InspectContext(request, client, story_id, tab, config, story, story_name, story_error)
     try:
         built = build(ctx)
     except EngineClientError as exc:

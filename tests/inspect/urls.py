@@ -1,7 +1,8 @@
 """The Console's routes with every Inspect tab registered (#135): each test tab calls
 ``inspect_page``, and its ``build`` makes one Engine read where :data:`READS` names one, so the
 shell's gate and its 409 ``module_off`` handling can be tested before the tabs' own stories
-land. A tab its story has registered (:data:`REAL`) keeps its real view."""
+land. A tab its story has registered (:data:`REAL`) keeps its real view: since #58 that is every
+tab, so this urlconf currently matches the Console's own (kept for tabs added later)."""
 
 from typing import Any
 

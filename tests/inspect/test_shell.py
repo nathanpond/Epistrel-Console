@@ -2,7 +2,8 @@
 greyed panel (zero calls to a greyed tab's routes), a route's 409 ``module_off``, the
 effective-config failures, and the "Inspect" links from the story and history pages.
 
-Every tab is registered by ``tests.inspect.urls`` (the tabs' own stories land later)."""
+The tests run on ``tests.inspect.urls``, which stubs any tab whose own story hasn't registered
+it; since #58 every tab is registered for real, so that urlconf matches the Console's own."""
 
 import re
 from collections.abc import Iterator
@@ -36,6 +37,13 @@ CONFIG_URL = f"/stories/{STORY}/config/"
 RETRIEVE = f"/stories/{STORY}/retrieve"
 LEDGER = f"/stories/{STORY}/inspect/ledger"
 ENGINE_TABS = (Tab.MEMORY, Tab.RETRIEVAL, Tab.CANON, Tab.LEDGER, Tab.SCENE)
+SCENE_BODY: dict[str, Any] = {
+    "turn": 0,
+    "variant": None,
+    "viewpoint": "omniscient",
+    "location": None,
+    "present": [],
+}
 
 
 @pytest.fixture
@@ -123,17 +131,18 @@ def test_a_tab_whose_url_is_not_registered_is_absent(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     answer_config(engine, structured())
+    # Every tab is registered for real now: Overview (#151), Memory (#140), Retrieval (#141),
+    # Canon (#137), Predicates (#136), Ledger (#148) and Scene (#58).
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         tabs = bar(get(operator_client).content.decode())
-    # Registered for real so far: Overview (#151), Memory (#140), Retrieval (#141), Canon
-    # (#137), Predicates (#136) and Ledger (#148); Scene is absent.
     assert tabs.startswith(f'<a class="active" aria-current="page" href="{URL}">Overview</a>')
-    assert f'href="{URL}memory/">Memory</a>' in tabs
-    assert f'href="{URL}retrieval/">Retrieval</a>' in tabs
-    assert f'href="{URL}canon/">Canon</a>' in tabs
-    assert f'href="{URL}predicates/">Predicates</a>' in tabs
-    assert f'href="{URL}ledger/">Ledger</a>' in tabs
-    assert ">Scene<" not in tabs
+    for tab in Tab:
+        assert f'href="{tab_url(tab)}">{tab.label}</a>' in tabs
+    # A urlconf without a tab's URL leaves that tab out of the bar (#64's nav rule).
+    with override_settings(ROOT_URLCONF="tests.inspect.urls_without_retrieval"):
+        tabs = bar(get(operator_client).content.decode())
+    assert ">Retrieval<" not in tabs
+    assert f'href="{tab_url(Tab.SCENE)}">Scene</a>' in tabs
 
 
 # --- a greyed tab opened directly -----------------------------------------------------------------
@@ -178,8 +187,10 @@ def test_a_greyed_ledger_on_lite_names_the_pipeline(
 
 def test_an_enabled_tab_calls_build(operator_client: Client, engine: FakeEngine) -> None:
     answer_config(engine, structured())
+    engine.respond("GET", "/stories/{story_id}/scene", 200, json=SCENE_BODY)
     response = get(operator_client, Tab.SCENE)
-    assert response.context["built"] == "scene"
+    assert f"/stories/{STORY}/scene" in paths(engine)  # the Scene tab's build made its read
+    assert response.context["scene"].header == "Turn 0 · as Omniscient"
     assert '<a class="active" aria-current="page" href="' in bar(response.content.decode())
 
 

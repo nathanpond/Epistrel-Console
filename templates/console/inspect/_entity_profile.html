@@ -1,0 +1,53 @@
+{% load scene_tags inspect_tags %}{% comment %}
+An entity's standing profile (#58, FR-RET-6): Relationships, Placement and Inventory, not the
+page header. Self-contained for #152, which includes it for retrieval's profiles. Context: profile
+(EntityProfileBody), story_id, link_as_of (int) and link_viewpoint (str): every entity link
+carries those. The Source fact column appears only when profile.viewpoint is omniscient. Rows
+come from console.scene.profile_view.
+{% endcomment %}{% entity_profile_view profile link_as_of link_viewpoint as v %}
+<section class="profile-relationships">
+<h2>Relationships</h2>
+{% if v.relationships %}
+<table class="profile-relationships">
+  <thead><tr><th>Direction</th><th>Predicate</th><th>Other</th><th>Qualifiers</th><th>Valid</th>{% if v.omniscient %}<th>Source fact</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for r in v.relationships %}<tr class="relationship">
+    <td class="direction">{% if r.arrow %}<span title="{{ r.direction }}">{{ r.arrow }}</span>{% else %}<code>{{ r.direction }}</code>{% endif %}</td>
+    <td class="predicate">{% if r.predicate_url %}<a href="{{ r.predicate_url }}" title="{{ r.predicate_id }}">{{ r.predicate|default:r.predicate_id }}</a>{% else %}<span title="{{ r.predicate_id }}">{{ r.predicate|default:r.predicate_id }}</span>{% endif %}</td>
+    <td class="other">{% include "console/inspect/_entity_link.html" with e=r.other %}</td>
+    <td class="qualifiers">{% for q in r.qualifiers %}{{ q.key }}={% if q.kind == "id" %}{{ q.text|engine_id }}{% elif q.kind == "string" %}<code>{{ q.text }}</code>{% else %}{{ q.text }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+    <td class="valid">{{ r.valid }}</td>
+    {% if v.omniscient %}<td class="source-fact">{% include "console/inspect/_source_fact.html" with source=r.source %}</td>{% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="none">None visible to this viewpoint</p>{% endif %}
+</section>
+<section class="profile-placement">
+<h2>Placement</h2>
+{% with p=v.placement %}{% if p %}
+<dl class="profile-placement">
+  <dt>Where</dt><dd class="where">{% if p.location %}at {% include "console/inspect/_entity_link.html" with e=p.location %}{% if p.within %} within {% for w in p.within %}{% include "console/inspect/_entity_link.html" with e=w %}{% if not forloop.last %} ⊂ {% endif %}{% endfor %}{% endif %}{% if p.container %} · in {% include "console/inspect/_entity_link.html" with e=p.container %}{% endif %}{% elif p.container %}in {% include "console/inspect/_entity_link.html" with e=p.container %}{% else %}—{% endif %}</dd>
+  <dt>Valid</dt><dd class="valid">{{ p.valid }}</dd>
+  {% if v.omniscient %}<dt>Source fact</dt><dd class="source-fact">{% include "console/inspect/_source_fact.html" with source=p.source %}</dd>{% endif %}
+</dl>
+{% else %}<p class="none">None visible to this viewpoint</p>{% endif %}{% endwith %}
+</section>
+<section class="profile-inventory">
+<h2>Inventory</h2>
+{% if v.inventory %}
+<table class="profile-inventory">
+  <thead><tr><th>Item</th><th>Kind</th><th>Id</th>{% if v.omniscient %}<th>Source fact</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for i in v.inventory %}<tr class="inventory-item">
+    <td class="item">{% include "console/inspect/_entity_link.html" with e=i.item %}</td>
+    <td class="kind">{% include "console/inspect/_entity_kind.html" with e=i.item %}</td>
+    <td class="id">{{ i.item.id|engine_id }}</td>
+    {% if v.omniscient %}<td class="source-fact">{% include "console/inspect/_source_fact.html" with source=i.source %}</td>{% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="none">None visible to this viewpoint</p>{% endif %}
+</section>

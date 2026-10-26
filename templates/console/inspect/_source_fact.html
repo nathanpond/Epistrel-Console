@@ -1,0 +1,1 @@
+{% load inspect_tags %}{% comment %}A source fact cell (#58; console.ledger.FactLink or None): the short id linked to #138's lineage view, "—" for none. Context: source.{% endcomment %}{% if source is None %}—{% elif source.url %}<a href="{{ source.url }}">{{ source.id|engine_id }}</a>{% else %}{{ source.id|engine_id }}{% endif %}

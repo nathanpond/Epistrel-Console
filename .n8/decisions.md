@@ -1524,3 +1524,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added the shared `percent` filter to `console_format` (one decimal with `%`, "—" for non-numbers) and `local_moment` to `console/forms/inspect.py` (`record_moment` now wraps it).
   **Why:** No rate formatter existed yet; the datetime-local parse was private to the canon form.
   **Issue:** #149
+- **Decision:** `InspectContext` gained `story_error` (the story read's failure, default `None`), so the Scene tab can tell a story 404 from other failures without a second `get_story` read.
+  **Why:** #58 maps a `get_story` 404 to the story-level not-found before any scene or profile call; the shell kept only `story is None`.
+  **Issue:** #58
+- **Decision:** Profile predicate names link `predicates.row_url` (`?layer=all#p-<id>`), not the bare `#p-<id>` on the default tab.
+  **Why:** #136 notes that is the right mode for other tabs: the default layer filter can hide the row.
+  **Issue:** #58
+- **Decision:** A 422 placed on the form (Turn or Viewpoint) also shows "Fix the form above to read the scene." in the panel area; a `query.as_of` 422 without `details.head` shows the Engine's message beside Turn.
+  **Why:** the panel area otherwise stays blank after a refused read; convention 10 puts a `details.field` error on that field.
+  **Issue:** #58
+- **Decision:** Non-string qualifier values render as compact JSON (`0.8`, `true`, `["a","b"]`), strings in `<code>`, a ULID string as a short id.
+  **Why:** the plan says dicts and lists render as JSON and doesn't name numbers or booleans; JSON spelling matches #136's `scalar`.
+  **Issue:** #58
+- **Decision:** Shell tests: `test_an_enabled_tab_calls_build` now asserts the real Scene view's read, and `test_a_tab_whose_url_is_not_registered_is_absent` checks all seven tabs on the real urlconf plus Retrieval absent under `tests.inspect.urls_without_retrieval`.
+  **Why:** Scene was the last stubbed tab; this keeps both shell rules tested.
+  **Issue:** #58

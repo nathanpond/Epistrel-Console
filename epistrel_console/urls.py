@@ -20,6 +20,7 @@ from console.views import (
     inspect_ledger,
     inspect_memory,
     inspect_predicates,
+    inspect_scene,
     media,
     media_picker,
     media_proxy,
@@ -192,6 +193,10 @@ inspect_patterns = (
         ),
         # #148: the story's thunks and promissory ledger.
         path("ledger/", inspect_ledger.ledger, name="ledger"),
+        # #58: the scene at a turn and viewpoint, and an entity's profile (``<ulid:…>``: any
+        # other id is a 404), both in the Scene tab.
+        path("scene/", inspect_scene.scene, name="scene"),
+        path("entities/<ulid:entity_id>/", inspect_scene.entity, name="entity"),
         # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
         path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
         path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),

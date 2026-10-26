@@ -2183,6 +2183,85 @@ class ExtractionShadow(Model):
     next_cursor: str | None = field(metadata={JSON_NAME: "next"})
 
 
+# --- the scene and an entity's standing profile (#58; #152 reuses them) -------------------------
+
+
+@dataclass(frozen=True)
+class EntityBody(Model):
+    """``EntityBody``: an entity of the story, its id, its ``kind`` (a free string: ``place``,
+    ``person``, ``object``…) and its canonical ``name`` ("" when the Engine has no entity row
+    for the id)."""
+
+    entity_id: str
+    kind: str
+    name: str
+
+
+@dataclass(frozen=True)
+class SceneBody(Model):
+    """``SceneBody`` (FR-STORE-3): the scene as of ``turn`` (its active ``variant``, ``None`` at
+    turn 0) for ``viewpoint``: the player character's ``location`` (``None`` when unknown to the
+    viewpoint) and the entities ``present`` there, sorted by entity id."""
+
+    turn: int
+    variant: int | None
+    viewpoint: str
+    location: EntityBody | None
+    present: list[EntityBody]
+
+
+@dataclass(frozen=True)
+class RelationshipBody(Model):
+    """``RelationshipBody``: one relationship of a profiled entity. ``direction`` is ``out``
+    (the entity is the subject, or the predicate is symmetric) or ``in``, a plain string in the
+    schema; the valid-time bounds are story-minutes (``None`` open); ``source_fact_id`` is set
+    only for ``omniscient``."""
+
+    predicate_id: str
+    predicate: str
+    direction: str
+    other: EntityBody
+    qualifiers: dict[str, Any]
+    valid_from: int | None
+    valid_to: int | None
+    source_fact_id: str | None
+
+
+@dataclass(frozen=True)
+class PlacementBody(Model):
+    """``PlacementBody``: at a ``location`` (with the places containing it, nearest first,
+    ``within``) or in a ``container``; valid-time bounds and, for ``omniscient``, the fact."""
+
+    location: EntityBody | None
+    container: EntityBody | None
+    within: list[EntityBody]
+    valid_from: int | None
+    valid_to: int | None
+    source_fact_id: str | None
+
+
+@dataclass(frozen=True)
+class InventoryBody(Model):
+    """``InventoryBody``: an item the entity holds and, for ``omniscient``, the fact."""
+
+    item: EntityBody
+    source_fact_id: str | None
+
+
+@dataclass(frozen=True)
+class EntityProfileBody(Model):
+    """``EntityProfileBody`` (FR-RET-6): ``entity``'s standing profile as of turn ``as_of`` for
+    ``viewpoint``: its relationships both ways, its ``placement`` (``None`` when it has none the
+    viewpoint can read) and its inventory."""
+
+    entity: EntityBody
+    as_of: int
+    relationships: list[RelationshipBody]
+    placement: PlacementBody | None
+    inventory: list[InventoryBody]
+    viewpoint: str
+
+
 def _number(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None

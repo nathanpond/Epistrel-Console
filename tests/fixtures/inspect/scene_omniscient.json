@@ -1,0 +1,27 @@
+{
+  "turn": 3,
+  "variant": 2,
+  "viewpoint": "omniscient",
+  "location": {
+    "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0CE1",
+    "kind": "place",
+    "name": "The cellar"
+  },
+  "present": [
+    {
+      "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0MM1",
+      "kind": "person",
+      "name": "Mara"
+    },
+    {
+      "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0NT1",
+      "kind": "object",
+      "name": "lantern"
+    },
+    {
+      "entity_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TB1",
+      "kind": "person",
+      "name": "Tobin"
+    }
+  ]
+}

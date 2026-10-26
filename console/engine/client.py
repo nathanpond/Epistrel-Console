@@ -45,6 +45,7 @@ from console.engine.models import (
     EffectiveConfig,
     EngineProfile,
     EngineProfilePage,
+    EntityProfileBody,
     ErasureBoundary,
     ErasureResult,
     ErasureStatus,
@@ -120,6 +121,7 @@ from console.engine.models import (
     ScenarioPage,
     ScenarioPublished,
     ScenarioStatus,
+    SceneBody,
     Story,
     StoryCharacterAdded,
     StoryCreated,
@@ -1286,6 +1288,46 @@ class EngineClient:
             params["after_id"] = after_id
         response = self._request("GET", f"{_story_path(story_id)}/inspect/ledger", params=params)
         return _parse(response, Ledger)
+
+    # --- the scene and an entity's standing profile (#58) -------------------------------------
+
+    @operation("GET", "/stories/{story_id}/scene", response_model=SceneBody)
+    def get_scene(
+        self, story_id: str, *, as_of: int | None = None, viewpoint: str | None = None
+    ) -> SceneBody:
+        """``GET /stories/{id}/scene`` (FR-STORE-3): the player character's location at the end
+        of turn ``as_of`` (default the head) and the entities there, for ``viewpoint``
+        (``omniscient`` or ``character:<id>``; default the story's default output viewpoint).
+        One of the two M4 reads that may send a character viewpoint (#135 convention 1). A
+        ``None`` argument is left out. 422 ``validation_error`` (``query.as_of``, with
+        ``details.head``) past the head; 422 ``viewpoint_unresolved`` for a viewpoint outside the
+        cast or none resolved."""
+        response = self._request(
+            "GET", f"{_story_path(story_id)}/scene", params=_scene_params(as_of, viewpoint)
+        )
+        return _parse(response, SceneBody)
+
+    @operation(
+        "GET", "/stories/{story_id}/entities/{entity_id}/profile", response_model=EntityProfileBody
+    )
+    def get_entity_profile(
+        self,
+        story_id: str,
+        entity_id: str,
+        *,
+        as_of: int | None = None,
+        viewpoint: str | None = None,
+    ) -> EntityProfileBody:
+        """``GET /stories/{id}/entities/{eid}/profile`` (FR-RET-6): the entity's relationships
+        both ways, its placement and its inventory as of turn ``as_of``, for ``viewpoint`` (the
+        same parameters and 422s as :meth:`get_scene`); 404 ``not_found`` for an entity that
+        isn't the story's."""
+        response = self._request(
+            "GET",
+            f"{_story_path(story_id)}/entities/{quote(entity_id, safe='')}/profile",
+            params=_scene_params(as_of, viewpoint),
+        )
+        return _parse(response, EntityProfileBody)
 
     # --- eval reports (#149) ---------------------------------------------------------------
 
@@ -3449,6 +3491,17 @@ def _window(window_from: datetime | None, window_to: datetime | None) -> dict[st
         params["from"] = _iso_z(window_from)
     if window_to is not None:
         params["to"] = _iso_z(window_to)
+    return params
+
+
+def _scene_params(as_of: int | None, viewpoint: str | None) -> dict[str, str]:
+    """The scene and profile reads' query (#58): each of ``as_of`` and ``viewpoint`` only when
+    given."""
+    params: dict[str, str] = {}
+    if as_of is not None:
+        params["as_of"] = str(as_of)
+    if viewpoint is not None:
+        params["viewpoint"] = viewpoint
     return params
 
 
