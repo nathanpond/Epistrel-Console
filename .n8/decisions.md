@@ -1506,3 +1506,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `test_shell.py::test_other_errors_from_build_are_the_error_panel` now uses a 503 `database_unavailable` on the ledger route instead of a 404.
   **Why:** The real Ledger tab renders a 404 as convention 10's not-found line; a 503 still exercises #43's panel.
   **Issue:** #148
+- **Decision:** Response models can type a field `datetime`: `_parse` reads an ISO 8601 string with an offset as an aware datetime (no offset fails the field), and the contract checker maps `datetime` to `string` `format: date-time`. The eval models use it for `from`/`to`/`created_at`.
+  **Why:** The plan asks for aware datetimes in the model; every earlier model kept times as strings, so the model layer had no datetime type.
+  **Issue:** #149
+- **Decision:** The eval page's GET params are parsed by small dataclasses in `console/evals.py` (`TimeInput`, `Window`), not a Django form.
+  **Why:** The prefill-only-when-the-key-is-absent rule and the "exactly as submitted" hidden carry-over are simpler on the raw QueryDict than through a bound form.
+  **Issue:** #149
+- **Decision:** The shadow section's "Next page" link pins `s_from`/`s_to` to the values that page sent (the prefill included); "First page" keeps every other param and shows whenever `s_after` is set, a refused cursor's 422 included.
+  **Why:** With absent keys the prefill is "now", which moves between clicks; a cursor should page the same window.
+  **Issue:** #149
+- **Decision:** The echoed window renders to the minute (`2026-10-17 14:03 UTC`) and adds seconds only when the bound has them; sample `created_at` uses the shared `engine_time` (to the second).
+  **Why:** The AC's window text is minute precision, but the Engine's own defaults carry seconds, which shouldn't be hidden.
+  **Issue:** #149
+- **Decision:** A null escalation rate reads "0 claims, 0 escalated · No claims checked in this window · reference 20.0%, not a gate"; a `s_story` id not in the story list gets its own selected option "…last8 (not in the list)" so it is still sent.
+  **Why:** The AC fixes the words but not the separators; the extra option keeps a bookmarked or typed id from being dropped by the select.
+  **Issue:** #149
+- **Decision:** Added the shared `percent` filter to `console_format` (one decimal with `%`, "—" for non-numbers) and `local_moment` to `console/forms/inspect.py` (`record_moment` now wraps it).
+  **Why:** No rate formatter existed yet; the datetime-local parse was private to the canon form.
+  **Issue:** #149

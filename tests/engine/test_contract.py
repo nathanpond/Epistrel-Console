@@ -77,7 +77,9 @@ from console.engine.models import (
     EpisodeBody,
     ErasureCandidate,
     ErasureResult,
+    EscalationYield,
     EvaluatedRating,
+    ExtractionShadow,
     FactBody,
     FactListBody,
     FeedbackContext,
@@ -220,6 +222,7 @@ from console.engine.models import (
     ScenarioVideo,
     Seed,
     SettingTags,
+    ShadowSample,
     StartingState,
     StoredResult,
     Story,
@@ -260,6 +263,7 @@ from console.engine.models import (
     VisualStyle,
     WorkersCheck,
     World,
+    YieldCluster,
 )
 from tests.engine.contract import check_operation, compare_model, compare_type
 from tests.fakes.engine import recorded_schema
@@ -631,6 +635,11 @@ def test_the_widening_only_adds_media_id() -> None:
         (LedgerItem, "LedgerItemBody"),
         (RejectedBinding, "RejectedBindingBody"),
         (Position, "PositionBody"),
+        # #149: eval reports.
+        (EscalationYield, "EscalationYieldBody"),
+        (YieldCluster, "YieldClusterBody"),
+        (ExtractionShadow, "ExtractionShadowBody"),
+        (ShadowSample, "ShadowSampleBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:

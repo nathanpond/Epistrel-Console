@@ -120,6 +120,15 @@ def count(value: Any) -> str:
     return f"{value:,}"
 
 
+@register.filter
+def percent(value: Any) -> str:
+    """A rate as a percentage with one decimal (#135 convention 5): ``0.1309`` → ``13.1%``; "—"
+    for ``None`` or anything that is not a number (#149)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return EMPTY
+    return f"{value * 100:.1f}%"
+
+
 @register.simple_tag
 def new_idempotency_key() -> str:
     """A fresh ULID per call (#43's per-render key, #135 convention 8), for a page that renders

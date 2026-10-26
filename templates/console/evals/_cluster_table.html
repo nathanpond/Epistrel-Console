@@ -1,0 +1,12 @@
+{% load console_format %}{% comment %}One escalation-yield cluster table (context `table`, `shape_title`): rows in the Engine's order, then the Totals row.{% endcomment %}
+<h3>{{ table.title }}</h3>
+{% if table.rows %}
+<table class="yield-clusters {{ table.key }}">
+  <thead><tr>{% if table.by_reason %}<th>Gate reason</th>{% endif %}{% if table.by_shape %}<th>Shape</th>{% endif %}<th>Escalations</th><th>Skipped (live tightening)</th><th>Valid verdicts</th><th>Flips</th><th>Flip rate</th><th title="consequence-weighted">Weighted flip rate</th></tr></thead>
+  <tbody>
+  {% for c in table.rows %}<tr class="cluster">{% include "console/evals/_cluster_keys.html" %}{% include "console/evals/_cluster_numbers.html" %}</tr>
+  {% endfor %}
+  <tr class="total"><th scope="row">Totals</th>{% if table.by_reason and table.by_shape %}<td>—</td>{% endif %}{% include "console/evals/_cluster_numbers.html" with c=table.totals %}</tr>
+  </tbody>
+</table>
+{% else %}<p class="none">None</p>{% endif %}

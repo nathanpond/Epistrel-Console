@@ -48,6 +48,8 @@ from console.engine.models import (
     ErasureBoundary,
     ErasureResult,
     ErasureStatus,
+    EscalationYield,
+    ExtractionShadow,
     FactListBody,
     FactWritten,
     ForkResult,
@@ -155,6 +157,7 @@ DEFAULT_TIMEOUT_S = 3.0  # reads (#43's timeouts)
 MUTATION_TIMEOUT_S = 10.0  # ordinary mutations (#43's timeouts)
 # A retrieve read may embed its query and runs five search arms (#141).
 RETRIEVE_TIMEOUT_S = 10.0
+EVAL_TIMEOUT_S = 10.0  # the eval reports aggregate a window's records (#149)
 OMNISCIENT_VIEWPOINT = "omniscient"  # the only viewpoint the retrieve read accepts
 TURN_GRACE_S = 15.0  # a turn call waits its effective deadline plus this (#43's timeouts)
 DEFAULT_TURN_DEADLINE_S = 45.0  # when neither the request nor the story names one (#43)
@@ -1283,6 +1286,50 @@ class EngineClient:
             params["after_id"] = after_id
         response = self._request("GET", f"{_story_path(story_id)}/inspect/ledger", params=params)
         return _parse(response, Ledger)
+
+    # --- eval reports (#149) ---------------------------------------------------------------
+
+    @operation("GET", "/admin/evals/escalation-yield", response_model=EscalationYield)
+    def get_escalation_yield(
+        self, window_from: datetime | None, window_to: datetime | None
+    ) -> EscalationYield:
+        """``GET /admin/evals/escalation-yield`` (NFR-PERF-5): escalation yield over ``from``
+        (inclusive) .. ``to`` (exclusive). An omitted ``to`` is now and an omitted ``from`` is
+        30 days before ``to``; the answer echoes the window used. ``from`` after ``to`` is 422
+        ``validation_error`` (``details.field`` ``from``). A 10 s read, never recorded."""
+        response = self._request(
+            "GET",
+            "/admin/evals/escalation-yield",
+            params=_window(window_from, window_to),
+            timeout=EVAL_TIMEOUT_S,
+        )
+        return _parse(response, EscalationYield)
+
+    @operation("GET", "/admin/evals/extraction-shadow", response_model=ExtractionShadow)
+    def get_extraction_shadow(
+        self,
+        window_from: datetime | None,
+        window_to: datetime | None,
+        *,
+        story_id: str | None = None,
+        limit: int = 100,
+        after: str | None = None,
+    ) -> ExtractionShadow:
+        """``GET /admin/evals/extraction-shadow`` (FR-OBS-4): claim detection's shadow report
+        over ``from`` .. ``to`` (both inclusive; the same defaults as the yield report), for
+        every story or one ``story_id``, with one page of samples (``limit`` 1 to 200;
+        ``after`` is the last page's ``next``, passed through as given). A 10 s read, never
+        recorded."""
+        params = _window(window_from, window_to)
+        if story_id:
+            params["story_id"] = story_id
+        params["limit"] = str(limit)
+        if after:
+            params["after"] = after
+        response = self._request(
+            "GET", "/admin/evals/extraction-shadow", params=params, timeout=EVAL_TIMEOUT_S
+        )
+        return _parse(response, ExtractionShadow)
 
     # --- author canon writes (#146) ------------------------------------------------------------
 
@@ -3385,6 +3432,23 @@ def _config_change_params(
             params[name] = value
     if after:
         params["after"] = after
+    return params
+
+
+def _iso_z(moment: datetime) -> str:
+    """An aware datetime as ISO 8601 in UTC with ``Z``: ``2026-10-17T14:03:00Z`` (microseconds
+    only when present)."""
+    utc = moment.astimezone(UTC)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.%fZ" if utc.microsecond else "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _window(window_from: datetime | None, window_to: datetime | None) -> dict[str, str]:
+    """An eval report's ``from`` / ``to`` query params (#149), each left out when ``None``."""
+    params: dict[str, str] = {}
+    if window_from is not None:
+        params["from"] = _iso_z(window_from)
+    if window_to is not None:
+        params["to"] = _iso_z(window_to)
     return params
 
 

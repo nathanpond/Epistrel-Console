@@ -448,18 +448,24 @@ class TickBox(forms.CheckboxInput):
         return isinstance(value, str) and value.strip().lower() in TICKED
 
 
-def record_moment(typed: str) -> datetime | None:
-    """A ``datetime-local`` value (``YYYY-MM-DDTHH:MM`` or ``…:SS``) read as UTC, moved to the
-    end of that second (``…:SS.999999``: ``tx_from`` has microsecond precision); ``None`` when
-    it is not one."""
+def local_moment(typed: str) -> datetime | None:
+    """A ``datetime-local`` value (``YYYY-MM-DDTHH:MM`` or ``…:SS``) read as UTC (convention 4);
+    ``None`` when it is not one (#149's eval windows)."""
     found = _LOCAL_MOMENT.match(typed)
     if found is None:
         return None
     year, month, day, hour, minute, second = (int(p) if p else 0 for p in found.groups())
     try:
-        return datetime(year, month, day, hour, minute, second, 999999, tzinfo=UTC)
+        return datetime(year, month, day, hour, minute, second, tzinfo=UTC)
     except ValueError:
         return None
+
+
+def record_moment(typed: str) -> datetime | None:
+    """:func:`local_moment` moved to the end of that second (``…:SS.999999``: ``tx_from`` has
+    microsecond precision); ``None`` when it is not a ``datetime-local`` value."""
+    moment = local_moment(typed)
+    return moment.replace(microsecond=999999) if moment is not None else None
 
 
 class CanonForm(forms.Form):

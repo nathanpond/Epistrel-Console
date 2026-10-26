@@ -52,6 +52,7 @@ operation_patterns = (
     [
         path("", operations.operation_list, name="list"),
         path("<int:pk>/", operations.operation_detail, name="detail"),
+        path("evals/", operations.evals, name="evals"),
     ],
     "operations",
 )

@@ -4,6 +4,7 @@
 {% block heading %}Operations{% endblock %}
 {% block content %}
 <p class="scope">Operations performed by this Console. Other Engine clients' operations are not shown.</p>
+<p class="eval-reports-link"><a href="{% url 'operations:evals' %}">Eval reports</a></p>
 
 <form method="get" action="" class="filters">
   <label>Story

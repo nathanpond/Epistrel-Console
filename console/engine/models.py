@@ -11,12 +11,16 @@ A field typed ``Any`` holds raw JSON (any value), for parts the Console shows on
 
 A JSON key that is not a valid Python name (``class``) is read into a field declared with
 ``field(metadata={JSON_NAME: "class"})`` (:func:`json_name`).
+
+A field typed ``datetime`` reads an ISO 8601 string with its offset as an aware datetime (#149);
+a string without an offset, or one that doesn't parse, fails the field.
 """
 
 import types
 import typing
 from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
+from datetime import datetime
 from typing import Any, Literal, Self, Union
 
 from console.entities import EntityType
@@ -46,6 +50,8 @@ def _parse(tp: Any, value: object) -> tuple[bool, object]:
         return ok, float(value) if ok else None  # type: ignore[arg-type]
     if tp is str:
         return isinstance(value, str), value
+    if tp is datetime:
+        return _aware(value)
     if origin is dict:
         _, item_tp = typing.get_args(tp)
         if not isinstance(value, dict):
@@ -72,6 +78,17 @@ def _parse(tp: Any, value: object) -> tuple[bool, object]:
         parsed = _from_json(tp, value)
         return parsed is not None, parsed
     raise TypeError(f"unsupported model annotation {tp!r}")
+
+
+def _aware(value: object) -> tuple[bool, object]:
+    """``(True, moment)`` for an ISO 8601 string with an offset, else ``(False, None)``."""
+    if not isinstance(value, str):
+        return False, None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return False, None
+    return (True, moment) if moment.tzinfo is not None else (False, None)
 
 
 JSON_NAME = "json"
@@ -2088,6 +2105,82 @@ class Ledger(Model):
     ledger: list[LedgerItem]
     revision: int
     next_after_id: str | None
+
+
+# --- eval reports (#149) -------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class YieldCluster(Model):
+    """``YieldClusterBody``: one escalation-yield cluster, a gate reason, a predicate shape
+    (``layer|cardinality|temporal|polarity``) or both (``None`` for the key a table doesn't
+    group by, and in the ``totals`` cluster). ``flip_rate`` and ``weighted_flip_rate`` are
+    ``None`` when ``valid`` is 0."""
+
+    escalations: int
+    skipped: int
+    valid: int
+    flips: int
+    flip_rate: float | None
+    weighted_flip_rate: float | None
+    gate_reason: str | None = None
+    shape: str | None = None
+
+
+@dataclass(frozen=True)
+class EscalationYield(Model):
+    """``EscalationYieldBody`` (NFR-PERF-5): escalation yield over the window the Engine used
+    (``from`` inclusive, ``to`` exclusive), its clusters in the Engine's order, and the overall
+    rate (``None`` when no claim was checked) beside its reference baseline."""
+
+    window_from: datetime = field(metadata={JSON_NAME: "from"})
+    window_to: datetime = field(metadata={JSON_NAME: "to"})
+    by_gate_reason: list[YieldCluster]
+    by_shape: list[YieldCluster]
+    by_gate_reason_shape: list[YieldCluster]
+    totals: YieldCluster
+    claims: int
+    escalated: int
+    escalation_rate: float | None
+    reference_baseline: float
+    is_gate: bool
+
+
+@dataclass(frozen=True)
+class ShadowSample(Model):
+    """``ShadowSampleBody``: one shadow sample, a sampled turn's render or composed message.
+    ``status`` is ``sampled`` or ``failed`` (an open set, shown raw when unknown)."""
+
+    id: str
+    story_id: str
+    operation_id: str
+    narrative_turn: int | None
+    status: str
+    extraction_claims: int
+    missed_count: int
+    missed_by_category: dict[str, int]
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ExtractionShadow(Model):
+    """``ExtractionShadowBody`` (FR-OBS-4): claim detection's shadow report over the window the
+    Engine used (inclusive at both ends): the whole window's counts, then one page of samples
+    (``next_cursor`` is the body's ``next``, ``None`` on the last page)."""
+
+    window_from: datetime = field(metadata={JSON_NAME: "from"})
+    window_to: datetime = field(metadata={JSON_NAME: "to"})
+    story_id: str | None
+    samples: int
+    failed: int
+    extraction_claims: int
+    missed: int
+    missed_by_category: dict[str, int]
+    miss_rate: float | None
+    detected_total: int
+    checked_total: int
+    items: list[ShadowSample]
+    next_cursor: str | None = field(metadata={JSON_NAME: "next"})
 
 
 def _number(value: object) -> float | None:
