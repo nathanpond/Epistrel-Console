@@ -17,8 +17,10 @@ no stub pages).
 1. reads ``GET /stories/{id}/effective-config``, then ``GET /stories/{id}`` (sequential; the
    story read runs even when the first failed, so the header keeps the name; any failure of it,
    ``erasure_pending`` included, degrades the name to the story id);
-2. a 503 ``erasure_pending`` on the effective-config read is #87's held wrapper; any other
-   failure is #43's error panel in place of the tab bar and the tab, and ``build`` is not called;
+2. a 503 ``erasure_pending`` on the effective-config read is #87's held wrapper; a 404 when the
+   story read 404s too is convention 10's "Not found (it may have been deleted or truncated)"
+   (#177); any other failure is #43's error panel. Either replaces the tab bar and the tab, and
+   ``build`` is not called;
 3. computes :func:`console.inspect.tab_availability`. A greyed tab renders the greyed panel and
    makes no other read (``build`` is not called);
 4. otherwise calls ``build`` (whose context may name another template under
@@ -172,6 +174,10 @@ def tab_links(
     return links
 
 
+def _is_404(answer: object) -> bool:
+    return isinstance(answer, EngineError) and answer.http_status == 404
+
+
 def _story(request: HttpRequest, client: EngineClient, story_id: str) -> Story | EngineClientError:
     try:
         return client.get_story(story_id)
@@ -206,7 +212,10 @@ def inspect_page(
         "reload_url": request.get_full_path(),
     }
     if isinstance(config, EngineClientError):
-        context["engine_error"] = panel_for(config)
+        if _is_404(config) and _is_404(read):
+            context["story_not_found"] = True  # convention 10: the story is gone (#177)
+        else:
+            context["engine_error"] = panel_for(config)
         return render(request, template, context)
     availability = tab_availability(config.effective)
     context.update(config=config, tabs=tab_links(story_id, tab, availability))
