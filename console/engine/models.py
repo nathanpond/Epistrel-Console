@@ -1870,6 +1870,36 @@ class FactListBody(Model):
     timeline_revision: int
 
 
+# --- author canon writes (#146) ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FactWarning(Model):
+    """``FactWarning``: what an author fact's deterministic check found that did not stop it:
+    ``uncertain`` (``reason``, may be ``None``) or ``contradicted`` (the ``rules`` the write
+    didn't resolve by superseding)."""
+
+    kind: str = open_enum()
+    reason: str | None = None
+    rules: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class FactWritten(Model):
+    """``FactWritten``: an author fact's commit, lock, unlock or supersede. ``fact`` is the new
+    version (or, unchanged, the version as it is); ``superseded`` the versions it closed;
+    ``memory_id`` the author memory written (``None`` without episodic memory or when nothing
+    changed); ``operation_id`` ``None`` when nothing changed."""
+
+    timeline_revision: int
+    fact: FactBody
+    superseded: list[str]
+    memory_id: str | None
+    warnings: list[FactWarning]
+    operation_id: str | None
+    idempotency_key: str | None = None
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 

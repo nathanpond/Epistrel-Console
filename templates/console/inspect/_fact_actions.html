@@ -1,0 +1,9 @@
+{% load canon_tags console_format %}{% comment %}
+A fact version's row actions (#146; #135 convention 14: _fact_row.html and _lineage_row.html include
+it in the Actions cell). Context: fact, state (None on the Canon tab without "include superseded":
+every row is current), story_id, actions_next (the page's full path). Only a current or
+"current (closure undone)" version gets them (the Engine treats both as current). Lock or Unlock
+(by author_locked) POSTs at once with its own key minted now (#43's per-render rule); Supersede…
+opens the pre-filled successor form, carrying next.
+{% endcomment %}{% if state is None or state.key == "current" or state.key == "closure_undone" %}{% new_idempotency_key as lock_key %}{% if fact.author_locked %}<form method="post" action="{% url 'inspect:canon-unlock' story_id fact.id %}">{% csrf_token %}<input type="hidden" name="idempotency_key" value="{{ lock_key }}"><input type="hidden" name="next" value="{{ actions_next }}"><button type="submit" class="fact-unlock">Unlock</button></form>{% else %}<form method="post" action="{% url 'inspect:canon-lock' story_id fact.id %}">{% csrf_token %}<input type="hidden" name="idempotency_key" value="{{ lock_key }}"><input type="hidden" name="next" value="{{ actions_next }}"><button type="submit" class="fact-lock">Lock</button></form>{% endif %}
+<a class="button fact-supersede" href="{% supersede_url fact.id actions_next %}">Supersede…</a>{% endif %}

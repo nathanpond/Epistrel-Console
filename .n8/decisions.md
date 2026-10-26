@@ -1434,3 +1434,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A version whose `tx_from` doesn't parse has no tx bar ("—"); its text columns still render.
   **Why:** The Engine always sends ISO datetimes, but the page shouldn't fail on a bad one.
   **Issue:** #138
+- **Decision:** The new-fact, supersede and result pages render inside #135's Inspect shell (Canon tab). `inspect_page` gained two small extension points: a build may name another template under `TEMPLATE_KEY`, and a build may return an `HttpResponse` (a redirect or the not-found page).
+  **Why:** A greyed Canon tab then makes zero fact calls, and the page gets convention 2's `get_story` read for free. The result page replaces the form on the POST response without a second view.
+  **Issue:** #146
+- **Decision:** The result page's `?report=` URL is `inspect:canon-written` (`canon/written/?report=<pk>`). It accepts only `ok` `commit_fact` / `supersede_fact` rows of the story; for any other `pk` it renders convention 10's not-found line in the tab.
+  **Why:** The story names convention 8's `?report=` but no URL. This follows #136's `decision_report`.
+  **Issue:** #146
+- **Decision:** With the registry read OK but no predicate chosen (or an id the registry doesn't hold), the new-fact page shows only the predicate select and a prompt. The main form, JSON box included, appears once a registry predicate is chosen.
+  **Why:** The AC says the predicate comes first and gates the form. A free-text predicate exists only when the registry is unavailable.
+  **Issue:** #146
+- **Decision:** An entity-kind predicate with `set_object: true` offers both an entity id and a set. `any` offers entity id and literal, plus a set when `set_object` is true.
+  **Why:** I read the Discretion's "entity id, or a set when set_object is true" as adding the set option, not replacing the entity one.
+  **Issue:** #146
+- **Decision:** `console.canon.locate_fact` returns `find_fact`'s version together with the page's `timeline_revision`, and `find_fact` now wraps it.
+  **Why:** The supersede page's `fact_states` check runs `read_current_set`, which needs that revision for its race check. It still makes one id-only read.
+  **Issue:** #146
+- **Decision:** The supersede snapshot (`canon_supersede`, `twostage.sign`) holds the AC's identity fields in `body`, and in `base` the display-only carry-over values (visibility, lock, `anchored_to`), the Instant note and the pre-fill body. On POST the snapshot is checked before the shell runs, so a tampered or expired one renders a bare message page with zero Engine calls (the shell reads included). A snapshot for another fact or story counts as tampered.
+  **Why:** The AC asks for zero calls and the read-only `<pre>` of the pre-fill body after a local failure, and nothing is re-read on POST.
+  **Issue:** #146
+- **Decision:** In a free qualifier row, a key with a blank value is not sent (as in a declared row). An undeclared predicate's stored qualifiers pre-fill the supersede rows with a type inferred from the JSON value (id-shaped string → `id`, list → `ids`).
+  **Why:** The AC says nothing about these cases. This keeps both row modes consistent.
+  **Issue:** #146
+- **Decision:** Canon refusals reuse #143's `refusal_text` but override the memory-worded texts: `story_archived`, `revision_conflict` and `erased_subject_referenced` get canon wording (`CANON_REFUSALS`).
+  **Why:** #143's texts mention memories.
+  **Issue:** #146
+- **Decision (Rule 2):** `base.html` renders a flash tagged `safe` without escaping. Only the `fact_superseded` flash uses the tag, and it is built with `format_html`.
+  **Why:** The AC asks for a lineage link in that flash. Message storage drops `SafeString`, so the template has to know.
+  **Issue:** #146

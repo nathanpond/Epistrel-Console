@@ -165,6 +165,12 @@ inspect_patterns = (
         path("canon/", inspect_canon.canon, name="canon"),
         # #138: one fact's lineage across supersedes (``<ulid:…>``: any other id is a 404).
         path("canon/<ulid:fact_id>/lineage/", inspect_canon.lineage, name="canon-lineage"),
+        # #146: write author canon (commit and its result page again; lock, unlock, supersede).
+        path("canon/new/", inspect_canon.new_fact, name="canon-new"),
+        path("canon/written/", inspect_canon.written, name="canon-written"),
+        path("canon/<ulid:fact_id>/lock/", inspect_canon.lock, name="canon-lock"),
+        path("canon/<ulid:fact_id>/unlock/", inspect_canon.unlock, name="canon-unlock"),
+        path("canon/<ulid:fact_id>/supersede/", inspect_canon.supersede, name="canon-supersede"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

@@ -1,0 +1,61 @@
+{% load inspect_tags %}{% comment %}
+The author fact fields (#146), shared by canon_new.html (a FactForm) and canon_supersede.html (a
+SupersedeForm, which has no subject, predicate or anchored-to inputs). Context: form,
+idempotency_key, cast_names (the subject/object datalist), predicate_names; on the supersede page
+token (the signed snapshot), snapshot, subject_ref, next_url and body_text (the read-only request body). Qualifier rows
+post as q-<n>-key/type/value; "Add qualifier" and "Remove" re-render the form (no Engine call).
+{% endcomment %}<input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+{% if token %}<input type="hidden" name="snapshot" value="{{ token }}"><input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+<datalist id="fact-cast">{% for id, label in cast_names.items %}<option value="{{ id }}">{{ label }}</option>{% endfor %}</datalist>
+{% if "subject" in form.fields %}
+<div class="field field-subject">{{ form.subject.label_tag }} {{ form.subject }}{{ form.subject.errors }}</div>
+<div class="field field-predicate">{% if form.gate %}{{ form.predicate }}Predicate: <strong title="{{ form.gate.id }}">{{ form.gate.name }}</strong> <small class="muted">({{ form.gate.layer }}; object {{ form.gate.object_type }}{% if form.gate.set_object %}, sets allowed{% endif %})</small>{% else %}{{ form.predicate.label_tag }} {{ form.predicate }}{% endif %}{{ form.predicate.errors }}</div>
+{% else %}
+<dl class="supersede-key">
+  <dt>Subject</dt><dd>{% include "console/inspect/_entity.html" with ref=subject_ref %} <small class="muted">(can't change)</small></dd>
+  <dt>Predicate</dt><dd>{% if form.gate %}<strong title="{{ form.gate.id }}">{{ form.gate.name }}</strong>{% else %}{{ snapshot.predicate_id|engine_id }}{% endif %} <small class="muted">(can't change)</small></dd>
+</dl>
+{% endif %}
+<fieldset class="fact-object"><legend>Object</legend>
+{% for radio in form.object_form %}<div class="object-choice object-{{ radio.data.value }}"><label>{{ radio.tag }} {{ radio.choice_label }}</label>
+{% if radio.data.value == "entity" %} {{ form.object_id }}{{ form.object_id.errors }}
+{% elif radio.data.value == "literal" %} {{ form.literal_kind.label_tag }} {{ form.literal_kind }}{{ form.literal_kind.errors }} {{ form.literal_value.label_tag }} {{ form.literal_value }}{{ form.literal_value.errors }} {{ form.literal_unit.label_tag }} {{ form.literal_unit }} <small class="muted">(quantity only)</small>{{ form.literal_unit.errors }}
+{% elif radio.data.value == "set" %} {{ form.object_set }}{{ form.object_set.errors }}{% endif %}</div>
+{% endfor %}{{ form.object_form.errors }}</fieldset>
+<div class="field field-polarity">{{ form.polarity.label_tag }} {{ form.polarity }}{{ form.polarity.errors }}</div>
+<fieldset class="fact-qualifiers"><legend>Qualifiers</legend>
+<input type="hidden" name="q-TOTAL_FORMS" value="{{ form.total_rows }}">
+{% if form.fixed %}<p class="key-qualifiers">Key qualifiers (can't change on a supersede): {% for q in form.fixed %}<code>{{ q.key }}</code> = <code>{{ q.text }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% if form.row_set.declared_none %}<p class="muted no-qualifiers">This predicate declares no qualifiers</p>
+{% elif form.row_set.mode != "off" %}
+<table class="qualifier-rows">
+  <thead><tr><th>Key</th><th>Type</th><th>Value</th>{% if form.row_set.free %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for row in form.row_set.rows %}<tr class="qualifier-row">
+    {% if row.fixed %}<td><code>{{ row.key }}</code><input type="hidden" name="q-{{ row.index }}-key" value="{{ row.key }}"></td><td>{{ row.kind }}<input type="hidden" name="q-{{ row.index }}-type" value="{{ row.kind }}"></td>
+    {% else %}<td><input type="text" name="q-{{ row.index }}-key" value="{{ row.key }}" size="14" aria-label="Qualifier key"></td><td><select name="q-{{ row.index }}-type" aria-label="Qualifier type">{% for kind in form.qualifier_kinds %}<option value="{{ kind }}"{% if kind == row.kind %} selected{% endif %}>{{ kind }}</option>{% endfor %}</select></td>{% endif %}
+    <td><input type="text" name="q-{{ row.index }}-value" value="{{ row.value }}" size="30" aria-label="Value of {{ row.key|default:'this qualifier' }}"></td>
+    {% if form.row_set.free %}<td><button type="submit" name="remove" value="{{ row.index }}">Remove</button></td>{% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if form.row_set.free %}<button type="submit" name="add" value="1">Add qualifier</button> <small class="muted">ids: comma-separated</small>{% endif %}
+{% elif not form.fixed %}<p class="muted">None</p>{% endif %}
+{{ form.qualifiers.errors }}</fieldset>
+<fieldset class="fact-valid-time"><legend>Valid-time (story-minutes, all optional)</legend>
+{% if snapshot.instant_note %}<p class="notice instant-note">{{ snapshot.instant_note }}</p>{% endif %}
+<div class="field">{{ form.valid_from.label_tag }} {{ form.valid_from }}{{ form.valid_from.errors }} {{ form.valid_from_inner.label_tag }} {{ form.valid_from_inner }}{{ form.valid_from_inner.errors }}</div>
+<div class="field">{{ form.valid_to.label_tag }} {{ form.valid_to }}{{ form.valid_to.errors }} {{ form.valid_to_inner.label_tag }} {{ form.valid_to_inner }}{{ form.valid_to_inner.errors }}</div>
+{{ form.valid_time.errors }}</fieldset>
+<div class="field field-scope">{{ form.scope.label_tag }} {{ form.scope }}{{ form.scope.errors }}</div>
+<div class="field field-characters">{{ form.characters.label_tag }} {{ form.characters }} <small class="muted">(used when the scope is characters)</small>{{ form.characters.errors }}</div>
+{% if "anchored_to" in form.fields %}<div class="field field-anchored_to">{{ form.anchored_to.label_tag }} {{ form.anchored_to }}{{ form.anchored_to.errors }}</div>
+{% else %}<p class="field anchored-carry">Anchored to: {% if snapshot.anchored_to %}{{ snapshot.anchored_to|engine_id }}{% else %}—{% endif %} <small class="muted">(carries over)</small></p>{% endif %}
+<div class="field field-locked">{% if "anchored_to" in form.fields %}<label>{{ form.locked }} Locked</label>{% else %}{{ form.locked.label_tag }} {{ form.locked }}{% endif %}{{ form.locked.errors }}</div>
+<details class="json-mode"{% if form.json_mode %} open{% endif %}><summary>Advanced: edit as JSON</summary>
+<p class="muted">When this box isn't empty it is sent as the whole request body, and the fields above are ignored.</p>
+{{ form.json_body }}{{ form.json_body.errors }}
+{% if body_text %}<p>The body this form sends:</p><pre class="request-body">{{ body_text }}</pre>{% endif %}
+</details>

@@ -497,12 +497,18 @@ def find_fact(client: EngineClient, story_id: str, fact_id: str) -> FactBody | N
     ``include_superseded=true&limit=1`` after the id's predecessor (the list is ordered by id
     and the cursor means "after this id"). ``None`` when the version returned isn't
     ``fact_id`` (not in the active timeline). Raises :class:`EngineClientError` on failure."""
+    return locate_fact(client, story_id, fact_id)[0]
+
+
+def locate_fact(client: EngineClient, story_id: str, fact_id: str) -> tuple[FactBody | None, int]:
+    """:func:`find_fact`'s read, with the page's ``timeline_revision`` (#146: the supersede
+    page's state check compares its current-set read with it)."""
     page = client.list_facts(
         story_id, include_superseded=True, limit=1, cursor=ulid_predecessor(fact_id)
     )
     if page.facts and page.facts[0].id == fact_id:
-        return page.facts[0]
-    return None
+        return page.facts[0], page.timeline_revision
+    return None, page.timeline_revision
 
 
 def read_lineage(

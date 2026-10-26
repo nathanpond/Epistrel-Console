@@ -6,8 +6,10 @@ names, turns and fact ids (``{% lineage_url %}``, #138)."""
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlencode
 
 from django import template
+from django.urls import reverse
 
 from console.canon import FactView, PropositionView
 from console.canon import fact_view as _fact_view
@@ -56,3 +58,13 @@ def lineage_url(
         subject if isinstance(subject, str) else None,
         predicate if isinstance(predicate, str) else None,
     )
+
+
+@register.simple_tag(takes_context=True)
+def supersede_url(context: template.Context, fact_id: str, next_url: Any = None) -> str:
+    """``{% supersede_url fact_id actions_next %}``: #146's supersede page for the version,
+    carrying ``next`` (the page the row is on, query kept) when given."""
+    url = reverse("inspect:canon-supersede", args=[str(context.get("story_id")), fact_id])
+    if isinstance(next_url, str) and next_url:
+        return f"{url}?{urlencode({'next': next_url})}"
+    return url

@@ -21,7 +21,9 @@ no stub pages).
    failure is #43's error panel in place of the tab bar and the tab, and ``build`` is not called;
 3. computes :func:`console.inspect.tab_availability`. A greyed tab renders the greyed panel and
    makes no other read (``build`` is not called);
-4. otherwise calls ``build``. A 409 ``module_off`` escaping it becomes the greyed panel (via
+4. otherwise calls ``build`` (whose context may name another template under
+   :data:`TEMPLATE_KEY`, or which may answer an ``HttpResponse`` of its own, #146). A 409
+   ``module_off`` escaping it becomes the greyed panel (via
    :func:`console.inspect.module_off_unavailable`) with "The story's configuration changed since
    this page loaded — reload"; the bar is not recomputed. Any other error escaping ``build``
    goes to the middleware (#43's panel, #87's held wrapper). A page with several reads renders
@@ -130,7 +132,11 @@ class InspectContext:
         return self.config.effective
 
 
-Build = Callable[[InspectContext], Mapping[str, Any]]
+Build = Callable[[InspectContext], Mapping[str, Any] | HttpResponse]
+# A build's context may name another template under this key (#146: a fact write's result page
+# renders in place of its form, on the POST response); a build may also answer a response of
+# its own (a redirect).
+TEMPLATE_KEY = "inspect_template"
 
 
 @dataclass(frozen=True)
@@ -204,14 +210,18 @@ def inspect_page(
         return render(request, template, context)
     ctx = InspectContext(request, client, story_id, tab, config, story, story_name)
     try:
-        context.update(build(ctx))
+        built = build(ctx)
     except EngineClientError as exc:
         if not is_module_off(exc):
             raise
         log_engine_error(request, exc)
         context["unavailable"] = module_off_unavailable(exc, tab, config.effective)
         context["config_changed"] = True
-    return render(request, template, context)
+        return render(request, template, context)
+    if isinstance(built, HttpResponse):
+        return built
+    context.update(built)
+    return render(request, context.pop(TEMPLATE_KEY, template), context)
 
 
 def _overview(ctx: InspectContext) -> dict[str, Any]:

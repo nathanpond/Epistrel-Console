@@ -156,6 +156,9 @@
     .arm-assessment { color: #953800; border-color: #bc4c00; background: #fff1e5; }
     table.retrieved td.memory-text { white-space: normal; min-width: 20rem; }
     table.retrieved td.actions form { display: inline; } /* #143: the row's Pin and Unpin */
+    table.canon-facts td.actions form, table.lineage td.actions form { display: inline; } /* #146 */
+    form.fact-form fieldset { margin: 0.6rem 0; } form.fact-form div.field { margin: 0.3rem 0; }
+    form.fact-form div.object-choice { margin: 0.2rem 0; }
     pre.memory-text, div.confirm dd code { white-space: pre-wrap; } /* #144: copyable spans */
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
     /* #139: a turn's eval hooks and read set */
@@ -185,7 +188,7 @@
   {% endif %}
   {% if messages %}
   <ul class="messages">
-    {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>{% endfor %}
+    {% for message in messages %}<li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{% if "safe" in message.extra_tags.split %}{{ message|safe }}{% else %}{{ message }}{% endif %}</li>{% endfor %}
   </ul>
   {% endif %}
   {% if pause_banner %}{% include "console/stories/_pause_banner.html" %}{% endif %}

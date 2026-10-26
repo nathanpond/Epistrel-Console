@@ -1,0 +1,29 @@
+{% extends "console/inspect/base.html" %}
+{% comment %}
+Supersede a current fact version (#146, console/views/inspect_canon.py's supersede), in the Canon
+tab: the version (its row, no actions), then console.forms.canon.SupersedeForm pre-filled from it.
+Its subject, predicate and key qualifiers ride in the signed snapshot (token), never in inputs. A
+version the state rule finds superseded shows the fact_superseded message and no form. The result
+page (canon_written.html) replaces this page on success.
+{% endcomment %}
+{% block title %}Inspect · Supersede {{ fact_short }} · {{ story_name }}{% endblock %}
+{% block tab_content %}
+<p class="canon-back"><a href="{{ back_url }}">Back</a></p>
+<h2>Supersede <code title="{{ fact_id }}">{{ fact_short }}</code></h2>
+{% if predicates_unavailable %}<p class="muted predicates-unavailable">{{ predicates_unavailable }}</p>{% endif %}
+{% if version %}
+<table class="canon-facts supersede-version">
+  <thead><tr><th>Id</th><th>Proposition</th><th>Valid-time (min)</th><th>Tx-time</th><th>State</th><th>Visibility</th><th>Provenance</th><th>Authority</th><th><span aria-label="Lock">🔒</span></th><th>Links</th><th>More</th></tr></thead>
+  <tbody>{% include "console/inspect/_fact_row.html" with fact=version state=version_state actions=None %}</tbody>
+</table>
+{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist fact-refusal" role="alert">{{ refusal }}</p>{% endif %}
+{% if form %}
+<form method="post" action="{{ action_url }}" class="fact-form supersede-form">
+  {% csrf_token %}
+  {% include "console/inspect/_fact_form.html" %}
+  <p><button type="submit" class="fact-supersede-submit">Supersede</button> <a href="{{ back_url }}">Cancel</a></p>
+</form>
+{% endif %}
+{% endblock %}

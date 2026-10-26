@@ -1,0 +1,30 @@
+{% extends "console/inspect/base.html" %}{% load canon_tags console_format inspect_tags %}
+{% comment %}
+A commit's or supersede's result (#146), in the Canon tab: rendered on the POST response and again
+at inspect:canon-written?report=<pk> from the #44 row (convention 8). Context: written (FactWritten),
+heading, fact and state (the written version, current, no actions), superseded ((id, lineage url)),
+memory_url or no_memory, operation_pk, replayed, report_url, fact_lineage_url, back_url and
+back_label; missing (convention 10's text) for a ?report= that isn't one.
+{% endcomment %}
+{% block title %}Inspect · {{ heading|default:"Fact written" }} · {{ story_name }}{% endblock %}
+{% block tab_content %}
+{% if missing %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
+<p><a href="{{ back_url }}">Back to Canon</a></p>
+{% else %}
+<h2 class="fact-written">{{ heading }}</h2>
+{% if replayed %}<p class="notice replayed">Already written — this is the Engine's recorded answer</p>{% endif %}
+<table class="canon-facts written-fact">
+  <thead><tr><th>Id</th><th>Proposition</th><th>Valid-time (min)</th><th>Tx-time</th><th>State</th><th>Visibility</th><th>Provenance</th><th>Authority</th><th><span aria-label="Lock">🔒</span></th><th>Links</th><th>More</th></tr></thead>
+  <tbody>{% include "console/inspect/_fact_row.html" %}</tbody>
+</table>
+<dl class="fact-written-details">
+  <dt>Superseded</dt><dd class="superseded">{% if superseded %}superseded: {{ superseded|length }} — {% for id, url in superseded %}<a href="{{ url }}">{{ id|engine_id }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}Superseded: none{% endif %}</dd>
+  <dt>Warnings</dt><dd class="warnings">{% if written.warnings %}<ul>{% for w in written.warnings %}<li class="warning warning-{{ w.kind }}">{% if w.kind == "uncertain" %}{% if w.reason %}The check couldn't decide: <span title="{{ w.reason }}">{{ w.reason|humanise|capfirst }}</span>{% else %}The check couldn't decide (no reason given){% endif %}{% elif w.kind == "contradicted" %}Contradicted — rules not resolved: {% for rule in w.rules %}<span class="rule" title="{{ rule }}">{{ rule|humanise|capfirst }}</span>{% if not forloop.last %}, {% endif %}{% empty %}none named{% endfor %}{% else %}<span title="{{ w.kind }}">{{ w.kind|humanise|capfirst }}</span>{% if w.reason %}: {{ w.reason }}{% endif %}{% endif %}</li>{% endfor %}</ul>{% else %}None{% endif %}</dd>
+  <dt>Author memory</dt><dd class="memory">{% if written.memory_id %}{% if memory_url %}<a href="{{ memory_url }}">{{ written.memory_id|engine_id }}</a>{% else %}{{ written.memory_id|engine_id }}{% endif %}{% else %}{{ no_memory }}{% endif %}</dd>
+  <dt>Operation</dt><dd class="operation">{% if written.operation_id %}{% if operation_pk %}<a class="operation-link" href="{% url 'operations:detail' operation_pk %}"><code>{{ written.operation_id }}</code></a>{% else %}<code>{{ written.operation_id }}</code>{% endif %}{% else %}—{% endif %}</dd>
+  <dt>Revision</dt><dd class="revision">Revision {{ written.timeline_revision }}</dd>
+</dl>
+<p class="written-links"><a href="{{ fact_lineage_url }}">View lineage</a> · <a href="{{ back_url }}">{{ back_label }}</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

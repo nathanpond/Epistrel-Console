@@ -49,6 +49,7 @@ from console.engine.models import (
     ErasureResult,
     ErasureStatus,
     FactListBody,
+    FactWritten,
     ForkResult,
     HealthResponse,
     HealthResult,
@@ -1252,6 +1253,66 @@ class EngineClient:
             params["cursor"] = cursor
         response = self._request("GET", f"/admin{_story_path(story_id)}/facts", params=params)
         return _parse(response, FactListBody)
+
+    # --- author canon writes (#146) ------------------------------------------------------------
+
+    @operation("POST", "/admin/stories/{story_id}/facts", response_model=FactWritten)
+    def commit_fact(
+        self, story_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> FactWritten:
+        """``POST /admin/stories/{id}/facts`` (``FactRequest``, sent as given): write an author
+        fact (FR-GUARD-4's canonize). The deterministic check runs first; a current fact of the
+        same functional key, or of the opposite polarity, is superseded (``superseded``), and an
+        ``uncertain`` verdict or an unresolved contradiction comes back in ``warnings``. 409
+        ``module_off`` for a Lite story; 422 ``unknown_predicate`` / ``validation_error``. The
+        Engine holds the write behind a running turn, so it waits the turn timeout (#64
+        convention 18)."""
+        path = f"/admin{_story_path(story_id)}/facts"
+        return self._fact_write("POST", path, idempotency_key, body)
+
+    @operation("POST", "/admin/stories/{story_id}/facts/{fact_id}/lock", response_model=FactWritten)
+    def lock_fact(self, story_id: str, fact_id: str, *, idempotency_key: str) -> FactWritten:
+        """``POST /admin/stories/{id}/facts/{fid}/lock`` (no body): set ``author_locked`` on
+        current version ``fact_id`` by writing a successor of the same proposition. A locked
+        version answers unchanged (``operation_id`` null). 404 ``fact_not_found``; 409
+        ``fact_superseded`` / ``fact_inactive``."""
+        return self._fact_write("POST", _fact_path(story_id, fact_id, "lock"), idempotency_key)
+
+    @operation(
+        "DELETE", "/admin/stories/{story_id}/facts/{fact_id}/lock", response_model=FactWritten
+    )
+    def unlock_fact(self, story_id: str, fact_id: str, *, idempotency_key: str) -> FactWritten:
+        """``DELETE /admin/stories/{id}/facts/{fid}/lock``: clear the lock (a successor, as for
+        the lock); an unlocked version answers unchanged."""
+        return self._fact_write("DELETE", _fact_path(story_id, fact_id, "lock"), idempotency_key)
+
+    @operation(
+        "POST",
+        "/admin/stories/{story_id}/facts/{fact_id}/supersede",
+        response_model=FactWritten,
+    )
+    def supersede_fact(
+        self, story_id: str, fact_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> FactWritten:
+        """``POST /admin/stories/{id}/facts/{fid}/supersede`` (``SupersedeRequest``, sent as
+        given): close current version ``fact_id`` and write ``proposition`` as its successor in
+        the same lineage. Visibility, the lock and ``anchored_to`` carry over unless given; the
+        valid-time is the new proposition's own unless ``valid_from``/``valid_to`` are given.
+        422 ``key_mismatch`` when the subject, predicate or key qualifiers change."""
+        path = _fact_path(story_id, fact_id, "supersede")
+        return self._fact_write("POST", path, idempotency_key, body)
+
+    def _fact_write(
+        self, method: str, path: str, idempotency_key: str, body: Mapping[str, Any] | None = None
+    ) -> FactWritten:
+        response = self._request(
+            method,
+            path,
+            json=dict(body) if body is not None else None,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, FactWritten)
 
     # --- a story's hot set (#140) ---------------------------------------------------------------
 
@@ -3305,6 +3366,11 @@ def _story_path(story_id: str) -> str:
 def _memory_path(story_id: str, memory_id: str, action: str) -> str:
     """``/stories/<id>/memories/<mid>/<action>``, both ids percent-encoded."""
     return f"{_story_path(story_id)}/memories/{quote(memory_id, safe='')}/{action}"
+
+
+def _fact_path(story_id: str, fact_id: str, action: str) -> str:
+    """``/admin/stories/<id>/facts/<fid>/<action>``, both ids percent-encoded."""
+    return f"/admin{_story_path(story_id)}/facts/{quote(fact_id, safe='')}/{action}"
 
 
 def _predicate_path(story_id: str, predicate_id: str, action: str) -> str:
