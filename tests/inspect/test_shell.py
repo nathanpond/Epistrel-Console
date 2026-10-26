@@ -126,14 +126,14 @@ def test_a_tab_whose_url_is_not_registered_is_absent(
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         tabs = bar(get(operator_client).content.decode())
     # Registered for real so far: Overview (#151), Memory (#140), Retrieval (#141), Canon
-    # (#137) and Predicates (#136); the rest are absent.
+    # (#137), Predicates (#136) and Ledger (#148); Scene is absent.
     assert tabs.startswith(f'<a class="active" aria-current="page" href="{URL}">Overview</a>')
     assert f'href="{URL}memory/">Memory</a>' in tabs
     assert f'href="{URL}retrieval/">Retrieval</a>' in tabs
     assert f'href="{URL}canon/">Canon</a>' in tabs
     assert f'href="{URL}predicates/">Predicates</a>' in tabs
-    for label in ("Ledger", "Scene"):
-        assert f">{label}<" not in tabs
+    assert f'href="{URL}ledger/">Ledger</a>' in tabs
+    assert ">Scene<" not in tabs
 
 
 # --- a greyed tab opened directly -----------------------------------------------------------------
@@ -230,11 +230,15 @@ def test_other_errors_from_build_are_the_error_panel(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     answer_config(engine, structured())
+    # The Ledger tab (#148) renders its own read's errors: a 503 is #43's panel there.
     engine.respond(
-        "GET", "/stories/{story_id}/inspect/ledger", 404, json=error_json("not_found", "gone")
+        "GET",
+        "/stories/{story_id}/inspect/ledger",
+        503,
+        json=error_json("database_unavailable", "down"),
     )
     html = get(operator_client, Tab.LEDGER).content.decode()
-    assert "Engine error 404 not_found" in html
+    assert "Engine error 503 database_unavailable" in html
     assert "panel unavailable" not in html
 
 

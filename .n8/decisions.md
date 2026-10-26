@@ -1488,3 +1488,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #142's explain-retrieval test fixture now answers `GET /stories/{id}/predicates`. Its structured history page makes #147's one registry read.
   **Why:** The new read is in the AC. Without an answer the schema-validating fake fails the page.
   **Issue:** #147
+- **Decision:** The Ledger tab's predicate and story-name reads run only after the ledger read answers; an invalid filter or a failed ledger read makes no registry read either.
+  **Why:** Nothing on the page needs names without rows, and it keeps "zero ledger calls" pages to the shell's two reads.
+  **Issue:** #148
+- **Decision:** Cast names come from the shell's own `get_story` read (`ctx.story`), not a second read.
+  **Why:** Convention 2 allows one `get_story` per page and `inspect_page` already makes it.
+  **Issue:** #148
+- **Decision:** The "Entries for thunks not on this page" table adds a Thunk column (the entry's `thunk_id`, short id); an entry with neither `thunk_id` nor `proposition_id` also lands there.
+  **Why:** Without the thunk id those entries can't be told apart; the AC lists the other five columns only.
+  **Issue:** #148
+- **Decision:** The thunks table has a 12th column, "More", after Rejected bindings (the sub-rows use `colspan="12"`).
+  **Why:** Convention 13's "More" (full id, sketch texts, span, parent fact, further candidates) needs a cell; the planned header list didn't name one.
+  **Issue:** #148
+- **Decision:** A hidden-fact entry the Engine returns on a page reached by `after_id` is left out, not shown.
+  **Why:** The AC says the group renders on the first page only; the Engine shouldn't send them there anyway.
+  **Issue:** #148
+- **Decision:** `test_shell.py::test_other_errors_from_build_are_the_error_panel` now uses a 503 `database_unavailable` on the ledger route instead of a 404.
+  **Why:** The real Ledger tab renders a 404 as convention 10's not-found line; a 503 still exercises #43's panel.
+  **Issue:** #148

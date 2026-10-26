@@ -17,6 +17,7 @@ from console.views import (
     history,
     inspect,
     inspect_canon,
+    inspect_ledger,
     inspect_memory,
     inspect_predicates,
     media,
@@ -188,6 +189,8 @@ inspect_patterns = (
             inspect_predicates.reject,
             name="predicate-reject",
         ),
+        # #148: the story's thunks and promissory ledger.
+        path("ledger/", inspect_ledger.ledger, name="ledger"),
         # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
         path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
         path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),

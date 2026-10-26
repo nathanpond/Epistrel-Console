@@ -2020,6 +2020,187 @@ class FactWritten(Model):
     idempotency_key: str | None = None
 
 
+# --- commitments: thunks and the promissory ledger (#148) ---------------------------------------
+
+
+@dataclass(frozen=True)
+class Position(Model):
+    """``PositionBody``: a narrative position, the turn, its variant and the beat (each ``None``
+    when position-less)."""
+
+    turn: int | None
+    variant: int | None
+    beat: int | None
+
+
+@dataclass(frozen=True)
+class RejectedBinding(Model):
+    """``RejectedBindingBody`` (FR-COMMIT-14): a binding reconciliation rejected: the claim and
+    beat that made it, the entity it bound and the records (fact ids) it conflicted with."""
+
+    claim_id: str | None = None
+    beat: int | None = None
+    bound_entity: str | None = None
+    conflicting_records: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Thunk(Model):
+    """``ThunkBody``: one introduced-but-undetermined reference. ``sketch`` stays raw JSON (the
+    schema leaves it untyped); :meth:`ThunkSketch.from_json` is its typed view (convention 12).
+    ``state``, ``open_slot`` and ``resolution_level`` are plain strings in the schema."""
+
+    id: str
+    sketch: dict[str, Any]
+    description: str
+    open_slot: str
+    state: str
+    position: Position
+    salient: bool
+    valid_time: int | None
+    resolved_fact_id: str | None
+    resolution_level: str | None = None
+    rejected_bindings: list[RejectedBinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class LedgerItem(Model):
+    """``LedgerItemBody``: one promissory-ledger entry, owed on a thunk (``thunk_id``) or on a
+    hidden fact's proposition (``proposition_id``), and the operation that discharged it and
+    how (both ``None`` while undischarged). It carries no turn."""
+
+    id: str
+    thunk_id: str | None
+    proposition_id: str | None
+    kind: str
+    introduced_position: Position
+    discharged_by_operation: str | None
+    discharged_mode: str | None
+
+
+@dataclass(frozen=True)
+class Ledger(Model):
+    """``LedgerBody``: a page of the story's thunks by id with their ledger entries (the first
+    page also holds the entries on hidden facts' propositions), the story's revision and the
+    next page's ``after_id`` (``None`` on the last)."""
+
+    thunks: list[Thunk]
+    ledger: list[LedgerItem]
+    revision: int
+    next_after_id: str | None
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+@dataclass(frozen=True)
+class SketchCandidate:
+    """A possible value of a thunk's open slot (the Engine's ``Candidate``): an entity, or a
+    text with no entity yet, and how likely it is. ``index`` is its 1-based position."""
+
+    index: int
+    entity_id: str | None
+    text: str
+    confidence: float
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object, index: int) -> SketchCandidate | None:
+        """``None`` unless ``obj`` is an object whose ``confidence`` is a number and whose
+        ``entity_id`` / ``text`` (when present) are strings (``entity_id`` may be null)."""
+        if not isinstance(obj, dict):
+            return None
+        entity, text = obj.get("entity_id"), obj.get("text", "")
+        confidence = _number(obj.get("confidence", 0.0))
+        if confidence is None or not isinstance(text, str):
+            return None
+        if entity is not None and not isinstance(entity, str):
+            return None
+        extras = _unnamed(obj, ("entity_id", "text", "confidence"))
+        return cls(index, entity, text, confidence, extras)
+
+
+SKETCH_TEXTS = ("subject_text", "relation_text", "object_text", "time_text")
+SKETCH_IDS = ("subject_id", "object_id", "parent_fact_id")
+SKETCH_FIELDS = (
+    *SKETCH_TEXTS,
+    "predicate_id",
+    *SKETCH_IDS,
+    "literal",
+    "polarity",
+    "open_slot",
+    "candidates",
+    "span",
+)
+
+
+@dataclass(frozen=True)
+class ThunkSketch:
+    """``ThunkBody.sketch`` typed (the Engine's ``core.commit.sketch.ThunkSketch``): the texts as
+    said, the predicate and the known arguments by id (``literal`` a :class:`TypedLiteral`), the
+    polarity, the sketch's own ``open_slot``, the candidates, the ``(beat, start, end)`` span and
+    an incidental detail's ``parent_fact_id``. A text or id of the wrong type lands in
+    ``extras`` and a candidate that doesn't parse in ``skipped_candidates`` (both for "More")."""
+
+    predicate_id: str
+    open_slot: str
+    subject_text: str | None = None
+    relation_text: str | None = None
+    object_text: str | None = None
+    time_text: str | None = None
+    subject_id: str | None = None
+    object_id: str | None = None
+    parent_fact_id: str | None = None
+    literal: TypedLiteral | None = None
+    polarity: str = "affirmed"
+    candidates: tuple[SketchCandidate, ...] = ()
+    skipped_candidates: tuple[tuple[int, Any], ...] = ()
+    span: tuple[int, ...] | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, obj: object) -> ThunkSketch | None:
+        """``None`` (the malformed case: the row shows the description and the raw sketch) unless
+        ``obj`` is an object with a string ``predicate_id`` and ``open_slot``, a ``literal`` that
+        is null, absent or a :class:`TypedLiteral` (``kind`` and ``value``), and ``candidates``
+        absent or a list. A text, id, polarity or span of the wrong type goes to ``extras``."""
+        if not isinstance(obj, dict):
+            return None
+        predicate, slot = obj.get("predicate_id"), obj.get("open_slot")
+        if not isinstance(predicate, str) or not isinstance(slot, str):
+            return None
+        raw_literal = obj.get("literal")
+        literal = None if raw_literal is None else TypedLiteral.from_json(raw_literal)
+        if raw_literal is not None and literal is None:
+            return None
+        raw_candidates = obj.get("candidates", [])
+        if not isinstance(raw_candidates, list):
+            return None
+        candidates, skipped = _entries(raw_candidates, SketchCandidate.from_json)
+        extras = _unnamed(obj, SKETCH_FIELDS)
+        texts = {name: _str_or_none(obj, name, extras) for name in (*SKETCH_TEXTS, *SKETCH_IDS)}
+        polarity = _str_or_none(obj, "polarity", extras)
+        span = obj.get("span")
+        span_ok = span is None or (
+            isinstance(span, list) and all(_int(n) is not None for n in span)
+        )
+        kept_span = _take(obj, "span", span_ok, extras)
+        return cls(
+            predicate,
+            slot,
+            literal=literal,
+            polarity=polarity or "affirmed",
+            candidates=candidates,
+            skipped_candidates=skipped,
+            span=tuple(kept_span) if isinstance(kept_span, list) else None,
+            extras=extras,
+            **texts,
+        )
+
+
 ConfigClass = Literal["interpretive", "prospective"]
 CONFIG_CLASSES: tuple[ConfigClass, ...] = typing.get_args(ConfigClass)
 

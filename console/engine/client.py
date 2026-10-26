@@ -57,6 +57,7 @@ from console.engine.models import (
     HotSetBody,
     ImpactReport,
     IngestResponse,
+    Ledger,
     ListingStatus,
     MediaAsset,
     MediaKind,
@@ -1253,6 +1254,35 @@ class EngineClient:
             params["cursor"] = cursor
         response = self._request("GET", f"/admin{_story_path(story_id)}/facts", params=params)
         return _parse(response, FactListBody)
+
+    # --- commitments: thunks and the promissory ledger (#148) --------------------------------
+
+    @operation("GET", "/stories/{story_id}/inspect/ledger", response_model=Ledger)
+    def inspect_ledger(
+        self,
+        story_id: str,
+        *,
+        state: str | None,
+        discharged: bool | None,
+        after_id: str | None,
+        limit: int = 100,
+    ) -> Ledger:
+        """``GET /stories/{id}/inspect/ledger`` (FR-COMMIT-7,13): a page of the story's thunks by
+        id (``limit`` 1 to 500, ``after_id`` continues), only those in ``state`` when given,
+        with their ledger entries (``discharged`` keeps the discharged or the undischarged ones;
+        every thunk on the page still comes back); the first page also holds the entries on
+        hidden facts' propositions. Always ``viewpoint=omniscient`` (#135 convention 1). A
+        ``None`` argument is left out; ``after_id`` is passed through as given. 409
+        ``module_off`` for a story that doesn't run commitment."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if state is not None:
+            params["state"] = state
+        if discharged is not None:
+            params["discharged"] = "true" if discharged else "false"
+        if after_id:
+            params["after_id"] = after_id
+        response = self._request("GET", f"{_story_path(story_id)}/inspect/ledger", params=params)
+        return _parse(response, Ledger)
 
     # --- author canon writes (#146) ------------------------------------------------------------
 

@@ -1,0 +1,57 @@
+{
+  "thunks": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH4",
+      "description": "a letter is at the inn",
+      "sketch": {
+        "relation_text": "is at",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "subject_id": null,
+        "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PA2",
+        "open_slot": "subject",
+        "candidates": []
+      },
+      "open_slot": "subject",
+      "state": "open",
+      "position": {
+        "turn": 6,
+        "variant": null,
+        "beat": 0
+      },
+      "salient": true,
+      "valid_time": 300,
+      "resolved_fact_id": null,
+      "rejected_bindings": []
+    }
+  ],
+  "ledger": [
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN6",
+      "thunk_id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH4",
+      "proposition_id": null,
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": 6,
+        "variant": null,
+        "beat": 0
+      },
+      "discharged_by_operation": null,
+      "discharged_mode": null
+    },
+    {
+      "id": "01JB2Z8Y5Q3W6K9M1N4P7R0EN7",
+      "thunk_id": null,
+      "proposition_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PP8",
+      "kind": "salient_reference",
+      "introduced_position": {
+        "turn": 5,
+        "variant": null,
+        "beat": 0
+      },
+      "discharged_by_operation": null,
+      "discharged_mode": null
+    }
+  ],
+  "revision": 9,
+  "next_after_id": null
+}

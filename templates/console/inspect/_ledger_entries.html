@@ -1,0 +1,21 @@
+{% load console_format inspect_tags %}{% comment %}
+Promissory-ledger entries (#148) as a sub-table, in the Engine's order. Context: entries (a list of
+console.ledger.EntryRow), story_id, and optional column flags proposition (the "Owed on hidden
+facts" group) and thunk (the "Entries for thunks not on this page" group). The discharging
+operation links its #44 row when the Console logged it (operation_links), else is a plain short id;
+an undischarged entry reads "undischarged" in bold, a set operation with a null mode "—".
+{% endcomment %}<table class="ledger-entries">
+  <thead><tr><th>Entry</th>{% if thunk %}<th>Thunk</th>{% endif %}{% if proposition %}<th>Proposition</th>{% endif %}<th>Kind</th><th>Introduced</th><th>Discharged by</th><th>Mode</th></tr></thead>
+  <tbody>
+  {% for e in entries %}<tr id="e-{{ e.item.id }}" class="ledger-entry">
+    <td>{{ e.item.id|engine_id }}</td>
+    {% if thunk %}<td>{{ e.item.thunk_id|engine_id }}</td>{% endif %}
+    {% if proposition %}<td>{{ e.item.proposition_id|engine_id }}</td>{% endif %}
+    <td><span title="{{ e.item.kind }}">{{ e.item.kind|humanise|capfirst }}</span></td>
+    <td class="introduced">{% if e.position_url %}<a href="{{ e.position_url }}">{{ e.position }}</a>{% else %}{{ e.position|default:"—" }}{% endif %}</td>
+    <td class="discharged-by">{% if e.discharged %}{% if e.op_pk %}<a class="operation-link" href="{% url 'operations:detail' e.op_pk %}">{{ e.item.discharged_by_operation|engine_id }}</a>{% else %}{{ e.item.discharged_by_operation|engine_id }}{% endif %}{% else %}<strong>undischarged</strong>{% endif %}</td>
+    <td class="mode">{% if e.item.discharged_mode %}<span title="{{ e.item.discharged_mode }}">{{ e.item.discharged_mode|humanise|capfirst }}</span>{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>

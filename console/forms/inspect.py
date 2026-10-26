@@ -580,3 +580,77 @@ class CanonForm(forms.Form):
             return
         if not apply_engine_errors(exc, self, aliases=aliases):
             self.add_error(None, exc.message)
+
+
+# --- the Ledger tab's filters (#148) -------------------------------------------------------------
+
+ANY = "any"
+# Console value → the Engine's ``state`` (``None``: not sent).
+LEDGER_STATES: Mapping[str, str | None] = {
+    ANY: None,
+    "open": "open",
+    "resolved": "resolved",
+    "expired": "expired",
+}
+# Console value → the Engine's ``discharged`` (``None``: not sent).
+LEDGER_DISCHARGED: Mapping[str, bool | None] = {
+    ANY: None,
+    "discharged": True,
+    "undischarged": False,
+}
+LEDGER_FIELDS = ("state", "discharged")
+
+
+class LedgerForm(forms.Form):
+    """The Ledger tab's GET filters (``console/views/inspect_ledger.py``): ``state`` (any, open,
+    resolved, expired) and ``discharged`` (any, discharged, undischarged). Blank is ``any``; an
+    unknown value is an error beside its select, and the view then makes no ledger call. The
+    page cursor ``after_id`` isn't a field: the view passes it through as given."""
+
+    state = forms.ChoiceField(
+        required=False,
+        label="State",
+        choices=[(ANY, "Any"), ("open", "Open"), ("resolved", "Resolved"), ("expired", "Expired")],
+    )
+    discharged = forms.ChoiceField(
+        required=False,
+        label="Entries",
+        choices=[(ANY, "Any"), ("discharged", "Discharged"), ("undischarged", "Undischarged")],
+    )
+
+    def clean_state(self) -> str:
+        return str(self.cleaned_data.get("state") or ANY)
+
+    def clean_discharged(self) -> str:
+        return str(self.cleaned_data.get("discharged") or ANY)
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_ledger``' filter arguments (valid form only; no cursor)."""
+        return {
+            "state": LEDGER_STATES[self.cleaned_data["state"]],
+            "discharged": LEDGER_DISCHARGED[self.cleaned_data["discharged"]],
+        }
+
+    @property
+    def state_filter(self) -> bool:
+        """Whether ``state`` narrows the thunks (a ``discharged`` filter narrows entries only)."""
+        return bool(self.cleaned_data.get("state", ANY) != ANY)
+
+    @property
+    def any_filter(self) -> bool:
+        return any(self.cleaned_data.get(name, ANY) != ANY for name in LEDGER_FIELDS)
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422: ``viewpoint_unresolved`` → convention 10's line above the filters; otherwise
+        the Engine's message beside the select ``details.field`` names (``query.state`` /
+        ``query.discharged``), else above the filters (a bad ``after_id`` lands there)."""
+        if exc.code == VIEWPOINT_UNRESOLVED:
+            self.add_error(None, OMNISCIENT_TEXT)
+            return
+        aliases = {f"query.{name}": name for name in LEDGER_FIELDS}
+        aliases.update({name: name for name in LEDGER_FIELDS})
+        field_name = exc.details.get("field")
+        if isinstance(field_name, str) and field_name in aliases:
+            self.add_error(aliases[field_name], exc.message)
+            return
+        self.add_error(None, exc.message)
