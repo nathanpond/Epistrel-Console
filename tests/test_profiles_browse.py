@@ -25,6 +25,7 @@ from tests.fakes.engine import FakeEngine, recorded_schema
 from tests.fakes.guarantees import answer_guarantees
 from tests.fakes.ownership import answer_one_relation, answer_relations, shows_panel
 from tests.fixtures import engine_fixture
+from tests.profile_helpers import STRUCTURED, m5_deployment, structured_profile
 from tests.ratings.helpers import calls, error, text
 
 pytestmark = pytest.mark.django_db
@@ -610,3 +611,66 @@ def test_the_detail_page_includes_the_ownership_panel(
     assert shows_panel(html, "engine_profile", LITE)
     assert html.index('class="stories-using"') < html.index('id="ownership"')
     assert html.index('id="ownership"') < html.index("<h2>Settings</h2>")
+
+
+# --- the M5 modules (#204) ------------------------------------------------------------------------
+
+M5_BLOCKS = ("character_knowledge", "perception", "multi_character")
+# Every M5 dial (dotted), its value at Structured v2 (migration 0080) and its schema default.
+M5_DIALS: dict[str, tuple[str, str]] = {
+    "character_knowledge.partitions": ("true", "false"),
+    "character_knowledge.nested_beliefs.enabled": ("true", "false"),
+    "character_knowledge.nested_beliefs.depth": ("2", "2"),
+    "character_knowledge.lazy_resolution": ("true", "false"),
+    "character_knowledge.testimony": ("model", "off"),
+    "character_knowledge.max_adjudications_per_turn": ("2", "2"),
+    "character_knowledge.max_lazy_resolutions_per_turn": ("20", "20"),
+    "perception.level": ("full", "none"),
+    "multi_character.renders": ("per_character", "combined"),
+    "multi_character.interjection_max_words": ("6", "6"),
+}
+STRUCTURED_DETAIL = f"/profiles/{STRUCTURED}/"
+
+
+def anchor(dotted: str) -> str:
+    return "f-" + dotted.replace(".", "-")
+
+
+def block_html(html: str, name: str) -> str:
+    start = html.index(f'<section class="settings-block" id="block-{name}">')
+    return html[start : html.index("</section>", start)]
+
+
+def structured_engine(engine: FakeEngine, version: int) -> None:
+    engine.respond("GET", SETTINGS, 200, json=m5_deployment())
+    engine.respond("GET", ITEM, 200, json=structured_profile(version))
+
+
+def test_m5_modules_render_with_their_dials(operator_client: Client, engine: FakeEngine) -> None:
+    structured_engine(engine, 2)
+    html = get(operator_client, STRUCTURED_DETAIL)
+    assert "Version 2 of 2" in text(html)
+    for name in M5_BLOCKS:
+        assert f'id="block-{name}"' in html
+    for dotted, (value, default) in M5_DIALS.items():
+        block = block_html(html, dotted.split(".", 1)[0])
+        assert f'<tr id="{anchor(dotted)}"' in block, dotted
+        assert cells(html, anchor(dotted))[1] == value, dotted
+        assert cells(html, anchor(dotted))[3] == default, dotted
+    # nested_beliefs is a sub-block of Character knowledge, its dials beneath it.
+    knowledge = block_html(html, "character_knowledge")
+    nested = knowledge.index('<tr id="f-character_knowledge-nested_beliefs"')
+    assert nested < knowledge.index('<tr id="f-character_knowledge-nested_beliefs-enabled"')
+    assert 'class="depth-2"' in row_html(html, "f-character_knowledge-nested_beliefs-depth")
+
+
+def test_m5_modules_at_version_1_read_off(operator_client: Client, engine: FakeEngine) -> None:
+    structured_engine(engine, 1)
+    html = get(operator_client, f"{STRUCTURED_DETAIL}?version=1")
+    assert "Version 1 of 2" in text(html)
+    for dotted, (_, default) in M5_DIALS.items():
+        row = cells(html, anchor(dotted))
+        # Not set at v1: the deployment's default (0080's, every module off) beside it.
+        assert row[1] == "not set", dotted
+        assert row[2] == default, dotted
+        assert row[3] == default, dotted

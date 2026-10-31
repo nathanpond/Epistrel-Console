@@ -2102,3 +2102,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `test_assign_flash_ignores_pinned` asserts an assign's signed base carries no `pinned`, an assign to another profile flashes the fingerprint, and a no-op assign of the own profile still flashes NO_CHANGE.
   **Why:** The AC's complement read literally (a pinned-only assign result → fingerprint) contradicts "assign bases compare as today"; this pins down "pinned not compared" both ways.
   **Issue:** #63
+- **Decision:** `tests/fixtures/profile_schema.json` not refreshed: compared as loaded JSON with #183's recorded schema (`EngineProfile.settings` in console/engine/openapi.json), every value matches; the only differences are OpenAPI's float spelling of integer bounds (1.0 vs 1) and `default`s the OpenAPI response rendering leaves out under `models.purposes`/`budgets.model_calls`, not schema changes.
+  **Why:** The plan says refresh only when a value differs; the fixture is the endpoint's own answer.
+  **Issue:** #204
+- **Decision:** The profile-version field strips the `min`/`max` attrs Django's IntegerField adds to its NumberInput (bounds kept server-side, so the stock error messages show).
+  **Why:** C10 and the AC's exact stock messages; no existing C10 IntegerField used `min_value`.
+  **Issue:** #204
+- **Decision:** "That profile has no version N" takes N from the form's cleaned `engine_profile_version`; on "Create anyway" the form is rebuilt from the signed body, so it is the signed body's value.
+  **Why:** `place_refusal` sees the form, not the body; both paths validate the form before placing.
+  **Issue:** #204
+- **Decision:** `place_missing` step 3 falls back to the leaf's own field when the leaf's parent is not a fieldset (root leaf), and an exact-path leaf (step 2) keeps its own field. As a side effect `contradiction_checking` findings now land on the verification fieldset instead of the form top.
+  **Why:** The AC's generic order; no module names in code.
+  **Issue:** #204
+- **Decision:** Structured v1/v2 settings and M5's profile defaults live in `tests/profile_helpers.py` (`STRUCTURED`, `STRUCTURED_V1_SETTINGS`, `STRUCTURED_V2_SETTINGS`, `M5_PROFILE_DEFAULTS`, `structured_profile(version)`, `m5_deployment()`), copied from Engine origin/main seeds (0080 stores `structured_settings()` as is); the shared `get_deployment_settings.json` fixture is left alone.
+  **Why:** Changing the shared deployment fixture would ripple through unrelated tests; the M5 browse tests add 0080's defaults locally.
+  **Issue:** #204

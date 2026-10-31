@@ -1,7 +1,9 @@
 """Create, edit, copy and delete engine profiles, validated and impact-checked first (#84)."""
 
+import copy
 import re
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -43,6 +45,9 @@ from tests.profile_helpers import (
     story,
     validation,
     written,
+)
+from tests.profile_helpers import (
+    STRUCTURED_V2_SETTINGS as V2,
 )
 from tests.ratings.helpers import calls, error, hidden, text
 
@@ -856,3 +861,238 @@ def test_deployment_unreadable_still_shows_schema_defaults(
     html = operator_client.get(EDIT).content.decode()
     assert 'placeholder="schema default: 30"' in html
     assert deployment()  # the helper stays importable for the other modules
+
+
+# --- the M5 modules (#204) ------------------------------------------------------------------------
+
+M5_BOOLEANS = (
+    "character_knowledge.partitions",
+    "character_knowledge.nested_beliefs.enabled",
+    "character_knowledge.lazy_resolution",
+)
+M5_ENUMS = ("character_knowledge.testimony", "perception.level", "multi_character.renders")
+M5_NUMBERS = (
+    "character_knowledge.nested_beliefs.depth",
+    "character_knowledge.max_adjudications_per_turn",
+    "character_knowledge.max_lazy_resolutions_per_turn",
+    "multi_character.interjection_max_words",
+)
+KNOWLEDGE = "f-character_knowledge"
+
+
+def schema_node(dotted: str) -> dict[str, Any]:
+    node: dict[str, Any] = schema_body()["schema"]
+    for part in dotted.split("."):
+        node = node["properties"][part]
+    return node
+
+
+def select_values(html: str, dotted: str) -> list[str]:
+    match = re.search(rf'<select name="{field(dotted)}".*?</select>', html, re.S)
+    assert match, f"no select for {dotted}"
+    return re.findall(r'<option value="([^"]*)"', match.group(0))
+
+
+def number_input(html: str, dotted: str) -> str:
+    match = re.search(rf'<input type="number" name="{field(dotted)}"[^>]*>', html)
+    assert match, f"no number input for {dotted}"
+    return match.group(0)
+
+
+def group_errors(html: str, anchor: str) -> list[str]:
+    """The errors atop the fieldset ``anchor`` (not its sub-fieldsets')."""
+    start = html.index(f'<details class="schema-group" id="{anchor}"')
+    head = html[start : html.index('<div class="schema-field', start)]
+    parts = head.split('<details class="schema-group"', 2)
+    own = parts[1] if len(parts) > 1 else parts[0]
+    found = re.search(r'<ul class="errorlist group-errors">(.*?)</ul>', own, re.S)
+    return [text(li) for li in re.findall(r"<li>(.*?)</li>", found.group(1))] if found else []
+
+
+def structured_copy(engine: FakeEngine) -> None:
+    """The profile being edited is a copy of Structured, at v2's settings."""
+    engine.respond("GET", ITEM, 200, json=other_profile(settings=copy.deepcopy(V2)))
+
+
+def test_m5_fields_are_typed_from_the_schema(operator_client: Client, engine: FakeEngine) -> None:
+    structured_copy(engine)
+    html = operator_client.get(EDIT).content.decode()
+    for dotted in M5_BOOLEANS:
+        assert select_values(html, dotted) == ["", "true", "false"], dotted  # C7: unset kept
+    for dotted in M5_ENUMS:
+        assert select_values(html, dotted)[1:] == schema_node(dotted)["enum"], dotted
+        assert select_values(html, dotted)[0] == ""
+    for dotted in M5_NUMBERS:
+        node = schema_node(dotted)
+        tag = number_input(html, dotted)
+        assert f'min="{node["minimum"]}"' in tag, dotted
+        assert f'max="{node["maximum"]}"' in tag, dotted
+    # Stored values prefill them.
+    form = operator_client.get(EDIT).context["form"]
+    assert form[field("perception.level")].value() == "full"
+    assert form[field("character_knowledge.nested_beliefs.depth")].value() == "2"
+
+
+def missing(module: str, level: str, *requires: tuple[str, list[str]]) -> dict[str, Any]:
+    return {
+        "module": module,
+        "level": level,
+        "requires": [{"module": m, "levels": levels} for m, levels in requires],
+    }
+
+
+def test_m5_dependency_findings_are_placed(operator_client: Client, engine: FakeEngine) -> None:
+    structured_copy(engine)
+    # 1. partitions on with perception none: the rule table gives one finding (rule 17).
+    page = edit_page(operator_client, engine)
+    engine.respond(
+        "PUT",
+        ITEM,
+        422,
+        json=error(
+            "invalid_profile",
+            "the profile cannot run",
+            missing_dependencies=[
+                missing("partitions", "on", ("perception", ["co_location", "full"]))
+            ],
+            undelivered=[],
+        ),
+    )
+    data = posted(page, action="save", **{field("perception.level"): "none"})
+    html = operator_client.post(EDIT, data).content.decode()
+    put = calls(engine, "PUT", OTHER_PATH)[0]
+    assert body_of(put)["settings"]["perception"] == {"level": "none"}
+    assert group_errors(html, KNOWLEDGE) == [
+        "`partitions` at `on` needs `perception` at `co_location` or `full`"
+    ]
+    # 2. partitions off with testimony model (and v2's perception, nested beliefs and lazy
+    # resolution on): rules 18-21.
+    page = edit_page(operator_client, engine)
+    engine.respond(
+        "PUT",
+        ITEM,
+        422,
+        json=error(
+            "invalid_profile",
+            "the profile cannot run",
+            missing_dependencies=[
+                missing("perception", "full", ("partitions", [])),
+                missing("nested_beliefs", "on", ("partitions", [])),
+                missing("lazy_resolution", "on", ("partitions", [])),
+                missing("testimony", "model", ("partitions", [])),
+            ],
+            undelivered=[],
+        ),
+    )
+    data = posted(
+        page,
+        action="save",
+        **{
+            field("character_knowledge.partitions"): "false",
+            field("character_knowledge.testimony"): "model",
+        },
+    )
+    html = operator_client.post(EDIT, data).content.decode()
+    knowledge = group_errors(html, KNOWLEDGE)
+    assert "`testimony` at `model` needs `partitions` at any level" in knowledge
+    assert "`lazy_resolution` at `on` needs `partitions` at any level" in knowledge
+    assert group_errors(html, "f-perception") == [
+        "`perception` at `full` needs `partitions` at any level"
+    ]
+    assert group_errors(html, "f-character_knowledge-nested_beliefs") == [
+        "`nested_beliefs` at `on` needs `partitions` at any level"
+    ]
+    # 3. A validate result (rule 17) through place_validation.
+    page = edit_page(operator_client, engine)
+    engine.respond(
+        "POST",
+        VALIDATE,
+        200,
+        json=validation(
+            valid=False,
+            missing_dependencies=[
+                missing("partitions", "on", ("perception", ["co_location", "full"]))
+            ],
+        ),
+    )
+    data = posted(page, action="validate", **{field("perception.level"): "none"})
+    html = operator_client.post(EDIT, data).content.decode()
+    assert "Not valid — 1 problem" in text(html)
+    assert group_errors(html, KNOWLEDGE) == [
+        "`partitions` at `on` needs `perception` at `co_location` or `full`"
+    ]
+
+
+def test_unknown_module_finding_lands_at_the_top(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = edit_page(operator_client, engine)
+    engine.respond(
+        "POST",
+        VALIDATE,
+        200,
+        json=validation(
+            valid=False, missing_dependencies=[missing("future_x", "on", ("pins", []))]
+        ),
+    )
+    response = operator_client.post(EDIT, posted(page, action="validate"))
+    form = response.context["form"]
+    assert form.non_field_errors() == ["`future_x` at `on` needs `pins` at any level"]
+    assert not form.group_errors
+
+
+def test_m3_m4_findings_land_where_they_did(operator_client: Client, engine: FakeEngine) -> None:
+    """Complement: a module that names a fieldset directly keeps its place."""
+    page = edit_page(operator_client, engine)
+    engine.respond(
+        "POST",
+        VALIDATE,
+        200,
+        json=validation(
+            valid=False,
+            missing_dependencies=[
+                missing("episodic", "on", ("pipeline", ["structured"])),
+                missing("consolidation", "on", ("episodic", [])),
+                missing("commitment", "on", ("pipeline", ["structured"])),
+            ],
+        ),
+    )
+    form = operator_client.post(EDIT, posted(page, action="validate")).context["form"]
+    assert form.group_errors == {
+        "memory.episodic": ["`episodic` at `on` needs `pipeline` at `structured`"],
+        "memory.consolidation": ["`consolidation` at `on` needs `episodic` at any level"],
+        "commitment": ["`commitment` at `on` needs `pipeline` at `structured`"],
+    }
+
+
+def test_m5_edit_impact_lists_capabilities(operator_client: Client, engine: FakeEngine) -> None:
+    structured_copy(engine)
+    page = edit_page(operator_client, engine)
+    engine.respond("GET", STORY, 200, json=story(STORY_A, "Harbour"))
+    report = impact(
+        affected(capabilities_gained=["multi_character"], capabilities_lost=["perception"])
+    )
+    engine.respond("PUT", ITEM, 200, json=edit_body(False, None, report))
+    data = posted(page, action="save", **{field("multi_character.renders"): "combined"})
+    html = operator_client.post(EDIT, data).content.decode()
+    row = re.search(rf'<tr id="impact-{STORY_A}".*?</tr>', html, re.S)
+    assert row
+    gained, lost = re.findall(r"<td>(.*?)</td>", row.group(0), re.S)[1:3]
+    assert "<code>multi_character</code>" in gained
+    assert "<code>perception</code>" in lost
+
+
+EDITOR_CODE = (
+    "console/profile_schema.py",
+    "console/forms/profile_schema_form.py",
+    "console/views/profiles.py",
+    "console/views/profile_edit.py",
+)
+
+
+@pytest.mark.parametrize("path", EDITOR_CODE)
+def test_no_m5_module_name_in_console_code(path: str) -> None:
+    """Complement: the editor stays schema-driven."""
+    source = (Path(__file__).resolve().parent.parent / path).read_text(encoding="utf-8")
+    for word in ("character_knowledge", "perception", "multi_character"):
+        assert word not in source, f"{word} in {path}"

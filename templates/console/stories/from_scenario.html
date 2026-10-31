@@ -63,6 +63,7 @@
   <h2>Story</h2>
   {% if form.fields.content_rating_id %}{% include "console/stories/_field.html" with f=form.content_rating_id %}{% else %}<p class="lookup-failed">{{ ratings_note }}</p>{% endif %}
   {% include "console/stories/_field.html" with f=form.engine_profile_id %}
+  {% include "console/stories/_field.html" with f=form.engine_profile_version %}
   {% include "console/stories/_field.html" with f=form.max_characters_at_start %}
   {% include "console/stories/_field.html" with f=form.name %}
   {% include "console/stories/_field.html" with f=form.owner %}

@@ -22,7 +22,9 @@ differs from it: a scalar cleared to "(default)" or blank over a value sends ``n
 JSON box sends nothing. ``cast.max_characters_at_start`` gets no field of its own: the "Cast
 limit" field is sent as the top-level ``max_characters_at_start`` when changed.
 
-The body always carries ``"projection": "full"`` and the pinned ``scenario.version``.
+The body always carries ``"projection": "full"`` and the pinned ``scenario.version``. An
+optional "Profile version" (#204; no HTML min/max, C10) is sent as ``engine_profile_version``
+right after ``engine_profile_id``, only when filled: it pins the new story to that version.
 :func:`data_from_body` rebuilds the form's data from a sent body ("Back", and a 422 after
 "Create anyway"). :meth:`StoryFromScenarioForm.place_refusal` puts a 422 at the role row,
 field or top of the form it names.
@@ -77,6 +79,7 @@ OVERRIDES_PREFIX = "overrides."
 TOP_FIELDS = (
     "content_rating_id",
     "engine_profile_id",
+    "engine_profile_version",
     "max_characters_at_start",
     "name",
     "owner",
@@ -110,6 +113,19 @@ CODE_FIELDS: dict[str, str | None] = {
 }
 OVERRIDE_NOT_ALLOWED = "override_not_allowed"
 VALIDATION_ERROR = "validation_error"
+PROFILE_VERSION = "engine_profile_version"
+# The Engine's ``details.reason`` for a version the profile lacks.
+UNKNOWN_VERSION = "unknown_version"
+PROFILE_VERSION_HELP = (
+    "Blank follows the profile's latest version. With no Engine profile chosen, it pins the "
+    "scenario's recommended profile, else the deployment's default."
+)
+
+
+def unknown_version_text(version: int) -> str:
+    """A 422 at ``body.engine_profile_version`` with ``reason: unknown_version`` (#204)."""
+    return f"That profile has no version {version}"
+
 
 # A slot's / player's Engine sub-path → the row's field.
 SLOT_ALIASES = {
@@ -523,6 +539,18 @@ class StoryFromScenarioForm(forms.Form):
                 label="Engine profile id",
                 help_text=profiles.unavailable_text,
             )
+        version = forms.IntegerField(
+            required=False,
+            min_value=1,
+            max_value=VERSION_MAX,
+            label="Profile version",
+            help_text=PROFILE_VERSION_HELP,
+            widget=forms.NumberInput(),
+        )
+        # C10: the server checks the bounds; the input carries no HTML min/max.
+        version.widget.attrs.pop("min", None)
+        version.widget.attrs.pop("max", None)
+        self.fields[PROFILE_VERSION] = version
         self.fields["max_characters_at_start"] = forms.IntegerField(
             required=False,
             min_value=CAST_LIMIT_MIN,
@@ -712,6 +740,8 @@ class StoryFromScenarioForm(forms.Form):
             value = (self._value(name) or "").strip() if name in self.fields else ""
             if value:
                 body[name] = value
+            if name == "engine_profile_id" and self._value(PROFILE_VERSION) is not None:
+                body[PROFILE_VERSION] = self._value(PROFILE_VERSION)
         limit = self._value("max_characters_at_start")
         if limit is not None and limit != scenario.cast.max_characters_at_start:
             body["max_characters_at_start"] = limit
@@ -806,8 +836,10 @@ class StoryFromScenarioForm(forms.Form):
         A role code lands on the role rows its report errors name (``location.role``), else on
         ``details.role``, else on the role a ``slots.<role>.`` / ``players.<role>.`` field names;
         ``override_not_allowed`` on its override field; a ``validation_error`` at
-        ``details.field``; the other codes beside their field (:data:`CODE_FIELDS`) or at the
-        top. A role or path the form lacks lands at the top, naming it."""
+        ``details.field`` (one at ``body.engine_profile_version`` with ``reason:
+        unknown_version`` reads :func:`unknown_version_text` of the version sent); the other
+        codes beside their field (:data:`CODE_FIELDS`) or at the top. A role or path the form
+        lacks lands at the top, naming it."""
         details = exc.details
         report = CreationReport.from_json(details.get("report"))
         headline = f"The Engine refused the story: {exc.code} — {exc.message}"
@@ -816,8 +848,16 @@ class StoryFromScenarioForm(forms.Form):
         errors = [e for e in (report.errors or []) if e.code] if report is not None else []
         if code == VALIDATION_ERROR:
             failures = engine_field_errors(exc)
+            sent_version = self._value(PROFILE_VERSION)
             for failure in failures:
-                self._place_at(failure.path, failure.message or exc.message)
+                message = failure.message or exc.message
+                if (
+                    failure.path.removeprefix(BODY_PREFIX) == PROFILE_VERSION
+                    and details.get("reason") == UNKNOWN_VERSION
+                    and isinstance(sent_version, int)
+                ):
+                    message = unknown_version_text(sent_version)
+                self._place_at(failure.path, message)
             if not failures:
                 self.top_errors.append(exc.message)
             return report
@@ -917,7 +957,7 @@ def data_from_body(body: Mapping[str, Any], scenario: Scenario) -> dict[str, str
     for row in override_rows(scenario):
         value = overrides.get(row.path, row.current)
         data[row.name] = _text(_shown(row.type.kind, value))
-    for name in ("content_rating_id", "engine_profile_id", "name", "owner"):
+    for name in ("content_rating_id", "engine_profile_id", PROFILE_VERSION, "name", "owner"):
         data[name] = _text(body.get(name))
     limit = body.get("max_characters_at_start", scenario.cast.max_characters_at_start)
     data["max_characters_at_start"] = _text(limit)

@@ -2,8 +2,10 @@
 
 import copy
 import json
+import re
 import time
 from collections.abc import Iterator
+from html import unescape
 from typing import Any
 
 import httpx
@@ -16,7 +18,7 @@ from console import twostage
 from console.creation_report import CREATION_KIND, creation_row, has_creation_report
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
-from console.forms.story_from_scenario import age_text
+from console.forms.story_from_scenario import PROFILE_VERSION_HELP, age_text
 from console.models import EngineOperation
 from console.views import catalog_scenarios, play, stories
 from console.views import story_from_scenario as views
@@ -998,3 +1000,180 @@ def test_post_stories_stays_listed_as_create_story() -> None:
     op = OPERATIONS["POST /stories"]
     assert op.response_model is StoryCreated
     assert op.entity is None
+
+
+# --- the profile version (#204) ----------------------------------------------------------------
+
+VERSION_FIELD = "engine_profile_version"
+
+
+def unknown_version(version: int, **changes: Any) -> dict[str, Any]:
+    """The Engine's 422 for a version the profile lacks (``core.profiles.effective``)."""
+    message = f"engine profile structured has no version {version}"
+    details: dict[str, Any] = {
+        "field": "body.engine_profile_version",
+        "reason": "unknown_version",
+        "errors": [
+            {"field": "body.engine_profile_version", "message": message, "type": "value_error"}
+        ],
+        **changes,
+    }
+    return error("validation_error", message, **details)
+
+
+def test_profile_version_is_sent_only_when_filled(client: Client, engine: FakeEngine) -> None:
+    create(client, engine)
+    blank = sent(posts(engine)[0])
+    assert VERSION_FIELD not in blank  # Complement: the body is main's
+    engine.reset()
+    create(client, engine, engine_profile_id="structured", engine_profile_version="1")
+    body = sent(posts(engine)[0])
+    assert body[VERSION_FIELD] == 1
+    keys = list(body)
+    assert keys.index(VERSION_FIELD) == keys.index("engine_profile_id") + 1
+    assert {k: v for k, v in body.items() if k not in ("engine_profile_id", VERSION_FIELD)} == blank
+    engine.reset()
+    # With no Engine profile chosen it is still sent: the help line says what it pins.
+    create(client, engine, engine_profile_version="2")
+    body = sent(posts(engine)[0])
+    assert body[VERSION_FIELD] == 2
+    assert "engine_profile_id" not in body
+
+
+def test_profile_version_widget_has_no_html_bounds(client: Client, engine: FakeEngine) -> None:
+    html = step2(client, engine).content.decode()
+    tag = re.search(r'<input[^>]*name="engine_profile_version"[^>]*>', html)
+    assert tag, "no profile version input"
+    assert 'type="number"' in tag.group(0)
+    assert 'id="id_engine_profile_version"' in tag.group(0)
+    assert " min=" not in tag.group(0)
+    assert " max=" not in tag.group(0)
+    shown = text(html)
+    assert "Profile version" in shown
+    assert PROFILE_VERSION_HELP in unescape(html)
+    assert html.index('name="engine_profile_id"') < html.index('name="engine_profile_version"')
+    assert html.index('name="engine_profile_version"') < html.index('name="max_characters_at')
+    # The profiles lookup failed: the free-text profile id, and the version after it.
+    engine.reset()
+    answer_reads(engine)
+    engine.respond("GET", "/engine-profiles", 503, json=error("unavailable"))
+    html = client.get(URL, {"scenario": SCN, "version": ""}).content.decode()
+    assert 'name="engine_profile_id"' in html
+    assert html.index('name="engine_profile_id"') < html.index('name="engine_profile_version"')
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("0", "Ensure this value is greater than or equal to 1."),
+        ("-3", "Ensure this value is greater than or equal to 1."),
+        ("2147483648", "Ensure this value is less than or equal to 2147483647."),
+        ("1.5", "Enter a whole number."),
+        ("two", "Enter a whole number."),
+    ],
+)
+def test_profile_version_below_one_is_refused_with_zero_calls(
+    client: Client, engine: FakeEngine, value: str, message: str
+) -> None:
+    response = create(client, engine, engine_profile_version=value)
+    assert posts(engine) == []
+    assert response.context["form"].errors[VERSION_FIELD] == [message]
+
+
+def test_profile_version_survives_a_refused_submit(client: Client, engine: FakeEngine) -> None:
+    response = create(client, engine, engine_profile_version="3", slot__traveller__adhoc_name="")
+    assert posts(engine) == []
+    assert response.context["form"][VERSION_FIELD].value() == "3"
+
+
+def test_profile_version_survives_create_anyway_and_back(
+    client: Client, engine: FakeEngine
+) -> None:
+    response = create(
+        client,
+        engine,
+        answer=(200, held()),
+        engine_profile_id="structured",
+        engine_profile_version="1",
+    )
+    token = response.context["token"]
+    assert twostage.unsign(views.KIND, token).body[VERSION_FIELD] == 1
+    engine.reset()
+    back = client.post(URL, {"op": "back", twostage.CONFIRM_FIELD: token, "idempotency_key": KEY})
+    assert back.context["form"][VERSION_FIELD].value() == "1"
+    # A 422 after "Create anyway": rebuilt from the signed body, the version under its field.
+    engine.reset()
+    engine.respond("POST", STORIES, 422, json=unknown_version(1))
+    page = client.post(
+        URL, {"op": "confirm", twostage.CONFIRM_FIELD: token, "idempotency_key": KEY}
+    )
+    form = page.context["form"]
+    assert form[VERSION_FIELD].value() == "1"
+    assert form.errors[VERSION_FIELD] == ["That profile has no version 1"]
+    # Complement: a body with no version re-renders the field blank.
+    engine.reset()
+    response = create(client, engine, answer=(200, held()))
+    token = response.context["token"]
+    back = client.post(URL, {"op": "back", twostage.CONFIRM_FIELD: token, "idempotency_key": KEY})
+    assert back.context["form"][VERSION_FIELD].value() in ("", None)
+
+
+def test_profile_version_422_is_placed_under_the_field(client: Client, engine: FakeEngine) -> None:
+    response = create(
+        client,
+        engine,
+        answer=(422, unknown_version(9)),
+        engine_profile_id="structured",
+        engine_profile_version="9",
+    )
+    form = response.context["form"]
+    assert form.errors[VERSION_FIELD] == ["That profile has no version 9"]
+    assert "engine_profile_id" not in form.errors
+    assert form.top_errors == [
+        "The Engine refused the story: validation_error — "
+        "engine profile structured has no version 9"
+    ]
+    html = response.content.decode()
+    field_at = html.index('name="engine_profile_version"')
+    assert "That profile has no version 9" in html[field_at - 600 : field_at + 600]
+    assert sent(posts(engine)[0])[VERSION_FIELD] == 9
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        error(
+            "validation_error",
+            "Input should be less than or equal to 2147483647",
+            field="body.engine_profile_version",
+            errors=[
+                {
+                    "field": "body.engine_profile_version",
+                    "message": "Input should be less than or equal to 2147483647",
+                    "type": "less_than_equal",
+                }
+            ],
+        ),
+        # unknown_version's path but no reason: the Engine's message.
+        error(
+            "validation_error",
+            "Input should be less than or equal to 2147483647",
+            field="body.engine_profile_version",
+        ),
+    ],
+    ids=["other-reason", "no-reason"],
+)
+def test_profile_version_other_422_shows_the_engine_message(
+    client: Client, engine: FakeEngine, answer: dict[str, Any]
+) -> None:
+    response = create(
+        client,
+        engine,
+        answer=(422, answer),
+        engine_profile_id="structured",
+        engine_profile_version="4",
+    )
+    form = response.context["form"]
+    assert form.errors[VERSION_FIELD] == ["Input should be less than or equal to 2147483647"]
+    assert "engine_profile_id" not in form.errors  # Complement
+    assert form.top_errors[0].startswith("The Engine refused the story: validation_error — ")
