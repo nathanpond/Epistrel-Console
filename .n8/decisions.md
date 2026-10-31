@@ -2233,3 +2233,9 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 1) The `.fidelity-none` strike-through now targets `.beat-text`, `span.text` and `td.text:not(:has(.beat-text))`, replacing `.fidelity-none .text`. A trace row strikes only its beat text. A plain row (no trace) still strikes its plain Text cell, as #62's plan says.
   **Why:** The first attempt wrapped the plain text in a new span. That broke `test_lite_history_items_are_byte_identical`, because Lite markup must not change. `:has()` reaches the same result with no markup change, and the Console targets desktop browsers only.
   **Issue:** #228
+
+## Ad-hoc — 2026-10-31
+
+- **Change:** #227 (beliefs How/Provenance) will be resolved by an Engine change, not by amending #190. The Engine is to expose `provenance_kind` (and optionally `provenance_source_character`) on `BeliefItemBody`/`AuthoredBeliefBody` (nathanpond/Epistrel#654). The Console will then show the acquisition kind and mark testimony again.
+  **Why:** The owner chose option (a). The Engine's belief reads carry only the producing transition's id, so #190 outcome 1 and the "testimony → #190" coverage item can't be met in the Console alone.
+  **Affects:** M5 (#227, story #190, #194's Provenance row, epics #19/#20), which stays open and blocked until Engine #654 ships in an `edge` build. M6+ Console plans are not affected.
