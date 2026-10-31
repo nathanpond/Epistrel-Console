@@ -1650,3 +1650,20 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `tests/inspect/test_shell.py::test_the_history_page_links_inspect_after_play` now answers effective-config (the Lite default).
   **Why:** Its fixture's Lite turn shows an input without `propositions`, so the history page now makes the read. The fake Engine refuses an unanswered call.
   **Issue:** #181
+
+## /n8-plan M5 — 2026-10-31
+
+- **Decision:** Planned M5 as 29 stories (#183, #186–#208, plus #61, #62, #63, #168, #169 extended in place) under epics #19 and #20. The surface is the two epics' ACs (11 items); the founder pulled in all eight extra Engine M5 features offered (K1–K8) and absorbed the six triage issues.
+  **Why:** Engine M5 closed 2026-10-28; round one "all recs good. all of #7, yes to #8".
+- **Decision:** Nested beliefs are left out of M5: the Engine serves no nested-belief or speech-act read. Filed nathanpond/Epistrel#606. Testimony is shown only as a belief's provenance.
+  **Why:** Founder, round one: "all recs good".
+- **Decision:** The per-beat perception trace (#195) is reconstructed from one History read per cast member (player view `story`), since the Engine stores none. Filed nathanpond/Epistrel#607 for a stored trace, and #608 for respond's undeclared 409 `module_off`.
+  **Why:** Founder, round one: "all recs good".
+- **Decision:** K7 (rewind/fork at an inter-turn slot) was withdrawn from M5 and filed as backlog capture #209.
+  **Why:** The Engine never records inter-turn slots on origin/main yet, so N⁺k behaves like N. Founder, round two Q3: "all recs good".
+- **Decision:** #168 (minors judged against the unscaled hot budget) is fixed Console-side in M5: the Memory tab scales by each character's `weight` and the deployment's `minor_hot_budget_fraction`, both now in the API. #185 (co-author knowledge notices) moved to M6, where the Engine ships it.
+  **Why:** Triage during round one, accepted.
+- **Decision:** Round-two answers (all "all recs good"): numbered render-order selects; whisper and per-turn player view gated on perception only, outside the multi-character section; version-pin changes follow #134's opt-in confirm mode; the transcript player-view toggle is display-only; no composition panel for turns played outside the Console; canon marks only for the current partition; the composition panel shows at every viewpoint; the entity-model link stays with a note when the Engine would refuse.
+- **Decision:** Sixteen cross-story decisions (C1–C16: positions, open enums and lenient parsing, enum wording, character labels, write refusals, gates, choice fields, roles, untouched forms, numeric inputs, paging, URL ids, fake-Engine query matching, fixture realism, player-narrated beats) are written into the M5 milestone description, and each story cites them by number.
+  **Why:** They were settled once across stories during the executor simulations, so executors don't re-decide them per story.
+- **Decision:** Executor simulations used plain subagents: 26 on the first drafts, 27 on the revised bodies, and 4 on later splits. They did not use the Workflow tool.
