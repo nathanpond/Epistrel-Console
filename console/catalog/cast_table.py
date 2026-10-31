@@ -2,8 +2,11 @@
 one row per role (its character named through :mod:`console.catalog.character_labels`, its
 starting location by the world's name, an eligibility summary) with its seeds nested, and the
 world seeds in their own table. #205 adds the locations' topology (lies in, adjoins) and the
-opening's remote channels, named through the same location lookup (:func:`location_label`)."""
+opening's remote channels, named through the same location lookup (:func:`location_label`).
+#206 adds the cast's groups, each role's relationships as a table, and each seed's confidence
+and nested content."""
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -11,6 +14,7 @@ from console.catalog.character_labels import CharacterLabel
 from console.engine.models import (
     Location,
     RoleEligibility,
+    RoleRelationship,
     Scenario,
     ScenarioCast,
     ScenarioChannel,
@@ -24,6 +28,9 @@ ANY_AGE = "any"
 LATEST = "latest"
 DEFAULT_BARRIER = "Door open (default)"
 NO_BARRIER = "No barrier"
+DEFAULT_CONFIDENCE = "Believed (default)"  # an unset belief or nested seed (structured genesis)
+DEFAULT_ATTRIBUTED = "Known (default)"
+CONFIDENT_KINDS = ("belief", "nested")
 
 
 @dataclass(frozen=True)
@@ -125,19 +132,83 @@ def channel_lines(cast: ScenarioCast, channels: list[ScenarioChannel]) -> list[C
 
 
 @dataclass(frozen=True)
+class GroupLine:
+    """A cast group (#206): its name and members as stored (duplicates kept)."""
+
+    name: str
+    members: list[str]
+
+
+def group_lines(cast: ScenarioCast) -> list[GroupLine]:
+    return [GroupLine(name, list(members)) for name, members in (cast.groups or {}).items()]
+
+
+@dataclass(frozen=True)
+class RelationshipRow:
+    """A relationships table row (#206): ``trust`` a number (shown to 2 decimals) or ``None``
+    (by name); ``trust_raw`` the JSON of a stored non-number; ``known_by`` the stored audience
+    (``None``: its two roles, the default)."""
+
+    to_role: str
+    name: str
+    trust: float | None
+    trust_raw: str
+    known_by: list[str] | None
+
+
+def relationship_row(relationship: RoleRelationship) -> RelationshipRow:
+    trust: object = relationship.trust
+    number = isinstance(trust, int | float) and not isinstance(trust, bool)
+    return RelationshipRow(
+        relationship.to_role,
+        relationship.name,
+        float(trust) if number else None,  # type: ignore[arg-type]
+        "" if number or trust is None else json.dumps(trust),
+        list(relationship.audience) if relationship.audience else None,
+    )
+
+
+@dataclass(frozen=True)
+class SeedLine:
+    """A seed as its table shows it (#206): ``confidence`` worded (C3, unknown values too), or
+    "Believed (default)" for an unset belief or nested seed, else "—"; ``attributed`` the
+    nested content's confidence worded, or "Known (default)"."""
+
+    seed: Seed
+    confidence: str
+    attributed: str
+
+
+def seed_line(seed: Seed) -> SeedLine:
+    if seed.confidence:
+        confidence = humanised(seed.confidence)
+    else:
+        confidence = DEFAULT_CONFIDENCE if seed.kind in CONFIDENT_KINDS else "—"
+    nested = seed.nested
+    attributed = (
+        humanised(nested.attributed_confidence)
+        if nested is not None and nested.attributed_confidence
+        else DEFAULT_ATTRIBUTED
+    )
+    return SeedLine(seed, confidence, attributed)
+
+
+@dataclass(frozen=True)
 class CastRow:
     role: ScenarioRole
     character: CharacterCell | None
     location: LocationCell | None
     eligibility: str
-    seeds: list[Seed]
+    seeds: list[SeedLine]
+    relationships: list[RelationshipRow]
 
 
 @dataclass(frozen=True)
 class CastTable:
     max_characters_at_start: int | None
     rows: list[CastRow]
-    world_seeds: list[Seed]
+    world_seeds: list[SeedLine]
+    groups: list[GroupLine]
 
 
 def character_ids(scenario: Scenario) -> list[str]:
@@ -205,11 +276,13 @@ def cast_table(
                 character,
                 location,
                 eligibility_summary(role.eligibility, rating_names),
-                list(role.seeded_memories),
+                [seed_line(s) for s in role.seeded_memories],
+                [relationship_row(r) for r in role.relationships],
             )
         )
     return CastTable(
         scenario.cast.max_characters_at_start,
         rows,
-        list(scenario.starting_state.seeded_memories),
+        [seed_line(s) for s in scenario.starting_state.seeded_memories],
+        group_lines(scenario.cast),
     )

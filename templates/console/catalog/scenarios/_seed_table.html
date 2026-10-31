@@ -1,17 +1,18 @@
-{% load console_format %}{% comment %}#73: seeds as a table: full id, holder, audience, disclosure, kind and text (truncated to 120; the full text and valid_time in a per-seed <details>). Context: seeds, css.{% endcomment %}{% if seeds %}
+{% load console_format %}{% comment %}#73: seeds as a table: full id, holder, audience, disclosure, kind and text (truncated to 120; the full text and valid_time in a per-seed <details>). #206: a Confidence column after Kind and, for a seed with nested content, a Nested line in its "More". Context: seeds (console.catalog.cast_table.SeedLine), css.{% endcomment %}{% if seeds %}
 <table class="seeds {{ css }}">
-  <thead><tr><th>Id</th><th>Holder</th><th>Audience</th><th>Disclosure</th><th>Kind</th><th>Text</th></tr></thead>
+  <thead><tr><th>Id</th><th>Holder</th><th>Audience</th><th>Disclosure</th><th>Kind</th><th>Confidence</th><th>Text</th></tr></thead>
   <tbody>
-    {% for seed in seeds %}
+    {% for line in seeds %}{% with seed=line.seed %}
     <tr{% if seed.id %} id="seed-{{ seed.id }}"{% endif %}>
       <td>{% if seed.id %}<code>{{ seed.id }}</code>{% else %}—{% endif %}</td>
       <td>{% if seed.holder %}<code>{{ seed.holder }}</code>{% else %}—{% endif %}</td>
       <td>{% if seed.audience %}{% for token in seed.audience %}<code>{{ token }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td>
       <td>{{ seed.disclosure|humanise }}</td>
       <td>{{ seed.kind|humanise }}</td>
-      <td>{{ seed.text|truncatechars:120 }}{% if seed.text|length > 120 or seed.valid_time is not None %}<details class="seed-more"><summary>More</summary>{% if seed.text|length > 120 %}<p>{{ seed.text|linebreaksbr }}</p>{% endif %}{% if seed.valid_time is not None %}<p>Valid time:</p><pre>{{ seed.valid_time|pretty_json }}</pre>{% endif %}</details>{% endif %}</td>
+      <td class="seed-confidence">{{ line.confidence }}</td>
+      <td>{{ seed.text|truncatechars:120 }}{% if seed.text|length > 120 or seed.valid_time is not None or seed.nested %}<details class="seed-more"><summary>More</summary>{% if seed.text|length > 120 %}<p>{{ seed.text|linebreaksbr }}</p>{% endif %}{% if seed.valid_time is not None %}<p>Valid time:</p><pre>{{ seed.valid_time|pretty_json }}</pre>{% endif %}{% if seed.nested %}<p class="seed-nested">Nested: believes <code>{{ seed.nested.attributed_holder }}</code> believes “{{ seed.nested.proposition }}” at {{ line.attributed }}</p>{% endif %}</details>{% endif %}</td>
     </tr>
-    {% endfor %}
+    {% endwith %}{% endfor %}
   </tbody>
 </table>
 {% else %}<p>—</p>{% endif %}

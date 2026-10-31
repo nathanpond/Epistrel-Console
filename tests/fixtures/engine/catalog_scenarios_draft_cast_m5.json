@@ -1,0 +1,335 @@
+{
+  "id": "01JC000000000000000000SCN2",
+  "status": "published",
+  "listing_status": "public",
+  "owner_principal": "console:nate",
+  "version": null,
+  "current_version": 2,
+  "draft_revision": 5,
+  "created_at": "2026-10-01T09:00:00.000000Z",
+  "updated_at": "2026-10-22T10:00:00.000000Z",
+  "published_at": null,
+  "companion_of": null,
+  "pinned_character_version": null,
+  "schema_version": 1,
+  "public_card": {
+    "name": "The Inheritance",
+    "public_description": "The whole family is home for the weekend.",
+    "media": {
+      "cover": null,
+      "gallery": [],
+      "videos": []
+    }
+  },
+  "metadata": {
+    "labels": [
+      "family",
+      "drama"
+    ],
+    "content_rating_id": "00000000000000000000RAT002"
+  },
+  "world": {
+    "description": "A farmhouse outside a small river town.",
+    "locations": [
+      {
+        "id": "farmhouse",
+        "name": "The farmhouse",
+        "description": "Where everyone sleeps."
+      },
+      {
+        "id": "barn",
+        "name": "The barn"
+      }
+    ],
+    "entities": [
+      {
+        "id": "tractor",
+        "name": "Old Red",
+        "kind": "item",
+        "aliases": [
+          "the tractor"
+        ],
+        "description": "The tractor that never starts."
+      },
+      {
+        "id": "town",
+        "name": "Riverbend"
+      }
+    ],
+    "event_types": [
+      "harvest",
+      "supper"
+    ]
+  },
+  "cast": {
+    "max_characters_at_start": 3,
+    "groups": {
+      "family": [
+        "bob",
+        "alice"
+      ],
+      "staff": [
+        "carol"
+      ]
+    },
+    "roles": [
+      {
+        "id": "alice",
+        "public_label": "Alice",
+        "setup_description": "The eldest; she found the deed.",
+        "kind": "npc",
+        "fill": "open",
+        "required": true,
+        "character": null,
+        "eligibility": null,
+        "starting_location": null,
+        "participation": null,
+        "seeded_memories": [
+          {
+            "id": "01JC0000000000000000M5SD01",
+            "text": "The deed is forged.",
+            "holder": "alice",
+            "audience": [
+              "family",
+              "alice"
+            ],
+            "disclosure": "secret",
+            "kind": "canon",
+            "valid_time": null
+          },
+          {
+            "id": "01JC0000000000000000M5SD02",
+            "text": "Carol stole the key.",
+            "holder": "alice",
+            "audience": [
+              "alice"
+            ],
+            "disclosure": "guarded",
+            "kind": "belief",
+            "valid_time": null,
+            "confidence": "suspected"
+          },
+          {
+            "id": "01JC0000000000000000M5SD03",
+            "text": "The will names Bob.",
+            "holder": "alice",
+            "audience": [
+              "alice"
+            ],
+            "disclosure": "open",
+            "kind": "belief",
+            "valid_time": null,
+            "confidence": "certain"
+          },
+          {
+            "id": "01JC0000000000000000M5SD04",
+            "text": "Bob is hiding something.",
+            "holder": "alice",
+            "audience": [
+              "alice"
+            ],
+            "disclosure": "secret",
+            "kind": "nested",
+            "valid_time": null,
+            "nested": {
+              "attributed_holder": "bob",
+              "proposition": "The will is in the safe.",
+              "attributed_confidence": "suspected"
+            }
+          }
+        ],
+        "relationships": [
+          {
+            "to_role": "carol",
+            "name": "rival_of",
+            "trust": 0.2,
+            "audience": [
+              "alice",
+              "carol",
+              "bob"
+            ]
+          },
+          {
+            "to_role": "bob",
+            "name": "sister_of"
+          }
+        ],
+        "name_overrides": null,
+        "state_initial_values": null
+      },
+      {
+        "id": "bob",
+        "public_label": "Bob",
+        "setup_description": "Back for the reading of the will.",
+        "kind": "player",
+        "fill": "open",
+        "required": true,
+        "character": null,
+        "eligibility": null,
+        "starting_location": null,
+        "participation": null,
+        "seeded_memories": [
+          {
+            "id": "01JC0000000000000000M5SD05",
+            "text": "Bob owes money.",
+            "holder": "bob",
+            "audience": [
+              "bob"
+            ],
+            "disclosure": "open",
+            "kind": "canon",
+            "valid_time": null
+          }
+        ],
+        "relationships": [],
+        "name_overrides": null,
+        "state_initial_values": null
+      },
+      {
+        "id": "carol",
+        "public_label": "Carol",
+        "setup_description": "The housekeeper.",
+        "kind": "npc",
+        "fill": "open",
+        "required": true,
+        "character": null,
+        "eligibility": null,
+        "starting_location": null,
+        "participation": null,
+        "seeded_memories": [],
+        "relationships": [
+          {
+            "to_role": "alice",
+            "name": "rival_of",
+            "trust": 1
+          }
+        ],
+        "name_overrides": null,
+        "state_initial_values": null
+      }
+    ]
+  },
+  "starting_state": {
+    "opening": {
+      "narration": "Dawn over the fields.",
+      "starting_location": "farmhouse",
+      "roles_present": [
+        "alice"
+      ]
+    },
+    "seeded_memories": [
+      {
+        "id": "01JC0000000000000000M5SD06",
+        "text": "The house is old.",
+        "holder": "world",
+        "audience": [
+          "world"
+        ],
+        "disclosure": "open",
+        "kind": "canon",
+        "valid_time": null
+      },
+      {
+        "id": "01JC0000000000000000M5SD07",
+        "text": "Everyone suspects Carol.",
+        "holder": "world",
+        "audience": [
+          "world"
+        ],
+        "disclosure": "open",
+        "kind": "nested",
+        "valid_time": null,
+        "confidence": "known",
+        "nested": {
+          "attributed_holder": "carol",
+          "proposition": "Nobody saw her."
+        }
+      }
+    ],
+    "states": [
+      {
+        "name": "weather",
+        "value": "rain"
+      }
+    ],
+    "clock": {
+      "start": "06:00"
+    },
+    "scheduled_events": [],
+    "predicates": [],
+    "closed_sets": [],
+    "rules": []
+  },
+  "drivers": {
+    "director_guidance": "Keep it warm.",
+    "plot_hooks": [
+      "A letter arrives."
+    ],
+    "objectives": [
+      "Bring the harvest in."
+    ],
+    "milestones": [],
+    "endings": [
+      "Everyone stays for supper."
+    ],
+    "planned_reveals": [
+      {
+        "truth": {
+          "text": "The farm is for sale."
+        },
+        "allowed_roles": [
+          "alice"
+        ]
+      }
+    ]
+  },
+  "story_settings_defaults": {
+    "allow_new_arrivals": true,
+    "interaction_mode": "sequential",
+    "player_authority": null,
+    "turn_concurrency": null,
+    "ambiguous_retcon_timing": null,
+    "backfill_conflict_policy": null,
+    "audit_retention_days": 30,
+    "default_output_viewpoint": "bob",
+    "policies": [
+      {
+        "name": "No swearing",
+        "rule": {
+          "type": "wordlist",
+          "words": [
+            "darn"
+          ]
+        },
+        "message": "Keep it clean.",
+        "applies_to": [
+          "text_output"
+        ],
+        "age_condition": "minor_involved_or_present"
+      }
+    ],
+    "required_providers": [
+      "openai"
+    ]
+  },
+  "recommendation": {
+    "engine_profile_id": "lite-default",
+    "capabilities": [
+      "memory"
+    ]
+  },
+  "visual_style": {
+    "prompt": "Warm watercolour",
+    "negative_prompt": null
+  },
+  "creation_rules": {
+    "overridable": [
+      "story_settings_defaults.interaction_mode"
+    ],
+    "bounds": {
+      "audit_retention_days": {
+        "max": 90
+      }
+    }
+  }
+}

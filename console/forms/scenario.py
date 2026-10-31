@@ -1279,6 +1279,11 @@ class ScenarioEditor:
     def create_body(self) -> dict[str, Any]:
         """``POST /catalog/scenarios``' body: the non-empty groups and the owner."""
         body: dict[str, Any] = drop_empty(self.write_doc())
+        # #206: ``cast.groups`` is exempt (a group's ``[]`` members survive; ``null`` is left out).
+        groups = self.cast.cast_body().get("groups") or {}
+        groups = {name: members for name, members in groups.items() if members is not None}
+        if groups:
+            body.setdefault("cast", {})["groups"] = groups
         body[OWNER] = self.form.cleaned_data[OWNER]
         return body
 
@@ -1509,8 +1514,8 @@ class ScenarioEditor:
 
 def apply_row_op(data: QueryDict, op: Op) -> QueryDict:
     """The posted state after a row button (``console.formset_rows.apply_op``), re-templated.
-    The cast's rows (#73) are named by their prefixes too: ``role``, ``role-<n>-seed`` and
-    ``wseed``."""
+    The cast's rows (#73) are named by their prefixes too: ``role``, ``role-<n>-seed``,
+    ``wseed`` and #206's ``grp``."""
     new_rows: dict[str, Mapping[str, list[str]]] = dict(NEW_ROWS) if op.kind == OP_ADD else {}
     if op.kind == OP_ADD:
         cast_row = new_row(data, op.prefix)

@@ -105,7 +105,11 @@ def the_cast(body: dict[str, Any]) -> dict[str, Any]:
                 "state_initial_values": role.get("state_initial_values"),
             }
         )
-    return {"max_characters_at_start": body["cast"]["max_characters_at_start"], "roles": roles}
+    return {
+        "max_characters_at_start": body["cast"]["max_characters_at_start"],
+        "roles": roles,
+        "groups": body["cast"].get("groups") or None,  # #206: always sent, null for none
+    }
 
 
 # --- the whole cast in the patch ------------------------------------------------------------------
@@ -419,7 +423,8 @@ def test_audience_order_and_other_tokens(operator_client: Client, engine: FakeEn
     data["role-0-seed-1-audience_other"] = " Self , self, mother "
     save(operator_client, engine, data)
     seed = changes(engine)["cast"]["roles"][0]["seeded_memories"][1]
-    assert seed["audience"] == ["mother", "son", "world", "Self", "self"]
+    # #206 (C9): the saved entries in their stored order, then the new ones in the form's.
+    assert seed["audience"] == ["mother", "son", "self", "world", "Self"]
 
 
 def test_an_empty_audience_sends_null(operator_client: Client, engine: FakeEngine) -> None:
@@ -562,7 +567,11 @@ def test_nested_seed_errors_are_placed(operator_client: Client, engine: FakeEngi
             ("cast.roles[0].seeded_memories[1].audience[2]", "bad token"),
             ("cast.roles[0].seeded_memories[1].holder", "no role of this scenario is `x`"),
             ("cast.roles[0].seeded_memories[0].valid_time.from", "bad time"),
+            ("cast.roles[0].seeded_memories[0].confidence", "bad confidence"),
+            ("cast.roles[0].seeded_memories[1].nested", "seed_nested_missing"),
+            ("cast.roles[0].seeded_memories[1].nested.proposition", "too long"),
             ("starting_state.seeded_memories[0].kind", "bad kind"),
+            ("starting_state.seeded_memories[0].nested.attributed_confidence", "bad level"),
             ("starting_state.seeded_memories[3].kind", "no such seed"),
         ),
     )
@@ -574,7 +583,12 @@ def test_nested_seed_errors_are_placed(operator_client: Client, engine: FakeEngi
     ]
     assert second.errors["audience"] == ["self: bad token"]
     assert second.errors["holder"] == ["no role of this scenario is `x`"]
+    # #206: the confidence and nested content at their fields; ``nested`` itself on its role.
+    assert first.errors["confidence"] == ["bad confidence"]
+    assert second.errors["nested__attributed_holder"] == ["seed_nested_missing"]
+    assert second.errors["nested__proposition"] == ["too long"]
     assert cast.world.forms[0].errors["kind"] == ["bad kind"]
+    assert cast.world.forms[0].errors["nested__attributed_confidence"] == ["bad level"]
     assert cast.world_errors == ["starting_state.seeded_memories[3].kind: no such seed"]
 
 
@@ -771,6 +785,35 @@ def test_normalize_cast_fills_defaults_and_drops_empties() -> None:
     changed["roles"][0]["required"] = False
     assert normalize_cast(changed) != normalize_cast(sparse)
     assert normalize_cast(None) == {}
+    # #206: groups ({} and null-valued entries read as none), relationships' and seeds' M5 keys.
+    assert normalize_cast({**full, "groups": {}}) == normalize_cast(sparse)
+    assert normalize_cast({**full, "groups": {"gone": None}}) == normalize_cast(sparse)
+    grouped = {**sparse, "groups": {"g": ["b", "a"], "h": []}}
+    reordered = {**full, "groups": {"h": [], "g": ["b", "a"], "old": None}}
+    assert normalize_cast(grouped) == normalize_cast(reordered)
+    m5: dict[str, Any] = json.loads(json.dumps(sparse))
+    m5["roles"][0]["relationships"] = [{"to_role": "b", "name": "n", "trust": 0.5}]
+    m5["roles"][0]["seeded_memories"] = [
+        {
+            "text": "t",
+            "confidence": "known",
+            "nested": {"attributed_holder": "b", "proposition": "p"},
+        }
+    ]
+    m5_full = copy.deepcopy(full)
+    m5_full["roles"][0]["relationships"] = [
+        {"name": "n", "to_role": "b", "audience": None, "trust": 0.5}
+    ]
+    m5_full["roles"][0]["seeded_memories"] = [
+        {
+            "text": "t",
+            "holder": None,
+            "confidence": "known",
+            "nested": {"attributed_holder": "b", "proposition": "p", "attributed_confidence": None},
+        }
+    ]
+    assert normalize_cast(m5) == normalize_cast(m5_full)
+    assert normalize_cast(m5) != normalize_cast(sparse)
 
 
 def editor_for(body: dict[str, Any], **changes: str) -> ScenarioEditor:
@@ -788,8 +831,9 @@ def editor_for(body: dict[str, Any], **changes: str) -> ScenarioEditor:
     )
 
 
-def test_the_draft_round_trips_through_the_editor() -> None:
-    body = cast_draft()
+@pytest.mark.parametrize("draft", ["draft_cast", "draft_cast_m5"])
+def test_the_draft_round_trips_through_the_editor(draft: str) -> None:
+    body = fixture(draft)  # #206: the M5 draft's groups, trust/audience, confidence and nested
     editor = editor_for(body)
     assert editor.is_valid(), editor.cast.roles.errors
     assert editor.edit_patch(draft_to_write(parsed(body))) == {}
@@ -829,12 +873,667 @@ def test_the_cast_enums_match_the_schema() -> None:
 
     role = schemas["ScenarioRole"]["properties"]
     seed = schemas["Seed"]["properties"]
+    nested = schemas["NestedSeed"]["properties"]
     checks: list[tuple[tuple[str, ...], dict[str, Any]]] = [
         (scenario_cast.ROLE_KINDS, role["kind"]),
         (scenario_cast.FILLS, role["fill"]),
         (scenario_cast.PARTICIPATION, role["participation"]),
         (scenario_cast.DISCLOSURES, seed["disclosure"]),
         (scenario_cast.SEED_KINDS, seed["kind"]),
+        (scenario_cast.SEED_CONFIDENCES, seed["confidence"]),
+        (scenario_cast.SEED_CONFIDENCES, nested["attributed_confidence"]),
     ]
     for ours, node in checks:
         assert sorted(ours) == sorted(enum(node))
+
+
+# --- #206: groups, relationship trust and audience, seed confidence and nested content -----------
+
+M5 = "01JC0000000000000000M5SD0{}"
+FAMILY = {"family": ["bob", "alice"], "staff": ["carol"]}
+GROUP_ERRORS = ("name", "members")
+
+
+def m5_draft(*, certain: bool = True, **changes: Any) -> dict[str, Any]:
+    """The M5 draft (roles alice, bob, carol; groups ``family`` stored as [bob, alice] and
+    ``staff``; alice's seeds: a canon secret known to ``family``, a belief at ``suspected``, one
+    at the unknown ``certain``, a nested seed; a world seed with confidence and nested content).
+    The schema refuses ``certain``: ``certain=False`` reads ``known`` (a schema-valid write)."""
+    body = fixture("draft_cast_m5", **changes)
+    if not certain:
+        body["cast"]["roles"][0]["seeded_memories"][2]["confidence"] = "known"
+    return body
+
+
+def m5_page(client: Client, engine: FakeEngine, body: dict[str, Any] | None = None) -> Any:
+    """The edit page of ``body`` (default :func:`m5_draft`), served unvalidated (C2's open enum
+    ``certain``)."""
+    served = body if body is not None else m5_draft()
+    answer_ratings(engine)
+    answer_profiles(engine)
+    engine.side_effect("GET", S_ITEM, lambda request: httpx.Response(200, json=served))
+    response = client.get(EDIT)
+    assert response.status_code == 200
+    engine.reset()
+    return response
+
+
+def m5_form(client: Client, engine: FakeEngine, body: dict[str, Any] | None = None) -> QueryDict:
+    return posted(m5_page(client, engine, body))
+
+
+def valid_changes(engine: FakeEngine) -> dict[str, Any]:
+    """The PATCH sent, checked against the request schema (no form-only key leaks)."""
+    from tests.catalog.test_scenarios_edit import schema_valid
+
+    (sent,) = calls(engine, "PATCH", PATH)
+    schema_valid(engine, body_of(sent), "ScenarioPatch")
+    return changes(engine)
+
+
+def saved(client: Client, data: QueryDict) -> Any:
+    """Press Save expecting a local refusal: the page again, no Engine call."""
+    data["op"] = "save"
+    response = client.post(EDIT, as_post(data))
+    assert response.status_code == 200
+    return response
+
+
+def group_errors(response: Any, index: int) -> dict[str, list[str]]:
+    return dict(response.context["editor"].cast.groups.forms[index].errors)
+
+
+def seed_errors(response: Any, role: int, index: int) -> dict[str, list[str]]:
+    return dict(response.context["editor"].cast.seed_sets[role].forms[index].errors)
+
+
+def test_m5_cast_fields_untouched_send_nothing(operator_client: Client, engine: FakeEngine) -> None:
+    data = m5_form(operator_client, engine)
+    assert data["grp-TOTAL_FORMS"] == "2"
+    assert data.getlist("grp-0-members") == ["bob", "alice"]
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert writes(engine) == []
+    body = m5_draft()
+    editor = editor_for(body)
+    assert editor.is_valid()
+    assert editor.edit_patch(draft_to_write(parsed(body))) == {}
+
+
+def test_editing_a_role_keeps_groups_relationships_and_seed_fields(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = m5_draft(certain=False)
+    data = m5_form(operator_client, engine, body)
+    data["role-1-public_label"] = "Robert"
+    save(operator_client, engine, data)
+    cast = valid_changes(engine)["cast"]
+    assert cast["groups"] == FAMILY
+    assert list(cast["groups"]["family"]) == ["bob", "alice"]  # C9: the stored order
+    for sent, stored in zip(cast["roles"], body["cast"]["roles"], strict=True):
+        assert sent["relationships"] == stored["relationships"]
+        assert sent["seeded_memories"] == stored["seeded_memories"]
+    assert cast["roles"][0]["seeded_memories"][0]["audience"] == ["family", "alice"]
+    assert cast["roles"][1]["public_label"] == "Robert"
+    # A stored confidence outside the three is kept and sent back (C7).
+    engine.reset()
+    data = m5_form(operator_client, engine)
+    data["role-1-public_label"] = "Robert"
+    save(operator_client, engine, data)
+    assert changes(engine)["cast"]["roles"][0]["seeded_memories"][2]["confidence"] == "certain"
+
+
+def test_editing_a_world_seed_keeps_confidence_and_nested(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = m5_draft(certain=False)
+    data = m5_form(operator_client, engine, body)
+    data["wseed-0-text"] = "The house is very old."
+    save(operator_client, engine, data)
+    sent = valid_changes(engine)
+    assert "cast" not in sent
+    world = sent["starting_state"]["seeded_memories"]
+    assert world[0]["text"] == "The house is very old."
+    assert world[1] == body["starting_state"]["seeded_memories"][1]
+    assert world[1]["nested"] == {"attributed_holder": "carol", "proposition": "Nobody saw her."}
+
+
+def test_groups_are_sent_in_row_order_and_cleared_to_null(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    # Swapping the two rows (members ticked in the form's order) sends nothing.
+    data = m5_form(operator_client, engine)
+    data["grp-0-name"], data["grp-1-name"] = "staff", "family"
+    data.setlist("grp-0-members", ["carol"])
+    data.setlist("grp-1-members", ["alice", "bob"])
+    assert operator_client.post(EDIT, as_post(data)).status_code == 302
+    assert writes(engine) == []
+    # A stored ``{}`` with no rows sends nothing either.
+    body = m5_draft(certain=False)
+    body["cast"]["groups"] = {}
+    data = m5_form(operator_client, engine, body)
+    assert data["grp-TOTAL_FORMS"] == "0"
+    assert operator_client.post(EDIT, as_post(data)).status_code == 302
+    assert writes(engine) == []
+    # A member added is appended; a new group comes after the rows before it.
+    data = m5_form(operator_client, engine, m5_draft(certain=False))
+    data.setlist("grp-0-members", ["alice", "bob", "carol"])
+    with_rows(data, "grp", [{"name": " kin ", "members": ["carol", "alice"]}])
+    save(operator_client, engine, data)
+    groups = valid_changes(engine)["cast"]["groups"]
+    # A new group's members in the form's (role-row) order.
+    assert groups == {
+        "family": ["bob", "alice", "carol"],
+        "staff": ["carol"],
+        "kin": ["alice", "carol"],
+    }
+    assert list(groups) == ["family", "staff", "kin"]
+    # Every row removed: ``groups: null`` clears them all.
+    engine.reset()
+    data = m5_form(operator_client, engine, m5_draft(certain=False))
+    data = op(operator_client, data, "remove:grp-0")
+    data = op(operator_client, data, "remove:grp-0")
+    assert data["grp-TOTAL_FORMS"] == "0"
+    save(operator_client, engine, data)
+    assert valid_changes(engine)["cast"]["groups"] is None
+
+
+def test_a_removed_or_renamed_group_is_sent_as_null(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = op(
+        operator_client, m5_form(operator_client, engine, m5_draft(certain=False)), "remove:grp-1"
+    )
+    save(operator_client, engine, data)
+    assert valid_changes(engine)["cast"]["groups"] == {"family": ["bob", "alice"], "staff": None}
+    engine.reset()
+    data = m5_form(operator_client, engine, m5_draft(certain=False))
+    data["grp-0-name"] = "kin"
+    save(operator_client, engine, data)
+    groups = valid_changes(engine)["cast"]["groups"]
+    assert groups == {"kin": ["alice", "bob"], "staff": ["carol"], "family": None}
+    assert list(groups) == ["kin", "staff", "family"]
+
+
+def create_with_groups(
+    client: Client, engine: FakeEngine, rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Create a scenario with one role (``guard``) and ``rows`` of groups: the body sent."""
+    from tests.catalog.test_scenarios_edit import schema_valid
+
+    answer_ratings(engine)
+    answer_profiles(engine)
+    data = posted(client.get(NEW_URL))
+    engine.reset()
+    data["op"] = "add:role"
+    data = posted(client.post(NEW_URL, as_post(data)))
+    data.update(
+        {
+            "role-0-id": "guard",
+            "role-0-public_label": "Guard",
+            "role-0-setup_description": "Watches the gate.",
+        }
+    )
+    with_rows(data, "grp", rows)
+    data["op"] = "save"
+    engine.respond("POST", S_LIST, 201, json=fixture("post"))
+    assert client.post(NEW_URL, as_post(data)).status_code == 302
+    (sent,) = calls(engine, "POST", S_LIST)
+    body: dict[str, Any] = body_of(sent)
+    schema_valid(engine, body, "ScenarioCreate")
+    return body
+
+
+def test_create_sends_groups_with_empty_members(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = create_with_groups(operator_client, engine, [{"name": "g"}])
+    assert body["cast"]["groups"] == {"g": []}
+    engine.reset()
+    body = create_with_groups(operator_client, engine, [])
+    assert "groups" not in body["cast"]
+
+
+def with_rows(data: QueryDict, prefix: str, rows: list[dict[str, Any]]) -> QueryDict:
+    from tests.catalog.test_scenarios_edit import with_rows as append
+
+    return append(data, prefix, rows)
+
+
+@pytest.mark.parametrize(
+    ("rows", "index", "message"),
+    [
+        ([{"name": "  ", "members": ["alice"]}], 2, "A group needs its name"),
+        ([{"name": "family"}], 2, "Already used by row 1"),
+        ([{"name": " staff "}, {"name": "staff", "members": ["bob"]}], 3, "Already used by row 2"),
+        ([{"name": "self"}], 2, "self is an audience level"),
+        ([{"name": "public"}], 2, "public is an audience level"),
+        ([{"name": "world"}], 2, "world is an audience level"),
+        (
+            [{"name": "carol", "members": ["bob"]}],
+            2,
+            "A role has this id: the group would hide the role in audiences",
+        ),
+    ],
+    ids=["blank", "repeat", "third-repeat", "self", "public", "world", "role-id"],
+)
+def test_group_name_rules_refused_locally(
+    operator_client: Client,
+    engine: FakeEngine,
+    rows: list[dict[str, Any]],
+    index: int,
+    message: str,
+) -> None:
+    data = with_rows(m5_form(operator_client, engine), "grp", rows)
+    response = saved(operator_client, data)
+    assert engine.requests == []
+    assert group_errors(response, index) == {"name": [message]}
+    # A colliding name is offered once (its first row) or not at all.
+    audience = response.context["editor"].cast.seed_sets[0].forms[0].fields["audience"]
+    assert [v for v, _ in audience.choices] == [
+        "alice",
+        "bob",
+        "carol",
+        "family",
+        "staff",
+        "world",
+    ]
+
+
+def test_audience_offers_groups_and_rehomes_a_renamed_group(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = m5_page(operator_client, engine)
+    html = response.content.decode()
+    data = posted(response)
+    # The saved audience [family, alice] is ticked, not in "Other audience".
+    assert data.getlist("role-0-seed-0-audience") == ["family", "alice"]
+    assert not data.get("role-0-seed-0-audience_other")
+    seed = response.context["editor"].cast.seed_sets[0].forms[0]
+    assert seed.fields["audience"].choices == [
+        ("alice", "alice"),
+        ("bob", "bob"),
+        ("carol", "carol"),
+        ("family", "family (group)"),
+        ("staff", "staff (group)"),
+        ("world", "world"),
+    ]
+    assert "family (group)</label>" in html
+    # Renamed: "Update form" offers the new name and moves the ticked old one to "Other".
+    data["grp-0-name"] = "kin"
+    data = op(operator_client, data, "refresh")
+    assert data.getlist("role-0-seed-0-audience") == ["alice"]
+    assert data["role-0-seed-0-audience_other"] == "family"
+    # C9: an untouched saved audience is sent unchanged.
+    engine.reset()
+    data = m5_form(operator_client, engine, m5_draft(certain=False))
+    data["role-1-public_label"] = "Robert"
+    data.setlist("role-0-seed-1-audience", ["family", "alice"])  # a group added to a saved one
+    save(operator_client, engine, data)
+    seeds = valid_changes(engine)["cast"]["roles"][0]["seeded_memories"]
+    assert seeds[0]["audience"] == ["family", "alice"]
+    assert seeds[1]["audience"] == ["alice", "family"]
+
+
+def test_seed_confidence_unset_sends_no_key(operator_client: Client, engine: FakeEngine) -> None:
+    response = m5_page(operator_client, engine)
+    seeds = response.context["editor"].cast.seed_sets[0].forms
+    assert seeds[1].fields["confidence"].choices == [
+        ("", "Engine default (believed)"),
+        ("suspected", "Suspected"),
+        ("believed", "Believed"),
+        ("known", "Known"),
+    ]
+    assert seeds[2].fields["confidence"].choices[-1] == ("certain", "Certain")  # kept (C7)
+    assert seeds[3].fields["nested__attributed_confidence"].choices[0] == (
+        "",
+        "Engine default (known)",
+    )
+    assert "How sure the holder is of a belief seed." in response.content.decode()
+    data = posted(response)
+    data["role-1-public_label"] = "Robert"
+    data["role-0-seed-1-confidence"] = ""  # suspected → the Engine default: no key
+    data["role-0-seed-2-confidence"] = "believed"  # an explicit default is sent
+    save(operator_client, engine, data)
+    roles = changes(engine)["cast"]["roles"]
+    alice, bob = roles[0]["seeded_memories"], roles[1]["seeded_memories"]
+    assert "confidence" not in alice[1]
+    assert alice[2]["confidence"] == "believed"
+    assert "confidence" not in bob[0]
+    assert "nested" not in bob[0]  # a fully blank nested block
+
+
+@pytest.mark.parametrize(
+    ("typed", "errors"),
+    [
+        (
+            {"nested__attributed_holder": "alice"},
+            {"nested__proposition": ["A nested belief needs both the role and what it believes"]},
+        ),
+        (
+            {"nested__proposition": "Carol lied."},
+            {
+                "nested__attributed_holder": [
+                    "A nested belief needs both the role and what it believes"
+                ]
+            },
+        ),
+        (
+            {"nested__attributed_confidence": "known", "nested__proposition": "   "},
+            {
+                "nested__attributed_holder": [
+                    "A nested belief needs both the role and what it believes"
+                ],
+                "nested__proposition": ["A nested belief needs both the role and what it believes"],
+            },
+        ),
+        (
+            {"nested__attributed_holder": "bob", "nested__proposition": "He knows."},
+            {"nested__attributed_holder": ["A role can't be its own attributed holder"]},
+        ),
+        (
+            {"text": "", "nested__attributed_holder": "alice", "nested__proposition": "Hm."},
+            {"text": ["A seed needs its text."]},
+        ),
+        ({"text": "", "confidence": "known"}, {"text": ["A seed needs its text."]}),
+    ],
+    ids=["holder-only", "proposition-only", "confidence-only", "self", "no-text", "no-text-conf"],
+)
+def test_nested_seed_needs_both_fields(
+    operator_client: Client, engine: FakeEngine, typed: dict[str, str], errors: dict[str, Any]
+) -> None:
+    data = m5_form(operator_client, engine)
+    for name, value in typed.items():
+        data[f"role-1-seed-0-{name}"] = value  # bob's seed, held by bob
+    response = saved(operator_client, data)
+    assert engine.requests == []
+    assert seed_errors(response, 1, 0) == errors
+
+
+def test_a_blank_role_kept_by_a_seed_confidence_is_refused(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = op(operator_client, m5_form(operator_client, engine), "add:role")
+    data = op(operator_client, data, "add:role-3-seed")
+    data["role-3-seed-0-confidence"] = "known"
+    response = saved(operator_client, data)
+    assert engine.requests == []
+    role = response.context["editor"].cast.roles.forms[3]
+    assert role.errors["id"] == ["This field is required."]
+    assert seed_errors(response, 3, 0) == {"text": ["A seed needs its text."]}
+
+
+def test_relationships_are_written_without_null_keys(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    from console.forms.scenario_cast import RELATIONSHIPS_HELP, relationship_to_write
+
+    response = m5_page(operator_client, engine, m5_draft(certain=False))
+    html = response.content.decode()
+    assert json.dumps(RELATIONSHIPS_HELP)[1:-1].replace('\\"', "&quot;") in html
+    assert "&quot;trust&quot;: 0.2" in html  # a saved trust shows in the box
+    data = posted(response)
+    data["role-1-relationships"] = (
+        '[{"audience": ["alice"], "trust": null, "name": "brother_of", "to_role": "alice"}]'
+    )
+    save(operator_client, engine, data)
+    (sent,) = valid_changes(engine)["cast"]["roles"][1]["relationships"]
+    assert list(sent.items()) == [
+        ("to_role", "alice"),
+        ("name", "brother_of"),
+        ("audience", ["alice"]),
+    ]
+    typed = {"x": 1, "audience": None, "name": "n", "y": None, "trust": 0.5, "to_role": "a"}
+    written = relationship_to_write(typed)
+    assert isinstance(written, dict)
+    assert list(written) == ["to_role", "name", "trust", "x"]
+    assert relationship_to_write("oops") == "oops"
+
+
+def nested_details(html: str, seed_id: str) -> str:
+    """Seed ``seed_id``'s editor row, up to its Remove button."""
+    start = html.index(f'id="seed-{seed_id}"')
+    return html[start : html.index('value="remove:', start)]
+
+
+def test_nested_details_open_for_kind_nested_or_values(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = m5_page(operator_client, engine)
+    html = response.content.decode()
+    note = (
+        "Needs the nested_beliefs module; without it the seed stays deferred. The Console "
+        "can&#x27;t read nested beliefs back yet (Engine #606)."
+    )
+    opened = '<details class="nested-belief" open><summary>Nested belief</summary>'
+    closed = '<details class="nested-belief"><summary>Nested belief</summary>'
+    nested = nested_details(html, M5.format(4))  # kind nested, with content
+    assert opened in nested
+    assert note in nested
+    assert "Believes that…" in nested
+    assert "…believes" in nested
+    assert "At confidence" in nested
+    assert nested.index("Confidence") < nested.index("Nested belief") < nested.index("Advanced")
+    assert closed in nested_details(html, M5.format(2))  # a belief, nothing nested
+    # Kind nested (after Update form), or a value typed, opens it; so does an error.
+    data = posted(response)
+    data["role-0-seed-1-kind"] = "nested"
+    data["role-1-seed-0-nested__attributed_confidence"] = "known"
+    data["op"] = "refresh"
+    html = operator_client.post(EDIT, as_post(data)).content.decode()
+    assert opened in nested_details(html, M5.format(2))
+    assert opened in nested_details(html, M5.format(5))
+    assert closed in nested_details(html, M5.format(1))
+    data = m5_form(operator_client, engine)
+    data["role-0-public_label"] = "Al"
+    response = save(
+        operator_client,
+        engine,
+        data,
+        status=422,
+        json=refused(("cast.roles[0].seeded_memories[0].nested", "seed_nested_missing")),
+    )
+    assert opened in nested_details(response.content.decode(), M5.format(1))
+
+
+def test_group_and_nested_errors_are_placed(operator_client: Client, engine: FakeEngine) -> None:
+    data = m5_form(operator_client, engine)
+    data["role-0-public_label"] = "Al"
+    response = save(
+        operator_client,
+        engine,
+        data,
+        status=422,
+        json=refused(
+            ("cast.groups.family.[key]", "string does not match the pattern"),
+            ("cast.groups.staff", "not a list"),
+            ("cast.groups.family[1]", "no role of this scenario"),
+            ("cast.groups.nope[0]", "no such group"),
+            ("cast.roles[0].seeded_memories[1].confidence", "bad level"),
+            ("cast.roles[0].seeded_memories[3].nested", "seed_nested_missing"),
+            ("cast.roles[0].seeded_memories[3].nested.attributed_holder", "unknown role"),
+            ("cast.roles[0].seeded_memories[0].holder", "seed_holder_required"),
+            ("starting_state.seeded_memories[1].nested.proposition", "blank"),
+        ),
+    )
+    assert response.status_code == 200
+    assert group_errors(response, 0) == {
+        "name": ["string does not match the pattern"],
+        "members": ["alice: no role of this scenario"],
+    }
+    assert group_errors(response, 1) == {"members": ["not a list"]}
+    cast = response.context["editor"].cast
+    assert cast.cast_errors == ["cast.groups.nope[0]: no such group"]
+    assert seed_errors(response, 0, 1) == {"confidence": ["bad level"]}
+    assert seed_errors(response, 0, 3) == {
+        "nested__attributed_holder": ["seed_nested_missing", "unknown role"]
+    }
+    assert seed_errors(response, 0, 0) == {"holder": ["seed_holder_required"]}
+    assert cast.world.forms[1].errors == {"nested__proposition": ["blank"]}
+    # No group error lands on a role row.
+    assert all(form.errors == {} for form in cast.roles.forms)
+    assert "alice: no role of this scenario" in response.content.decode()
+
+
+def test_group_and_nested_report_errors_are_placed(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    from tests.catalog.scenario_helpers import SCN
+
+    def entry(code: str, field: str) -> dict[str, Any]:
+        return {
+            "code": code,
+            "location": {
+                "entry": SCN,
+                "version": "draft",
+                "field": field,
+                "role": None,
+                "seed_id": None,
+            },
+            "outcome": "rejected",
+            "rule": "refused",
+            "source": None,
+            "text": None,
+        }
+
+    body = m5_draft(certain=False)
+    data = m5_form(operator_client, engine, body)
+    data["role-0-public_label"] = "Al"
+    data["action"] = "publish"
+    report = fixture("publish_invalid")
+    report["error"]["details"]["report"]["errors"] = [
+        entry("seed_reference_unknown", "cast.groups.staff[0]"),
+        entry("seed_nested_missing", "cast.roles[0].seeded_memories[3].nested"),
+        entry(
+            "seed_reference_unknown", "cast.roles[0].seeded_memories[3].nested.attributed_holder"
+        ),
+        entry("seed_holder_required", "starting_state.seeded_memories[1].holder"),
+        entry("seed_audience_unknown", "cast.roles[0].seeded_memories[0].audience[0]"),
+    ]
+    engine.respond("PATCH", S_ITEM, 200, json=fixture("patch"))
+    engine.respond("POST", "/catalog/scenarios/{scenario_id}/publish", 422, json=report)
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    page = operator_client.get(response["Location"])
+    assert group_errors(page, 1) == {"members": ["carol: seed_reference_unknown: refused"]}
+    assert seed_errors(page, 0, 3) == {
+        "nested__attributed_holder": [
+            "seed_nested_missing: refused",
+            "seed_reference_unknown: refused",
+        ]
+    }
+    world = page.context["editor"].cast.world.forms[1]
+    assert dict(world.errors) == {"holder": ["seed_holder_required: refused"]}
+    assert seed_errors(page, 0, 0) == {"audience": ["family: seed_audience_unknown: refused"]}
+
+
+def test_an_archived_scenario_disables_groups_and_seed_fields(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = m5_page(operator_client, engine, m5_draft(status="archived")).content.decode()
+    assert re.search(r'<input type="text" name="grp-0-name"[^>]* disabled', html)
+    assert re.search(r'<input type="checkbox" name="grp-0-members" value="bob"[^>]* disabled', html)
+    assert re.search(r'<select name="role-0-seed-0-confidence"[^>]* disabled', html)
+    for name in ("nested__attributed_holder", "nested__attributed_confidence"):
+        assert re.search(rf'<select name="role-0-seed-3-{name}"[^>]* disabled', html)
+    assert re.search(r'<textarea name="role-0-seed-3-nested__proposition"[^>]* disabled', html)
+    assert 'value="add:grp" formnovalidate disabled' in html
+
+
+def test_the_groups_rows_follow_the_roles(operator_client: Client, engine: FakeEngine) -> None:
+    html = m5_page(operator_client, engine).content.decode()
+    cast = html[html.index('id="f-cast"') :]
+    groups = cast.index('<fieldset class="rows rows-grp" id="f-cast-groups">')
+    assert cast.index('id="f-cast-roles"') < groups
+    assert "<legend>Groups</legend>" in cast[groups:]
+    assert (
+        "A seed&#x27;s audience can name a group to mean its members. Use Update form to offer "
+        "a new or renamed group in the audiences."
+    ) in cast[groups:]
+    assert 'id="grp-1"' in cast
+    # Members offer the role rows' ids, then a missing ticked one, kept as "(missing)".
+    data = m5_form(operator_client, engine)
+    data["role-2-id"] = "cook"
+    data["op"] = "refresh"
+    response = operator_client.post(EDIT, as_post(data))
+    page = response.content.decode()
+    assert posted(response).getlist("grp-1-members") == ["carol"]
+    assert "carol (missing)" in page
+
+
+def m5_detail(client: Client, engine: FakeEngine, body: dict[str, Any] | None = None) -> str:
+    """The M5 draft's detail page, served unvalidated (C2's ``certain``)."""
+    served = body if body is not None else m5_draft()
+    served.pop("draft_revision", None)
+    answer_ratings(engine)
+    answer_profiles(engine)
+    engine.side_effect("GET", S_ITEM, lambda request: httpx.Response(200, json=served))
+    response = client.get(f"{DETAIL}?view=draft")
+    assert response.status_code == 200
+    return response.content.decode()
+
+
+def test_the_detail_page_shows_groups_relationships_and_seed_confidence(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = m5_detail(operator_client, engine)
+    section = html[html.index('<section id="cast">') :]
+    assert (
+        '<dl class="cast-groups"><dt>Groups</dt><dd><code>family</code>: <code>bob</code>, '
+        "<code>alice</code><br><code>staff</code>: <code>carol</code></dd></dl>"
+    ) in section
+    assert section.index("Most characters at start") < section.index("cast-groups")
+    assert section.index("cast-groups") < section.index('<table class="cast-roles">')
+    alice = section[section.index('id="role-alice-detail"') : section.index('id="role-bob"')]
+    table = alice[
+        alice.index('<table class="relationships">') : alice.index(
+            "</table>", alice.index('class="relationships"')
+        )
+    ]
+    page = text(table)
+    assert "To role Name Trust Known by" in page
+    assert "carol rival_of 0.20 alice , carol , bob" in page
+    assert "bob sister_of — (by name) its two roles (default)" in page
+    assert "None" not in page
+    assert "null" not in page
+    assert "&quot;to_role&quot;" not in alice  # the table replaces the JSON
+    carol = section[section.index('id="role-carol-detail"') :]
+    assert "1.00" in text(carol[: carol.index("</table>")])
+    # The Confidence column, right after Kind.
+    assert "<th>Kind</th><th>Confidence</th><th>Text</th>" in html
+
+    def confidence(seed: int) -> str:
+        row = html[html.index(f'<tr id="seed-{M5.format(seed)}">') :]
+        cell = re.search(r'<td class="seed-confidence">([^<]*)</td>', row)
+        assert cell is not None
+        return cell[1]
+
+    assert [confidence(n) for n in range(1, 8)] == [
+        "—",  # canon
+        "Suspected",
+        "Certain",  # unknown, humanised (C3)
+        "Believed (default)",  # nested, unset
+        "—",
+        "—",
+        "Known",
+    ]
+    assert (
+        "Nested: believes <code>bob</code> believes “The will is in the safe.” at Suspected"
+    ) in html
+    assert (
+        "Nested: believes <code>carol</code> believes “Nobody saw her.” at Known (default)" in html
+    )
+
+
+def test_the_detail_page_groups_defaults(operator_client: Client, engine: FakeEngine) -> None:
+    body = m5_draft()
+    body["cast"]["groups"] = {"empty": []}
+    body["cast"]["roles"][1]["name_overrides"] = {"canonical": "Robert"}
+    body["cast"]["roles"][1]["seeded_memories"][0]["kind"] = "belief"
+    html = m5_detail(operator_client, engine, body)
+    assert "<dd><code>empty</code>: no members</dd>" in html
+    bob = html[html.index('id="role-bob-detail"') : html.index('id="role-carol"')]
+    assert "<dt>Relationships</dt><dd>—</dd>" in bob
+    assert '<td class="seed-confidence">Believed (default)</td>' in bob  # an unset belief
+    body["cast"]["groups"] = None
+    assert "<dt>Groups</dt><dd>—</dd>" in m5_detail(operator_client, engine, body)

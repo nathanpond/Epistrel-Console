@@ -3,7 +3,7 @@ its seeded memories. The character select shows for a default or locked fill (af
 form" when the fill was just changed). #74: on a companion (cast.companion) each role's id, kind,
 fill and character are a read-only block ("Fixed — follows <character>", posted as hidden inputs
 the server pins anyway) and roles are neither added nor removed. Context: cast
-(console.forms.scenario_cast.CastForms), archived_note, companion_name.{% endcomment %}
+(console.forms.scenario_cast.CastForms), archived_note, companion_name. #206: the Groups rows (prefix grp) follow the roles.{% endcomment %}
 <fieldset class="section cast" id="f-cast"><legend>Cast</legend>
   {% if cast.cast_errors %}<ul class="errorlist">{% for error in cast.cast_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
   <p class="field">{% with field=cast.limit.cast__max_characters_at_start %}<label for="{{ field.id_for_label }}">{{ field.label }}</label><br>{{ field }} <small class="muted">{{ field.help_text }}</small>{{ field.errors }}{% endwith %}</p>
@@ -64,5 +64,6 @@ the server pins anyway) and roles are neither added nor removed. Context: cast
     {% endfor %}
     {% if cast.companion %}<p class="muted">A companion keeps its two roles: none can be added or removed.</p>{% elif cast.can_add_role %}<button type="submit" name="op" value="add:role" formnovalidate{% if archived_note %} disabled{% endif %}>Add role</button>{% else %}<small class="muted">At the limit.</small>{% endif %}
   </fieldset>
+  {% include "console/catalog/scenarios/_rows.html" with rows=cast.group_rows %}
   {% include "console/catalog/scenarios/_refresh.html" %}
 </fieldset>

@@ -1,9 +1,11 @@
 {% load console_format %}{% comment %}#73 (#74 reuses it): a scenario's cast as a table of roles with
 their seeds nested, and the world seeds in their own table. Context: cast
-(console.catalog.cast_table.CastTable).{% endcomment %}
+(console.catalog.cast_table.CastTable). #206: the groups (a dt/dd pair, one line per group in
+stored order), each role's relationships as a table, the seeds' confidence and nested content.{% endcomment %}
 <section id="cast">
   <h2>Cast</h2>
   <p>Most characters at start: {% if cast.max_characters_at_start is None %}— (deployment default){% else %}{{ cast.max_characters_at_start }}{% endif %}</p>
+  <dl class="cast-groups"><dt>Groups</dt><dd>{% for group in cast.groups %}<code>{{ group.name }}</code>: {% for member in group.members %}<code>{{ member }}</code>{% if not forloop.last %}, {% endif %}{% empty %}no members{% endfor %}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</dd></dl>
   {% if cast.rows %}
   <table class="cast-roles">
     <thead><tr><th>Id</th><th>Kind</th><th>Label</th><th>Setup</th><th>Fill</th><th>Required</th><th>Character</th><th>Participation</th><th>Starting location</th><th>Eligibility</th></tr></thead>
@@ -28,7 +30,20 @@ their seeds nested, and the world seeds in their own table. Context: cast
           {% if role.relationships or role.name_overrides is not None or role.state_initial_values is not None %}
           <details class="role-more"><summary>Relationships, name overrides and initial values</summary>
             <dl>
-              <dt>Relationships</dt><dd><pre>{{ role.relationships|pretty_json }}</pre></dd>
+              <dt>Relationships</dt><dd>{% if row.relationships %}
+                <table class="relationships">
+                  <thead><tr><th>To role</th><th>Name</th><th>Trust</th><th>Known by</th></tr></thead>
+                  <tbody>
+                    {% for rel in row.relationships %}
+                    <tr>
+                      <td><code>{{ rel.to_role }}</code></td>
+                      <td>{{ rel.name }}</td>
+                      <td>{% if rel.trust is not None %}{{ rel.trust|floatformat:2 }}{% elif rel.trust_raw %}<code>{{ rel.trust_raw }}</code>{% else %}— (by name){% endif %}</td>
+                      <td>{% if rel.known_by %}{% for id in rel.known_by %}<code>{{ id }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}its two roles (default){% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>{% else %}—{% endif %}</dd>
               <dt>Name overrides</dt><dd><pre>{{ role.name_overrides|pretty_json }}</pre></dd>
               <dt>Initial state values</dt><dd><pre>{{ role.state_initial_values|pretty_json }}</pre></dd>
             </dl>

@@ -2150,3 +2150,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** "Pre-fix first" shown locally: editing hall's name against the old `draft_to_write`/`LocationForm` sent `world.locations` without `located_in`/`adjacent_to` (assertion failed), not committed red.
   **Why:** Planner, pass 2.
   **Issue:** #205
+- **Decision:** `keep_order` and `Rows` (both in `console/forms/scenario.py`, #205) are imported inside the `scenario_cast` functions that use them (`SeedForm.seed`, `GroupForm.group`, `CastForms.group_rows`), not moved.
+  **Why:** `scenario.py` imports `scenario_cast` at module level, so a top-level import would be circular. #205 still owns them.
+  **Issue:** #206
+- **Decision:** Seed audiences now go through `keep_order` against the draft seed with the same kept id. `test_audience_order_and_other_tokens` (#73) was updated to expect the stored order followed by the new tokens (`[mother, son, self, world, Self]`).
+  **Why:** The AC requires it (C9: offering groups never reorders a saved audience). This is a behavior change the AC asks for, not a weakened test.
+  **Issue:** #206
+- **Decision:** The cast sent always carries `groups` (`null` with no rows). The `the_cast` test helper (#73) now includes it.
+  **Why:** The AC says "`cast_to_write` always emits the `groups` key".
+  **Issue:** #206
+- **Decision:** Wording placeholders shown as code in the AC (`<name>` is an audience level, `<id>` (missing)) are rendered as plain text, e.g. "self is an audience level".
+  **Why:** This matches how the existing "(missing)" labels render the same notation.
+  **Issue:** #206
+- **Decision:** The member-list comparison stays list-based in `normalize_cast`, not set-based. Both sides are written through `keep_order`, so a set test would add nothing.
+  **Why:** C9 holds because the editor never reorders stored members.
+  **Issue:** #206
+- **Decision:** The M5 fixture's unknown confidence `certain` is schema-invalid, so M5 pages are served through `side_effect` (unvalidated), as #205's portcullis is. Tests that check request schemas use `m5_draft(certain=False)`.
+  **Why:** The AC asks for the unknown value in the fixture, and the fake validates responses.
+  **Issue:** #206
+- **Decision:** The detail page's Trust shows a stored non-number as raw JSON through `RelationshipRow.trust_raw`. With the strict model this is defensive only.
+  **Why:** The AC names the case. The model refuses non-numbers, so it can't arise from a parsed draft.
+  **Issue:** #206
+- **Decision:** `create_body` puts `cast.groups` back after `drop_empty`, with null entries dropped.
+  **Why:** The AC exempts groups from `drop_empty`. Doing it in `create_body` leaves `drop_empty`'s other callers alone.
+  **Issue:** #206
