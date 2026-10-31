@@ -16,6 +16,7 @@ from console.views import (
     feedback,
     history,
     inspect,
+    inspect_beliefs,
     inspect_canon,
     inspect_ledger,
     inspect_memory,
@@ -177,6 +178,8 @@ inspect_patterns = (
         # #189: the Knowledge tab; its sections (knowledge/beliefs/, knowledge/divergences/,
         # knowledge/exposures/) are registered by #190, #192 and #193.
         path("knowledge/", inspect.knowledge, name="knowledge"),
+        # #190: one character's beliefs (its partition) and the identities it holds.
+        path("knowledge/beliefs/", inspect_beliefs.beliefs, name="beliefs"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

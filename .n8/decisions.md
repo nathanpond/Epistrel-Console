@@ -1745,3 +1745,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The plain `p.notice` rule (`border-left: 4px solid #d0d7de`, no background) applies to every existing `p.notice`, not only Knowledge's.
   **Why:** The planner's styling line names a plain `p.notice` rule; `p.notice.warn` still overrides it.
   **Issue:** #189
+- **Decision:** "(minor)" in Beliefs' character labels comes from `console.beliefs.story_minor_ids` over the shell's own `get_story` items that parse as `OmniscientStoryCharacter`; the shell's read isn't omniscient (no `weight`), so no label is marked minor today, and no read was added.
+  **Why:** C4 forbids an extra read for "(minor)"; the AC assumed Inspect reads the omniscient cast, but `inspect_page` reads `GET /stories/{id}` without a viewpoint.
+  **Issue:** #190
+- **Decision:** A blank `character` in select mode defaults like an absent one (first non-player).
+  **Why:** Apply always sends the select's value; only a hand-edited URL is blank, and an empty request would otherwise read as "no modeled characters".
+  **Issue:** #190
+- **Decision:** More's "Step" is the `since` position's step (the position the row's Holds since shows); `polarity` (humanised) follows the listed fields as the unnamed one (convention 13); an unparsable proposition adds "Proposition (as sent)" as a `<pre>`.
+  **Why:** The AC names "the position's step" in the singular; polarity has no column.
+  **Issue:** #190
+- **Decision:** Cast-unavailable and cursor-dropped notices sit above the filters; the first-order notice above the table (all above the rows, in the planner's order). The header is an `<h3 class="beliefs-header">` under #189's `<h2>Beliefs</h2>`.
+  **Why:** Reconciles the AC's "above the filters" for the cursor notice with pass 2's "notices above the table" ordering.
+  **Issue:** #190
+- **Decision:** `marks` is a mapping belief id → mark (`None` hides the Canon column; a row without a mark shows "—"), applied by `console.beliefs.belief_rows(story_id, beliefs, marks)` into `BeliefRow.mark`.
+  **Why:** The AC defines only the hook; #191 can fill the mapping without touching the row partial.
+  **Issue:** #190
+- **Decision:** The unparsable-proposition case (C2) is a view-model test, not a page test.
+  **Why:** The schema-validating fake refuses a schema-invalid proposition, and the Engine never sends one (C15).
+  **Issue:** #190
