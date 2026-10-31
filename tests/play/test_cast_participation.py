@@ -301,6 +301,8 @@ def test_same_role_makes_no_engine_call(operator_client: Client, engine: FakeEng
         Shown(STORY, TOBIN, "Tobin", None, False).signed(),  # a shown "—" always calls
         Shown(STORY, TOBIN, "Tobin", "background", False).signed(),  # so does an unknown role
     ],
+    # Fixed ids: a signed value is time-stamped, so xdist workers would collect different ids.
+    ids=["garbage", "empty", "absent", "shown-dash", "shown-unknown-role"],
 )
 def test_bad_signature_calls_the_engine(
     operator_client: Client, engine: FakeEngine, signed: str | None

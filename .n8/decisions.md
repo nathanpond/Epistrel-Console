@@ -1973,3 +1973,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Full gate's pytest ran without xdist: xdist collection differs between workers on #61's `test_bad_signature_calls_the_engine` (parametrize ids carry time-stamped signed values), unrelated to this story.
   **Why:** Brief's fallback rule.
   **Issue:** #198
+- **Decision:** (Rule 1) Gave `test_bad_signature_calls_the_engine` fixed parametrize `ids=`, fixing #211 inside M5 rather than leaving it for triage.
+  **Why:** The defect is in #61's own test (this milestone). Signed `Shown` values are time-stamped, so xdist workers collected different ids, and every later story's gate fell back to the 11-minute serial run. With the fix, the xdist gate gives 5245 passed, the same count as serial. The milestone PR closes #211.
+  **Issue:** #61, #211
