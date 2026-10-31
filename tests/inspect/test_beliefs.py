@@ -326,6 +326,37 @@ def test_column_hooks_render_canon_and_actions() -> None:
     assert '<td class="canon">—</td>' in html
 
 
+def test_canon_and_actions_columns_absent_when_unset() -> None:
+    """#213: with ``marks`` and ``actions`` unset the row has neither the Canon nor the Actions
+    cell, and the table header neither column (only the view-model path: the view sets
+    both)."""
+    body = Beliefs.from_json(fixture("beliefs_page1"))
+    assert body is not None
+    (first,) = belief_rows(STORY, body.beliefs[:1], {BE[1]: CanonMark(UNSETTLED)})
+    context = {"row": first, "marks": None, "actions": None, "story_id": STORY}
+    html = render_to_string("console/inspect/_belief_row.html", context)
+    assert 'class="canon"' not in html
+    assert 'class="actions"' not in html
+    assert re.findall(r'<td class="([a-z]+)"', html) == [
+        "proposition",
+        "confidence",
+        "how",
+        "since",
+        "until",
+        "about",
+        "more",
+    ]
+    table = render_to_string(
+        "console/inspect/beliefs.html", {**context, "rows": [first], "beliefs": body}
+    )
+    head = re.search(r'<table class="beliefs">\s*<thead><tr>(.*?)</tr></thead>', table, re.S)
+    assert head is not None
+    assert "Canon" not in head.group(1)
+    assert "Actions" not in head.group(1)
+    assert 'class="canon"' not in table
+    assert 'class="actions"' not in table
+
+
 def test_registry_failure_shows_short_ids(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", PREDICATES, 503, json=error_json("database_unavailable", "down"))
     html = page(operator_client)
