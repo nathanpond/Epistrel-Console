@@ -1,8 +1,9 @@
 {% comment %}#68: one row formset, edited without JavaScript: each row's Remove and the Add button
 submit the form with op=remove:<prefix>-<n> / op=add:<prefix> and re-render it (no Engine call).
-Context: rows (console.forms.scenario.Rows), archived_note.{% endcomment %}
+Context: rows (console.forms.scenario.Rows; #205: its help, if any, under the title), archived_note.{% endcomment %}
 <fieldset class="rows rows-{{ rows.prefix }}" id="{{ rows.anchor }}">
   <legend>{{ rows.title }}</legend>
+  {% if rows.help %}<p class="muted rows-help">{{ rows.help }}</p>{% endif %}
   {{ rows.formset.management_form }}
   {{ rows.formset.non_form_errors }}
   {% for row in rows.formset.forms %}

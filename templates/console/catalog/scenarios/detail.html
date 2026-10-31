@@ -84,10 +84,10 @@
   <h2>World</h2>
   <dl><dt>Description</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=w.description %}</dd></dl>
   <h3>Locations</h3>
-  {% if w.locations %}
+  {% if topology %}
   <table class="locations">
-    <thead><tr><th>Id</th><th>Name</th><th>Description</th></tr></thead>
-    <tbody>{% for loc in w.locations %}<tr id="location-{{ loc.id }}"><td><code>{{ loc.id }}</code></td><td>{{ loc.name }}</td><td>{% include "console/catalog/scenarios/_long_text.html" with text=loc.description %}</td></tr>{% endfor %}</tbody>
+    <thead><tr><th>Id</th><th>Name</th><th>Description</th><th>Lies in</th><th>Adjoins</th></tr></thead>
+    <tbody>{% for row in topology %}{% with loc=row.location %}<tr id="location-{{ loc.id }}"><td><code>{{ loc.id }}</code></td><td>{{ loc.name }}</td><td>{% include "console/catalog/scenarios/_long_text.html" with text=loc.description %}</td><td class="lies-in">{% if row.lies_in %}{% include "console/catalog/scenarios/_place.html" with place=row.lies_in %}{% else %}—{% endif %}</td><td class="adjoins">{% for adjoin in row.adjoins %}{% include "console/catalog/scenarios/_place.html" with place=adjoin.place %} · {% if adjoin.barrier.raw %}<span title="{{ adjoin.barrier.raw }}">{{ adjoin.barrier.text }}</span>{% else %}{{ adjoin.barrier.text }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}—{% endfor %}</td></tr>{% endwith %}{% endfor %}</tbody>
   </table>
   {% else %}<p>—</p>{% endif %}
   <h3>Entities</h3>
@@ -111,6 +111,7 @@
     <dt>Narration</dt><dd>{% include "console/catalog/scenarios/_long_text.html" with text=o.narration %}</dd>
     <dt>Starting location</dt><dd>{% if o.starting_location %}<code>{{ o.starting_location }}</code>{% else %}—{% endif %}</dd>
     <dt>Roles present</dt><dd>{% if o.roles_present %}{% for role in o.roles_present %}<code>{{ role }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</dd>
+    <dt>Remote channels</dt><dd class="channels">{% for channel in channels %}<code>{{ channel.id }}</code>: {% for p in channel.participants %}<code>{{ p.id }}</code>{% if not p.declared %} (undeclared){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}no participants{% endfor %}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</dd>
   </dl>
 </section>
 {% endwith %}

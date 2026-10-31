@@ -38,7 +38,13 @@ from django.utils.safestring import SafeString
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from console.acting import acting_principal
-from console.catalog.cast_table import cast_table, character_ids, rating_ids
+from console.catalog.cast_table import (
+    cast_table,
+    channel_lines,
+    character_ids,
+    location_topology,
+    rating_ids,
+)
 from console.catalog.character_labels import CharacterLabel, character_labels
 from console.catalog.scenario_report import (
     ShownReport,
@@ -582,6 +588,9 @@ def _detail_page(
         names = _rating_names(client, [*([rating_id] if rating_id else []), *rating_ids(entry)])
         context["rating"] = _rating_name(names, rating_id)
         context["cast"] = cast_table(entry, character_labels(client, character_ids(entry)), names)
+        # #205: the locations' topology and the opening's remote channels.
+        context["topology"] = location_topology(entry)
+        context["channels"] = channel_lines(entry.cast, entry.starting_state.channels)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""

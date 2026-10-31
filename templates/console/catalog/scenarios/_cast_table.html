@@ -18,7 +18,7 @@ their seeds nested, and the world seeds in their own table. Context: cast
         <td>{% if role.required %}Yes{% else %}No{% endif %}</td>
         <td class="role-character">{% if row.character %}{% with c=row.character.label %}{% if c.url %}<a href="{{ c.url }}">{{ c.text }}</a>{% else %}<code>{{ c.text }}</code>{% endif %}{% if c.archived %} (archived){% endif %}{% if c.error %} <span class="lookup-failed">(name unavailable: {{ c.error }})</span>{% endif %}{% endwith %} {{ row.character.version }}{% else %}—{% endif %}</td>
         <td>{{ role.participation|humanise }}</td>
-        <td>{% if row.location %}{% if row.location.name %}{{ row.location.name }} (<code>{{ row.location.id }}</code>){% else %}<code>{{ row.location.id }}</code> (undeclared){% endif %}{% else %}—{% endif %}</td>
+        <td>{% if row.location %}{% include "console/catalog/scenarios/_place.html" with place=row.location %}{% else %}—{% endif %}</td>
         <td>{{ row.eligibility }}</td>
       </tr>
       <tr class="role-detail" id="role-{{ role.id }}-detail">

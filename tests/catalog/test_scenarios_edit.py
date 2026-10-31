@@ -1,12 +1,16 @@
 """Create and edit a scenario's draft in the editor (#68): every section but the cast, the world
 seeds and media."""
 
+import copy
 import json
+import re
 from typing import Any
 
+import httpx
 import pytest
 from django.http import QueryDict
 from django.test import Client
+from jsonschema import Draft202012Validator
 
 from console.engine.client import EngineError
 from console.forms.policy import RULE_TEMPLATES, retemplate, rule_template_text
@@ -30,7 +34,7 @@ from tests.catalog.scenario_helpers import (
     posted,
     writes,
 )
-from tests.fakes.engine import FakeEngine
+from tests.fakes.engine import DOC_URI, FakeEngine
 
 pytestmark = pytest.mark.django_db
 
@@ -871,3 +875,553 @@ def test_unchanged_new_defaults_are_not_in_the_patch(
     save(operator_client, engine, data)
     # Complement: only the changed key; none of the four stored ones.
     assert changes(engine) == {"story_settings_defaults": {"audit_retention_days": 45}}
+
+
+# --- #205: locations' topology and the opening's remote channels ---------------------------------
+
+PUBLISH = "/catalog/scenarios/{scenario_id}/publish"
+BARRIER_OPTIONS = [
+    ("", "Engine default (door open)"),
+    ("none", "No barrier"),
+    ("door_open", "Door open"),
+    ("door_closed", "Door closed"),
+    ("window", "Window"),
+    ("thin_wall", "Thin wall"),
+    ("wall", "Wall"),
+]
+
+
+def topology(*, portcullis: bool = False) -> dict[str, Any]:
+    """The topology draft (hall and cellar lie in the house; hall-cellar behind a closed door,
+    cellar-house with no barrier set, house-hall behind a ``portcullis``; channels ``phone``
+    stored as ``[bob, alice]`` and ``radio`` with no ``participants``). The schema refuses the
+    portcullis, so by default it reads ``wall``."""
+    body = fixture("draft_topology")
+    if not portcullis:
+        body["world"]["locations"][2]["adjacent_to"][0]["barrier"] = "wall"
+    return body
+
+
+def topology_page(client: Client, engine: FakeEngine, body: dict[str, Any] | None = None) -> Any:
+    body = body if body is not None else topology()
+    if body["world"]["locations"][2].get("adjacent_to", [{}])[0].get("barrier") == "portcullis":
+        # A value outside the schema's enum (C2's open enum): served unvalidated.
+        answer_ratings(engine)
+        answer_profiles(engine)
+        engine.side_effect("GET", S_ITEM, lambda request: httpx.Response(200, json=body))
+        response = client.get(EDIT)
+        assert response.status_code == 200
+        engine.reset()
+        return response
+    return edit_page(client, engine, body)
+
+
+def schema_valid(engine: FakeEngine, body: Any, component: str) -> None:
+    """The Engine's request schema (``additionalProperties: false`` throughout) accepts ``body``:
+    no Console-only key (a row index, a form name) leaks into a write."""
+    ref = {"$ref": f"{DOC_URI}#/components/schemas/{component}"}
+    Draft202012Validator(ref, registry=engine._registry).validate(body)
+
+
+def topology_changes(engine: FakeEngine) -> dict[str, Any]:
+    schema_valid(engine, patch_sent(engine), "ScenarioPatch")
+    return changes(engine)
+
+
+def row_errors(response: Any, prefix: str, index: int) -> dict[str, list[str]]:
+    return dict(response.context["editor"].formsets[prefix].forms[index].errors)
+
+
+def with_rows(data: QueryDict, prefix: str, rows: list[dict[str, Any]]) -> QueryDict:
+    """``data`` with ``rows`` appended to ``prefix``'s formset (a list value: ticked boxes)."""
+    total = int(str(data[f"{prefix}-TOTAL_FORMS"]))
+    for offset, row in enumerate(rows):
+        for key, value in row.items():
+            name = f"{prefix}-{total + offset}-{key}"
+            if isinstance(value, list):
+                data.setlist(name, value)
+            else:
+                data[name] = value
+    data[f"{prefix}-TOTAL_FORMS"] = str(total + len(rows))
+    return data
+
+
+def test_topology_and_channels_untouched_send_nothing(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = topology_page(operator_client, engine)
+    html = response.content.decode()
+    # The row sets: Adjacent places after Locations (World), Remote channels in the Opening
+    # after Roles present and before its Update form button and the Deferred boxes.
+    order = [
+        'id="f-world-locations"',
+        'id="f-world-adjacency"',
+        'name="starting_state__opening__roles_present"',
+        'id="f-starting_state-channels"',
+        'id="f-deferred"',
+    ]
+    positions = [html.index(marker) for marker in order]
+    assert positions == sorted(positions)
+    assert "<legend>Adjacent places</legend>" in html
+    assert "Adjacency is symmetric: declare each pair once." in html
+    assert "<legend>Remote channels</legend>" in html
+    assert "A structured story puts each participant on the channel." in html
+    data = posted(response)
+    assert data.getlist("chan-0-participants") == ["bob", "alice"]
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert engine.requests == []
+    assert flashes(response) == ["No changes"]
+    # Complement: a row-button re-render (add a row, remove it again) changes nothing either.
+    data["op"] = "add:adj"
+    added = posted(operator_client.post(EDIT, as_post(data)))
+    assert added["adj-TOTAL_FORMS"] == "4"
+    added["op"] = "remove:adj-3"
+    again = posted(operator_client.post(EDIT, as_post(added)))
+    again["op"] = "refresh"
+    again = posted(operator_client.post(EDIT, as_post(again)))
+    response = operator_client.post(EDIT, as_post(again))
+    assert response.status_code == 302
+    assert writes(engine) == []
+
+
+def test_keep_order_compares_as_sets(operator_client: Client, engine: FakeEngine) -> None:
+    from console.forms.scenario import keep_order
+
+    assert keep_order(["b", "a", "b"], ["a", "b"]) == ["b", "a", "b"]  # duplicates kept
+    assert keep_order(["b", "a"], ["a"]) == ["a"]  # an unticked entry dropped
+    assert keep_order(["b"], ["c", "b", "c"]) == ["b", "c"]
+    assert keep_order([], ["x", "y"]) == ["x", "y"]
+    # The browser posts the boxes in the role rows' order: still no change.
+    data = form(operator_client, engine, topology())
+    data.setlist("chan-0-participants", ["alice", "bob"])
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert writes(engine) == []
+    # Ticking carol sends the stored order with carol last.
+    data.setlist("chan-0-participants", ["alice", "bob", "carol"])
+    save(operator_client, engine, data)
+    assert topology_changes(engine) == {
+        "starting_state": {
+            "channels": [
+                {"id": "phone", "participants": ["bob", "alice", "carol"]},
+                {"id": "radio", "participants": []},
+            ]
+        }
+    }
+
+
+def test_roles_present_compare_as_sets(operator_client: Client, engine: FakeEngine) -> None:
+    """C9 for #68's "Roles present" too: a draft stored out of the role rows' order."""
+    body = topology()
+    body["starting_state"]["opening"]["roles_present"] = ["carol", "alice"]
+    data = form(operator_client, engine, body)
+    data.setlist("starting_state__opening__roles_present", ["alice", "carol"])
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert writes(engine) == []
+    data.setlist("starting_state__opening__roles_present", ["alice", "bob", "carol"])
+    save(operator_client, engine, data)
+    assert topology_changes(engine) == {
+        "starting_state": {"opening": {"roles_present": ["carol", "alice", "bob"]}}
+    }
+
+
+def test_editing_a_location_keeps_its_topology(operator_client: Client, engine: FakeEngine) -> None:
+    """Demo 4. Before the fix, ``world.locations`` was sent without ``located_in`` and
+    ``adjacent_to``: the draft's topology was erased."""
+    body = topology()
+    data = form(operator_client, engine, body)
+    data["loc-0-name"] = "Great hall"
+    save(operator_client, engine, data)
+    expected = copy.deepcopy(body["world"]["locations"])
+    expected[0]["name"] = "Great hall"
+    sent = topology_changes(engine)
+    assert sent == {"world": {"locations": expected}}
+    # Schema order on each row.
+    assert list(sent["world"]["locations"][0]) == [
+        "id",
+        "name",
+        "description",
+        "located_in",
+        "adjacent_to",
+    ]
+
+
+def test_located_in_offers_other_locations_and_keeps_missing(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = topology_page(operator_client, engine)
+    html = response.content.decode()
+    # Complement: a row's own id isn't offered.
+    assert options(html, "loc-0-located_in") == [
+        ("", "— none —"),
+        ("cellar", "cellar"),
+        ("house", "house"),
+    ]
+    assert options(html, "loc-2-located_in") == [
+        ("", "— none —"),
+        ("hall", "hall"),
+        ("cellar", "cellar"),
+    ]
+    assert "Seeded as canon by a structured story; Lite stores it but doesn&#x27;t use it." in html
+    assert '<label for="id_loc-0-located_in">Lies in</label>' in html
+    # A renamed place doesn't cascade: the stale id is kept, marked missing.
+    data = posted(response)
+    data["loc-2-id"] = "home"
+    data["op"] = "refresh"
+    html = operator_client.post(EDIT, as_post(data)).content.decode()
+    assert engine.requests == []
+    assert options(html, "loc-0-located_in") == [
+        ("", "— none —"),
+        ("cellar", "cellar"),
+        ("home", "home"),
+        ("house", "house (missing)"),
+    ]
+    assert '<option value="house" selected>house (missing)</option>' in html
+    # A lone location offers only "— none —".
+    engine.reset()
+    lone = topology()
+    lone["world"]["locations"] = [{"id": "hall", "name": "The hall"}]
+    lone["starting_state"]["opening"]["starting_location"] = None
+    html = edit_page(operator_client, engine, lone).content.decode()
+    assert options(html, "loc-0-located_in") == [("", "— none —")]
+
+
+def test_adjacency_rows_attach_to_their_from_location(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = topology_page(operator_client, engine)
+    html = response.content.decode()
+    data = posted(response)
+    # A GET reads each location's entries as rows, in location order then entry order.
+    rows = [
+        (data[f"adj-{n}-from"], data[f"adj-{n}-to"], data.get(f"adj-{n}-barrier", ""))
+        for n in range(int(str(data["adj-TOTAL_FORMS"])))
+    ]
+    assert rows == [
+        ("hall", "cellar", "door_closed"),
+        ("cellar", "house", ""),
+        ("house", "hall", "wall"),
+    ]
+    assert options(html, "adj-0-from") == [
+        ("", "— none —"),
+        ("hall", "hall"),
+        ("cellar", "cellar"),
+        ("house", "house"),
+    ]
+    assert options(html, "adj-1-barrier") == BARRIER_OPTIONS
+    # Drop cellar-house, declare house-cellar instead (no barrier set), and set hall-cellar's
+    # barrier to an explicit "Door open" (C7: sent).
+    data["op"] = "remove:adj-1"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    data["op"] = "add:adj"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    assert engine.requests == []
+    data["adj-2-from"] = "house"
+    data["adj-2-to"] = "cellar"
+    data["adj-0-barrier"] = "door_open"
+    save(operator_client, engine, data)
+    hall, cellar, house = topology()["world"]["locations"]
+    hall["adjacent_to"] = [{"location": "cellar", "barrier": "door_open"}]
+    del cellar["adjacent_to"]  # complement: a location with no rows sends no adjacent_to
+    # Row order kept; an unset barrier sends no barrier key.
+    house["adjacent_to"] = [{"location": "hall", "barrier": "wall"}, {"location": "cellar"}]
+    assert topology_changes(engine) == {"world": {"locations": [hall, cellar, house]}}
+
+
+def test_explicit_null_barrier_reads_as_unset(operator_client: Client, engine: FakeEngine) -> None:
+    body = topology()
+    body["world"]["locations"][1]["adjacent_to"] = [{"location": "house", "barrier": None}]
+    data = form(operator_client, engine, body)
+    assert data.get("adj-1-barrier") is None
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert writes(engine) == []
+
+
+def test_self_and_duplicate_adjacency_refused_locally(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = form(operator_client, engine, topology())
+    data["loc-0-located_in"] = "hall"
+    with_rows(
+        data,
+        "adj",
+        [
+            {"from": "cellar", "to": "hall"},  # row 4: hall-cellar again, the other way
+            {"from": "hall", "to": ""},  # row 5: half-filled
+            {"from": "house", "to": "house"},  # row 6: a self-pair
+            {"from": "", "to": "cellar", "barrier": "wall"},  # row 7: half-filled
+            {"from": "attic", "to": "hall"},  # row 8: no such location row
+            {"from": "", "to": "", "barrier": "window"},  # row 9: blank, dropped
+        ],
+    )
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 200
+    assert engine.requests == []
+    assert row_errors(response, "loc", 0) == {"located_in": ["A place can't lie in itself"]}
+    assert row_errors(response, "adj", 3) == {
+        "to": ["Already declared in row 1 (adjacency is symmetric)"]
+    }
+    assert row_errors(response, "adj", 4) == {"to": ["Choose both places"]}
+    assert row_errors(response, "adj", 5) == {"to": ["A place can't adjoin itself"]}
+    assert row_errors(response, "adj", 6) == {"from": ["Choose both places"]}
+    assert row_errors(response, "adj", 7) == {"from": ["No location row has this id"]}
+    assert row_errors(response, "adj", 8) == {}
+    for n in range(3):
+        assert row_errors(response, "adj", n) == {}
+    html = response.content.decode()
+    assert '<option value="hall" selected>hall (this place)</option>' in html
+    assert '<option value="attic" selected>attic (missing)</option>' in html
+    # Complement: a row-button re-render shows the same rows without an error.
+    data["op"] = "refresh"
+    response = operator_client.post(EDIT, as_post(data))
+    assert engine.requests == []
+    assert 'class="errorlist' not in response.content.decode()
+    # A 101st row for one "from" (hall-cellar is the first of hall's).
+    engine.reset()
+    data = form(operator_client, engine, topology())
+    with_rows(data, "adj", [{"from": "hall", "to": f"p{n}"} for n in range(100)])
+    response = operator_client.post(EDIT, as_post(data))
+    assert engine.requests == []
+    assert row_errors(response, "adj", 102) == {
+        "from": ["At most 100 adjacent places per location"]
+    }
+    assert row_errors(response, "adj", 101) == {}
+
+
+def test_channels_round_trip_and_clear_to_empty_array(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = form(operator_client, engine, topology())
+    data["op"] = "add:chan"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    data["op"] = "add:chan"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    data["op"] = "add:chan"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    assert engine.requests == []
+    data["chan-3-id"] = "  Intercom 2 "  # stripped, case and inner spaces kept
+    data["chan-4-id"] = "   "  # whitespace only, nothing ticked: dropped
+    save(operator_client, engine, data)
+    assert topology_changes(engine) == {
+        "starting_state": {
+            "channels": [
+                {"id": "phone", "participants": ["bob", "alice"]},
+                {"id": "radio", "participants": []},
+                {"id": "Intercom 2", "participants": []},  # an id-only row
+            ]
+        }
+    }
+    # Removing every row sends an empty array.
+    engine.reset()
+    data = form(operator_client, engine, topology())
+    data["op"] = "remove:chan-0"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    data["op"] = "remove:chan-0"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    save(operator_client, engine, data)
+    assert topology_changes(engine) == {"starting_state": {"channels": []}}
+    # Complement: a draft without channels and a blank new row sends nothing.
+    engine.reset()
+    data = form(operator_client, engine)
+    data["op"] = "add:chan"
+    data = posted(operator_client.post(EDIT, as_post(data)))
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert writes(engine) == []
+
+
+def test_a_duplicate_channel_id_is_refused_locally(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = form(operator_client, engine, topology())
+    with_rows(
+        data,
+        "chan",
+        [
+            {"id": "phone "},  # row 3: phone again once stripped
+            {"id": "Phone"},  # row 4: case-sensitive, not a duplicate
+            {"id": "", "participants": ["alice"]},  # row 5
+            {"id": "net", "participants": [f"p{n}" for n in range(33)]},  # row 6
+        ],
+    )
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 200
+    assert engine.requests == []
+    assert row_errors(response, "chan", 2) == {"id": ["Already used by row 1"]}
+    assert row_errors(response, "chan", 3) == {}
+    assert row_errors(response, "chan", 4) == {"id": ["A channel needs its id"]}
+    assert row_errors(response, "chan", 5) == {"participants": ["At most 32 participants"]}
+    # A ticked id matching no role row stays ticked, marked missing.
+    html = response.content.decode()
+    assert re.search(r'name="chan-5-participants" value="p0" [^>]*checked', html)
+    assert "p0 (missing)" in html
+    # The id's length is Django's own message.
+    data = form(operator_client, engine, topology())
+    data["chan-0-id"] = "x" * 61
+    response = operator_client.post(EDIT, as_post(data))
+    assert row_errors(response, "chan", 0) == {
+        "id": ["Ensure this value has at most 60 characters (it has 61)."]
+    }
+
+
+def test_an_unknown_barrier_is_kept(operator_client: Client, engine: FakeEngine) -> None:
+    response = topology_page(operator_client, engine, topology(portcullis=True))
+    html = response.content.decode()
+    assert options(html, "adj-2-barrier") == [*BARRIER_OPTIONS, ("portcullis", "Portcullis")]
+    assert '<option value="portcullis" selected>Portcullis</option>' in html
+    response = operator_client.post(EDIT, as_post(posted(response)))
+    assert response.status_code == 302
+    assert writes(engine) == []
+
+
+def test_topology_and_channel_422_paths_land_on_their_rows(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = form(operator_client, engine, topology())
+    data["loc-0-name"] = "Great hall"
+    paths = {
+        "body.world.locations[1].located_in": "unknown place",
+        "body.world.locations[0].adjacent_to[0].barrier": "bad barrier",
+        "body.world.locations[2].adjacent_to[0].location": "bad place",
+        "body.world.locations[1].adjacent_to[0]": "bad entry",
+        "body.world.locations[0].adjacent_to": "too many",
+        "body.world.locations[0].adjacent_to[5].location": "nowhere",
+        "body.starting_state.channels": "too many channels",
+        "body.starting_state.channels[0].participants[1]": "unknown role",
+        "body.starting_state.channels[0].participants": "too many",
+        "body.starting_state.channels[1].id": "bad id",
+        "body.starting_state.channels[1]": "bad channel",
+        "body.starting_state.channels[7].id": "no such row",
+    }
+    body = error(
+        "validation_error",
+        "invalid",
+        errors=[{"field": path, "message": message} for path, message in paths.items()],
+    )
+    response = save(operator_client, engine, data, status=422, json=body)
+    assert response.status_code == 200
+    assert row_errors(response, "loc", 1) == {"located_in": ["unknown place"]}
+    assert row_errors(response, "loc", 0) == {
+        "__all__": ["world.locations[0].adjacent_to: too many"]
+    }
+    assert row_errors(response, "loc", 2) == {}
+    assert row_errors(response, "adj", 0) == {"barrier": ["bad barrier"]}
+    assert row_errors(response, "adj", 1) == {"__all__": ["bad entry"]}
+    assert row_errors(response, "adj", 2) == {"to": ["bad place"]}
+    assert row_errors(response, "chan", 0) == {"participants": ["alice: unknown role", "too many"]}
+    assert row_errors(response, "chan", 1) == {"id": ["bad id"], "__all__": ["bad channel"]}
+    editor = response.context["editor"]
+    assert list(editor.formsets["chan"].non_form_errors()) == ["too many channels"]
+    assert list(editor.form.non_field_errors()) == [
+        "world.locations[0].adjacent_to[5].location: nowhere",
+        "starting_state.channels[7].id: no such row",
+    ]
+    html = response.content.decode()
+    assert "alice: unknown role" in html
+    assert "too many channels" in html
+
+
+def test_reference_unknown_from_publish_report_is_placed(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    def entry(field: str) -> dict[str, Any]:
+        return {
+            "code": "seed_reference_unknown",
+            "location": {
+                "entry": SCN,
+                "version": "draft",
+                "field": field,
+                "role": None,
+                "seed_id": None,
+            },
+            "outcome": "rejected",
+            "rule": "references an undeclared id",
+            "source": None,
+            "text": None,
+        }
+
+    data = form(operator_client, engine, topology())
+    data["loc-0-name"] = "Great hall"
+    data["action"] = "publish"
+    refused = fixture("publish_invalid")
+    refused["error"]["details"]["report"]["errors"] = [
+        entry("world.locations[1].located_in"),
+        entry("world.locations[2].adjacent_to[0].location"),
+        entry("starting_state.channels[0].participants[0]"),
+    ]
+    engine.respond("PATCH", S_ITEM, 200, json=fixture("patch"))
+    engine.respond("POST", PUBLISH, 422, json=refused)
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    page = operator_client.get(response["Location"])
+    message = "seed_reference_unknown: references an undeclared id"
+    assert row_errors(page, "loc", 1) == {"located_in": [message]}
+    assert row_errors(page, "adj", 2) == {"to": [message]}
+    assert row_errors(page, "chan", 0) == {"participants": [f"bob: {message}"]}
+
+
+def test_create_sends_topology_and_channels_only_when_filled(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = posted(new_page(operator_client, engine))
+    for prefix in ("adj", "chan"):  # blank rows: nothing sent
+        data["op"] = f"add:{prefix}"
+        data = posted(operator_client.post(NEW_URL, as_post(data)))
+    engine.respond("POST", S_LIST, 201, json=fixture("post"))
+    operator_client.post(NEW_URL, as_post(data))
+    (sent,) = calls(engine, "POST", S_LIST)
+    assert body_of(sent) == {"owner": "console:nate"}
+    engine.reset()
+    data = posted(new_page(operator_client, engine))
+    with_rows(
+        data,
+        "loc",
+        [
+            {"id": "lamp", "name": "The lamp room", "located_in": "tower"},
+            {"id": "tower", "name": "The tower"},
+        ],
+    )
+    with_rows(data, "adj", [{"from": "lamp", "to": "tower", "barrier": "window"}])
+    with_rows(data, "chan", [{"id": "radio"}])
+    engine.respond("POST", S_LIST, 201, json=fixture("post"))
+    operator_client.post(NEW_URL, as_post(data))
+    (sent,) = calls(engine, "POST", S_LIST)
+    body = body_of(sent)
+    schema_valid(engine, body, "ScenarioCreate")
+    assert body["world"] == {
+        "locations": [
+            {
+                "id": "lamp",
+                "name": "The lamp room",
+                "located_in": "tower",
+                "adjacent_to": [{"location": "tower", "barrier": "window"}],
+            },
+            {"id": "tower", "name": "The tower"},
+        ]
+    }
+    assert body["starting_state"] == {"channels": [{"id": "radio", "participants": []}]}
+
+
+def test_an_archived_scenario_disables_topology_and_channels(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = topology()
+    body["status"] = "archived"
+    html = edit_page(operator_client, engine, body).content.decode()
+    for name in ("loc-0-located_in", "adj-0-from", "adj-0-to", "adj-0-barrier"):
+        assert re.search(rf'<select name="{name}"[^>]* disabled', html), name
+    assert re.search(r'<input type="text" name="chan-0-id"[^>]* disabled', html)
+    assert re.search(r'<input type="checkbox" name="chan-0-participants"[^>]* disabled', html)
+
+
+def test_the_barrier_enum_matches_the_schema() -> None:
+    from console.engine import schema as engine_schema
+    from console.forms.scenario import BARRIERS
+
+    doc = json.loads(engine_schema.RECORDED_PATH.read_text(encoding="utf-8"))
+    node = doc["components"]["schemas"]["LocationAdjacency"]["properties"]["barrier"]
+    (values,) = [option["enum"] for option in node["anyOf"] if "enum" in option]
+    assert list(BARRIERS) == values

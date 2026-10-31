@@ -2129,3 +2129,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added two page tests beyond the plan: the profile page shows the default-assumption suffix (Demo 1), and a failed story read on Config shows no suffix or reason with exactly one `GET /stories/{id}`.
   **Why:** The test plan's "story read failed" complement names the fake call log, which needs a page test.
   **Issue:** #169
+- **Decision:** `keep_order(stored, chosen)` in `console/forms/scenario.py` is C9's one helper; channel participants and also #68's "Roles present" go through it (the browser posts boxes in role-row order, so a draft stored in another order sent a spurious patch). Chosen values are taken in the field's choice order before `keep_order`.
+  **Why:** AC: "every list-valued checkbox field the editor writes goes through it"; Roles present is one.
+  **Issue:** #205
+- **Decision:** The sent-index map is the pure `adjacency_entries(location_ids, rows)`; `ScenarioEditor.adjacency()` binds it to the forms and is used by `write_doc`, `_place_adjacency` (422) and `place_report`. `adj`/`chan` stay out of `ROW_PATHS` (anchors `f-world-adjacency` and `f-starting_state-channels` come from a separate map) and are placed before the generic indexed match.
+  **Why:** Planner key_link; adjacency paths live under `world.locations[n]`, channels need the id-prefixed participant message.
+  **Issue:** #205
+- **Decision:** A `starting_state.channels[c].participants[p]` error is prefixed with the participant id sent at `p` ("alice: …"); an out-of-range `p` keeps the path.
+  **Why:** AC's "`<id>`: <message>" read as the participant's id, the one thing the row doesn't already show.
+  **Issue:** #205
+- **Decision:** Channel row checks are independent per field (blank id / duplicate id on `id`, >32 on `participants`); adjacency rows show only their first failing check, as the AC orders them. A too-long id (Django's message) skips the id checks.
+  **Why:** AC states first-failing only for adjacency; the channel checks sit on different fields.
+  **Issue:** #205
+- **Decision:** The fake Engine validates responses only, so the "rejects unknown keys" complement is a test helper `schema_valid(engine, body, component)` (ScenarioPatch/ScenarioCreate via the fake's registry); the portcullis draft is served unvalidated (`side_effect`) and the default `topology()` reads `wall`.
+  **Why:** C15 / the schema's enum refuses `portcullis` in a canned answer; writes carrying it would also be refused.
+  **Issue:** #205
+- **Decision:** Extending `catalog_scenarios_detail.json` (farmhouse adjoins barn behind a closed door, barn lies in the farmhouse, channel `phone`) made `test_the_envelope_alone_does_not_differ` see a difference against the #68 draft fixture; that test now copies the detail's topology and channels into its draft. The location lookup became `location_names` (first id wins) + `location_label`, and a `_place.html` partial now renders every "Name (`id`)"/"(undeclared)" cell, the cast table's included.
+  **Why:** The AC keeps the draft fixture as is; the test's intent (envelope-only change) is unchanged.
+  **Issue:** #205
+- **Decision:** "Pre-fix first" shown locally: editing hall's name against the old `draft_to_write`/`LocationForm` sent `world.locations` without `located_in`/`adjacent_to` (assertion failed), not committed red.
+  **Why:** Planner, pass 2.
+  **Issue:** #205

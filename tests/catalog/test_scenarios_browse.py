@@ -269,6 +269,9 @@ def test_the_draft_differs_note(operator_client: Client, engine: FakeEngine) -> 
 
 def test_the_envelope_alone_does_not_differ(operator_client: Client, engine: FakeEngine) -> None:
     other = draft(updated_at="2026-10-23T10:00:00.000000Z", listing_status="private")
+    # #205: the detail fixture's topology and channels, which the #68 draft fixture lacks.
+    other["world"]["locations"] = detail()["world"]["locations"]
+    other["starting_state"]["channels"] = detail()["starting_state"]["channels"]
     engine.respond_sequence(
         "GET", S_ITEM, [{"status": 200, "json": detail()}, {"status": 200, "json": other}]
     )
@@ -431,3 +434,91 @@ def test_a_companions_ownership_panel_is_read_only(
     assert "/ownership/" not in panel
     card_reads = [r for r in engine.requests if r.url.path == f"/catalog/characters/{CHAR}"]
     assert len(card_reads) == 1  # the panel shares the page's one card read
+
+
+# --- #205: topology and remote channels -----------------------------------------------------------
+
+
+def topology_detail(**changes: object) -> dict[str, object]:
+    """The detail fixture with undeclared ids: barn lies in an ``attic``, the farmhouse also
+    adjoins a ``well`` (an explicit ``null`` barrier) and a barn entry with ``none``, and a
+    channel names a ``stranger``."""
+    body = detail(**changes)
+    farmhouse, barn = body["world"]["locations"]
+    farmhouse["adjacent_to"] = [
+        {"location": "barn", "barrier": "door_closed"},
+        {"location": "well", "barrier": None},
+        {"location": "barn", "barrier": "none"},
+    ]
+    barn["located_in"] = "attic"
+    body["starting_state"]["channels"] = [
+        {"id": "phone", "participants": ["mother", "son", "mother"]},
+        {"id": "radio"},
+        {"id": "ghost", "participants": ["stranger"]},
+    ]
+    return body
+
+
+def location_cells(html: str, location_id: str) -> list[str]:
+    row = html[html.index(f'<tr id="location-{location_id}">') :]
+    row = row[: row.index("</tr>")]
+    return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+
+
+ADJOINS = (
+    'The barn (<code>barn</code>) · <span title="door_closed">Door closed</span>; '
+    "<code>well</code> (undeclared) · Door open (default); "
+    'The barn (<code>barn</code>) · <span title="none">No barrier</span>'
+)
+CHANNELS = (
+    '<dt>Remote channels</dt><dd class="channels"><code>phone</code>: <code>mother</code>, '
+    "<code>son</code>, <code>mother</code><br><code>radio</code>: no participants<br>"
+    "<code>ghost</code>: <code>stranger</code> (undeclared)</dd>"
+)
+
+
+def test_the_detail_page_shows_topology_and_channels(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    # The fixture as is: barn lies in the farmhouse, behind a closed door from it.
+    engine.respond("GET", S_ITEM, 200, json=detail())
+    html = detail_page(operator_client, engine)
+    assert "<th>Lies in</th><th>Adjoins</th>" in html
+    assert location_cells(html, "farmhouse")[3:] == [
+        "—",
+        'The barn (<code>barn</code>) · <span title="door_closed">Door closed</span>',
+    ]
+    assert location_cells(html, "barn")[3:] == ["The farmhouse (<code>farmhouse</code>)", "—"]
+    assert 'Remote channels</dt><dd class="channels"><code>phone</code>: ' in html
+    # Undeclared ids are marked; an unset or null barrier reads the default, with no title.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=topology_detail())
+    html = detail_page(operator_client, engine)
+    assert location_cells(html, "farmhouse")[3:] == ["—", ADJOINS]
+    assert location_cells(html, "barn")[3:] == ["<code>attic</code> (undeclared)", "—"]
+    assert CHANNELS in html
+    opening = html[html.index('<section id="opening">') :]
+    rows = re.findall(r"<dt>([^<]*)</dt>", opening[: opening.index("</dl>")])
+    assert rows == ["Narration", "Starting location", "Roles present", "Remote channels"]
+    # A published version shows the same rows.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=topology_detail(version=1))
+    html = detail_page(operator_client, engine, "?version=1")
+    assert location_cells(html, "farmhouse")[3:] == ["—", ADJOINS]
+    assert CHANNELS in html
+    # Complement: the public card shows none of it.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=card_of(topology_detail()))
+    page = text(detail_page(operator_client, engine, "?projection=card"))
+    for label in ("Lies in", "Adjoins", "Remote channels"):
+        assert label not in page
+
+
+def test_a_scenario_without_channels_shows_a_dash(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = detail()
+    body["starting_state"].pop("channels")
+    engine.respond("GET", S_ITEM, 200, json=body)
+    html = detail_page(operator_client, engine)
+    assert '<dt>Remote channels</dt><dd class="channels">—</dd>' in html
