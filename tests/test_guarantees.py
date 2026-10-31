@@ -17,7 +17,8 @@ from django.test import Client
 from console.engine.client import EngineClient
 from console.engine.models import GuaranteeStatus, GuaranteeTable, ImpactReport
 from console.engine_access import engine_client_for
-from console.guarantees import ROW_CAVEATS, caveats, needs_text, status_text
+from console.guarantees import ROW_CAVEATS, caveats, needs_text, rows, status_text
+from console.guarantees import section as guarantees_section
 from console.views import story_config
 from tests.fakes.engine import FakeEngine
 from tests.fakes.guarantees import (
@@ -41,6 +42,7 @@ PROFILE_PATH = f"/engine-profiles/{LITE}/guarantees"
 STORY_PATH = f"/stories/{STORY}/guarantees"
 DOCS = "https://github.com/nathanpond/Epistrel/blob/main/docs/guarantees.md"
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates" / "console"
+GUARANTEES_PY = Path(__file__).resolve().parent.parent / "console" / "guarantees.py"
 BASE_CAVEATS = (
     "The model proposes; the engine validates structured claims, effects, and permissions. "
     "A model-dependent step is only as good as its metric. "
@@ -209,6 +211,180 @@ def test_status_wording(provided: Any, delivered_in: str | None, expected: str) 
 
 def test_no_delivered_in_text_without_a_milestone() -> None:
     assert "delivered in" not in status_text(status(provided=False, delivered_in=None))
+
+
+# --- a story setting (#169) -----------------------------------------------------------------------
+
+PLAYER_VIEW = {"path": "player_view", "values": ["character"]}
+PROFILE_NOTE = "each story's own setting; this table assumes the default"
+CHARACTER_CLAUSE = "story setting `player_view` = `character`"
+
+
+@pytest.mark.parametrize(
+    ("requires", "story_setting", "expected"),
+    [
+        (
+            [{"module": "perception", "level": "co_location"}],
+            PLAYER_VIEW,
+            "`perception` at `co_location` or above; " + CHARACTER_CLAUSE,
+        ),
+        ([], PLAYER_VIEW, CHARACTER_CLAUSE),
+        (
+            [],
+            {"path": "player_view", "values": ["character", "omniscient"]},
+            "story setting `player_view` = `character` or `omniscient`",
+        ),
+        ([], {"path": "player_view", "values": []}, "story setting `player_view` (any value)"),
+    ],
+)
+def test_needs_wording_with_a_story_setting(
+    requires: list[dict[str, Any]], story_setting: dict[str, Any], expected: str
+) -> None:
+    assert needs_text(status(requires=requires, story_setting=story_setting)) == expected
+
+
+@pytest.mark.parametrize("provided", [True, False, None])
+def test_a_story_setting_alone_is_never_none(provided: Any) -> None:
+    shown = needs_text(status(story_setting=PLAYER_VIEW, provided=provided))
+    assert shown == CHARACTER_CLAUSE
+    assert "none (" not in shown
+
+
+def test_needs_wording_keeps_the_setting_before_the_story_setting() -> None:
+    row = status(
+        requires=[{"module": "perception"}],
+        setting={"path": "a.b", "values": []},
+        story_setting=PLAYER_VIEW,
+    )
+    assert needs_text(row, mode="profile") == (
+        f"`perception`; `a.b` (any value); {CHARACTER_CLAUSE} ({PROFILE_NOTE})"
+    )
+
+
+def test_profile_mode_suffix() -> None:
+    row = status(story_setting=PLAYER_VIEW, provided=True)
+    assert needs_text(row, mode="profile") == f"{CHARACTER_CLAUSE} ({PROFILE_NOTE})"
+    any_value = status(story_setting={"path": "player_view", "values": []})
+    assert needs_text(any_value, mode="profile") == (
+        f"story setting `player_view` (any value; {PROFILE_NOTE})"
+    )
+    assert needs_text(status(setting={"path": "a.b", "values": []}), mode="profile") == (
+        "`a.b` (any value)"
+    )  # the note is the story setting's only
+
+
+@pytest.mark.parametrize("value", ["story", "character"])
+def test_story_mode_suffix_names_the_storys_value(value: str) -> None:
+    row = status(story_setting=PLAYER_VIEW)
+    shown = needs_text(row, mode="story", story_settings={"player_view": value})
+    assert shown == f"{CHARACTER_CLAUSE} (this story: `{value}`)"
+
+
+@pytest.mark.parametrize("story_settings", [None, {}, {"turn_concurrency": "reject"}])
+def test_an_unknown_story_value_adds_no_suffix(story_settings: dict[str, Any] | None) -> None:
+    row = status(story_setting=PLAYER_VIEW, provided=False)
+    assert needs_text(row, mode="story", story_settings=story_settings) == CHARACTER_CLAUSE
+    assert status_text(row, story_settings=story_settings) == "Not provided"
+
+
+def test_no_mode_adds_no_suffix() -> None:
+    row = status(story_setting=PLAYER_VIEW)
+    assert needs_text(row, story_settings={"player_view": "story"}) == CHARACTER_CLAUSE
+
+
+def test_story_setting_status_reason() -> None:
+    unmet = status(story_setting=PLAYER_VIEW, provided=False)
+    assert status_text(unmet, story_settings={"player_view": "story"}) == (
+        "Not provided (this story's `player_view` is `story`)"
+    )
+    # The story meets the setting, so another need is unmet: no reason.
+    assert status_text(unmet, story_settings={"player_view": "character"}) == "Not provided"
+    met = status(story_setting=PLAYER_VIEW, provided=True)
+    assert status_text(met, story_settings={"player_view": "story"}) == "Provided"
+    outside = status(story_setting=PLAYER_VIEW, provided=None)
+    assert status_text(outside, story_settings={"player_view": "story"}) == "Outside stories"
+    table = parsed_table(table_of({**fixture_row("audience_filtering", delivered_in=None)}))
+    (shown,) = rows(table, mode="profile", story_settings={"player_view": "story"})
+    assert shown.status == "Not provided"
+
+
+def test_delivered_in_wins_over_the_story_setting_reason() -> None:
+    row = status(story_setting=PLAYER_VIEW, provided=False, delivered_in="M6")
+    assert status_text(row, story_settings={"player_view": "story"}) == (
+        "Not provided (delivered in M6)"
+    )
+
+
+def test_story_setting_edge_values() -> None:
+    row = status(story_setting=PLAYER_VIEW, provided=False)
+    assert needs_text(row, mode="story", story_settings={"player_view": None}) == (
+        f"{CHARACTER_CLAUSE} (this story: `null`)"
+    )
+    assert status_text(row, story_settings={"player_view": None}) == (
+        "Not provided (this story's `player_view` is `null`)"
+    )
+    assert needs_text(row, mode="story", story_settings={"player_view": {"a": [1, 2]}}) == (
+        f'{CHARACTER_CLAUSE} (this story: `{{"a":[1,2]}}`)'
+    )
+    any_value = status(story_setting={"path": "player_view", "values": []}, provided=False)
+    known = {"player_view": "story"}
+    assert needs_text(any_value, mode="story", story_settings=known) == (
+        "story setting `player_view` (any value; this story: `story`)"
+    )
+    assert status_text(any_value, story_settings=known) == "Not provided"
+    outside = status(story_setting=PLAYER_VIEW, provided=None)
+    assert needs_text(outside, mode="story", story_settings=known) == (
+        f"{CHARACTER_CLAUSE} (this story: `story`)"
+    )
+    assert status_text(outside, story_settings=known) == "Outside stories"
+
+
+def test_rows_ignore_story_settings_in_profile_mode() -> None:
+    table = parsed_table(table_of(fixture_row("audience_filtering", delivered_in=None)))
+    (profile_row,) = rows(table, mode="profile", story_settings={"player_view": "story"})
+    assert profile_row.needs.endswith(f"{CHARACTER_CLAUSE} ({PROFILE_NOTE})")
+    assert "this story" not in profile_row.needs + profile_row.status
+    (story_row,) = rows(table, mode="story", story_settings={"player_view": "story"})
+    assert story_row.needs.endswith(f"{CHARACTER_CLAUSE} (this story: `story`)")
+    assert story_row.status == "Not provided (this story's `player_view` is `story`)"
+    # A story whose settings lack player_view (pre-M5): neither suffix nor reason.
+    (pre_m5,) = rows(table, mode="story", story_settings={"turn_concurrency": "reject"})
+    assert pre_m5.needs.endswith(CHARACTER_CLAUSE)
+    assert pre_m5.status == "Not provided"
+
+
+def test_caveat_still_keyed_on_the_row() -> None:
+    for name in ("lite", "structured"):
+        assert AUDIENCE_CAVEAT in " ".join(caveats(parsed_table(guarantees_fixture(name))))
+    provided = parsed_table(table_of(fixture_row("audience_filtering", provided=True)))
+    assert len(caveats(provided)) == 3
+    unmet = parsed_table(table_of(fixture_row("audience_filtering", delivered_in=None)))
+    assert caveats(unmet)[3:] == [ROW_CAVEATS[1][1]]
+
+
+def test_status_reason_renders_code() -> None:
+    table = table_of(fixture_row("audience_filtering", delivered_in=None))
+    context = guarantees_section(
+        HttpRequest(), parsed_table(table), "story", story_settings={"player_view": "story"}
+    )
+    html = render_to_string("console/_guarantees.html", context)
+    status_cell = re.search(r'<td class="status">(.*?)</td>', html, re.S)
+    assert status_cell is not None
+    assert status_cell.group(1) == (
+        "Not provided (this story&#x27;s <code>player_view</code> is <code>story</code>)"
+    )
+    assert "`" not in row(html, "audience_filtering")
+
+
+def test_the_wording_module_never_says_verified() -> None:
+    assert "verified" not in GUARANTEES_PY.read_text(encoding="utf-8").lower()
+
+
+def test_the_fixtures_give_audience_filtering_its_story_setting() -> None:
+    for name in ("lite", "structured"):
+        for found in guarantees_fixture(name)["rows"]:
+            expected = PLAYER_VIEW if found["id"] == "audience_filtering" else None
+            assert found["story_setting"] == expected
 
 
 def test_caveats_follow_the_rows() -> None:
@@ -446,6 +622,38 @@ def test_the_config_page_shows_the_storys_table(
     assert cells(shown, "commitment_mechanics")[5] == "Not provided"
     assert cells(shown, "rating_suggestion")[5] == "Outside stories"
     assert PARTITIONS_CAVEAT in unescape(shown)
+
+
+def test_the_profile_page_says_the_table_assumes_the_default(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    table = table_of(fixture_row("audience_filtering", "structured", provided=True))
+    engine.respond("GET", PROFILE_GUARANTEES, 200, json=table)
+    shown = section(get(operator_client, DETAIL))
+    needs, status_cell = (
+        cells(shown, "audience_filtering")[3],
+        cells(shown, "audience_filtering")[5],
+    )
+    assert unescape(needs).endswith(
+        "; story setting player_view = character (each story's own setting; this table "
+        "assumes the default)"
+    )
+    assert status_cell == "Provided"
+    assert "this story" not in unescape(shown)
+
+
+def test_a_failed_story_read_adds_no_story_value(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    table = table_of(fixture_row("audience_filtering", delivered_in=None))
+    engine.respond("GET", STORY_GUARANTEES, 200, json=table)
+    engine.respond("GET", "/stories/{story_id}", 503, json=error("database_unavailable"))
+    shown = unescape(section(get(operator_client, CONFIG)))
+    assert "(this story" not in shown
+    assert "player_view` is" not in shown
+    assert "player_view is" not in text(shown)
+    assert cells(shown, "audience_filtering")[5] == "Not provided"
+    assert len(calls(engine, "GET", f"/stories/{STORY}")) == 1
 
 
 def test_the_overrides_form_reads_no_table(operator_client: Client, engine: FakeEngine) -> None:

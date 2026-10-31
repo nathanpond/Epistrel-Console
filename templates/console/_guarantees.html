@@ -3,7 +3,9 @@ The guarantee table (#57, FR-VERIFY-15): the profile page's (#78) and a story's 
 Guarantees section. Context from console.guarantees.section: guarantees (GuaranteeTable | None),
 guarantee_rows, guarantee_caveats, guarantees_error (ErrorPanel | None), guarantees_missing (the
 profile route's 404), guarantees_mode ("profile" | "story"), profile_name (optional),
-guarantees_note (after the caption), guarantees_docs_url / _label. Order: caption, docs link,
+guarantees_note (after the caption), guarantees_docs_url / _label. On the Config page the rows
+are built with the story's settings (story_settings, #169), so Needs and Status may name the
+story's value of a story setting; both cells carry backtick spans (code_spans). Order: caption, docs link,
 caveats, table. Each row is <tr id="g-<id>">, the target of the impact report's lost guarantees.
 {% endcomment %}{% load inspect_tags %}<section class="guarantees">
   <h2 id="guarantees">Guarantees</h2>
@@ -22,7 +24,7 @@ caveats, table. Each row is <tr id="g-<id>">, the target of the impact report's 
       <td>{% if g.row.metric is None %}—{% elif g.row.metric == "unmeasured" %}Unmeasured{% else %}<code>{{ g.row.metric }}</code>{% endif %}</td>
       <td>{{ g.needs|code_spans }}</td>
       <td>{% for p in g.row.purposes %}<code>{{ p }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
-      <td class="status">{{ g.status }}</td>
+      <td class="status">{{ g.status|code_spans }}</td>
     </tr>{% endfor %}</tbody>
   </table>
   {% else %}<p class="guarantees-empty">None</p>{% endif %}

@@ -25,7 +25,7 @@ from console.models import EngineOperation
 from console.story_settings import config_url as settings_config_url
 from console.views import play, story_config
 from tests.fakes.engine import FakeEngine
-from tests.fakes.guarantees import answer_guarantees
+from tests.fakes.guarantees import STORY_GUARANTEES, answer_guarantees, guarantees_fixture
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import EFFECTIVE, effective_config
 from tests.fixtures import engine_fixture
@@ -307,6 +307,43 @@ def test_the_settings_pages_see_config_link_resolves_here(
     """#54's "Moved to engine profile overrides — see Config" link targets this page."""
     assert settings_config_url(STORY) == CONFIG == reverse("stories:config", args=[STORY])
     assert operator_client.get(settings_config_url(STORY)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("player_view", "provided", "status", "caveat"),
+    [
+        ("story", False, "Not provided (this story's player_view is story)", True),
+        ("character", True, "Provided", False),
+    ],
+    ids=["story", "character"],
+)
+def test_config_guarantees_name_the_storys_player_view(
+    operator_client: Client,
+    engine: FakeEngine,
+    player_view: str,
+    provided: bool,
+    status: str,
+    caveat: bool,
+) -> None:
+    """#169: the Config page's story read gives the audience-filtering row the story's value."""
+    table = guarantees_fixture("structured")
+    for found in table["rows"]:
+        if found["id"] == "audience_filtering":
+            found.update(provided=provided, delivered_in=None)
+    engine.respond("GET", STORY_GUARANTEES, 200, json=table)
+    story = copy.deepcopy(engine_fixture("get_story"))
+    story["settings"]["player_view"] = player_view
+    engine.respond("GET", "/stories/{story_id}", 200, json=story)
+    html = operator_client.get(CONFIG).content.decode()
+    match = re.search(r'<tr id="g-audience_filtering"[^>]*>(.*?)</tr>', html, re.S)
+    assert match is not None
+    tds = re.findall(r"<td[^>]*>(.*?)</td>", match.group(1), re.S)
+    cells = [unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in tds]
+    assert cells[3].endswith(f"; story setting player_view = character (this story: {player_view})")
+    assert f"<code>{player_view}</code>)" in match.group(1)
+    assert cells[5] == status
+    assert ("Audience filtering isn&#x27;t provided" in html) is caveat
+    assert len(requests(engine, "GET", f"/stories/{STORY}")) == 1
 
 
 # --- the overrides form ---------------------------------------------------------------------------

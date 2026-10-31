@@ -190,7 +190,8 @@ def _reads(reads: Mapping[str, Callable[[], Any]]) -> dict[str, Any]:
 class Loaded:
     """Config's reads: the effective configuration and, each ``None`` when it failed, the
     running profile version, the schema and the story; on the Config page also the guarantee
-    table or its failure (#57)."""
+    table or its failure (#57). The story's ``settings`` also feed the guarantee rows' story
+    setting (#169: the Needs suffix and the Status reason); no extra read."""
 
     config: EffectiveConfig
     profile: EngineProfile | None
@@ -411,7 +412,12 @@ def _config_page(
         name = loaded.profile.name if loaded.profile is not None else ""
         context.update(
             guarantees_section(
-                request, loaded.guarantees, "story", profile_name=name, note=CONFIG_SCOPE
+                request,
+                loaded.guarantees,
+                "story",
+                profile_name=name,
+                note=CONFIG_SCOPE,
+                story_settings=loaded.story.settings if isinstance(loaded.story, Story) else None,
             )
         )
     return render(request, "console/stories/config.html", context)

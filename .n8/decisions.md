@@ -2117,3 +2117,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Structured v1/v2 settings and M5's profile defaults live in `tests/profile_helpers.py` (`STRUCTURED`, `STRUCTURED_V1_SETTINGS`, `STRUCTURED_V2_SETTINGS`, `M5_PROFILE_DEFAULTS`, `structured_profile(version)`, `m5_deployment()`), copied from Engine origin/main seeds (0080 stores `structured_settings()` as is); the shared `get_deployment_settings.json` fixture is left alone.
   **Why:** Changing the shared deployment fixture would ripple through unrelated tests; the M5 browse tests add 0080's defaults locally.
   **Issue:** #204
+- **Decision:** The story-setting note merges only into a story-setting clause's own trailing " (any value)" (`_with_note`); a profile-level `setting`'s "(any value)" never gets it. The story value is looked up only when `mode == "story"`, and `rows()` drops `story_settings` outside story mode.
+  **Why:** Planner pass 2 lines; a profile page can't know a story's value.
+  **Issue:** #169
+- **Decision:** `console/guarantees.py`'s module docstring was reworded ("claims an output was checked in full") so the planned grep for "verified" finds nothing; its meaning (FR-RESP-1) is unchanged.
+  **Why:** The test plan's complement greps the module, and the old docstring quoted the word.
+  **Issue:** #169
+- **Decision:** Both guarantee fixtures were regenerated with `json.dumps(indent=2)` so every row carries `story_setting` (only `audience_filtering`'s is set); the Config test overrides `audience_filtering` to `delivered_in: null` because the shared Structured fixture marks it delivered in M5, which would win over the reason.
+  **Why:** C15 / the Engine always serialises the field; the precedence AC puts `delivered_in` first.
+  **Issue:** #169
+- **Decision:** Added two page tests beyond the plan: the profile page shows the default-assumption suffix (Demo 1), and a failed story read on Config shows no suffix or reason with exactly one `GET /stories/{id}`.
+  **Why:** The test plan's "story read failed" complement names the fake call log, which needs a page test.
+  **Issue:** #169
