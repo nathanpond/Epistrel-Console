@@ -2213,3 +2213,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 2) The CI fix changes the #223 check to `_is_variant()` (`str.partition(":")` plus an ASCII-digit set test), with no regex. It accepts and refuses the same inputs as `fullmatch(r"[0-9]+:[0-9]+")`. Tests now also cover `1:2:3`, `:2` and `1:`.
   **Why:** CodeQL flagged a high `py/polynomial-redos` on the regex in PR #226, the same finding and fix as #194's `scalar_syntax`.
   **Issue:** #223
+- **Decision:** (Rule 3) Raised the CI `test` job's `timeout-minutes` from 15 to 25.
+  **Why:** On PR #226 the job was cancelled by its own 15-minute timeout (16:22:22 to 16:37:39), and the gate failed with `test=cancelled`. The last green runs of the same job took 13m12s (#212) and 14m17s (plan-m5-state), so the suite had already grown to within a minute of the limit. 25 minutes matches the docker job's existing ceiling. A re-run would have stayed one slow runner away from the same failure.
+  **Issue:** #213 (PR #226)
