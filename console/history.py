@@ -315,6 +315,7 @@ class Row:
     feedback: FeedbackWidget | None = None  # the "Rate" control (#83, set by the view)
     trace: BeatTrace | None = None  # a structured beat's trace (#147, set by the view)
     fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62)
+    reaction: bool = False  # narrated by a primary, not the player (#202, #201's rule)
 
 
 @dataclass
@@ -326,6 +327,7 @@ class TurnGroup:
     no_reply: bool = False
     explain_url: str | None = None  # "Explain retrieval" (#142, set by the view)
     perception_url: str | None = None  # "Perception" (#195, set by the view)
+    render_order: str = ""  # "Renders: A → B" for a multi-render turn (#202)
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:
@@ -348,7 +350,10 @@ def turn_groups(
     """The page's turns in ascending order. Audit records render under their turn only for
     turns on this page (an erasure marker with no turn under turn 0, which only the oldest page
     holds). A turn ≥ 1 with no reply item says "no reply" (not while an actor filter is
-    set)."""
+    set). #202: a reaction row is marked, and a group's render order comes from its first
+    ``message_rendered`` row on this page."""
+    from console.renders import is_reaction, render_order_line  # console.renders imports us
+
     groups: dict[tuple[int, int | None], TurnGroup] = {}
 
     def group(turn: int, variant: int | None) -> TurnGroup:
@@ -374,8 +379,12 @@ def turn_groups(
             links.get(item.operation_id),
             same,
             fidelity=fidelity_badge(item.fidelity),
+            reaction=is_reaction(item),
         )
-        group(item.turn or 0, item.variant).rows.append(row)
+        owner = group(item.turn or 0, item.variant)
+        if item.kind == REPLY_KIND and not any(r.item.kind == REPLY_KIND for r in owner.rows):
+            owner.render_order = render_order_line(item, labels)
+        owner.rows.append(row)
         previous = item
     by_turn: dict[int, TurnGroup] = {}
     for g in groups.values():

@@ -5,9 +5,19 @@ beat (C16) is never a reaction."""
 
 from typing import Any
 
-from console.engine.models import HistoryItem
+import pytest
+
+from console.engine.models import HistoryItem, TurnWarning
 from console.inspect import short_id
-from console.renders import NO_BEATS, RenderBeat, RenderGroup, turn_renders
+from console.renders import (
+    NO_BEATS,
+    RenderBeat,
+    RenderGroup,
+    WarningLine,
+    render_order_line,
+    turn_renders,
+    warning_lines,
+)
 
 PAT = "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"  # the player
 MARCUS = "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
@@ -266,3 +276,114 @@ def test_fidelity_class_beside_reaction() -> None:
     assert reaction.css_class == "reaction fidelity-envelope"
     assert reaction.fidelity is not None
     assert reaction.fidelity.text == "envelope"
+
+
+# --- #202: the turn report's warnings and History's render order ---------------------------------
+
+STORY = "01JB2Z8Y5Q3W6K9M1N4P7R0T2V"
+MEMORY = "01JB2Z8Y5Q3W6K9M1N4P7MEM01"
+ROOK = "01JB2Z8Y5Q3W6K9M1N4P7R0T3D"  # not in LABELS: its short id
+RETRIEVAL = f"/stories/{STORY}/inspect/retrieval/?memory={MEMORY}"
+
+
+def warning_of(raw: dict[str, Any]) -> TurnWarning:
+    parsed = TurnWarning.from_json(raw)
+    assert parsed is not None
+    return parsed
+
+
+@pytest.mark.parametrize(
+    ("warning", "story_id", "line"),
+    [
+        pytest.param(
+            {"kind": "primary_not_present", "character_id": JENNI},
+            STORY,
+            WarningLine("Jenni was named but isn't in the scene — rendered with nothing perceived"),
+            id="not-present-named",
+        ),
+        pytest.param(
+            {"kind": "primary_not_present", "character_id": ROOK, "memory_id": MEMORY},
+            STORY,
+            WarningLine(
+                f"{short_id(ROOK)} was named but isn't in the scene — rendered with nothing "
+                "perceived"
+            ),
+            id="not-present-short-id",
+        ),
+        pytest.param(
+            {"kind": "primary_not_present"},
+            STORY,
+            WarningLine("A named character isn't in the scene — rendered with nothing perceived"),
+            id="not-present-no-id",
+        ),
+        pytest.param(
+            {"kind": "pin_quarantined", "memory_id": MEMORY, "character_id": JENNI},
+            STORY,
+            WarningLine("Pinned memory ", MEMORY, RETRIEVAL, " was quarantined by the output gate"),
+            id="pin-linked",
+        ),
+        pytest.param(
+            {"kind": "pin_quarantined", "memory_id": MEMORY},
+            "",
+            WarningLine("Pinned memory ", MEMORY, "", " was quarantined by the output gate"),
+            id="pin-no-story",
+        ),
+        pytest.param(
+            {"kind": "pin_quarantined"},
+            STORY,
+            WarningLine("A pinned memory was quarantined by the output gate"),
+            id="pin-no-id",
+        ),
+        pytest.param(
+            {"kind": "tie_break_state_not_yet", "character_id": JENNI},
+            STORY,
+            WarningLine("The story's state tie-break arrives in Engine M6 — request order applied"),
+            id="tie-break",
+        ),
+        pytest.param(
+            {"kind": "some_new_warning", "character_id": MARCUS, "memory_id": MEMORY},
+            STORY,
+            WarningLine("Some new warning — Marcus"),
+            id="unknown-named",
+        ),
+        pytest.param(
+            {"kind": "some_new_warning"},
+            STORY,
+            WarningLine("Some new warning"),
+            id="unknown-bare",
+        ),
+    ],
+)
+def test_warning_lines(warning: dict[str, Any], story_id: str, line: WarningLine) -> None:
+    assert warning_lines([warning_of(warning)], LABELS, story_id) == (line,)
+
+
+def test_warning_lines_keep_order_and_duplicates() -> None:
+    warnings = [
+        warning_of({"kind": "tie_break_state_not_yet"}),
+        warning_of({"kind": "primary_not_present", "character_id": JENNI}),
+        warning_of({"kind": "primary_not_present", "character_id": JENNI}),
+    ]
+    lines = warning_lines(warnings, LABELS, STORY)
+    assert [line.before.split(" ")[0] for line in lines] == ["The", "Jenni", "Jenni"]
+
+
+def test_render_order_line() -> None:
+    multi = beat(
+        None,
+        None,
+        "Both answer.",
+        channel="message",
+        kind="message_rendered",
+        render_character_ids=[MARCUS, JENNI, MARCUS, ROOK],
+    )
+    assert render_order_line(multi, LABELS) == f"Renders: Marcus → Jenni → {short_id(ROOK)}"
+    single = beat(
+        None,
+        None,
+        "Marcus answers.",
+        channel="message",
+        kind="message_rendered",
+        render_character_ids=[MARCUS, MARCUS],
+    )
+    assert render_order_line(single, LABELS) == ""

@@ -116,7 +116,7 @@ from console.models import EngineOperation
 from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.perception import perception_url, turn_links_perception
-from console.renders import RenderGroup, is_reaction, turn_renders
+from console.renders import RenderGroup, WarningLine, is_reaction, turn_renders, warning_lines
 from console.story_config import (
     ConfigBadge,
     badge_from_report,
@@ -666,6 +666,8 @@ class Inspector:
     differing_text: str = ""
     nothing_perceived: bool = False
     m5_facts: tuple[tuple[str, str, str], ...] = ()
+    # #202: the report's Warnings lines, named by the inspector's labels (:func:`_with_warnings`).
+    warnings: tuple[WarningLine, ...] = ()
 
     @property
     def trace_shown(self) -> bool:
@@ -747,12 +749,13 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
             ("Attempts", _detail(details, "attempts")),
             *retry,
         )
-        return Inspector(
+        found = Inspector(
             notice="Model unavailable — nothing was written.",
             facts=facts,
             report=_report({"error": {"details": details}}),
             **base,
         )
+        return _with_warnings(found, {}, "")  # no labels or story here: short ids, no link
     if exc.code == "erased_subject_referenced":
         facts = (
             ("Erasure", _detail(details, "erasure_id")),
@@ -762,6 +765,14 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
     if is_module_off(exc):  # #200: the profile no longer renders per character
         return Inspector(notice=RELOAD, facts=(("Module", _detail(details, "module")),), **base)
     return Inspector(title="Turn refused", error=panel_for(exc), idempotency_key=idempotency_key)
+
+
+def _with_warnings(found: Inspector, labels: Mapping[str, str], story_id: str) -> Inspector:
+    """#202: an inspector carrying a report gets its Warnings lines, named by ``labels`` (C4;
+    ``{}``: short ids), the quarantined pin linked into ``story_id``'s Retrieval explorer."""
+    if found.report is None:
+        return found
+    return replace(found, warnings=warning_lines(found.report.warnings, labels, story_id))
 
 
 def _with_history_link(story_id: str, found: Inspector) -> Inspector:
@@ -911,6 +922,7 @@ def result_inspector(
         trace_offered=True,
     )
     found = _with_answer(found, TurnAnswer.of(result), actor=actor, labels=labels or {})
+    found = _with_warnings(found, labels or {}, story_id)
     return _with_history_link(story_id, found)
 
 
@@ -966,6 +978,7 @@ def row_inspector(
     )
     answer = TurnAnswer.logged(row.response)
     found = _with_answer(found, answer, actor=_row_actor(row), labels=labels or {})
+    found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 
 

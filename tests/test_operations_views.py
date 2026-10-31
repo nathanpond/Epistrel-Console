@@ -10,6 +10,7 @@ from django.test import Client, override_settings
 
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
+from console.inspect import short_id
 from console.models import EngineOperation
 from console.views import operations as views
 from tests.fakes.engine import FakeEngine
@@ -236,6 +237,31 @@ def test_detail_shows_request_response_and_the_turn_report(
     assert "&quot;timeline_revision&quot;: 7" in html  # response as formatted JSON
     # No Engine operation id recorded: no Fetch button.
     assert "Fetch from Engine" not in html
+
+
+def test_operation_detail_warnings_use_short_ids(operator_client: Client) -> None:
+    """#202: the operation detail's Warnings row has no labels and no story: short ids (the
+    full id in ``title``) and no Retrieval link."""
+    character, memory = "01JA0000000000000000000CH1", "01JA0000000000000000000ME1"
+    row = make_row(
+        response={
+            "model_calls": [],
+            "elapsed_ms": 5,
+            "warnings": [
+                {"kind": "primary_not_present", "character_id": character},
+                {"kind": "pin_quarantined", "memory_id": memory},
+            ],
+        }
+    )
+    html = operator_client.get(f"/operations/{row.pk}/").content.decode()
+    warnings = html.split("<dt>Warnings</dt>")[1].split("</dd>")[0]
+    assert f"<li>{short_id(character)} was named but isn&#x27;t in the scene" in warnings
+    assert (
+        f'<li>Pinned memory <code title="{memory}">{short_id(memory)}</code> was quarantined by '
+        "the output gate</li>"
+    ) in warnings
+    assert "<a " not in warnings
+    assert "/inspect/retrieval/" not in html
 
 
 def test_detail_shows_input_violations(

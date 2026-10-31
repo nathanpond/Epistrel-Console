@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from django.test import Client
 
+from console.inspect import short_id
 from console.models import EngineOperation
 from tests.fakes.engine import FakeEngine
 from tests.history.helpers import (
@@ -20,6 +21,7 @@ from tests.history.helpers import (
     history_json,
     page,
 )
+from tests.play.helpers import story_json
 
 pytestmark = pytest.mark.django_db
 OP = "01M5R5XK5X7GQK27XMD1FZQV27"  # turn 1's operation in the fixture
@@ -323,3 +325,95 @@ def test_lite_turn_has_no_perception_link(operator_client: Client, engine: FakeE
     assert "Turn 1 · variant 1" in html
     assert perception_links(html) == []
     assert effective_reads(engine) == 1  # one lazy read for the whole page
+
+
+# --- #202: a multi-render turn's render order; reactions indented ---------------------------------
+
+MARCUS = "01JB2Z8Y5Q3W6K9M1N4P7R0T3D"
+JENNI = "01JB2Z8Y5Q3W6K9M1N4P7R0T3C"
+STORY_PATH = "/stories/{story_id}"
+
+
+def demo_cast(engine: FakeEngine, items: list[dict[str, Any]]) -> None:
+    """#52's reads with ``items`` as turn 1, and Marcus and Jenni in the cast (the #201 demo)."""
+    answer(engine, history=history_json(items=items, turns=turns(1), audit=None, summary=None))
+    story = story_json(next_turn_index=4)
+    story["characters"] = [
+        *story["characters"],
+        {"id": MARCUS, "name": "Marcus", "is_player": False},
+        {"id": JENNI, "name": "Jenni", "is_player": False},
+    ]
+    engine.respond("GET", STORY_PATH, 200, json=story)
+
+
+def header(html: str) -> str:
+    match = re.search(r'<tr class="turn-header"><th colspan="7">(Turn 1 .*?)</th></tr>', html)
+    assert match is not None
+    return match.group(1)
+
+
+def test_multi_render_turn_header_names_the_order(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    outsider = "01JB2Z8Y5Q3W6K9M1N4P7R0ZZ9"
+    items = [
+        item(1, 1, "say", "Anyone here?"),
+        item(
+            1,
+            2,
+            "message",
+            "Marcus and Jenni answer.",
+            render_character_ids=[MARCUS, JENNI, MARCUS, outsider],
+        ),
+        item(1, 3, "message", "A later reply.", render_character_ids=[JENNI, MARCUS]),
+    ]
+    demo_cast(engine, items)
+    html = header(page(operator_client))
+    assert html.startswith(
+        'Turn 1 · variant 1 · <span class="render-order">Renders: Marcus → Jenni → '
+        f"{short_id(outsider)}</span>"
+    )
+    assert html.count("render-order") == 1  # the group's first message_rendered row only
+
+
+def test_single_render_turn_header_has_no_renders_line(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement: one rendering character (a duplicate id counts once) gives no line; the
+    Render column is unchanged."""
+    items = [
+        item(1, 1, "say", "Hello."),
+        item(1, 2, "message", "Marcus answers.", render_character_ids=[MARCUS, MARCUS]),
+    ]
+    demo_cast(engine, items)
+    html = page(operator_client)
+    assert "Renders:" not in html
+    assert 'class="render-order"' not in html
+    assert "<td>Marcus, Marcus</td>" in row_of(html, "Marcus answers.")
+
+
+def test_reaction_rows_are_indented(operator_client: Client, engine: FakeEngine) -> None:
+    items = [
+        item(1, 1, "say", "Anyone here?"),
+        item(
+            1,
+            2,
+            "say",
+            "Jenni gasps.",
+            actor_character_id=JENNI,
+            narrated_by=MARCUS,
+            kind="beat_say",
+        ),
+        item(1, 3, "say", "Mara shrugs.", narrated_by="player", kind="beat_say"),
+        item(1, 4, "message", "Marcus answers.", render_character_ids=[MARCUS, JENNI]),
+    ]
+    demo_cast(engine, items)
+    html = page(operator_client)
+    reaction = row_of(html, "↳ Jenni gasps.")
+    assert re.match(r'<tr class="item channel-say reaction">', reaction)
+    assert "<td>Jenni (narrated by Marcus)</td>" in reaction  # #62's label unchanged
+    # Complement: a player-narrated beat (C16) and an own beat are neither marked nor prefixed.
+    for text in ("Mara shrugs.", "Anyone here?"):
+        row = row_of(html, text)
+        assert "reaction" not in row
+        assert "↳" not in row

@@ -1,4 +1,4 @@
-{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). A structured turn's header links "Explain retrieval" (#142), then "Perception" (#195). A structured beat's Text cell is its trace (#147), under the verdict legend and the trace notices. A character read names its audience filter and player view; envelope and not-perceived beats are badged and styled (#62). #}
+{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). A structured turn's header links "Explain retrieval" (#142), then "Perception" (#195). A structured beat's Text cell is its trace (#147), under the verdict legend and the trace notices. A character read names its audience filter and player view; envelope and not-perceived beats are badged and styled (#62). A multi-render turn's header names its render order; a reaction row is indented and prefixed "↳ " (#202). #}
 {% load console_format erasure %}
 {% if page.chain %}<p class="chain-line">Viewing chain {{ page.chain }} — <a href="{{ page.clear_chain_url }}">clear</a></p>{% endif %}
 {% if page.error %}
@@ -23,15 +23,15 @@
   <thead><tr><th>Beat</th><th>Kind</th><th>Channel</th><th>Actor</th><th>Render</th><th>Text</th><th>Operation</th></tr></thead>
   {% for group in page.groups %}
   <tbody class="turn" id="turn-{{ group.turn }}-{{ group.variant|default_if_none:'0' }}">
-    <tr class="turn-header"><th colspan="7">Turn {{ group.turn }} · variant {{ group.variant|default_if_none:"—" }}{% if group.no_reply %} <span class="no-reply">no reply</span>{% endif %}{% if group.explain_url %} <a class="explain-link" href="{{ group.explain_url }}">Explain retrieval</a>{% endif %}{% if group.perception_url %} <a class="perception-link" href="{{ group.perception_url }}">Perception</a>{% endif %}</th></tr>
+    <tr class="turn-header"><th colspan="7">Turn {{ group.turn }} · variant {{ group.variant|default_if_none:"—" }}{% if group.render_order %} · <span class="render-order">{{ group.render_order }}</span>{% endif %}{% if group.no_reply %} <span class="no-reply">no reply</span>{% endif %}{% if group.explain_url %} <a class="explain-link" href="{{ group.explain_url }}">Explain retrieval</a>{% endif %}{% if group.perception_url %} <a class="perception-link" href="{{ group.perception_url }}">Perception</a>{% endif %}</th></tr>
     {% for row in group.rows %}
-    <tr class="item channel-{{ row.item.channel }}{% if row.fidelity.row_class %} {{ row.fidelity.row_class }}{% endif %}">
+    <tr class="item channel-{{ row.item.channel }}{% if row.reaction %} reaction{% endif %}{% if row.fidelity.row_class %} {{ row.fidelity.row_class }}{% endif %}">
       <td>{{ row.item.beat|default_if_none:"—" }}</td>
       <td><code>{{ row.item.kind }}</code></td>
       <td><span class="badge-channel">{{ row.item.channel }}</span>{% if row.item.redacted %} <span class="badge-erased">erased</span>{% endif %}{% if row.fidelity %} <span class="badge-fidelity" title="{{ row.fidelity.title }}">{{ row.fidelity.text }}</span>{% endif %}</td>
       <td>{{ row.actor }}</td>
       <td>{% if row.render %}{{ row.render|join:", " }}{% else %}—{% endif %}</td>
-      <td class="text">{% if row.trace %}{% include "console/history/_beat_trace.html" with t=row.trace %}{% else %}{{ row.item.text|mark_erased }}{% endif %}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
+      <td class="text">{% if row.reaction %}↳ {% endif %}{% if row.trace %}{% include "console/history/_beat_trace.html" with t=row.trace %}{% else %}{{ row.item.text|mark_erased }}{% endif %}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
       <td>{% if row.log_pk %}<a class="operation-link" href="{% url 'operations:detail' row.log_pk %}"><code>{{ row.item.operation_id }}</code></a>{% else %}<code>{{ row.item.operation_id }}</code>{% endif %}</td>
     </tr>
     {% if row.feedback %}<tr class="feedback-row"><td colspan="7">{% include "console/stories/_feedback.html" with fb=row.feedback %}</td></tr>{% endif %}

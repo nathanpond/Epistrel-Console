@@ -22,7 +22,7 @@
 <tbody>{% for v in inspector.report.guardrail.violations %}<tr><td><code>{{ v.policy_id }}</code></td><td>{{ v.name }}</td><td>{{ v.message }}</td><td>{{ v.kind }}</td></tr>{% endfor %}</tbody></table>
 {% endif %}
 {% else %}<p>—</p>{% endif %}
-{% include "console/_turn_report.html" with report=inspector.report %}
+{% include "console/_turn_report.html" with report=inspector.report warning_lines=inspector.warnings %}
 {% endif %}
 {% if inspector.revisions %}
 <dl class="revisions">

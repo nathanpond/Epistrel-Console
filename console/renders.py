@@ -12,19 +12,25 @@ order) by rendering character, in the turn's ``order``:
 
 A beat whose ``narrated_by`` is ``"player"`` (co_author) is a player-narrated beat, never a
 reaction, and never by itself shows the section (C16, owned here).
+
+#202: the past-turn surfaces: :func:`warning_lines` words a turn report's ``warnings[]`` (the
+report's Warnings row) and :func:`render_order_line` a History turn header's render order. Both
+name a character by the page's label, else its short id (never the raw id).
 """
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
-from console.engine.models import HistoryItem
+from console.engine.models import HistoryItem, TurnWarning
 from console.history import (
     PLAYER_NARRATOR,
+    REPLY_KIND,
     FidelityBadge,
     fidelity_badge,
     narrated_label,
 )
-from console.wording import character_label
+from console.inspect import retrieval_url
+from console.wording import character_label, humanised
 
 NO_BEATS = "No beats (see warnings)"
 INPUT_HEADING = "Input — {}"
@@ -198,3 +204,68 @@ def _anchors(items: list[HistoryItem]) -> dict[int, str]:
         seen.add(item.beat)
         found[index] = f"beat-{item.beat}"
     return found
+
+
+# --- #202: the turn report's warnings and History's render order ---------------------------------
+
+PRIMARY_NOT_PRESENT = "primary_not_present"
+PIN_QUARANTINED = "pin_quarantined"
+TIE_BREAK_STATE_NOT_YET = "tie_break_state_not_yet"
+NOT_PRESENT_TEXT = "{} was named but isn't in the scene — rendered with nothing perceived"
+NOT_PRESENT_UNNAMED = "A named character isn't in the scene — rendered with nothing perceived"
+PIN_BEFORE = "Pinned memory "
+PIN_AFTER = " was quarantined by the output gate"
+PIN_UNNAMED = "A pinned memory was quarantined by the output gate"
+TIE_BREAK_TEXT = "The story's state tie-break arrives in Engine M6 — request order applied"
+RENDER_ORDER = "Renders: {}"
+RENDER_ARROW = " → "
+
+
+@dataclass(frozen=True)
+class WarningLine:
+    """One Warnings ``<li>``, in plain (autoescaped) parts: ``before``, then the memory's short
+    id (``memory_id`` set; linked to ``url`` unless it is ``""``), then ``after``."""
+
+    before: str
+    memory_id: str = ""
+    url: str = ""
+    after: str = ""
+
+
+def warning_line(warning: TurnWarning, labels: Mapping[str, str], story_id: str) -> WarningLine:
+    """One warning's line; an id or field its kind doesn't use is ignored. ``story_id`` ``""``
+    means no Retrieval link (the operation detail page)."""
+    if warning.kind == PRIMARY_NOT_PRESENT:
+        if not warning.character_id:
+            return WarningLine(NOT_PRESENT_UNNAMED)
+        return WarningLine(NOT_PRESENT_TEXT.format(character_label(warning.character_id, labels)))
+    if warning.kind == PIN_QUARANTINED:
+        if not warning.memory_id:
+            return WarningLine(PIN_UNNAMED)
+        url = retrieval_url(story_id, {"memory": warning.memory_id}) if story_id else None
+        return WarningLine(PIN_BEFORE, warning.memory_id, url or "", PIN_AFTER)
+    if warning.kind == TIE_BREAK_STATE_NOT_YET:
+        return WarningLine(TIE_BREAK_TEXT)
+    text = humanised(warning.kind)
+    if warning.character_id:
+        text = f"{text} — {character_label(warning.character_id, labels)}"
+    return WarningLine(text)
+
+
+def warning_lines(
+    warnings: Sequence[TurnWarning], labels: Mapping[str, str], story_id: str
+) -> tuple[WarningLine, ...]:
+    """The report's Warnings lines in the Engine's order, every warning (duplicates
+    included)."""
+    return tuple(warning_line(w, labels, story_id) for w in warnings)
+
+
+def render_order_line(item: HistoryItem, labels: Mapping[str, str]) -> str:
+    """ "Renders: A → B" from a ``message_rendered`` item's ``render_character_ids`` (distinct,
+    first-seen order), or ``""`` for fewer than two (or another kind of item)."""
+    if item.kind != REPLY_KIND:
+        return ""
+    ids = list(dict.fromkeys(item.render_character_ids or ()))
+    if len(ids) < 2:
+        return ""
+    return RENDER_ORDER.format(RENDER_ARROW.join(character_label(c, labels) for c in ids))

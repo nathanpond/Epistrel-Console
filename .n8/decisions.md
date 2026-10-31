@@ -2054,3 +2054,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A side effect we accepted: the trace cell of a not-perceived history row now matches `.fidelity-none .text` too (line-through over its labels as well as its text).
   **Why:** It follows from the class the AC asks for. The beat text in such a cell was already struck through by `.beat-text`.
   **Issue:** #201
+- **Decision:** `warning_lines` and `render_order_line` name characters through the existing `console.wording.character_label` (cast label, else `console.inspect.short_id`), so no second fallback helper was added.
+  **Why:** It is the same rule (C4), and the brief says to reuse it rather than redefine it.
+  **Issue:** #202
+- **Decision:** `turn_groups` imports `console.renders` inside the function.
+  **Why:** `console.renders` imports `console.history` at module level, so a top-level import would be circular. This follows the project's existing in-function import pattern (console/forms/stories.py).
+  **Issue:** #202
+- **Decision:** The `model_unavailable` error inspector builds its warnings with no labels and story `""`: short ids, no Retrieval link.
+  **Why:** `error_inspector` gets neither labels nor a story id, and adding a story id to `details` would mean guessing a shape the Engine doesn't promise (C15).
+  **Issue:** #202
+- **Decision:** `_turn_report.html` writes the `<li>` markup inline in both branches (given `warning_lines`, or the `turn_warnings` fallback) instead of adding a partial. The pin link gets class `warning-memory`.
+  **Why:** It is one line, and keeps to the story's file budget. The class makes the link easy to target in tests.
+  **Issue:** #202
+- **Decision:** Two #62 player-view assertions were updated to expect the new `reaction` row class on the reaction Jenni narrated.
+  **Why:** The AC adds that class. No test was weakened: the expectation is now derived from `narrated_by`.
+  **Issue:** #202

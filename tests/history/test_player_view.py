@@ -297,7 +297,7 @@ def test_envelope_and_none_rows_are_styled(operator_client: Client, engine: Fake
         'character perceived only that it happened; the text is the envelope">envelope</span>'
     ) in envelope
     content = row_with(html, "Tobin glances toward the kitchen.")
-    assert row_class(content) == "item channel-do"
+    assert row_class(content) == "item channel-do reaction"  # narrated by Jenni (#202)
     assert "badge-fidelity" not in content
 
     serve(engine, story_view())
@@ -347,6 +347,8 @@ def test_console_never_hides_items_itself(
     for item, row in zip(body["items"], rows, strict=True):
         badge = fidelity_badge(item.get("fidelity"))
         expected = f"item channel-{item['channel']}"
+        if item.get("narrated_by") not in (None, "player"):  # a reaction (#202)
+            expected += " reaction"
         if badge is not None:
             expected += f" {badge.row_class}"
             assert f'<span class="badge-fidelity" title="{badge.title}">{badge.text}</span>' in row
