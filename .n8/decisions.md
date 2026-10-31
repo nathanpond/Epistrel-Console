@@ -1823,3 +1823,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added one test beyond the plan: an omniscient History page shows the classification tag and the legend line once, and not without a classified say.
   **Why:** the plan's page tests covered only the character complement on History.
   **Issue:** #207
+- **Decision:** Divergence row view models (`DivergenceRow`, `divergence_rows`, `count_text`, `empty_text`) live in `console/views/inspect_divergences.py`, not a new module.
+  **Why:** the story's artifacts list names only the view; nothing else reuses them yet.
+  **Issue:** #192
+- **Decision:** Speaker labels: options use `character_label(id, cast_names, minor)` (player marked, "(minor)" via `story_minor_ids`); the row cell uses `_character.html` with the plain label and `is_player`.
+  **Why:** C4; mirrors #190's Holder so " (player)" isn't doubled.
+  **Issue:** #192
+- **Decision:** The C2 non-parsing `asserted` case (`divergences_unparsed.json`) is a view-model test, not a page test.
+  **Why:** the fake Engine validates responses against the schema, which forbids such a proposition (C15); #190 did the same.
+  **Issue:** #192
+- **Decision:** `CAST_UNAVAILABLE` sits above the filters (as on Beliefs), so it is above the table whenever one renders; the raw item in More is `dataclasses.asdict(item)`.
+  **Why:** AC says "above the table"; one placement for every outcome. The model keeps every schema field, so asdict equals the sent item.
+  **Issue:** #192
+- **Decision:** "Believed belief id" in More reads "—" when null; the belief link's `#b-` fragment is left out if `believed_belief_id` were ever null with a proposition id.
+  **Why:** C15 says both are set together; defensive at no cost.
+  **Issue:** #192

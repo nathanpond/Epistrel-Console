@@ -1,0 +1,130 @@
+{
+  "items": [
+    {
+      "id": "0000000000000000000000DV01",
+      "utterance_id": "0000000000000000000000UT01",
+      "speaker": "0000000000000000000000CA02",
+      "asserted_proposition_id": "0000000000000000000000PA01",
+      "asserted": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "believed_belief_id": "0000000000000000000000BE01",
+      "believed_proposition_id": "0000000000000000000000PB01",
+      "believed": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "position": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "revealed_by_event_id": null,
+      "operation_id": "0000000000000000000000QP01"
+    },
+    {
+      "id": "0000000000000000000000DV02",
+      "utterance_id": "0000000000000000000000UT02",
+      "speaker": "0000000000000000000000CA01",
+      "asserted_proposition_id": "0000000000000000000000PA02",
+      "asserted": {
+        "subject_id": "0000000000000000000000CA02",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "believed_belief_id": "0000000000000000000000BE02",
+      "believed_proposition_id": "0000000000000000000000PB02",
+      "believed": {
+        "subject_id": "0000000000000000000000CA02",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "position": {
+        "turn": 2,
+        "variant": 1,
+        "slot_k": 0,
+        "beat": 3,
+        "step": 40000
+      },
+      "revealed_by_event_id": "0000000000000000000000EV02",
+      "operation_id": "0000000000000000000000QP02"
+    },
+    {
+      "id": "0000000000000000000000DV03",
+      "utterance_id": "0000000000000000000000UT03",
+      "speaker": "0000000000000000000000ZZ99",
+      "asserted_proposition_id": "0000000000000000000000PA03",
+      "asserted": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "believed_belief_id": "0000000000000000000000BE03",
+      "believed_proposition_id": "0000000000000000000000PB03",
+      "believed": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "position": {
+        "turn": 3,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 1,
+        "step": 0
+      },
+      "revealed_by_event_id": null,
+      "operation_id": "0000000000000000000000QP03"
+    }
+  ],
+  "revision": 7,
+  "next_after_id": "0000000000000000000000DV03",
+  "output_viewpoint": "omniscient"
+}

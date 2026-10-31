@@ -1,0 +1,40 @@
+{% extends "console/inspect/knowledge.html" %}{% load inspect_tags %}
+{% comment %}
+The Knowledge tab's Divergences section (#192): the GET filters (names = the Engine's query params;
+Apply carries no cursor), then one page of GET /stories/{id}/inspect/divergences
+(viewpoint=omniscient, limit=100): the count line, the rows (_divergence_row.html, Engine order)
+and the paging links. The filters and their errors stay above every error (convention 10); an
+invalid filter makes no call. Context from console/views/inspect_divergences.py.
+{% endcomment %}
+{% block knowledge_content %}
+<p class="section-intro">{{ intro }}</p>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}{% if after_refused %} <a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}</div>{% endif %}
+<form method="get" id="divergences-filters" action="{{ filter_url }}">
+  <div class="field field-speaker">{{ form.speaker.label_tag }} {{ form.speaker }}{{ form.speaker.errors }}</div>
+  <div class="field field-subject">{{ form.subject.label_tag }} {{ form.subject }}{{ form.subject.errors }}</div>
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif divergences_error %}{% include "console/_engine_error.html" with engine_error=divergences_error %}
+{% elif divergences %}
+<p class="divergences-count">{{ count }}</p>
+{% if rows %}
+<table class="divergences">
+  <thead><tr><th>When</th><th>Speaker</th><th>Asserted</th><th>Believes</th><th>Revealed</th><th>Operation</th>{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_divergence_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="none divergences-none">{{ empty }}</p>{% endif %}
+<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

@@ -919,3 +919,127 @@ class BeliefsForm(forms.Form):
             return False
         self.add_error(None, exc.message)
         return field_name == AFTER_FIELD
+
+
+# --- the Knowledge tab's Divergences section (#192) -----------------------------------------------
+
+ANY_SPEAKER = "Any"
+# A 422 ``validation_error``'s ``details.field`` → the Divergences filter it lands on.
+DIVERGENCES_FIELDS: Mapping[str, str] = {
+    "query.speaker": "speaker",
+    "query.subject": "subject",
+    "query.as_of": "as_of",
+}
+AFTER_ID_FIELD = "query.after_id"
+
+
+class DivergencesForm(forms.Form):
+    """The Divergences section's GET filters (``console/views/inspect_divergences.py``); each
+    name is the Engine's query parameter. The cursor ``after_id`` isn't a field: Apply starts
+    over.
+
+    **Speaker.** With the story read (``cast`` given), a select: "Any" (value "", not sent), then
+    the whole cast in cast order (the player included: a player can lie), labelled by ``labels``
+    (C4's, from the view). A URL id is trimmed and upper-cased, then read by C13's
+    :func:`console.paging.cast_id`: a valid id outside the cast is kept as an extra option, last
+    ("<short id> (not in the cast)"), and sent; an invalid one is
+    :data:`console.paging.CHARACTER_INVALID`. Without the story read (``cast`` ``None``), a
+    free-text id field read the same way.
+
+    **Subject** is an entity id (trimmed, upper-cased, ``is_ulid``; :data:`SUBJECT_INVALID`);
+    **As of turn** is parsed as the Beliefs section's (ASCII digits only, up to
+    :data:`TURN_MAX`)."""
+
+    speaker = forms.CharField(required=False, label="Speaker")
+    subject = forms.CharField(
+        required=False, label="Subject", widget=forms.TextInput(attrs={"size": 30})
+    )
+    as_of = forms.CharField(
+        required=False,
+        label="As of turn",
+        help_text="Blank for now",
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        labels: Mapping[str, str],
+    ) -> None:
+        bound = data.copy()
+        for name in ("speaker", "subject"):
+            value = bound.get(name)
+            if isinstance(value, str):
+                bound[name] = value.strip().upper()
+        self.cast = cast
+        self.cast_ids: tuple[str, ...] = tuple(c.id for c in cast or ())
+        options: list[tuple[str, str]] = [("", ANY_SPEAKER)]
+        if cast is not None:
+            options += [(c.id, labels.get(c.id) or short_id(c.id)) for c in cast]
+            requested = str(bound.get("speaker") or "")
+            if cast_id(requested, self.cast_ids).kept:
+                options.append((requested, f"{short_id(requested)}{NOT_IN_CAST_SUFFIX}"))
+        super().__init__(bound)
+        if cast is not None:
+            self.fields["speaker"].widget = forms.Select(choices=options)
+        else:
+            self.fields["speaker"].widget = forms.TextInput(attrs={"size": 30})
+
+    def clean_speaker(self) -> str:
+        typed = cast_id(str(self.cleaned_data.get("speaker") or ""), self.cast_ids)
+        if typed.error:
+            raise forms.ValidationError(typed.error)
+        return typed.value
+
+    def clean_subject(self) -> str:
+        subject: str = self.cleaned_data["subject"]
+        if subject and not is_ulid(subject):
+            raise forms.ValidationError(SUBJECT_INVALID)
+        return subject
+
+    def clean_as_of(self) -> int | None:
+        typed = str(self.cleaned_data.get("as_of") or "").strip()
+        if not typed:
+            return None
+        if not (typed.isascii() and typed.isdigit()):
+            raise forms.ValidationError(AS_OF_INVALID)
+        turn = int(typed)
+        if turn > TURN_MAX:
+            raise forms.ValidationError(TURN_TOO_HIGH)
+        return turn
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_divergences``' filter arguments (valid form only; no cursor):
+        ``None`` for a blank filter, which isn't sent."""
+        data = self.cleaned_data
+        return {
+            "speaker": data["speaker"] or None,
+            "subject": data["subject"] or None,
+            "as_of": data["as_of"],
+        }
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether Speaker, Subject or As of is set (valid form only; a cursor isn't a filter)."""
+        return any(v is not None for v in self.query().values())
+
+    def normalised(self, name: str) -> str:
+        """The bound (trimmed, upper-cased) value of ``speaker`` or ``subject``, valid or not."""
+        return str(self.data.get(name) or "")
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: ``unknown_character`` → :data:`console.wording.UNKNOWN_CHARACTER` beside
+        Speaker; any other the Engine's message beside the filter ``details.field`` names, else
+        above the filters. ``True`` when it named ``query.after_id`` (the line gets "First
+        page")."""
+        field_name = exc.details.get("field")
+        if exc.details.get("reason") == UNKNOWN_CHARACTER_REASON:
+            self.add_error("speaker", UNKNOWN_CHARACTER)
+            return False
+        if isinstance(field_name, str) and field_name in DIVERGENCES_FIELDS:
+            self.add_error(DIVERGENCES_FIELDS[field_name], exc.message)
+            return False
+        self.add_error(None, exc.message)
+        return field_name == AFTER_ID_FIELD
