@@ -325,6 +325,7 @@ class TurnGroup:
     audit: list[AuditRecord] = field(default_factory=list)
     no_reply: bool = False
     explain_url: str | None = None  # "Explain retrieval" (#142, set by the view)
+    perception_url: str | None = None  # "Perception" (#195, set by the view)
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:

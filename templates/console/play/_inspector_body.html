@@ -1,4 +1,4 @@
-{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation"; a generated turn ends with #139's lazy "Eval hooks & read set" block. #}
+{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation", then its perception trace (#195); a generated turn ends with #139's lazy "Eval hooks & read set" block. #}
 {% if inspector.title %}<h3>{{ inspector.title }}</h3>{% endif %}
 {% if inspector.notice %}<p class="notice"><strong>{% if inspector.notice_url %}<a class="notice-link" href="{{ inspector.notice_url }}">{{ inspector.notice }}</a>{% else %}{{ inspector.notice }}{% endif %}</strong></p>{% endif %}
 {% if inspector.error_line %}<p class="error-line"><code>{{ inspector.error_line }}</code></p>{% endif %}
@@ -28,9 +28,11 @@
   <dt>Idempotency key</dt><dd>{% if inspector.idempotency_key %}<code>{{ inspector.idempotency_key }}</code>{% else %}—{% endif %}</dd>
   {% if inspector.operation_id %}<dt>Engine operation</dt><dd><code>{{ inspector.operation_id }}</code>{% if inspector.log_pk %} — <a href="{% url 'operations:detail' inspector.log_pk %}">operation log</a>{% endif %}</dd>{% endif %}
   {% if inspector.explain_url or inspector.history_url %}<dt>Retrieval</dt><dd>{% include "console/play/_explain_link.html" %}</dd>{% endif %}
+  {% if inspector.perception_url %}<dt>Perception</dt><dd><a class="perception-link" href="{{ inspector.perception_url }}">Perception trace</a></dd>{% endif %}
 </dl>
 {% else %}
 {% if inspector.operation_id and inspector.log_pk %}<p><a href="{% url 'operations:detail' inspector.log_pk %}">Operation log entry</a></p>{% endif %}
 {% if inspector.explain_url or inspector.history_url %}<p class="explain">{% include "console/play/_explain_link.html" %}</p>{% endif %}
+{% if inspector.perception_url %}<p class="explain"><a class="perception-link" href="{{ inspector.perception_url }}">Perception trace</a></p>{% endif %}
 {% endif %}
 {% if inspector.trace_shown %}{% url 'inspect:turn-trace' inspector.story_id inspector.operation_id as trace_url %}{% if trace_url %}{% include "console/_turn_trace_block.html" %}{% endif %}{% endif %}

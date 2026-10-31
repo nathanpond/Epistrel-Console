@@ -1,0 +1,95 @@
+{
+  "items": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "0000000000000000000000CA03",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Where   is\nthe key?",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0003",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0301",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_say",
+      "actor_character_id": "0000000000000000000000CA01",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "It's under the mat.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0003",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0302",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 3,
+      "kind": "beat_do",
+      "actor_character_id": "0000000000000000000000CA02",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Bob slips out the back door.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0003",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0303",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "none"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "0000000000000000000000CA03"
+      ],
+      "channel": "message",
+      "text": "Alice: \"It's under the mat.\" Bob slips out the back door.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0003",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0304",
+      "origin": "generated"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": {
+        "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0304",
+        "text": "Alice: \"It's under the mat.\" Bob slips out the back door."
+      }
+    }
+  ],
+  "output_viewpoint": "character:0000000000000000000000CA03",
+  "audience_filter": "bypassed_by_player_view",
+  "player_view": "story",
+  "as_of": 3,
+  "timeline_revision": 5,
+  "next_before_turn": 3
+}

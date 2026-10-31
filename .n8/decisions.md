@@ -1895,3 +1895,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The test that the turn body never gets `player_view` posts only `transcript_player_view`, not a `player_view` field.
   **Why:** #200 will add its own `player_view` turn-form field. Posting one here would test #200's field rather than this control.
   **Issue:** #196
+- **Decision:** The perception pool (`console.views.perception.character_views`) returns `(reads, errors)`: the planned `dict[str, History | str]` plus the exceptions behind failed reads.
+  **Why:** "#43's panel for the first `EngineClientError` in cast order" needs the exception, which the reason string loses.
+  **Issue:** #195
+- **Decision:** When every read fails but none is an `EngineClientError` (for example every echo is player view `character`), and they didn't all time out, the page shows only the failure notice: no panel and no grid.
+  **Why:** No AC case covers it. The notice already names each failure, and there is no Engine error to put in a panel.
+  **Issue:** #195
+- **Decision:** A read's turn variant comes from its `turns` summary for that turn, else from its first item. Reads with neither are left out of the variant race check. The heading shows " · vV" for any variant ≠ 0, so v1 shows too.
+  **Why:** One chain read holds one variant per turn. The AC says "(if ≠ 0)" literally.
+  **Issue:** #195
+- **Decision:** Column labels use `console.perception.column_labels`: the name, or the short id when nameless, plus " (<short id>)" (convention 2's 8-character `short_id`) for a shared name and " (player)". They don't use `cast_names`' 6-character " (…xxxxxx)".
+  **Why:** The AC names " (<short id>)" exactly.
+  **Issue:** #195
+- **Decision:** An effective-config 503 `erasure_pending` is re-raised to `HeldStoryMiddleware` (#87's wrapper) instead of being rendered in the view.
+  **Why:** It is the same wrapper with less code. Any other failure is `UNREAD`.
+  **Issue:** #195
+- **Decision:** "Back to turn N in History" is `history_turn_url(story, turn)` with `&variant=T:V` added before the anchor when the page has a chain. The footnote shows only under a rendered grid.
+  **Why:** `history_turn_url` takes no chain parameter. The AC places the footnote "below the grid".
+  **Issue:** #195
+- **Decision:** The History page's perception test is "`propositions` or `fidelity` set" (`console.perception.has_structured_item`), not `is_structured`, which drops envelopes. Lite active-chain pages now make the one lazy effective-config read (`_story_structured`) whenever a turn ≥ 1 is shown.
+  **Why:** That is what the AC says. The read stays at most one per page.
+  **Issue:** #195

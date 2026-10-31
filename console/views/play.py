@@ -100,6 +100,7 @@ from console.ingest import (
 from console.inspect import STRUCTURED, history_turn_url, is_structured_pipeline
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
+from console.perception import perception_url, turn_links_perception
 from console.story_config import (
     ConfigBadge,
     badge_from_report,
@@ -517,6 +518,7 @@ class Inspector:
     revisions: bool = True  # show the revision/key lines
     explain_url: str = ""  # "Explain retrieval" for a transcript turn (#142)
     history_url: str = ""  # "Explain retrieval in history": the reported turn's anchor (#142)
+    perception_url: str = ""  # "Perception trace" (#195): the turn's grid, active chain
     story_id: str = ""  # the story the inspector is for (#139's trace URL)
     trace_offered: bool = False  # #139: offer the lazy "Eval hooks & read set" block
 
@@ -630,7 +632,11 @@ def _with_history_link(story_id: str, found: Inspector) -> Inspector:
         or found.error_line
     ):
         return found
-    return replace(found, history_url=history_turn_url(story_id, report.turn, report.variant))
+    return replace(
+        found,
+        history_url=history_turn_url(story_id, report.turn, report.variant),
+        perception_url=perception_url(story_id, report.turn),  # #195
+    )
 
 
 def result_inspector(
@@ -917,7 +923,12 @@ def _turn_inspector(
     found = selected_inspector(transcript.story_id, chosen[0].operation_id, chosen[0].origin)
     query = explain_query(items, turn, chosen[0].variant, lambda: story_structured)
     link = explain_url(transcript.story_id, query) if query is not None else None
-    return replace(found, explain_url=link or "", history_url="")
+    perception = (  # #195: History's test for its turn groups
+        perception_url(transcript.story_id, turn)
+        if turn_links_perception(items, turn, lambda: story_structured)
+        else ""
+    )
+    return replace(found, explain_url=link or "", history_url="", perception_url=perception)
 
 
 def _page(

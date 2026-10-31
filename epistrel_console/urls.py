@@ -31,6 +31,7 @@ from console.views import (
     offboarding,
     operations,
     ownership,
+    perception,
     personas,
     play,
     policies,
@@ -74,6 +75,12 @@ story_patterns = (
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         path("<str:story_id>/history/", history.history, name="history"),
+        # #195: one turn's perception trace, reconstructed per character.
+        path(
+            "<str:story_id>/turns/<int:turn>/perception/",
+            perception.perception,
+            name="perception",
+        ),
         # #83: rate, re-rate and retract feedback on one rendered message.
         path(
             "<str:story_id>/messages/<str:message_id>/feedback/",

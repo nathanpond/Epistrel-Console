@@ -133,3 +133,40 @@ def test_the_no_js_link_renders_the_page_with_that_report(
     answer_page(engine)
     html = operator_client.get(f"/stories/{STORY}/", {"operation": TURN_OP}).content.decode()
     assert "<h3>Turn report</h3>" in html.split('<div id="inspector">')[1]
+
+
+# --- the perception trace link (#195) -------------------------------------------------------------
+
+PERCEPTION = f"/stories/{STORY}/turns/1/perception/"
+PERCEPTION_ROW = (
+    f'<dt>Perception</dt><dd><a class="perception-link" href="{PERCEPTION}">'
+    "Perception trace</a></dd>"
+)
+STRUCTURED_CAPS = ["budgets", "structured", "models", "episodic"]
+
+
+def test_inspector_links_perception_for_a_structured_report(operator_client: Client) -> None:
+    log_row(response=respond_json(capabilities=STRUCTURED_CAPS))
+    html = inspect(operator_client, TURN_OP)
+    revisions = html.split('<dl class="revisions">')[1].split("</dl>")[0]
+    assert PERCEPTION_ROW in revisions
+    assert revisions.index("<dt>Retrieval</dt>") < revisions.index("<dt>Perception</dt>")
+    EngineOperation.objects.all().delete()
+    log_row()  # a Lite report
+    assert "perception-link" not in inspect(operator_client, TURN_OP)
+
+
+def test_transcript_turn_inspector_links_perception(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    history = engine_fixture("get_history")
+    history["items"][0]["propositions"] = []  # a structured turn's input
+    answer_page(engine, history=history)
+    html = operator_client.get(f"/stories/{STORY}/", {"turn": "1"}).content.decode()
+    inspector = html.split('<div id="inspector">')[1]
+    link = f'<a class="perception-link" href="{PERCEPTION}">Perception trace</a>'
+    assert f'<p class="explain">{link}</p>' in inspector  # not logged: the paragraph form
+    assert "variant=" not in link
+    answer_page(engine)  # a Lite turn, on a Lite story
+    html = operator_client.get(f"/stories/{STORY}/", {"turn": "1"}).content.decode()
+    assert "perception-link" not in html.split('<div id="inspector">')[1]

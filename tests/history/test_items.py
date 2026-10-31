@@ -1,6 +1,7 @@
 """How history items render (#52): per-turn groups, channels, "no reply", operation links,
 audit records with their rejected drafts and the summary."""
 
+import json
 import re
 from typing import Any
 
@@ -249,3 +250,76 @@ def test_no_summary_section_unless_asked(operator_client: Client, engine: FakeEn
     body.pop("summary")
     answer(engine, history=body)
     assert "<h2>Summary</h2>" not in page(operator_client)
+
+
+# --- the Perception link (#195) -------------------------------------------------------------------
+
+EFFECTIVE = "/stories/{story_id}/effective-config"
+
+
+def perception_links(html: str) -> list[str]:
+    found = re.findall(r'<a class="perception-link" href="([^"]+)">Perception</a>', html)
+    return [h.replace("&amp;", "&") for h in found]
+
+
+def effective_reads(engine: FakeEngine) -> int:
+    return calls_to(engine, "/effective-config")
+
+
+def _predicates() -> dict[str, Any]:
+    from tests.inspect.helpers import FIXTURES
+
+    body: dict[str, Any] = json.loads((FIXTURES / "predicates_list.json").read_text())
+    return body
+
+
+def _structured_turns() -> dict[str, Any]:
+    items = [
+        item(0, 1, "say", "Setup.", propositions=[]),
+        item(1, 1, "say", "Is the ferry late?", propositions=[]),
+        item(1, 2, "message", "Tobin shrugs."),
+        item(2, 1, "say", "Fine.", kind="beat_say", fidelity="envelope"),  # fidelity alone
+    ]
+    return history_json(items=items, turns=turns(0, 1, 2), audit=None)
+
+
+def test_structured_turn_links_perception(operator_client: Client, engine: FakeEngine) -> None:
+    answer(engine, history=_structured_turns())
+    engine.respond("GET", "/stories/{story_id}/predicates", 200, json=_predicates())
+    html = page(operator_client)
+    assert perception_links(html) == [
+        f"/stories/{STORY}/turns/1/perception/",
+        f"/stories/{STORY}/turns/2/perception/",
+    ]
+    assert effective_reads(engine) == 0  # the items say
+    (header,) = [line for line in html.splitlines() if "turn-header" in line and "Turn 1 ·" in line]
+    assert header.index("Explain retrieval") < header.index('class="perception-link"')
+    engine.reset()
+    chain = perception_links(page(operator_client, "variant=1:2"))
+    assert chain == [
+        f"/stories/{STORY}/turns/1/perception/?variant=1%3A2",
+        f"/stories/{STORY}/turns/2/perception/?variant=1%3A2",
+    ]
+
+
+def test_do_only_turn_links_perception_when_story_structured(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    from tests.inspect.helpers import structured
+
+    items = [item(1, 1, "do", "Mara sits."), item(1, 2, "message", "Tobin shrugs.")]
+    answer(engine, history=history_json(items=items, turns=turns(1), audit=None))
+    engine.respond("GET", EFFECTIVE, 200, json=structured())
+    assert perception_links(page(operator_client)) == [f"/stories/{STORY}/turns/1/perception/"]
+    assert effective_reads(engine) == 1
+    engine.reset()
+    assert perception_links(page(operator_client, "variant=1:2")) == []  # a chain view
+    assert effective_reads(engine) == 0
+
+
+def test_lite_turn_has_no_perception_link(operator_client: Client, engine: FakeEngine) -> None:
+    answer(engine)  # the Lite fixture, on a Lite story
+    html = page(operator_client)
+    assert "Turn 1 · variant 1" in html
+    assert perception_links(html) == []
+    assert effective_reads(engine) == 1  # one lazy read for the whole page

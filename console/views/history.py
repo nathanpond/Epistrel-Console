@@ -13,9 +13,11 @@ every view is a shareable URL. Reads, each degrading its own section:
 - ``GET /stories/{id}/settings`` — only when audit records are shown, for policy names;
 - ``GET /stories/{id}/predicates`` — once, only when the page shows a structured beat (#147),
   for the propositions' predicate names (a failure shows ids);
-- ``GET /stories/{id}/effective-config`` — at most once, only when a turn's input is shown but
-  none of its shown items carries ``propositions`` (#181): whether the story runs the structured
-  pipeline, for "Explain retrieval" (a failure: no link);
+- ``GET /stories/{id}/effective-config`` — at most once, on an active-chain page only, when a
+  turn's shown items don't say whether it is structured: a turn whose input is shown but none of
+  whose items carries ``propositions`` (#181), for "Explain retrieval", or any turn ≥ 1 none of
+  whose items carries ``propositions`` or ``fidelity`` (no player input needed), for
+  "Perception" (#195): whether the story runs the structured pipeline (a failure: no link);
 - ``GET /operations/{id}?viewpoint=omniscient`` — only with "Show all traces" (#147): once per
   structured turn on the page, the first 20, on a local pool with a shared deadline
   (:func:`turn_traces`); a failure marks that turn's beats unavailable and lists it.
@@ -63,6 +65,7 @@ from console.history import (
     turn_label,
 )
 from console.inspect import is_structured_pipeline
+from console.perception import perception_url, turn_links_perception
 from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
 from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
@@ -248,8 +251,11 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
     )
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     variant = query["variant"] or ""
-    if not variant:  # a chain view isn't the active timeline (#142)
-        _with_explain(story.id, groups, _story_structured(client, request, story.id))
+    # A chain view isn't the active timeline (#142): no Explain link, no effective-config read.
+    structured = None if variant else _story_structured(client, request, story.id)
+    if structured is not None:
+        _with_explain(story.id, groups, structured)
+    _with_perception(story.id, groups, structured, variant or None)
     traces = _with_traces(client, request, story, groups, load=form.show_traces)
     older = history.next_before_turn
     return Page(
@@ -279,13 +285,16 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
 # --- Beat traces (#147) -------------------------------------------------------------------------
 
 
-def _failure(exc: EngineClientError) -> str:
-    """A failed trace read's reason in the page notice."""
+def read_failure(exc: EngineClientError) -> str:
+    """A failed trace (or perception, #195) read's reason in the page notice."""
     if isinstance(exc, EngineError):
         return f"HTTP {exc.http_status} {exc.code}" if exc.code else f"HTTP {exc.http_status}"
     if isinstance(exc, EngineUnreachable):
         return "unreachable"
     return "error"
+
+
+_failure = read_failure  # the name before #195 made it public
 
 
 def turn_traces(
@@ -319,7 +328,7 @@ def turn_traces(
         if isinstance(exc, EngineClientError):
             if request is not None:
                 log_engine_error(request, exc)
-            found[op_id] = _failure(exc)
+            found[op_id] = read_failure(exc)
         elif exc is not None:
             raise exc
         else:
@@ -429,6 +438,21 @@ def _with_explain(
         rows = [row.item for row in group.rows]
         found = explain_query(rows, group.turn, group.variant, story_structured)
         group.explain_url = explain_url(story_id, found) if found is not None else None
+
+
+def _with_perception(
+    story_id: str,
+    groups: list[TurnGroup],
+    story_structured: Callable[[], bool] | None,
+    variant: str | None,
+) -> None:
+    """Give each structured turn ≥ 1 its "Perception" link (#195), carrying the page's chain.
+    ``story_structured`` (active-chain pages only; the same lazy read as Explain's) decides a
+    turn whose shown items don't."""
+    for group in groups:
+        rows = [row.item for row in group.rows]
+        if turn_links_perception(rows, group.turn, story_structured):
+            group.perception_url = perception_url(story_id, group.turn, variant)
 
 
 def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidget]) -> None:
