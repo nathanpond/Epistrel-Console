@@ -554,7 +554,8 @@ def test_result_first_order(operator_client: Client, engine: FakeEngine) -> None
     assert detail(html, "confidence") == "Suspected · 0.300"
     assert detail(html, "accessibility") == "1.000"
     assert detail(html, "state") == "Held"
-    assert detail(html, "provenance") == "Author"
+    assert detail(html, "provenance") == "…0000TR01"  # the transition's id (#227)
+    assert f'<dd class="provenance"><code title="{P}TR01">' in html
     assert detail(html, "held-from") == "turn 3 · after the turn until now"
     assert detail(html, "valid") == "[0, …) min"
     transition = detail(html, "transition")

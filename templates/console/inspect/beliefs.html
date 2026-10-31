@@ -33,7 +33,7 @@ beliefs call. Context from console/views/inspect_beliefs.py, wording from consol
 {% endfor %}{% if canon_summary %}<p class="canon-summary">{{ canon_summary }}</p>{% endif %}
 {% if rows %}
 <table class="beliefs">
-  <thead><tr><th>Proposition</th><th>Confidence</th><th>How</th><th>Holds since</th><th>Until</th><th>About story-time</th>{% if marks is not None %}<th>Canon</th>{% endif %}{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <thead><tr><th>Proposition</th><th>Confidence</th><th title="The belief transition that produced it">Provenance</th><th>Holds since</th><th>Until</th><th>About story-time</th>{% if marks is not None %}<th>Canon</th>{% endif %}{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
   <tbody>
   {% for row in rows %}{% include "console/inspect/_belief_row.html" %}
   {% endfor %}

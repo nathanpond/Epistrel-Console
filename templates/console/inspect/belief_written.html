@@ -24,7 +24,7 @@ not_readable (nested), again_url; missing (convention 10's text) for a ?report= 
   <dt>Confidence</dt><dd class="confidence"><span title="{{ belief.confidence_level }}">{{ confidence }}</span></dd>
   <dt>Accessibility</dt><dd class="accessibility">{{ accessibility }}</dd>
   <dt>State</dt><dd class="state"><span title="{{ belief.state }}">{{ belief.state|humanised }}</span></dd>
-  <dt>Provenance</dt><dd class="provenance"><span title="{{ belief.provenance }}">{{ belief.provenance|humanised }}</span></dd>
+  <dt>Provenance</dt><dd class="provenance">{{ belief.provenance|engine_id }}</dd>
   <dt>Held from</dt><dd class="held-from">{% if held_from_url %}<a href="{{ held_from_url }}">{{ held_from }}</a>{% else %}{{ held_from }}{% endif %} until <span class="held-to">{% if held_to %}{% if held_to_url %}<a href="{{ held_to_url }}">{{ held_to }}</a>{% else %}{{ held_to }}{% endif %}{% else %}now{% endif %}</span></dd>
   <dt>Valid-time</dt><dd class="valid">{{ valid_text }}</dd>
   <dt>Transition</dt><dd class="transition">{{ transition.id|engine_id }} · <span title="{{ transition.kind }}">{{ transition.kind|humanised }}</span> · valid at {{ valid_at }} · {% if position_url %}<a href="{{ position_url }}">{{ position }}</a>{% else %}{{ position }}{% endif %}</dd>

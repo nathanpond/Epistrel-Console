@@ -2216,3 +2216,20 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 3) Raised the CI `test` job's `timeout-minutes` from 15 to 25.
   **Why:** On PR #226 the job was cancelled by its own 15-minute timeout (16:22:22 to 16:37:39), and the gate failed with `test=cancelled`. The last green runs of the same job took 13m12s (#212) and 14m17s (plan-m5-state), so the suite had already grown to within a minute of the limit. 25 minutes matches the docker job's existing ceiling. A re-run would have stayed one slow runner away from the same failure.
   **Issue:** #213 (PR #226)
+
+## /n8-exec M5 (verification fixes, round 2) — 2026-10-31
+
+- **Decision:** Worked the two open M5 bugs (#227, #228) on a fresh branch `milestone/m5-verification-fixes-r2` off `main`. #226 was already squash-merged.
+  **Why:** Every M5 story is closed. Only bugs filed by the round-1 re-verify remain.
+  **Issue:** #227, #228
+- **Decision:** (Rule 1, partial) The beliefs list and the belief-written page now show `provenance` as an id, using convention 2's `engine_id` (`<code title="<full>">…<last 8></code>`, never lower-cased). The column header "How" is now "Provenance", with the title "The belief transition that produced it". `how_text`, `TESTIMONY_TEXT`, `BeliefRow.testimony`/`how_text` and the `.testimony` CSS are removed.
+  **Why:** The Engine's belief read and write carry only the producing transition's id. This is the interim fix the bug names. A testimony marker keyed on `provenance == "testimony"` can never trigger, so it is dead code. Leaving "How" would still imply a kind.
+  **Issue:** #227
+- **Decision:** Belief fixtures (`beliefs_page1/2`, `beliefs_canon_alice`, `belief_written_*`) now carry transition ids as `provenance`. `BE<nn>` uses `TB<nn>`, `BC<nn>` uses `TC<nn>`, and the written belief uses its own `transition.id`.
+  **Why:** C15 says fixtures follow what the Engine returns.
+  **Issue:** #227
+- **Blocker:** #227's main expectation can't be done in this repo: How should show the acquisition kind (author/testimony/observation…) with testimony marked. The Engine exposes no kind on `BeliefItemBody`/`AuthoredBeliefBody`, and its OpenAPI has no belief-transition read. Adding one changes the Engine's API contract in the other repo (Rule 4). The options are (a) an Engine change adding e.g. `provenance_kind` to both bodies, after which the Console shows it, or (b) accepting the id-only display and amending #190's AC and coverage-map item "testimony → #190". #227 stays open, labelled `blocked` + `needs-owner-action`.
+  **Issue:** #227 (#190 outcome 1, testimony coverage)
+- **Decision:** (Rule 1) The `.fidelity-none` strike-through now targets `.beat-text`, `span.text` and `td.text:not(:has(.beat-text))`, replacing `.fidelity-none .text`. A trace row strikes only its beat text. A plain row (no trace) still strikes its plain Text cell, as #62's plan says.
+  **Why:** The first attempt wrapped the plain text in a new span. That broke `test_lite_history_items_are_byte_identical`, because Lite markup must not change. `:has()` reaches the same result with no markup change, and the Console targets desktop browsers only.
+  **Issue:** #228

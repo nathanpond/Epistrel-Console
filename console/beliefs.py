@@ -10,6 +10,9 @@ only in "More"); enum values are C3's ``humanised`` with the raw value in ``titl
 labels are C4's (``console.wording.character_label``). Counts follow C11 (``console.ledger``'s
 "on this page" / "matching filters" qualifiers).
 
+``provenance`` is the id of the belief transition that produced the row (the Engine's design;
+its belief read carries no acquisition kind), shown as an id (convention 2's ``engine_id``), #227.
+
 Shown as sent (C15): level and scalar aren't reconciled, ``held_to`` isn't checked against the
 as-of turn, identities always read the current record. A proposition that doesn't parse (C2)
 shows "—" in its column and raw in "More".
@@ -32,8 +35,6 @@ from console.positions import (
 )
 from console.wording import humanised, minor_ids
 
-TESTIMONY = "testimony"
-TESTIMONY_TEXT = "Testimony — heard from another character"
 FIRST_ORDER_NOTICE = "Only first-order beliefs held at suspected or above are listed."
 PLAYER_NOTICE = "The player's character has no partition — the Engine keeps no beliefs for it"
 NO_CHARACTERS = "This story has no modeled characters"
@@ -85,8 +86,6 @@ class BeliefRow:
     proposition: Proposition | None
     level_text: str
     scalar_text: str | None
-    how_text: str
-    testimony: bool
     since: Linked
     until: Linked | None
     about: str
@@ -97,16 +96,6 @@ class BeliefRow:
 
 def _linked(story_id: str, position: Any) -> Linked:
     return Linked(knowledge_position_text(position), knowledge_position_url(story_id, position))
-
-
-def how_text(provenance: str | None) -> str:
-    """Provenance, humanised (an unknown value the same way); testimony spelled out; "—" for
-    none."""
-    if provenance is None:
-        return EMPTY
-    if provenance == TESTIMONY:
-        return TESTIMONY_TEXT
-    return humanised(provenance)
 
 
 def _more(belief: BeliefItem, proposition: Proposition | None) -> tuple[MoreItem, ...]:
@@ -136,8 +125,6 @@ def belief_row(
         proposition=proposition,
         level_text=humanised(belief.current_level),
         scalar_text=None if scalar is None else f"{scalar:.3f}",
-        how_text=how_text(belief.provenance),
-        testimony=belief.provenance == TESTIMONY,
         since=_linked(story_id, belief.since),
         until=None if belief.held_to is None else _linked(story_id, belief.held_to),
         about=valid_minutes_text(belief.valid_from, belief.valid_to),
