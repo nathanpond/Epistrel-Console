@@ -1991,3 +1991,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The recorded-fixture cast-membership test appends m5 `entity_modeled.json`'s character to m5 `story.json` (no recorded story lists a modeled minor); Engine origin/main `_character()` confirms `get_story` lists minors with the rest.
   **Why:** C15: realistic shape, checked on Engine origin/main.
   **Issue:** #199
+- **Decision:** When both the omniscient and the settings reads fail, both notes show, although no Counts row is then known minor: the settings note shows when the fraction read failed and (the weights read failed or a Counts row is a minor).
+  **Why:** The AC says both "When both fail, both notes show" and "The settings note shows when any Counts row is a minor", which conflict when weights are unknown; unknown weights mean the story may have minors.
+  **Issue:** #168
+- **Decision:** `get_deployment_settings.json` and `update_admin_settings.json` gain `minor_hot_budget_fraction: 0.2` (the planner assumed #183 had re-recorded them; it hadn't).
+  **Why:** C15: the real Engine returns the field; without it the now-required form field would read blank.
+  **Issue:** #168
+- **Decision:** `test_consolidate.py`'s engine fixture registers the omniscient story and settings answers, and its request-order assertion lists the two new reads.
+  **Why:** That test renders the Memory tab, which now makes both reads after the hot set; the section itself still makes no read.
+  **Issue:** #168
+- **Decision:** `CountRow.fraction_text` (property) formats the fraction as `str(float(...))` for the Budget cell; the template prints `FRACTION_UNAVAILABLE` from the context key `fraction_unavailable`.
+  **Why:** Keeps the template free of formatting logic, per the planner's "the template words them".
+  **Issue:** #168
+- **Decision:** The held/404 omniscient-read test is parametrised over `erasure_pending` and `not_found`; `module_off` isn't covered because `GET /stories/{id}` declares no 409.
+  **Why:** The fake Engine refuses undeclared statuses (C15).
+  **Issue:** #168

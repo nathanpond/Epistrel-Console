@@ -26,6 +26,7 @@ ID_MAX = 64
 FALLBACK_MAX = 500
 LIST_MAX = 50
 CLEAR_PREFIX = "clear_"
+FRACTION_BOUNDS = "Must be above 0 and at most 1"
 NAME_PLACEHOLDER_HELP = "{name} is replaced by the character's name."
 # The settings that accept null (unset): no hook, no base URL, no ceiling.
 NULLABLE = ("media_moderation_webhook_url", "public_base_url", "max_characters_at_start_ceiling")
@@ -75,6 +76,17 @@ def _number(name: str, lo: float, hi: float, default: float, unit: str = "") -> 
         min_value=lo,
         max_value=hi,
         help_text=_help(default),
+        widget=forms.NumberInput(attrs={"step": "any"}),
+    )
+
+
+def _fraction(name: str, default: float, extra: str = "") -> forms.FloatField:
+    """A float in (0, 1] with no HTML ``min``/``max`` (C10) and no unit: the exclusive minimum
+    is a ``clean_<name>`` check (``_number``'s inclusive ``min_value`` can't express it)."""
+    DEFAULTS[name] = default
+    return forms.FloatField(
+        required=True,
+        help_text=_help(default, extra),
         widget=forms.NumberInput(attrs={"step": "any"}),
     )
 
@@ -262,6 +274,7 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Memory and retrieval",
         (
             "memory_importance_half_life_turns",
+            "minor_hot_budget_fraction",
             "neighborhood_max_facts",
             "protected_index_max",
             "retrieval_vector_k",
@@ -391,6 +404,12 @@ class DeploymentSettingsForm(forms.Form):
     memory_importance_half_life_turns = _int(
         "memory_importance_half_life_turns", 1, 1000000, 200, "turns"
     )
+    minor_hot_budget_fraction = _fraction(
+        "minor_hot_budget_fraction",
+        0.2,
+        "Share of the per-character hot-memory budget a minor character's unpinned hot memories "
+        "are held to (above 0, at most 1).",
+    )
     neighborhood_max_facts = _int("neighborhood_max_facts", 1, 1000, 50)
     protected_index_max = _int("protected_index_max", 1, 100000, 5000)
     retrieval_vector_k = _int("retrieval_vector_k", 1, 1000, 50)
@@ -468,6 +487,13 @@ class DeploymentSettingsForm(forms.Form):
                 for name in names
             ]
             yield title, rows
+
+    def clean_minor_hot_budget_fraction(self) -> float:
+        """``SettingsBody``: ``exclusiveMinimum`` 0, ``maximum`` 1 (#168)."""
+        value: float = self.cleaned_data["minor_hot_budget_fraction"]
+        if not 0 < value <= 1:
+            raise forms.ValidationError(FRACTION_BOUNDS)
+        return value
 
     def clean(self) -> dict[str, Any] | None:
         cleaned = super().clean()

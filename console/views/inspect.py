@@ -54,18 +54,22 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_safe
 
+from console.cast import OMNISCIENT
+from console.engine.choices import error_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
-from console.engine.models import EffectiveConfig, Story
+from console.engine.models import EffectiveConfig, OmniscientStoryCharacter, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
 from console.forms.inspect import QUESTION_FIELDS, ConsolidateForm, RetrievalForm
 from console.held import held_context, is_held, render_held
 from console.hot_set import (
+    FRACTION_UNAVAILABLE,
     REASON_LEGEND,
     browse_rows,
     budget_rows,
     episode_rows,
     hot_set_rows,
+    minor_share_row,
     more,
     retirement_rows,
 )
@@ -113,6 +117,7 @@ from console.turn_trace import (
     trace_view,
     withheld,
 )
+from console.wording import minor_ids
 
 OVERVIEW_TEMPLATE = "console/inspect/overview.html"
 MEMORY_TEMPLATE = "console/inspect/memory.html"
@@ -295,7 +300,11 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
     10's line, any other error with #43's panel; ``erasure_pending`` (and a 409 ``module_off``,
     which the route doesn't declare) escape to #87's held wrapper (and the shell's panel). The
     Browse grid renders either way. ``episodic: false`` shows #135's reason inline above the
-    sections, which still render (convention 7)."""
+    sections, which still render (convention 7).
+
+    After a successful hot-set read (#168) it reads the omniscient story (the minors' weights)
+    then the deployment settings (``minor_hot_budget_fraction``); each failure is logged and
+    degrades to a note in ``minor_notes`` (:func:`_minor_budgets`), never failing the tab."""
     browse = browse_rows(ctx.story_id)
     context: dict[str, Any] = {
         "browse": browse,
@@ -315,17 +324,65 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
         return context
     context["consolidate"] = consolidate_section(ctx, body.head_turn)
     cast = ctx.story.cast if ctx.story is not None else None
+    minors, fraction, weights_error, fraction_error = _minor_budgets(ctx)
+    rows = hot_set_rows(body, cast, minors=minors, fraction=fraction)
+    notes = []
+    if weights_error is not None:
+        notes.append(WEIGHTS_UNAVAILABLE.format(code=error_text(weights_error)))
+    # With the weights unknown the story may have minors, so both notes show (#168).
+    may_have_minors = weights_error is not None or any(row.minor for row in rows.counts)
+    if fraction_error is not None and may_have_minors:
+        notes.append(FRACTION_NOTE.format(code=error_text(fraction_error)))
+    budgets = budget_rows(body.budgets)
+    budgets.insert(1, minor_share_row(body.budgets, fraction))
     context.update(
         hot_set=body,
         episodic_off=None if body.episodic else unavailable_for(EPISODIC, ctx.effective),
-        budgets=budget_rows(body.budgets),
-        rows=hot_set_rows(body, cast),
+        budgets=budgets,
+        rows=rows,
+        minor_notes=notes,
+        fraction_unavailable=FRACTION_UNAVAILABLE,
         episodes=episode_rows(body.open_episodes, body.head_turn, cast),
         retirements=retirement_rows(ctx.story_id, body.recent_retirements, cast),
         reason_legend=REASON_LEGEND,
         more=more(body),
     )
     return context
+
+
+WEIGHTS_UNAVAILABLE = (
+    "Minor characters' budgets can't be shown (weights unavailable: {code}) \u2014 a minor's row "
+    "may read under budget while the Engine counts it over"
+)
+FRACTION_NOTE = (
+    "Minor budgets need the deployment's minor_hot_budget_fraction (unavailable: {code})"
+)
+
+
+def _minor_budgets(
+    ctx: InspectContext,
+) -> tuple[frozenset[str] | None, float | None, EngineClientError | None, EngineClientError | None]:
+    """The Memory tab's two extra reads (#168), in order: the omniscient story's minors
+    (``None`` when that read failed; an item that doesn't parse counts as major) and the
+    deployment's ``minor_hot_budget_fraction`` (``None`` when that read failed), with each
+    read's error. Every ``EngineClientError`` (held and ``module_off`` included) degrades."""
+    minors: frozenset[str] | None = None
+    fraction: float | None = None
+    weights_error = fraction_error = None
+    try:
+        story = ctx.client.get_story(ctx.story_id, viewpoint=OMNISCIENT)
+    except EngineClientError as exc:
+        log_engine_error(ctx.request, exc)
+        weights_error = exc
+    else:
+        parsed = (OmniscientStoryCharacter.from_json(item) for item in story.characters)
+        minors = minor_ids(member for member in parsed if member is not None)
+    try:
+        fraction = ctx.client.get_deployment_settings().minor_hot_budget_fraction
+    except EngineClientError as exc:
+        log_engine_error(ctx.request, exc)
+        fraction_error = exc
+    return minors, fraction, weights_error, fraction_error
 
 
 @dataclass(frozen=True)

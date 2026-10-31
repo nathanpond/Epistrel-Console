@@ -29,6 +29,7 @@ from console.models import EngineOperation
 from console.views import inspect as views
 from console.views import inspect_memory
 from tests.fakes.engine import FakeEngine
+from tests.fixtures import engine_fixture
 from tests.inspect.helpers import EFFECTIVE, FIXTURES, STORY, STORY_PATH, structured
 from tests.play.helpers import error_json, story_json
 
@@ -86,6 +87,10 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake.respond("GET", EFFECTIVE, 200, json=structured())
     fake.respond("GET", STORY_PATH, 200, json=story_json())
     fake.respond("GET", HOT_SET, 200, json=hot_set())
+    # The Memory tab's minor-budget reads (#168).
+    omniscient = json.loads((FIXTURES / "story_omniscient.json").read_text())
+    fake.respond("GET", STORY_PATH, 200, json=omniscient, query={"viewpoint": "omniscient"})
+    fake.respond("GET", "/admin/settings", 200, json=engine_fixture("get_deployment_settings"))
     fake.respond("POST", CONSOLIDATE, 202, json=queued())
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
@@ -160,11 +165,14 @@ def test_the_section_is_the_last_on_the_tab(operator_client: Client, engine: Fak
     assert '<button type="submit">Consolidate…</button>' in shown
     assert SEMANTIC in shown
     assert REFLECTION in shown
-    # The section makes no read of its own: the effective config, the story and the hot set.
+    # The section makes no read of its own: the effective config, the story, the hot set and
+    # the tab's two minor-budget reads (#168: the omniscient story, the deployment settings).
     assert [r.url.path for r in engine.requests] == [
         f"/stories/{STORY}/effective-config",
         f"/stories/{STORY}",
         f"/admin/stories/{STORY}/hot-set",
+        f"/stories/{STORY}",
+        "/admin/settings",
     ]
 
 

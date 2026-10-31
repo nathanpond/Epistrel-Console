@@ -12,12 +12,21 @@ carry no ``actor``.
 stored count unlike the recount "differs (+N)" / "differs (\u2212N)" (stored minus recount). With
 ``stored_counters`` ``None`` no row has a stored count (the template says "not stored yet").
 
+**Minor characters** (#168, FR-EPI-10): the hot-set read reports only
+``budgets.memories_per_character``, so a minor's budget is computed here as the Engine computes it
+(``Budgets.character_budget`` in ``src/epistrel/core/memory/retirement.py`` at Engine origin/main
+7d181b3): :func:`character_budget`. ``minors`` comes from the omniscient story read and the fraction
+from the deployment settings read; the reads aren't atomic with the hot-set read, so a weight or
+fraction changed in between isn't detected. Pin ceilings and story vectors aren't scaled.
+
 **Episodes** are due when ``deadline_turn`` ≤ ``head_turn``; **retirements** keep the Engine's
 order (newest first). Both link per conventions 3 and 11 (:mod:`console.inspect`).
 """
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+
+from django.urls import reverse
 
 from console.cast import Character, character_labels
 from console.engine.models import EpisodeBody, HotSetBody, HotSetBudgets, RetirementBody
@@ -28,6 +37,11 @@ AT_CEILING = "at ceiling"
 OVER_CEILING = "over ceiling"
 STORY_VECTORS = "Story vectors"
 MINUS = "\u2212"  # the minus sign
+TIMES = "\u00d7"
+ARROW = "\u2192"
+# A minor's Budget and Headroom when the deployment's fraction couldn't be read.
+FRACTION_UNAVAILABLE = "scaled (fraction unavailable)"
+MINOR_FRACTION = "minor_hot_budget_fraction"
 
 CHARACTER_SCOPE = "character"
 STORY_SCOPE = "story"
@@ -59,23 +73,33 @@ class BudgetRow:
     title: str | None
     source: str
     setting: str | None
+    url: str | None = None
 
 
 @dataclass(frozen=True)
 class CountRow:
     """A Counts row: a character's unpinned hot memories (``character_id`` empty for the Story
     vectors row), its budget and headroom text, and the stored count (``None``: not stored yet)
-    with ``stored_delta`` = stored - recount."""
+    with ``stored_delta`` = stored - recount. A ``minor`` row's budget is scaled
+    (``scaled_from`` = (memories per character, fraction)); ``budget`` ``None`` is a minor's
+    whose fraction is unknown (headroom :data:`FRACTION_UNAVAILABLE`, no marker)."""
 
     character_id: str
     label: str | None
     is_player: bool
     hot: int
-    budget: int
+    budget: int | None
     headroom: str
     stored: int | None
     stored_delta: int | None
     marker: str | None
+    minor: bool = False
+    scaled_from: tuple[int, float] | None = None
+
+    @property
+    def fraction_text(self) -> str:
+        """The fraction as the Budget cell shows it (``str(float(...))``: 0.2, 1.0)."""
+        return str(float(self.scaled_from[1])) if self.scaled_from is not None else ""
 
     @property
     def differs(self) -> str | None:
@@ -232,6 +256,35 @@ def budget_rows(budgets: HotSetBudgets) -> list[BudgetRow]:
     ]
 
 
+def character_budget(memories_per_character: int, fraction: float, minor: bool) -> int:
+    """A character's unpinned hot budget, as Engine ``Budgets.character_budget``
+    (``src/epistrel/core/memory/retirement.py`` at origin/main 7d181b3) computes it: for a minor,
+    ``max(1, int(memories_per_character * fraction))`` (float product truncated toward zero, at
+    least 1; never ``round``), else ``memories_per_character``."""
+    if minor:
+        return max(1, int(memories_per_character * fraction))
+    return memories_per_character
+
+
+def minor_share_row(budgets: HotSetBudgets, fraction: float | None) -> BudgetRow:
+    """The Budgets table's "Minor characters' share" row: "<fraction> → <scaled> per minor",
+    or "—" when the deployment settings read failed; it links the deployment settings page."""
+    if fraction is None:
+        value = "\u2014"
+    else:
+        scaled = character_budget(budgets.memories_per_character, fraction, True)
+        value = f"{float(fraction)} {ARROW} {_count(scaled)} per minor"
+    return BudgetRow(
+        MINOR_FRACTION,
+        "Minor characters' share",
+        value,
+        None,
+        "deployment setting",
+        MINOR_FRACTION,
+        reverse("engine:settings"),
+    )
+
+
 def character_ids(cast: Sequence[Character] | None, *maps: Iterable[str]) -> list[str]:
     """The cast's ids in cast order, then every other id in ``maps``, sorted."""
     ordered = [c.id for c in cast or ()]
@@ -257,16 +310,42 @@ def _count_row(
     label: str | None,
     is_player: bool,
     hot: int,
-    budget: int,
+    budget: int | None,
     stored: int | None,
+    *,
+    minor: bool = False,
+    scaled_from: tuple[int, float] | None = None,
 ) -> CountRow:
-    headroom, marker = _headroom(hot, budget)
+    if budget is None:
+        headroom, marker = FRACTION_UNAVAILABLE, None
+    else:
+        headroom, marker = _headroom(hot, budget)
     delta = None if stored is None else stored - hot
-    return CountRow(character_id, label, is_player, hot, budget, headroom, stored, delta, marker)
+    return CountRow(
+        character_id,
+        label,
+        is_player,
+        hot,
+        budget,
+        headroom,
+        stored,
+        delta,
+        marker,
+        minor=minor,
+        scaled_from=scaled_from,
+    )
 
 
-def hot_set_rows(body: HotSetBody, cast: Sequence[Character] | None) -> HotSetRows:
-    """The Counts and Pins rows (module docstring: union, order, zero-fill, markers)."""
+def hot_set_rows(
+    body: HotSetBody,
+    cast: Sequence[Character] | None,
+    *,
+    minors: frozenset[str] | None = None,
+    fraction: float | None = None,
+) -> HotSetRows:
+    """The Counts and Pins rows (module docstring: union, order, zero-fill, markers). A Counts
+    row in ``minors`` (``None``: weights unknown, every row unscaled) is judged against
+    :func:`character_budget` with ``fraction`` (``None``: unknown, budget ``None``)."""
     labels = character_labels(cast) if cast is not None else {}
     players = {c.id for c in cast or () if c.is_player}
     budgets = body.budgets
@@ -274,17 +353,30 @@ def hot_set_rows(body: HotSetBody, cast: Sequence[Character] | None) -> HotSetRo
     stored = body.stored_counters
     stored_characters: Mapping[str, int] = stored.characters if stored is not None else {}
 
-    counts = [
-        _count_row(
-            cid,
-            labels.get(cid),
-            cid in players,
-            recount.characters.get(cid, 0),
-            budgets.memories_per_character,
-            None if stored is None else stored_characters.get(cid, 0),
+    per_character = budgets.memories_per_character
+    counts = []
+    for cid in character_ids(cast, recount.characters, stored_characters):
+        minor = minors is not None and cid in minors
+        budget: int | None = per_character
+        scaled_from = None
+        if minor:
+            if fraction is None:
+                budget = None
+            else:
+                budget = character_budget(per_character, fraction, True)
+                scaled_from = (per_character, fraction)
+        counts.append(
+            _count_row(
+                cid,
+                labels.get(cid),
+                cid in players,
+                recount.characters.get(cid, 0),
+                budget,
+                None if stored is None else stored_characters.get(cid, 0),
+                minor=minor,
+                scaled_from=scaled_from,
+            )
         )
-        for cid in character_ids(cast, recount.characters, stored_characters)
-    ]
     story_vectors = _count_row(
         "",
         STORY_VECTORS,

@@ -30,8 +30,6 @@ from tests.fixtures import engine_fixture
 
 URL = "/engine/settings/"
 SCHEMAS = RECORDED["components"]["schemas"]
-# Engine M5 deployment settings no Console form edits yet (#168 adds the field and removes this).
-M5_NOT_YET_EDITABLE = {"minor_hot_budget_fraction"}
 
 
 def _load(client: Client, engine: FakeEngine, **changes: Any) -> dict[str, str]:
@@ -66,10 +64,8 @@ def _field_html(html: str, name: str) -> str:
 
 
 def test_the_form_mirrors_the_settings_patch_schema() -> None:
-    """Guard: one field per ``SettingsPatch`` property except ``profile_defaults`` (and the M5
-    settings no form edits yet)."""
+    """Guard: one field per ``SettingsPatch`` property except ``profile_defaults``."""
     patch = set(SCHEMAS["SettingsPatch"]["properties"]) - {"profile_defaults"}
-    patch -= M5_NOT_YET_EDITABLE
     fields = set(DeploymentSettingsForm.base_fields)
     settings = {name for name in fields if not name.startswith(CLEAR_PREFIX)}
     assert settings == patch
@@ -93,7 +89,7 @@ def test_help_texts_show_the_schema_defaults() -> None:
     for name, default in stated.items():
         if name in DEFAULTS:
             assert DEFAULTS[name] == default, name
-    assert set(stated) - {"profile_defaults"} - M5_NOT_YET_EDITABLE <= set(DEFAULTS)
+    assert set(stated) - {"profile_defaults"} <= set(DEFAULTS)
 
 
 def test_the_page_shows_every_setting_in_sections(
@@ -309,6 +305,56 @@ def test_out_of_range_values_make_no_call(operator_client: Client, engine: FakeE
 
     assert "less than or equal to 120" in _field_html(html, "minor_age_threshold")
     assert engine.requests == []
+
+
+@pytest.mark.parametrize("value", ["0", "-0.1", "1.5"])
+def test_minor_fraction_zero_is_refused_without_engine_call(
+    operator_client: Client, engine: FakeEngine, value: str
+) -> None:
+    data = _load(operator_client, engine)
+    data["minor_hot_budget_fraction"] = value
+
+    html = operator_client.post(URL, data).content.decode()
+
+    field = _field_html(html, "minor_hot_budget_fraction")
+    assert "Must be above 0 and at most 1" in field
+    assert html.count("Must be above 0 and at most 1") == 1
+    assert _puts(engine) == []
+    assert engine.requests == []
+
+
+def test_minor_fraction_field_is_a_bare_float_input(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    answer_settings(engine)
+    html = operator_client.get(URL).content.decode()
+
+    field = _field_html(html, "minor_hot_budget_fraction")
+    assert 'step="any"' in field
+    assert " min=" not in field
+    assert " max=" not in field
+    assert (
+        "Share of the per-character hot-memory budget a minor character&#x27;s unpinned hot "
+        "memories are held to (above 0, at most 1). Default: 0.2."
+    ) in field
+    assert '<span class="unit">' not in field
+    assert 'name="clear_minor_hot_budget_fraction"' not in html
+    names = dict(SECTIONS)["Memory and retrieval"]
+    assert names[names.index("memory_importance_half_life_turns") + 1] == (
+        "minor_hot_budget_fraction"
+    )
+
+
+def test_minor_fraction_change_is_sent_alone(operator_client: Client, engine: FakeEngine) -> None:
+    data = _load(operator_client, engine)
+    _saved(engine, minor_hot_budget_fraction=0.5)
+    data["minor_hot_budget_fraction"] = "0.5"
+
+    response = operator_client.post(URL, data)
+
+    assert response.status_code == 302
+    [put] = _puts(engine)
+    assert body(put) == {"minor_hot_budget_fraction": 0.5}
 
 
 def test_a_concurrent_change_is_mentioned(operator_client: Client, engine: FakeEngine) -> None:
