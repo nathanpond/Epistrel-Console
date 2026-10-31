@@ -621,6 +621,23 @@ def test_errored_row_has_no_composition(operator_client: Client) -> None:
     assert found.composition is None
 
 
+def test_rejected_input_row_has_no_composition(operator_client: Client) -> None:
+    """**Complement** (#219): a logged 422 row with input violations and no error code shows no
+    Composition, even when its response carries a turn, roles and adjudications."""
+    rejected = engine_fixture("respond_guardrail_violation")["error"]
+    multi_row(
+        response={**composed_json(), "error": rejected},
+        http_status=422,
+        error_code="",
+    )
+    html = inspect(operator_client, TURN_OP)
+    assert "Input rejected by a guardrail" in html
+    assert "Composition" not in html
+    found = row_inspector(EngineOperation.objects.get())
+    assert found.input_violations
+    assert found.composition is None
+
+
 def test_a_turn_with_only_roles_shows_roles_alone(operator_client: Client) -> None:
     roles = {JENNI: {"role": "primary", "source": "request"}}
     multi_row(response=multi_json(roles=roles))
