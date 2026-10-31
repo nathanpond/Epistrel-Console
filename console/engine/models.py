@@ -3888,12 +3888,14 @@ class RoleEligibility(Model):
 @dataclass(frozen=True)
 class RoleRelationship(Model):
     """``RoleRelationship`` (#73): the role's relationship ``name`` to another role, who knows
-    of it (``audience``) and the trust it carries (0 to 1)."""
+    of it (``audience``) and the trust it carries (0 to 1). ``trust`` is raw: a stored
+    non-number (a boolean included) must not fail the whole scenario read, so the detail page
+    can show it as JSON (#206 AC7, #225)."""
 
     to_role: str
     name: str
     audience: list[str] | None = None
-    trust: float | None = None
+    trust: Any = None
 
 
 @dataclass(frozen=True)

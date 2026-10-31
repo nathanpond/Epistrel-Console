@@ -1525,6 +1525,20 @@ def test_the_detail_page_shows_groups_relationships_and_seed_confidence(
     )
 
 
+@pytest.mark.parametrize(("stored", "shown"), [(True, "true"), ("high", "&quot;high&quot;")])
+def test_the_detail_page_shows_a_non_number_trust_as_raw_json(
+    operator_client: Client, engine: FakeEngine, stored: Any, shown: str
+) -> None:
+    """#225: a stored non-number trust (a boolean included) is the Trust cell's raw JSON, not
+    a page-level bad_response."""
+    body = m5_draft()
+    body["cast"]["roles"][0]["relationships"][0]["trust"] = stored
+    html = m5_detail(operator_client, engine, body)
+    assert "bad_response" not in html
+    alice = html[html.index('id="role-alice-detail"') : html.index('id="role-bob"')]
+    assert f"<td><code>{shown}</code></td>" in alice
+
+
 def test_the_detail_page_groups_defaults(operator_client: Client, engine: FakeEngine) -> None:
     body = m5_draft()
     body["cast"]["groups"] = {"empty": []}
