@@ -1934,3 +1934,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The live test `test_player_authority_and_interaction_mode_live` was written but not run (no `ENGINE_LIVE_URL` in this environment).
   **Why:** No live Engine available to the agent.
   **Issue:** #197
+- **Decision:** C8 lives in `console/participation.py` with extra shared helpers beyond the AC's list: `ROLES`, `Role`/`Weight` literals, `is_role`, `is_weight`, `role_label`, `weight_label`, `WEIGHT_TITLES`, `FIXED_LABEL`, `FIXED_TITLE`, `CHOOSE_ROLE`, and `participation_error(role, fixed, *, is_player=False)` (the two local errors in one check).
+  **Why:** #198/#199/#200/#203 reuse the wording and checks; one function keeps the error order (player first) the same everywhere.
+  **Issue:** #61
+- **Decision:** The signed row snapshot is `console.cast_panel.Shown` (salt `console.cast_panel.participation`), with `Shown.unsigned(value, story_id, cid)` and `same_role(role, fixed)` (false for a shown "—" or unknown role).
+  **Why:** AC's no-op and naming rules in one place; the panel module owns the salt.
+  **Issue:** #61
+- **Decision:** The omniscient read's participation, weight and `modeled_at` are parsed per item (`omniscient_rows`), not via `OmniscientStoryCharacter.from_json`.
+  **Why:** As #72's `promoted_links`: one malformed or partial row (older fixtures lack `true_age`) never loses the others' weights.
+  **Issue:** #61
+- **Decision:** 409 `idempotency_conflict` on a role/weight write flashes "Couldn't change <name>: 409 idempotency_conflict".
+  **Why:** `write_refusal` (#187) has no wording for it (returns `None` → the caller's fallback), and the AC's fallback is that line.
+  **Issue:** #61
+- **Decision:** A weight POST whose `weight` isn't `major`/`minor` flashes "Choose a weight." with no call.
+  **Why:** AC is silent on a forged weight; mirrors the role form's "Choose a role.".
+  **Issue:** #61
+- **Decision:** The add form's role select is labelled "Participation role" (id `f-participation_role`).
+  **Why:** AC names the field, not its label; the id follows #72's `f-<name>` anchor rule.
+  **Issue:** #61
+- **Decision:** #72/#48 assertions on `<li>Mara (player)` / `<li>Tobin <a …promote` and "Promotion links unavailable" (tests/play/test_play_page.py, tests/test_story_characters.py, tests/stories/test_archive_delete.py) and #48's single-key test (tests/play/test_turn_form.py, now strips the cast list) were updated to the new markup.
+  **Why:** The AC changes the row markup (`<li id="cast-<cid>">`, role/weight text), the note wording and adds per-row keys; the tests' intent is unchanged.
+  **Issue:** #61

@@ -29,8 +29,9 @@ def test_header_and_two_columns(operator_client: Client, engine: FakeEngine) -> 
     answer_page(engine)
     html = operator_client.get(f"/stories/{STORY}/").content.decode()
     assert "<h1>Harbour</h1>" in html
-    assert '<li>Mara (player) <a class="button danger erase"' in html  # #86: Erase…
-    assert '<li>Tobin <a class="button promote"' in html  # #72: Promote on non-players
+    assert f'<li id="cast-{MARA}">Mara (player) <a class="button danger erase"' in html  # #86
+    assert f'<li id="cast-{TOBIN}">Tobin · ' in html  # #61: role and weight, then the controls
+    assert '<a class="button promote"' in html  # #72: Promote on non-players
     assert "<dt>Timeline revision</dt><dd>1</dd>" in html
     assert "Teen" in html
     left = html.split('<section class="play-left">')[1].split('<section class="play-right">')[0]

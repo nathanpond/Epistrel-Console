@@ -143,6 +143,16 @@ story_patterns = (
             story_characters.character_promote,
             name="character-promote",
         ),
+        path(
+            "<str:story_id>/characters/<str:character_id>/participation/",
+            story_characters.character_participation,
+            name="character-participation",
+        ),
+        path(
+            "<str:story_id>/characters/<str:character_id>/weight/",
+            story_characters.character_weight,
+            name="character-weight",
+        ),
         # #80: change the story's rating, confirm a tighten, follow its check.
         path("<str:story_id>/rating/", story_rating.rating_page, name="rating"),
         path("<str:story_id>/rating/confirm/", story_rating.rating_confirm, name="rating-confirm"),

@@ -97,7 +97,14 @@ from console.ingest import (
     place_ingest_error,
     result_rows,
 )
-from console.inspect import STRUCTURED, history_turn_url, is_structured_pipeline
+from console.inspect import (
+    MULTI_CHARACTER,
+    SETTINGS,
+    STRUCTURED,
+    history_turn_url,
+    is_structured_pipeline,
+    setting,
+)
 from console.models import EngineOperation
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.perception import perception_url, turn_links_perception
@@ -977,7 +984,14 @@ def _page(
         INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
         _timeline_header(story, play),
         _fork_banner(request, story_id),
-        cast_panel(engine_client_for(request), story),
+        cast_panel(
+            engine_client_for(request),
+            story,
+            # #61: whether the roles take effect (None when the configuration is unread)
+            renders=(
+                setting(config.effective, SETTINGS[MULTI_CHARACTER]) if config is not None else None
+            ),
+        ),
         _ownership(request, story),
         pause_banner(story),
         badge_or_unavailable(story_id, config),
