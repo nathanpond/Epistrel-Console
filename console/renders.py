@@ -269,3 +269,19 @@ def render_order_line(item: HistoryItem, labels: Mapping[str, str]) -> str:
     if len(ids) < 2:
         return ""
     return RENDER_ORDER.format(RENDER_ARROW.join(character_label(c, labels) for c in ids))
+
+
+def beat_numbers(groups: Sequence[RenderGroup]) -> frozenset[int]:
+    """The ``N`` of every ``beat-<N>`` anchor the groups render (#203's Reconcile links)."""
+    found: set[int] = set()
+
+    def visit(beats: Sequence[RenderBeat]) -> None:
+        for b in beats:
+            if b.anchor.startswith("beat-"):
+                found.add(int(b.anchor.removeprefix("beat-")))
+            visit(b.reactions)
+
+    for group in groups:
+        visit(group.leading)
+        visit(group.beats)
+    return frozenset(found)

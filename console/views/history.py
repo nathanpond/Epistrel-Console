@@ -56,9 +56,11 @@ from console.history import (
     chain_tip,
     explain_query,
     explain_url,
+    inspector_url,
     is_structured,
     operation_links,
     policy_names,
+    report_item,
     split_audit,
     summary_rows,
     turn_groups,
@@ -256,6 +258,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
     if structured is not None:
         _with_explain(story.id, groups, structured)
     _with_perception(story.id, groups, structured, variant or None)
+    _with_report(story.id, groups)
     traces = _with_traces(client, request, story, groups, load=form.show_traces)
     older = history.next_before_turn
     return Page(
@@ -453,6 +456,15 @@ def _with_perception(
         rows = [row.item for row in group.rows]
         if turn_links_perception(rows, group.turn, story_structured):
             group.perception_url = perception_url(story_id, group.turn, variant)
+
+
+def _with_report(story_id: str, groups: list[TurnGroup]) -> None:
+    """Give each turn ≥ 1 whose chosen item is generated its "Report" link (#203): the play
+    page's inspector for that item, where the Composition shows when the Console logged the
+    turn (whichever chain the page shows)."""
+    for group in groups:
+        found = report_item([row.item for row in group.rows]) if group.turn >= 1 else None
+        group.report_url = inspector_url(story_id, found) if found is not None else None
 
 
 def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidget]) -> None:

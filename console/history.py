@@ -328,6 +328,7 @@ class TurnGroup:
     explain_url: str | None = None  # "Explain retrieval" (#142, set by the view)
     perception_url: str | None = None  # "Perception" (#195, set by the view)
     render_order: str = ""  # "Renders: A → B" for a multi-render turn (#202)
+    report_url: str | None = None  # "Report" (#203, set by the view): the play inspector
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:
@@ -662,6 +663,16 @@ def turn_label(turn: int | None, variant: int | None) -> str:
     """The transcript's turn label: "T3", "T3.2" for a variant other than 1."""
     label = f"T{turn or 0}"
     return f"{label}.{variant}" if variant and variant != 1 else label
+
+
+def report_item(items: Sequence[HistoryItem]) -> HistoryItem | None:
+    """#203: a turn group's chosen item (its last reply item, else its last item) when it was
+    generated with an operation id, which its "Report" link opens; else ``None``."""
+    replies = [item for item in items if is_reply(item)]
+    chosen = (replies or list(items))[-1:]
+    if not chosen or chosen[0].origin != "generated" or not chosen[0].operation_id:
+        return None
+    return chosen[0]
 
 
 def inspector_url(story_id: str, item: HistoryItem) -> str:

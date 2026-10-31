@@ -417,3 +417,25 @@ def test_reaction_rows_are_indented(operator_client: Client, engine: FakeEngine)
         row = row_of(html, text)
         assert "reaction" not in row
         assert "↳" not in row
+
+
+def test_turn_header_links_report(operator_client: Client, engine: FakeEngine) -> None:
+    """#203: a turn whose chosen item (its reply, else its last item) was generated links its
+    play-page inspector, last in the header. **Complement:** an ingested turn has no link."""
+    items = [
+        item(1, 1, "say", "Anyone here?"),
+        item(1, 2, "message", "Marcus answers.", render_character_ids=[MARCUS, JENNI]),
+    ]
+    demo_cast(engine, items)
+    found = header(page(operator_client))
+    url = f"/stories/{STORY}/?operation={OP}&amp;origin=generated"
+    assert found.endswith(f' <a class="report-link" href="{url}">Report</a>')
+    engine.reset()
+    ingested = [
+        item(1, 1, "say", "Anyone here?", origin="ingested"),
+        item(1, 2, "message", "Tobin answers.", origin="ingested"),
+    ]
+    demo_cast(engine, ingested)
+    html = page(operator_client)
+    assert "report-link" not in header(html)
+    assert "Report</a>" not in html

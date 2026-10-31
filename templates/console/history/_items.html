@@ -23,7 +23,7 @@
   <thead><tr><th>Beat</th><th>Kind</th><th>Channel</th><th>Actor</th><th>Render</th><th>Text</th><th>Operation</th></tr></thead>
   {% for group in page.groups %}
   <tbody class="turn" id="turn-{{ group.turn }}-{{ group.variant|default_if_none:'0' }}">
-    <tr class="turn-header"><th colspan="7">Turn {{ group.turn }} · variant {{ group.variant|default_if_none:"—" }}{% if group.render_order %} · <span class="render-order">{{ group.render_order }}</span>{% endif %}{% if group.no_reply %} <span class="no-reply">no reply</span>{% endif %}{% if group.explain_url %} <a class="explain-link" href="{{ group.explain_url }}">Explain retrieval</a>{% endif %}{% if group.perception_url %} <a class="perception-link" href="{{ group.perception_url }}">Perception</a>{% endif %}</th></tr>
+    <tr class="turn-header"><th colspan="7">Turn {{ group.turn }} · variant {{ group.variant|default_if_none:"—" }}{% if group.render_order %} · <span class="render-order">{{ group.render_order }}</span>{% endif %}{% if group.no_reply %} <span class="no-reply">no reply</span>{% endif %}{% if group.explain_url %} <a class="explain-link" href="{{ group.explain_url }}">Explain retrieval</a>{% endif %}{% if group.perception_url %} <a class="perception-link" href="{{ group.perception_url }}">Perception</a>{% endif %}{% if group.report_url %} <a class="report-link" href="{{ group.report_url }}">Report</a>{% endif %}</th></tr>
     {% for row in group.rows %}
     <tr class="item channel-{{ row.item.channel }}{% if row.reaction %} reaction{% endif %}{% if row.fidelity.row_class %} {{ row.fidelity.row_class }}{% endif %}">
       <td>{{ row.item.beat|default_if_none:"—" }}</td>

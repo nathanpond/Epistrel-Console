@@ -2069,3 +2069,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Two #62 player-view assertions were updated to expect the new `reaction` row class on the reaction Jenni narrated.
   **Why:** The AC adds that class. No test was weakened: the expectation is now derived from `narrated_by`.
   **Issue:** #202
+- **Decision:** The live answer's composition reads `dataclasses.asdict(result)` with `result.unparsed` laid back over it (raw), so a bad entry the model's C2 parse dropped still lands under More.
+  **Why:** Without it the live path would silently lose dropped entries that the polled and logged paths (raw bodies) show; one `composition()` path, same output on all three.
+  **Issue:** #203
+- **Decision:** More keeps `roles`' dropped entries as a map (id → raw value), the five lists' as lists.
+  **Why:** `roles` is a map; keeping the key is what names the character the bad entry was for.
+  **Issue:** #203
+- **Decision:** Every enum value in the panel (role, source, reason, needed, rule) renders in a `<span>` with its raw value as `title`, known or not; in-cast names are plain text.
+  **Why:** The AC demands the title for sources and unknown values; one rule for all avoids a known/unknown split in the template.
+  **Issue:** #203
+- **Decision:** History's chosen item is the group's last reply item (`is_reply`), else its last item — the same pick as the play page's `_turn_inspector`.
+  **Why:** The AC says "the reply item"; a turn can carry more than one, and the transcript already takes the last.
+  **Issue:** #203
+- **Decision:** The #147 Lite history golden was re-rendered to include the two generated turns' new "Report" header links (the ingested turn gets none); nothing else in it changed (diffed).
+  **Why:** The AC gives every generated turn the link, Lite included. The golden guards #147's trace markup, which is unchanged.
+  **Issue:** #203
+- **Decision:** Added `console.renders.beat_numbers(groups)` (the `beat-N` anchors a Renders section rendered) and a `console/play/_worded.html` partial.
+  **Why:** Reconcile links only to anchors that exist; the partial keeps the span-or-plain rule in one place.
+  **Issue:** #203

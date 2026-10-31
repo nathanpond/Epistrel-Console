@@ -11,8 +11,10 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
 
+from console.engine.models import RespondResponse
 from console.inspect import short_id
 from console.models import EngineOperation
+from console.views.play import result_inspector, row_inspector
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.play.helpers import (
@@ -469,3 +471,158 @@ def test_transcript_reaction_items_are_indented(
     assert re.search(
         rf'hx-get="{inspector_url}\?operation=[^"]+" hx-include="\[name=snapshot\]"', html
     )
+
+
+# --- how a multi-character turn was composed (#203) ---------------------------------------------
+
+KNIFE = "01JB2Z8Y5Q3W6K9M1N4P7R0KN1"
+ENTITY = f"/stories/{STORY}/inspect/entities/{KNIFE}/"
+
+
+def composed_json(**changes: Any) -> dict[str, Any]:
+    """The #203 demo on #201's turn: Tobin and Jenni named simultaneous, both reaching for the
+    knife; a structured turn, so the knife links its entity page."""
+    body = multi_json(
+        interaction_mode="simultaneous",
+        capabilities=STRUCTURED_CAPS,
+        roles={
+            TOBIN: {"role": "primary", "source": "request"},
+            JENNI: {"role": "primary", "source": "request"},
+            MARA: {"role": "silent", "source": "default"},
+        },
+        adjudications=[{"object": KNIFE, "winner": TOBIN, "loser": JENNI, "rule": "request_order"}],
+        reconcile=[
+            {
+                "proposition": "holds:knife",
+                "winner_beat": 2,
+                "loser_beat": 4,
+                "rule": "request_order",
+            }
+        ],
+        escalation_deferred=[{"character_id": JENNI, "reason": "budget", "needed": "speech"}],
+    )
+    body.update(changes)
+    return body
+
+
+def composition_of(html: str) -> str:
+    match = re.search(r'<section class="composition">.*?</section>', html, re.S)
+    assert match, "no Composition section"
+    return match.group(0)
+
+
+def assert_composition(html: str) -> None:
+    found = composition_of(html)
+    assert re.findall(r"<h5>(.*?)</h5>", found) == [
+        "Roles",
+        "Reactions that needed a render",
+        "Adjudications (simultaneous)",
+        "Reconcile",
+    ]
+    rows = re.findall(r"<tr><td>([^<]*)</td><td><span[^>]*>(\w+)</span></td>", found)
+    assert rows == [("Mara (player)", "Silent"), ("Tobin", "Primary"), ("Jenni", "Primary")]
+    assert '<td><span title="request">this request</span></td>' in found
+    assert re.search(rf'<a href="{ENTITY}\?as_of=1&amp;viewpoint=omniscient"><code', found)
+    assert "<td>Tobin</td><td>Jenni</td>" in found
+    assert '<a href="#beat-2">beat 2</a></td><td><a href="#beat-4">beat 4</a>' in found
+    assert 'Jenni\'s reaction needed <span title="speech">speech</span>' in found
+    # After the Renders section, before the output guardrail.
+    assert html.index("</section>", html.index('<section class="renders">')) < html.index(
+        '<section class="composition">'
+    )
+    assert html.index('<section class="composition">') < html.index("<h4>Output guardrail</h4>")
+
+
+def test_live_simultaneous_turn_shows_composition(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("POST", RESPOND, 200, json=composed_json())
+    answer_page(engine, story=play_story())
+    response = operator_client.post(
+        TURN_URL, turn_data(snapshot=snapshot_for(), actor=MARA), headers=HTMX
+    )
+    assert_composition(response.content.decode())
+
+
+def test_live_answer_keeps_a_malformed_entry_under_more() -> None:
+    """The live answer's model drops a bad entry (C2); the panel puts it back under More."""
+    bad = {"object": KNIFE, "winner": TOBIN, "rule": "state"}
+    body = composed_json()
+    body["adjudications"].append(bad)
+    found = RespondResponse.from_json(body)
+    assert found is not None
+    inspector = result_inspector(STORY, found, "", TURN_OP)
+    assert inspector.composition is not None
+    assert inspector.composition.more == {"adjudications": [bad]}
+    assert len(inspector.composition.adjudications) == 1
+
+
+def test_polled_turn_shows_composition(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond(
+        "POST",
+        RESPOND,
+        202,
+        json={"operation_id": QUEUED_OP, "position": 1},
+        headers={"Location": f"/operations/{QUEUED_OP}"},
+    )
+    answer_page(engine, story=play_story())
+    operator_client.post(TURN_URL, turn_data(snapshot=snapshot_for(), actor=MARA), headers=HTMX)
+    committed = operation_json(
+        "committed",
+        result={"status": 200, "body": composed_json()},
+        viewpoint=f"character:{TOBIN}",
+        timeline_revision=2,
+    )
+    engine.respond("GET", OPERATION, 200, json=committed)
+    assert_composition(poll(operator_client))
+
+
+def test_logged_turn_shows_composition_from_row_response(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    multi_row(response=composed_json())
+    serve_page(engine)
+    html = operator_client.get(f"/stories/{STORY}/", {"operation": TURN_OP}).content.decode()
+    assert_composition(html.split('<div id="inspector">')[1])
+    # The HTMX inspector, labelled from the transcript link's snapshot, with no Engine read.
+    engine.reset()
+    assert_composition(inspect(operator_client, TURN_OP, snapshot=snapshot_for()))
+    assert engine.requests == []
+
+
+def test_not_played_here_turn_has_no_composition_and_no_operations_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """**Complement:** a turn not in the log makes no ``/operations`` read and shows no
+    Composition."""
+    html = inspect(operator_client, "01JB2Z8Y5Q3W6K9M1N4P7R0ZZZ", snapshot=snapshot_for())
+    assert "Report not available — this turn was not played from this Console" in html
+    assert "Composition" not in html
+    assert not any("/operations/" in r.url.path for r in engine.requests)
+
+
+def test_lite_turn_has_no_composition(operator_client: Client, engine: FakeEngine) -> None:
+    """**Complement:** a Lite turn's inspector, live or logged, never contains "Composition"."""
+    engine.respond("POST", RESPOND, 200, json=respond_json())
+    answer_page(engine)
+    live = operator_client.post(TURN_URL, turn_data(), headers=HTMX).content.decode()
+    log_row()
+    for html in (live, inspect(operator_client, TURN_OP)):
+        assert "Composition" not in html
+        assert "composition" not in html
+
+
+def test_errored_row_has_no_composition(operator_client: Client) -> None:
+    """**Complement:** a logged row with an error code shows no Composition, whatever its
+    response holds; a rejected input neither."""
+    multi_row(response=composed_json(), http_status=409, error_code="revision_conflict")
+    assert "Composition" not in inspect(operator_client, TURN_OP)
+    found = row_inspector(EngineOperation.objects.get())
+    assert found.composition is None
+
+
+def test_a_turn_with_only_roles_shows_roles_alone(operator_client: Client) -> None:
+    roles = {JENNI: {"role": "primary", "source": "request"}}
+    multi_row(response=multi_json(roles=roles))
+    found = composition_of(inspect(operator_client, TURN_OP))
+    assert re.findall(r"<h5>(.*?)</h5>", found) == ["Roles"]

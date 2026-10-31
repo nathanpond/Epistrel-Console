@@ -1,0 +1,20 @@
+{# How a multi-character turn was composed (#203). Context: c (console.composition.Composition): each subsection only when non-empty, then what didn't parse under More. #}{% load console_format %}
+<section class="composition">
+<h4>Composition</h4>
+{% if c.roles %}<h5>Roles</h5>
+<table class="composition-roles"><thead><tr><th>Character</th><th>Role</th><th>Source</th></tr></thead>
+<tbody>{% for r in c.roles %}<tr><td>{% include "console/play/_worded.html" with w=r.name %}</td><td>{% include "console/play/_worded.html" with w=r.role %}</td><td>{% include "console/play/_worded.html" with w=r.source %}</td></tr>{% endfor %}</tbody></table>
+{% endif %}{% if c.deferred %}<h5>Deferred to a later turn</h5>
+<ul class="composition-deferred">{% for d in c.deferred %}<li>{% include "console/play/_worded.html" with w=d.name %} — {% include "console/play/_worded.html" with w=d.reason %}{% if d.fixed %}; fixed primary{% endif %}</li>{% endfor %}</ul>
+{% endif %}{% if c.reduced %}<h5>Narrated instead of rendered</h5>
+<ul class="composition-reduced">{% for n in c.reduced %}<li>{% include "console/play/_worded.html" with w=n %}</li>{% endfor %}</ul>
+{% endif %}{% if c.escalations %}<h5>Reactions that needed a render</h5>
+<ul class="composition-escalations">{% for e in c.escalations %}<li>{% include "console/play/_worded.html" with w=e.name %}'s reaction needed {% include "console/play/_worded.html" with w=e.needed %} but stayed reactive: {% include "console/play/_worded.html" with w=e.reason %} — bring them in on a later turn</li>{% endfor %}</ul>
+{% endif %}{% if c.adjudications %}<h5>Adjudications (simultaneous)</h5>
+<table class="composition-adjudications"><thead><tr><th>Contested object</th><th>Stood</th><th>Became an attempt</th><th>Rule</th></tr></thead>
+<tbody>{% for a in c.adjudications %}<tr><td>{% if a.object_url %}<a href="{{ a.object_url }}"><code title="{{ a.object_id }}">{{ a.object_text }}</code></a>{% else %}<code title="{{ a.object_id }}">{{ a.object_text }}</code>{% endif %}</td><td>{% include "console/play/_worded.html" with w=a.winner %}</td><td>{% include "console/play/_worded.html" with w=a.loser %}</td><td>{% include "console/play/_worded.html" with w=a.rule %}</td></tr>{% endfor %}</tbody></table>
+{% endif %}{% if c.reconcile %}<h5>Reconcile</h5>
+<table class="composition-reconcile"><thead><tr><th>Proposition</th><th>Stood</th><th>Rewritten</th><th>Rule</th></tr></thead>
+<tbody>{% for r in c.reconcile %}<tr><td><code>{{ r.proposition }}</code></td><td>{% if r.winner.url %}<a href="{{ r.winner.url }}">{{ r.winner.text }}</a>{% else %}{{ r.winner.text }}{% endif %}</td><td>{% if r.loser.url %}<a href="{{ r.loser.url }}">{{ r.loser.text }}</a>{% else %}{{ r.loser.text }}{% endif %}</td><td>{% include "console/play/_worded.html" with w=r.rule %}</td></tr>{% endfor %}</tbody></table>
+{% endif %}{% if c.more %}<details class="more"><summary>More</summary><pre>{{ c.more|pretty_json }}</pre></details>
+{% endif %}</section>

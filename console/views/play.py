@@ -24,7 +24,7 @@ form's viewpoint. Its add/remove-row buttons post to the same endpoint (``consol
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -40,6 +40,7 @@ from console import cast as cast_helpers
 from console.canon import cast_names
 from console.cast import CastMember, character_of, viewpoint_for
 from console.cast_panel import CastPanel, cast_panel
+from console.composition import Composition, composition
 from console.confirm import confirm_query, posted_idempotency_key
 from console.creation_report import has_creation_report
 from console.engine.client import (
@@ -116,7 +117,14 @@ from console.models import EngineOperation
 from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.perception import perception_url, turn_links_perception
-from console.renders import RenderGroup, WarningLine, is_reaction, turn_renders, warning_lines
+from console.renders import (
+    RenderGroup,
+    WarningLine,
+    beat_numbers,
+    is_reaction,
+    turn_renders,
+    warning_lines,
+)
 from console.story_config import (
     ConfigBadge,
     badge_from_report,
@@ -668,6 +676,8 @@ class Inspector:
     m5_facts: tuple[tuple[str, str, str], ...] = ()
     # #202: the report's Warnings lines, named by the inspector's labels (:func:`_with_warnings`).
     warnings: tuple[WarningLine, ...] = ()
+    # #203: how a multi-character turn was composed (:func:`_with_composition`).
+    composition: Composition | None = None
 
     @property
     def trace_shown(self) -> bool:
@@ -797,6 +807,34 @@ def _with_history_link(story_id: str, found: Inspector) -> Inspector:
     )
 
 
+def _with_composition(
+    found: Inspector, response: Mapping[str, Any], labels: Mapping[str, str]
+) -> Inspector:
+    """#203: a turn answer's Composition panel, from the raw response mapping (every path's),
+    its reconcile beats linked to the anchors the Renders section rendered, its adjudicated
+    objects to their entity pages when the report says ``structured``."""
+    turn = response.get("turn")
+    capabilities = found.report.capabilities if found.report is not None else None
+    panel = composition(
+        response,
+        labels,
+        found.story_id,
+        structured=STRUCTURED in (capabilities or ()),
+        turn=turn if isinstance(turn, int) and not isinstance(turn, bool) else None,
+        anchors=beat_numbers(found.renders),
+    )
+    return replace(found, composition=panel)
+
+
+def _answer_mapping(result: RespondResponse) -> dict[str, Any]:
+    """#203: the live answer as a mapping (``dataclasses.asdict``), each field the model's
+    lenient parse lost an entry of (``unparsed``) put back raw, so the panel keeps it under
+    More as the logged and polled paths do."""
+    found = asdict(result)
+    found.update(result.unparsed)
+    return found
+
+
 NOTHING_PERCEIVED = "nothing_perceived"
 AUDIENCE_OFF = "none"
 
@@ -906,10 +944,13 @@ def result_inspector(
     *,
     actor: str = "",
     labels: Mapping[str, str] | None = None,
+    response: Mapping[str, Any] | None = None,
 ) -> Inspector:
     """The inspector for a finished turn: the live answer, or a polled operation's stored
     result. ``actor`` is the turn's (the posted form's, or the logged request's) for the
-    Renders section's Input group; ``labels`` name the characters (C4)."""
+    Renders section's Input group; ``labels`` name the characters (C4). ``response`` is the
+    raw answer the Composition reads (#203: the poll's ``result.body``); ``result`` as a
+    mapping by default."""
     found = Inspector(
         title=f"Turn {result.turn} (variant {result.variant})",
         report=result.report,
@@ -922,6 +963,8 @@ def result_inspector(
         trace_offered=True,
     )
     found = _with_answer(found, TurnAnswer.of(result), actor=actor, labels=labels or {})
+    raw = response if response is not None else _answer_mapping(result)
+    found = _with_composition(found, raw, labels or {})
     found = _with_warnings(found, labels or {}, story_id)
     return _with_history_link(story_id, found)
 
@@ -978,6 +1021,8 @@ def row_inspector(
     )
     answer = TurnAnswer.logged(row.response)
     found = _with_answer(found, answer, actor=_row_actor(row), labels=labels or {})
+    if isinstance(row.response, dict) and not row.error_code and not violations:
+        found = _with_composition(found, row.response, labels or {})
     found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 
@@ -1810,6 +1855,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
                 operation_id,
                 actor=_logged_actor(operation_id),
                 labels=cast_names(pending[0].cast),
+                response=op.result.body if op.result else None,
             )
             note = f"Turn {result.turn} committed."
             badge = _badge_after(request, story_id, result)

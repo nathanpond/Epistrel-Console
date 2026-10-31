@@ -1,4 +1,4 @@
-{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation", then its perception trace (#195); a generated turn shows its composed narrative (or the nothing-perceived notice), the M5 facts and a multi-character turn's Renders (#201); a generated turn ends with #139's lazy "Eval hooks & read set" block. #}
+{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation", then its perception trace (#195); a generated turn shows its composed narrative (or the nothing-perceived notice), the M5 facts and a multi-character turn's Renders (#201) and Composition (#203, shown even when the report can't be read); a generated turn ends with #139's lazy "Eval hooks & read set" block. #}
 {% if inspector.title %}<h3>{{ inspector.title }}</h3>{% endif %}
 {% if inspector.notice %}<p class="notice"><strong>{% if inspector.notice_url %}<a class="notice-link" href="{{ inspector.notice_url }}">{{ inspector.notice }}</a>{% else %}{{ inspector.notice }}{% endif %}</strong></p>{% endif %}
 {% if inspector.error_line %}<p class="error-line"><code>{{ inspector.error_line }}</code></p>{% endif %}
@@ -8,6 +8,7 @@
 {% elif inspector.reply %}<blockquote class="reply">{{ inspector.reply }}</blockquote>
 {% if inspector.differing_text %}<details class="more"><summary>More</summary><p>Reply text (differs from the narrative)</p><blockquote class="reply">{{ inspector.differing_text }}</blockquote></details>{% endif %}
 {% endif %}{% if inspector.renders %}{% include "console/play/_renders.html" %}{% endif %}
+{% if inspector.composition %}{% include "console/play/_composition.html" with c=inspector.composition %}{% endif %}
 {% if inspector.input_violations %}
 <h4>Input guardrail — violations</h4>
 {% include "console/_violations.html" with violations=inspector.input_violations %}
