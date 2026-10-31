@@ -229,6 +229,12 @@ inspect_patterns = (
         # other id is a 404), both in the Scene tab.
         path("scene/", inspect_scene.scene, name="scene"),
         path("entities/<ulid:entity_id>/", inspect_scene.entity, name="entity"),
+        # #199: model the entity as a minor character (form, write, PRG to the entity page).
+        path(
+            "entities/<ulid:entity_id>/model/",
+            inspect_scene.entity_model,
+            name="entity-model",
+        ),
         # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
         path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
         path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),

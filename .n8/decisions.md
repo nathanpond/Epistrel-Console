@@ -1976,3 +1976,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 1) Gave `test_bad_signature_calls_the_engine` fixed parametrize `ids=`, fixing #211 inside M5 rather than leaving it for triage.
   **Why:** The defect is in #61's own test (this milestone). Signed `Shown` values are time-stamped, so xdist workers collected different ids, and every later story's gate fell back to the 11-minute serial run. With the fix, the xdist gate gives 5245 passed, the same count as serial. The milestone PR closes #211.
   **Issue:** #61, #211
+- **Decision:** The model form keeps only the `as_of`/`viewpoint` the request actually carried and #58's `SceneForm` accepts (no story-default viewpoint added) on the back link, the form action and the redirect.
+  **Why:** "Query kept, invalid values dropped"; adding the default would invent a query the author never had.
+  **Issue:** #199
+- **Decision:** `idempotency_conflict` and any other unworded refusal on the model write render #43's panel (`panel_for`) above the kept form with a fresh key.
+  **Why:** C5's `write_refusal` returns `None` for it by design (convention 18), which is "the shared wording".
+  **Issue:** #199
+- **Decision:** A 409 `module_off` on the write is a refusal line `unavailable_for`-worded via `module_off_unavailable(exc, None, effective)` plus a "Config" link (convention 24); "See the check" is the paused refusal's link text, as #194's form uses.
+  **Why:** Reuse of the existing helpers and link wording.
+  **Issue:** #199
+- **Decision:** "Character: <name>" uses the cast member's plain name (short id when blank), without the " (player)" suffix; the not-a-person kind falls back to the snapshot's kind when `details.kind` is absent, else the sentence ends at "modeled".
+  **Why:** AC says "<cast name>" and no role/weight wording; the Engine always sends `details.kind`, so the fallback is cheap defence only.
+  **Issue:** #199
+- **Decision:** The recorded-fixture cast-membership test appends m5 `entity_modeled.json`'s character to m5 `story.json` (no recorded story lists a modeled minor); Engine origin/main `_character()` confirms `get_story` lists minors with the rest.
+  **Why:** C15: realistic shape, checked on Engine origin/main.
+  **Issue:** #199

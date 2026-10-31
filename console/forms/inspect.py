@@ -783,6 +783,74 @@ class SceneForm(forms.Form):
         self.add_error(None, exc.message)
 
 
+# --- model an entity as a minor character (#199) --------------------------------------------------
+
+TRUE_AGE_MIN, TRUE_AGE_MAX = 0, 150  # ``ModelEntityRequest.true_age``
+DEFINITION_MAX = 4000  # ``ModelEntityRequest.definition``
+ENTER_TRUE_AGE = "Enter a true age."
+WHOLE_NUMBER = "Enter a whole number."
+TRUE_AGE_RANGE = "True age is 0 to 150."
+DEFINITION_HELP = "Blank: the entity's name"
+DEFINITION_NEEDED = "Enter a definition — this entity has no name."
+
+
+def definition_too_long(length: int) -> str:
+    return f"At most {DEFINITION_MAX:,} characters ({length:,} given)."
+
+
+class ModelEntityForm(forms.Form):
+    """The "Model as a minor character" form (#199): **True age** (a whole number 0 to 150,
+    required, checked here, no HTML min/max: C10) and **Definition** (optional; CRLF → LF, then
+    stripped; at most 4,000 characters after that, no ``maxlength``; blank → left out of the
+    body, so the Engine uses the entity's name). ``unnamed`` (the entity is known to have no
+    name) makes Definition required."""
+
+    true_age = forms.IntegerField(
+        label="True age",
+        error_messages={"required": ENTER_TRUE_AGE, "invalid": WHOLE_NUMBER},
+        widget=forms.NumberInput(),
+    )
+    definition = forms.CharField(
+        label="Definition",
+        required=False,
+        strip=False,
+        help_text=DEFINITION_HELP,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+
+    def __init__(self, data: QueryDict | None = None, *, unnamed: bool = False) -> None:
+        super().__init__(data)
+        self.unnamed = unnamed
+
+    def clean_true_age(self) -> int:
+        age: int = self.cleaned_data["true_age"]
+        if not TRUE_AGE_MIN <= age <= TRUE_AGE_MAX:
+            raise forms.ValidationError(TRUE_AGE_RANGE)
+        return age
+
+    def clean_definition(self) -> str:
+        text = str(self.cleaned_data.get("definition") or "").replace("\r\n", "\n").strip()
+        if len(text) > DEFINITION_MAX:
+            raise forms.ValidationError(definition_too_long(len(text)))
+        if not text and self.unnamed:
+            raise forms.ValidationError(DEFINITION_NEEDED)
+        return text
+
+    def body(self) -> dict[str, Any]:
+        """``model_entity``'s keyword arguments (valid form only): ``true_age``, and
+        ``definition`` only when one was entered."""
+        found: dict[str, Any] = {"true_age": self.cleaned_data["true_age"]}
+        if self.cleaned_data["definition"]:
+            found["definition"] = self.cleaned_data["definition"]
+        return found
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422: ``body.true_age`` / ``body.definition`` beside the field, anything else above
+        the form (the Engine's message)."""
+        if not apply_engine_errors(exc, self):
+            self.add_error(None, exc.message)
+
+
 # --- the Knowledge tab's Beliefs section (#190) ---------------------------------------------------
 
 PROPOSITION_INVALID = (

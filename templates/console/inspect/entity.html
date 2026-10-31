@@ -3,14 +3,18 @@
 {% comment %}
 An entity's standing profile (#58), in the Scene tab: "← Scene" (at the profile's resolved turn
 and viewpoint, else the submitted ones), the entity's header and context line, the GET form
-(it submits to this page), then _entity_profile.html's three sections. The form stays above
+(it submits to this page), then _entity_profile.html's three sections. #199's action line sits
+under the context line: "Character: <name>" (cast_character, cast_url) or the model link
+(model_url) with its muted note (model_note). The form stays above
 every error; an invalid form makes no profile call.
 {% endcomment %}
 {% block tab_content %}
 <p class="back"><a class="scene-back" href="{{ back_url }}">← Scene</a></p>
 {% if entity %}{% with e=entity %}<h2 class="entity-header">{% if e.name %}{{ e.name }}{% else %}<span class="muted">(unnamed)</span>{% endif %} ({% include "console/inspect/_entity_kind.html" %}) {{ e.id|engine_id }}</h2>{% endwith %}
 <p class="context-line">{{ context_line }}</p>
-{% else %}<h2 class="entity-header">Entity <code title="{{ entity_id }}">{{ entity_short }}</code></h2>{% endif %}
+{% if cast_character %}<p class="entity-action">Character: <a class="cast-character" href="{{ cast_url }}">{{ cast_character }}</a></p>
+{% elif model_url %}<p class="entity-action"><a class="model-entity" href="{{ model_url }}">Model as a minor character…</a>{% if model_note %} <small class="muted model-note">{{ model_note }}</small>{% endif %}</p>
+{% endif %}{% else %}<h2 class="entity-header">Entity <code title="{{ entity_id }}">{{ entity_short }}</code></h2>{% endif %}
 {% include "console/inspect/_scene_form.html" %}
 {% if not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
 {% elif fix_form %}<p class="fix-form">{{ fix_form }}</p>

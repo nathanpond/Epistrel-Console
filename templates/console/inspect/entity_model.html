@@ -1,0 +1,37 @@
+{% extends "console/inspect/base.html" %}
+{% load inspect_tags %}
+{% comment %}
+Model an entity as a minor character (#199, console/views/inspect_scene.py's entity_model), in the
+Scene tab: "← Entity" (the entity page, query kept), the heading and context line from the signed
+snapshot (the short id when there is none), the shell story read's note (model_note) or the
+archived text (archived_text: the form inside a disabled fieldset), then one line above the form:
+not_found / entity_not_found (the form dropped), read_error or write_error (#43's panel), refusal.
+console.forms.inspect.ModelEntityForm POSTs to form_action (the kept query on it) with the signed
+snapshot and idempotency_key.
+{% endcomment %}
+{% block title %}Model {{ entity_name }} as a minor character{% endblock %}
+{% block tab_content %}
+<p class="back"><a class="entity-back" href="{{ back_url }}">← Entity</a></p>
+<h2 class="entity-model-header">Model {{ entity_name }} as a minor character</h2>
+<p class="context-line">{% if entity_kind %}{{ entity_kind }} · {% endif %}<code title="{{ entity_id }}">{{ entity_short }}</code></p>
+{% if not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif entity_not_found %}<p class="not-found">{{ entity_not_found }}</p>
+{% else %}
+{% if archived_text %}<p class="notice archived-note">{{ archived_text }}</p>
+{% elif model_note %}<p><small class="muted model-note">{{ model_note }}</small></p>{% endif %}
+{% if read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist model-refusal" role="alert">{{ refusal }}</p>{% endif %}
+{% if form %}<form method="post" action="{{ form_action }}" class="entity-model-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  <fieldset{% if archived_text %} disabled{% endif %}>
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  <div class="field field-true_age">{{ form.true_age.label_tag }} {{ form.true_age }}{{ form.true_age.errors }}</div>
+  <div class="field field-definition">{{ form.definition.label_tag }} {{ form.definition }} <small class="muted">{{ form.definition.help_text }}</small>{{ form.definition.errors }}</div>
+  <p><button type="submit" class="model-entity-submit">Model as minor character</button></p>
+  </fieldset>
+</form>{% endif %}
+{% endif %}
+{% endblock %}
