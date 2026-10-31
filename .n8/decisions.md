@@ -2210,3 +2210,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #216's play-transcript test serves a history with `labels` removed at `character:<Tobin>`, as the History complement test does. The Engine omits labels at a character viewpoint, and the test asserts the Console adds no classification of its own.
   **Why:** This mirrors `test_history_view.py`'s existing #207 complement.
   **Issue:** #216
+- **Decision:** (Rule 2) The CI fix changes the #223 check to `_is_variant()` (`str.partition(":")` plus an ASCII-digit set test), with no regex. It accepts and refuses the same inputs as `fullmatch(r"[0-9]+:[0-9]+")`. Tests now also cover `1:2:3`, `:2` and `1:`.
+  **Why:** CodeQL flagged a high `py/polynomial-redos` on the regex in PR #226, the same finding and fix as #194's `scalar_syntax`.
+  **Issue:** #223

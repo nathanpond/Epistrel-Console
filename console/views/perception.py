@@ -20,7 +20,6 @@ The grid itself is :func:`console.perception.grid`. The page says it is reconstr
 request nathanpond/Epistrel#607), never the Engine's recorded perception.
 """
 
-import re
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Any
 
@@ -60,7 +59,15 @@ from console.views.history import TIMEOUT, TRACE_DEADLINE_S, TRACE_WORKERS, read
 
 TEMPLATE = "console/perception/turn.html"
 LEVEL = "co_location"  # the grid means something from co-location up (envelopes need full)
-VARIANT = re.compile(r"[0-9]+:[0-9]+")  # ASCII only, whole string (fullmatch)
+ASCII_DIGITS = frozenset("0123456789")
+
+
+def _is_variant(raw: str) -> bool:
+    """``<turn>:<variant>``: two non-empty runs of ASCII digits, the whole string (#223). No
+    regex: ``\\d`` takes Unicode digits, ``$`` a trailing newline, and CodeQL flags a
+    repeated digit class on user input as a polynomial ReDoS."""
+    turn, colon, variant = raw.partition(":")
+    return bool(colon and turn and variant) and ASCII_DIGITS.issuperset(turn + variant)
 
 
 def _read(
@@ -149,7 +156,7 @@ def perception(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
     client = engine_client_for(request)
     story = client.get_story(story_id)
     raw_variant = request.GET.get("variant", "")
-    variant = raw_variant if VARIANT.fullmatch(raw_variant) else None
+    variant = raw_variant if _is_variant(raw_variant) else None
     context: dict[str, Any] = {
         "story": story,
         "story_name": _story_name(story),
