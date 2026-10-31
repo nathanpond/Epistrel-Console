@@ -1,11 +1,13 @@
 """A story's settings page forms (#54): settings, one story policy, pinned memories and custom
 instructions. Each section has its own form and its own write.
 
-- :class:`StorySettingsForm` edits the seven settable ``StorySettingsPatch`` fields as a merge
-  patch (#43): the original values travel in the page's signed snapshot,
+- :class:`StorySettingsForm` edits the thirteen settable ``StorySettingsPatch`` fields as a
+  merge patch (#43): the original values travel in the page's signed snapshot,
   :meth:`~StorySettingsForm.patch` holds only the fields whose value changed, and each field's
   "reset to default" checkbox (``reset_<name>``) sends ``null``. Bounds are the recorded
-  schema's ranges; everything else is the Engine's 422.
+  schema's ranges; everything else is the Engine's 422. Engine M5's six (#197) are selects
+  built with C7 (:mod:`console.story_settings`): the three nullable ones offer
+  "Engine default (…)" first, and a stored value outside the choices is kept as one more.
 - :class:`StoryPolicyForm` is #47's :class:`~console.forms.policy.PolicyContentForm` with the
   story's rule types (``entity_list`` included), a scope (the story or one character) and an
   ``effect`` (``deny``, or ``allow`` so the Engine's ``cannot_relax`` is reachable); its
@@ -17,7 +19,7 @@ instructions. Each section has its own form and its own write.
 
 import re
 import unicodedata
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -34,14 +36,24 @@ from console.forms.policy import (
     policy_initial,
 )
 from console.story_settings import (
+    BOOLEAN_SELECT,
     LABELS,
+    MULTI_CHARACTER,
     NULLABLE,
     PINNED_ITEM_MAX,
     SETTABLE,
+    SETTING_CHOICES,
     Marker,
+    engine_default_choice,
+    flash_name,
+    kept_choices,
     marker,
+    null_default_text,
     same_value,
+    select_bool,
+    tie_break_label,
 )
+from console.wording import humanised
 
 RESET_PREFIX = "reset_"
 NO_OVERRIDE = ""
@@ -68,7 +80,7 @@ class SettingRow:
 
 
 class StorySettingsForm(forms.Form):
-    """The seven settable story settings. ``original`` is ``settings`` as read; ``cast`` the
+    """The thirteen settable story settings. ``original`` is ``settings`` as read; ``cast`` the
     viewpoint options; ``deployment`` ``GET /admin/settings`` (``None``: unread) for markers."""
 
     turn_concurrency = forms.ChoiceField(
@@ -95,6 +107,15 @@ class StorySettingsForm(forms.Form):
         required=False,
         help_text="Whether a director pass or a render may introduce new arrivals.",
     )
+    # Engine M5 (#197): never null in the read, so required selects with no Engine default.
+    player_authority = forms.ChoiceField(
+        help_text="Lite stories get this as a prompt instruction only."
+    )
+    player_view = forms.ChoiceField()
+    interaction_mode = forms.ChoiceField(required=False)
+    sequence_order = forms.ChoiceField(required=False)
+    simultaneous_tie_break = forms.ChoiceField(required=False)
+    reactive_interjections = forms.TypedChoiceField(choices=BOOLEAN_SELECT, coerce=select_bool)
 
     def __init__(
         self,
@@ -106,7 +127,12 @@ class StorySettingsForm(forms.Form):
     ) -> None:
         self.original = {name: original.get(name) for name in SETTABLE}
         self.deployment = deployment
+        found = original.get("inactive")
+        self.inactive = found if isinstance(found, Mapping) else None
         initial = {name: ("" if value is None else value) for name, value in self.original.items()}
+        stored_bool = self.original["reactive_interjections"]
+        if isinstance(stored_bool, bool):
+            initial["reactive_interjections"] = "true" if stored_bool else "false"
         super().__init__(data, initial=initial)
         for name in SETTABLE:
             self.fields[name].label = LABELS[name]
@@ -123,6 +149,18 @@ class StorySettingsForm(forms.Form):
             unknown = character_of(current) is None
             choices.append((current, f"{current} ({'not a character' if unknown else 'unknown'})"))
         viewpoint.choices = choices
+        self._m5_choices()
+
+    def _m5_choices(self) -> None:
+        """C7: each M5 select's choices, a stored value they lack kept as one more."""
+        for name in ("player_authority", "player_view", *MULTI_CHARACTER):
+            field = self.fields[name]
+            assert isinstance(field, forms.ChoiceField)  # noqa: S101 - declared above
+            label = tie_break_label if name == "simultaneous_tie_break" else humanised
+            kept = kept_choices(SETTING_CHOICES[name], self.original[name], label)
+            if name in MULTI_CHARACTER:
+                kept = [engine_default_choice(null_default_text(name, self.inactive)), *kept]
+            field.choices = kept
 
     def rows(self) -> Iterator[SettingRow]:
         for name in SETTABLE:
@@ -130,7 +168,7 @@ class StorySettingsForm(forms.Form):
                 name=name,
                 field=self[name],
                 reset=self[RESET_PREFIX + name],
-                marker=marker(name, self.original[name], self.deployment),
+                marker=marker(name, self.original[name], self.deployment, inactive=self.inactive),
             )
 
     def clean(self) -> dict[str, Any] | None:
@@ -159,6 +197,26 @@ class StorySettingsForm(forms.Form):
             elif not same_value(value, original):
                 body[name] = value
         return body
+
+    def changes(self, patch: Mapping[str, Any]) -> list[str]:
+        """The flash's "<Name>: <value>" for each key of ``patch``: "default" for ``null``, the
+        chosen option's label for a select, "On" / "Off" for a boolean, else ``str(value)``."""
+        return [
+            f"{flash_name(LABELS[name])}: {self._shown(name, value)}"
+            for name, value in patch.items()
+        ]
+
+    def _shown(self, name: str, value: Any) -> str:
+        if value is None:
+            return "default"
+        if isinstance(value, bool):
+            return "On" if value else "Off"
+        field = self.fields[name]
+        if isinstance(field, forms.ChoiceField):
+            for option, label in cast(Iterable[tuple[Any, Any]], field.choices):
+                if option == value:
+                    return str(label)
+        return str(value)
 
 
 # Engine paths a settings 422 names that the form shows elsewhere.

@@ -2,17 +2,20 @@
 
 One page with sections, each read separately so a failed read degrades only its section (#43):
 
-- **Settings**: the seven settable story settings with their "story" / "default" markers
-  (:mod:`console.story_settings`), a reset-to-default per field, and old keys the read still
-  returns under "Other settings". Save sends a merge patch of the changed fields only. The six
-  engine dials that moved to engine-profile overrides are a note linking to the story's Config
-  page (M3 #85).
+- **Settings**: the thirteen settable story settings with their "story" / "default" markers
+  (:mod:`console.story_settings`; the multi-character ones name what ``null`` means), a
+  reset-to-default per field, and old keys the read still returns under "Other settings". Save
+  sends a merge patch of the changed fields only and flashes each change as "<Name>: <value>".
+  The six engine dials that moved to engine-profile overrides are a note linking to the story's
+  Config page (M3 #85); a static note says where the M5 settings apply (#197; no
+  effective-config read).
 - **Budget**: ``guardrail_calls`` and ``effective_budget`` as the Engine sends them.
 - **Effective policies** and **inactive policies**, read-only.
 - **Story policies**: the story- and character-scoped ones, an add / edit form (one
   ``policies`` upsert per submit) and no Remove (owner).
 - **Pinned memories** and **custom instructions**, each saved with ``PUT``.
-- **Config changes**: #50's grouped table, filtered by GET parameters on this page.
+- **Config changes**: #50's grouped table, filtered by GET parameters on this page; the
+  setting select offers each non-player character's ``participation:<id>`` (#197).
 
 Each form POSTs to its own URL (``settings/``, ``settings/policies/``, ``settings/pinned/``,
 ``settings/instructions/``) with the page's signed snapshot (story, cast, settings as read and
@@ -35,7 +38,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
-from console.cast import CastMember, members, viewpoint_label
+from console.cast import CastMember, character_labels, members, viewpoint_label
 from console.config_changes import RevisionGroup, revision_groups, setting_filter
 from console.confirm import posted_idempotency_key
 from console.engine.client import EngineClient, EngineClientError, EngineError
@@ -66,6 +69,7 @@ from console.formset_rows import edit_rows, wants_edit
 from console.history import NAME_WITHHELD
 from console.ids import new_ulid
 from console.ingest import BatchErrors
+from console.inspect import short_id
 from console.story_pause import pause_banner, paused_refusal
 from console.story_settings import (
     DEPLOYMENT_DEFAULTS,
@@ -93,6 +97,9 @@ EDIT_POLICY = "policy"  # ?policy=<id>: the policy form edits that policy
 EMPTY = "—"
 ARCHIVED_NOTE = "Archived — unarchive to change the settings"
 SUPERSEDED_REASON = "superseded"
+NOT_YET_REASON = "not_yet"
+NOT_YET_TEXT = "State tie-breaks arrive in Engine M6"
+PARTICIPATION_PREFIX = "participation:"
 CANNOT_RELAX = "A story policy can only add restrictions"
 GUARDRAIL_TEXT = "Rejected by a guardrail — nothing was saved"
 CAP_TEXT = "Over a cap — nothing was saved"
@@ -428,15 +435,37 @@ def _instructions_context(
     }
 
 
-def _changes_context(request: HttpRequest, client: EngineClient, story_id: str) -> dict[str, Any]:
+def participation_options(cast: Sequence[CastMember], wanted: str = "") -> list[tuple[str, str]]:
+    """``(participation:<id>, "Participation: <label>")`` for each non-player character, in cast
+    order (C4 labels; an empty name reads the short id), plus ``wanted`` (the URL's
+    ``setting``) when it names a character no longer in the cast, so an old link still filters."""
+    labels = character_labels(cast)
+    options = [
+        (
+            f"{PARTICIPATION_PREFIX}{member.id}",
+            f"Participation: {labels[member.id] if member.name else short_id(member.id)}",
+        )
+        for member in cast
+        if not member.is_player
+    ]
+    stale = wanted.removeprefix(PARTICIPATION_PREFIX)
+    if wanted.startswith(PARTICIPATION_PREFIX) and stale and wanted not in dict(options):
+        options.append((wanted, f"Participation: {short_id(stale)}"))
+    return options
+
+
+def _changes_context(
+    request: HttpRequest, client: EngineClient, story_id: str, cast: Sequence[CastMember]
+) -> dict[str, Any]:
     """``GET …/config-changes`` with this page's filter parameters; an invalid filter makes no
-    call."""
+    call. ``cast`` (the snapshot's) gives the ``participation:<id>`` options."""
     allowed = setting_filter(RECORDED, CHANGES_PATH)
     filtered = any(key in request.GET for key in FILTER_KEYS)
+    participation = participation_options(cast, request.GET.get("setting", ""))
     form = ConfigChangeFilterForm(
         request.GET if filtered else None,
         settings=allowed,
-        groups=setting_groups(allowed.names),
+        groups=setting_groups(allowed.names, participation=participation),
         with_since=False,
     )
     groups: list[RevisionGroup] = []
@@ -542,7 +571,7 @@ def _read_page(request: HttpRequest, story_id: str) -> Page:
         )
     )
     sections["instructions_error"] = instructions_error
-    sections.update(_changes_context(request, client, story_id))
+    sections.update(_changes_context(request, client, story_id, snap.cast))
     sections["viewpoint_text"] = viewpoint_label(
         (snap.settings or {}).get("default_output_viewpoint"), snap.cast
     )
@@ -581,14 +610,14 @@ def settings_page(request: HttpRequest, story_id: str) -> HttpResponse:
     return render(request, PAGE_TEMPLATE, page.context())
 
 
-def _shown(value: Any) -> str:
-    return "null" if value is None else str(value)
-
-
 def _place_settings_error(exc: EngineError, form: StorySettingsForm) -> bool:
-    """Put a 422 on the form (``superseded`` at the non-field errors); ``False`` otherwise."""
+    """Put a 422 on the form (``not_yet`` on the tie-break whatever field it names, ``superseded``
+    at the non-field errors); ``False`` otherwise."""
     if exc.http_status != 422:
         return False
+    if exc.details.get("reason") == NOT_YET_REASON:
+        form.add_error("simultaneous_tie_break", NOT_YET_TEXT)
+        return True
     if exc.details.get("reason") == SUPERSEDED_REASON:
         replacement = exc.details.get("replacement", EMPTY)
         form.add_error(None, f"Moved to engine profile overrides ({replacement})")
@@ -623,7 +652,7 @@ def _save_settings(request: HttpRequest, story_id: str) -> HttpResponse:
             refusal = refusal_for(exc, key)
         context = _settings_context(snap, form=form, refusal=refusal)
         return _render_section(request, snap, "settings", context)
-    changed = ", ".join(f"{name}={_shown(value)}" for name, value in patch.items())
+    changed = ", ".join(form.changes(patch))
     messages.success(
         request,
         f"Saved — config revision {saved.config_revision} ({changed}), idempotency key "

@@ -1916,3 +1916,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The History page's perception test is "`propositions` or `fidelity` set" (`console.perception.has_structured_item`), not `is_structured`, which drops envelopes. Lite active-chain pages now make the one lazy effective-config read (`_story_structured`) whenever a turn ≥ 1 is shown.
   **Why:** That is what the AC says. The read stays at most one per page.
   **Issue:** #195
+- **Decision:** C7 helpers live in `console/story_settings.py` (`ENGINE_DEFAULT`, `engine_default_choice`, `SETTING_CHOICES`, `kept_choices`, `tie_break_label`, `BOOLEAN_SELECT`, `select_bool`), plus `scenario_mode`, `null_default_text(name, inactive)` and `flash_name(label)`; the form reads `inactive` from `original.get("inactive")`.
+  **Why:** One module for #198/#61/#200/#205 to import; the AC names these exactly.
+  **Issue:** #197
+- **Decision:** `StorySettingsForm.changes(patch)` builds the "<Name>: <value>" flash for all thirteen rows (select label from the field's own choices); the view's raw `name=value` `_shown` is removed.
+  **Why:** The form already holds the choice labels (viewpoint cast labels, kept values).
+  **Issue:** #197
+- **Decision:** `participation:<cid>` options come from a public `participation_options(cast, wanted)` in `console/views/story_settings.py`; a URL `setting` starting `participation:` that isn't in the cast is appended as "Participation: <short id>". Empty name → `short_id`, duplicates → `character_labels`' suffix.
+  **Why:** Keeps old links filtering; the select validates against its choices, so the stale value must be an option.
+  **Issue:** #197
+- **Decision:** `test_the_groups_cover_the_recorded_enum` now asserts no "Other" group (the M5 keys were all that fell there); `engine_profile_version_pin` stays in "Rating and profile" as #54 placed it, not "Other".
+  **Why:** The AC's "falls to Other" remark predates the existing grouping; changing #54's grouping is out of scope.
+  **Issue:** #197
+- **Decision:** Test helpers `settings_json`/`written_json` fill `M5_READ_DEFAULTS` (Engine read values) under the recorded fixtures, which lack the six keys.
+  **Why:** Planner pass 2; C15.
+  **Issue:** #197
+- **Decision:** The live test `test_player_authority_and_interaction_mode_live` was written but not run (no `ENGINE_LIVE_URL` in this environment).
+  **Why:** No live Engine available to the agent.
+  **Issue:** #197

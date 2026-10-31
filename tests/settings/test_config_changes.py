@@ -11,8 +11,16 @@ from console.engine_api_check import RECORDED
 from console.story_settings import SETTABLE, SUPERSEDED, setting_groups
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
-from tests.settings.helpers import STORY, URL, answer_page, calls, section
-from tests.settings.test_story_settings import M5_NOT_YET_EDITABLE
+from tests.settings.helpers import (
+    MARA,
+    STORY,
+    TOBIN,
+    URL,
+    answer_page,
+    calls,
+    section,
+    story_json,
+)
 
 CHANGES_PATH = f"/stories/{STORY}/config-changes"
 
@@ -116,9 +124,69 @@ def test_the_groups_cover_the_recorded_enum() -> None:
     historical = {value.split(".", 1)[0] for value, _ in groups["Historical"]}
     assert historical == set(SUPERSEDED)
     assert "engine_profile_version_pin" in {value for value, _ in groups["Rating and profile"]}
-    # Until #197 edits them, the M5 story settings are exactly what lands in "Other".
-    assert {value for value, _ in groups["Other"]} == M5_NOT_YET_EDITABLE
+    # Every recorded name has a group of its own: the M5 settings fall under "Settings" (#197).
+    assert "Other" not in groups
     # ``participation:<id>`` is a prefixed key (the recorded pattern), not an enum value.
     assert not any(value.startswith("participation:") for value in grouped)
     accepted = setting_filter(RECORDED, "/stories/{story_id}/config-changes")
     assert accepted.accepts_prefixed("participation:01JB2Z8Y5Q3W6K9M1N4P7R0T3A")
+
+
+# --- participation:<id> (#197) --------------------------------------------------------------------
+
+OTHER_TOBIN = "01JB2Z8Y5Q3W6K9M1N4P7R0T3C"
+NAMELESS = "01JB2Z8Y5Q3W6K9M1N4P7R0T3D"
+
+
+def _participation_options(html: str) -> list[tuple[str, str]]:
+    group = re.search(r'<optgroup label="Participation">(.*?)</optgroup>', html, re.S)
+    assert group is not None
+    return re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', group.group(1))
+
+
+def _cast_story() -> dict[str, Any]:
+    story = story_json()
+    story["characters"] = [
+        {"id": TOBIN, "name": "Tobin", "is_player": False},
+        {"id": MARA, "name": "Mara", "is_player": True},
+        {"id": NAMELESS, "name": "", "is_player": False},
+        {"id": OTHER_TOBIN, "name": "Tobin", "is_player": False},
+    ]
+    return story
+
+
+def test_participation_names_group_under_participation(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    answer_page(engine, story=_cast_story())
+    html = section(operator_client.get(URL).content.decode(), "config-changes")
+
+    # Cast order, the player left out, duplicate names suffixed, an empty name as its short id.
+    assert _participation_options(html) == [
+        (f"participation:{TOBIN}", "Participation: Tobin (…7R0T3B)"),
+        (f"participation:{NAMELESS}", "Participation: …4P7R0T3D"),
+        (f"participation:{OTHER_TOBIN}", "Participation: Tobin (…7R0T3C)"),
+    ]
+    groups = re.findall(r'<optgroup label="([^"]+)">', html)
+    assert groups.index("Participation") == groups.index("Settings") + 1
+    assert groups.index("Historical") == groups.index("Participation") + 1
+    # The M5 settings are under "Settings".
+    settings = re.search(r'<optgroup label="Settings">(.*?)</optgroup>', html, re.S)
+    assert settings is not None
+    assert 'value="player_authority"' in settings.group(1)
+
+    engine.requests.clear()
+    answer_page(engine, story=_cast_story())
+    operator_client.get(URL, {"setting": f"participation:{TOBIN}"})
+    assert _changes_params(engine)["setting"] == f"participation:{TOBIN}"
+
+
+def test_stale_participation_filter_is_kept_as_an_option(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    gone = "01JB2Z8Y5Q3W6K9M1N4P7R0GONE"
+    html = _page(operator_client, engine, {"setting": f"participation:{gone}"})
+
+    assert _participation_options(html)[-1] == (f"participation:{gone}", "Participation: …P7R0GONE")
+    assert _changes_params(engine)["setting"] == f"participation:{gone}"
+    assert "Select a valid choice." not in html
