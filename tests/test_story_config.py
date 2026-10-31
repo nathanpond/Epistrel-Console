@@ -1283,3 +1283,57 @@ def test_kept_wording_no_longer_says_lite() -> None:
     assert profile_edit.UPGRADE_UNAVAILABLE == (
         "This story has history the Engine can't backfill — it keeps its current configuration"
     )
+
+
+# --- #218: each flash names only the non-empty guarantee lists ------------------------------------
+
+
+def _applied_text(tail: str = "") -> str:
+    return (
+        f'Applied — fingerprint <code title="{FP_NEW}">{short_fingerprint(FP_NEW)}</code>; '
+        f"takes effect from the next turn{tail}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("gained", "lost", "tail"),
+    [
+        ([], ["l1"], ". Guarantees lost: <code>l1</code>."),
+        (["g1", "g2"], [], ". Guarantees gained: <code>g1</code>, <code>g2</code>."),
+        ([], [], ""),
+    ],
+    ids=["lost-only", "gained-only", "neither"],
+)
+def test_assign_flash_names_only_non_empty_guarantee_lists(
+    operator_client: Client, engine: FakeEngine, gained: list[str], lost: list[str], tail: str
+) -> None:
+    html = _assign_preview(operator_client, engine, impact())
+    result = config_body(profile={"id": OTHER, "version": 3, "pinned": False, "deleted": False})
+    result["fingerprint"] = FP_NEW
+    report = impact(guarantees_gained=gained, guarantees_lost=lost)
+    engine.respond("PUT", PUT, 200, json=written(True, result, report))
+    [flash] = flashes(_apply(operator_client, html, ASSIGN_APPLY))
+    assert flash == _applied_text(tail)
+
+
+@pytest.mark.parametrize(
+    ("gained", "lost", "tail"),
+    [
+        (["g1"], [], ". Guarantees gained: <code>g1</code>."),
+        ([], ["l1", "l2"], ". Guarantees lost: <code>l1</code>, <code>l2</code>."),
+        ([], [], ""),
+    ],
+    ids=["gained-only", "lost-only", "neither"],
+)
+def test_overrides_flash_names_only_non_empty_guarantee_lists(
+    operator_client: Client, engine: FakeEngine, gained: list[str], lost: list[str], tail: str
+) -> None:
+    html = _preview_page(operator_client, engine, impact(affected(fingerprint_after=FP_NEW)))
+    result = config_body({"memory": {"rolling_summary": {"window_messages": 20}}}, revision=4)
+    result["fingerprint"] = FP_NEW
+    report = impact(guarantees_gained=gained, guarantees_lost=lost)
+    engine.respond("PATCH", PATCH, 200, json=written(True, result, report))
+    [flash] = flashes(_apply(operator_client, html))
+    assert flash == _applied_text(tail)
+    assert "Guarantees gained: ." not in flash
+    assert "Guarantees lost: ." not in flash
