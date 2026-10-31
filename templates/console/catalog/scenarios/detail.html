@@ -122,7 +122,8 @@
     <dt>Allow new arrivals</dt><dd>{% if s.allow_new_arrivals is None %}— (deployment default){% elif s.allow_new_arrivals %}Yes{% else %}No{% endif %}</dd>
     <dt>Interaction mode</dt><dd>{{ s.interaction_mode|humanise }}</dd>
     <dt>Player authority</dt><dd>{{ s.player_authority|humanise }}</dd>
-    <dt>Turn concurrency</dt><dd>{{ s.turn_concurrency|humanise }}</dd>
+    {% for label, text in m5_defaults %}<dt>{{ label }}</dt><dd>{{ text }}</dd>
+    {% endfor %}    <dt>Turn concurrency</dt><dd>{{ s.turn_concurrency|humanise }}</dd>
     <dt>Ambiguous retcon timing</dt><dd>{{ s.ambiguous_retcon_timing|humanise }}</dd>
     <dt>Backfill conflict policy</dt><dd>{{ s.backfill_conflict_policy|humanise }}</dd>
     <dt>Audit retention (days)</dt><dd>{{ s.audit_retention_days|default_if_none:"—" }}</dd>

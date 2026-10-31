@@ -1955,3 +1955,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #72/#48 assertions on `<li>Mara (player)` / `<li>Tobin <a …promote` and "Promotion links unavailable" (tests/play/test_play_page.py, tests/test_story_characters.py, tests/stories/test_archive_delete.py) and #48's single-key test (tests/play/test_turn_form.py, now strips the cast list) were updated to the new markup.
   **Why:** The AC changes the row markup (`<li id="cast-<cid>">`, role/weight text), the note wording and adds per-row keys; the tests' intent is unchanged.
   **Issue:** #61
+- **Decision:** `console/forms/stories.py` imports `console.story_settings` / `console.participation` inside the functions that use them; CharacterForm adds its two role fields in `__init__` (still last in the row). (Rule 3)
+  **Why:** A module-level import is circular: `console.forms` loads under `console.engine_access` (via `console.acting`), and `console.story_settings` reaches `engine_access` again through `console.wording` → `story_pause` → `job_poll`.
+  **Issue:** #198
+- **Decision:** New-story creation settings are listed in `CREATION_SETTINGS` (name → C7 default text), the reactive select a `TypedChoiceField(coerce=select_bool, empty_value=None)`; `StoryForm.settings()` builds `spec["settings"]` (viewpoint first).
+  **Why:** One list drives the fields, `story_spec` and `CreationErrorPaths`' fixed keys.
+  **Issue:** #198
+- **Decision:** A role or "Fixed" on the player's row reports `PLAYER_NO_ROLE` directly (not via `participation_error`, which would give `FIX_NEEDS_ROLE` for "Fixed" alone).
+  **Why:** AC: Fixed alone on the player row gives one error, the player one.
+  **Issue:** #198
+- **Decision:** Scenario editor: the C7 fields' "Engine default (<text>)" texts live in `C7_DEFAULTS` (scenario.py); `BOOLEAN_SETTINGS` names both boolean selects for editor_data/write_doc; labels are #197's `LABELS` (e.g. "Player view (where perception is on)") on both the editor and the detail rows.
+  **Why:** AC asks for #197's labels; the detail rows share them for one wording.
+  **Issue:** #198
+- **Decision:** `setting_label("simultaneous_tie_break", v)` is `tie_break_label(v)` for every value (it equals the choice labels for the two M5 values).
+  **Why:** AC: the tie-break reads through `tie_break_label`.
+  **Issue:** #198
+- **Decision:** Full gate's pytest ran without xdist: xdist collection differs between workers on #61's `test_bad_signature_calls_the_engine` (parametrize ids carry time-stamped signed values), unrelated to this story.
+  **Why:** Brief's fallback rule.
+  **Issue:** #198

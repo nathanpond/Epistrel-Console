@@ -41,6 +41,7 @@ from console.forms import (
     StoryForm,
     story_spec,
 )
+from console.forms.stories import CREATION_ERROR_PATHS
 from console.formset_rows import edit_rows, wants_edit
 from console.held import HELD_PARAM, HELD_STATUS
 from console.ids import new_ulid
@@ -49,12 +50,6 @@ EMPTY = "—"
 PAUSED_NOTE = "Paused while the check runs"  # #80's wording
 RATINGS_FIELD = "rating_choices"  # the select's options, signed, carried across re-renders
 RATINGS_SALT = "console.stories.rating_choices"
-# A 422 at these paths, or with this code, belongs beside the viewpoint field.
-VIEWPOINT_ALIASES = {
-    "settings.default_output_viewpoint": "viewpoint",
-    "settings": "viewpoint",
-    "viewpoint_unresolved": "viewpoint",
-}
 
 
 def story_label(name: str | None, story_id: str) -> str:
@@ -314,7 +309,7 @@ def story_new(request: HttpRequest) -> HttpResponse:
                 exc,
                 story,
                 formsets={CHARACTERS_PREFIX: characters.sent_forms()},
-                aliases=VIEWPOINT_ALIASES,
+                aliases=CREATION_ERROR_PATHS,
             )
             story.add_error(None, f"The Engine rejected the story: {exc.message}")
             return _render_new(request, story, characters, ratings, show_errors=True)

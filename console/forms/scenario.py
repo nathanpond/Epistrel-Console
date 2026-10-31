@@ -87,6 +87,16 @@ from console.forms.scenario_cast import (
 )
 from console.formset_rows import OP_ADD, Op, apply_op
 from console.reports import field_anchor
+from console.story_settings import (
+    BOOLEAN_SELECT,
+    LABELS,
+    NULL_DEFAULT_TEXT,
+    SETTING_CHOICES,
+    engine_default_choice,
+    kept_choices,
+    select_bool,
+    tie_break_label,
+)
 
 SEP = "__"
 BODY_PREFIX = "body."
@@ -134,7 +144,24 @@ SETTING_ENUMS: dict[str, tuple[str, ...]] = {
     "interaction_mode": ("sequential", "simultaneous"),
     "player_authority": ("own_character", "co_author"),
     "turn_concurrency": ("reject", "queue"),
+    "player_view": ("character", "story"),
+    "sequence_order": ("request", "director"),
 }
+# Engine M5's defaults (#198): C7 choices (#197) instead of "(deployment default)" and " (unknown)".
+C7_SETTINGS = frozenset({"player_view", "sequence_order"})
+# Each C7 field's "Engine default (<text>)" (the tie-break and interjections included).
+C7_DEFAULTS = {
+    "player_view": "character",
+    "sequence_order": NULL_DEFAULT_TEXT["sequence_order"],
+    "simultaneous_tie_break": NULL_DEFAULT_TEXT["simultaneous_tie_break"],
+    "reactive_interjections": "off",
+}
+# The two boolean defaults, sent as ``true``/``false`` and edited as a select.
+BOOLEAN_SETTINGS = (
+    "story_settings_defaults__allow_new_arrivals",
+    "story_settings_defaults__reactive_interjections",
+)
+TIE_BREAK_FIELD = "story_settings_defaults__simultaneous_tie_break"
 BOOLEAN_CHOICES = [(NOT_SET, DEFAULT_LABEL), ("true", "Yes"), ("false", "No")]
 
 # The deferred JSON boxes: field name → (top type, empty value).
@@ -270,6 +297,8 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
         },
         "story_settings_defaults": {
             "allow_new_arrivals": settings.allow_new_arrivals,
+            "reactive_interjections": settings.reactive_interjections,
+            "simultaneous_tie_break": settings.simultaneous_tie_break,
             **{name: getattr(settings, name) for name in SETTING_ENUMS},
             "audit_retention_days": settings.audit_retention_days,
             "default_output_viewpoint": settings.default_output_viewpoint,
@@ -338,7 +367,7 @@ def editor_data(doc: Mapping[str, Any]) -> QueryDict:
             put(name, "\n".join(value or []))
         elif name == "metadata__labels":
             put(name, ", ".join(value or []))
-        elif name == "story_settings_defaults__allow_new_arrivals":
+        elif name in BOOLEAN_SETTINGS:
             put(name, None if value is None else ("true" if value else "false"))
         else:
             put(name, value)
@@ -531,6 +560,15 @@ def _enum(label: str, values: tuple[str, ...]) -> forms.ChoiceField:
     return forms.ChoiceField(label=label, required=False, choices=_enum_choices(values))
 
 
+def _c7(name: str, choices: list[tuple[str, str]]) -> forms.ChoiceField:
+    """An M5 default (#198): C7's "Engine default (<text>)" first, then #197's choices."""
+    return forms.ChoiceField(
+        label=LABELS[name],
+        required=False,
+        choices=[engine_default_choice(C7_DEFAULTS[name]), *choices],
+    )
+
+
 def _fields() -> dict[str, forms.Field]:
     """Every field but the owner, in display order."""
     settings = "story_settings_defaults"
@@ -563,6 +601,10 @@ def _fields() -> dict[str, forms.Field]:
         f"{settings}__player_authority": _enum(
             "Player authority", SETTING_ENUMS["player_authority"]
         ),
+        f"{settings}__player_view": _c7("player_view", SETTING_CHOICES["player_view"]),
+        f"{settings}__sequence_order": _c7("sequence_order", SETTING_CHOICES["sequence_order"]),
+        TIE_BREAK_FIELD: _c7("simultaneous_tie_break", SETTING_CHOICES["simultaneous_tie_break"]),
+        f"{settings}__reactive_interjections": _c7("reactive_interjections", BOOLEAN_SELECT),
         f"{settings}__turn_concurrency": _enum(
             "Turn concurrency", SETTING_ENUMS["turn_concurrency"]
         ),
@@ -706,10 +748,27 @@ class ScenarioForm(forms.Form):
         for name in SETTING_ENUMS:
             field_name = f"story_settings_defaults__{name}"
             field = self.fields[field_name]
-            if isinstance(field, forms.ChoiceField):
+            if not isinstance(field, forms.ChoiceField):
+                continue
+            if name in C7_SETTINGS:
+                field.choices = [
+                    engine_default_choice(C7_DEFAULTS[name]),
+                    *kept_choices(SETTING_CHOICES[name], data.get(field_name) or None),
+                ]
+            else:
                 field.choices = _kept(
                     _enum_choices(SETTING_ENUMS[name]), [data.get(field_name, "")], UNKNOWN_SUFFIX
                 )
+        tie_break = self.fields[TIE_BREAK_FIELD]
+        if isinstance(tie_break, forms.ChoiceField):
+            tie_break.choices = [
+                engine_default_choice(C7_DEFAULTS["simultaneous_tie_break"]),
+                *kept_choices(
+                    SETTING_CHOICES["simultaneous_tie_break"],
+                    data.get(TIE_BREAK_FIELD) or None,
+                    tie_break_label,
+                ),
+            ]
         for name, field in self.fields.items():
             if name != OWNER:
                 field.widget.attrs["id"] = field_anchor(field_path(name))
@@ -857,8 +916,8 @@ class ScenarioEditor:
             if name == RATING_FIELD:
                 doc.setdefault("metadata", {})["content_rating_id"] = value or None
                 continue
-            if name == "story_settings_defaults__allow_new_arrivals":
-                value = {"true": True, "false": False}.get(value)
+            if name in BOOLEAN_SETTINGS:
+                value = select_bool(value)
             elif name == "world__event_types":
                 value = value or None
             elif name in (LOCATION_FIELD, VIEWPOINT_FIELD, PROFILE_FIELD) or name.startswith(

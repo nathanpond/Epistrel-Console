@@ -741,3 +741,133 @@ def test_the_scenario_filter_form_adds_include_companions() -> None:
     plain = ScenarioFilterForm({}, ratings=RatingChoices([]), listing_values=None)
     assert plain.is_valid()
     assert plain.query()["include_companions"] is False
+
+
+# --- #198: Engine M5's story-setting defaults ----------------------------------------------------
+
+M5_FIELDS = (
+    "story_settings_defaults__player_view",
+    "story_settings_defaults__sequence_order",
+    "story_settings_defaults__simultaneous_tie_break",
+    "story_settings_defaults__reactive_interjections",
+)
+
+
+def with_defaults(**settings: Any) -> dict[str, Any]:
+    body = draft()
+    body["story_settings_defaults"].update(settings)
+    return body
+
+
+def options(html: str, name: str) -> list[tuple[str, str]]:
+    import re
+
+    start = html.index(f'name="{name}"')
+    select = html[start : html.index("</select>", start)]
+    return re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', select)
+
+
+def test_the_new_defaults_follow_player_authority_with_c7_choices(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = edit_page(operator_client, engine).content.decode()
+    order = [
+        "story_settings_defaults__player_authority",
+        *M5_FIELDS,
+        "story_settings_defaults__turn_concurrency",
+    ]
+    positions = [html.index(f'name="{name}"') for name in order]
+    assert positions == sorted(positions)
+    assert options(html, M5_FIELDS[0]) == [
+        ("", "Engine default (character)"),
+        ("character", "Character (audience-filtered)"),
+        ("story", "Story (every beat in full)"),
+    ]
+    assert options(html, M5_FIELDS[1]) == [
+        ("", "Engine default (request order)"),
+        ("request", "Request order"),
+        ("director", "Director"),
+    ]
+    assert options(html, M5_FIELDS[2]) == [
+        ("", "Engine default (request order)"),
+        ("request_order", "Request order"),
+        ("director", "Director"),
+    ]
+    assert options(html, M5_FIELDS[3]) == [
+        ("", "Engine default (off)"),
+        ("false", "Off"),
+        ("true", "On"),
+    ]
+    # #68's rows keep their wording.
+    assert options(html, "story_settings_defaults__allow_new_arrivals")[1:] == [
+        ("true", "Yes"),
+        ("false", "No"),
+    ]
+    assert options(html, "story_settings_defaults__player_authority")[0] == (
+        "",
+        "(deployment default)",
+    )
+
+
+def test_reactive_interjections_and_tie_break_round_trip(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = form(operator_client, engine)
+    data["story_settings_defaults__player_view"] = "story"
+    data["story_settings_defaults__sequence_order"] = "director"
+    data["story_settings_defaults__simultaneous_tie_break"] = "director"
+    data["story_settings_defaults__reactive_interjections"] = "true"
+    save(operator_client, engine, data)
+    assert changes(engine) == {
+        "story_settings_defaults": {
+            "player_view": "story",
+            "sequence_order": "director",
+            "simultaneous_tie_break": "director",
+            "reactive_interjections": True,
+        }
+    }
+    # A stored value reads back into the editor; Engine default sends null over it.
+    engine.reset()
+    stored = with_defaults(
+        player_view="story", simultaneous_tie_break="director", reactive_interjections=False
+    )
+    data = form(operator_client, engine, stored)
+    assert data["story_settings_defaults__reactive_interjections"] == "false"
+    assert data["story_settings_defaults__simultaneous_tie_break"] == "director"
+    assert data["story_settings_defaults__player_view"] == "story"
+    data["story_settings_defaults__reactive_interjections"] = ""
+    data["story_settings_defaults__player_view"] = ""
+    save(operator_client, engine, data)
+    assert changes(engine) == {
+        "story_settings_defaults": {"player_view": None, "reactive_interjections": None}
+    }
+
+
+def test_stored_state_tie_break_is_kept(operator_client: Client, engine: FakeEngine) -> None:
+    stored = with_defaults(simultaneous_tie_break="state:initiative")
+    response = edit_page(operator_client, engine, stored)
+    html = response.content.decode()
+    assert options(html, M5_FIELDS[2])[-1] == (
+        "state:initiative",
+        "state:initiative (M6: request order applies)",
+    )
+    data = posted(response)
+    data["visual_style__prompt"] = "Ink"
+    save(operator_client, engine, data)
+    assert changes(engine) == {"visual_style": {"prompt": "Ink"}}
+
+
+def test_unchanged_new_defaults_are_not_in_the_patch(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    stored = with_defaults(
+        player_view="character",
+        sequence_order="request",
+        simultaneous_tie_break="request_order",
+        reactive_interjections=True,
+    )
+    data = form(operator_client, engine, stored)
+    data["story_settings_defaults__audit_retention_days"] = "45"
+    save(operator_client, engine, data)
+    # Complement: only the changed key; none of the four stored ones.
+    assert changes(engine) == {"story_settings_defaults": {"audit_retention_days": 45}}

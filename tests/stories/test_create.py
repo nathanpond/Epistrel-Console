@@ -353,3 +353,236 @@ def test_rating_list_failure_shows_the_panel_in_place_of_the_form(
     html = operator_client.get(URL).content.decode()
     assert "Engine error 503 unavailable" in html
     assert "Create story" not in html
+
+
+# --- #198: creation settings and participation roles -----------------------------------------
+
+SIX = (
+    "player_authority",
+    "player_view",
+    "interaction_mode",
+    "sequence_order",
+    "simultaneous_tie_break",
+    "reactive_interjections",
+)
+ENGINE_DEFAULTS = {
+    "player_authority": "Engine default (own character)",
+    "player_view": "Engine default (character)",
+    "interaction_mode": "Engine default (sequential)",
+    "sequence_order": "Engine default (request order)",
+    "simultaneous_tie_break": "Engine default (request order)",
+    "reactive_interjections": "Engine default (off)",
+}
+
+
+def created(engine: FakeEngine) -> None:
+    engine.respond("POST", "/stories", 201, json=engine_fixture("create_story"))
+
+
+def test_the_form_offers_the_six_settings_after_the_viewpoint(
+    operator_client: Client, ratings: FakeEngine
+) -> None:
+    html = operator_client.get(URL).content.decode()
+    positions = [html.index('id="id_viewpoint"')] + [html.index(f'id="id_{n}"') for n in SIX]
+    assert positions == sorted(positions)
+    for name, first in ENGINE_DEFAULTS.items():
+        block = field_block(html, name)
+        options = re.findall(r"<option value=\"([^\"]*)\"[^>]*>([^<]*)</option>", block)
+        assert options[0] == ("", first), name
+    assert "Lite stories get this as a prompt instruction only." in field_block(
+        html, "player_authority"
+    )
+    assert "<small>" not in field_block(html, "player_view")
+    row = fieldset(html, 0)
+    assert row.index("field-deflection_style") < row.index("field-participation_role")
+    assert row.index("field-participation_role") < row.index("field-participation_fixed")
+    assert "Engine default (reactive)" in row
+    assert "Leave on Engine default for the player&#x27;s character." in row
+    assert "The engine never escalates or lowers a fixed role" in row
+
+
+def test_new_story_sends_chosen_settings_only(operator_client: Client, engine: FakeEngine) -> None:
+    created(engine)
+    operator_client.post(
+        URL,
+        form_data(
+            MARA,
+            viewpoint="Mara",
+            interaction_mode="simultaneous",
+            player_authority="co_author",
+            simultaneous_tie_break="director",
+            reactive_interjections="true",
+            player_view="",
+            sequence_order="",
+        ),
+    )
+    assert sent_body(engine)["settings"] == {
+        "default_output_viewpoint": "Mara",
+        "player_authority": "co_author",
+        "interaction_mode": "simultaneous",
+        "simultaneous_tie_break": "director",
+        "reactive_interjections": True,
+    }
+    # Complement: untouched selects add no keys; an all-default form sends only the viewpoint.
+    engine.reset()
+    created(engine)
+    operator_client.post(URL, form_data(MARA, viewpoint="Mara", **dict.fromkeys(SIX, "")))
+    assert sent_body(engine)["settings"] == {"default_output_viewpoint": "Mara"}
+    engine.reset()
+    created(engine)
+    operator_client.post(URL, form_data(MARA, **dict.fromkeys(SIX, "")))
+    assert "settings" not in sent_body(engine)
+
+
+def test_explicit_default_setting_is_sent(operator_client: Client, engine: FakeEngine) -> None:
+    created(engine)
+    operator_client.post(
+        URL,
+        form_data(
+            MARA,
+            player_authority="own_character",
+            player_view="character",
+            interaction_mode="sequential",
+            sequence_order="request",
+            simultaneous_tie_break="request_order",
+            reactive_interjections="false",
+        ),
+    )
+    assert sent_body(engine)["settings"] == {
+        "player_authority": "own_character",
+        "player_view": "character",
+        "interaction_mode": "sequential",
+        "sequence_order": "request",
+        "simultaneous_tie_break": "request_order",
+        "reactive_interjections": False,
+    }
+
+
+def test_new_story_sends_participation_for_a_chosen_role(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    created(engine)
+    jenni = character(name="Jenni", definition="A neighbour.", true_age="29")
+    operator_client.post(
+        URL,
+        form_data(
+            MARA,
+            {**TOBIN, "participation_role": "primary", "participation_fixed": "on"},
+            {**jenni, "participation_role": "silent"},
+            character(name="Ola", definition="A dog.", true_age="3", participation_role=""),
+        ),
+    )
+    characters = sent_body(engine)["characters"]
+    assert "participation" not in characters[0]
+    assert characters[1]["participation"] == {"role": "primary", "fixed": True}
+    assert characters[2]["participation"] == {"role": "silent", "fixed": False}
+    assert "participation" not in characters[3]
+
+
+def role_errors(html: str, index: int) -> str:
+    row = fieldset(html, index)
+    return row[row.index("field-participation_role") : row.index("field-participation_fixed")]
+
+
+@pytest.mark.parametrize(
+    "posted",
+    [{"participation_role": "primary"}, {"participation_fixed": "on"}],
+    ids=["role", "fixed-alone"],
+)
+def test_player_row_with_a_role_is_a_local_error(
+    operator_client: Client, engine: FakeEngine, posted: dict[str, str]
+) -> None:
+    html = operator_client.post(URL, form_data({**MARA, **posted}, TOBIN)).content.decode()
+    errors = role_errors(html, 0)
+    assert errors.count("The player&#x27;s character has no role.") == 1
+    assert "Choose a role to fix it." not in errors
+    assert calls(engine, "POST", "/stories") == []
+
+
+def test_fixed_without_role_is_a_local_error(operator_client: Client, engine: FakeEngine) -> None:
+    html = operator_client.post(
+        URL, form_data(MARA, {**TOBIN, "participation_fixed": "on"})
+    ).content.decode()
+    assert "Choose a role to fix it." in role_errors(html, 1)
+    assert "Choose a role to fix it." not in fieldset(html, 0)
+    assert calls(engine, "POST", "/stories") == []
+    # A blank extra row with only "Fixed" ticked counts as changed: required errors and the C8 one.
+    engine.reset()
+    html = operator_client.post(
+        URL, form_data(MARA, character(participation_fixed="on"))
+    ).content.decode()
+    second = fieldset(html, 1)
+    assert "This field is required." in second
+    assert "Choose a role to fix it." in role_errors(html, 1)
+    assert calls(engine, "POST", "/stories") == []
+
+
+@pytest.mark.parametrize("name", SIX)
+def test_settings_422_lands_beside_the_field(
+    operator_client: Client, engine: FakeEngine, name: str
+) -> None:
+    message = f"{name} is not allowed here"
+    engine.respond(
+        "POST",
+        "/stories",
+        422,
+        json=error_422("validation_error", message, field=f"body.settings.{name}"),
+    )
+    html = operator_client.post(URL, form_data(MARA)).content.decode()
+    assert message in field_block(html, name)
+    assert f"The Engine rejected the story: {message}" in html
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "body.characters[1]",
+        "body.characters[1].participation",
+        "body.characters[1].participation.role",
+        "body.characters[1].participation.fixed",
+    ],
+)
+def test_participation_422_lands_on_its_row(
+    operator_client: Client, engine: FakeEngine, path: str
+) -> None:
+    message = "the player's character has no participation role"
+    engine.respond("POST", "/stories", 422, json=error_422("validation_error", message, field=path))
+    html = operator_client.post(
+        URL, form_data(TOBIN, {**MARA, "participation_role": ""})
+    ).content.decode()
+    assert message.replace("'", "&#x27;") in role_errors(html, 1)
+    assert message.replace("'", "&#x27;") not in fieldset(html, 0)
+
+
+def test_bare_settings_422_is_a_form_error(operator_client: Client, engine: FakeEngine) -> None:
+    message = "Extra inputs are not permitted"
+    engine.respond(
+        "POST", "/stories", 422, json=error_422("validation_error", message, field="body.settings")
+    )
+    html = operator_client.post(URL, form_data(MARA, viewpoint="Mara")).content.decode()
+    assert f"settings: {message}" in html
+    assert message not in field_block(html, "viewpoint")
+    # A creation setting the form doesn't show falls back the same way.
+    engine.reset()
+    engine.respond(
+        "POST",
+        "/stories",
+        422,
+        json=error_422("validation_error", message, field="body.settings.turn_queue_max"),
+    )
+    html = operator_client.post(URL, form_data(MARA)).content.decode()
+    assert f"settings.turn_queue_max: {message}" in html
+
+
+def test_creation_error_paths_enumerate_the_fixed_keys() -> None:
+    from console.forms.stories import CREATION_ERROR_PATHS
+
+    assert set(CREATION_ERROR_PATHS) == {
+        *(f"settings.{name}" for name in SIX),
+        "settings.default_output_viewpoint",
+        "viewpoint_unresolved",
+    }
+    assert len(CREATION_ERROR_PATHS) == 8
+    assert CREATION_ERROR_PATHS["characters[3]"] == "characters[3].participation_role"
+    assert "settings" not in CREATION_ERROR_PATHS
+    assert "characters[3].true_age" not in CREATION_ERROR_PATHS

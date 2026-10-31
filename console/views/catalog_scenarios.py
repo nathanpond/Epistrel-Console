@@ -96,6 +96,7 @@ from console.media_slots import (
     infos_to_snapshot,
     slot_infos,
 )
+from console.story_settings import LABELS, setting_label
 from console.views.catalog_lifecycle import SCENARIO as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import Follows, follows_label, lifecycle_for
 from console.views.ownership import ownership_context
@@ -125,6 +126,8 @@ FACTS_FIELD = "facts"
 FACTS_SALT = "console.scenario_facts"
 VERSION = "version"
 DESCRIPTION_SHORT = 200
+# Engine M5's story-setting defaults (#198), listed after Player authority in this order.
+M5_DEFAULTS = ("player_view", "sequence_order", "simultaneous_tie_break", "reactive_interjections")
 # The content groups "Draft differs from published" compares (#65's rule; not the envelope).
 COMPARED_GROUPS = (
     "public_card",
@@ -582,6 +585,10 @@ def _detail_page(
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""
+        defaults = entry.story_settings_defaults
+        context["m5_defaults"] = [
+            (LABELS[name], setting_label(name, getattr(defaults, name))) for name in M5_DEFAULTS
+        ]
     context.update(
         {
             "entry": entry,

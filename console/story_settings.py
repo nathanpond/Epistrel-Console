@@ -163,6 +163,20 @@ def tie_break_label(value: str) -> str:
     return humanised(value)
 
 
+def setting_label(name: str, value: object) -> str:
+    """A stored M5 setting as a read-only page shows it (#198's scenario detail): "—" for
+    ``None``, "On" / "Off" for a boolean, the tie-break through :func:`tie_break_label`, else
+    its :data:`SETTING_CHOICES` label (an unknown value :func:`humanised`, C3)."""
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        return "On" if value else "Off"
+    text = str(value)
+    if name == "simultaneous_tie_break":
+        return tie_break_label(text)
+    return dict(SETTING_CHOICES.get(name, [])).get(text) or humanised(text)
+
+
 def select_bool(value: str) -> bool | None:
     """A :data:`BOOLEAN_SELECT` value: ``"true"`` → ``True``, ``"false"`` → ``False``, anything
     else (``""`` included) → ``None``."""

@@ -202,6 +202,50 @@ def test_the_detail_shows_every_section(operator_client: Client, engine: FakeEng
     assert 'href="/catalog/scenarios/01JC000000000000000000SCN2/edit/"' in html
 
 
+def test_detail_lists_the_new_story_setting_defaults(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#198: four rows after Player authority, before Turn concurrency."""
+    body = detail()
+    body["story_settings_defaults"].update(
+        player_view="story", simultaneous_tie_break="state:initiative", reactive_interjections=True
+    )
+    engine.respond("GET", S_ITEM, 200, json=body)
+    html = detail_page(operator_client, engine)
+    section = html[html.index('<section id="story-settings-defaults">') :]
+    section = section[: section.index("</dl>")]
+    rows = re.findall(r"<dt>([^<]*)</dt><dd>([^<]*)</dd>", section)
+    labels = [label for label, _ in rows]
+    start = labels.index("Player authority")
+    assert rows[start + 1 : start + 6] == [
+        ("Player view (where perception is on)", "Story (every beat in full)"),
+        ("Sequence order (sequential turns)", "—"),
+        ("Tie-break (simultaneous turns)", "state:initiative (M6: request order applies)"),
+        ("Reactive interjections", "On"),
+        ("Turn concurrency", "—"),
+    ]
+    engine.reset()
+    body["story_settings_defaults"].update(
+        player_view=None, sequence_order="director", reactive_interjections=False
+    )
+    engine.respond("GET", S_ITEM, 200, json=body)
+    page = text(detail_page(operator_client, engine))
+    assert "Player view (where perception is on) —" in page
+    assert "Sequence order (sequential turns) Director" in page
+    assert "Reactive interjections Off" in page
+
+
+def test_setting_label() -> None:
+    from console.story_settings import setting_label
+
+    assert setting_label("player_view", None) == "—"
+    assert setting_label("player_view", "character") == "Character (audience-filtered)"
+    assert setting_label("sequence_order", "random") == "Random"  # C3: humanised, no suffix
+    assert setting_label("simultaneous_tie_break", "request_order") == "Request order"
+    assert setting_label("simultaneous_tie_break", "coin_flip") == "Coin flip"
+    assert setting_label("reactive_interjections", False) == "Off"
+
+
 def test_the_policies_table_shows_the_defaults(operator_client: Client, engine: FakeEngine) -> None:
     body = detail()
     body["story_settings_defaults"]["policies"] = [

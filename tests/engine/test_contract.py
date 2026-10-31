@@ -814,6 +814,20 @@ def test_scenario_form_enums_match_the_schema() -> None:
         assert enum(settings[name]) == list(values), name
 
 
+def test_tie_break_choices_match_the_schema_pattern() -> None:
+    """#198: the one tie-break list both forms offer fits both schemas' pattern."""
+    import re
+
+    from console.story_settings import SETTING_CHOICES
+
+    schemas = DOC["components"]["schemas"]
+    for component in ("CreationSettings", "StorySettingsDefaults"):
+        node = schemas[component]["properties"]["simultaneous_tie_break"]
+        (pattern,) = [o["pattern"] for o in node.get("anyOf") or [node] if "pattern" in o]
+        for value, _ in SETTING_CHOICES["simultaneous_tie_break"]:
+            assert re.fullmatch(pattern, value), (component, value)
+
+
 def test_health_checks_both_declared_statuses() -> None:
     responses = DOC["paths"]["/health"]["get"]["responses"]
     assert {"200", "503"} <= set(responses)
