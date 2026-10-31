@@ -2186,3 +2186,33 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 2) The role and weight views' return address is now `_cast_back()`. It builds `cast_row_url` from the URL's ids and keeps it only when `url_has_allowed_host_and_scheme` passes, checked in the `if` as `acting.back_to` does. Otherwise it returns the story list.
   **Why:** CodeQL flagged medium `py/url-redirection` on redirects built from path values.
   **Issue:** #61
+
+## /n8-exec M5 (verification fixes, round 1) — 2026-10-31
+
+- **Decision:** Worked the 13 open M5 bug issues (#213–#225) on a fresh branch `milestone/m5-verification-fixes` off `main`, since the original milestone branch was already squash-merged in #212.
+  **Why:** Every M5 story is closed; only verify-filed bugs remain.
+  **Issue:** #213–#225
+- **Decision:** (Rule 1) The perception page's variant check is now `re.fullmatch(r"[0-9]+:[0-9]+")`, replacing `^\d+:\d+$` with `.match`. A trailing newline or non-ASCII digits are treated as no variant.
+  **Why:** This is the fix the bug names. `$` matched before a trailing `\n`, and `\d` matched Unicode digits.
+  **Issue:** #223
+- **Decision:** (Rule 1) `turn_renders`' Input group now leaves out every reaction (any beat with a non-player `narrated_by`). A reaction whose narrator is in `order` shows once, in that narrator's group. One whose narrator isn't in `order` goes to Other beats, as the module docstring already said.
+  **Why:** The bug allowed either placement. Leaving reactions out of Input matches `_group`, which also excludes reactions from a character's own beats, and the docstring's rule for Other beats.
+  **Issue:** #224
+- **Decision:** (Rule 1) `RoleRelationship.trust` is now `Any` (raw), not `float | None`. A stored non-number no longer fails the whole scenario read as `bad_response`, and the detail page shows it as raw JSON through the existing `trust_raw` branch.
+  **Why:** The bug offered two fixes: make the model lenient, or drop the AC7 clause. Making the model lenient keeps #206 AC7 as written, the same way `RoleEligibility.age_range` is raw. Only `cast_table.relationship_row` reads the field, and it already handles non-numbers. Dropping the AC clause would have been a plan change.
+  **Issue:** #225
+- **Decision:** The missing complement tests (#213–#222) only add assertions; no production code changed for them. For each one I checked by hand that the new test fails when the guarded behaviour is removed: the beliefs header gate, the divergences hidden `after_id` and datalist, the flash's `if ids:`, and the inspector's `not violations` gate. The template and code mutations were reverted.
+  **Why:** A complement test that can't fail guards nothing.
+  **Issue:** #213, #214, #215, #218, #219
+- **Decision:** #217's test compares the Render cell of the same row with and without `narrated_by`, both with `render_character_ids` unset ("—") and set ("Mara, Jenni").
+  **Why:** The issue asks that narration leave the Render column unchanged, ideally with render ids set.
+  **Issue:** #217
+- **Decision:** #216's play-transcript test serves a history with `labels` removed at `character:<Tobin>`, as the History complement test does. The Engine omits labels at a character viewpoint, and the test asserts the Console adds no classification of its own.
+  **Why:** This mirrors `test_history_view.py`'s existing #207 complement.
+  **Issue:** #216
+- **Decision:** (Rule 2) The CI fix changes the #223 check to `_is_variant()` (`str.partition(":")` plus an ASCII-digit set test), with no regex. It accepts and refuses the same inputs as `fullmatch(r"[0-9]+:[0-9]+")`. Tests now also cover `1:2:3`, `:2` and `1:`.
+  **Why:** CodeQL flagged a high `py/polynomial-redos` on the regex in PR #226, the same finding and fix as #194's `scalar_syntax`.
+  **Issue:** #223
+- **Decision:** (Rule 3) Raised the CI `test` job's `timeout-minutes` from 15 to 25.
+  **Why:** On PR #226 the job was cancelled by its own 15-minute timeout (16:22:22 to 16:37:39), and the gate failed with `test=cancelled`. The last green runs of the same job took 13m12s (#212) and 14m17s (plan-m5-state), so the suite had already grown to within a minute of the limit. 25 minutes matches the docker job's existing ceiling. A re-run would have stayed one slow runner away from the same failure.
+  **Issue:** #213 (PR #226)

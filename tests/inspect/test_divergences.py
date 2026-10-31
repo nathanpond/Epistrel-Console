@@ -143,6 +143,12 @@ def field(html: str, name: str) -> str:
     return found.group(1)
 
 
+def filters(html: str) -> str:
+    found = re.search(r'<form method="get" id="divergences-filters"[^>]*>(.*?)</form>', html, re.S)
+    assert found is not None
+    return found.group(1)
+
+
 def options(html: str) -> list[tuple[str, str]]:
     return re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', field(html, "speaker"))
 
@@ -366,7 +372,11 @@ def test_belief_link_left_out_without_beliefs_route(
 def test_speaker_options(operator_client: Client, engine: FakeEngine) -> None:
     html = page(operator_client)
     assert options(html) == [("", "Any"), (ALICE, "Alice"), (BOB, "Bob"), (PAT, "Pat (player)")]
-    assert '<input type="text" name="subject" size="30"' in field(html, "subject")
+    subject = field(html, "subject")
+    assert '<input type="text" name="subject" size="30"' in subject
+    assert "datalist" not in subject  # #215: the Subject field has no datalist
+    assert "list=" not in subject
+    assert "<datalist" not in filters(html)
     as_of = field(html, "as_of")
     assert 'type="number"' in as_of
     assert 'step="1"' in as_of
@@ -515,6 +525,17 @@ def test_paging_links(operator_client: Client, engine: FakeEngine) -> None:
 def sent_for(engine: FakeEngine, cursor: str) -> dict[str, str]:
     (call,) = [r for r in reads(engine) if r.url.params.get("after_id") == cursor]
     return dict(call.url.params)
+
+
+def test_apply_drops_after_id(operator_client: Client, engine: FakeEngine) -> None:
+    """#214: on a page loaded with a valid ``after_id`` the filter form carries no cursor, so
+    Apply always starts at the first page."""
+    form = filters(page(operator_client, f"?speaker={BOB}&after_id={DV[3]}"))
+    assert sent_for(engine, DV[3])["after_id"] == DV[3]
+    assert "after_id" not in form
+    assert DV[3] not in form
+    names = re.findall(r'<(?:input|select)[^>]*\sname="([^"]+)"', form)
+    assert names == ["speaker", "subject", "as_of"]
 
 
 def test_bad_after_id_dropped_not_sent(operator_client: Client, engine: FakeEngine) -> None:

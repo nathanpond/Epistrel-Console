@@ -87,7 +87,7 @@ jobs:
   test:
     # CONSOLE_ENGINE_URL stays unset here: tests and tooling must not need an Engine.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25  # the suite alone takes ~13-14 min on a hosted runner
     steps:
       - uses: actions/checkout@v7
         with:

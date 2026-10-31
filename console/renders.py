@@ -4,7 +4,8 @@
 order) by rendering character, in the turn's ``order``:
 
 1. "Input — <actor>": the turn actor's beats before the first beat of a character in ``order``
-   (only when the actor is not in ``order`` itself);
+   (only when the actor is not in ``order`` itself), reactions excluded (they belong to their
+   narrator's group or Other beats, so no beat shows twice, #224);
 2. one group per distinct id in ``order``: reactions before the character's first own beat at
    the top, then its own beats, each later reaction it narrated nested under its nearest
    preceding own beat (one level only);
@@ -142,7 +143,11 @@ def turn_renders(
             (i for i, item in enumerate(items) if item.actor_character_id in in_order),
             len(items),
         )
-        inputs = tuple(beat(i, "") for i in range(cut) if items[i].actor_character_id == actor)
+        inputs = tuple(
+            beat(i, "")
+            for i in range(cut)
+            if items[i].actor_character_id == actor and not is_reaction(items[i])
+        )
         if inputs:
             heading = INPUT_HEADING.format(character_label(actor, labels))
             groups.append(RenderGroup(heading, INPUT_ANCHOR, (), inputs))
