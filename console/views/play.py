@@ -318,6 +318,7 @@ class Transcript:
     start: TurnControls | None = None  # turn 0: "Rewind to start", "Fork from here" (#53)
     archived_note: str = ""
     legend: bool = False  # a structured beat is shown: the verdict legend (#147)
+    classification_legend: bool = False  # a classified say is shown: the legend line (#207)
 
 
 def _speaker(item: HistoryItem, labels: dict[str, str]) -> str:
@@ -413,6 +414,7 @@ def _transcript(
         start=turn_controls(basis, 0, chains=chains),
         archived_note=play_story.timeline_note,
         legend=any(e.trace is not None for e in entries),
+        classification_legend=any(e.trace is not None and e.trace.classified for e in entries),
     )
 
 

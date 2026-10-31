@@ -158,3 +158,36 @@ def test_the_ownership_panel_sits_collapsed_under_the_header(
     assert "relation=player&amp;principal=team%2Falice" in html
     opened = operator_client.get(f"/stories/{STORY}/?panel=ownership").content.decode()
     assert '<details id="ownership" class="ownership" open>' in opened
+
+
+def test_transcript_shows_classification_at_omniscient(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#207: an omniscient transcript shows a classified say's tag and the legend's line."""
+    from tests.play.helpers import history_json
+
+    history = history_json()
+    say = history["items"][0]
+    say.update(
+        propositions=[],
+        labels={
+            "intent": "sincere",
+            "belief_relation": "inconsistent",
+            "objective_relation": "false",
+            "classification": "lie",
+        },
+    )
+    answer_page(engine, history=history)
+    url = reverse("stories:transcript", args=[STORY])
+    html = operator_client.get(
+        url, {"viewpoint": "omniscient", "snapshot": snapshot()}, headers=HTMX
+    ).content.decode()
+    (read,) = calls(engine, "GET", f"/stories/{STORY}/history")
+    assert read.url.params["viewpoint"] == "omniscient"
+    assert (
+        '<span class="beat-label beat-classification classification-lie"'
+        ' title="classification: lie">Lie</span>'
+    ) in html
+    assert "<dt>classification</dt>" in html
+    assert html.index("<dt>classification</dt>") < html.index('<ol class="transcript">')
+    assert "verified" not in html.lower()

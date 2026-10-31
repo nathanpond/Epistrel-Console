@@ -2111,7 +2111,9 @@ class UtteranceLabels:
     """``UtteranceLabelsModel``: a ``say``-channel item's three independent labels (FR-TURN-6),
     M5's ``classification`` (open: any string is kept, C2) and ``intent_corrected``. A
     ``classification`` that isn't a string or ``null``, or an ``intent_corrected`` that isn't a
-    bool, reads as unset with the raw value in ``extras``; other keys land in ``extras``."""
+    bool, reads as unset with the raw value in ``extras``; other keys land in ``extras``. The beat
+    trace shows ``classification`` as its classification tag and ``intent_corrected`` as
+    "(corrected)" on the intent tag (#207)."""
 
     intent: str
     belief_relation: str

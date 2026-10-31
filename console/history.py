@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 from django.urls import reverse
+from django.utils.text import slugify
 
 from console.engine.models import (
     BeatProposition,
@@ -41,8 +42,8 @@ from console.engine.models import (
 )
 from console.inspect import retrieval_url
 from console.models import EngineOperation
-from console.retrieval import humanised
 from console.turn_trace import MorePart, TurnTrace, declared_beat, inline_json
+from console.wording import humanised
 
 if TYPE_CHECKING:
     from console.feedback import FeedbackWidget
@@ -395,10 +396,12 @@ EN_DASH = "\u2013"  # between the bounds of "(invalid span 12-40)"
 
 @dataclass(frozen=True)
 class LabelTag:
-    """One utterance label as a tag: the humanised value, ``title`` "intent: sincere"."""
+    """One utterance label as a tag: the humanised value, ``title`` "intent: sincere";
+    ``css_class`` is added after ``beat-label`` (the classification tag's, a corrected intent's)."""
 
     text: str
     title: str
+    css_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -469,15 +472,45 @@ class BeatTrace:
     def beat_known(self) -> bool:
         return self.item.beat is not None
 
+    @property
+    def classified(self) -> bool:
+        """A classification tag is shown: the legend explains it (#207)."""
+        return any(t.css_class.startswith(CLASSIFICATION_CLASS) for t in self.tags)
+
+
+CLASSIFICATION_CLASS = "beat-classification"
+CORRECTED_CLASS = "intent-corrected"
+CORRECTED_SUFFIX = " (corrected)"
+CORRECTED_TITLE = (
+    "intent: {raw} — declared deceptive; relabelled sincere because the speaker's beliefs "
+    "support it"
+)
+
 
 def label_tags(labels: UtteranceLabels) -> tuple[LabelTag, ...]:
-    """Intent · belief · objective, humanised (convention 5), the raw value in ``title``."""
-    pairs = (
-        ("intent", labels.intent),
-        ("belief", labels.belief_relation),
-        ("objective", labels.objective_relation),
-    )
-    return tuple(LabelTag(humanised(value), f"{name}: {value}") for name, value in pairs)
+    """Intent · belief · objective, humanised (convention 5), the raw value in ``title``; then,
+    when the Engine classified the say (#207, omniscient reads only), its classification
+    (humanised, C3; ``title`` "classification: lie", class ``beat-classification
+    classification-<slug>``). An ``intent_corrected`` intent reads "Sincere (corrected)"."""
+    if labels.intent_corrected:
+        intent = LabelTag(
+            humanised(labels.intent) + CORRECTED_SUFFIX,
+            CORRECTED_TITLE.format(raw=labels.intent),
+            CORRECTED_CLASS,
+        )
+    else:
+        intent = LabelTag(humanised(labels.intent), f"intent: {labels.intent}")
+    tags = [
+        intent,
+        LabelTag(humanised(labels.belief_relation), f"belief: {labels.belief_relation}"),
+        LabelTag(humanised(labels.objective_relation), f"objective: {labels.objective_relation}"),
+    ]
+    raw = labels.classification
+    if raw:
+        slug = slugify(raw)
+        css = f"{CLASSIFICATION_CLASS} classification-{slug}" if slug else CLASSIFICATION_CLASS
+        tags.append(LabelTag(humanised(raw), f"classification: {raw}", css))
+    return tuple(tags)
 
 
 def valid_span(claim: DetectedClaim, text: str) -> bool:

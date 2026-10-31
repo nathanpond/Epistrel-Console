@@ -1814,3 +1814,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Updated #190's `test_column_order`: the Actions column and a Change… cell per row are now expected.
   **Why:** #194 fills #190's `actions` hook by design; not a weakening.
   **Issue:** #194
+- **Decision:** `label_tags` builds the intent tag separately (corrected or not) and appends the classification tag; `CLASSIFICATION_CLASS`, `CORRECTED_CLASS`, `CORRECTED_SUFFIX`, `CORRECTED_TITLE` are module constants in `console/history.py`; `history.py` now imports `humanised` from `console.wording` instead of the `console.retrieval` re-export.
+  **Why:** AC names the constants and #187's `console.wording` as the source of `humanised`.
+  **Issue:** #207
+- **Decision:** History's `classification_legend` is computed in `_with_traces` after the traces are attached, over every row of every group; no extra read.
+  **Why:** AC; feedback-collapsed rows stay in `group.rows`, so they count.
+  **Issue:** #207
+- **Decision:** Added one test beyond the plan: an omniscient History page shows the classification tag and the legend line once, and not without a classified say.
+  **Why:** the plan's page tests covered only the character complement on History.
+  **Issue:** #207

@@ -15,7 +15,7 @@
 </section>
 {% endif %}
 {% if page.settings_error %}<p class="warning">Policy names unavailable — showing ids.</p>{% include "console/_engine_error.html" with engine_error=page.settings_error %}{% endif %}
-{% if page.legend %}{% include "console/_verdict_legend.html" %}
+{% if page.legend %}{% include "console/_verdict_legend.html" with classification=page.classification_legend %}
 {% endif %}{% if page.trace_cap_note %}<p class="warning trace-notice">{{ page.trace_cap_note }}</p>
 {% endif %}{% if page.trace_failures %}<p class="warning trace-notice">{{ page.trace_failures }}</p>
 {% endif %}{% if page.groups %}

@@ -115,6 +115,7 @@ class Page:
     clear_chain_url: str = ""
     settings_error: ErrorPanel | None = None
     legend: bool = False  # a structured beat is shown: the verdict legend (#147)
+    classification_legend: bool = False  # a classified say is shown: the legend line (#207)
     trace_cap_note: str = ""
     trace_failures: str = ""  # "Turn trace unavailable: T3 (timeout), …"
 
@@ -258,6 +259,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         clear_chain_url=_url(story.id, _with(request, variant=None)) if variant else "",
         settings_error=settings_error,
         legend=traces.legend,
+        classification_legend=traces.classification_legend,
         trace_cap_note=traces.cap_note,
         trace_failures=traces.failures,
     )
@@ -318,6 +320,7 @@ def turn_traces(
 @dataclass(frozen=True)
 class Traces:
     legend: bool = False
+    classification_legend: bool = False  # any row's trace is classified (#207)
     cap_note: str = ""
     failures: str = ""
 
@@ -350,8 +353,12 @@ def _with_traces(
             for row in group.rows
         ]
     failed = [f"{operations[op]} ({why})" for op, why in read.items() if isinstance(why, str)]
+    classified = any(
+        row.trace is not None and row.trace.classified for group in groups for row in group.rows
+    )
     return Traces(
         legend=True,
+        classification_legend=classified,
         cap_note=TRACE_CAP_NOTE if load and len(operations) > TRACE_TURNS_MAX else "",
         failures=f"Turn trace unavailable: {', '.join(failed)}" if failed else "",
     )

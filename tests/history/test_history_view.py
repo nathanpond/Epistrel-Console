@@ -280,3 +280,24 @@ def test_history_is_linked_from_the_list_and_the_play_header(
         link = f'<a class="history-link" href="/stories/{item["id"]}/history/">History</a>'
         # #87: a held story's row offers its detail link and Delete only.
         assert (link in listed) is (item["status"] != "blocked_by_erasure")
+
+
+def test_character_viewpoint_shows_no_classification(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#207 complement: at a character viewpoint the Engine omits a classified say's labels, so
+    no classification tag, "(corrected)" or legend line shows, and the Console adds nothing."""
+    from tests.history.test_beat_trace import answer_history, history_body
+
+    body = history_body([2])
+    for item in body["items"]:
+        item.pop("labels", None)
+    body.update(output_viewpoint=f"character:{TOBIN}", audience_filter="co_location")
+    answer_history(engine, body)
+    html = page(operator_client, f"viewpoint=character:{TOBIN}")
+    assert '<details class="beat-trace">' in html
+    assert '<dl class="verdict-legend">' in html
+    assert "beat-classification" not in html
+    assert "(corrected)" not in html
+    assert "<dt>classification</dt>" not in html
+    assert "omniscient reads only" not in html

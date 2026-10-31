@@ -6,7 +6,7 @@
   {% if transcript.older_before_turn is not None %}<p><a href="{% url 'stories:history' transcript.story_id %}?before_turn={{ transcript.older_before_turn }}{% if transcript.viewpoint %}&amp;viewpoint={{ transcript.viewpoint|urlencode }}{% endif %}">Older →</a></p>{% endif %}
   {% if transcript.archived_note %}<p class="warning timeline-archived">{{ transcript.archived_note }}</p>{% endif %}
   {% if transcript.entries %}{% if transcript.legend %}
-  {% include "console/_verdict_legend.html" %}{% endif %}
+  {% include "console/_verdict_legend.html" with classification=transcript.classification_legend %}{% endif %}
   <ol class="transcript">
     {% if transcript.start %}{% include "console/timeline/_turn_controls.html" with c=transcript.start %}{% endif %}
     {% for entry in transcript.entries %}
