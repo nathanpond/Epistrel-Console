@@ -1,0 +1,168 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Where is Jenni?",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0101",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_say",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3C",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Jenni whispers something to Tobin",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0102",
+      "origin": "generated",
+      "propositions": [],
+      "fidelity": "envelope"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 3,
+      "kind": "beat_do",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Tobin glances toward the kitchen.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0103",
+      "origin": "generated",
+      "propositions": [
+        {
+          "proposition": {
+            "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+            "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+            "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PL1",
+            "polarity": "affirmed",
+            "qualifiers": {},
+            "valid_time": {
+              "kind": "interval",
+              "start": {
+                "outer": 10,
+                "inner": 12
+              },
+              "end": null
+            }
+          },
+          "verdict": null
+        }
+      ],
+      "fidelity": "content",
+      "narrated_by": "01JB2Z8Y5Q3W6K9M1N4P7R0T3C"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+      ],
+      "channel": "message",
+      "text": "Jenni whispers something to Tobin. Tobin glances toward the kitchen.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0104",
+      "origin": "generated"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "beat_say",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "The ferry is late again.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0002",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0201",
+      "origin": "generated",
+      "propositions": [
+        {
+          "proposition": {
+            "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+            "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+            "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PL1",
+            "polarity": "affirmed",
+            "qualifiers": {},
+            "valid_time": {
+              "kind": "interval",
+              "start": {
+                "outer": 10,
+                "inner": 12
+              },
+              "end": null
+            }
+          },
+          "verdict": null
+        }
+      ],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content",
+      "narrated_by": "player"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+      ],
+      "channel": "message",
+      "text": "The ferry is late again.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0002",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0202",
+      "origin": "generated"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": {
+        "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0104",
+        "text": "Jenni whispers something to Tobin. Tobin glances toward the kitchen."
+      }
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": {
+        "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0202",
+        "text": "The ferry is late again."
+      }
+    }
+  ],
+  "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+  "audience_filter": "full",
+  "player_view": "character",
+  "as_of": 2,
+  "timeline_revision": 3,
+  "next_before_turn": null
+}

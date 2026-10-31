@@ -10,7 +10,10 @@
 - :func:`explain_query` / :func:`explain_url`: a structured turn's "Explain retrieval" link
   into the Retrieval explorer (#142), rebuilt from the turn's transcript items;
 - :func:`beat_trace`: a structured beat's labels, visibility, highlighted detected claims and
-  Trace (#147), from the item and, when loaded, its turn's eval hooks (#139).
+  Trace (#147), from the item and, when loaded, its turn's eval hooks (#139);
+- :func:`audience_filter_label`, :func:`fidelity_badge` and :func:`narrated_label`: the audience
+  filter a character read applied, how the viewpoint perceived each beat and who narrated it
+  (#62; the play transcript reuses them, #196). One wording and style (convention 20).
 
 #53 builds its timeline controls onto these groups.
 """
@@ -43,7 +46,7 @@ from console.engine.models import (
 from console.inspect import retrieval_url
 from console.models import EngineOperation
 from console.turn_trace import MorePart, TurnTrace, declared_beat, inline_json
-from console.wording import humanised
+from console.wording import character_label, humanised
 
 if TYPE_CHECKING:
     from console.feedback import FeedbackWidget
@@ -227,6 +230,76 @@ def operation_links(story_id: str, operation_ids: Iterable[str]) -> dict[str, in
     return links
 
 
+# --- Audience filter, fidelity and narrators (#62) ----------------------------------------------
+
+ENVELOPE = "envelope"
+NOT_PERCEIVED = "none"
+PLAYER_NARRATOR = "player"  # ``narrated_by`` of a beat the player narrated (co_author, C16)
+AUDIENCE_FILTER_LABELS = {
+    "none": "None (perception off: every beat in full)",
+    "co_location": "Co-location",
+    "full": "Full",
+    "nothing_perceived": "Nothing perceived (this viewpoint perceived none of these beats)",
+    "bypassed_by_player_view": (
+        "Bypassed by player view: every beat in full, marked with what this character would "
+        "have perceived"
+    ),
+}
+
+
+def audience_filter_label(value: str) -> tuple[str, str]:
+    """``(label, raw)`` for a history read's ``audience_filter``; an unknown value humanised
+    (C3)."""
+    return AUDIENCE_FILTER_LABELS.get(value) or humanised(value), value
+
+
+@dataclass(frozen=True)
+class FidelityBadge:
+    """How the viewpoint perceived a beat, when not in full: the badge's text and ``title``,
+    and the class added to the item's row (``""``: none)."""
+
+    text: str
+    title: str
+    row_class: str = ""
+
+
+FIDELITY_BADGES: dict[str, FidelityBadge] = {
+    ENVELOPE: FidelityBadge(
+        "envelope",
+        "This character perceived only that it happened; the text is the envelope",
+        "fidelity-envelope",
+    ),
+    NOT_PERCEIVED: FidelityBadge(
+        "not perceived",
+        "Shown because player view is story; this character did not perceive this beat",
+        "fidelity-none",
+    ),
+}
+
+
+def fidelity_badge(value: str | None) -> FidelityBadge | None:
+    """``None`` for ``content`` or no fidelity; an unknown value's badge is humanised (C3),
+    titled with the raw value, with no row class."""
+    if not value or value == "content":
+        return None
+    return FIDELITY_BADGES.get(value) or FidelityBadge(humanised(value), value)
+
+
+def narrated_label(item: HistoryItem, labels: Mapping[str, str]) -> str:
+    """The Actor column: the actor's label ("—" when none), then " (narrated by <name>)" for a
+    narrated item: the narrator's cast label (a short id outside the cast, C4), or "the player"
+    (C16)."""
+    actor = _label(item.actor_character_id, labels) if item.actor_character_id else "—"
+    if not item.narrated_by:
+        return actor
+    narrator = (
+        "the player"
+        if item.narrated_by == PLAYER_NARRATOR
+        else character_label(item.narrated_by, labels)
+    )
+    return f"{actor} (narrated by {narrator})"
+
+
 # --- Turn groups --------------------------------------------------------------------------------
 
 
@@ -241,6 +314,7 @@ class Row:
     same_message: bool = False  # shares message_id with the row before it (say + do)
     feedback: FeedbackWidget | None = None  # the "Rate" control (#83, set by the view)
     trace: BeatTrace | None = None  # a structured beat's trace (#147, set by the view)
+    fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62)
 
 
 @dataclass
@@ -291,9 +365,15 @@ def turn_groups(
             and previous.message_id == item.message_id
             and previous.turn == item.turn
         )
-        actor = _label(item.actor_character_id, labels) if item.actor_character_id else "—"
         render = tuple(_label(c, labels) for c in item.render_character_ids or ())
-        row = Row(item, actor, render, links.get(item.operation_id), same)
+        row = Row(
+            item,
+            narrated_label(item, labels),
+            render,
+            links.get(item.operation_id),
+            same,
+            fidelity=fidelity_badge(item.fidelity),
+        )
         group(item.turn or 0, item.variant).rows.append(row)
         previous = item
     by_turn: dict[int, TurnGroup] = {}
@@ -627,11 +707,11 @@ def beat_trace(
     inspector_hint: bool = False,
     open_trace: bool = False,
 ) -> BeatTrace | None:
-    """``None`` for an item that isn't a structured beat (``propositions`` absent). Otherwise
+    """``None`` for an item that isn't a structured beat (:func:`is_structured`). Otherwise
     the beat's trace. ``state`` is the caller's (:data:`NOT_LOADED`, :data:`UNAVAILABLE`) when
     there is no ``trace``; with one it follows the read (withheld: unavailable; no hooks;
     loaded). An ingested item is always :data:`NO_TRACE`."""
-    if item.propositions is None:
+    if not is_structured(item):
         return None
     names = cast_names or {}
     labels = UtteranceLabels.from_json(item.labels) if item.labels is not None else None
@@ -686,8 +766,10 @@ def beat_trace(
 
 
 def is_structured(item: HistoryItem) -> bool:
-    """A structured beat: ``propositions`` is set (possibly ``[]``)."""
-    return item.propositions is not None
+    """A structured beat with a trace: ``propositions`` is set (possibly ``[]``) and the beat
+    isn't an envelope (#62: the Engine sends an envelope with ``propositions: []`` and no
+    labels; it reads as plain text)."""
+    return item.propositions is not None and item.fidelity != ENVELOPE
 
 
 def summary_rows(segments: Sequence[SummarySegment] | None) -> list[SummarySegment]:

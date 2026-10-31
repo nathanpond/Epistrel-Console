@@ -1865,3 +1865,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** In the fixtures, TH2 (resolved) carries the mild (Tobin, 600) and strong (Mara, 64800) flags. HF1 is `characters` [Mara, non-cast CX1], turn 3. HF2 is `engine`, turn 0, which exercises the turn-0 link.
   **Why:** The test plan's amended fixture. The shapes were checked against the recorded `HiddenFactBody`/`CouldHaveKnownFlagBody` (C15).
   **Issue:** #208
+- **Decision:** `is_structured()` (and so `beat_trace()`) now leaves out an item with `fidelity: envelope`: it reads as plain text with no beat trace, no predicate read and no legend. (Rule 1)
+  **Why:** The AC assumed an envelope item has no `propositions`. Engine origin/main (`core/history.py` `_items`) sends `propositions: []` and drops `labels`, so the existing rule alone would have drawn an empty trace. The fixtures follow the Engine (C15). The play transcript (#196) inherits the same rule.
+  **Issue:** #62
+- **Decision:** The Player view `<select>` is written by hand in `_controls.html`. It is disabled through `Controls.player_view_disabled`, and the hidden carrier input takes `HistoryForm.player_view_kept` (a valid choice, else nothing).
+  **Why:** This follows the AC's "same hand-written pattern as Include audit", and an invalid value is never carried.
+  **Issue:** #62
+- **Decision:** The plain Text cell of a badged row without a trace gets `class="text"`, so `.fidelity-none .text` strikes it through. Plain text is not wrapped in a span.
+  **Why:** Wrapping every row's text would break #147's Lite byte-identity goldens. With the class only on fidelity rows, Lite markup stays unchanged.
+  **Issue:** #62
+- **Decision:** Two places were updated to drop " · audience filter none" from the omniscient header: the golden `tests/fixtures/inspect/golden/lite_history_items.html` and `test_header_line_shows_the_echoed_read`.
+  **Why:** The AC (convention 21) leaves the audience filter off an omniscient page's header. This change is mandated, not a weakened test.
+  **Issue:** #62
+- **Decision:** The fixtures add Jenni (`…R0T3C`) to the Harbour cast in-test, where she is the narrator and the envelope speaker. Tobin is the character viewpoint.
+  **Why:** A reaction is narrated by a primary NPC, and the player can't play that role. The narrator label needs a cast member.
+  **Issue:** #62

@@ -180,10 +180,8 @@ def test_no_older_link_on_the_oldest_page(operator_client: Client, engine: FakeE
 def test_header_line_shows_the_echoed_read(operator_client: Client, engine: FakeEngine) -> None:
     answer(engine)
     html = page(operator_client, "viewpoint=omniscient")
-    assert (
-        "Viewpoint omniscient <code>omniscient</code> · as of 3 · revision 4 · audience filter none"
-        in html
-    )
+    # #62 / convention 21: an omniscient read names no audience filter or player view.
+    assert "Viewpoint omniscient <code>omniscient</code> · as of 3 · revision 4</p>" in html
 
 
 def test_the_chain_line_keeps_variant_and_clears_it(

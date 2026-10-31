@@ -47,6 +47,7 @@ from console.history import (
     UNAVAILABLE,
     BeatTrace,
     TurnGroup,
+    audience_filter_label,
     audit_record,
     beat_trace,
     chain_key,
@@ -88,6 +89,7 @@ class Controls:
     options: list[int]
     audit_disabled: bool
     show_errors: bool  # not on the HTMX re-render, which only follows the viewpoint select
+    player_view_disabled: bool = False  # an explicit omniscient viewpoint (#62)
 
 
 @dataclass(frozen=True)
@@ -118,6 +120,8 @@ class Page:
     classification_legend: bool = False  # a classified say is shown: the legend line (#207)
     trace_cap_note: str = ""
     trace_failures: str = ""  # "Turn trace unavailable: T3 (timeout), …"
+    # A character read's (label, raw) audience filter; ``None`` for an omniscient echo (#62).
+    audience_filter: tuple[str, str] | None = None
 
 
 def _url(story_id: str, params: QueryDict) -> str:
@@ -174,11 +178,13 @@ def _controls(
         as_of_options(last),
         audit_disabled=not form.omniscient,
         show_errors=show_errors,
+        player_view_disabled=form.omniscient,
     )
 
 
 def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) -> list[ChainRow]:
-    """Each chain with its "view" link (``viewpoint`` and ``limit`` kept, ``variant`` set) and
+    """Each chain with its "view" link (``viewpoint``, ``limit`` and ``player_view`` kept,
+    ``variant`` set) and
     its Swap (not on the active chain; ``&check=1`` when it ``requires_check``) and Fork links,
     carrying the story read's revision and head (#53)."""
     story_id = story.id
@@ -195,7 +201,7 @@ def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) 
     for chain in chains:
         key = chain_key(chain)
         params = QueryDict(mutable=True)
-        for name in ("viewpoint", "limit"):
+        for name in ("viewpoint", "limit", "player_view"):
             if request.GET.get(name):
                 params[name] = request.GET[name]
         params["variant"] = key
@@ -262,6 +268,11 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         classification_legend=traces.classification_legend,
         trace_cap_note=traces.cap_note,
         trace_failures=traces.failures,
+        audience_filter=(
+            None
+            if history.output_viewpoint == cast_helpers.OMNISCIENT
+            else audience_filter_label(history.audience_filter)
+        ),
     )
 
 
