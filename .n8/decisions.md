@@ -2006,3 +2006,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The held/404 omniscient-read test is parametrised over `erasure_pending` and `not_found`; `module_off` isn't covered because `GET /stories/{id}` declares no 409.
   **Why:** The fake Engine refuses undeclared statuses (C15).
   **Issue:** #168
+- **Decision:** The play snapshot also carries `partitions` (`character_knowledge.partitions`) beside the planned `renders`/`pipeline`/`perception`. (Rule 3)
+  **Why:** #188's `m5_gate` makes perception depend on partitions (`NEEDS_PARTITIONS`). Without the key, the minimal mapping would always read as unread, which would grey Player view and Whisper to everywhere.
+  **Issue:** #200
+- **Decision:** A "Story setting (…)" first choice uses the explicit choice's label in lower case ("director", "request order") or the raw `character`/`story` for Player view. Interjections read "On"/"Off", a null multi-character setting uses #197's `null_default_text`, and a kept `state:<name>` tie-break uses `tie_break_label`.
+  **Why:** This matches #197's lower-case "default (…)" markers and the AC's examples.
+  **Issue:** #200
+- **Decision:** `player_cannot_render` and the other `details.reason` refusals are matched on the reason alone, not also on `details.field`. The `not_yet` sentence is a literal copy of #197's `NOT_YET_TEXT`.
+  **Why:** On respond, the Engine raises each reason from one field only. Importing `console.views.story_settings` from `console/forms/play.py` would be circular, because that view imports `console.views.play`.
+  **Issue:** #200
+- **Decision:** A stored role is read from the raw `characters` items of `GET /stories/{id}`, not from the parsed `Participation`.
+  **Why:** The AC says a missing `fixed` reads `false`. The typed model requires `fixed`, so the parse would drop the participation altogether.
+  **Issue:** #200
+- **Decision:** `read_story` now makes its effective-config read before the transcript's history read (get_story → settings → effective-config → history).
+  **Why:** The AC fixes the order of the three reads inside `read_story`. No test depended on where the effective-config read fell among the others.
+  **Issue:** #200
+- **Decision:** The live test `test_two_primary_sequential_turn_live` was written but not run, because this environment has no `ENGINE_LIVE_URL` or service key.
+  **Why:** Same precedent as #197.
+  **Issue:** #200

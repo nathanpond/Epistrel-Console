@@ -51,6 +51,7 @@ from console.engine.client import (
     turn_timeout,
 )
 from console.engine.models import (
+    EffectiveConfig,
     History,
     HistoryItem,
     IngestResponse,
@@ -58,6 +59,7 @@ from console.engine.models import (
     QueuedTurn,
     RespondResponse,
     Story,
+    StorySettings,
     TurnReport,
 )
 from console.engine_access import complete_queued, engine_client_for
@@ -99,13 +101,18 @@ from console.ingest import (
 )
 from console.inspect import (
     MULTI_CHARACTER,
+    PARTITIONS,
+    PERCEPTION,
+    PIPELINE,
     SETTINGS,
     STRUCTURED,
     history_turn_url,
+    is_module_off,
     is_structured_pipeline,
     setting,
 )
 from console.models import EngineOperation
+from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.perception import perception_url, turn_links_perception
 from console.story_config import (
@@ -116,6 +123,7 @@ from console.story_config import (
     read_effective_config,
 )
 from console.story_pause import TURN_NOTE, PauseBanner, pause_banner, paused_refusal
+from console.story_settings import scenario_mode
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
 from console.timeline import Basis, Link, TurnControls, turn_controls
@@ -175,10 +183,28 @@ class PlayStory:
     cast: tuple[CastMember, ...]
     default_viewpoint: str | None
     turn_deadline: float | None  # effective_budget.turn_deadline, when the read succeeded
+    # #200's gate and first choices (each ``None`` when its read failed or the key is missing):
+    # the effective ``pipeline``, ``multi_character.renders``, ``perception.level`` and
+    # ``character_knowledge.partitions`` (the perception gate needs it, #188); each non-player's
+    # stored participation ``{cid: (role, fixed)}``; the settings read's multi-character values.
+    renders: str | None = None
+    pipeline: str | None = None
+    perception: str | None = None
+    partitions: bool | None = None
+    roles: dict[str, tuple[str, bool]] = field(default_factory=dict)
+    story_multi: dict[str, Any] | None = None
 
     @classmethod
-    def of(cls, story: Story, turn_deadline: float | None) -> PlayStory:
+    def of(
+        cls,
+        story: Story,
+        turn_deadline: float | None,
+        *,
+        settings: StorySettings | None = None,
+        config: EffectiveConfig | None = None,
+    ) -> PlayStory:
         default = story.settings.get("default_output_viewpoint")
+        effective = config.effective if config is not None else None
         return cls(
             story.id,
             story.name,
@@ -186,6 +212,12 @@ class PlayStory:
             tuple(cast_helpers.members(story.cast)),
             default if isinstance(default, str) and default else None,
             turn_deadline,
+            renders=_text(effective, SETTINGS[MULTI_CHARACTER]),
+            pipeline=_text(effective, SETTINGS[PIPELINE]),
+            perception=_text(effective, SETTINGS[PERCEPTION]),
+            partitions=_flag(effective, SETTINGS[PARTITIONS]),
+            roles=_stored_roles(story),
+            story_multi=_story_multi(settings),
         )
 
     def signed(self) -> str:
@@ -197,6 +229,12 @@ class PlayStory:
                 "cast": [[c.id, c.name, c.is_player] for c in self.cast],
                 "default_viewpoint": self.default_viewpoint,
                 "turn_deadline": self.turn_deadline,
+                "renders": self.renders,
+                "pipeline": self.pipeline,
+                "perception": self.perception,
+                "partitions": self.partitions,
+                "roles": {cid: [role, fixed] for cid, (role, fixed) in self.roles.items()},
+                "story_multi": self.story_multi,
             },
             salt=SNAPSHOT_SALT,
             compress=True,
@@ -211,6 +249,9 @@ class PlayStory:
             raw = signing.loads(value, salt=SNAPSHOT_SALT)
             members = tuple(CastMember(str(i), str(n), bool(p)) for i, n, p in raw["cast"])
             deadline = raw["turn_deadline"]
+            story_multi = raw["story_multi"]
+            if story_multi is not None and not isinstance(story_multi, dict):
+                return None
             found = cls(
                 str(raw["id"]),
                 raw["name"],
@@ -218,10 +259,21 @@ class PlayStory:
                 members,
                 raw["default_viewpoint"],
                 float(deadline) if deadline is not None else None,
+                renders=_optional(raw["renders"], str),
+                pipeline=_optional(raw["pipeline"], str),
+                perception=_optional(raw["perception"], str),
+                partitions=_optional(raw["partitions"], bool),
+                roles=_signed_roles(raw["roles"]),
+                story_multi=story_multi,
             )
         except signing.BadSignature, KeyError, TypeError, ValueError:
             return None
         return found if found.id == story_id else None
+
+    @property
+    def gate(self) -> MultiGate:
+        """#200's gate for the turn form's section, Player view and Whisper to."""
+        return gate(self)
 
     @property
     def archived(self) -> bool:
@@ -256,26 +308,94 @@ class PlayStory:
         return form_viewpoint
 
 
+def _text(effective: dict[str, Any] | None, path: str) -> str | None:
+    value = setting(effective, path) if effective is not None else None
+    return value if isinstance(value, str) else None
+
+
+def _flag(effective: dict[str, Any] | None, path: str) -> bool | None:
+    value = setting(effective, path) if effective is not None else None
+    return value if isinstance(value, bool) else None
+
+
+def _optional[T](value: object, kind: type[T]) -> T | None:
+    """A signed snapshot's value: ``None`` or a ``kind``; anything else fails the snapshot."""
+    if value is None or isinstance(value, kind):
+        return value
+    raise TypeError(value)
+
+
+def _signed_roles(raw: object) -> dict[str, tuple[str, bool]]:
+    """The snapshot's ``roles``: every value a two-item ``[role, fixed]`` list, or it fails."""
+    if not isinstance(raw, dict):
+        raise TypeError(raw)
+    roles: dict[str, tuple[str, bool]] = {}
+    for cid, value in raw.items():
+        if not isinstance(value, list) or len(value) != 2:
+            raise TypeError(value)
+        role, fixed = value
+        if not isinstance(role, str) or not isinstance(fixed, bool):
+            raise TypeError(value)
+        roles[str(cid)] = (role, fixed)
+    return roles
+
+
+def _stored_roles(story: Story) -> dict[str, tuple[str, bool]]:
+    """Each non-player's stored participation from ``GET /stories/{id}`` (raw, so a missing
+    ``fixed`` reads ``False``); a character without one has no entry."""
+    roles: dict[str, tuple[str, bool]] = {}
+    for item in story.characters:
+        if not isinstance(item, dict) or item.get("is_player") is not False:
+            continue
+        participation = item.get("participation")
+        cid = item.get("id")
+        if not isinstance(cid, str) or not isinstance(participation, dict):
+            continue
+        role = participation.get("role")
+        if isinstance(role, str) and role:
+            roles[cid] = (role, participation.get("fixed") is True)
+    return roles
+
+
+def _story_multi(settings: StorySettings | None) -> dict[str, Any] | None:
+    """The settings read's values #200's first choices name (``None``: the read failed)."""
+    if settings is None:
+        return None
+    values = settings.settings
+    found: dict[str, Any] = {name: values.get(name) for name in STORY_MULTI_KEYS}
+    found[SCENARIO_MODE] = scenario_mode(values.get("inactive"))
+    return found
+
+
 def _player_view(value: str | None) -> str:
     """``value`` when it is exactly ``character`` or ``story``, else ``""`` (#196: any other
     value, a different case or surrounding spaces included, is ignored and not sent)."""
     return value if value in PLAYER_VIEWS else ""
 
 
-def _turn_deadline(client: EngineClient, request: HttpRequest, story_id: str) -> float | None:
-    """``effective_budget.turn_deadline``; a failed read degrades to the 45 s default."""
+def _story_settings(
+    client: EngineClient, request: HttpRequest, story_id: str
+) -> StorySettings | None:
+    """The settings read (its turn deadline, #200's story settings); ``None`` when it fails (the
+    deadline then degrades to the 45 s default)."""
     try:
-        return client.get_story_settings(story_id).effective_budget.turn_deadline
+        return client.get_story_settings(story_id)
     except EngineClientError as exc:
         log_engine_error(request, exc)
         return None
 
 
-def read_story(request: HttpRequest, story_id: str) -> tuple[Story, PlayStory]:
-    """``GET /stories/{id}`` (and its turn deadline) as the play view carries it."""
+def read_story(
+    request: HttpRequest, story_id: str
+) -> tuple[Story, PlayStory, EffectiveConfig | None]:
+    """``GET /stories/{id}``, its settings read and its effective-config read (#85; ``None``
+    when it fails) as the play view carries them."""
     client = engine_client_for(request)
     story = client.get_story(story_id)
-    return story, PlayStory.of(story, _turn_deadline(client, request, story_id))
+    settings = _story_settings(client, request, story_id)
+    config = read_effective_config(client, story_id)
+    deadline = settings.effective_budget.turn_deadline if settings is not None else None
+    return story, PlayStory.of(story, deadline, settings=settings, config=config), config
 
 
 def _snapshot(request: HttpRequest, story_id: str, value: str | None) -> PlayStory:
@@ -288,6 +408,9 @@ def _form(play: PlayStory, data: Any = None, *, initial: dict[str, Any] | None =
         data,
         cast=play.cast,
         default_viewpoint=play.default_viewpoint,
+        gate=play.gate,
+        story_multi=play.story_multi,
+        roles=play.roles,
         initial=initial if initial is not None else _initial(play),
     )
 
@@ -621,6 +744,8 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
             ("Matches", _detail(details, "match_count")),
         )
         return Inspector(notice=ERASED, facts=facts, **base)
+    if is_module_off(exc):  # #200: the profile no longer renders per character
+        return Inspector(notice=RELOAD, facts=(("Module", _detail(details, "module")),), **base)
     return Inspector(title="Turn refused", error=panel_for(exc), idempotency_key=idempotency_key)
 
 
@@ -952,7 +1077,7 @@ def _page(
     ingest_view: IngestView | None = None,
     player_view: str | None = None,
 ) -> HttpResponse:
-    story, play = read_story(request, story_id)
+    story, play, config = read_story(request, story_id)
     requested = _player_view(player_view)
     restored = _restored_cards(play, requested) if cards is None else cards
     if form is None:
@@ -962,7 +1087,6 @@ def _page(
     )
     chosen = viewpoint or play.resolve(form_viewpoint)
     shown = _transcript(request, play, chosen, story=story, player_view=requested)
-    config = read_effective_config(engine_client_for(request), story_id)  # #85's header, #181
     if inspector is None and turn is not None:
         structured = config is not None and is_structured_pipeline(config.effective)
         inspector = _turn_inspector(shown, turn, structured)
@@ -1126,8 +1250,14 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        if isinstance(exc, EngineError) and exc.code in PLACED_CODES:
-            apply_engine_errors(exc, form, aliases=FORM_ALIASES)
+        if is_module_off(exc):
+            form.multi_error = RELOAD  # #200: the section-level error
+        elif (
+            isinstance(exc, EngineError)
+            and exc.code in PLACED_CODES
+            and not form.place_reason(exc)  # #200: a worded details.reason first
+        ):
+            apply_engine_errors(exc, form, aliases={**FORM_ALIASES, **form.role_aliases()})
         return _turn_answer(request, play_story, form, error_inspector(exc, key), player_view=shown)
     if isinstance(result, QueuedTurn):
         pending = request.session.get(PENDING_KEY, {})

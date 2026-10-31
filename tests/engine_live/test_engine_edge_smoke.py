@@ -429,6 +429,70 @@ def test_play_one_turn_live(url: str, key: str, operator_client: Client, operato
         client.delete_story(story_id, idempotency_key=new_ulid())
 
 
+def test_two_primary_sequential_turn_live(
+    url: str, key: str, operator_client: Client, operator: object
+) -> None:
+    """#200: as ``test_play_one_turn_live``, on a story with a player and two non-players
+    assigned the seeded ``Structured`` profile v2 (per-character renders): one turn from the play
+    view naming both non-players as render characters, sequentially, answers 200 with an
+    ``order`` of length 2."""
+    client = EngineClient(url, key, principal="console:smoke")
+    ratings = client.list_content_ratings()
+    created = client.create_story(
+        {
+            "name": "Console smoke two primaries",
+            "content_rating_id": ratings[0].id,
+            "characters": [
+                {"name": "Wren", "definition": "A courier.", "true_age": 29, "is_player": True},
+                {"name": "Marcus", "definition": "A smith.", "true_age": 44, "is_player": False},
+                {"name": "Jenni", "definition": "A baker.", "true_age": 37, "is_player": False},
+            ],
+        },
+        idempotency_key=new_ulid(),
+    )
+    story_id = created.story_id
+    assert story_id is not None
+    wren, marcus, jenni = (c.id for c in created.characters)
+    try:
+        client.assign_engine_profile(
+            story_id,
+            _structured_profile(client),
+            ignore_warnings=True,
+            idempotency_key=new_ulid(),
+            version=2,
+        )
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            page = operator_client.get(f"/stories/{story_id}/").content.decode()
+            snapshot = re.search(r'name="snapshot" value="([^"]+)"', page)
+            idempotency_key = re.search(r'name="idempotency_key" value="([^"]+)"', page)
+            assert snapshot is not None, page
+            assert idempotency_key is not None, page
+            assert '<fieldset class="multi-character">' in page  # the section is enabled
+            answer = operator_client.post(
+                f"/stories/{story_id}/turn/",
+                {
+                    "snapshot": snapshot.group(1),
+                    "idempotency_key": idempotency_key.group(1),
+                    "actor": wren,
+                    "say": "Who baked this?",
+                    "output_viewpoint": f"character:{marcus}",
+                    "render_character_ids": [marcus, jenni],
+                    "interaction_mode": "sequential",
+                    f"order_{marcus}": "1",
+                    f"order_{jenni}": "2",
+                },
+                HTTP_HX_REQUEST="true",
+            ).content.decode()
+        row = EngineOperation.objects.filter(story_id=story_id, kind="respond").first()
+        assert row is not None, answer
+        assert row.request["body"]["render_character_ids"] == [marcus, jenni]
+        assert row.http_status == 200, answer
+        assert isinstance(row.response, dict)
+        assert len(row.response["order"]) == 2, row.response
+    finally:
+        client.delete_story(story_id, idempotency_key=new_ulid())
+
+
 def _structured_profile(client: EngineClient) -> str:
     """The id of the one profile named exactly ``Structured`` (no hard-coded id)."""
     names: list[str] = []

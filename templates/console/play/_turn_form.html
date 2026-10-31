@@ -1,4 +1,4 @@
-{# The turn form (#48). Context: fv (FormView: form, snapshot, idempotency_key, disabled, note). #}
+{# The turn form (#48). Context: fv (FormView: form, snapshot, idempotency_key, disabled, note). #200: Player view follows Output viewpoint, Whisper to follows Say (each greyed by its perception gate), and the Multi-character section follows Render characters; the field loop skips the section's own fields. #}
 <div id="turn-form"{% if oob %} hx-swap-oob="true"{% endif %}>
   <h2>Play a turn</h2>
   {% if fv.note %}<p class="warning">{{ fv.note }}</p>{% endif %}
@@ -11,7 +11,7 @@
     <input type="hidden" name="transcript_player_view" id="turn-transcript-player-view" value="{{ fv.transcript_player_view }}">
     {{ fv.form.non_field_errors }}
     <fieldset{% if fv.disabled %} disabled{% endif %}>
-      {% for field in fv.form %}
+      {% for field in fv.form %}{% if field.name not in fv.form.section_names %}
       <div class="field field-{{ field.name }}">
         {{ field.label_tag }}
         {% if field.name == "output_viewpoint" %}
@@ -19,10 +19,12 @@
           {% for value, label in field.field.choices %}<option value="{{ value }}"{% if value == field.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
         {% else %}{{ field }}{% endif %}
+        {% if field.name == "player_view" %}{% include "console/_gated_control.html" with gate=fv.form.gate.player_view_reason gate_id="gate-player-view" %}{% elif field.name == "whisper_to" %}{% include "console/_gated_control.html" with gate=fv.form.gate.whisper_reason gate_id="gate-whisper-to" %}{% endif %}
         {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
         {{ field.errors }}
       </div>
-      {% endfor %}
+      {% if field.name == "render_character_ids" %}{% include "console/play/_multi_character.html" with form=fv.form story_id=fv.story_id %}{% endif %}
+      {% endif %}{% endfor %}
       <button type="submit">Send</button> <span class="htmx-indicator">Running…</span>
     </fieldset>
   </form>
