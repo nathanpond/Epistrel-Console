@@ -122,7 +122,11 @@ def _pretty(value: object) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False)
 
 
-def _speaker(character_id: str, cast: Sequence[Character] | None, minor: frozenset[str]) -> Speaker:
+def speaker_of(
+    character_id: str, cast: Sequence[Character] | None, minor: frozenset[str]
+) -> Speaker:
+    """A character id as a :class:`Speaker` (C4); an id off the cast, or with no story read, has
+    an empty label (a short id). Also the Exposures section's witness and source (#193)."""
     member = next((c for c in cast or () if c.id == character_id), None)
     if member is None or cast is None:
         return Speaker("", character_id, False)
@@ -184,7 +188,7 @@ def divergence_rows(
                     knowledge_position_text(item.position),
                     knowledge_position_url(story_id, item.position),
                 ),
-                speaker=_speaker(item.speaker, cast, minor),
+                speaker=speaker_of(item.speaker, cast, minor),
                 speaker_url=None
                 if item.speaker == speaker_filter
                 else _only(base, "speaker", item.speaker),

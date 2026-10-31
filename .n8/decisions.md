@@ -1838,3 +1838,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** "Believed belief id" in More reads "—" when null; the belief link's `#b-` fragment is left out if `believed_belief_id` were ever null with a proposition id.
   **Why:** C15 says both are set together; defensive at no cost.
   **Issue:** #192
+- **Decision:** Exposures reuse #192's `Speaker`; its private `_speaker` became public `speaker_of` in console/views/inspect_divergences.py (witness and source labels) instead of a copy.
+  **Why:** reuse, don't copy (C12); one C4 label rule for Knowledge rows.
+  **Issue:** #193
+- **Decision:** Resolved by joins only the parts present (Transition id, resolution operation, belief link) with " · "; a resolved row with nothing to list (no ids and no Beliefs route) shows "—".
+  **Why:** the AC leaves a missing id out; avoids a dangling separator.
+  **Issue:** #193
+- **Decision:** The row's own `operation_id` sits in More (convention 3 link when logged), between Kind and Step, as the AC's More list orders it; there is no separate Operation column.
+  **Why:** the AC's column list has none.
+  **Issue:** #193
+- **Decision:** State and Caught both carry the raw value in `title` (Caught's `partial` the AC's explanatory title); a non-`content` kind shows as `<small class="kind">` after the proposition.
+  **Why:** C3; the AC names the title only for Caught, applied to State for consistency.
+  **Issue:** #193
+- **Decision:** Fixtures use the shared Alice/Bob/Pat cast (Alice stands in for the story's "Carol") and a source of Pat for the partial row.
+  **Why:** #188's shared cast fixture; C15 shapes checked against Engine origin/main `ExposureItemBody`.
+  **Issue:** #193

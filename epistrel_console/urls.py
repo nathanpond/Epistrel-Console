@@ -19,6 +19,7 @@ from console.views import (
     inspect_beliefs,
     inspect_canon,
     inspect_divergences,
+    inspect_exposures,
     inspect_ledger,
     inspect_memory,
     inspect_predicates,
@@ -186,6 +187,8 @@ inspect_patterns = (
         path("knowledge/beliefs/written/", inspect_beliefs.written, name="belief-written"),
         # #192: the story's divergences (lies).
         path("knowledge/divergences/", inspect_divergences.divergences, name="divergences"),
+        # #193: what witnesses heard (exposures) and whether each resolved.
+        path("knowledge/exposures/", inspect_exposures.exposures, name="exposures"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

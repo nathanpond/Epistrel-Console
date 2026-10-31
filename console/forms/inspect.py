@@ -1043,3 +1043,133 @@ class DivergencesForm(forms.Form):
             return False
         self.add_error(None, exc.message)
         return field_name == AFTER_ID_FIELD
+
+
+# --- the Knowledge tab's Exposures section (#193) -------------------------------------------------
+
+ANY_WITNESS = "Any"
+STATE_CHOICES = (("", "Any"), ("unresolved", "Unresolved"), ("resolved", "Resolved"))
+STATE_INVALID = "Choose Any, Unresolved or Resolved"
+EXPOSURES_AS_OF_HELP = "State as the record stood through this turn"
+# A 422 ``validation_error``'s ``details.field`` → the Exposures filter it lands on.
+EXPOSURES_FIELDS: Mapping[str, str] = {
+    "query.character": "character",
+    "query.state": "state",
+    "query.as_of": "as_of",
+}
+
+
+class ExposuresForm(forms.Form):
+    """The Exposures section's GET filters (``console/views/inspect_exposures.py``); each name is
+    the Engine's query parameter. The cursor ``after_id`` isn't a field: Apply starts over.
+
+    **Witness** (``character``). With the story read (``cast`` given), a select: "Any" (value
+    "", not sent), then every non-player cast member in cast order (exposures belong to
+    partitions; the player has none), labelled by ``labels`` (C4's, from the view). A URL id is
+    trimmed and upper-cased, then read by C13's :func:`console.paging.cast_id`: a valid id
+    outside the options is kept as an extra option, last ("<label> (player)" for the cast's
+    player, else "<short id> (not in the cast)"), and sent; an invalid one is
+    :data:`console.paging.CHARACTER_INVALID`. Without the story read (``cast`` ``None``), a
+    free-text id field read the same way.
+
+    **State** is exactly ``unresolved`` or ``resolved`` (no trimming or case folding), else
+    :data:`STATE_INVALID`. **As of turn** is parsed as the Beliefs section's (ASCII digits only,
+    up to :data:`TURN_MAX`)."""
+
+    character = forms.CharField(required=False, label="Witness")
+    state = forms.ChoiceField(
+        required=False,
+        label="State",
+        choices=STATE_CHOICES,
+        error_messages={"invalid_choice": STATE_INVALID},
+    )
+    as_of = forms.CharField(
+        required=False,
+        label="As of turn",
+        help_text=EXPOSURES_AS_OF_HELP,
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        labels: Mapping[str, str],
+    ) -> None:
+        bound = data.copy()
+        value = bound.get("character")
+        if isinstance(value, str):
+            bound["character"] = value.strip().upper()
+        self.cast = cast
+        self.option_ids: tuple[str, ...] = ()
+        options: list[tuple[str, str]] = [("", ANY_WITNESS)]
+        if cast is not None:
+            witnesses = [c for c in cast if not c.is_player]
+            options += [(c.id, labels.get(c.id) or short_id(c.id)) for c in witnesses]
+            self.option_ids = tuple(c.id for c in witnesses)
+            requested = str(bound.get("character") or "")
+            if cast_id(requested, self.option_ids).kept:
+                if any(c.id == requested and c.is_player for c in cast):
+                    label = labels.get(requested) or short_id(requested)
+                    if PLAYER_SUFFIX not in label:
+                        label += PLAYER_SUFFIX
+                else:
+                    label = f"{short_id(requested)}{NOT_IN_CAST_SUFFIX}"
+                options.append((requested, label))
+        super().__init__(bound)
+        if cast is not None:
+            self.fields["character"].widget = forms.Select(choices=options)
+        else:
+            self.fields["character"].widget = forms.TextInput(attrs={"size": 30})
+
+    def clean_character(self) -> str:
+        typed = cast_id(str(self.cleaned_data.get("character") or ""), self.option_ids)
+        if typed.error:
+            raise forms.ValidationError(typed.error)
+        return typed.value
+
+    def clean_as_of(self) -> int | None:
+        typed = str(self.cleaned_data.get("as_of") or "").strip()
+        if not typed:
+            return None
+        if not (typed.isascii() and typed.isdigit()):
+            raise forms.ValidationError(AS_OF_INVALID)
+        turn = int(typed)
+        if turn > TURN_MAX:
+            raise forms.ValidationError(TURN_TOO_HIGH)
+        return turn
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_exposures``' filter arguments (valid form only; no cursor):
+        ``None`` for a blank filter, which isn't sent."""
+        data = self.cleaned_data
+        return {
+            "character": data["character"] or None,
+            "state": data["state"] or None,
+            "as_of": data["as_of"],
+        }
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether Witness, State or As of is set (valid form only; a cursor isn't a filter)."""
+        return any(v is not None for v in self.query().values())
+
+    def normalised(self, name: str) -> str:
+        """The bound (trimmed, upper-cased) ``character``, valid or not."""
+        return str(self.data.get(name) or "")
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: ``unknown_character`` → :data:`console.wording.UNKNOWN_CHARACTER` beside
+        Witness; any other the Engine's message beside the filter ``details.field`` names, else
+        above the filters. ``True`` when it named ``query.after_id`` (the line gets "First
+        page")."""
+        field_name = exc.details.get("field")
+        if exc.details.get("reason") == UNKNOWN_CHARACTER_REASON:
+            self.add_error("character", UNKNOWN_CHARACTER)
+            return False
+        if isinstance(field_name, str) and field_name in EXPOSURES_FIELDS:
+            self.add_error(EXPOSURES_FIELDS[field_name], exc.message)
+            return False
+        self.add_error(None, exc.message)
+        return field_name == AFTER_ID_FIELD

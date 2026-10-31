@@ -1,0 +1,41 @@
+{% extends "console/inspect/knowledge.html" %}{% load inspect_tags %}
+{% comment %}
+The Knowledge tab's Exposures section (#193): the raw-read note, the GET filters (names = the
+Engine's query params; Apply carries no cursor), then one page of
+GET /stories/{id}/inspect/exposures (viewpoint=omniscient, limit=100): the count line, the rows
+(_exposure_row.html, Engine order) and the paging links. The filters and their errors stay above
+every error (convention 10); an invalid filter makes no call. Context from
+console/views/inspect_exposures.py.
+{% endcomment %}
+{% block knowledge_content %}
+<p class="section-intro raw-read">{{ raw_read }}</p>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}{% if after_refused %} <a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}</div>{% endif %}
+<form method="get" id="exposures-filters" action="{{ filter_url }}">
+  <div class="field field-character">{{ form.character.label_tag }} {{ form.character }}{{ form.character.errors }}</div>
+  <div class="field field-state">{{ form.state.label_tag }} {{ form.state }}{{ form.state.errors }}</div>
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif exposures_error %}{% include "console/_engine_error.html" with engine_error=exposures_error %}
+{% elif exposures %}
+<p class="exposures-count">{{ count }}</p>
+{% if rows %}
+<table class="exposures">
+  <thead><tr><th>When</th><th>Witness</th><th>Heard</th><th>From</th><th>Caught</th><th>State</th><th>Resolved by</th>{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_exposure_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="none exposures-none">{{ empty }}</p>{% endif %}
+<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

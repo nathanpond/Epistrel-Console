@@ -1,0 +1,167 @@
+{
+  "items": [
+    {
+      "id": "0000000000000000000000XP01",
+      "witness": "0000000000000000000000CA01",
+      "proposition_id": "0000000000000000000000PX01",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "source": "0000000000000000000000CA02",
+      "source_event_id": "0000000000000000000000EV01",
+      "kind": "content",
+      "fidelity": "full",
+      "position": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "state": "unresolved",
+      "resolved_by_transition": null,
+      "resolution_operation_id": null,
+      "operation_id": "0000000000000000000000QX01"
+    },
+    {
+      "id": "0000000000000000000000XP02",
+      "witness": "0000000000000000000000CA02",
+      "proposition_id": "0000000000000000000000PX02",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "source": "0000000000000000000000CA01",
+      "source_event_id": "0000000000000000000000EV02",
+      "kind": "content",
+      "fidelity": "full",
+      "position": {
+        "turn": 2,
+        "variant": 1,
+        "slot_k": 0,
+        "beat": 3,
+        "step": 40000
+      },
+      "state": "resolved",
+      "resolved_by_transition": "0000000000000000000000TR02",
+      "resolution_operation_id": "0000000000000000000000QR02",
+      "operation_id": "0000000000000000000000QX02"
+    },
+    {
+      "id": "0000000000000000000000XP03",
+      "witness": "0000000000000000000000CA01",
+      "proposition_id": "0000000000000000000000PX03",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN02",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "source": "0000000000000000000000CA02",
+      "source_event_id": "0000000000000000000000EV03",
+      "kind": "content",
+      "fidelity": "full",
+      "position": {
+        "turn": 3,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 1,
+        "step": 0
+      },
+      "state": "resolved",
+      "resolved_by_transition": null,
+      "resolution_operation_id": null,
+      "operation_id": "0000000000000000000000QX03"
+    },
+    {
+      "id": "0000000000000000000000XP04",
+      "witness": "0000000000000000000000CA02",
+      "proposition_id": "0000000000000000000000PX04",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "source": null,
+      "source_event_id": "0000000000000000000000EV04",
+      "kind": "content",
+      "fidelity": "full",
+      "position": {
+        "turn": 0,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 0,
+        "step": 0
+      },
+      "state": "unresolved",
+      "resolved_by_transition": null,
+      "resolution_operation_id": null,
+      "operation_id": "0000000000000000000000QX04"
+    },
+    {
+      "id": "0000000000000000000000XP05",
+      "witness": "0000000000000000000000CA01",
+      "proposition_id": "0000000000000000000000PX05",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN03",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN01",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "source": "0000000000000000000000CA03",
+      "source_event_id": "0000000000000000000000EV05",
+      "kind": "content",
+      "fidelity": "partial",
+      "position": {
+        "turn": 4,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "state": "unresolved",
+      "resolved_by_transition": null,
+      "resolution_operation_id": null,
+      "operation_id": "0000000000000000000000QX05"
+    }
+  ],
+  "revision": 7,
+  "next_after_id": "0000000000000000000000XP05",
+  "output_viewpoint": "omniscient"
+}
