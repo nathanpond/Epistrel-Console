@@ -111,6 +111,7 @@ class IngestView:
     results: tuple[ResultRow, ...] = ()
     timeline_revision: int | None = None
     gate: str = ""
+    transcript_player_view: str = ""  # #196: the transcript's requested player view
 
     @property
     def can_add(self) -> bool:

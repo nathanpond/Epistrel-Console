@@ -1880,3 +1880,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The fixtures add Jenni (`…R0T3C`) to the Harbour cast in-test, where she is the narrator and the envelope speaker. Tobin is the character viewpoint.
   **Why:** A reaction is narrated by a primary NPC, and the player can't play that role. The narrator label needs a cast member.
   **Issue:** #62
+- **Decision:** The Lite transcript golden (`tests/fixtures/inspect/golden/lite_transcript.html`) gains the Player view control line. That line is the only change; items are byte-identical.
+  **Why:** The AC puts the control under every transcript heading. #62 updated its History golden the same way. This change is mandated, not a weakened test.
+  **Issue:** #196
+- **Decision:** The transcript endpoint's HTMX answer always appends the two out-of-band `transcript_player_view` inputs (`form_inputs` context flag), for the output-viewpoint switch as well as the toggle. Turn, ingest and poll answers, which include `_transcript.html` with `oob`, don't append them.
+  **Why:** One endpoint serves both. On a switch, the value is the one the form just sent, so re-swapping it is a no-op. Those POST answers re-render their own form with the value.
+  **Issue:** #196
+- **Decision:** The omniscient check uses `PlayStory.resolve(viewpoint)` on the viewpoint the transcript reads. The viewpoint that is sent stays as given, so `None` still lets the Engine pick, and then the value is sent.
+  **Why:** This is the AC's "resolved viewpoint". Re-resolving an already-resolved value is idempotent.
+  **Issue:** #196
+- **Decision:** `Entry.speaker` uses #62's `narrated_label` only for items with `narrated_by`. Every other item keeps the existing `_speaker`, which keeps a reply's render-character list and leaves no "—" for actor-less items.
+  **Why:** The AC says "in place of the plain speaker" only for narrated items. It also keeps the Lite golden identical.
+  **Issue:** #196
+- **Decision:** The test that the turn body never gets `player_view` posts only `transcript_player_view`, not a `player_view` field.
+  **Why:** #200 will add its own `player_view` turn-form field. Posting one here would test #200's field rather than this control.
+  **Issue:** #196

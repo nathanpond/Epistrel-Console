@@ -1,18 +1,19 @@
-{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector; a generated message carries its "Rate" control (#83). After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. A structured beat shows its trace (#147), under the verdict legend. #}
+{# The transcript (#48): the last 50 history items at one viewpoint, oldest first. Each item selects its turn in the inspector; a generated message carries its "Rate" control (#83). After each turn's last item, its timeline operations (#53); turn 0's ("Rewind to start", fork) come first. A structured beat shows its trace (#147), under the verdict legend. The Player view control (#196, display-only) re-reads the transcript at its own viewpoint; a character read's heading names the player view and audience filter, and envelope / not-perceived beats carry #62's badges and styles. On the transcript endpoint's answer (form_inputs), both forms' hidden transcript_player_view inputs follow out-of-band. #}
 {% load erasure %}<div id="transcript"{% if oob %} hx-swap-oob="true"{% endif %}>
-  <h2>Transcript <small>as {{ transcript.viewpoint_label }}</small></h2>
+  <h2>Transcript <small>as {{ transcript.viewpoint_label }}{% if transcript.audience_filter %} · player view <span class="player-view">{{ transcript.echoed_player_view }}</span> · audience filter <span class="audience-filter" title="{{ transcript.audience_filter.1 }}">{{ transcript.audience_filter.0 }}</span>{% endif %}</small></h2>
+  <p class="field transcript-player-view"><label for="transcript-player-view">Player view</label> <select name="player_view" id="transcript-player-view" hx-get="{% url 'stories:transcript' transcript.story_id %}{% if transcript.viewpoint %}?viewpoint={{ transcript.viewpoint|urlencode }}{% endif %}" hx-include="[name=snapshot]" hx-target="#transcript" hx-swap="outerHTML"{% if transcript.player_view_disabled %} disabled{% endif %}>{% for value, label in transcript.player_view_choices %}<option value="{{ value }}"{% if value == transcript.player_view %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% if transcript.player_view_disabled %} <small class="muted player-view-note">applies to a character viewpoint</small>{% endif %}</p>
   {% if transcript.error %}{% include "console/_engine_error.html" with engine_error=transcript.error %}
   {% else %}
-  {% if transcript.older_before_turn is not None %}<p><a href="{% url 'stories:history' transcript.story_id %}?before_turn={{ transcript.older_before_turn }}{% if transcript.viewpoint %}&amp;viewpoint={{ transcript.viewpoint|urlencode }}{% endif %}">Older →</a></p>{% endif %}
+  {% if transcript.older_before_turn is not None %}<p><a href="{% url 'stories:history' transcript.story_id %}?before_turn={{ transcript.older_before_turn }}{% if transcript.viewpoint %}&amp;viewpoint={{ transcript.viewpoint|urlencode }}{% endif %}{% if transcript.player_view %}&amp;player_view={{ transcript.player_view }}{% endif %}">Older →</a></p>{% endif %}
   {% if transcript.archived_note %}<p class="warning timeline-archived">{{ transcript.archived_note }}</p>{% endif %}
   {% if transcript.entries %}{% if transcript.legend %}
   {% include "console/_verdict_legend.html" with classification=transcript.classification_legend %}{% endif %}
   <ol class="transcript">
     {% if transcript.start %}{% include "console/timeline/_turn_controls.html" with c=transcript.start %}{% endif %}
     {% for entry in transcript.entries %}
-    <li class="item channel-{{ entry.item.channel }}" data-operation="{{ entry.item.operation_id }}">
+    <li class="item channel-{{ entry.item.channel }}{% if entry.fidelity.row_class %} {{ entry.fidelity.row_class }}{% endif %}" data-operation="{{ entry.item.operation_id }}">
       <a href="{% url 'stories:detail' transcript.story_id %}?operation={{ entry.item.operation_id }}&amp;origin={{ entry.item.origin }}" hx-get="{% url 'stories:inspector' transcript.story_id %}?operation={{ entry.item.operation_id }}&amp;origin={{ entry.item.origin }}" hx-target="#inspector" title="Show this turn's report">T{{ entry.item.turn|default_if_none:"0" }}{% if entry.item.variant and entry.item.variant != 1 %}.{{ entry.item.variant }}{% endif %}</a>
-      <span class="channel">{{ entry.item.channel }}</span>{% if entry.item.redacted %} <span class="badge-erased">erased</span>{% endif %}
+      <span class="channel">{{ entry.item.channel }}</span>{% if entry.item.redacted %} <span class="badge-erased">erased</span>{% endif %}{% if entry.fidelity %} <span class="badge-fidelity" title="{{ entry.fidelity.title }}">{{ entry.fidelity.text }}</span>{% endif %}
       {% if entry.speaker %}<strong>{{ entry.speaker }}</strong>:{% endif %} {% if entry.trace %}{% include "console/history/_beat_trace.html" with t=entry.trace %}{% else %}<span class="text">{{ entry.item.text|mark_erased }}</span>{% endif %}
       {% if entry.item.origin == "ingested" %}<small class="source">ingested</small>{% endif %}
       {% if entry.feedback %}{% include "console/stories/_feedback.html" with fb=entry.feedback %}{% endif %}
@@ -22,4 +23,6 @@
   </ol>
   {% else %}<p>No turns yet.</p>{% endif %}
   {% endif %}
-</div>
+</div>{% if form_inputs %}
+<input type="hidden" name="transcript_player_view" id="turn-transcript-player-view" value="{{ transcript.player_view }}" hx-swap-oob="true">
+<input type="hidden" name="transcript_player_view" id="ingest-transcript-player-view" value="{{ transcript.player_view }}" hx-swap-oob="true">{% endif %}

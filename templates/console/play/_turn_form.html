@@ -8,13 +8,14 @@
     {% csrf_token %}
     <input type="hidden" name="idempotency_key" value="{{ fv.idempotency_key }}">
     <input type="hidden" name="snapshot" value="{{ fv.snapshot }}">
+    <input type="hidden" name="transcript_player_view" id="turn-transcript-player-view" value="{{ fv.transcript_player_view }}">
     {{ fv.form.non_field_errors }}
     <fieldset{% if fv.disabled %} disabled{% endif %}>
       {% for field in fv.form %}
       <div class="field field-{{ field.name }}">
         {{ field.label_tag }}
         {% if field.name == "output_viewpoint" %}
-        <select name="output_viewpoint" id="{{ field.auto_id }}" hx-get="{% url 'stories:transcript' fv.story_id %}" hx-target="#transcript" hx-swap="outerHTML" hx-include="[name=snapshot]">
+        <select name="output_viewpoint" id="{{ field.auto_id }}" hx-get="{% url 'stories:transcript' fv.story_id %}" hx-target="#transcript" hx-swap="outerHTML" hx-include="[name=snapshot], #turn-form [name=transcript_player_view]">
           {% for value, label in field.field.choices %}<option value="{{ value }}"{% if value == field.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
         {% else %}{{ field }}{% endif %}
