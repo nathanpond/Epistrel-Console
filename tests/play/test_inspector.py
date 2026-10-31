@@ -1,6 +1,7 @@
 """The inspector for earlier turns (#48): a turn played from this Console shows its stored
 report (#44's log); any other turn says why there is none."""
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -8,11 +9,30 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import escape
 
+from console.inspect import short_id
 from console.models import EngineOperation
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
-from tests.play.helpers import HTMX, QUEUED_OP, STORY, TOBIN, TURN_OP, answer_page, respond_json
+from tests.play.helpers import (
+    HTMX,
+    MARA,
+    OPERATION,
+    QUEUED_OP,
+    RESPOND,
+    STORY,
+    TOBIN,
+    TURN_OP,
+    answer_page,
+    calls,
+    operation_json,
+    respond_json,
+    turn_data,
+)
+from tests.play.test_cast_participation import JENNI, play_story
+from tests.play.test_multi_turn_form import serve_page, snapshot_for
+from tests.play.test_turn_outcomes import poll
 
 pytestmark = pytest.mark.django_db
 
@@ -170,3 +190,282 @@ def test_transcript_turn_inspector_links_perception(
     answer_page(engine)  # a Lite turn, on a Lite story
     html = operator_client.get(f"/stories/{STORY}/", {"turn": "1"}).content.decode()
     assert "perception-link" not in html.split('<div id="inspector">')[1]
+
+
+# --- a multi-character turn's renders, narrative and facts (#201) --------------------------------
+
+TURN_URL = f"/stories/{STORY}/turn/"
+NARRATIVE = "Tobin says they were at the docks. Jenni looks away. Jenni says she was there too."
+FACTS = (
+    '<dt>Interaction mode</dt><dd title="sequential">Sequential</dd>'
+    '<dt>Audience filter</dt><dd title="full">Full</dd>'
+    '<dt>Player view</dt><dd title="character">Character</dd>'
+    '<dt>Composed</dt><dd title="polished">Polished</dd>'
+)
+REACTION = (
+    '<li id="beat-3" class="reaction">↳ Jenni (reaction): beat 3 · Do · '
+    '<span class="text">Jenni looks away.</span></li>'
+)
+
+
+def beat_json(
+    number: int | None, actor: str | None, channel: str, text: str, **extra: Any
+) -> dict[str, Any]:
+    """A respond beat as the Engine returns it (C15)."""
+    found: dict[str, Any] = {
+        "turn": 1,
+        "variant": 1,
+        "beat": number,
+        "kind": "player_input" if actor == MARA else f"beat_{channel}",
+        "actor_character_id": actor,
+        "render_character_ids": None,
+        "channel": channel,
+        "text": text,
+        "operation_id": TURN_OP,
+        "message_id": f"01JB2Z8Y5Q3W6K9M1N4P7M01{number or 0:02d}",
+        "origin": "generated",
+        "propositions": [],
+        "fidelity": "content",
+    }
+    found.update(extra)
+    return found
+
+
+def multi_json(**changes: Any) -> dict[str, Any]:
+    """The #200 demo turn: Mara asks, Tobin then Jenni render (sequential), Jenni's reaction
+    narrated by Tobin, as Tobin's character view under perception ``full``."""
+    beats = [
+        beat_json(1, MARA, "say", "Where were you both?"),
+        beat_json(2, TOBIN, "say", "At the docks."),
+        beat_json(3, JENNI, "do", "Jenni looks away.", narrated_by=TOBIN),
+        beat_json(4, JENNI, "say", "Me too."),
+        beat_json(
+            None,
+            None,
+            "message",
+            NARRATIVE,
+            kind="message_rendered",
+            render_character_ids=[TOBIN, JENNI],
+            propositions=None,
+            fidelity=None,
+        ),
+    ]
+    body = respond_json(
+        beats=beats,
+        order=[TOBIN, JENNI],
+        interaction_mode="sequential",
+        audience_filter="full",
+        player_view="character",
+        message={
+            "message_id": "01M5R0QNTZV2CSB478YYC57Y3W",
+            "text": NARRATIVE,
+            "narrative": NARRATIVE,
+            "mode": "polished",
+        },
+    )
+    body.update(changes)
+    return body
+
+
+def multi_row(**fields: Any) -> EngineOperation:
+    request = {"body": {"actor_character_id": MARA, "output_viewpoint": f"character:{TOBIN}"}}
+    fields.setdefault("response", multi_json())
+    return log_row(request={**request, "headers": {}}, **fields)
+
+
+def renders_of(html: str) -> str:
+    match = re.search(r'<section class="renders">.*?</section>', html, re.S)
+    assert match, "no Renders section"
+    return match.group(0)
+
+
+def assert_named_renders(html: str) -> None:
+    found = renders_of(html)
+    assert "<h4>Renders</h4>" in found
+    headings = re.findall(r'<h5 id="([^"]+)">(.*?)</h5>', found)
+    assert headings == [
+        ("render-input", "Input — Mara (player)"),
+        ("render-1", "Tobin"),
+        ("render-2", "Jenni"),
+        ("render-other", "Other beats"),
+    ]
+    tobin = found.split('<h5 id="render-1">')[1].split("<h5")[0]
+    assert (
+        '<li id="beat-2">beat 2 · Say · <span class="text">At the docks.</span>'
+        f'<ol class="reactions">{REACTION}</ol></li>'
+    ) in tobin
+    jenni = found.split('<h5 id="render-2">')[1].split("<h5")[0]
+    assert '<li id="beat-4">beat 4 · Say · <span class="text">Me too.</span></li>' in jenni
+    assert "Jenni looks away." not in jenni
+    other = found.split('<h5 id="render-other">')[1]
+    assert f'<li>Tobin, Jenni: item 5 · Message · <span class="text">{NARRATIVE}</span>' in other
+
+
+def test_live_multi_turn_shows_renders_and_facts(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("POST", RESPOND, 200, json=multi_json())
+    answer_page(engine, story=play_story())
+    response = operator_client.post(
+        TURN_URL, turn_data(snapshot=snapshot_for(), actor=MARA), headers=HTMX
+    )
+    html = response.content.decode()
+    assert_named_renders(html)
+    assert f"{FACTS}</dl>" in html
+    assert f'<blockquote class="reply">{NARRATIVE}</blockquote>' in html
+    assert "differs from the narrative" not in html  # the text is the same
+    # The section sits after the reply block and before the output guardrail.
+    assert html.index('<blockquote class="reply">') < html.index('<section class="renders">')
+    assert html.index('<section class="renders">') < html.index("<h4>Output guardrail</h4>")
+
+
+def test_logged_turn_shows_renders_from_the_stored_response(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    multi_row()
+    serve_page(engine)
+    html = operator_client.get(f"/stories/{STORY}/", {"operation": TURN_OP}).content.decode()
+    inspector = html.split('<div id="inspector">')[1]
+    assert_named_renders(inspector)
+    assert FACTS in inspector
+    assert f'<blockquote class="reply">{NARRATIVE}</blockquote>' in inspector
+
+
+def test_logged_row_reads_field_by_field(operator_client: Client) -> None:
+    """A malformed beat is skipped and a non-string ``order`` entry dropped; the rest shows."""
+    body = multi_json(order=[TOBIN, 7, JENNI])
+    body["beats"].insert(1, {"beat": "two"})
+    multi_row(response=body)
+    found = renders_of(inspect(operator_client, TURN_OP))
+    assert '<h5 id="render-2">' in found
+    assert "item 5" in found  # the reply's place among the parsed beats
+
+
+def test_htmx_inspector_labels_from_snapshot(operator_client: Client, engine: FakeEngine) -> None:
+    multi_row()
+    html = inspect(operator_client, TURN_OP, snapshot=snapshot_for())
+    assert_named_renders(html)
+    # Without a snapshot (or with a bad one): short ids, silently, and no Engine read.
+    for extra in ({}, {"snapshot": "tampered"}):
+        html = renders_of(inspect(operator_client, TURN_OP, **extra))
+        assert f'<h5 id="render-1">{short_id(TOBIN)}</h5>' in html
+        assert f"Input — {short_id(MARA)}" in html
+        assert "Tobin</h5>" not in html
+        assert "Mara (player)" not in html
+    assert engine.requests == []
+
+
+def test_polled_turn_shows_renders(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond(
+        "POST",
+        RESPOND,
+        202,
+        json={"operation_id": QUEUED_OP, "position": 1},
+        headers={"Location": f"/operations/{QUEUED_OP}"},
+    )
+    answer_page(engine, story=play_story())
+    operator_client.post(TURN_URL, turn_data(snapshot=snapshot_for(), actor=MARA), headers=HTMX)
+    committed = operation_json(
+        "committed",
+        result={"status": 200, "body": multi_json()},
+        viewpoint=f"character:{TOBIN}",
+        timeline_revision=2,
+    )
+    engine.respond("GET", OPERATION, 200, json=committed)
+    html = poll(operator_client)
+    assert_named_renders(html)
+    assert FACTS in html
+    assert calls(engine, "GET", f"/stories/{STORY}") == []  # labels from the posted snapshot
+
+
+def test_nothing_perceived_narrative_line(operator_client: Client) -> None:
+    body = multi_json(
+        audience_filter="nothing_perceived",
+        beats=[],
+        message={
+            "message_id": "01M5R0QNTZV2CSB478YYC57Y3W",
+            "text": "",
+            "narrative": "",
+            "mode": "deterministic",
+        },
+    )
+    multi_row(response=body)
+    html = inspect(operator_client, TURN_OP)
+    notice = (
+        '<p class="notice">This viewpoint perceived nothing this turn — the narrative is empty</p>'
+    )
+    assert notice in html
+    assert '<blockquote class="reply">' not in html
+    found = renders_of(html)
+    assert html.index(notice) < html.index('<section class="renders">')
+    assert found.count("No beats (see warnings)") == 2
+    assert '<dd title="nothing_perceived">Nothing perceived' in html
+
+
+def test_differing_text_under_more(operator_client: Client) -> None:
+    body = multi_json()
+    body["message"]["text"] = "The plain reply text."
+    multi_row(response=body)
+    html = inspect(operator_client, TURN_OP)
+    assert (
+        f'<blockquote class="reply">{NARRATIVE}</blockquote>\n'
+        '<details class="more"><summary>More</summary><p>Reply text (differs from the '
+        'narrative)</p><blockquote class="reply">The plain reply text.</blockquote></details>'
+    ) in html
+    # An empty narrative falls back to the text, with nothing under More.
+    EngineOperation.objects.all().delete()
+    body["message"]["narrative"] = "  "
+    multi_row(response=body)
+    html = inspect(operator_client, TURN_OP)
+    assert '<blockquote class="reply">The plain reply text.</blockquote>' in html
+    assert "differs from the narrative" not in html
+
+
+def test_lite_turn_has_no_renders_or_m5_facts(operator_client: Client, engine: FakeEngine) -> None:
+    """**Complement:** a Lite turn (``audience_filter: none``, none of the M5 fields) shows its
+    reply text and no Renders section or M5 fact, live or logged."""
+    engine.respond("POST", RESPOND, 200, json=respond_json())
+    answer_page(engine)
+    answer = operator_client.post(TURN_URL, turn_data(), headers=HTMX).content.decode()
+    live = answer.split('<div id="turn-status"', 1)[0]  # the inspector, before the out-of-band
+    log_row()
+    logged = inspect(operator_client, TURN_OP)
+    text = respond_json()["message"]["text"]
+    for html in (live, logged):
+        assert "renders" not in html
+        for label in ("Interaction mode", "Audience filter", "Player view</dt>", "Composed"):
+            assert label not in html
+        assert '<dl class="facts">' not in html
+        assert f'<blockquote class="reply">{escape(text)}</blockquote>' in html
+
+
+def test_not_played_here_turn_has_no_renders(operator_client: Client, engine: FakeEngine) -> None:
+    """**Complement:** a turn not in the log says so, with no Renders section and no
+    ``/operations`` read."""
+    html = inspect(operator_client, "01JB2Z8Y5Q3W6K9M1N4P7R0ZZZ", snapshot=snapshot_for())
+    assert "Report not available — this turn was not played from this Console" in html
+    assert "renders" not in html
+    assert not any(r.url.path.startswith("/operations") for r in engine.requests)
+
+
+def test_transcript_reaction_items_are_indented(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """A reaction's item is classed ``reaction`` with "↳ " before its speaker; **complement:**
+    a player-narrated item (C16) is neither."""
+    answer_page(engine, story=play_story(), history=engine_fixture("get_history_filtered"))
+    html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    assert "li.reaction, tr.reaction td.text { padding-left: 1.5em; }" in html
+    items = re.findall(r'<li class="item[^"]*".*?</li>', html, re.S)
+    reaction = next(i for i in items if "Tobin glances toward the kitchen." in i)
+    assert reaction.startswith('<li class="item channel-do reaction"')
+    assert "↳ <strong>Tobin (narrated by Jenni)</strong>" in reaction
+    player = next(i for i in items if "The ferry is late again." in i)
+    assert "reaction" not in player.split(">", 1)[0]
+    assert "↳" not in player
+    assert "<strong>Tobin (narrated by the player)</strong>" in player
+    # The turn links carry the page's signed snapshot to the inspector (C4).
+    inspector_url = reverse("stories:inspector", args=[STORY])
+    assert re.search(
+        rf'hx-get="{inspector_url}\?operation=[^"]+" hx-include="\[name=snapshot\]"', html
+    )

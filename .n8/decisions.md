@@ -2024,3 +2024,33 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The live test `test_two_primary_sequential_turn_live` was written but not run, because this environment has no `ENGINE_LIVE_URL` or service key.
   **Why:** Same precedent as #197.
   **Issue:** #200
+- **Decision:** `turn_renders` applies the show rule itself and returns `()` when the section isn't shown. `shows_renders(entries, order)` and `is_reaction(item)` are public in `console/renders.py`. The transcript's `Entry.reaction` uses `is_reaction`.
+  **Why:** One place holds C16, and the unit test for "on its own it doesn't show the section" runs on `turn_renders` directly.
+  **Issue:** #201
+- **Decision:** `RenderBeat` gains a `position: int = 0` field (1-based place among the parsed beats), plus `reaction`, `fidelity` and `css_class` properties, on top of the planned `(item, label, anchor, reactions)` shape.
+  **Why:** "item i" needs the item's place, and the template needs the reaction and fidelity classes without its own logic.
+  **Issue:** #201
+- **Decision:** The beat line is a separate partial, `templates/console/play/_render_beat.html`, included by `_renders.html` (once more for nested reactions). That makes eight source files, not the planned seven.
+  **Why:** Leading, own and nested beats share one line format. Copying it three times would let the copies drift.
+  **Issue:** #201
+- **Decision:** A literal reading of the Input rule: every item whose actor is the turn's actor and that comes before the cut-off. Reactions are routed only by `narrated_by`. A turn with no known actor, which includes a regeneration, gets no Input group, so its beats go to Other.
+  **Why:** That is the AC as written, with the planner's "cut-off by `actor_character_id` only".
+  **Issue:** #201
+- **Decision:** A logged row's inspector now shows the reply block too (the narrative, else `message.text`). Before this, a logged row showed no reply.
+  **Why:** The AC builds the reply, M5 facts and Renders from the live answer, the poll end and the logged response alike, and the demo's reload step expects the same inspector as the live answer.
+  **Issue:** #201
+- **Decision:** `TurnAnswer` (console/views/play.py) carries a turn's narrative, enums, order and parsed beats. `.of(RespondResponse)` builds it for the live answer and the poll end, and `.logged(row.response)` reads a logged row field by field. One `_with_answer` fills the Inspector from it.
+  **Why:** All three sources share one wording path, and a logged row never goes through `RespondResponse.from_json` (C2).
+  **Issue:** #201
+- **Decision:** A polled turn's actor comes from the logged row's request body (`_logged_actor(operation_id)`). `_poll_end` takes the `pending=` result that `poll` already computed, so the session's pending entry is popped only once.
+  **Why:** The AC names the logged request as the polled turn's actor source, and `_pending_form` pops the entry.
+  **Issue:** #201
+- **Decision:** The non-HTMX `stories:inspector` with no `?operation=` still renders the page with "Select a turn". With an operation, it passes `operation`/`origin` to `_page`, which builds the inspector after its story read.
+  **Why:** This keeps the old behaviour and adds the labels.
+  **Issue:** #201
+- **Decision:** History's Text `<td>` now always has `class="text"`. Before, only fidelity rows without a trace had it. #147's two Lite goldens were re-rendered. The only differences are that attribute and the transcript links' `hx-include="[name=snapshot]"`, both checked by diff. `tests/history/test_items.py::row_of` and one #196 transcript assertion now expect the new markup.
+  **Why:** The AC requires both markup changes. The precedent is #62/#196, which updated the goldens when an AC changed markup. No test was weakened.
+  **Issue:** #201
+- **Decision:** A side effect we accepted: the trace cell of a not-perceived history row now matches `.fidelity-none .text` too (line-through over its labels as well as its text).
+  **Why:** It follows from the class the AC asks for. The beat text in such a cell was already struck through by `.beat-text`.
+  **Issue:** #201

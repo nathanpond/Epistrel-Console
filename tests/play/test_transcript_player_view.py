@@ -367,7 +367,7 @@ def test_transcript_items_carry_fidelity_badges_and_narrator(
     reaction = item_with(html, "Tobin glances toward the kitchen.")
     assert "<strong>Tobin (narrated by Jenni)</strong>" in reaction
     assert "badge-fidelity" not in reaction
-    assert re.match(r'<li class="item channel-do"', reaction)
+    assert re.match(r'<li class="item channel-do reaction"', reaction)  # #201's indent
     player_beat = item_with(html, "The ferry is late again.")
     assert "<strong>Tobin (narrated by the player)</strong>" in player_beat
     # Complement: every item the Engine returned is rendered; the Console hides none.

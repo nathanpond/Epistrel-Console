@@ -31,7 +31,7 @@
       <td><span class="badge-channel">{{ row.item.channel }}</span>{% if row.item.redacted %} <span class="badge-erased">erased</span>{% endif %}{% if row.fidelity %} <span class="badge-fidelity" title="{{ row.fidelity.title }}">{{ row.fidelity.text }}</span>{% endif %}</td>
       <td>{{ row.actor }}</td>
       <td>{% if row.render %}{{ row.render|join:", " }}{% else %}—{% endif %}</td>
-      <td{% if row.fidelity.row_class and not row.trace %} class="text"{% endif %}>{% if row.trace %}{% include "console/history/_beat_trace.html" with t=row.trace %}{% else %}{{ row.item.text|mark_erased }}{% endif %}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
+      <td class="text">{% if row.trace %}{% include "console/history/_beat_trace.html" with t=row.trace %}{% else %}{{ row.item.text|mark_erased }}{% endif %}{% if row.same_message %} <small class="muted same-message">same message</small>{% endif %}{% if row.item.origin == "ingested" %} <small class="source">ingested</small>{% endif %}</td>
       <td>{% if row.log_pk %}<a class="operation-link" href="{% url 'operations:detail' row.log_pk %}"><code>{{ row.item.operation_id }}</code></a>{% else %}<code>{{ row.item.operation_id }}</code>{% endif %}</td>
     </tr>
     {% if row.feedback %}<tr class="feedback-row"><td colspan="7">{% include "console/stories/_feedback.html" with fb=row.feedback %}</td></tr>{% endif %}

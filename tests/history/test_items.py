@@ -50,7 +50,7 @@ def turns(*numbers: int) -> list[dict[str, Any]]:
 
 def row_of(html: str, text: str) -> str:
     rows: list[str] = re.findall(r'<tr class="item[^"]*">.*?</tr>', html, re.S)
-    found = [row for row in rows if f"<td>{text}" in row]
+    found = [row for row in rows if f'<td class="text">{text}' in row]
     assert len(found) == 1, text
     return found[0]
 
