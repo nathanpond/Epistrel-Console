@@ -270,6 +270,7 @@ class TurnWarning(Model):
 
     kind: str
     memory_id: str | None = None
+    character_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -641,6 +642,8 @@ class HistoryItem(Model):
 
     An omniscient read's ``OmniscientHistoryItemModel`` has these fields too (plus
     ``true_ages``), so this parses both. The structured-turn extras (#150) stay raw JSON.
+    M5 adds ``fidelity`` (how the viewpoint character perceived the beat: ``content``,
+    ``envelope`` or ``none``) and ``narrated_by`` (who narrated a reaction), on both items.
     """
 
     turn: int | None
@@ -661,6 +664,8 @@ class HistoryItem(Model):
     quarantined: bool = False
     redacted: bool = False
     visibility: Any = None
+    fidelity: str | None = open_enum(default=None)
+    narrated_by: str | None = None
 
 
 def _history_items(raw: list[Any]) -> list[HistoryItem]:
@@ -704,14 +709,16 @@ class History(Model):
 
     Pages hold whole turns, newest page first; ``items`` are ascending within the page.
     ``items`` (and ``audit``) are raw, because the schema's item is a union (omniscient or
-    not); :attr:`entries` and :attr:`audit_entries` parse them. #52 reads every field (the
-    issue calls this model ``HistoryResponse``).
+    not); :attr:`entries` and :attr:`audit_entries` parse them. #52 reads every field, and
+    M5's ``player_view`` (the issue calls this model ``HistoryResponse``).
     """
 
     items: list[Any]
     turns: list[TurnSummary]
     output_viewpoint: str
-    audience_filter: Literal["none", "co_location", "full"]
+    # Open enums (``open_enum()``, spelled out because required fields follow).
+    audience_filter: str = field(metadata={OPEN_ENUM: True})
+    player_view: str = field(metadata={OPEN_ENUM: True})
     as_of: int
     timeline_revision: int
     next_before_turn: int | None
@@ -732,11 +739,91 @@ class History(Model):
 
 @dataclass(frozen=True)
 class ReplyMessage(Model):
-    """``MessageBody``: a finished reply's transcript row id and text."""
+    """``MessageBody``: a finished reply's transcript row id and text, its ``mode``
+    (``polished`` or ``deterministic``) and, on a multi-character turn, the ``narrative``."""
 
     message_id: str
     text: str
-    mode: Literal["polished", "deterministic"] | None = None
+    mode: str | None = open_enum(default=None)
+    narrative: str | None = None
+
+
+def _keep_parsing(
+    parent: type, holder: dict[str, Any], lenient: tuple[tuple[str, type[Model]], ...]
+) -> dict[str, list[Any] | dict[str, Any]]:
+    """C2's per-entry lists and maps: for each ``(key, model)``, keep in ``holder`` only the
+    entries of ``holder[key]`` (a list, or a map's values, as ``parent``'s field is typed) that
+    ``model`` parses. The raw value of a key that lost an entry, or whose value is the wrong
+    container, is returned by key; a wrong container is removed from ``holder`` so the field
+    reads as its default."""
+    hints = typing.get_type_hints(parent)
+    unparsed: dict[str, list[Any] | dict[str, Any]] = {}
+    for key, model in lenient:
+        if key not in holder:
+            continue
+        raw = holder[key]
+        as_map = typing.get_origin(hints[key]) is dict
+        kept: list[Any] | dict[str, Any]
+        if as_map and isinstance(raw, dict):
+            kept = {k: v for k, v in raw.items() if model.from_json(v) is not None}
+        elif not as_map and isinstance(raw, list):
+            kept = [e for e in raw if model.from_json(e) is not None]
+        else:
+            del holder[key]
+            unparsed[key] = raw
+            continue
+        if len(kept) < len(raw):
+            holder[key] = kept
+            unparsed[key] = raw
+    return unparsed
+
+
+@dataclass(frozen=True)
+class Adjudication(Model):
+    """``AdjudicationBody``: a simultaneous-mode conflict over ``object``, who won and by which
+    ``rule``."""
+
+    object: str
+    winner: str
+    loser: str
+    rule: str = open_enum()
+
+
+@dataclass(frozen=True)
+class TurnRole(Model):
+    """``RoleBody``: a character's participation role on this turn and where it came from."""
+
+    role: str = open_enum()
+    source: str = open_enum()
+
+
+@dataclass(frozen=True)
+class EscalationDeferred(Model):
+    """``EscalationDeferredBody``: a character that wanted to escalate its role but couldn't."""
+
+    character_id: str
+    reason: str = open_enum()
+    needed: str | None = None
+
+
+@dataclass(frozen=True)
+class DeferredCharacter(Model):
+    """``DeferredCharacterBody``: a character the turn deferred (the schema's one reason is
+    ``budget``) and whether its role was fixed."""
+
+    character_id: str
+    reason: str = field(metadata={OPEN_ENUM: True})  # spelled out: a required field follows
+    fixed: bool
+
+
+@dataclass(frozen=True)
+class Reconcile(Model):
+    """``ReconcileBody``: a reconciled conflict between two beats over a proposition."""
+
+    proposition: str
+    winner_beat: int
+    loser_beat: int
+    rule: str = open_enum()
 
 
 @dataclass(frozen=True)
@@ -745,6 +832,13 @@ class RespondResponse(Model):
 
     ``beats`` are raw (the schema's item is a union); :attr:`entries` parses them, and
     :attr:`report` is the turn report the inspector shows.
+
+    M5's multi-character fields default to empty (the Engine omits them when empty).
+    ``from_json`` reads ``roles``, ``adjudications``, ``escalation_deferred``,
+    ``deferred_characters`` and ``reconcile`` entry by entry (C2): an entry that doesn't parse
+    is left out, and ``unparsed`` keeps that field's raw value for its "More", so one bad entry
+    never fails the turn. ``unparsed`` is the Console's, not the schema's (not a dataclass
+    field).
     """
 
     timeline_revision: int
@@ -753,7 +847,7 @@ class RespondResponse(Model):
     turn: int
     variant: int
     output_viewpoint: str
-    audience_filter: Literal["none", "co_location", "full"]
+    audience_filter: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
     model_calls: list[ModelCall]
     elapsed_ms: int
     degradation: list[str]
@@ -770,6 +864,37 @@ class RespondResponse(Model):
     queued_ms: int | None = None
     first_call_offset_ms: int | None = None
     warnings: list[TurnWarning] = field(default_factory=list)
+    order: list[str] = field(default_factory=list)
+    interaction_mode: str | None = open_enum(default=None)
+    adjudications: list[Adjudication] = field(default_factory=list)
+    roles: dict[str, TurnRole] = field(default_factory=dict)
+    escalation_deferred: list[EscalationDeferred] = field(default_factory=list)
+    deferred_characters: list[DeferredCharacter] = field(default_factory=list)
+    reduced_characters: list[str] = field(default_factory=list)
+    reconcile: list[Reconcile] = field(default_factory=list)
+    player_view: str | None = open_enum(default=None)
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        if not isinstance(obj, dict):
+            return None
+        obj = dict(obj)
+        lenient: tuple[tuple[str, type[Model]], ...] = (
+            ("adjudications", Adjudication),
+            ("roles", TurnRole),
+            ("escalation_deferred", EscalationDeferred),
+            ("deferred_characters", DeferredCharacter),
+            ("reconcile", Reconcile),
+        )
+        unparsed = _keep_parsing(cls, obj, lenient)
+        parsed = _from_json(cls, obj)
+        if not isinstance(parsed, cls):
+            return None
+        if unparsed:
+            object.__setattr__(parsed, "unparsed", unparsed)
+        return parsed
 
     @property
     def entries(self) -> list[HistoryItem]:
@@ -957,10 +1082,30 @@ class CatalogSource(Model):
 
 
 @dataclass(frozen=True)
+class Participation(Model):
+    """``ParticipationBody``: a character's participation role and whether it is fixed."""
+
+    role: str = field(metadata={OPEN_ENUM: True})  # spelled out: a required field follows
+    fixed: bool
+
+
+@dataclass(frozen=True)
+class ModeledAt(Model):
+    """``ModeledAtBody``: the five-part narrative position an entity was modeled at."""
+
+    turn: int
+    variant: int
+    slot_k: int
+    beat: int
+    step: int
+
+
+@dataclass(frozen=True)
 class StoryCharacter(Model):
     """``CharacterBody``: one cast member as a non-omniscient ``GET /stories/{id}`` shows it.
 
     An omniscient read's ``OmniscientCharacterBody`` has these fields too, so this parses both.
+    ``participation`` is the character's stored role (M5; ``None`` when unset).
     """
 
     id: str
@@ -968,11 +1113,14 @@ class StoryCharacter(Model):
     is_player: bool
     role_id: str | None = None
     source: CatalogSource | None = None
+    participation: Participation | None = None
 
 
 @dataclass(frozen=True)
 class OmniscientStoryCharacter(Model):
-    """``OmniscientCharacterBody``: a cast member with its true age (an omniscient read)."""
+    """``OmniscientCharacterBody``: a cast member with its true age (an omniscient read), its
+    participation, its ``weight`` (``major`` or ``minor``) and, for an entity modeled as a
+    character, where it was modeled (``modeled_at``)."""
 
     id: str
     name: str
@@ -981,6 +1129,9 @@ class OmniscientStoryCharacter(Model):
     promoted_to: list[str]
     role_id: str | None = None
     source: CatalogSource | None = None
+    participation: Participation | None = None
+    weight: str = open_enum(default="major")
+    modeled_at: ModeledAt | None = None
 
 
 @dataclass(frozen=True)
@@ -1435,6 +1586,7 @@ class DeploymentSettings(Model):
     media_upload_ttl: int = 86400
     memory_importance_half_life_turns: int = 200
     minor_age_threshold: int = 18
+    minor_hot_budget_fraction: float = 0.2
     neighborhood_max_facts: int = 50
     offboarding_report_retention_days: int = 90
     profile_defaults: Any = None
@@ -1952,12 +2104,16 @@ UTTERANCE_LABEL_FIELDS = ("intent", "belief_relation", "objective_relation")
 
 @dataclass(frozen=True)
 class UtteranceLabels:
-    """``UtteranceLabelsModel``: a ``say``-channel item's three independent labels (FR-TURN-6).
-    Later Engine fields (``classification``, ``intent_corrected``) land in ``extras``."""
+    """``UtteranceLabelsModel``: a ``say``-channel item's three independent labels (FR-TURN-6),
+    M5's ``classification`` (open: any string is kept, C2) and ``intent_corrected``. A
+    ``classification`` that isn't a string or ``null``, or an ``intent_corrected`` that isn't a
+    bool, reads as unset with the raw value in ``extras``; other keys land in ``extras``."""
 
     intent: str
     belief_relation: str
     objective_relation: str
+    classification: str | None = None
+    intent_corrected: bool = False
     extras: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -1971,7 +2127,19 @@ class UtteranceLabels:
         if not all(v in a for v, a in zip(values, allowed, strict=True)):
             return None
         intent, belief, objective = (str(v) for v in values)
-        return cls(intent, belief, objective, _unnamed(obj, UTTERANCE_LABEL_FIELDS))
+        extras = _unnamed(obj, (*UTTERANCE_LABEL_FIELDS, "classification", "intent_corrected"))
+        classification = _str_or_none(obj, "classification", extras)
+        corrected = _take(
+            obj, "intent_corrected", isinstance(obj.get("intent_corrected"), bool), extras
+        )
+        return cls(
+            intent=intent,
+            belief_relation=belief,
+            objective_relation=objective,
+            classification=classification,
+            intent_corrected=corrected is True,
+            extras=extras,
+        )
 
 
 @dataclass(frozen=True)
@@ -2127,9 +2295,9 @@ class FactWritten(Model):
 
 
 @dataclass(frozen=True)
-class Position(Model):
-    """``PositionBody``: a narrative position, the turn, its variant and the beat (each ``None``
-    when position-less)."""
+class InspectPosition(Model):
+    """``epistrel__api__routes__inspect__PositionBody``: a narrative position, the turn, its
+    variant and the beat (each ``None`` when position-less)."""
 
     turn: int | None
     variant: int | None
@@ -2139,31 +2307,66 @@ class Position(Model):
 @dataclass(frozen=True)
 class RejectedBinding(Model):
     """``RejectedBindingBody`` (FR-COMMIT-14): a binding reconciliation rejected: the claim and
-    beat that made it, the entity it bound and the records (fact ids) it conflicted with."""
+    beat that made it, the entity it bound and the records (fact ids) and lines it conflicted
+    with."""
 
     claim_id: str | None = None
     beat: int | None = None
     bound_entity: str | None = None
     conflicting_records: list[str] = field(default_factory=list)
+    conflicting_lines: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CouldHaveKnownFlag(Model):
+    """``CouldHaveKnownFlagBody``: a character who could have known of the thunk, how severe
+    that is (a plain string in the schema) and the gap in story minutes."""
+
+    character_id: str
+    severity: str
+    gap_minutes: int
+
+
+@dataclass(frozen=True)
+class HiddenFact(Model):
+    """``HiddenFactBody``: a fact hidden from some characters. ``proposition`` stays raw JSON
+    (C2); :attr:`proposition_view` is its typed view."""
+
+    fact_id: str
+    proposition: Any
+    scope: str
+    characters: list[str]
+    valid_from: int | None
+    valid_to: int | None
+    narrative_turn: int | None
+
+    @property
+    def proposition_view(self) -> Proposition | None:
+        return Proposition.from_json(self.proposition)
 
 
 @dataclass(frozen=True)
 class Thunk(Model):
     """``ThunkBody``: one introduced-but-undetermined reference. ``sketch`` stays raw JSON (the
     schema leaves it untyped); :meth:`ThunkSketch.from_json` is its typed view (convention 12).
-    ``state``, ``open_slot`` and ``resolution_level`` are plain strings in the schema."""
+    ``state``, ``open_slot`` and ``resolution_level`` are plain strings in the schema.
+    ``Ledger.from_json`` reads ``could_have_known_flags`` entry by entry (C2), keeping the raw
+    list in ``unparsed`` when an entry didn't parse."""
 
     id: str
     sketch: dict[str, Any]
     description: str
     open_slot: str
     state: str
-    position: Position
+    position: InspectPosition
     salient: bool
     valid_time: int | None
     resolved_fact_id: str | None
     resolution_level: str | None = None
     rejected_bindings: list[RejectedBinding] = field(default_factory=list)
+    could_have_known_flags: list[CouldHaveKnownFlag] = field(default_factory=list)
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
 
 
 @dataclass(frozen=True)
@@ -2176,7 +2379,7 @@ class LedgerItem(Model):
     thunk_id: str | None
     proposition_id: str | None
     kind: str
-    introduced_position: Position
+    introduced_position: InspectPosition
     discharged_by_operation: str | None
     discharged_mode: str | None
 
@@ -2185,12 +2388,47 @@ class LedgerItem(Model):
 class Ledger(Model):
     """``LedgerBody``: a page of the story's thunks by id with their ledger entries (the first
     page also holds the entries on hidden facts' propositions), the story's revision and the
-    next page's ``after_id`` (``None`` on the last)."""
+    next page's ``after_id`` (``None`` on the last), the hidden facts and the viewpoint (always
+    ``omniscient``).
+
+    ``from_json`` reads ``hidden_facts`` and each thunk's ``could_have_known_flags`` entry by
+    entry (C2): an entry that doesn't parse is left out, and ``unparsed`` (here, or on the
+    thunk) keeps the field's raw value for its "More"."""
 
     thunks: list[Thunk]
     ledger: list[LedgerItem]
     revision: int
     next_after_id: str | None
+    hidden_facts: list[HiddenFact] = field(default_factory=list)
+    output_viewpoint: str = open_enum(default="omniscient")
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        if not isinstance(obj, dict):
+            return None
+        obj = dict(obj)
+        unparsed = _keep_parsing(cls, obj, (("hidden_facts", HiddenFact),))
+        flags: dict[int, dict[str, list[Any] | dict[str, Any]]] = {}
+        if isinstance(obj.get("thunks"), list):
+            thunks = [dict(t) if isinstance(t, dict) else t for t in obj["thunks"]]
+            for index, thunk in enumerate(thunks):
+                if isinstance(thunk, dict):
+                    lost = _keep_parsing(
+                        Thunk, thunk, (("could_have_known_flags", CouldHaveKnownFlag),)
+                    )
+                    if lost:
+                        flags[index] = lost
+            obj["thunks"] = thunks
+        parsed = _from_json(cls, obj)
+        if not isinstance(parsed, cls):
+            return None
+        if unparsed:
+            object.__setattr__(parsed, "unparsed", unparsed)
+        for index, lost in flags.items():
+            object.__setattr__(parsed.thunks[index], "unparsed", lost)
+        return parsed
 
 
 # --- eval reports (#149) -------------------------------------------------------------------------
@@ -3173,12 +3411,23 @@ class ScenarioMetadata(Model):
 
 
 @dataclass(frozen=True)
+class LocationAdjacency(Model):
+    """``LocationAdjacency``: a location next to this one and what's between them."""
+
+    location: str
+    barrier: str | None = open_enum(default=None)
+
+
+@dataclass(frozen=True)
 class Location(Model):
-    """``ScenarioLocation``: a named place roles and the opening start at."""
+    """``ScenarioLocation``: a named place roles and the opening start at, the place it is in
+    and the places next to it."""
 
     id: str
     name: str
     description: str | None = None
+    located_in: str | None = None
+    adjacent_to: list[LocationAdjacency] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -3214,10 +3463,29 @@ class Opening(Model):
 
 
 @dataclass(frozen=True)
+class NestedSeed(Model):
+    """``NestedSeed``: the holder attributed with a belief, the proposition and, optionally,
+    the confidence attributed to them."""
+
+    attributed_holder: str
+    proposition: str
+    attributed_confidence: str | None = open_enum(default=None)
+
+
+@dataclass(frozen=True)
+class ScenarioChannel(Model):
+    """``ScenarioChannel``: a starting communication channel and who is on it."""
+
+    id: str
+    participants: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class Seed(Model):
     """``Seed`` (#73): a seeded item, a role's or the world's (``starting_state``). ``id`` is
     the Engine's, assigned when a save stores the seed (sent back to keep it); holder, audience
-    and disclosure may be unset on a draft (publishing needs all three)."""
+    and disclosure may be unset on a draft (publishing needs all three). M5 adds the holder's
+    ``confidence`` and, for a ``nested`` seed, what the holder thinks another holder believes."""
 
     text: str
     id: str | None = None
@@ -3226,6 +3494,8 @@ class Seed(Model):
     disclosure: str | None = open_enum(default=None)
     kind: str | None = open_enum(default=None)
     valid_time: dict[str, Any] | None = None
+    confidence: str | None = open_enum(default=None)
+    nested: NestedSeed | None = None
 
 
 @dataclass(frozen=True)
@@ -3241,6 +3511,7 @@ class StartingState(Model):
     predicates: list[dict[str, Any]] = field(default_factory=list)
     closed_sets: list[dict[str, Any]] = field(default_factory=list)
     rules: list[dict[str, Any]] = field(default_factory=list)
+    channels: list[ScenarioChannel] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -3283,6 +3554,10 @@ class StorySettingsDefaults(Model):
     turn_concurrency: str | None = open_enum(default=None)
     policies: list[ScenarioPolicy] = field(default_factory=list)
     required_providers: list[str] = field(default_factory=list)
+    player_view: str | None = open_enum(default=None)
+    reactive_interjections: bool | None = None
+    sequence_order: str | None = open_enum(default=None)
+    simultaneous_tie_break: str | None = None
 
 
 @dataclass(frozen=True)
@@ -3331,10 +3606,13 @@ class RoleEligibility(Model):
 
 @dataclass(frozen=True)
 class RoleRelationship(Model):
-    """``RoleRelationship`` (#73): the role's relationship ``name`` to another role."""
+    """``RoleRelationship`` (#73): the role's relationship ``name`` to another role, who knows
+    of it (``audience``) and the trust it carries (0 to 1)."""
 
     to_role: str
     name: str
+    audience: list[str] | None = None
+    trust: float | None = None
 
 
 @dataclass(frozen=True)
@@ -3361,11 +3639,12 @@ class ScenarioRole(Model):
 
 @dataclass(frozen=True)
 class ScenarioCast(Model):
-    """``ScenarioCast`` (#73): the roles and the starting-cast limit (``None``: the
-    deployment's default)."""
+    """``ScenarioCast`` (#73): the roles, the starting-cast limit (``None``: the
+    deployment's default) and the named role groups."""
 
     max_characters_at_start: int | None = None
     roles: list[ScenarioRole] = field(default_factory=list)
+    groups: dict[str, list[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -3635,7 +3914,19 @@ FieldClass = Literal[
     "recommendation",
     "style",
 ]
-MaterializedOutcome = Literal["canon", "memory", "deferred", "merge_conflict", "entity", "rule"]
+MaterializedOutcome = Literal[
+    "canon",
+    "memory",
+    "deferred",
+    "merge_conflict",
+    "entity",
+    "rule",
+    "belief",
+    "nested",
+    "belief_conflict",
+    "visibility_conflict",
+    "seed_audience_unfilled",
+]
 
 
 @dataclass(frozen=True)
@@ -3807,6 +4098,7 @@ class ImpactReport(Model):
     quality_status_after: QualityStatus | None = None
     fingerprint_before: str | None = None
     fingerprint_after: str | None = None
+    guarantees_gained: list[str] = field(default_factory=list)
 
 
 # --- engine profile writes (#84) -----------------------------------------------------------------
@@ -3867,6 +4159,7 @@ class GuaranteeStatus(Model):
     purposes: list[str]
     provided: bool | None
     delivered_in: str | None
+    story_setting: RequiredSetting | None = None
 
 
 @dataclass(frozen=True)

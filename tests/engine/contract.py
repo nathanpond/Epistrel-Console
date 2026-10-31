@@ -1,13 +1,15 @@
 """Compare the client's registry and typed models with an OpenAPI document.
 
 Type mapping: ``str``/``int``/``float``/``bool`` ↔ ``string``/``integer``/``number``/``boolean``;
-``Literal`` ↔ ``enum`` (as a set, plus its ``type``); ``dict[str, X]`` ↔ object with
-``additionalProperties``; ``list[X]`` ↔ array with ``items``; ``X | None`` ↔ ``anyOf`` with null
-(or ``nullable``); a nested dataclass ↔ a ``$ref`` to the component of the same shape; ``Any``
-(raw JSON) ↔ any schema, and ``dict[str, Any]`` ↔ an object with ``additionalProperties: true``
-(#44); a field flagged ``OPEN_ENUM`` (``str``, #65) ↔ a string enum, compared as its ``Literal``;
-a response whose schema is an ``anyOf`` of components ↔ a model matching one of them (#65);
-``datetime`` ↔ ``string`` with ``format: date-time`` (#149).
+``Literal`` ↔ ``enum`` (as a set, plus its ``type``; a ``const`` is a one-member enum);
+``dict[str, X]`` ↔ object with ``additionalProperties`` (or with exactly one
+``patternProperties`` entry and no ``properties``, #183); ``list[X]`` ↔ array with ``items``;
+``X | None`` ↔ ``anyOf`` with null (or ``nullable``); a nested dataclass ↔ a ``$ref`` to the
+component of the same shape; ``Any`` (raw JSON) ↔ any schema, and ``dict[str, Any]`` ↔ an object
+with ``additionalProperties: true`` (#44); a field flagged ``OPEN_ENUM`` (``str``, #65) ↔ a
+string enum (or ``const``), compared as its ``Literal``; a response whose schema is an ``anyOf``
+of components ↔ a model matching one of them (#65); ``datetime`` ↔ ``string`` with
+``format: date-time`` (#149).
 Compared:
 type, enum, properties, required (a field is required when it has no default). Ignored: title,
 description, examples, default.
@@ -94,6 +96,13 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
             if node.get("type") != "object" or node.get("properties"):
                 return [f"{where}: model is a dict but the schema is not a map"]
             return []
+        patterns = node.get("patternProperties")
+        if extra is None and isinstance(patterns, dict) and not node.get("properties"):
+            # A map whose keys follow a pattern (``ScenarioCast.groups``, #183): one pattern only.
+            if node.get("type") != "object" or len(patterns) != 1:
+                return [f"{where}: model is a dict but the schema is not a one-pattern map"]
+            (value,) = patterns.values()
+            return compare_type(doc, item_tp, value, f"{where}[*]")
         if node.get("type") != "object" or not isinstance(extra, dict) or node.get("properties"):
             return [f"{where}: model is a dict but the schema is not a map"]
         return compare_type(doc, item_tp, extra, f"{where}[*]")
@@ -165,12 +174,19 @@ def _open_enum(
         problems.append(f"{where}: an open enum must be typed str or str | None")
         return tp
     options = resolve(doc, node).get("anyOf") or [node]
-    enums = [resolve(doc, o).get("enum") for o in options if resolve(doc, o).get("type") != "null"]
+    # A ``const`` reads as a one-member enum (``DeferredCharacter.reason``, #183).
+    enums = [_enum_of(resolve(doc, o)) for o in options if resolve(doc, o).get("type") != "null"]
     if len(enums) != 1 or not isinstance(enums[0], list) or not enums[0]:
         problems.append(f"{where}: an open enum's schema is not a string enum")
         return tp
     literal: Any = Literal[tuple(enums[0])]
     return literal | None if nullable else literal
+
+
+def _enum_of(node: dict[str, Any]) -> Any:
+    if "const" in node and "enum" not in node:
+        return [node["const"]]
+    return node.get("enum")
 
 
 ERROR_REF = "#/components/schemas/Error"

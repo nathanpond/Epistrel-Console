@@ -12,6 +12,7 @@ import pytest
 
 from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
+    Adjudication,
     AffectedStory,
     AgeCondition,
     Backfill,
@@ -51,6 +52,7 @@ from console.engine.models import (
     ContentRatingList,
     ContentRatingMutation,
     ContentRatingSummary,
+    CouldHaveKnownFlag,
     CreatedCharacter,
     CreationCounts,
     CreationReport,
@@ -58,6 +60,7 @@ from console.engine.models import (
     CurrentEntity,
     CustomInstructions,
     CustomInstructionsWritten,
+    DeferredCharacter,
     DeferredItem,
     DegradationStep,
     DeploymentSettings,
@@ -79,6 +82,7 @@ from console.engine.models import (
     EpisodeBody,
     ErasureCandidate,
     ErasureResult,
+    EscalationDeferred,
     EscalationYield,
     EvaluatedRating,
     ExtractionShadow,
@@ -96,6 +100,7 @@ from console.engine.models import (
     GuardrailViolation,
     HealthChecks,
     HealthResponse,
+    HiddenFact,
     History,
     HistoryItem,
     HotCountsBody,
@@ -105,6 +110,7 @@ from console.engine.models import (
     ImpactReport,
     Implication,
     InactiveItem,
+    InspectPosition,
     Instant,
     InteractionStyle,
     Interval,
@@ -115,6 +121,7 @@ from console.engine.models import (
     LikesDislikes,
     ListingStatus,
     Location,
+    LocationAdjacency,
     MaterializedEntry,
     MediaAsset,
     MediaPage,
@@ -130,7 +137,9 @@ from console.engine.models import (
     ModelConfigEntry,
     ModelConfigItem,
     ModelConfigMutation,
+    ModeledAt,
     ModelIdentity,
+    NestedSeed,
     OffboardingActions,
     OffboardingError,
     OffboardingJob,
@@ -147,6 +156,7 @@ from console.engine.models import (
     OwnedItem,
     OwnedPage,
     OwnerTransfer,
+    Participation,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -160,7 +170,6 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PolicyTarget,
-    Position,
     Predicate,
     PredicateDecision,
     PredicateList,
@@ -191,6 +200,7 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     Recommendation,
+    Reconcile,
     ReembedRetry,
     ReembedStatus,
     ReferenceImage,
@@ -220,6 +230,7 @@ from console.engine.models import (
     ScenarioCardMediaSet,
     ScenarioCardRole,
     ScenarioCast,
+    ScenarioChannel,
     ScenarioDraft,
     ScenarioListItem,
     ScenarioMediaSet,
@@ -262,6 +273,7 @@ from console.engine.models import (
     TurnGuardrail,
     TurnMessage,
     TurnReport,
+    TurnRole,
     TurnSummary,
     TurnWarning,
     TypedLiteral,
@@ -647,7 +659,7 @@ def test_the_widening_only_adds_media_id() -> None:
         (Thunk, "ThunkBody"),
         (LedgerItem, "LedgerItemBody"),
         (RejectedBinding, "RejectedBindingBody"),
-        (Position, "PositionBody"),
+        (InspectPosition, "epistrel__api__routes__inspect__PositionBody"),
         # #149: eval reports.
         (EscalationYield, "EscalationYieldBody"),
         (YieldCluster, "YieldClusterBody"),
@@ -669,6 +681,19 @@ def test_the_widening_only_adds_media_id() -> None:
         (GuaranteeStatus, "GuaranteeStatus"),
         (GuaranteeRequiredModule, "epistrel__core__profiles__guarantees__RequiredModule"),
         (RequiredSetting, "RequiredSetting"),
+        # #183: the nested components M5's changed components reference.
+        (Adjudication, "AdjudicationBody"),
+        (TurnRole, "RoleBody"),
+        (EscalationDeferred, "EscalationDeferredBody"),
+        (DeferredCharacter, "DeferredCharacterBody"),
+        (Reconcile, "ReconcileBody"),
+        (Participation, "ParticipationBody"),
+        (ModeledAt, "ModeledAtBody"),
+        (CouldHaveKnownFlag, "CouldHaveKnownFlagBody"),
+        (HiddenFact, "HiddenFactBody"),
+        (LocationAdjacency, "LocationAdjacency"),
+        (ScenarioChannel, "ScenarioChannel"),
+        (NestedSeed, "NestedSeed"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -948,3 +973,46 @@ def test_the_ownership_bodies_widen_only_their_revisions(component: str) -> None
     same = set(recorded["properties"]) - {carried}
     assert all(recorded["properties"][k] == widened["properties"][k] for k in same)
     assert set(recorded["required"]) - set(widened["required"]) == {carried}
+
+
+def test_a_pattern_properties_map_is_a_dict() -> None:
+    """#183: an object with one ``patternProperties`` entry (and no ``properties``) is a
+    ``dict[str, X]`` compared on its value schema; a wrong value type or two patterns bite."""
+    one = {
+        "type": "object",
+        "patternProperties": {"^[a-z]+$": {"type": "array", "items": {"type": "string"}}},
+    }
+    assert compare_type(DOC, dict[str, list[str]], one, "groups") == []
+    assert compare_type(DOC, dict[str, int], one, "groups") != []
+    two = {
+        "type": "object",
+        "patternProperties": {"^a$": {"type": "integer"}, "^b$": {"type": "integer"}},
+    }
+    assert compare_type(DOC, dict[str, int], two, "groups") != []
+
+
+def test_an_open_enum_reads_a_const() -> None:
+    """#183: an ``OPEN_ENUM`` ``str`` passes against a ``const`` (a one-member enum), while a
+    plain ``str`` against an ``enum`` is still reported."""
+    from dataclasses import field as dc_field
+
+    from console.engine.models import OPEN_ENUM
+
+    @dataclass(frozen=True)
+    class Deferred:
+        character_id: str
+        fixed: bool
+        reason: str = dc_field(metadata={OPEN_ENUM: True})
+
+    ref = {"$ref": "#/components/schemas/DeferredCharacterBody"}
+    assert compare_model(DOC, Deferred, ref, "Deferred") == []
+
+    @dataclass(frozen=True)
+    class Plain:
+        object: str
+        winner: str
+        loser: str
+        rule: str
+
+    problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/AdjudicationBody"}, "P")
+    assert any("enum" in p for p in problems)

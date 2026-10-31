@@ -131,7 +131,7 @@ def budget_source(source: str) -> str:
 # --- the config-change ``setting`` filter ---------------------------------------------------------
 
 PROFILE_OVERRIDES = "profile_overrides"
-RATING_AND_PROFILE = ("content_rating_id", "engine_profile_id")
+RATING_AND_PROFILE = ("content_rating_id", "engine_profile_id", "engine_profile_version_pin")
 
 
 def setting_groups(names: Iterable[str]) -> list[tuple[str, list[tuple[str, str]]]]:

@@ -1667,3 +1667,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Sixteen cross-story decisions (C1–C16: positions, open enums and lenient parsing, enum wording, character labels, write refusals, gates, choice fields, roles, untouched forms, numeric inputs, paging, URL ids, fake-Engine query matching, fixture realism, player-narrated beats) are written into the M5 milestone description, and each story cites them by number.
   **Why:** They were settled once across stories during the executor simulations, so executors don't re-decide them per story.
 - **Decision:** Executor simulations used plain subagents: 26 on the first drafts, 27 on the revised bodies, and 4 on later splits. They did not use the Workflow tool.
+
+## /n8-exec M5 — 2026-10-30
+
+- **Decision:** `console/engine/openapi.json` re-recorded from `ghcr.io/nathanpond/epistrel:edge`, `org.opencontainers.image.revision` 7d181b35fa64692f6cdbe31e8260042d57d3c784 (= Engine origin/main @ 7d181b3), digest `sha256:8a7043c9ef3e6720feb8b1f19225eaaee9b72a09356e62c00dde56d4eb0f9d79` (180 operations, 490 components); `engine_schema --check` exits 0 and the local live smoke XPASSes `test_live_engine_api_matches_the_recording`.
+  **Why:** AC 1; the milestone PR description must name the revision and digest.
+  **Issue:** #183
+- **Decision:** The smoke stack ran with `compose.smoke.yml`'s content on host port 8001 (a scratch override; same image, stub adapter, db), not 8000.
+  **Why:** 127.0.0.1:8000 was held by the Engine repo's own running stack, which isn't this session's to stop; the recorded schema doesn't depend on the port.
+  **Issue:** #183
+- **Decision:** No drift beyond the AC's field list: every contract row passes on the new recording, so no extra fields were typed and no follow-up issue was filed.
+  **Why:** AC 2's "small addition / follow-up" clause had nothing to cover.
+  **Issue:** #183
+- **Decision:** `_keep_parsing(parent, holder, lenient)` takes the parent class and reads the expected container (list or map) from its field type, so `adjudications: {}` is a wrong container (default + raw kept), not an empty map.
+  **Why:** AC 3's wrong-container rule; deciding by the value's own type would accept a map where the schema has a list.
+  **Issue:** #183
+- **Decision:** Required open enums followed by required fields (`History.audience_filter`/`player_view`, `RespondResponse.audience_filter`, `DeferredCharacter.reason`, `Participation.role`) use the spelled-out `field(metadata={OPEN_ENUM: True})`, as `MediaAsset` does.
+  **Why:** mypy's dataclass plugin reads `open_enum()` as a defaulted field and rejects required fields after it.
+  **Issue:** #183
+- **Decision:** (Rule 1) The scenario cast editor writes each relationship with M5's `audience`/`trust` only when set (`role_to_write`), so a relationship without them keeps its pre-M5 write shape, and one carrying them now keeps them through an edit. Before this, the editor would have sent `audience: null, trust: null` on every relationship.
+  **Why:** The editor serialises relationships with `asdict`, so new model fields leaked into the patch and broke `test_scenario_cast` round trips. The story says no write-path behaviour changes (#205/#206 own the write path).
+  **Issue:** #183

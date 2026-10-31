@@ -459,7 +459,7 @@ def test_malformed_labels_render_no_tags(labels: Any) -> None:
 
 
 def test_later_label_fields_go_to_more() -> None:
-    t = trace(beat(labels={**SAY_LABELS, "classification": "sincere"}))
+    t = trace(beat(labels={**SAY_LABELS, "later_label": "sincere"}))
     assert len(t.tags) == 3
     assert [p.label for p in t.more] == ["labels"]
 
@@ -607,6 +607,7 @@ def history_body(turns: list[int], *, structured: bool = True) -> dict[str, Any]
         ],
         "output_viewpoint": "omniscient",
         "audience_filter": "none",
+        "player_view": "character",
         "as_of": max(turns),
         "timeline_revision": 9,
         "next_before_turn": min(turns) if min(turns) > 1 else None,

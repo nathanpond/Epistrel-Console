@@ -14,7 +14,34 @@ from console.engine.client import (
     _raise_for_envelope,
     current_call,
 )
-from console.engine.models import HealthChecks, HealthResponse, StoryList, WorkersCheck
+from console.engine.models import (
+    Adjudication,
+    CouldHaveKnownFlag,
+    DeferredCharacter,
+    EscalationDeferred,
+    HealthChecks,
+    HealthResponse,
+    History,
+    HistoryItem,
+    InspectPosition,
+    Ledger,
+    LocationAdjacency,
+    MaterializedEntry,
+    NestedSeed,
+    OmniscientStoryCharacter,
+    Participation,
+    Proposition,
+    Reconcile,
+    RegenerateResult,
+    ReplyMessage,
+    RespondResponse,
+    Seed,
+    StoryList,
+    StorySettingsDefaults,
+    TurnRole,
+    UtteranceLabels,
+    WorkersCheck,
+)
 from tests.fakes.engine import FakeEngine, recorded_schema, with_test_thing
 from tests.fixtures import engine_fixture
 
@@ -512,3 +539,293 @@ def test_a_registered_method_names_its_call(fake_engine: FakeEngine) -> None:
     assert call.kind == "list_stories"
     assert call.operation == OPERATIONS["GET /stories"]
     assert current_call() is None  # reset once the method returns
+
+
+# --- M5 models (#183) -----------------------------------------------------------------------------
+
+C1 = "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+C2 = "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
+PROPOSITION: dict[str, Any] = {
+    "subject_id": C2,
+    "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PW1",
+    "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PC1",
+    "polarity": "affirmed",
+    "valid_time": {"kind": "interval", "start": {"outer": 40, "inner": 40}, "end": None},
+}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["none", "co_location", "full", "nothing_perceived", "bypassed_by_player_view", "later_value"],
+)
+def test_history_parses_every_audience_filter(value: str) -> None:
+    body = {**engine_fixture("get_history"), "audience_filter": value}
+    history = History.from_json(body)
+    assert history is not None
+    assert history.audience_filter == value
+    assert history.player_view == "character"
+
+
+def _item() -> dict[str, Any]:
+    item: dict[str, Any] = engine_fixture("get_history")["items"][0]
+    return item
+
+
+@pytest.mark.parametrize(
+    ("model", "body", "name"),
+    [
+        (HistoryItem, _item(), "fidelity"),
+        (
+            OmniscientStoryCharacter,
+            {"id": C1, "name": "Tobin", "is_player": False, "true_age": 41, "promoted_to": []},
+            "weight",
+        ),
+        (Participation, {"role": "primary", "fixed": False}, "role"),
+        (TurnRole, {"role": "primary", "source": "default"}, "source"),
+        (LocationAdjacency, {"location": "hall"}, "barrier"),
+        (Seed, {"text": "The ferry is late."}, "confidence"),
+        (NestedSeed, {"attributed_holder": "mother", "proposition": "p"}, "attributed_confidence"),
+        (StorySettingsDefaults, {}, "sequence_order"),
+        (ReplyMessage, {"message_id": "01M5R0QNTZV2CSB478YYC57Y3V", "text": "Hi."}, "mode"),
+        (DeferredCharacter, {"character_id": C1, "reason": "budget", "fixed": False}, "reason"),
+    ],
+)
+def test_open_enums_keep_unknown_values(model: Any, body: dict[str, Any], name: str) -> None:
+    parsed = model.from_json({**body, name: "later_value"})
+    assert parsed is not None
+    assert getattr(parsed, name) == "later_value"
+    # A non-string still fails that model's parse.
+    assert model.from_json({**body, name: 7}) is None
+
+
+MULTI: dict[str, Any] = {
+    "order": [C1, C2],
+    "interaction_mode": "simultaneous",
+    "roles": {
+        C1: {"role": "primary", "source": "default"},
+        C2: {"role": "reactive", "source": "escalated"},
+    },
+    "adjudications": [{"object": "the key", "winner": C1, "loser": C2, "rule": "request_order"}],
+    "escalation_deferred": [{"character_id": C2, "reason": "budget", "needed": "primary"}],
+    "deferred_characters": [{"character_id": C2, "reason": "budget", "fixed": False}],
+    "reduced_characters": [C2],
+    "reconcile": [{"proposition": "p1", "winner_beat": 1, "loser_beat": 2, "rule": "earlier_beat"}],
+    "player_view": "story",
+}
+
+
+def _respond(**changes: Any) -> dict[str, Any]:
+    body: dict[str, Any] = engine_fixture("respond")
+    body.update(changes)
+    return body
+
+
+def test_respond_parses_the_multi_character_fields() -> None:
+    body = _respond(**MULTI)
+    body["message"] = {
+        **body["message"],
+        "narrative": "They both reach for it.",
+        "mode": "polished",
+    }
+    turn = RespondResponse.from_json(body)
+    assert turn is not None
+    assert turn.order == [C1, C2]
+    assert turn.interaction_mode == "simultaneous"
+    assert turn.roles == {
+        C1: TurnRole(role="primary", source="default"),
+        C2: TurnRole(role="reactive", source="escalated"),
+    }
+    assert turn.adjudications == [Adjudication("the key", C1, C2, "request_order")]
+    assert turn.escalation_deferred == [EscalationDeferred(C2, "budget", "primary")]
+    assert turn.deferred_characters == [DeferredCharacter(C2, "budget", False)]
+    assert turn.reduced_characters == [C2]
+    assert turn.reconcile == [Reconcile("p1", 1, 2, "earlier_beat")]
+    assert turn.message.narrative == "They both reach for it."
+    assert turn.message.mode == "polished"
+    assert turn.player_view == "story"
+    assert turn.unparsed == {}
+
+
+def test_respond_without_the_multi_character_fields_reads_defaults() -> None:
+    body = _respond()
+    for name in MULTI:
+        body.pop(name, None)
+    turn = RespondResponse.from_json(body)
+    assert turn is not None
+    assert (turn.order, turn.roles, turn.adjudications, turn.reconcile) == ([], {}, [], [])
+    assert (turn.escalation_deferred, turn.deferred_characters, turn.reduced_characters) == (
+        [],
+        [],
+        [],
+    )
+    assert turn.interaction_mode is None
+    assert turn.player_view is None
+    assert turn.message.narrative is None
+
+
+def test_respond_keeps_an_unknown_role_source() -> None:
+    turn = RespondResponse.from_json(
+        _respond(roles={C1: {"role": "primary", "source": "conjured"}})
+    )
+    assert turn is not None
+    assert turn.roles[C1].source == "conjured"
+
+
+def test_respond_keeps_malformed_entries_raw() -> None:
+    roles = {C1: {"role": "primary", "source": "default"}, C2: {"source": "default"}}
+    adjudications = [
+        {"object": "the key", "winner": C1, "loser": C2, "rule": "director"},
+        {"object": "the cup", "loser": C2, "rule": "director"},
+    ]
+    turn = RespondResponse.from_json(_respond(roles=roles, adjudications=adjudications))
+    assert turn is not None
+    assert turn.roles == {C1: TurnRole(role="primary", source="default")}
+    assert turn.adjudications == [Adjudication("the key", C1, C2, "director")]
+    assert turn.unparsed == {"roles": roles, "adjudications": adjudications}
+
+
+def test_respond_keeps_a_wrong_container_raw() -> None:
+    turn = RespondResponse.from_json(_respond(roles=[], adjudications={}))
+    assert turn is not None
+    assert turn.roles == {}
+    assert turn.adjudications == []
+    assert turn.unparsed == {"roles": [], "adjudications": {}}
+
+
+def test_regenerate_inherits_the_lenient_read() -> None:
+    body = _respond(roles={C2: {"source": "default"}}, previous_variant=1)
+    result = RegenerateResult.from_json(body)
+    assert result is not None
+    assert result.roles == {}
+    assert result.unparsed == {"roles": {C2: {"source": "default"}}}
+
+
+def _thunk(**changes: Any) -> dict[str, Any]:
+    thunk: dict[str, Any] = {
+        "id": "01JB2Z8Y5Q3W6K9M1N4P7R0TH1",
+        "sketch": {},
+        "description": "a stranger is at the harbour",
+        "open_slot": "subject",
+        "state": "open",
+        "position": {"turn": 3, "variant": None, "beat": 2},
+        "salient": True,
+        "valid_time": 120,
+        "resolved_fact_id": None,
+    }
+    thunk.update(changes)
+    return thunk
+
+
+def _hidden(**changes: Any) -> dict[str, Any]:
+    fact: dict[str, Any] = {
+        "fact_id": "01JB2Z8Y5Q3W6K9M1N4P7R0F01",
+        "proposition": PROPOSITION,
+        "scope": "characters",
+        "characters": [C1],
+        "valid_from": 40,
+        "valid_to": None,
+        "narrative_turn": 2,
+    }
+    fact.update(changes)
+    return fact
+
+
+def test_ledger_keeps_malformed_hidden_facts_and_flags_raw() -> None:
+    good_flag = {"character_id": C1, "severity": "high", "gap_minutes": 30}
+    flags = [good_flag, {"character_id": C2, "severity": "low", "gap_minutes": "x"}]
+    bad_fact = {k: v for k, v in _hidden().items() if k != "fact_id"}
+    hidden = [_hidden(), bad_fact]
+    body = {
+        "thunks": [_thunk(could_have_known_flags=flags), _thunk(id="01JB2Z8Y5Q3W6K9M1N4P7R0TH2")],
+        "ledger": [],
+        "revision": 4,
+        "next_after_id": None,
+        "hidden_facts": hidden,
+        "output_viewpoint": "omniscient",
+    }
+    ledger = Ledger.from_json(body)
+    assert ledger is not None
+    assert [f.fact_id for f in ledger.hidden_facts] == ["01JB2Z8Y5Q3W6K9M1N4P7R0F01"]
+    assert isinstance(ledger.hidden_facts[0].proposition_view, Proposition)
+    assert ledger.unparsed == {"hidden_facts": hidden}
+    first, second = ledger.thunks
+    assert first.could_have_known_flags == [CouldHaveKnownFlag(C1, "high", 30)]
+    assert first.unparsed == {"could_have_known_flags": flags}
+    assert first.position == InspectPosition(turn=3, variant=None, beat=2)
+    assert second.could_have_known_flags == []
+    assert second.unparsed == {}
+    assert ledger.output_viewpoint == "omniscient"
+
+
+def test_a_hidden_fact_with_an_unparseable_proposition_stays_typed() -> None:
+    body = {
+        "thunks": [],
+        "ledger": [],
+        "revision": 4,
+        "next_after_id": None,
+        "hidden_facts": [_hidden(proposition={"subject_id": C1})],
+    }
+    ledger = Ledger.from_json(body)
+    assert ledger is not None
+    (fact,) = ledger.hidden_facts
+    assert fact.proposition_view is None
+    assert fact.proposition == {"subject_id": C1}
+    assert ledger.unparsed == {}
+
+
+def test_ledger_reads_a_wrong_hidden_facts_container_as_empty() -> None:
+    body = {"thunks": [], "ledger": [], "revision": 4, "next_after_id": None, "hidden_facts": {}}
+    ledger = Ledger.from_json(body)
+    assert ledger is not None
+    assert ledger.hidden_facts == []
+    assert ledger.unparsed == {"hidden_facts": {}}
+
+
+def test_creation_report_parses_belief_outcomes() -> None:
+    entry = MaterializedEntry.from_json(
+        {
+            "field_ref": "cast.roles[0].seeded_memories[0]",
+            "location": {"entry": "01JB2Z8Y5Q3W6K9M1N4P7R0SC1", "version": "draft"},
+            "outcomes": ["belief", "seed_audience_unfilled"],
+        }
+    )
+    assert entry is not None
+    assert entry.outcomes == ["belief", "seed_audience_unfilled"]
+
+
+LABELS: dict[str, Any] = {
+    "intent": "deceptive",
+    "belief_relation": "inconsistent",
+    "objective_relation": "false",
+}
+
+
+def test_utterance_labels_read_classification() -> None:
+    labels = UtteranceLabels.from_json(
+        {**LABELS, "classification": "lie", "intent_corrected": True}
+    )
+    assert labels is not None
+    assert (labels.classification, labels.intent_corrected, labels.extras) == ("lie", True, {})
+
+
+@pytest.mark.parametrize(
+    ("extra", "classification", "corrected", "extras"),
+    [
+        ({"classification": "nonsense"}, "nonsense", False, {}),
+        ({"classification": None}, None, False, {}),
+        ({}, None, False, {}),
+        ({"classification": 3}, None, False, {"classification": 3}),
+        ({"intent_corrected": "yes"}, None, False, {"intent_corrected": "yes"}),
+        ({"later_label": "x"}, None, False, {"later_label": "x"}),
+    ],
+)
+def test_utterance_labels_keep_odd_values(
+    extra: dict[str, Any], classification: str | None, corrected: bool, extras: dict[str, Any]
+) -> None:
+    labels = UtteranceLabels.from_json({**LABELS, **extra})
+    assert labels is not None
+    assert (labels.classification, labels.intent_corrected, labels.extras) == (
+        classification,
+        corrected,
+        extras,
+    )

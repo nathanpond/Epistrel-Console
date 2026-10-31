@@ -12,6 +12,7 @@ from console.story_settings import SETTABLE, SUPERSEDED, setting_groups
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.settings.helpers import STORY, URL, answer_page, calls, section
+from tests.settings.test_story_settings import M5_NOT_YET_EDITABLE
 
 CHANGES_PATH = f"/stories/{STORY}/config-changes"
 
@@ -114,4 +115,10 @@ def test_the_groups_cover_the_recorded_enum() -> None:
     assert {value for value, _ in groups["Settings"]} == set(SETTABLE)
     historical = {value.split(".", 1)[0] for value, _ in groups["Historical"]}
     assert historical == set(SUPERSEDED)
-    assert "Other" not in groups
+    assert "engine_profile_version_pin" in {value for value, _ in groups["Rating and profile"]}
+    # Until #197 edits them, the M5 story settings are exactly what lands in "Other".
+    assert {value for value, _ in groups["Other"]} == M5_NOT_YET_EDITABLE
+    # ``participation:<id>`` is a prefixed key (the recorded pattern), not an enum value.
+    assert not any(value.startswith("participation:") for value in grouped)
+    accepted = setting_filter(RECORDED, "/stories/{story_id}/config-changes")
+    assert accepted.accepts_prefixed("participation:01JB2Z8Y5Q3W6K9M1N4P7R0T3A")

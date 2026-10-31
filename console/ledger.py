@@ -27,7 +27,7 @@ from django.http import QueryDict
 from django.urls import NoReverseMatch
 
 from console.canon import EntityRef, LiteralView, entity_ref, lineage_url, literal_view
-from console.engine.models import LedgerItem, Position, RejectedBinding, Thunk, ThunkSketch
+from console.engine.models import InspectPosition, LedgerItem, RejectedBinding, Thunk, ThunkSketch
 from console.inspect import history_turn_url, position_text
 from console.predicates import PredicateRef, Refs
 
@@ -148,7 +148,7 @@ def fact_link(
         return FactLink(fact_id, None)
 
 
-def _position(story_id: str, position: Position) -> tuple[str | None, str | None]:
+def _position(story_id: str, position: InspectPosition) -> tuple[str | None, str | None]:
     """Convention 4's text and convention 3's history link (``None`` for a null turn)."""
     text = position_text(position.turn, position.beat, position.variant)
     if position.turn is None:

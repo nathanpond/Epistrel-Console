@@ -44,6 +44,7 @@
   ],
   "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
   "audience_filter": "none",
+  "player_view": "character",
   "as_of": 2,
   "timeline_revision": 3,
   "next_before_turn": null

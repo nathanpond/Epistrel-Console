@@ -193,7 +193,11 @@ def role_to_write(role: ScenarioRole, *, companion: bool = False) -> dict[str, A
         "starting_location": role.starting_location,
         "participation": role.participation,
         "seeded_memories": [seed_to_write(s) for s in role.seeded_memories],
-        "relationships": [asdict(r) for r in role.relationships],
+        # M5's optional ``audience``/``trust`` only when set, so a relationship without them
+        # keeps its pre-M5 shape (#183).
+        "relationships": [
+            {k: v for k, v in asdict(r).items() if v is not None} for r in role.relationships
+        ],
         "name_overrides": role.name_overrides,
         "state_initial_values": role.state_initial_values,
     }

@@ -30,6 +30,8 @@ from tests.fixtures import engine_fixture
 
 URL = "/engine/settings/"
 SCHEMAS = RECORDED["components"]["schemas"]
+# Engine M5 deployment settings no Console form edits yet (#168 adds the field and removes this).
+M5_NOT_YET_EDITABLE = {"minor_hot_budget_fraction"}
 
 
 def _load(client: Client, engine: FakeEngine, **changes: Any) -> dict[str, str]:
@@ -64,8 +66,10 @@ def _field_html(html: str, name: str) -> str:
 
 
 def test_the_form_mirrors_the_settings_patch_schema() -> None:
-    """Guard: one field per ``SettingsPatch`` property except ``profile_defaults``."""
+    """Guard: one field per ``SettingsPatch`` property except ``profile_defaults`` (and the M5
+    settings no form edits yet)."""
     patch = set(SCHEMAS["SettingsPatch"]["properties"]) - {"profile_defaults"}
+    patch -= M5_NOT_YET_EDITABLE
     fields = set(DeploymentSettingsForm.base_fields)
     settings = {name for name in fields if not name.startswith(CLEAR_PREFIX)}
     assert settings == patch
@@ -89,7 +93,7 @@ def test_help_texts_show_the_schema_defaults() -> None:
     for name, default in stated.items():
         if name in DEFAULTS:
             assert DEFAULTS[name] == default, name
-    assert set(stated) - {"profile_defaults"} <= set(DEFAULTS)
+    assert set(stated) - {"profile_defaults"} - M5_NOT_YET_EDITABLE <= set(DEFAULTS)
 
 
 def test_the_page_shows_every_setting_in_sections(

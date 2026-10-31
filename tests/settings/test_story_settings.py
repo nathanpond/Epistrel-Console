@@ -121,9 +121,20 @@ def test_a_failed_deployment_read_marks_unknown_and_the_page_renders(
     assert "Up to 4,000 characters" in section(html, "instructions")
 
 
+# Engine M5 story settings no Console form edits yet (#197 adds them and removes this).
+M5_NOT_YET_EDITABLE = {
+    "interaction_mode",
+    "player_authority",
+    "player_view",
+    "reactive_interjections",
+    "sequence_order",
+    "simultaneous_tie_break",
+}
+
+
 def test_the_default_table_matches_the_recorded_settings_patch() -> None:
     patch = recorded_schema()["components"]["schemas"]["StorySettingsPatch"]
-    properties = set(patch["properties"])
+    properties = set(patch["properties"]) - M5_NOT_YET_EDITABLE
     assert properties == {*SETTABLE, POLICIES}
     assert set(CONSTANT_DEFAULTS) | set(NULLABLE) == set(SETTABLE)
     assert not set(CONSTANT_DEFAULTS) & set(NULLABLE)

@@ -158,6 +158,7 @@ def history_body(items: list[dict[str, Any]]) -> dict[str, Any]:
             }
             for t, v in turns
         ],
+        player_view="character",
         as_of=7,
         timeline_revision=8,
     )
