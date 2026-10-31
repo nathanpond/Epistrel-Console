@@ -192,3 +192,28 @@ def test_transcript_shows_classification_at_omniscient(
     assert "<dt>classification</dt>" in html
     assert html.index("<dt>classification</dt>") < html.index('<ol class="transcript">')
     assert "verified" not in html.lower()
+
+
+def test_transcript_at_a_character_viewpoint_shows_no_classification(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#207 complement (#216): at a character viewpoint the Engine omits a say's labels, so no
+    classification tag, "(corrected)" or classification legend line shows, and the Console adds
+    nothing of its own."""
+    from tests.play.helpers import history_json
+
+    history = history_json()
+    for item in history["items"]:
+        item.pop("labels", None)
+    history["items"][0]["propositions"] = []
+    answer_page(engine, history=history)
+    url = reverse("stories:transcript", args=[STORY])
+    html = operator_client.get(
+        url, {"viewpoint": f"character:{TOBIN}", "snapshot": snapshot()}, headers=HTMX
+    ).content.decode()
+    (read,) = calls(engine, "GET", f"/stories/{STORY}/history")
+    assert read.url.params["viewpoint"] == f"character:{TOBIN}"
+    assert '<ol class="transcript">' in html
+    assert "beat-classification" not in html
+    assert "(corrected)" not in html
+    assert "<dt>classification</dt>" not in html
