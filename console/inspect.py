@@ -29,14 +29,49 @@ configuration)". Backtick spans are code: the panel renders them as ``<code>``, 
 strips them (``console/templatetags/inspect_tags.py``).
 
 ``module_off`` is mapped here, inside Inspect only, not in #43's central ``engine_errors``.
+
+**The M5 gates (#188, C6).** The six modules M5 delivers (:data:`M5_MODULES`: ``partitions``,
+``nested_beliefs``, ``lazy_resolution``, ``testimony``, ``perception``, ``multi_character``) are
+asked through :func:`m5_gate` (``None``: served), which checks, in order:
+
+1. ``effective`` is ``None``, or a key the gate reads is missing (``pipeline``, the module's own
+   switch, and ``character_knowledge.partitions`` for the four dependants; an explicit ``null``
+   or a non-object step counts as missing) → :data:`UNREAD` (:data:`GATE_UNREAD`);
+2. ``pipeline`` ≠ ``structured`` → "Needs the `<module>` module, which needs the structured
+   pipeline (`pipeline: structured`; this story runs `lite`)" (the Engine's schema forbids every
+   M5 module without the structured pipeline);
+3. ``nested_beliefs``, ``lazy_resolution``, ``testimony`` and ``perception`` with partitions off
+   → partitions' own reason (Engine schema rules 18-21);
+4. the module's switch off, or below ``level`` → its own reason: a boolean is on only when it is
+   ``True``; ``perception.level`` ranks :data:`PERCEPTION_LEVELS` (default ``co_location``; the
+   only module ``level`` applies to); ``testimony`` is served by either of
+   :data:`TESTIMONY_SERVED`; ``multi_character.renders`` must be :data:`PER_CHARACTER`.
+
+:func:`unavailable_for` applies steps 2-4 in the same order, so a 409 ``module_off`` naming an M5
+module reads the same as the gate (without ``effective``, or without ``pipeline``, it gives the
+module's plain wording).
+
+**Convention 22 (C6): gates outside Inspect.** A page with an M5 control reads
+``get_effective_config`` once (3 s, #85), or reuses a read it already makes, and asks
+``m5_gate(module, effective, level)``. A failed read passes ``None``, so the control greys with
+``GATE_UNREAD`` and the form sends none of the gated fields. A greyed control is ``disabled``
+through ``gate_attrs`` (on the control, or on a ``<fieldset>`` for a group), with its reason in
+``console/_gated_control.html``'s visible ``<small class="gate-reason">`` (backticks as
+``code_spans`` from ``inspect_tags``) and in ``title`` (``no_backticks``). It is never hidden. A
+POST carrying an M5 field for a story whose gate is closed is refused Console-side by
+:func:`gate_refusal`, with the reason as that field's error and **no Engine write**: the POST may
+re-read the effective configuration once to check the gate, and that read is its only Engine
+call. Tests assert no POST/PUT/PATCH to the write route, not an empty call log.
 """
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, TypeGuard
 from urllib.parse import urlencode
 
+from django.http import QueryDict
 from django.urls import NoReverseMatch, reverse
 
 from console.engine.client import EngineError
@@ -50,13 +85,43 @@ COMMITMENT = "commitment"
 CONSOLIDATION = "consolidation"
 STRUCTURED = "structured"
 
+# The M5 modules (#188), named as the Engine's ``details.module`` names them.
+PARTITIONS = "partitions"
+NESTED_BELIEFS = "nested_beliefs"
+LAZY_RESOLUTION = "lazy_resolution"
+TESTIMONY = "testimony"
+PERCEPTION = "perception"
+MULTI_CHARACTER = "multi_character"
+M5_MODULES: tuple[str, ...] = (
+    PARTITIONS,
+    NESTED_BELIEFS,
+    LAZY_RESOLUTION,
+    TESTIMONY,
+    PERCEPTION,
+    MULTI_CHARACTER,
+)
+
 # A module's switch in ``effective`` (``pipeline`` is a level, not a switch).
 SETTINGS: Mapping[str, str] = {
     PIPELINE: "pipeline",
     EPISODIC: "memory.episodic.enabled",
     COMMITMENT: "commitment.enabled",
     CONSOLIDATION: "memory.consolidation.enabled",
+    PARTITIONS: "character_knowledge.partitions",
+    NESTED_BELIEFS: "character_knowledge.nested_beliefs.enabled",
+    LAZY_RESOLUTION: "character_knowledge.lazy_resolution",
+    TESTIMONY: "character_knowledge.testimony",
+    PERCEPTION: "perception.level",
+    MULTI_CHARACTER: "multi_character.renders",
 }
+
+PERCEPTION_LEVELS: tuple[str, ...] = ("none", "co_location", "full")  # the Engine's ladder
+PERCEPTION_DEFAULT_LEVEL = "co_location"  # what a perception gate asks without ``level``
+TESTIMONY_SERVED: tuple[str, ...] = ("model", "defaulted")  # alternatives, not a ladder
+PER_CHARACTER = "per_character"
+BOOLEAN_MODULES = frozenset({PARTITIONS, NESTED_BELIEFS, LAZY_RESOLUTION})
+# The M5 modules the Engine's schema lets on only with partitions (rules 18-21).
+NEEDS_PARTITIONS: tuple[str, ...] = (NESTED_BELIEFS, LAZY_RESOLUTION, TESTIMONY, PERCEPTION)
 
 
 class Tab(StrEnum):
@@ -112,20 +177,181 @@ def is_structured_pipeline(effective: Mapping[str, Any]) -> bool:
     return setting(effective, SETTINGS[PIPELINE]) == STRUCTURED
 
 
-def unavailable_for(module: str, effective: Mapping[str, Any] | None = None) -> Unavailable:
+def _check_level(level: str | None) -> None:
+    if level is not None and level not in PERCEPTION_LEVELS:
+        raise ValueError(f"{level!r} is not a perception level: {list(PERCEPTION_LEVELS)}")
+
+
+def _named(value: Any) -> str | None:
+    """A switch's value as "(this story runs …)" names it: a string as given, anything else as
+    JSON; ``None`` (unknown) or an empty string names nothing."""
+    if value is None or value == "":
+        return None
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _served(module: str, value: Any, level: str | None) -> bool:
+    """Whether an M5 module's switch ``value`` serves the module (at ``level``, perception)."""
+    if module in BOOLEAN_MODULES:
+        return value is True
+    if module == TESTIMONY:
+        return isinstance(value, str) and value in TESTIMONY_SERVED
+    if module == MULTI_CHARACTER:
+        return bool(value == PER_CHARACTER)
+    wanted = PERCEPTION_LEVELS.index(level or PERCEPTION_DEFAULT_LEVEL)
+    return (
+        isinstance(value, str)
+        and value in PERCEPTION_LEVELS
+        and PERCEPTION_LEVELS.index(value) >= wanted
+    )
+
+
+def _m5_wording(module: str, value: Any, level: str | None) -> str:
+    """An M5 module's own reason; "(this story runs …)" names ``value`` unless it is unknown
+    or serves the module (a stale 409)."""
+    switch = SETTINGS[module]
+    if module in BOOLEAN_MODULES:
+        return f"Needs the `{module}` module (`{switch}` is off under this story's profile)"
+    if module == PERCEPTION:
+        wanted = level or PERCEPTION_DEFAULT_LEVEL
+        if wanted == PERCEPTION_LEVELS[-1]:
+            needs = f"Needs `{switch}: {wanted}`"
+        else:
+            needs = f"Needs `{switch}` at `{wanted}` or above"
+    elif module == MULTI_CHARACTER:
+        needs = f"Needs `{switch}: {PER_CHARACTER}`"
+    else:
+        needs = f"Needs `{switch}` at " + " or ".join(f"`{v}`" for v in TESTIMONY_SERVED)
+    named = None if _served(module, value, level) else _named(value)
+    return f"{needs} (this story runs `{named}`)" if named is not None else needs
+
+
+def _pipeline_clause(module: str, pipeline: Any) -> Unavailable:
+    runs = f"; this story runs `{pipeline}`" if isinstance(pipeline, str) and pipeline else ""
+    reason = (
+        f"Needs the `{module}` module, which needs the structured pipeline "
+        f"(`pipeline: structured`{runs})"
+    )
+    return Unavailable(module, SETTINGS[module], reason)
+
+
+def unavailable_for(
+    module: str, effective: Mapping[str, Any] | None = None, level: str | None = None
+) -> Unavailable:
     """The :class:`Unavailable` naming ``module``. ``effective`` supplies the pipeline level the
-    story runs (left out of the reason when unknown)."""
+    story runs (left out of the reason when unknown); for an M5 module it also supplies the
+    pipeline clause, the partitions prerequisite and the value "(this story runs …)" names, in
+    :func:`m5_gate`'s order, and ``level`` is the perception level asked for."""
+    _check_level(level)
     if module == PIPELINE:
-        level = setting(effective, SETTINGS[PIPELINE]) if effective is not None else None
-        runs = f"; this story runs `{level}`" if isinstance(level, str) and level else ""
+        pipeline_level = setting(effective, SETTINGS[PIPELINE]) if effective is not None else None
+        runs = (
+            f"; this story runs `{pipeline_level}`"
+            if isinstance(pipeline_level, str) and pipeline_level
+            else ""
+        )
         reason = f"Needs the structured pipeline (`pipeline: structured`{runs})"
         return Unavailable(PIPELINE, SETTINGS[PIPELINE], reason)
+    if module in M5_MODULES:
+        pipeline = setting(effective, SETTINGS[PIPELINE]) if effective is not None else None
+        value = None
+        if effective is not None and pipeline is not None:
+            if pipeline != STRUCTURED:
+                return _pipeline_clause(module, pipeline)
+            partitions = setting(effective, SETTINGS[PARTITIONS])
+            if module in NEEDS_PARTITIONS and partitions is not None and partitions is not True:
+                return unavailable_for(PARTITIONS, effective)
+            value = setting(effective, SETTINGS[module])
+        return Unavailable(module, SETTINGS[module], _m5_wording(module, value, level))
     switch = SETTINGS.get(module)
     if switch is None:
         reason = f"Needs the `{module}` module (off under this story's configuration)"
         return Unavailable(module, None, reason)
     reason = f"Needs the `{module}` module (`{switch}` is off under this story's profile)"
     return Unavailable(module, switch, reason)
+
+
+GATE_UNREAD = "Couldn't read this story's configuration — reload"
+UNREAD = Unavailable("", None, GATE_UNREAD)
+
+
+def m5_gate(
+    module: str, effective: Mapping[str, Any] | None, level: str | None = None
+) -> Unavailable | None:
+    """Why ``effective`` can't serve the M5 ``module`` (at perception ``level``, default
+    ``co_location``; ignored for the other five), or ``None`` when it is served. The order is the
+    module docstring's: :data:`UNREAD`, the pipeline clause, partitions' reason for a dependant,
+    the module's own reason. An unknown ``module`` raises ``KeyError``; a ``level`` outside
+    :data:`PERCEPTION_LEVELS` raises ``ValueError``."""
+    if module not in M5_MODULES:
+        raise KeyError(module)
+    _check_level(level)
+    if effective is None:
+        return UNREAD
+    pipeline = setting(effective, SETTINGS[PIPELINE])
+    value = setting(effective, SETTINGS[module])
+    partitions = setting(effective, SETTINGS[PARTITIONS])
+    if pipeline is None or value is None or (module in NEEDS_PARTITIONS and partitions is None):
+        return UNREAD
+    if pipeline != STRUCTURED:
+        return _pipeline_clause(module, pipeline)
+    if module in NEEDS_PARTITIONS and partitions is not True:
+        return unavailable_for(PARTITIONS, effective)
+    return None if _served(module, value, level) else unavailable_for(module, effective, level)
+
+
+def partitions_on(effective: Mapping[str, Any] | None) -> bool:
+    """The story keeps per-character partitions (the ``partitions`` gate is open)."""
+    return m5_gate(PARTITIONS, effective) is None
+
+
+def nested_beliefs_on(effective: Mapping[str, Any] | None) -> bool:
+    """The story keeps nested beliefs (the ``nested_beliefs`` gate is open)."""
+    return m5_gate(NESTED_BELIEFS, effective) is None
+
+
+def renders_per_character(effective: Mapping[str, Any] | None) -> bool:
+    """The story renders per character (the ``multi_character`` gate is open)."""
+    return m5_gate(MULTI_CHARACTER, effective) is None
+
+
+def perception_level(effective: Mapping[str, Any] | None) -> str | None:
+    """The raw ``perception.level`` when it is a string, whatever the pipeline (not a gate);
+    ``None`` when missing or not a string."""
+    value = setting(effective, SETTINGS[PERCEPTION]) if effective is not None else None
+    return value if isinstance(value, str) else None
+
+
+@dataclass(frozen=True)
+class GateRefusal:
+    """A POST field :func:`gate_refusal` refuses, and why."""
+
+    field: str
+    unavailable: Unavailable
+
+    @property
+    def reason(self) -> str:
+        return self.unavailable.reason
+
+
+def gate_refusal(
+    data: QueryDict,
+    effective: Mapping[str, Any] | None,
+    gated: Mapping[str, tuple[str, str | None]],
+) -> GateRefusal | None:
+    """Convention 22's POST check: the first field of ``gated`` (field name → ``(module,
+    level)``, in its order) that ``data`` carries with any non-blank value (an "off"-looking one
+    included) and whose :func:`m5_gate` is closed; ``None`` when every carried field is served.
+    ``effective`` ``None`` (a failed read) refuses every carried field with
+    :data:`GATE_UNREAD`. The view calls it before any Engine write and makes none when it
+    refuses."""
+    for field, (module, level) in gated.items():
+        if not any(str(value).strip() for value in data.getlist(field)):
+            continue
+        gate = m5_gate(module, effective, level)
+        if gate is not None:
+            return GateRefusal(field, gate)
+    return None
 
 
 def _ledger(effective: Mapping[str, Any]) -> Unavailable | None:
@@ -166,19 +392,23 @@ def is_module_off(exc: object) -> TypeGuard[EngineError]:
 
 
 def module_off_unavailable(
-    error: EngineError, tab: Tab, effective: Mapping[str, Any] | None = None
+    error: EngineError,
+    tab: Tab | None = None,
+    effective: Mapping[str, Any] | None = None,
+    *,
+    level: str | None = None,
 ) -> Unavailable:
-    """A route's 409 ``module_off`` as the greyed panel's reason: the module
-    ``error.details.module`` names, else the module ``tab``'s rule names (a tab without a rule
-    gets a reason naming no module). ``effective`` supplies the pipeline level, as in
-    :func:`unavailable_for`."""
+    """A route's 409 ``module_off`` as the greyed panel's (or form error's) reason: the module
+    ``error.details.module`` names, else the module ``tab``'s rule names (no ``tab``, or a tab
+    without a rule, gets a reason naming no module). ``effective`` and ``level`` are as in
+    :func:`unavailable_for`, so an M5 module reads the same as its gate."""
     named = error.details.get("module")
     if isinstance(named, str) and named:
-        return unavailable_for(named, effective)
-    module = RULE_MODULES.get(tab)
+        return unavailable_for(named, effective, level)
+    module = RULE_MODULES.get(tab) if tab is not None else None
     if module is None:
         return Unavailable("", None, UNNAMED_REASON)
-    return unavailable_for(module, effective)
+    return unavailable_for(module, effective, level)
 
 
 # --- the Overview (#151) --------------------------------------------------------------------------

@@ -1712,3 +1712,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The conventions 15–24 addendum is in the module docstrings now; the PR body and the #135 comment are the milestone PR's (one PR per milestone), so the addendum text is posted on #187 for the PR author to copy.
   **Why:** No per-story PR exists to carry it; the first AC's docstring part is done here.
   **Issue:** #187
+- **Decision:** `level` is validated against `PERCEPTION_LEVELS` (ValueError) in both `m5_gate` and `unavailable_for`, for every module, though only perception uses it.
+  **Why:** One caller-bug check; a stray level on another module is still a bug.
+  **Issue:** #188
+- **Decision:** `unavailable_for` on an M5 module applies the partitions prerequisite only when `character_knowledge.partitions` is present (a missing key falls through to the module's own wording); `pipeline` missing or `effective` None gives the plain wording.
+  **Why:** The 409 path has no UNREAD; it names the module the Engine named, plus what the config shows.
+  **Issue:** #188
+- **Decision:** An empty-string switch value is treated as unknown in "(this story runs …)" (part omitted), as the pipeline clause already treats an empty pipeline.
+  **Why:** Avoids an empty code span; the Engine never sends one (C15).
+  **Issue:** #188
+- **Decision:** v2 fixture `effective`/`deployment_defaults` M5 blocks and `capabilities` computed by running Engine origin/main 7d181b3 code (`resolve_layers(profile_defaults(), structured_settings())`, `capability_names`) from a `git archive` copy in the scratchpad; the Engine checkout was not touched. Capabilities therefore include `budgets` and `models` (the M4 fixture omits them).
+  **Why:** C15 and the story's "run capability_names once"; no regeneration script kept.
+  **Issue:** #188
+- **Decision:** `story_cast.json` copies `get_story.json` (story id `STORY`), with `CharacterBody`-shaped cast entries (no participation), Pat as the default output viewpoint and engine profile PRF002 v2. `tests/inspect/helpers.py` also exports `ALICE`/`BOB`/`PAT` ids and `story_cast()`.
+  **Why:** One shared cast and its ids for #190/#192/#193.
+  **Issue:** #188
+- **Decision:** In the fake Engine, an exhausted `respond_sequence` falls to query answers before its repeating last answer (lookup: failure, side effect, sequence, query answer, query-less).
+  **Why:** The story's lookup order; sequences and query answers are not combined in any test today.
+  **Issue:** #188
+- **Decision:** No existing test asserted the old unknown-module wording for `partitions`, so none was updated.
+  **Why:** Grep found none; full suite green.
+  **Issue:** #188

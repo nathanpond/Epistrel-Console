@@ -1,0 +1,5 @@
+{% load inspect_tags %}{% comment %}
+Convention 22 (#188): the reason an M5 gate greys a control, right after the control (which
+carries {{ gate|gate_attrs:gate_id }}). Renders nothing when the gate is open (None).
+  {% include "console/_gated_control.html" with gate=<Unavailable|None> gate_id="<id>" %}
+{% endcomment %}{% if gate %}<small class="gate-reason"{% if gate_id %} id="{{ gate_id }}"{% endif %}>{{ gate.reason|code_spans }}</small>{% endif %}
