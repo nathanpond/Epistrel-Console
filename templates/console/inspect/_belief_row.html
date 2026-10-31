@@ -2,13 +2,14 @@
 One belief (#190): a console.beliefs.BeliefRow as row, one <tr id="b-<belief_id>">. Context:
 predicate_names, cast_names (convention 2's name maps); marks (#191: None hides the Canon cell,
 else the row's console.belief_canon.CanonMark shows through _belief_canon.html); actions (convention 14: a template name for an Actions cell, rendered
-with row in context, or None; #194 sets it). Columns: Proposition, Confidence, How, Holds since,
-Until, About story-time, [Canon], [Actions], More. A proposition that doesn't parse shows "—" and
+with row in context, or None; #194 sets it). Columns: Proposition, Confidence, Provenance (the
+producing transition's id, convention 2 — the Engine's belief read carries no acquisition kind,
+#227), Holds since, Until, About story-time, [Canon], [Actions], More. A proposition that doesn't parse shows "—" and
 its raw JSON in More (C2).
 {% endcomment %}{% with belief=row.belief %}<tr id="b-{{ belief.belief_id }}" class="belief-row">
   <td class="proposition">{% if row.proposition %}{% include "console/inspect/_proposition.html" with proposition=row.proposition %}{% else %}—{% endif %}</td>
   <td class="confidence"><span title="{{ belief.current_level }}">{{ row.level_text }}</span>{% if row.scalar_text %} · {{ row.scalar_text }}{% endif %}</td>
-  <td class="how">{% if belief.provenance is None %}{{ row.how_text }}{% else %}<span{% if row.testimony %} class="testimony"{% endif %} title="{{ belief.provenance }}">{{ row.how_text }}</span>{% endif %}</td>
+  <td class="provenance">{{ belief.provenance|engine_id }}</td>
   <td class="since">{% if row.since.url %}<a href="{{ row.since.url }}">{{ row.since.text }}</a>{% else %}{{ row.since.text }}{% endif %}</td>
   <td class="until">{% if row.until %}{% if row.until.url %}<a href="{{ row.until.url }}">{{ row.until.text }}</a>{% else %}{{ row.until.text }}{% endif %}{% else %}now{% endif %}</td>
   <td class="about">{{ row.about }}</td>

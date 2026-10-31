@@ -10,6 +10,7 @@ Tobin did not perceive). Values outside the schema's enums are served unvalidate
 import copy
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -433,3 +434,59 @@ def test_variants_view_links_carry_player_view(operator_client: Client, engine: 
     html = page(operator_client, CHARACTER)
     for href in re.findall(r'<a class="view-chain" href="([^"]+)">view</a>', html):
         assert "player_view" not in query_of(href)
+
+
+def _struck_selectors() -> set[str]:
+    """Every selector of ``base.html``'s ``line-through`` rules."""
+    css = (Path(__file__).resolve().parents[2] / "templates" / "base.html").read_text()
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    found: set[str] = set()
+    for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+        if "line-through" in body:
+            found |= {s.strip() for s in selectors.split(",")}
+    return found
+
+
+def test_not_perceived_strikes_only_the_text() -> None:
+    """#228: the ``fidelity-none`` strike-through names the text spans only, never the whole
+    ``<td class="text">`` (whose beat labels, trace headings and links stay readable)."""
+    struck = {s for s in _struck_selectors() if s.startswith(".fidelity-none")}
+    assert struck == {
+        ".fidelity-none .beat-text",
+        ".fidelity-none span.text",
+        ".fidelity-none td.text:not(:has(.beat-text))",
+    }
+
+
+def test_not_perceived_row_keeps_labels_outside_the_struck_text(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#228: in a not-perceived row only the beat's text sits inside a struck span; the beat
+    labels are outside it."""
+    serve(engine, story_view())
+    html = page(operator_client, f"{CHARACTER}&player_view=story")
+    unseen = row_with(html, "The key is under the mat.")
+    assert '<td class="text">' in unseen
+    cell = unseen.split('<td class="text">', 1)[1]  # to the row's end: the trace nests tables
+    struck = re.findall(r'<span class="beat-text">(.*?)</span>', cell, re.S)
+    assert any("The key is under the mat." in s for s in struck)
+    assert not any("beat-label" in s for s in struck)
+    outside = re.sub(r'<span class="beat-text">.*?</span>', "", cell, flags=re.S)
+    assert "The key is under the mat." not in outside
+
+
+def test_plain_not_perceived_row_has_no_beat_text(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#228: a not-perceived row without a beat trace (no ``propositions``) is the plain Text
+    cell the ``:not(:has(.beat-text))`` selector strikes; its markup is unchanged (the Lite
+    golden stays byte-identical)."""
+    body = story_view()
+    (item,) = [i for i in body["items"] if i["text"] == "The key is under the mat."]
+    item["propositions"] = None
+    serve(engine, body)
+    html = page(operator_client, f"{CHARACTER}&player_view=story")
+    unseen = row_with(html, "The key is under the mat.")
+    assert "fidelity-none" in row_class(unseen)
+    assert 'class="beat-text"' not in unseen
+    assert '<td class="text">The key is under the mat.' in unseen

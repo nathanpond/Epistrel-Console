@@ -4,14 +4,16 @@ Runs against the real urlconf on the schema-validating fake Engine, under #188's
 configuration and the shared Alice/Bob/Pat cast (``story_cast.json``; Pat is the player).
 ``beliefs_page1.json`` is Alice's first page (revision 7, ``next_after`` ``PP11``):
 
-- ``BE01``: suspected, no scalar, observation, ``located_at(Bob, …EN03)``, since turn 1 · beat 2;
-- ``BE02``: believed 0.7, testimony, since turn 1 · v1 · beat 2 (step 40000), held to turn 3 ·
-  beat 4, valid [540, 600);
-- ``BE03``: inference, a negated ``holds(…EN01, Alice)``, since the slot turn 2⁺¹ · beat 5;
-- ``BE04`` to ``BE09``: discovery, correction, forgetting, revision, author (after the turn),
-  resolution (turn 0 · start);
-- ``BE10``: no provenance, both valid bounds open; ``BE11``: the unknown ``hearsay``, on a
-  predicate absent from the registry;
+Each row's ``provenance`` is the producing transition's id, as the Engine sends it (#227):
+``BE<nn>``'s is ``TB<nn>``.
+
+- ``BE01``: suspected, no scalar, ``located_at(Bob, …EN03)``, since turn 1 · beat 2;
+- ``BE02``: believed 0.7, since turn 1 · v1 · beat 2 (step 40000), held to turn 3 · beat 4,
+  valid [540, 600);
+- ``BE03``: a negated ``holds(…EN01, Alice)``, since the slot turn 2⁺¹ · beat 5;
+- ``BE04`` to ``BE09``: since after the turn (``BE08``) and turn 0 · start (``BE09``);
+- ``BE10``: no provenance, both valid bounds open; ``BE11``: a predicate absent from the
+  registry;
 - identities: ``…EN01 = …EN03`` (canon, ``FA01``) and ``Bob = …EN02`` (belief ``BE01``).
 
 ``beliefs_page2.json`` (keyed on ``after=PP11``, C14) holds ``BE12`` and no ``next_after``;
@@ -216,7 +218,7 @@ def test_rows_render_each_column(operator_client: Client, engine: FakeEngine) ->
     html = page(operator_client)
     first = row(html, BE[1])
     assert cell(first, "confidence") == '<span title="suspected">Suspected</span>'
-    assert cell(first, "how") == '<span title="observation">Observation</span>'
+    assert cell(first, "provenance") == f'<code title="{P}TB01">…0000TB01</code>'
     assert cell(first, "since") == f'<a href="{link(1)}">turn 1 · beat 2</a>'
     assert cell(first, "until") == "now"
     assert cell(first, "about") == "[0, …) min"
@@ -224,9 +226,6 @@ def test_rows_render_each_column(operator_client: Client, engine: FakeEngine) ->
 
     testimony = row(html, BE[2])
     assert cell(testimony, "confidence") == '<span title="believed">Believed</span> · 0.700'
-    assert cell(testimony, "how") == (
-        '<span class="testimony" title="testimony">Testimony — heard from another character</span>'
-    )
     assert cell(testimony, "since") == f'<a href="{link(1, 1)}">turn 1 · v1 · beat 2</a>'
     assert cell(testimony, "until") == f'<a href="{link(3)}">turn 3 · beat 4</a>'
     assert cell(testimony, "about") == "[540, 600) min"
@@ -236,20 +235,29 @@ def test_rows_render_each_column(operator_client: Client, engine: FakeEngine) ->
     assert cell(negated, "since") == f'<a href="{link(2)}">turn 2⁺¹ · beat 5</a>'
     assert '<strong class="polarity">NOT</strong>' not in cell(first, "proposition")
 
-    for n, word in (
-        (4, "Discovery"),
-        (5, "Correction"),
-        (6, "Forgetting"),
-        (7, "Revision"),
-        (8, "Author"),
-        (9, "Resolution"),
-    ):
-        assert cell(row(html, BE[n]), "how") == f'<span title="{word.lower()}">{word}</span>'
+    for n in range(2, 10):
+        assert cell(row(html, BE[n]), "provenance") == (
+            f'<code title="{P}TB{n:02}">…0000TB{n:02}</code>'
+        )
     assert text(cell(row(html, BE[8]), "since")) == "turn 2 · after the turn"
     assert text(cell(row(html, BE[9]), "since")) == "turn 0 · start"
-    assert cell(row(html, BE[10]), "how") == "—"
+    assert cell(row(html, BE[10]), "provenance") == "—"
     assert cell(row(html, BE[10]), "about") == "[…, …) min"
-    assert cell(row(html, BE[11]), "how") == '<span title="hearsay">Hearsay</span>'
+    assert cell(row(html, BE[11]), "provenance") == f'<code title="{P}TB11">…0000TB11</code>'
+
+
+def test_provenance_is_an_id_never_a_kind(operator_client: Client, engine: FakeEngine) -> None:
+    """#227: the Engine's ``provenance`` is the producing transition's id. It's shown as an id
+    (full value in ``title``, never lower-cased) and the column doesn't promise a kind."""
+    html = page(operator_client)
+    head = re.search(r'<table class="beliefs">\s*<thead><tr>(.*?)</tr></thead>', html, re.S)
+    assert head is not None
+    assert '<th title="The belief transition that produced it">Provenance</th>' in head.group(1)
+    assert "<th>How</th>" not in head.group(1)
+    first = cell(row(html, BE[1]), "provenance")
+    assert first.lower() != first
+    assert 'class="testimony"' not in html
+    assert "Testimony — heard from another character" not in html
 
 
 def more_items(row_html: str) -> list[tuple[str, str]]:
@@ -294,10 +302,10 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
     html = page(operator_client)
     head = re.search(r'<table class="beliefs">\s*<thead><tr>(.*?)</tr></thead>', html, re.S)
     assert head is not None
-    assert re.findall(r"<th>(.*?)</th>", head.group(1)) == [
+    assert re.findall(r"<th[^>]*>(.*?)</th>", head.group(1)) == [
         "Proposition",
         "Confidence",
-        "How",
+        "Provenance",
         "Holds since",
         "Until",
         "About story-time",
@@ -340,7 +348,7 @@ def test_canon_and_actions_columns_absent_when_unset() -> None:
     assert re.findall(r'<td class="([a-z]+)"', html) == [
         "proposition",
         "confidence",
-        "how",
+        "provenance",
         "since",
         "until",
         "about",

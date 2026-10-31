@@ -24,7 +24,7 @@
     "confidence_scalar": 0.3,
     "accessibility": 1.0,
     "state": "held",
-    "provenance": "author",
+    "provenance": "0000000000000000000000TR01",
     "held_from": {
       "turn": 3,
       "variant": 0,

@@ -87,7 +87,8 @@
     table.history .badge-channel { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; }
     .fidelity-envelope, .fidelity-envelope td { color: #57606a; font-style: italic; }
     .fidelity-none, .fidelity-none td { color: #57606a; }
-    .fidelity-none .beat-text, .fidelity-none .text { text-decoration: line-through; }
+    /* #62/#228: only the text is struck: a trace row's .beat-text (its labels and trace stay readable), a span.text, or a plain Text cell */
+    .fidelity-none .beat-text, .fidelity-none span.text, .fidelity-none td.text:not(:has(.beat-text)) { text-decoration: line-through; }
     .fidelity-unavailable { font-style: italic; color: #57606a; }
     li.reaction, tr.reaction td.text { padding-left: 1.5em; }
     .badge-fidelity { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; }
@@ -184,7 +185,6 @@
     p.notice { border-left: 4px solid #d0d7de; padding: 0.3rem 0.8rem; } /* #189 */
     .canon-contradicts { font-weight: bold; } /* #191: the label carries the meaning, no colour */
     .canon-agrees { font-weight: normal; }
-    .testimony { font-weight: bold; } /* #190: testimony stands out by weight, not colour */
     /* #152: what a retrieval placed */
     p.notice.warn { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
     table.context-items td.number, table.context-dropped td.number, table.retrieval-timings td.number { text-align: right; }
