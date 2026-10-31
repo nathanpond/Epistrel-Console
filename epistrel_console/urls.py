@@ -133,6 +133,11 @@ story_patterns = (
             story_config.profile_apply,
             name="config-profile-apply",
         ),
+        path(  # #63: pin the story to a profile version or follow the latest
+            "<str:story_id>/config/version/",
+            story_config.version_change,
+            name="config-version",
+        ),
         path(
             "<str:story_id>/characters/new/",
             story_characters.character_new,

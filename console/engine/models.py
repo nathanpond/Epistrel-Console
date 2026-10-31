@@ -4548,8 +4548,8 @@ class ProfileDeleted(Model):
 @dataclass(frozen=True)
 class ProfileRef(Model):
     """``ProfileRef``: the profile a story runs under and the version it runs on. ``pinned``:
-    it keeps an earlier version (an upgrade was unavailable); ``deleted``: the profile is
-    deleted and still serves the story."""
+    pinned by an operator or by the M5 upgrade, or kept back because an upgrade was
+    unavailable; ``deleted``: the profile is deleted and still serves the story."""
 
     id: str
     version: int

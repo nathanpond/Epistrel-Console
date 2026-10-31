@@ -2,8 +2,8 @@
 {% comment %}
 A story's effective configuration (#85, console/views/story_config.py): the profile it runs on,
 each setting's three layers with the effective one highlighted, capabilities, fingerprint and
-quality status; the assign-profile select; a link to the overrides form; the story's guarantee
-table (#57, console/_guarantees.html).
+quality status; the assign-profile select; the Profile version select (#63); a link to the
+overrides form; the story's guarantee table (#57, console/_guarantees.html).
 {% endcomment %}
 {% block title %}Config — {{ story_name }} — Epistrel Console{% endblock %}
 {% block heading %}Config — {{ story_name }}{% endblock %}
@@ -12,7 +12,7 @@ table (#57, console/_guarantees.html).
 {% if profile_error %}<p class="banner banner-warning profile-unavailable" role="status">{{ profile_error }}</p>{% endif %}
 <dl class="story-config">
   <dt>Engine profile</dt>
-  <dd class="profile"><a href="{{ profile_url }}">{% if profile %}{{ profile.name }}{% else %}<code>{{ config.profile.id }}</code>{% endif %}</a> v{{ config.profile.version }} — {% if config.profile.pinned %}pinned at v{{ config.profile.version }}{% else %}follows latest{% endif %}{% if config.profile.deleted %} <span class="badge deleted">deleted</span>{% endif %}</dd>
+  <dd class="profile"><a href="{{ profile_url }}">{% if profile %}{{ profile.name }}{% else %}<code>{{ config.profile.id }}</code>{% endif %}</a> v{{ config.profile.version }} — {{ pin_text }}{% if config.profile.deleted %} <span class="badge deleted">deleted</span>{% endif %}</dd>
   <dt>Overrides revision</dt><dd class="overrides-revision">{% if config.overrides.revision == 0 %}0 (no overrides){% else %}{{ config.overrides.revision }}{% endif %} — <a class="overrides-link" href="{{ overrides_url }}">Edit overrides</a></dd>
   <dt>Fingerprint</dt><dd class="fingerprint"><code>{{ config.fingerprint }}</code></dd>
   <dt>Quality status</dt><dd><span class="quality {{ quality_class }}">{{ config.quality_status.status }}</span></dd>
@@ -38,6 +38,30 @@ table (#57, console/_guarantees.html).
     {% endif %}
     <button type="submit">Preview</button>
   </form>
+  {% endif %}
+</section>
+
+<section class="profile-version" id="version">
+  <h2>Profile version</h2>
+  {% if versions.deleted %}<p class="muted version-deleted">{{ version_deleted_text }}</p>
+  {% else %}
+  {% if version.refusal %}{% include "console/settings/_refusal.html" with refusal=version.refusal %}{% endif %}
+  {% if version.error %}<p class="errorlist version-error" role="alert">{{ version.error }}</p>{% endif %}
+  {% if version.lines %}<ul class="overrides-lines">{% for line in version.lines %}<li><code>{{ line }}</code></li>{% endfor %}</ul>{% endif %}
+  {% if versions.error %}<p class="warning versions-unavailable">{{ versions.error }}</p>
+  {% else %}
+  <form method="post" action="{{ version_url }}" class="version-form">{% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ versions.key }}">
+    <input type="hidden" name="{{ confirm_field }}" value="{{ versions.token }}">
+    <label for="version-select">Version</label>
+    <select id="version-select" name="version"{% if versions.archived %} disabled{% endif %}>
+      <option value=""{% if not version.chosen %} selected{% endif %}>{{ version_placeholder }}</option>
+      {% for option in versions.options %}<option value="{{ option.value }}"{% if option.disabled %} disabled{% endif %}{% if version.chosen and option.value == version.chosen %} selected{% endif %}>{{ option.label }}</option>{% endfor %}
+    </select>
+    {% if version.select_error %}<p class="errorlist version-error" role="alert">{{ version.select_error }}</p>{% endif %}
+    <button type="submit" class="change-version"{% if versions.archived %} disabled{% endif %}>Change version</button>{% if versions.archived %} <small class="apply-disabled">{{ archived_apply }}</small>{% endif %}
+  </form>
+  {% endif %}
   {% endif %}
 </section>
 

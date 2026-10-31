@@ -11,6 +11,10 @@
   merge patch is sent, ``POST …/impact-preview {overrides}``; nothing changed is "Nothing to
   preview" with zero calls; a 422 is placed at the fields.
 - ``…/config/profile/`` (POST): ``POST …/impact-preview {profile_id}``.
+- ``…/config/version/`` (POST, #63): the Profile version select. A version change has no preview
+  (``impact-preview`` can't preview a version): it sends ``PUT …/engine-profile {profile_id,
+  version, ignore_warnings: false}`` at once, and a held ``applied: false`` shows the preview page
+  with "Apply anyway" (kind ``story_profile``, the body carrying ``version``).
 - The preview page **is** the impact step (#64 convention 3): its Apply posts a signed payload
   (kinds ``story_overrides`` / ``story_profile``; ``base`` = overrides revision, profile id and
   version, the fingerprint before and whether the preview warned) to ``…/apply/``, which sends
@@ -24,18 +28,21 @@ unchanged one and a stale schema make no Engine call.
 """
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Final, Literal
 
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import SafeString
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from console import twostage
+from console.canon import utc_text
 from console.confirm import posted_idempotency_key
 from console.engine.choices import PROFILES_MAX, error_text
 from console.engine.client import (
@@ -49,8 +56,10 @@ from console.engine.models import (
     EngineProfile,
     GuaranteeTable,
     ImpactReport,
+    ProfileRef,
     ProfileSchema,
     ProfileValidation,
+    ProfileVersion,
     Story,
     StoryProfileWrite,
 )
@@ -73,6 +82,7 @@ from console.profile_schema import get_profile_schema_cached
 from console.story_config import badge_for, config_layers, config_url
 from console.views.profiles import detail_url
 from console.views.story_settings import Refusal, refusal_for
+from console.wording import write_refusal
 
 OVERRIDES_FORM_KIND = "story_overrides_form"
 OVERRIDES_KIND = "story_overrides"
@@ -96,8 +106,26 @@ TOO_MANY = "Too many to list — enter the id"
 ARCHIVED_APPLY = "Archived — unarchive to apply"
 ARCHIVED_REFUSED = "This story is archived — unarchive it to change its configuration"
 NO_CHANGE = "No change — the story already runs this configuration"
-KEPT = "Applied, but this story keeps its previous configuration (Lite can't backfill history)"
+KEPT = (
+    "Applied, but this story keeps its previous configuration: the Engine can't backfill its "
+    "history for the modules this version adds"
+)
 CANT_RUN = "This story's overrides can't run on {profile}"
+
+# #63: the Profile version section.
+VERSION_KIND = "story_version"
+VERSION_FIELD = "version"
+LATEST: Final = "latest"
+VERSION_MAX = 2**31 - 1
+VERSION_VERB = "change its profile version"
+VERSIONS_UNAVAILABLE = "Versions unavailable — reload"
+VERSION_DELETED = "This profile is deleted — assign another profile to change versions"
+PICK_VERSION = "Pick a version"
+SAME_VERSION = "Already on that version"
+NO_SUCH_VERSION = "That profile has no version {version}"
+VERSION_PLACEHOLDER = "— pick a version —"
+LATEST_LABEL = "Latest — follows the profile's edits"
+VERSION_FIELD_PATH = "body.version"
 
 
 # --- reads ----------------------------------------------------------------------------------------
@@ -170,6 +198,7 @@ class Loaded:
     schema: ProfileSchema | None
     story: Story | None
     guarantees: GuaranteeTable | EngineClientError | None = None
+    versions: list[ProfileVersion] | EngineClientError | None = None  # #63, Config only
 
 
 def _load(
@@ -186,6 +215,8 @@ def _load(
     if select:
         reads["profiles"] = lambda: profile_select(client, config.profile.id)
         reads["guarantees"] = lambda: client.get_story_guarantees(story_id)
+        if not config.profile.deleted:  # #63: a deleted profile offers no version form
+            reads["versions"] = lambda: client.list_engine_profile_versions(config.profile.id)
     results = _reads(reads)
     for name, value in results.items():
         if isinstance(value, EngineClientError) and name != "guarantees":  # logged by its section
@@ -207,6 +238,7 @@ def _load(
         schema if isinstance(schema, ProfileSchema) else None,
         story if isinstance(story, Story) else None,
         results.get("guarantees"),
+        results.get("versions"),
     )
     if not select:
         return loaded, None
@@ -234,14 +266,119 @@ class AssignState:
     refusal: Refusal | None = None
 
 
+Choice = int | str  # a version number or ``LATEST``
+
+
+@dataclass
+class VersionState:
+    """The Profile version section after a refused change (#63): the posted choice
+    pre-selected, a line above the form, one under the select, the overrides lines and a
+    refusal."""
+
+    chosen: str = ""
+    error: str = ""
+    select_error: str = ""
+    lines: list[str] = field(default_factory=list)
+    refusal: Refusal | None = None
+
+
+@dataclass(frozen=True)
+class VersionOption:
+    value: str
+    label: str
+    disabled: bool = False
+
+
+@dataclass(frozen=True)
+class VersionSelect:
+    """The Profile version section: ``deleted`` (no form), ``error`` (the versions read
+    failed) or the options with the signed token, a fresh idempotency key and whether the story
+    is archived."""
+
+    options: tuple[VersionOption, ...] = ()
+    error: str = ""
+    deleted: bool = False
+    archived: bool = False
+    token: str = ""
+    key: str = ""
+
+
+def pin_text(ref: ProfileRef, latest: int | None) -> str:
+    """Config's pin clause: "pinned at v1 (latest is v2)", "pinned at v2 (the latest)" or
+    "follows latest"; without the latest clause when the profile read failed."""
+    if not ref.pinned:
+        return "follows latest"
+    text = f"pinned at v{ref.version}"
+    if latest is None:
+        return text
+    return f"{text} (latest is v{latest})" if ref.version < latest else f"{text} (the latest)"
+
+
+def current_choice(ref: ProfileRef) -> Choice:
+    return ref.version if ref.pinned else LATEST
+
+
+def version_label(version: ProfileVersion) -> str:
+    """ "v2 · 2026-10-28 14:03:05 UTC · npond" (`` · <created_by>`` left out when empty)."""
+    label = f"v{version.version} · {utc_text(version.created_at)}"
+    return f"{label} · {version.created_by}" if version.created_by else label
+
+
+def version_options(versions: list[ProfileVersion], ref: ProfileRef) -> tuple[VersionOption, ...]:
+    """ "Latest" then each version newest first, the story's current choice "(current)" and
+    disabled; a pinned number missing from the list added as "vN (current)" in its place."""
+    current = current_choice(ref)
+    options = [
+        VersionOption(LATEST, f"{LATEST_LABEL} (current)", True)
+        if current == LATEST
+        else VersionOption(LATEST, LATEST_LABEL)
+    ]
+    labels = {v.version: version_label(v) for v in versions}
+    if isinstance(current, int) and current not in labels:
+        labels[current] = f"v{current}"
+    for number in sorted(labels, reverse=True):
+        if number == current:
+            options.append(VersionOption(str(number), f"{labels[number]} (current)", True))
+        else:
+            options.append(VersionOption(str(number), labels[number]))
+    return tuple(options)
+
+
+def _version_select(loaded: Loaded, story_id: str) -> VersionSelect:
+    config = loaded.config
+    if config.profile.deleted:
+        return VersionSelect(deleted=True)
+    versions = loaded.versions
+    if not isinstance(versions, list):
+        return VersionSelect(error=VERSIONS_UNAVAILABLE)
+    profile = loaded.profile
+    base = {
+        "current": current_choice(config.profile),
+        "latest": profile.current_version if profile is not None else None,
+        "profile_id": config.profile.id,
+        "profile_version": config.profile.version,
+        "pinned": config.profile.pinned,
+        "revision": config.overrides.revision,
+        "name": profile.name if profile is not None else config.profile.id,
+    }
+    return VersionSelect(
+        version_options(versions, config.profile),
+        archived=loaded.story is not None and loaded.story.status == "archived",
+        token=twostage.sign(VERSION_KIND, story_id, {}, base),
+        key=new_ulid(),
+    )
+
+
 def _config_page(
     request: HttpRequest,
     client: EngineClient,
     story_id: str,
     assign: AssignState | None = None,
+    version: VersionState | None = None,
 ) -> HttpResponse:
     loaded, select = _load(request, client, story_id, select=True)
     config = loaded.config
+    latest = loaded.profile.current_version if loaded.profile is not None else None
     profile_settings = loaded.profile.settings if loaded.profile is not None else None
     context = {
         "story_id": story_id,
@@ -257,6 +394,14 @@ def _config_page(
         "too_many_text": TOO_MANY,
         "assign": assign or AssignState(),
         "assign_url": reverse("stories:config-profile", args=[story_id]),
+        "pin_text": pin_text(config.profile, latest),
+        "versions": _version_select(loaded, story_id),
+        "version": version or VersionState(),
+        "version_url": reverse("stories:config-version", args=[story_id]),
+        "version_placeholder": VERSION_PLACEHOLDER,
+        "version_deleted_text": VERSION_DELETED,
+        "archived_apply": ARCHIVED_APPLY,
+        "confirm_field": twostage.CONFIRM_FIELD,
         "overrides_url": reverse("stories:config-overrides", args=[story_id]),
         "settings_url": reverse("stories:settings", args=[story_id]),
         "story_url": reverse("stories:detail", args=[story_id]),
@@ -560,9 +705,21 @@ def _line(exc: EngineError) -> str:
     return f"HTTP {exc.http_status} {exc.code}: {exc.message}"
 
 
-def _flash_applied(request: HttpRequest, write: StoryProfileWrite, base: Mapping[str, Any]) -> None:
+def _guarantee_ids(ids: list[str]) -> SafeString:
+    return format_html_join(", ", "<code>{}</code>", ((g,) for g in ids))
+
+
+def _flash_applied(
+    request: HttpRequest,
+    write: StoryProfileWrite,
+    base: Mapping[str, Any],
+    *,
+    version_change: bool = False,
+) -> None:
     """After an applied write: kept (``upgrade_unavailable`` and the fingerprint unchanged),
-    no change, or the new fingerprint."""
+    no change, or the new fingerprint (after a version change, the new pin first), then the
+    impact's guarantees gained and lost (#63). ``pinned`` joins the no-change comparison only
+    when ``base`` carries it (a version change's base does)."""
     result = write.result
     if result is None:
         messages.info(request, NO_CHANGE)
@@ -577,18 +734,30 @@ def _flash_applied(request: HttpRequest, write: StoryProfileWrite, base: Mapping
         result.overrides.revision == base.get("revision")
         and result.profile.id == base.get("profile_id")
         and result.profile.version == base.get("profile_version")
+        and ("pinned" not in base or result.profile.pinned == base["pinned"])
     )
     if unchanged:
         messages.info(request, NO_CHANGE)
         return
-    messages.success(
-        request,
-        format_html(
-            'Applied — fingerprint <code title="{}">{}</code>; takes effect from the next turn',
-            result.fingerprint,
-            short_fingerprint(result.fingerprint),
-        ),
+    text = format_html(
+        'Applied — fingerprint <code title="{}">{}</code>; takes effect from the next turn',
+        result.fingerprint,
+        short_fingerprint(result.fingerprint),
     )
+    if version_change:
+        pin = (
+            f"Now pinned at v{result.profile.version}."
+            if result.profile.pinned
+            else f"Now follows the latest version (v{result.profile.version})."
+        )
+        text = format_html("{} {}", pin, text)
+    impact = write.impact
+    if impact.guarantees_gained or impact.guarantees_lost:
+        text = format_html("{}.", text)
+    for label, ids in (("gained", impact.guarantees_gained), ("lost", impact.guarantees_lost)):
+        if ids:
+            text = format_html("{} Guarantees {}: {}.", text, label, _guarantee_ids(ids))
+    messages.success(request, text)
 
 
 def _unsigned_write(request: HttpRequest, kind: str, story_id: str) -> twostage.Payload | None:
@@ -762,26 +931,181 @@ def profile_apply(request: HttpRequest, story_id: str) -> HttpResponse:
         return redirect(config_url(story_id))
     base: dict[str, Any] = payload.base
     chosen = str(payload.body.get("profile_id", ""))
+    version = _signed_version(payload.body)  # #63: a version change's body carries it
     client = engine_client_for(request)
     key = posted_idempotency_key(request)
+    name = str(base.get("name") or chosen)
     try:
         write = client.assign_engine_profile(
-            story_id, chosen, ignore_warnings=base.get("warned") is True, idempotency_key=key
+            story_id,
+            chosen,
+            ignore_warnings=base.get("warned") is True,
+            idempotency_key=key,
+            version=version,
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        name = str(base.get("name") or chosen)
+        if version is not None:
+            state = _version_refused(exc, story_id, version, name, base.get("latest"))
+            return _config_page(request, client, story_id, version=state)
         return _config_page(request, client, story_id, _assign_refused(exc, chosen, key, name))
     if not write.applied:
-        preview = Preview(
-            PROFILE_KIND,
-            story_id,
-            payload.body,
-            {k: v for k, v in base.items() if k not in ("warned", "fingerprint_before")},
-            f"Preview: assign {base.get('name') or chosen}",
-            archived=_archived(client, story_id),
-            again=True,
-        )
+        kept = {k: v for k, v in base.items() if k not in ("warned", "fingerprint_before")}
+        if version is not None:
+            preview = _version_preview(client, story_id, payload.body, kept, version)
+        else:
+            preview = Preview(
+                PROFILE_KIND,
+                story_id,
+                payload.body,
+                kept,
+                f"Preview: assign {name}",
+                archived=_archived(client, story_id),
+                again=True,
+            )
         return _preview_page(request, preview, write.impact)
-    _flash_applied(request, write, base)
+    _flash_applied(request, write, base, version_change=version is not None)
+    return redirect(config_url(story_id))
+
+
+# --- change the profile version (#63) -------------------------------------------------------------
+
+
+def _signed_version(body: Mapping[str, Any]) -> int | Literal["latest"] | None:
+    """A signed body's ``version`` (``None`` when it carries none: an assign)."""
+    value = body.get(VERSION_FIELD)
+    if value == LATEST:
+        return LATEST
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def parse_version(raw: str | None) -> int | Literal["latest"] | None:
+    """The posted choice, stripped: ``latest`` (any case), or ASCII digits from 1 to 2**31 - 1
+    ("02" is 2); anything else is ``None``."""
+    value = (raw or "").strip()
+    if value.lower() == LATEST:
+        return LATEST
+    if not re.fullmatch(r"[0-9]+", value):
+        return None
+    number = int(value)
+    return number if 1 <= number <= VERSION_MAX else None
+
+
+def _latest_of(base: Mapping[str, Any]) -> int | None:
+    latest = base.get("latest")
+    return latest if isinstance(latest, int) and not isinstance(latest, bool) else None
+
+
+def version_heading(version: Choice, latest: int | None) -> str:
+    if version == LATEST:
+        shown = f" (v{latest})" if latest is not None else ""
+        return f"Preview: follow the latest version{shown}"
+    return f"Preview: pin to v{version}"
+
+
+def version_line(version: Choice, name: str, latest: int | None) -> str:
+    if version == LATEST:
+        shown = f" (v{latest})" if latest is not None else ""
+        return f"Follows {name}'s latest version{shown} from the next turn"
+    return f"Runs {name} v{version} from the next turn"
+
+
+def _version_preview(
+    client: EngineClient,
+    story_id: str,
+    body: dict[str, Any],
+    base: dict[str, Any],
+    version: Choice,
+) -> Preview:
+    latest = _latest_of(base)
+    name = str(base.get("name") or body.get("profile_id", ""))
+    return Preview(
+        PROFILE_KIND,
+        story_id,
+        body,
+        base,
+        version_heading(version, latest),
+        lines=(version_line(version, name, latest),),
+        archived=_archived(client, story_id),
+        again=True,
+    )
+
+
+def _version_target(version: Choice, name: str, latest: Any) -> str:
+    if version == LATEST:
+        return f"{name} v{latest}" if isinstance(latest, int) else f"{name}'s latest version"
+    return f"{name} v{version}"
+
+
+def _version_refused(
+    exc: EngineClientError, story_id: str, version: Choice, name: str, latest: Any
+) -> VersionState:
+    """A refused version change, in the Profile version section with the choice kept."""
+    state = VersionState(chosen=str(version))
+    if isinstance(exc, EngineError):
+        if (
+            exc.http_status == 422
+            and exc.code == "validation_error"
+            and exc.details.get("field") == VERSION_FIELD_PATH
+        ):
+            state.select_error = NO_SUCH_VERSION.format(version=version)
+            return state
+        if exc.code == PROFILE_DELETED:
+            state.error = DELETED_PICK
+            return state
+        if exc.http_status == 422 and exc.code == INVALID_PROFILE and "overrides" in exc.details:
+            target = _version_target(version, name, latest)
+            state.error = f"{CANT_RUN.format(profile=target)}: {exc.message}"
+            state.lines = overrides_lines(exc.details.get("overrides"))
+            return state
+        if exc.code in (STORY_ARCHIVED, "story_paused", "story_busy", REVISION_CONFLICT):
+            refusal = write_refusal(exc, story_id, VERSION_VERB)
+            if refusal is not None:
+                state.refusal = Refusal(
+                    notice=refusal.text, notice_url=refusal.url, line=_line(exc)
+                )
+                return state
+    state.refusal = Refusal(panel=panel_for(exc))
+    return state
+
+
+@require_POST
+def version_change(request: HttpRequest, story_id: str) -> HttpResponse:
+    """The Profile version form: ``PUT …/engine-profile {profile_id, version,
+    ignore_warnings: false}`` at once (no preview); a local refusal makes no write."""
+    client = engine_client_for(request)
+    raw = request.POST.get(VERSION_FIELD, "")
+    try:
+        payload = twostage.unsign(VERSION_KIND, request.POST.get(twostage.CONFIRM_FIELD, ""))
+    except twostage.ConfirmationExpired:
+        payload = None
+    if payload is None or payload.target_id != story_id or not isinstance(payload.base, dict):
+        state = VersionState(chosen=raw.strip(), error=EXPIRED)
+        return _config_page(request, client, story_id, version=state)
+    base: dict[str, Any] = payload.base
+    version = parse_version(raw)
+    if version is None:
+        return _config_page(request, client, story_id, version=VersionState(error=PICK_VERSION))
+    if version == base.get("current"):
+        state = VersionState(chosen=str(version), error=SAME_VERSION)
+        return _config_page(request, client, story_id, version=state)
+    profile_id = str(base.get("profile_id", ""))
+    name = str(base.get("name") or profile_id)
+    key = posted_idempotency_key(request)
+    try:
+        write = client.assign_engine_profile(
+            story_id, profile_id, ignore_warnings=False, idempotency_key=key, version=version
+        )
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        state = _version_refused(exc, story_id, version, name, base.get("latest"))
+        return _config_page(request, client, story_id, version=state)
+    body = {"profile_id": profile_id, VERSION_FIELD: version}
+    if not write.applied:
+        return _preview_page(
+            request, _version_preview(client, story_id, body, dict(base), version), write.impact
+        )
+    _flash_applied(request, write, base, version_change=True)
     return redirect(config_url(story_id))

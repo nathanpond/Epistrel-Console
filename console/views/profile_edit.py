@@ -94,7 +94,7 @@ MOVED = (
 DELETE_LINE = "Stories using it keep running on their pinned version; it can't be assigned again."
 IS_DEFAULT_TEXT = "The deployment default can't be deleted — choose another default first"
 UPGRADE_UNAVAILABLE = (
-    "This story has history and Lite can't backfill — it keeps its current configuration"
+    "This story has history the Engine can't backfill — it keeps its current configuration"
 )
 
 

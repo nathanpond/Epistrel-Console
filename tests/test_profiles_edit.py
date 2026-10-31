@@ -614,7 +614,7 @@ def test_applied_false_renders_the_impact_page(operator_client: Client, engine: 
     assert 'href="/catalog/scenarios/01JSCN0000000000000000000A/?version=2"' in html
     assert f'<a href="/stories/{STORY_A}/">Harbour <code>{STORY_A}</code></a>' in html
     assert (
-        "This story has history and Lite can&#x27;t backfill — it keeps its current configuration"
+        "This story has history the Engine can&#x27;t backfill — it keeps its current configuration"
     ) in html
     assert "1,200 model calls, 345,678 tokens, ~1m 15s" in shown
     assert f'<code title="{FP_BEFORE}">{FP_BEFORE[:12]}</code> → <code title="{FP_AFTER}">' in html

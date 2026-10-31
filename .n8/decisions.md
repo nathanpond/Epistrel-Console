@@ -2087,3 +2087,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added `console.renders.beat_numbers(groups)` (the `beat-N` anchors a Renders section rendered) and a `console/play/_worded.html` partial.
   **Why:** Reconcile links only to anchors that exist; the partial keeps the span-or-plain rule in one place.
   **Issue:** #203
+- **Decision:** The Profile version section's refusals use `VersionState(chosen, error, select_error, lines, refusal)`; C5's `WriteRefusal` is wrapped in the existing `Refusal(notice, notice_url, line)` so `_refusal.html` renders it (the HTTP line kept, as the assign section shows).
+  **Why:** Reuses the section partial; `write_refusal` takes no idempotency key, so the posted key isn't needed for the busy line.
+  **Issue:** #63
+- **Decision:** When a success flash appends guarantee sentences, the fingerprint sentence gains a closing "." ("…from the next turn. Guarantees gained: …."); without them it is unchanged.
+  **Why:** Reads as sentences; the AC fixes only the appended sentences' text.
+  **Issue:** #63
+- **Decision:** Local version checks run in this order: token (EXPIRED) → parse ("Pick a version") → equal to the signed current ("Already on that version"); digits are matched with `[0-9]+` so non-ASCII digits are refused.
+  **Why:** A choice can only be compared against a valid signed base; AC says "ASCII digits".
+  **Issue:** #63
+- **Decision:** The CANT_RUN target for "latest" is "<name> v<latest>" from the signed base, or "<name>'s latest version" when the profile read had failed.
+  **Why:** The AC names "<name> vN" but a latest choice carries no number of its own.
+  **Issue:** #63
+- **Decision:** `test_assign_flash_ignores_pinned` asserts an assign's signed base carries no `pinned`, an assign to another profile flashes the fingerprint, and a no-op assign of the own profile still flashes NO_CHANGE.
+  **Why:** The AC's complement read literally (a pinned-only assign result → fingerprint) contradicts "assign bases compare as today"; this pins down "pinned not compared" both ways.
+  **Issue:** #63

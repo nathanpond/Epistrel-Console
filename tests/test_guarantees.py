@@ -27,6 +27,7 @@ from tests.fakes.guarantees import (
     guarantees_fixture,
 )
 from tests.fakes.story_config import EFFECTIVE, effective_config
+from tests.fixtures import engine_fixture
 from tests.play.helpers import story_json
 from tests.profile_helpers import ITEM, LIST, LITE, fake_engine, fresh_cache, impact, profile
 from tests.ratings.helpers import calls, error, text
@@ -68,6 +69,8 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
         fake.respond("GET", EFFECTIVE, 200, json=effective_config(story_id=STORY))
         fake.respond("GET", LIST, 200, json={"items": [profile()], "next_cursor": None})
         fake.respond("GET", "/stories/{story_id}", 200, json=story_json())
+        versions = engine_fixture("list_engine_profile_versions")
+        fake.respond("GET", "/engine-profiles/{profile_id}/versions", 200, json=versions)
         yield fake
 
 
@@ -546,6 +549,71 @@ def test_a_lost_id_names_a_row_of_the_table(operator_client: Client, engine: Fak
     assert fragment
     assert fragment.group(1) == lost
     assert f'<tr id="g-{lost}"' in section(get(operator_client, CONFIG))
+
+
+def gained_report(*gained: str) -> ImpactReport:
+    parsed = ImpactReport.from_json(impact(guarantees_gained=list(gained)))
+    assert parsed is not None
+    return parsed
+
+
+GAINED_NOTE = (
+    "Gained by at least one following story; a story with its own overrides can differ from "
+    "this profile's table"
+)
+
+
+def gained_cell(html: str) -> str:
+    found = re.search(r'<dd class="guarantees-gained">(.*?)</dd>', html, re.S)
+    assert found
+    return found.group(1)
+
+
+@pytest.mark.parametrize(
+    ("mode", "href"),
+    [("profile", f"/profiles/{LITE}/?version=2"), ("story", CONFIG)],
+)
+def test_gained_guarantees_link_their_rows(mode: str, href: str) -> None:
+    html = render_to_string(
+        "console/_impact_report.html",
+        {
+            "impact": gained_report("structural_knowledge_separation", "audience_filtering"),
+            "mode": mode,
+            "guarantees_href": href,
+        },
+    )
+    cell = gained_cell(html)
+    assert cell.startswith(
+        LINK.format(href=href, id="structural_knowledge_separation")
+        + ", "
+        + LINK.format(href=href, id="audience_filtering")
+    )
+    assert html.index("Guarantees gained") < html.index("Guarantees lost")
+
+
+def test_without_an_href_gained_guarantees_stay_raw_code() -> None:
+    html = render_to_string(
+        "console/_impact_report.html",
+        {"impact": gained_report("audience_filtering"), "mode": "story"},
+    )
+    assert gained_cell(html) == "<code>audience_filtering</code>"
+    assert "<a " not in gained_cell(html)
+
+
+def test_no_gained_guarantees_is_a_dash() -> None:
+    html = render_to_string(
+        "console/_impact_report.html", {"impact": gained_report(), "mode": "profile"}
+    )
+    assert gained_cell(html) == "—"
+
+
+def test_profile_mode_gained_note() -> None:
+    for mode, shown in (("profile", True), ("story", False)):
+        html = render_to_string(
+            "console/_impact_report.html",
+            {"impact": gained_report("audience_filtering"), "mode": mode},
+        )
+        assert (GAINED_NOTE in gained_cell(html)) is shown
 
 
 def test_the_templates_never_say_verified() -> None:
