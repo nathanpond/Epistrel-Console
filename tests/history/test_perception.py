@@ -511,7 +511,15 @@ def test_no_beats_at_that_turn_says_so(operator_client: Client, engine: FakeEngi
 
 @pytest.mark.parametrize(
     ("given", "sent"),
-    [("0:0", "0:0"), ("3:2", "3:2"), ("3:x", None), ("3", None), ("", None)],
+    [
+        ("0:0", "0:0"),
+        ("3:2", "3:2"),
+        ("3:x", None),
+        ("3", None),
+        ("", None),
+        ("1:2%0A", None),  # a trailing newline (#223)
+        ("%D9%A1:%D9%A2", None),  # Arabic-Indic digits are not ASCII 0-9 (#223)
+    ],
 )
 def test_variant_is_forwarded_and_a_bad_one_is_not_sent(
     operator_client: Client, engine: FakeEngine, given: str, sent: str | None

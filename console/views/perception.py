@@ -60,7 +60,7 @@ from console.views.history import TIMEOUT, TRACE_DEADLINE_S, TRACE_WORKERS, read
 
 TEMPLATE = "console/perception/turn.html"
 LEVEL = "co_location"  # the grid means something from co-location up (envelopes need full)
-VARIANT = re.compile(r"^\d+:\d+$")
+VARIANT = re.compile(r"[0-9]+:[0-9]+")  # ASCII only, whole string (fullmatch)
 
 
 def _read(
@@ -149,7 +149,7 @@ def perception(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
     client = engine_client_for(request)
     story = client.get_story(story_id)
     raw_variant = request.GET.get("variant", "")
-    variant = raw_variant if VARIANT.match(raw_variant) else None
+    variant = raw_variant if VARIANT.fullmatch(raw_variant) else None
     context: dict[str, Any] = {
         "story": story,
         "story_name": _story_name(story),
