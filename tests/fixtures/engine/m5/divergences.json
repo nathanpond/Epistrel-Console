@@ -1,0 +1,78 @@
+{
+  "items": [
+    {
+      "id": "01JM5DV0000000000000000001",
+      "utterance_id": "01JM5SP0000000000000000001",
+      "speaker": "01JM5CH0000000000000000003",
+      "asserted_proposition_id": "01JM5PR0000000000000000002",
+      "asserted": {
+        "subject_id": "01JM5CH0000000000000000003",
+        "predicate_id": "01JM5PD0000000000000000001",
+        "object_id": "01JM5EN0000000000000000003",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 600,
+            "outer": 600
+          }
+        }
+      },
+      "believed_belief_id": null,
+      "believed_proposition_id": null,
+      "believed": null,
+      "position": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "revealed_by_event_id": null,
+      "operation_id": "01JM5QP0000000000000000002"
+    },
+    {
+      "id": "01JM5DV0000000000000000002",
+      "utterance_id": "01JM5SP0000000000000000002",
+      "speaker": "01JM5CH0000000000000000002",
+      "asserted_proposition_id": "01JM5PR0000000000000000003",
+      "asserted": {
+        "subject_id": "01JM5CH0000000000000000002",
+        "predicate_id": "01JM5PD0000000000000000002",
+        "object_id": "01JM5EN0000000000000000002",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "believed_belief_id": "01JM5BE0000000000000000003",
+      "believed_proposition_id": "01JM5PR0000000000000000004",
+      "believed": {
+        "subject_id": "01JM5CH0000000000000000003",
+        "predicate_id": "01JM5PD0000000000000000002",
+        "object_id": "01JM5EN0000000000000000002",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "position": {
+        "turn": 3,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 1,
+        "step": 0
+      },
+      "revealed_by_event_id": "01JM5EV0000000000000000003",
+      "operation_id": "01JM5QP0000000000000000003"
+    }
+  ],
+  "revision": 7,
+  "next_after_id": null,
+  "output_viewpoint": "omniscient"
+}

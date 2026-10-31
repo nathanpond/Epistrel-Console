@@ -2431,6 +2431,281 @@ class Ledger(Model):
         return parsed
 
 
+# --- character knowledge (#186, M5) ------------------------------------------------------------
+#
+# C2: propositions stay raw JSON with a typed ``*_view`` beside them; ``output_viewpoint`` and
+# ``IdentityItem.source`` are the only schema enums (open); the pages' lists are read entry by
+# entry (``_keep_parsing``), keeping a list that lost an entry raw in ``unparsed``.
+
+EXPOSURE_STATES = ("unresolved", "resolved")
+"""``ExposureState``'s members: the states ``inspect_exposures``' ``state`` filter takes."""
+
+
+@dataclass(frozen=True)
+class NarrativePosition(Model):
+    """``NarrativePositionBody``: a five-part narrative position (#159): the turn, its variant,
+    the inter-turn slot (0: the turn itself), the beat (0: the player input) and the step."""
+
+    turn: int
+    variant: int
+    slot_k: int
+    beat: int
+    step: int
+
+
+@dataclass(frozen=True)
+class AuthorPosition(NarrativePosition):
+    """``epistrel__api__routes__admin__beliefs__PositionBody``: the same five parts, as the
+    author-belief write answers them."""
+
+
+@dataclass(frozen=True)
+class BeliefItem(Model):
+    """``BeliefItemBody``: one belief the character holds now, its ``belief_state`` row
+    (``current_level``, ``current_scalar``, ``polarity``, ``since``) joined with its belief record
+    (``kind``, ``provenance``: the acquisition, ``held_from``/``held_to``, valid-time in
+    story-minutes). ``proposition`` stays raw JSON (C2); :attr:`proposition_view` is its typed
+    view."""
+
+    belief_id: str
+    proposition_id: str
+    proposition: Any
+    kind: str
+    polarity: str
+    current_level: str
+    current_scalar: float | None
+    since: NarrativePosition
+    provenance: str | None
+    held_from: NarrativePosition
+    held_to: NarrativePosition | None
+    valid_from: int | None
+    valid_to: int | None
+    tx_from: str
+
+    @property
+    def proposition_view(self) -> Proposition | None:
+        return Proposition.from_json(self.proposition)
+
+
+@dataclass(frozen=True)
+class IdentityItem(Model):
+    """``IdentityItemBody``: one ``same_as`` the character holds (FR-PROP-7): the two entities,
+    whether it is a canon fact it may read or its own belief (``source``) and that record's
+    id."""
+
+    entities: list[str]
+    source: str = field(metadata={OPEN_ENUM: True})  # spelled out: a required field follows
+    record_id: str
+
+
+@dataclass(frozen=True)
+class Beliefs(Model):
+    """``BeliefsBody``: a page of one character's beliefs by proposition id (``next_after``
+    continues; ``None`` on the last page), the story's revision and the identities it holds.
+
+    ``from_json`` reads ``beliefs`` and ``identities`` entry by entry (C2): an entry that doesn't
+    parse is left out, and ``unparsed`` keeps that list's raw value for the page's "More"."""
+
+    character: str
+    beliefs: list[BeliefItem]
+    revision: int
+    next_after: str | None
+    identities: list[IdentityItem] = field(default_factory=list)
+    output_viewpoint: str = open_enum(default="omniscient")
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("beliefs", BeliefItem), ("identities", IdentityItem)))
+
+
+@dataclass(frozen=True)
+class DivergenceItem(Model):
+    """``DivergenceItemBody``: one divergence (FR-TURN-7): the utterance and its speaker, what it
+    asserted and the contrary belief it deviates from (``None`` for a lie no record settles), the
+    say beat's position, the event of a reveal that settled it and the writing operation.
+    ``asserted`` and ``believed`` stay raw JSON (C2); :attr:`asserted_view` and
+    :attr:`believed_view` are their typed views (``None`` for a JSON ``null`` too)."""
+
+    id: str
+    utterance_id: str
+    speaker: str
+    asserted_proposition_id: str
+    asserted: Any
+    believed_belief_id: str | None
+    believed_proposition_id: str | None
+    believed: Any
+    position: NarrativePosition
+    revealed_by_event_id: str | None
+    operation_id: str
+
+    @property
+    def asserted_view(self) -> Proposition | None:
+        return Proposition.from_json(self.asserted)
+
+    @property
+    def believed_view(self) -> Proposition | None:
+        return Proposition.from_json(self.believed)
+
+
+@dataclass(frozen=True)
+class Divergences(Model):
+    """``DivergencesBody``: a page of the story's divergences by id (``next_after_id``
+    continues), the story's revision. ``from_json`` reads ``items`` entry by entry (C2)."""
+
+    items: list[DivergenceItem]
+    revision: int
+    next_after_id: str | None
+    output_viewpoint: str = open_enum(default="omniscient")
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", DivergenceItem),))
+
+
+@dataclass(frozen=True)
+class ExposureItem(Model):
+    """``ExposureItemBody``: one exposure (FR-BELIEF-5): the witness, the proposition it heard
+    and from whom (``source``; ``None`` for no speaker), the beat's event, how much it caught
+    (``fidelity``), its position, its effective ``state`` and, once resolved, the transition and
+    operation that resolved it. ``proposition`` stays raw JSON (C2)."""
+
+    id: str
+    witness: str
+    proposition_id: str
+    proposition: Any
+    source: str | None
+    source_event_id: str
+    kind: str
+    fidelity: str
+    position: NarrativePosition
+    state: str
+    resolved_by_transition: str | None
+    resolution_operation_id: str | None
+    operation_id: str
+
+    @property
+    def proposition_view(self) -> Proposition | None:
+        return Proposition.from_json(self.proposition)
+
+
+@dataclass(frozen=True)
+class Exposures(Model):
+    """``ExposuresBody``: a page of the story's exposures by id (``next_after_id`` continues),
+    the story's revision. ``from_json`` reads ``items`` entry by entry (C2)."""
+
+    items: list[ExposureItem]
+    revision: int
+    next_after_id: str | None
+    output_viewpoint: str = open_enum(default="omniscient")
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", ExposureItem),))
+
+
+def _lenient_page[M: Model](
+    cls: type[M], obj: object, lenient: tuple[tuple[str, type[Model]], ...]
+) -> M | None:
+    """``cls`` parsed with ``lenient``'s lists read entry by entry (:func:`_keep_parsing`)."""
+    if not isinstance(obj, dict):
+        return None
+    obj = dict(obj)
+    unparsed = _keep_parsing(cls, obj, lenient)
+    parsed = _from_json(cls, obj)
+    if not isinstance(parsed, cls):
+        return None
+    if unparsed:
+        object.__setattr__(parsed, "unparsed", unparsed)
+    return parsed
+
+
+@dataclass(frozen=True)
+class AuthoredBelief(Model):
+    """``AuthoredBeliefBody``: the belief after an author write: its kind (``first_order``, or
+    ``nested`` with its attributed holder and depth), proposition, dual confidence, accessibility
+    and hold state, the transition that produced it (``provenance``), the positions it is held
+    between, valid-time and lineage. ``proposition`` stays raw JSON (C2)."""
+
+    id: str
+    holder_character_id: str
+    kind: str
+    attributed_holder_id: str | None
+    depth: int
+    proposition_id: str
+    proposition: Any
+    polarity: str
+    confidence_level: str
+    confidence_scalar: float | None
+    accessibility: float
+    state: str
+    provenance: str
+    held_from: AuthorPosition
+    held_to: AuthorPosition | None
+    valid_from: int | None
+    valid_to: int | None
+    lineage_id: str
+
+    @property
+    def proposition_view(self) -> Proposition | None:
+        return Proposition.from_json(self.proposition)
+
+
+@dataclass(frozen=True)
+class BeliefTransition(Model):
+    """``TransitionBody``: the ``author`` transition: its kind, antecedent (the call's author
+    act, raw), story-time (``valid_at``), the confidence it left and its position."""
+
+    id: str
+    kind: str
+    antecedent: dict[str, Any]
+    valid_at: int | None
+    confidence_level: str
+    confidence_scalar: float | None
+    position: AuthorPosition
+
+
+@dataclass(frozen=True)
+class BeliefWritten(Model):
+    """``BeliefWritten``: an author belief's write (``POST /admin/stories/{id}/beliefs``' 201):
+    the belief, its transition, the held beliefs it closed, the story's revision and the
+    ``control`` operation."""
+
+    belief: AuthoredBelief
+    transition: BeliefTransition
+    closed: list[str]
+    operation_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CharacterWeighted(Model):
+    """``CharacterWeightedBody``: a character after a weight change or a modeling directive, as
+    an omniscient read lists it, and the story's revision after."""
+
+    character: OmniscientStoryCharacter
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ParticipationSet(Model):
+    """``ParticipationSetBody``: a character after a participation change, as a read lists it,
+    with the story's ``config_revision`` (moved by a change) and its unchanged
+    ``timeline_revision``."""
+
+    character: StoryCharacter
+    config_revision: int
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
 # --- eval reports (#149) -------------------------------------------------------------------------
 
 

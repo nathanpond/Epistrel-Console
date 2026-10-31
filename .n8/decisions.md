@@ -1688,3 +1688,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 1) The scenario cast editor writes each relationship with M5's `audience`/`trust` only when set (`role_to_write`), so a relationship without them keeps its pre-M5 write shape, and one carrying them now keeps them through an edit. Before this, the editor would have sent `audience: null, trust: null` on every relationship.
   **Why:** The editor serialises relationships with `asdict`, so new model fields leaked into the patch and broke `test_scenario_cast` round trips. The story says no write-path behaviour changes (#205/#206 own the write path).
   **Issue:** #183
+- **Decision:** The three M5 pages read their lists through #183's existing `_keep_parsing` (via a small `_lenient_page` wrapper), not a new `_lenient_items` helper; `unparsed` is typed `ClassVar[dict[str, list[Any] | dict[str, Any]]]`, as `Ledger`/`RespondResponse` are.
+  **Why:** #183 landed the shared lenient-list helper after this story was planned; a second one would re-define it (brief: reuse, never re-define).
+  **Issue:** #186
+- **Decision:** `contract.py::_open_enum` already reads a `const` (#183); this story only adds `test_open_enum_reads_a_const` on the three pages' `output_viewpoint` with its complement (`BeliefItemBody.kind`, no enum/const, still refused).
+  **Why:** No code change needed; the test plan's coverage still applies.
+  **Issue:** #186
+- **Decision:** Fixture values follow Engine origin/main @ 7d181b3: heard testimony is `current_level: believed`, `current_scalar: null`; exposure `kind: content` (an envelope writes no exposure); an author write is positioned at the head turn's end (`beat 32767`, `step` 1+), `provenance: author`, antecedent `{kind: record, ref: {table: events, id}}`; a modeled entity is `reactive`, not fixed. Ids outside the prescribed prefixes use `PD` (predicate), `SP` (utterance; `U` isn't Crockford), `KY` (idempotency key), `PF` (profile).
+  **Why:** C15; the brief's prefix list names no predicate, utterance or key.
+  **Issue:** #186
+- **Decision:** `test_m5_fixtures_validate`'s complement (a file missing from the table) is its own test, `test_every_m5_fixture_is_in_the_table`, since the main test is parametrised per file.
+  **Why:** A parametrised test can't express a whole-directory check once.
+  **Issue:** #186
+- **Decision:** `test_m5_knowledge_reads_live` was not run locally: the Engine on 127.0.0.1:8000 is an M2 stack without the M5 routes (left running, as asked). It runs in CI's engine-smoke job against edge.
+  **Why:** No M5 Engine reachable locally without stopping another stack.
+  **Issue:** #186

@@ -15,8 +15,14 @@ from console.engine.models import (
     Adjudication,
     AffectedStory,
     AgeCondition,
+    AuthoredBelief,
+    AuthorPosition,
     Backfill,
     BackfillEstimate,
+    BeliefItem,
+    Beliefs,
+    BeliefTransition,
+    BeliefWritten,
     Bound,
     CardImage,
     CardImages,
@@ -37,6 +43,7 @@ from console.engine.models import (
     CharacterImage,
     CharacterImages,
     CharacterPublished,
+    CharacterWeighted,
     CheckProgress,
     CheckTarget,
     CheckViolation,
@@ -66,6 +73,8 @@ from console.engine.models import (
     DeploymentSettings,
     Disposition,
     Dispositions,
+    DivergenceItem,
+    Divergences,
     DormantChain,
     Drivers,
     EffectiveBudget,
@@ -85,6 +94,8 @@ from console.engine.models import (
     EscalationDeferred,
     EscalationYield,
     EvaluatedRating,
+    ExposureItem,
+    Exposures,
     ExtractionShadow,
     FactBody,
     FactListBody,
@@ -107,6 +118,7 @@ from console.engine.models import (
     HotSetBody,
     HotSetBudgets,
     HotSetPins,
+    IdentityItem,
     ImpactReport,
     Implication,
     InactiveItem,
@@ -139,6 +151,7 @@ from console.engine.models import (
     ModelConfigMutation,
     ModeledAt,
     ModelIdentity,
+    NarrativePosition,
     NestedSeed,
     OffboardingActions,
     OffboardingError,
@@ -157,6 +170,7 @@ from console.engine.models import (
     OwnedPage,
     OwnerTransfer,
     Participation,
+    ParticipationSet,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -694,6 +708,21 @@ def test_the_widening_only_adds_media_id() -> None:
         (LocationAdjacency, "LocationAdjacency"),
         (ScenarioChannel, "ScenarioChannel"),
         (NestedSeed, "NestedSeed"),
+        # #186: M5's character knowledge and character controls.
+        (Beliefs, "BeliefsBody"),
+        (BeliefItem, "BeliefItemBody"),
+        (IdentityItem, "IdentityItemBody"),
+        (NarrativePosition, "NarrativePositionBody"),
+        (Divergences, "DivergencesBody"),
+        (DivergenceItem, "DivergenceItemBody"),
+        (Exposures, "ExposuresBody"),
+        (ExposureItem, "ExposureItemBody"),
+        (BeliefWritten, "BeliefWritten"),
+        (AuthoredBelief, "AuthoredBeliefBody"),
+        (BeliefTransition, "TransitionBody"),
+        (AuthorPosition, "epistrel__api__routes__admin__beliefs__PositionBody"),
+        (CharacterWeighted, "CharacterWeightedBody"),
+        (ParticipationSet, "ParticipationSetBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -1016,3 +1045,66 @@ def test_an_open_enum_reads_a_const() -> None:
 
     problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/AdjudicationBody"}, "P")
     assert any("enum" in p for p in problems)
+
+
+M5_OPERATIONS = (
+    "GET /stories/{story_id}/inspect/beliefs",
+    "GET /stories/{story_id}/inspect/divergences",
+    "GET /stories/{story_id}/inspect/exposures",
+    "POST /admin/stories/{story_id}/beliefs",
+    "PATCH /stories/{story_id}/characters/{character_id}/participation",
+    "POST /stories/{story_id}/characters/{character_id}/weight",
+    "POST /stories/{story_id}/entities/{entity_id}/model",
+)
+
+
+@pytest.mark.parametrize("name", M5_OPERATIONS)
+def test_the_m5_operations_are_registered(name: str) -> None:
+    """#186: the seven M5 operations are registered with a response model, so
+    ``test_registered_operations_match_the_recorded_schema`` checks each one."""
+    assert name in OPERATIONS
+    assert OPERATIONS[name].response_model is not None
+
+
+def test_open_enum_reads_a_const() -> None:
+    """#186: the three M5 pages' ``output_viewpoint`` is a bare ``const`` in the schema, read as
+    a one-member enum by an ``OPEN_ENUM`` field. **Complement:** an open enum over a schema
+    string with neither ``enum`` nor ``const`` is still a problem."""
+    from dataclasses import field as dc_field
+
+    from console.engine.models import OPEN_ENUM
+
+    for component in ("BeliefsBody", "DivergencesBody", "ExposuresBody"):
+        node = DOC["components"]["schemas"][component]["properties"]["output_viewpoint"]
+        assert node.get("const") == "omniscient"
+        assert "enum" not in node
+
+    @dataclass(frozen=True)
+    class Page:
+        items: list[DivergenceItem]
+        revision: int
+        next_after_id: str | None
+        output_viewpoint: str = dc_field(default="omniscient", metadata={OPEN_ENUM: True})
+
+    ref = {"$ref": "#/components/schemas/DivergencesBody"}
+    assert compare_model(DOC, Page, ref, "Page") == []
+
+    @dataclass(frozen=True)
+    class Plain:  # ``BeliefItemBody.kind`` is a plain string: no enum, no const
+        belief_id: str
+        proposition_id: str
+        proposition: Any
+        polarity: str
+        current_level: str
+        current_scalar: float | None
+        since: NarrativePosition
+        provenance: str | None
+        held_from: NarrativePosition
+        held_to: NarrativePosition | None
+        valid_from: int | None
+        valid_to: int | None
+        tx_from: str
+        kind: str = dc_field(metadata={OPEN_ENUM: True})
+
+    problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/BeliefItemBody"}, "P")
+    assert problems == ["P.kind: an open enum's schema is not a string enum"]

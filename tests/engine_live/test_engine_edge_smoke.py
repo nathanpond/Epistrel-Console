@@ -9,7 +9,7 @@ import re
 import pytest
 from django.test import Client, override_settings
 
-from console.engine.client import EngineClient
+from console.engine.client import ENGINE_PROFILES_PAGE, EngineClient, EngineError
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from console.ids import new_ulid
@@ -427,3 +427,82 @@ def test_play_one_turn_live(url: str, key: str, operator_client: Client, operato
         assert any(item.channel == "message" and item.text for item in history.entries)
     finally:
         client.delete_story(story_id, idempotency_key=new_ulid())
+
+
+def _structured_profile(client: EngineClient) -> str:
+    """The id of the one profile named exactly ``Structured`` (no hard-coded id)."""
+    names: list[str] = []
+    found: list[str] = []
+    cursor: str | None = None
+    while True:
+        profiles, cursor = client.list_engine_profiles(cursor=cursor, limit=ENGINE_PROFILES_PAGE)
+        names.extend(p.name for p in profiles)
+        found.extend(p.id for p in profiles if p.name == "Structured")
+        if not cursor:
+            break
+    assert len(found) == 1, f"expected one profile named 'Structured', saw {names}"
+    return found[0]
+
+
+def _knowledge_story(client: EngineClient, profile: str, version: int) -> str:
+    """A story with ``test_play_one_turn_live``'s cast (no turn played), on ``profile`` pinned
+    to ``version``."""
+    ratings = client.list_content_ratings()
+    created = client.create_story(
+        {
+            "name": f"Console smoke knowledge v{version}",
+            "content_rating_id": ratings[0].id,
+            "characters": [
+                {
+                    "name": "Mara",
+                    "definition": "A harbour pilot.",
+                    "true_age": 34,
+                    "is_player": True,
+                },
+                {"name": "Tobin", "definition": "Her brother.", "true_age": 41, "is_player": False},
+            ],
+        },
+        idempotency_key=new_ulid(),
+    )
+    assert created.story_id is not None
+    client.assign_engine_profile(
+        created.story_id,
+        profile,
+        ignore_warnings=True,
+        idempotency_key=new_ulid(),
+        version=version,
+    )
+    return created.story_id
+
+
+@pytest.mark.engine_auth
+def test_m5_knowledge_reads_live(url: str, key: str) -> None:
+    """#186: on ``Structured`` v2 (partitions on) the three knowledge reads answer empty pages
+    for a story with no turn; **Complement:** on v1 ("Structured (M4)", no partitions) each is
+    409 ``module_off``."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profile = _structured_profile(client)
+    stories: list[str] = []
+    try:
+        on = _knowledge_story(client, profile, 2)
+        stories.append(on)
+        off = _knowledge_story(client, profile, 1)
+        stories.append(off)
+        [player] = [c.id for c in client.get_story(on).characters if c.is_player]
+        beliefs = client.inspect_beliefs(on, player)
+        assert beliefs.beliefs == []
+        assert beliefs.character == player
+        assert client.inspect_divergences(on).items == []
+        assert client.inspect_exposures(on, character=player).items == []
+        [off_player] = [c.id for c in client.get_story(off).characters if c.is_player]
+        for read in (
+            lambda: client.inspect_beliefs(off, off_player),
+            lambda: client.inspect_divergences(off),
+            lambda: client.inspect_exposures(off, character=off_player),
+        ):
+            with pytest.raises(EngineError) as caught:
+                read()
+            assert caught.value.code == "module_off"
+    finally:
+        for story_id in stories:
+            client.delete_story(story_id, idempotency_key=new_ulid())

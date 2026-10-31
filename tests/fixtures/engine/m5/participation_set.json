@@ -1,0 +1,16 @@
+{
+  "timeline_revision": 7,
+  "config_revision": 5,
+  "character": {
+    "id": "01JM5CH0000000000000000002",
+    "name": "Alice",
+    "is_player": false,
+    "role_id": null,
+    "source": null,
+    "participation": {
+      "role": "reactive",
+      "fixed": true
+    }
+  },
+  "idempotency_key": "01JM5KY0000000000000000002"
+}

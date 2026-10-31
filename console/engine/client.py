@@ -23,6 +23,8 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    Beliefs,
+    BeliefWritten,
     CatalogCharacter,
     CatalogCharacterCard,
     CatalogCharacterDraft,
@@ -32,6 +34,7 @@ from console.engine.models import (
     CatalogVersion,
     CatalogVersionList,
     CharacterPublished,
+    CharacterWeighted,
     CompanionDraft,
     ConfigChanges,
     ConsolidationQueued,
@@ -42,6 +45,7 @@ from console.engine.models import (
     CustomInstructions,
     CustomInstructionsWritten,
     DeploymentSettings,
+    Divergences,
     EffectiveConfig,
     EngineProfile,
     EngineProfilePage,
@@ -50,6 +54,7 @@ from console.engine.models import (
     ErasureResult,
     ErasureStatus,
     EscalationYield,
+    Exposures,
     ExtractionShadow,
     FactListBody,
     FactWritten,
@@ -79,6 +84,7 @@ from console.engine.models import (
     OffboardingQueued,
     OperationRecord,
     OwnerTransfer,
+    ParticipationSet,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -861,12 +867,14 @@ class EngineClient:
         images: Sequence[str] = (),
         expected_revision: int | None,
         idempotency_key: str,
+        participation: tuple[Literal["primary", "reactive", "silent"], bool] | None = None,
     ) -> StoryCharacterAdded:
         """``POST /stories/{id}/characters``: an ad-hoc character joins the running story's
         cast (never a player character). The optional fields are sent only when given;
         ``expected_revision`` (the revision the form was opened at) is sent as
-        ``X-Epistrel-Expected-Revision``. The definition and deflection style pass the input
-        gate, so the timeout allows for its model calls."""
+        ``X-Epistrel-Expected-Revision``. ``participation`` (``(role, fixed)``, M5) is sent as
+        ``{role, fixed}`` only when given, ``fixed`` always included. The definition and
+        deflection style pass the input gate, so the timeout allows for its model calls."""
         body: dict[str, Any] = {"name": name, "definition": definition, "true_age": true_age}
         if safe_fallback_text is not None:
             body["safe_fallback_text"] = safe_fallback_text
@@ -874,6 +882,8 @@ class EngineClient:
             body["deflection_style"] = deflection_style
         if images:
             body["images"] = list(images)
+        if participation is not None:
+            body["participation"] = {"role": participation[0], "fixed": participation[1]}
         headers = {"Idempotency-Key": idempotency_key}
         if expected_revision is not None:
             headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
@@ -918,6 +928,90 @@ class EngineClient:
             timeout=MUTATION_TIMEOUT_S,
         )
         return _parse(response, Promotion)
+
+    # --- character controls (M5) -----------------------------------------------------------------
+
+    @operation(
+        "PATCH",
+        "/stories/{story_id}/characters/{character_id}/participation",
+        response_model=ParticipationSet,
+    )
+    def set_participation(
+        self,
+        story_id: str,
+        character_id: str,
+        *,
+        role: Literal["primary", "reactive", "silent"],
+        fixed: bool,
+        idempotency_key: str,
+    ) -> ParticipationSet:
+        """``PATCH /stories/{id}/characters/{cid}/participation`` (FR-MULTI-7,10): set the
+        character's participation ``role``, ``fixed`` or not (both always sent). A prospective
+        configuration write: it moves the story's ``config_revision``; the role it has changes
+        nothing. 422 ``is_player``; 404 for a character the story doesn't have; 409
+        ``story_archived``."""
+        response = self._request(
+            "PATCH",
+            f"{_story_character_path(story_id, character_id)}/participation",
+            json={"role": role, "fixed": fixed},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ParticipationSet)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/characters/{character_id}/weight",
+        response_model=CharacterWeighted,
+    )
+    def set_weight(
+        self,
+        story_id: str,
+        character_id: str,
+        weight: Literal["minor", "major"],
+        *,
+        idempotency_key: str,
+    ) -> CharacterWeighted:
+        """``POST /stories/{id}/characters/{cid}/weight`` (FR-EPI-10): give the character
+        narrative ``weight``, prospectively. 422 ``is_player``; 409 ``story_archived``; 423
+        ``story_busy`` while a turn is in flight."""
+        response = self._request(
+            "POST",
+            f"{_story_character_path(story_id, character_id)}/weight",
+            json={"weight": weight},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CharacterWeighted)
+
+    @operation(
+        "POST", "/stories/{story_id}/entities/{entity_id}/model", response_model=CharacterWeighted
+    )
+    def model_entity(
+        self,
+        story_id: str,
+        entity_id: str,
+        *,
+        true_age: int,
+        definition: str | None = None,
+        idempotency_key: str,
+    ) -> CharacterWeighted:
+        """``POST /stories/{id}/entities/{eid}/model`` (FR-EPI-9): model one of the story's
+        entities as a ``minor`` character with the entity's id (201). ``definition`` is left
+        out when ``None`` (the Engine then uses the entity's name). 404 for an entity the story
+        doesn't have; 422 ``already_modeled``, ``not_a_person`` or ``allow_new_arrivals``; 409
+        ``story_archived``; 423 ``story_busy``. The timeout is :meth:`add_story_character`'s."""
+        body: dict[str, Any] = {"true_age": true_age}
+        if definition is not None:
+            body["definition"] = definition
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/entities/{quote(entity_id, safe='')}/model",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=STORY_CHARACTER_ADD,
+        )
+        return _parse(response, CharacterWeighted)
 
     @operation("POST", "/stories/{story_id}/archive", response_model=StoryStatusChange)
     def archive_story(self, story_id: str, *, idempotency_key: str) -> StoryStatusChange:
@@ -1294,6 +1388,100 @@ class EngineClient:
         response = self._request("GET", f"{_story_path(story_id)}/inspect/ledger", params=params)
         return _parse(response, Ledger)
 
+    # --- character knowledge (M5) ----------------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/inspect/beliefs", response_model=Beliefs)
+    def inspect_beliefs(
+        self,
+        story_id: str,
+        character: str,
+        *,
+        proposition_id: str | None = None,
+        as_of: int | None = None,
+        limit: int = 100,
+        after: str | None = None,
+    ) -> Beliefs:
+        """``GET /stories/{id}/inspect/beliefs`` (FR-EPI-6, FR-EPI-3, FR-PROP-7): a page of what
+        ``character`` believes, by proposition id (``limit`` 1 to 500, ``after`` continues), only
+        ``proposition_id``'s when given, as the corrected record stood through turn ``as_of``
+        when given, with the identities it holds. Always ``viewpoint=omniscient`` (#135
+        convention 1). A ``None`` filter is left out (``as_of=0`` is sent); an empty ``after`` is
+        left out; ids and the cursor are passed through as given. 409 ``module_off`` when the
+        story keeps no character partitions; 422 for a character outside the cast; the player's
+        character answers an empty page."""
+        params: dict[str, str] = {
+            "viewpoint": OMNISCIENT_VIEWPOINT,
+            "character": character,
+            "limit": str(limit),
+        }
+        if proposition_id is not None:
+            params["proposition_id"] = proposition_id
+        if as_of is not None:
+            params["as_of"] = str(as_of)
+        if after:
+            params["after"] = after
+        response = self._request("GET", f"{_story_path(story_id)}/inspect/beliefs", params=params)
+        return _parse(response, Beliefs)
+
+    @operation("GET", "/stories/{story_id}/inspect/divergences", response_model=Divergences)
+    def inspect_divergences(
+        self,
+        story_id: str,
+        *,
+        speaker: str | None = None,
+        subject: str | None = None,
+        as_of: int | None = None,
+        limit: int = 100,
+        after_id: str | None = None,
+    ) -> Divergences:
+        """``GET /stories/{id}/inspect/divergences`` (FR-TURN-7, FR-ADMIN-5): a page of what each
+        lying speaker asserted against what it believes, by id (``limit`` 1 to 500, ``after_id``
+        continues), only ``speaker``'s, those about entity ``subject`` and those positioned
+        through turn ``as_of`` when given. Always ``viewpoint=omniscient``. A ``None`` filter is
+        left out (``as_of=0`` is sent); an empty ``after_id`` is left out. 409 ``module_off``
+        when the story keeps no character partitions."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if speaker is not None:
+            params["speaker"] = speaker
+        if subject is not None:
+            params["subject"] = subject
+        if as_of is not None:
+            params["as_of"] = str(as_of)
+        if after_id:
+            params["after_id"] = after_id
+        path = f"{_story_path(story_id)}/inspect/divergences"
+        return _parse(self._request("GET", path, params=params), Divergences)
+
+    @operation("GET", "/stories/{story_id}/inspect/exposures", response_model=Exposures)
+    def inspect_exposures(
+        self,
+        story_id: str,
+        *,
+        character: str | None = None,
+        state: Literal["unresolved", "resolved"] | None = None,
+        as_of: int | None = None,
+        limit: int = 100,
+        after_id: str | None = None,
+    ) -> Exposures:
+        """``GET /stories/{id}/inspect/exposures`` (FR-BELIEF-5,14, FR-ADMIN-5): a page of what
+        each witness heard, by id (``limit`` 1 to 500, ``after_id`` continues), only witness
+        ``character``'s and those in effective ``state`` as the record stood through turn
+        ``as_of`` when given. A raw read: it never resolves an exposure. Always
+        ``viewpoint=omniscient``. A ``None`` filter is left out (``as_of=0`` is sent); an empty
+        ``after_id`` is left out. 409 ``module_off`` when the story keeps no character
+        partitions."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if character is not None:
+            params["character"] = character
+        if state is not None:
+            params["state"] = state
+        if as_of is not None:
+            params["as_of"] = str(as_of)
+        if after_id:
+            params["after_id"] = after_id
+        path = f"{_story_path(story_id)}/inspect/exposures"
+        return _parse(self._request("GET", path, params=params), Exposures)
+
     # --- the scene and an entity's standing profile (#58) -------------------------------------
 
     @operation("GET", "/stories/{story_id}/scene", response_model=SceneBody)
@@ -1393,6 +1581,26 @@ class EngineClient:
         convention 18)."""
         path = f"/admin{_story_path(story_id)}/facts"
         return self._fact_write("POST", path, idempotency_key, body)
+
+    @operation("POST", "/admin/stories/{story_id}/beliefs", response_model=BeliefWritten)
+    def write_belief(
+        self, story_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> BeliefWritten:
+        """``POST /admin/stories/{id}/beliefs`` (``BeliefRequest``, sent as given; FR-EPI-7):
+        set what modeled character ``holder`` believes (201). A belief it already holds changes
+        in place; a held belief it contradicts is closed (``closed``). ``attributed_to`` makes it
+        a nested belief. No expected revision is sent. 409 ``module_off`` unless the story keeps
+        partitions (or, nested, nested beliefs); 422 ``holder_has_no_partition``,
+        ``confidence_inconsistent``, ``nesting_too_deep``. The Engine holds the write behind a
+        running turn, so it waits the turn timeout, as :meth:`commit_fact` does."""
+        response = self._request(
+            "POST",
+            f"/admin{_story_path(story_id)}/beliefs",
+            json=dict(body),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, BeliefWritten)
 
     @operation("POST", "/admin/stories/{story_id}/facts/{fact_id}/lock", response_model=FactWritten)
     def lock_fact(self, story_id: str, fact_id: str, *, idempotency_key: str) -> FactWritten:
@@ -1826,14 +2034,24 @@ class EngineClient:
 
     @operation("POST", "/stories/{story_id}/truncate", response_model=TruncateResult)
     def truncate(
-        self, story_id: str, to_turn: int, *, expected_revision: int | None, idempotency_key: str
+        self,
+        story_id: str,
+        to_turn: int,
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+        slot: int | None = None,
     ) -> TruncateResult:
         """``POST /stories/{id}/truncate``: rewind to ``to_turn`` (0 to the head - 1); every
-        later operation becomes ``discarded`` (``untruncate`` restores them)."""
+        later operation becomes ``discarded`` (``untruncate`` restores them). ``slot`` (M5: keep
+        ``to_turn``'s inter-turn slots 1..k) is sent only when given."""
+        body: dict[str, Any] = {"to_turn": to_turn}
+        if slot is not None:
+            body["slot"] = slot
         response = self._timeline(
             story_id,
             "truncate",
-            body={"to_turn": to_turn},
+            body=body,
             expected_revision=expected_revision,
             idempotency_key=idempotency_key,
             timeout=MUTATION_TIMEOUT_S,
@@ -1917,15 +2135,19 @@ class EngineClient:
         expected_revision: int | None,
         idempotency_key: str,
         timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
+        slot: int | None = None,
     ) -> ForkResult | ReactivationCheck:
         """``POST /stories/{id}/fork``: copy the story through ``at_turn`` into a new one named
         ``name`` (201), along ``variant_chain`` (``(turn, variant)``; default the active chain). An
         archived story can be forked. :class:`ReactivationCheck` (202) when a dormant chain's
         turns must be re-checked first. ``timeout``: :func:`turn_timeout` (#81: the Engine may
-        hold it behind a running turn, #64 convention 18)."""
+        hold it behind a running turn, #64 convention 18). ``slot`` (M5: copy ``at_turn``'s
+        inter-turn slots 1..k too) is sent only when given."""
         body: dict[str, Any] = {"at_turn": at_turn, "name": name}
         if variant_chain is not None:
             body["variant_chain"] = {"turn": variant_chain[0], "variant": variant_chain[1]}
+        if slot is not None:
+            body["slot"] = slot
         response = self._timeline(
             story_id,
             "fork",
@@ -1951,13 +2173,15 @@ class EngineClient:
         variant: str | None = None,
         include_audit: bool = False,
         include_summary: bool = False,
+        player_view: Literal["character", "story"] | None = None,
     ) -> History:
         """``GET /stories/{id}/history``: one page (whole turns, newest page first, items
         ascending) for ``viewpoint`` (``character:<id>`` or ``omniscient``; else the story's
         default), as of turn ``as_of`` (default: head, or the chain's tip), along chain
         ``variant`` (``T:V``). ``include_audit`` needs ``omniscient`` (403
-        ``omniscient_required``). A ``None`` or ``False`` argument is left out of the query
-        (#52)."""
+        ``omniscient_required``). ``player_view`` (M5) is sent only when given, whatever the
+        viewpoint (the Engine applies it to the one that resolves). A ``None`` or ``False``
+        argument is left out of the query (#52)."""
         params: dict[str, str] = {}
         if viewpoint:
             params["viewpoint"] = viewpoint
@@ -1975,6 +2199,8 @@ class EngineClient:
             params["include_audit"] = "1"
         if include_summary:
             params["include_summary"] = "1"
+        if player_view is not None:
+            params["player_view"] = player_view
         response = self._request("GET", f"{_story_path(story_id)}/history", params=params or None)
         return _parse(response, History)
 
@@ -3235,15 +3461,21 @@ class EngineClient:
         *,
         ignore_warnings: bool,
         idempotency_key: str,
+        version: int | Literal["latest"] | None = None,
     ) -> StoryProfileWrite:
         """``PUT /stories/{id}/engine-profile``: run the story under ``profile_id`` at its latest
-        version from the next turn, keeping the overrides. 422 ``invalid_profile``
-        (``details.overrides``) or ``profile_deleted``; the story's own profile is a 200 that
-        changes nothing. Two stages, as :meth:`patch_profile_overrides`."""
+        version from the next turn, keeping the overrides. ``version`` (M5) is sent only when
+        given: a number pins the story to that version, ``"latest"`` follows the latest and
+        clears a pin (422 ``validation_error`` for a version the profile doesn't have). 422
+        ``invalid_profile`` (``details.overrides``) or ``profile_deleted``; the story's own
+        profile is a 200 that changes nothing. Two stages, as :meth:`patch_profile_overrides`."""
+        body: dict[str, Any] = {"profile_id": profile_id, "ignore_warnings": ignore_warnings}
+        if version is not None:
+            body["version"] = version
         response = self._request(
             "PUT",
             f"{_story_path(story_id)}/engine-profile",
-            json={"profile_id": profile_id, "ignore_warnings": ignore_warnings},
+            json=body,
             headers={"Idempotency-Key": idempotency_key},
             timeout=MUTATION_TIMEOUT_S,
         )
@@ -3548,6 +3780,10 @@ def _scene_params(as_of: int | None, viewpoint: str | None) -> dict[str, str]:
 def _story_path(story_id: str) -> str:
     """``/stories/<id>``, the id percent-encoded (an unknown id still reaches the Engine)."""
     return f"/stories/{quote(story_id, safe='')}"
+
+
+def _story_character_path(story_id: str, character_id: str) -> str:
+    return f"{_story_path(story_id)}/characters/{quote(character_id, safe='')}"
 
 
 def _memory_path(story_id: str, memory_id: str, action: str) -> str:

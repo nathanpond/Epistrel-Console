@@ -1,0 +1,90 @@
+{
+  "id": "01JM5ST0000000000000000001",
+  "name": "Lantern Quay",
+  "owner_principal": "console:nate",
+  "status": "active",
+  "timeline_revision": 7,
+  "next_turn_index": 4,
+  "content_rating": {
+    "id": "00000000000000000000RAT002",
+    "version_id": "00000000000000000000RTV002",
+    "name": "Teen"
+  },
+  "created_at": "2026-10-30T09:12:44.512031Z",
+  "archived_at": null,
+  "characters": [
+    {
+      "id": "01JM5CH0000000000000000001",
+      "name": "Mara",
+      "is_player": true,
+      "true_age": 34,
+      "promoted_to": [],
+      "role_id": null,
+      "source": null,
+      "participation": null,
+      "weight": "major",
+      "modeled_at": null
+    },
+    {
+      "id": "01JM5CH0000000000000000002",
+      "name": "Alice",
+      "is_player": false,
+      "true_age": 29,
+      "promoted_to": [],
+      "role_id": null,
+      "source": null,
+      "participation": {
+        "role": "reactive",
+        "fixed": false
+      },
+      "weight": "major",
+      "modeled_at": null
+    },
+    {
+      "id": "01JM5CH0000000000000000003",
+      "name": "Bob",
+      "is_player": false,
+      "true_age": 52,
+      "promoted_to": [],
+      "role_id": null,
+      "source": null,
+      "participation": {
+        "role": "reactive",
+        "fixed": false
+      },
+      "weight": "major",
+      "modeled_at": null
+    },
+    {
+      "id": "01JM5CH0000000000000000004",
+      "name": "Carol",
+      "is_player": false,
+      "true_age": 41,
+      "promoted_to": [],
+      "role_id": null,
+      "source": null,
+      "participation": {
+        "role": "reactive",
+        "fixed": false
+      },
+      "weight": "major",
+      "modeled_at": null
+    }
+  ],
+  "settings": {
+    "allow_new_arrivals": true,
+    "default_output_viewpoint": "character:01JM5CH0000000000000000001",
+    "regenerate_retry_budget": 2,
+    "turn_concurrency": "reject",
+    "turn_queue_max": null
+  },
+  "engine_profile": {
+    "id": "00000000000000000000PRF001",
+    "version": 2
+  },
+  "undo_available": false,
+  "dormant_chains": [],
+  "variant_chains": [],
+  "pause": null,
+  "scenario": null
+}
