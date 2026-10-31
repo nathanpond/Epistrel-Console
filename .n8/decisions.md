@@ -1703,3 +1703,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `test_m5_knowledge_reads_live` was not run locally: the Engine on 127.0.0.1:8000 is an M2 stack without the M5 routes (left running, as asked). It runs in CI's engine-smoke job against edge.
   **Why:** No M5 Engine reachable locally without stopping another stack.
   **Issue:** #186
+- **Decision:** The position functions carry a third `@overload` (`FivePart | None` → `str | None`, `position_step` → `tuple[str, str] | None`) beside the planned `None` → `None` and `FivePart` → `str`.
+  **Why:** Callers holding an optional position (most model fields) type-check without narrowing first; behaviour unchanged.
+  **Issue:** #187
+- **Decision:** The `humanised` template filter is `console_format.humanised_filter` registered under the name `humanised`, so the module can import `console.wording.humanised` without shadowing it.
+  **Why:** One function name per module; templates see only `humanised`.
+  **Issue:** #187
+- **Decision:** The conventions 15–24 addendum is in the module docstrings now; the PR body and the #135 comment are the milestone PR's (one PR per milestone), so the addendum text is posted on #187 for the PR author to copy.
+  **Why:** No per-story PR exists to carry it; the first AC's docstring part is done here.
+  **Issue:** #187

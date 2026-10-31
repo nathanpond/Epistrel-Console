@@ -79,6 +79,7 @@ from console.story_settings import (
 )
 from console.turn_reports import ViolationRow, violation_rows
 from console.views.play import error_inspector
+from console.wording import ERASED_TEXT as ERASED_TEXT  # moved (#187); old import kept
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +94,6 @@ EMPTY = "—"
 ARCHIVED_NOTE = "Archived — unarchive to change the settings"
 SUPERSEDED_REASON = "superseded"
 CANNOT_RELAX = "A story policy can only add restrictions"
-ERASED_TEXT = "This text refers to an erased subject — nothing was saved"
 GUARDRAIL_TEXT = "Rejected by a guardrail — nothing was saved"
 CAP_TEXT = "Over a cap — nothing was saved"
 PIN_LIMIT_TEXT = "Pin limit exceeded — nothing was saved"

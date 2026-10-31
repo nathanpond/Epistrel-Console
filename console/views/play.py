@@ -107,6 +107,7 @@ from console.turn_reports import (
     violation_rows,
 )
 from console.views.ownership import OwnershipPanel, ownership_context
+from console.wording import busy_notice
 
 TRANSCRIPT_LIMIT = 50
 POLL_GRACE_S = 30.0  # polling stops this long after the turn's deadline (planner)
@@ -509,16 +510,8 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
         paused = paused_refusal(exc, story_id if isinstance(story_id, str) else None)
         return Inspector(notice=paused.text, notice_url=paused.url, **base)
     if exc.code == "story_busy":
-        reason = details.get("reason")
-        if reason == "queue_full":
-            depth = details.get("queue_depth")
-            notice = f"Story busy — queue full ({EMPTY if depth is None else depth} waiting)"
-        elif reason == "in_flight":
-            notice = "Story busy — another turn is running"
-        else:
-            notice = "Story busy"
         facts = (("Operation", _detail(details, "operation_id")), *retry)
-        return Inspector(notice=notice, facts=facts, **base)
+        return Inspector(notice=busy_notice(details), facts=facts, **base)
     if exc.code == "guardrail_violation":
         refused = {"error": {"details": details}}
         spend = input_gate_text(refused)

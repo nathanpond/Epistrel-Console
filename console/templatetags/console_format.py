@@ -11,6 +11,7 @@ from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
 from console.ids import new_ulid
+from console.wording import humanised
 
 register = template.Library()
 
@@ -84,6 +85,16 @@ def humanise(value: Any) -> str:
     if value is None or value == "":
         return EMPTY
     return str(value).replace("_", " ")
+
+
+@register.filter(name="humanised")
+def humanised_filter(value: Any) -> str:
+    """An enum value for an M5 page (#187 convention 16): ``very_cautious`` → ``Very cautious``
+    (``console.wording.humanised``); ``None`` or blank → ``—``; a non-string through ``str()``.
+    The template puts the raw value in ``title`` itself."""
+    if value is None or value == "":
+        return EMPTY
+    return humanised(str(value))
 
 
 MIB = 1024 * 1024
