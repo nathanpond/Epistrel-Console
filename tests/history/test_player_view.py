@@ -369,6 +369,31 @@ def test_narrated_by_names_the_narrator(operator_client: Client, engine: FakeEng
     assert actor_cell(plain) == "Mara"
 
 
+def render_cell(row: str) -> str:
+    cells: list[str] = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+    return cells[4]
+
+
+def test_narrated_row_leaves_the_render_column_unchanged(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#62 AC4 (#217): narration changes only the Actor cell; the Render cell is the same as
+    on the row without ``narrated_by``, with and without ``render_character_ids``."""
+    for render in (None, [MARA, JENNI]):
+        rendered: list[str] = []
+        for narrator in (JENNI, None):
+            body = filtered()
+            body["items"][2]["render_character_ids"] = render
+            if narrator is None:
+                body["items"][2].pop("narrated_by", None)
+            serve(engine, body)
+            row = row_with(page(operator_client, CHARACTER), "Tobin glances toward the kitchen.")
+            rendered.append(render_cell(row))
+            engine.reset()
+        assert rendered[0] == rendered[1]
+        assert rendered[0] == ("—" if render is None else "Mara, Jenni")
+
+
 def test_unknown_narrator_is_a_short_id(operator_client: Client, engine: FakeEngine) -> None:
     body = filtered()
     body["items"][2]["narrated_by"] = OUTSIDER
