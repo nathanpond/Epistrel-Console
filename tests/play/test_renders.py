@@ -165,6 +165,38 @@ def test_input_takes_every_actor_beat_when_no_order_beat_exists() -> None:
     assert texts(groups[0].beats) == ["One.", "Two."]
 
 
+def test_an_unordered_actors_reaction_is_not_also_an_input_beat() -> None:
+    """#224: a reaction by the (unordered) actor before the cut-off shows once, in its
+    narrator's group, not also under Input."""
+    entries = [
+        beat(1, PAT, "Pat flinches.", narrated_by=MARCUS),
+        beat(2, MARCUS, "M."),
+        beat(3, JENNI, "J."),
+    ]
+    groups = turn_renders(entries, [MARCUS, JENNI], LABELS, PAT)
+    assert headings(groups) == ["Marcus", "Jenni"]
+    assert texts(groups[0].leading) == ["Pat flinches."]
+    every = [
+        b.item.text
+        for g in groups
+        for b in (*g.leading, *g.beats, *(r for o in g.beats for r in o.reactions))
+    ]
+    assert every == ["Pat flinches.", "M.", "J."]
+
+
+def test_an_unordered_narrators_reaction_by_the_actor_goes_to_other() -> None:
+    """#224: with its narrator outside ``order`` the actor's reaction is an Other beat, once."""
+    entries = [
+        beat(1, PAT, "Hello?"),
+        beat(2, PAT, "Pat flinches.", narrated_by=JENNI),
+        beat(3, MARCUS, "M."),
+    ]
+    groups = turn_renders(entries, [MARCUS], LABELS, PAT)
+    assert headings(groups) == ["Input — Pat (player)", "Marcus", "Other beats"]
+    assert texts(groups[0].beats) == ["Hello?"]
+    assert texts(groups[2].beats) == ["Pat flinches."]
+
+
 def test_no_actor_means_no_input_group() -> None:
     """A regeneration sends no actor, so its beats go to Other beats."""
     entries = [beat(1, PAT, "Hello?"), beat(2, MARCUS, "Hi."), beat(3, JENNI, "Hey.")]
