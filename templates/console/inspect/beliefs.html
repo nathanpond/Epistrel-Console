@@ -1,9 +1,10 @@
-{% extends "console/inspect/knowledge.html" %}
+{% extends "console/inspect/knowledge.html" %}{% load inspect_tags %}
 {% comment %}
 The Knowledge tab's Beliefs section (#190): the GET filters (names = the Engine's query params;
 Apply carries no cursor), then one page of GET /stories/{id}/inspect/beliefs
 (viewpoint=omniscient, limit=100) for one character: the header and count lines, the notices,
-the rows (_belief_row.html, Engine order) and the paging links, then the Identities section.
+#191's canon notices and summary line, the rows (_belief_row.html, Engine order; #191's Canon
+column) and the paging links, then the Identities section.
 The filters and their errors stay above every error (convention 10); an invalid filter makes no
 beliefs call. Context from console/views/inspect_beliefs.py, wording from console/beliefs.py.
 {% endcomment %}
@@ -26,6 +27,8 @@ beliefs call. Context from console/views/inspect_beliefs.py, wording from consol
 {% elif beliefs %}
 <p class="beliefs-count">{{ count }}</p>
 <p class="notice first-order">{{ first_order }}</p>
+{% for notice in canon_notices %}<p class="notice canon-notice">{{ notice|code_spans }}</p>
+{% endfor %}{% if canon_summary %}<p class="canon-summary">{{ canon_summary }}</p>{% endif %}
 {% if rows %}
 <table class="beliefs">
   <thead><tr><th>Proposition</th><th>Confidence</th><th>How</th><th>Holds since</th><th>Until</th><th>About story-time</th>{% if marks is not None %}<th>Canon</th>{% endif %}{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>

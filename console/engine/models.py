@@ -1996,6 +1996,10 @@ class PredicateList(Model):
         """Predicate id → name (#135 convention 2's one registry read per page)."""
         return {p.id: p.name for p in self.predicates}
 
+    def cardinality(self) -> dict[str, str]:
+        """Predicate id → ``cardinality`` (#191's functional rule, from the same read)."""
+        return {p.id: p.cardinality for p in self.predicates}
+
 
 @dataclass(frozen=True)
 class PredicateViolation(Model):

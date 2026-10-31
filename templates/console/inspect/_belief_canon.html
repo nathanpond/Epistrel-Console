@@ -1,0 +1,7 @@
+{% load canon_tags inspect_tags %}{% comment %}
+One belief's Canon cell (#191): a console.belief_canon.CanonMark as mark. Context: story_id, and
+the row's subject and predicate (subject, predicate; from its parsed proposition). The label
+carries the meaning (class canon-contradicts / canon-agrees; the others muted) and its title the
+rule or the reason; up to 3 fact ids link their lineage view, "+N more" the Canon tab filtered
+to the subject and predicate.
+{% endcomment %}<span class="{{ mark.css_class }}" title="{{ mark.title }}">{{ mark.label }}</span>{% if mark.facts %}: {% for fact_id in mark.facts %}<a class="canon-fact" href="{% lineage_url fact_id subject predicate %}">{{ fact_id|engine_id }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% if mark.more %} <a class="canon-more" href="{% canon_filter_url subject predicate %}">+{{ mark.more }} more</a>{% endif %}{% endif %}

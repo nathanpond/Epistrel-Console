@@ -32,6 +32,7 @@ from django.template.loader import render_to_string
 from django.test import Client, override_settings
 from django.utils.html import escape
 
+from console.belief_canon import UNSETTLED, CanonMark
 from console.beliefs import belief_rows
 from console.engine.client import EngineClient
 from console.engine.models import Beliefs
@@ -63,6 +64,8 @@ BELIEFS = "/stories/{story_id}/inspect/beliefs"
 BELIEFS_PATH = f"/stories/{STORY}/inspect/beliefs"
 PREDICATES = "/stories/{story_id}/predicates"
 PREDICATES_PATH = f"/stories/{STORY}/predicates"
+FACTS = "/admin/stories/{story_id}/facts"
+NO_FACTS: dict[str, Any] = {"facts": [], "next_cursor": None, "timeline_revision": 7}
 P = "0000000000000000000000"
 BE = {n: P + f"BE{n:02d}" for n in range(1, 13)}
 PP11 = P + "PP11"
@@ -97,6 +100,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake.respond("GET", PREDICATES, 200, json=fixture("predicates_list"))
     fake.respond("GET", BELIEFS, 200, json=fixture("beliefs_page1"))
     fake.respond("GET", BELIEFS, 200, json=fixture("beliefs_page2"), query={"after": PP11})
+    fake.respond("GET", FACTS, 200, json=NO_FACTS)  # #191's canon read: nothing to compare
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
 
@@ -182,6 +186,7 @@ def test_reads_in_order_and_sub_nav(operator_client: Client, engine: FakeEngine)
         f"/stories/{STORY}",
         BELIEFS_PATH,
         PREDICATES_PATH,
+        f"/admin/stories/{STORY}/facts",  # #191's canon read
     ]
     assert sent(engine) == {"viewpoint": "omniscient", "character": ALICE, "limit": "100"}
     assert f'<a class="active" aria-current="page" href="{URL}">Beliefs</a>' in html
@@ -296,9 +301,9 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
         "Holds since",
         "Until",
         "About story-time",
+        "Canon",  # #191
         "More",
     ]
-    assert 'class="canon"' not in html
     assert 'class="actions"' not in html
 
 
@@ -306,11 +311,11 @@ def test_column_hooks_render_canon_and_actions() -> None:
     """#191's ``marks`` adds the Canon cell, #194's ``actions`` the Actions cell, before More."""
     body = Beliefs.from_json(fixture("beliefs_page1"))
     assert body is not None
-    marks = {BE[1]: "Contradicts canon"}
+    marks = {BE[1]: CanonMark(UNSETTLED)}
     (first,) = belief_rows(STORY, body.beliefs[:1], marks)
     context = {"row": first, "marks": marks, "actions": Template("ACT"), "story_id": STORY}
     html = render_to_string("console/inspect/_belief_row.html", context)
-    assert '<td class="canon">Contradicts canon</td>' in html
+    assert "No canon record settles it</span></td>" in html
     assert '<td class="actions">ACT</td>' in html
     assert html.index('class="canon"') < html.index('class="actions"') < html.index('class="more"')
     (unmarked,) = belief_rows(STORY, body.beliefs[1:2], {})

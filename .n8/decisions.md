@@ -1763,3 +1763,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The unparsable-proposition case (C2) is a view-model test, not a page test.
   **Why:** The schema-validating fake refuses a schema-invalid proposition, and the Engine never sends one (C15).
   **Issue:** #190
+- **Decision:** `CurrentFacts` carries an extra `error` (the Engine refusal behind `module_off`/`erasure_pending`).
+  **Why:** #87's held wrapper needs the original 503 (Retry-After) re-raised; `read_current_set` logs both as before, so the Canon tab is unchanged.
+  **Issue:** #191
+- **Decision:** The Beliefs view now calls `list_predicates` directly (names + new `PredicateList.cardinality()`) instead of `predicate_names`.
+  **Why:** One registry read must supply both names and cardinality; failure gives `{}` names and `None` cardinality, logged as before.
+  **Issue:** #191
+- **Decision:** Under a failed registry read, only a row whose sole candidate verdict needs the functional rule (both affirmed, equal qualifiers, other object, overlapping) reads "Not compared (predicate registry unavailable)"; other overlapping-but-irrelevant facts leave it "No canon record settles it". The registry notice shows only when some row is affected, or alongside a facts-problem notice.
+  **Why:** Pass 2's "rows needing the functional rule"; "Some beliefs weren't compared" would otherwise be false.
+  **Issue:** #191
+- **Decision:** Summary grammar: noun follows the page count, verb the contradicting count ("1 of 3 beliefs on this page contradicts canon").
+  **Why:** The AC gives only the 1-of-1 and plural forms.
+  **Issue:** #191
+- **Decision:** Under a facts problem or past turn, every row (nested/unparsed included) gets that reason; unsettled and not-compared cells carry `muted` plus `canon-unsettled`/`canon-not-compared`.
+  **Why:** AC: "the column shows Not compared" / "Every Canon cell reads…".
+  **Issue:** #191
+- **Decision:** Updated #190's `test_reads_in_order_and_sub_nav` (facts path appended) and `test_column_order` ("Canon" header) and its hook test (a `CanonMark` instead of a string); its fixture registers an empty current-facts answer.
+  **Why:** #191 makes the canon read and shows the column by design; not a weakening.
+  **Issue:** #191
+- **Decision:** Added `{% canon_filter_url subject predicate %}` in canon_tags for the "+N more" link; fact links reuse `{% lineage_url %}`.
+  **Why:** Templates can't call the URL helpers with arguments.
+  **Issue:** #191

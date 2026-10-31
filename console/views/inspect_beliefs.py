@@ -9,8 +9,10 @@ the Engine's query parameter; the cursor is ``after`` (convention 6 via
 
 Reads per render, sequential: the shell's effective config and story (cast names), then one
 ``GET /stories/{id}/inspect/beliefs`` (``viewpoint=omniscient``, ``limit=100``), then, only when
-it answered at least one row, convention 2's one registry read
-(:func:`console.predicates.predicate_names`; ``{}`` on failure: short ids). No beliefs call for
+it answered at least one row, convention 2's one registry read (``list_predicates``: the names,
+``{}`` on failure: short ids, and #191's ``cardinality``), then #191's canon comparison
+(:func:`console.belief_canon.canon_column`: at most 4 ``list_facts`` calls, none for a past
+turn or a page with no comparable row). No beliefs call for
 an invalid filter, a blank character (no modeled characters, or nothing typed when the story
 read failed). An ``after`` failing the id pattern is dropped (:data:`console.paging.
 CURSOR_DROPPED`) and never sent.
@@ -29,6 +31,7 @@ from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
 from django.views.decorators.http import require_safe
 
+from console.belief_canon import CanonColumn, canon_column
 from console.beliefs import (
     ENTER_CHARACTER,
     FIRST_ORDER_NOTICE,
@@ -46,14 +49,14 @@ from console.beliefs import (
     time_text,
 )
 from console.canon import cast_names
-from console.engine.client import EngineClientError, EngineError
+from console.engine.client import EngineClient, EngineClientError, EngineError
+from console.engine.models import PredicateList
 from console.engine_errors import log_engine_error, panel_for
 from console.forms.inspect import OMNISCIENT_TEXT, VIEWPOINT_UNRESOLVED, BeliefsForm
 from console.held import is_held
 from console.ids import is_ulid
 from console.inspect import Tab, is_module_off
 from console.paging import CAST_UNAVAILABLE, CURSOR_DROPPED, paging
-from console.predicates import predicate_names
 from console.views.inspect import OMNISCIENT_REQUIRED, InspectContext, inspect_page
 from console.wording import character_label
 
@@ -79,7 +82,7 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
         "filter_url": reverse("inspect:beliefs", args=[ctx.story_id]),
         "actions": None,  # convention 14: #194's row actions
         "actions_next": request.get_full_path(),
-        "marks": None,  # #191's Canon column
+        "marks": None,  # #191's Canon column (set once a beliefs page answered)
     }
     form.is_valid()
     if not form.valid("character"):
@@ -121,10 +124,21 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
             context["beliefs_error"] = panel_for(exc)
         return context
 
-    rows = belief_rows(ctx.story_id, body.beliefs, context["marks"])
-    if rows:
-        context["predicate_names"] = predicate_names(request, ctx.client, ctx.story_id)
     as_of, proposition = query["as_of"], query["proposition_id"]
+    column = CanonColumn({})
+    if body.beliefs:
+        registry = _registry(request, ctx.client, ctx.story_id)
+        context["predicate_names"] = {} if registry is None else registry.names()
+        column = canon_column(
+            request,
+            ctx.client,
+            ctx.story_id,
+            body.beliefs,
+            body.revision,
+            cardinality=None if registry is None else registry.cardinality(),
+            as_of=as_of,
+        )
+    rows = belief_rows(ctx.story_id, body.beliefs, column.marks)
     filtered = as_of is not None or proposition is not None
     context.update(
         beliefs=body,
@@ -132,6 +146,9 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
         header=header_text(label, time, body.revision),
         count=count_text(len(rows), partial=bool(cursor or body.next_after), filtered=filtered),
         first_order=FIRST_ORDER_NOTICE,
+        marks=column.marks,
+        canon_notices=column.notices,
+        canon_summary=column.summary,
         player_notice=PLAYER_NOTICE if player else None,
         empty=empty_text(
             label, paged=cursor is not None, proposition=bool(proposition), as_of=as_of
@@ -145,6 +162,16 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
         **paging(params, cursor, body.next_after, param=CURSOR),
     )
     return context
+
+
+def _registry(request: HttpRequest, client: EngineClient, story_id: str) -> PredicateList | None:
+    """Convention 2's one registry read, supplying both the predicate names and #191's
+    ``cardinality``; ``None`` when it fails (logged: short ids, no functional rule)."""
+    try:
+        return client.list_predicates(story_id)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None
 
 
 @require_safe

@@ -68,3 +68,11 @@ def supersede_url(context: template.Context, fact_id: str, next_url: Any = None)
     if isinstance(next_url, str) and next_url:
         return f"{url}?{urlencode({'next': next_url})}"
     return url
+
+
+@register.simple_tag(takes_context=True)
+def canon_filter_url(context: template.Context, subject: Any, predicate: Any) -> str:
+    """``{% canon_filter_url subject predicate %}``: the Canon tab filtered to one subject and
+    predicate, ``inspect:canon?subject=&predicate=`` and nothing else (#191's "+N more")."""
+    url = reverse("inspect:canon", args=[str(context.get("story_id"))])
+    return f"{url}?{urlencode({'subject': str(subject), 'predicate': str(predicate)})}"
