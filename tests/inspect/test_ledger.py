@@ -9,13 +9,17 @@ Runs against the real urlconf on the schema-validating fake Engine. Page 1 is
   undischarged;
 - ``TH2``: resolved by ``FR1`` (consequential), a negated ``holds(Mara, ?)`` with the literal
   slot open, turn 4 · v2 · beat 1; entries ``EN2`` (discharged by the logged ``QP1``,
-  dependence) and ``EN3`` (by the unlogged ``QP2``, null mode);
+  dependence) and ``EN3`` (by the unlogged ``QP2``, null mode); two could-have-known flags
+  (#208): Tobin mild, gap 600, then Mara strong, gap 64800;
 - ``TH3``: expired, subject open with a known ``40 kg (quantity)`` literal, a text-only
   candidate, ``parent_fact_id`` ``FP1``, a null position and valid time; no entries;
-- ``EN4``: owed on the hidden proposition ``PP9``; ``EN5``: on ``TH9``, not on the page.
+- ``EN4``: owed on the hidden proposition ``PP9``; ``EN5``: on ``TH9``, not on the page;
+- hidden facts (#208): ``HF1`` ``located_at(Tobin, …PA1)``, scope ``characters`` known to Mara
+  and the non-cast ``CX1``, valid ``[30, …)``, committed turn 3; ``HF2`` negated
+  ``holds(Mara, …PA3)``, scope ``engine``, valid ``[…, 90)``, committed turn 0.
 
-Page 2 (``ledger_page2.json``, ``next_after_id`` null) holds ``TH4`` with ``EN6``, and a
-hidden-fact entry ``EN7`` the Console leaves out off the first page."""
+Page 2 (``ledger_page2.json``, ``next_after_id`` null) holds ``TH4`` with ``EN6``, a
+hidden-fact entry ``EN7`` the Console leaves out off the first page, and ``hidden_facts: []``."""
 
 import copy
 import json
@@ -440,7 +444,8 @@ def test_entries_sit_under_their_thunk(operator_client: Client, engine: FakeEngi
         "<thead><tr><th>Entry</th><th>Kind</th><th>Introduced</th><th>Discharged by</th>"
         "<th>Mode</th></tr></thead>"
     ) in group
-    assert 'colspan="12"' in html
+    assert 'colspan="13"' in html
+    assert 'colspan="12"' not in html
     assert '<span class="muted no-entries">No ledger entries</span>' in entries_of(html, TH3)
 
 
@@ -523,7 +528,8 @@ def test_counts_on_a_page_with_a_next_page(operator_client: Client, engine: Fake
     counts = text(re.findall(r'<p class="ledger-counts">(.*?)</p>', tab(operator_client), re.S)[0])
     assert counts == (
         "Story revision 9 · Thunks on this page: open 1 · resolved 1 · expired 1 · "
-        "Entries on this page: discharged 3 · undischarged 2"
+        "Entries on this page: discharged 3 · undischarged 2 · "
+        "Could-have-known flags on this page: 1"
     )
 
 
@@ -687,3 +693,363 @@ def test_odd_sketch_fields_go_to_extras() -> None:
     assert sketch.extras == {"subject_text": 7, "span": "x", "future": True}
     assert [c.text for c in sketch.candidates] == ["b"]
     assert sketch.skipped_candidates == ((1, {"text": "a", "confidence": "high"}),)
+
+
+# --- hidden facts (#208) -------------------------------------------------------------------------
+
+HF1, HF2, HF3, CX1, PA1, PA3 = (P + s for s in ("HF1", "HF2", "HF3", "CX1", "PA1", "PA3"))
+HIDDEN_HEADING = (
+    '<h2 id="hidden-facts">Hidden facts <small class="muted">not affected by the filters</small>'
+    "</h2>"
+)
+ENGINE_ONLY = (
+    '<span title="Scoped to the engine: no character\'s partition holds it">'
+    "Nobody (engine only)</span>"
+)
+
+
+def hidden_facts(html: str) -> str:
+    """The section, from its heading to the next heading or the paging line."""
+    found = re.search(r'<h2 id="hidden-facts">(.*?)(?=<h2>|<p class="paging">)', html, re.S)
+    assert found is not None
+    return found.group(1)
+
+
+def hidden_row(html: str, fid: str) -> str:
+    found = re.search(rf'<tr id="hf-{fid}">(.*?)</tr>', html, re.S)
+    assert found is not None, fid
+    return found.group(1)
+
+
+def hidden_fact(fid: str, **over: Any) -> dict[str, Any]:
+    found: dict[str, Any]
+    (found,) = [f for f in fixture("ledger_page1")["hidden_facts"] if f["fact_id"] == fid]
+    found.update(over)
+    return found
+
+
+def unvalidated(engine: FakeEngine, body: dict[str, Any]) -> None:
+    """Answer the ledger read with a shape the schema refuses (a malformed item)."""
+    engine.side_effect("GET", LEDGER, lambda request: httpx.Response(200, json=body))
+
+
+def test_hidden_facts_render_on_the_first_page(operator_client: Client, engine: FakeEngine) -> None:
+    html = tab(operator_client)
+    assert HIDDEN_HEADING in html
+    # After the thunk table and the flag legend, above "Owed on hidden facts".
+    order = [
+        html.index('<table class="ledger">'),
+        html.index('<p class="muted flag-legend">'),
+        html.index(HIDDEN_HEADING),
+        html.index("<h2>Owed on hidden facts</h2>"),
+    ]
+    assert order == sorted(order)
+    section_html = hidden_facts(html)
+    assert '<table class="hidden-facts">' in section_html
+    assert (
+        "<thead><tr><th>Fact</th><th>Proposition</th><th>Known to</th><th>Valid</th>"
+        "<th>Committed</th></tr></thead>"
+    ) in section_html
+    assert re.findall(r'<tr id="hf-([^"]+)">', section_html) == [HF1, HF2]
+    r1 = hidden_row(html, HF1)
+    assert cell(r1, "fact") == (
+        f'<a href="/stories/{STORY}/inspect/canon/{HF1}/lineage/?subject={TOBIN}&amp;'
+        f'predicate={LOC}"><code title="{HF1}">…4P7R0HF1</code></a>'
+    )
+    proposition = cell(r1, "proposition")
+    assert f'<span class="character" title="{TOBIN}">Tobin</span>' in proposition
+    assert ">located_at</a>" in proposition
+    assert f'<code title="{PA1}">…4P7R0PA1</code>' in proposition
+    assert cell(r1, "valid") == "[30, …) min"
+    assert cell(r1, "committed") == (
+        f'<a href="/stories/{STORY}/history/?before_turn=4#turn-3-0">turn 3</a>'
+    )
+    r2 = hidden_row(html, HF2)
+    assert '<strong class="polarity">NOT</strong>' in cell(r2, "proposition")
+    assert cell(r2, "valid") == "[…, 90) min"
+    # Turn 0 is linked too.
+    assert cell(r2, "committed") == (
+        f'<a href="/stories/{STORY}/history/?before_turn=1#turn-0-0">turn 0</a>'
+    )
+
+
+def test_a_null_committing_turn_reads_a_dash(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond(
+        "GET", LEDGER, 200, json=page1(hidden_facts=[hidden_fact(HF1, narrative_turn=None)])
+    )
+    assert cell(hidden_row(tab(operator_client), HF1), "committed") == "—"
+
+
+def test_hidden_facts_are_not_rendered_on_page_two(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", LEDGER, 200, json=fixture("ledger_page2"))
+    html = tab(operator_client, f"?after_id={TH3}")
+    assert 'id="hidden-facts"' not in html
+    assert "hidden-facts-none" not in html
+    # Complement: whatever the list holds off the first page, it's ignored.
+    engine.respond(
+        "GET", LEDGER, 200, json={**fixture("ledger_page2"), "hidden_facts": [hidden_fact(HF1)]}
+    )
+    html = tab(operator_client, f"?after_id={TH3}")
+    assert 'id="hidden-facts"' not in html
+    assert f'id="hf-{HF1}"' not in html
+
+
+def test_engine_scope_reads_nobody(operator_client: Client, engine: FakeEngine) -> None:
+    assert cell(hidden_row(tab(operator_client), HF2), "known-to") == ENGINE_ONLY
+    # Any characters it carries are ignored.
+    engine.respond(
+        "GET", LEDGER, 200, json=page1(hidden_facts=[hidden_fact(HF2, characters=[MARA])])
+    )
+    assert cell(hidden_row(tab(operator_client), HF2), "known-to") == ENGINE_ONLY
+
+
+def test_known_to_names_cast_and_short_ids_others(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = tab(operator_client)
+    assert cell(hidden_row(html, HF1), "known-to") == (
+        f'<span class="character" title="{MARA}">Mara (player)</span>, '
+        f'<code title="{CX1}">…4P7R0CX1</code>'
+    )
+    engine.respond(
+        "GET",
+        LEDGER,
+        200,
+        json=page1(
+            hidden_facts=[
+                hidden_fact(HF1, characters=[]),
+                hidden_fact(HF2, scope="party_only", characters=[TOBIN]),
+                hidden_fact(HF1, fact_id=HF3, scope="Engine", characters=[]),
+            ]
+        ),
+    )
+    html = tab(operator_client)
+    assert cell(hidden_row(html, HF1), "known-to") == '<span class="muted">no character</span>'
+    # An unknown scope is humanised and titled with the raw value, then its characters.
+    assert cell(hidden_row(html, HF2), "known-to") == (
+        f'<span title="party_only">Party only</span>: '
+        f'<span class="character" title="{TOBIN}">Tobin</span>'
+    )
+    # Scope matching is exact and case-sensitive.
+    assert cell(hidden_row(html, HF3), "known-to") == '<span title="Engine">Engine</span>'
+
+
+def test_empty_hidden_facts_reads_none(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", LEDGER, 200, json=page1(hidden_facts=[]))
+    html = tab(operator_client)
+    assert HIDDEN_HEADING in html
+    assert '<p class="hidden-facts-none">None</p>' in hidden_facts(html)
+    assert '<table class="hidden-facts">' not in html
+    # Whatever the thunk table shows.
+    engine.respond(
+        "GET", LEDGER, 200, json=page1(thunks=[], ledger=[], hidden_facts=[], next_after_id=None)
+    )
+    html = tab(operator_client)
+    assert '<p class="ledger-none">' in html
+    assert '<p class="hidden-facts-none">None</p>' in hidden_facts(html)
+
+
+def test_malformed_hidden_fact_goes_to_the_section_more(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    bad = {"fact_id": HF3, "scope": "characters"}
+    unvalidated(engine, page1(hidden_facts=[hidden_fact(HF1), bad]))
+    html = tab(operator_client)
+    section_html = hidden_facts(html)
+    assert re.findall(r'<tr id="hf-([^"]+)">', section_html) == [HF1]
+    unread = re.search(
+        r'<details class="hidden-facts-unread"><summary>More</summary>(.*?)</details>',
+        section_html,
+        re.S,
+    )
+    assert unread is not None
+    assert "<p>Some hidden facts couldn't be read; the Engine's list as sent:</p>" in unread[1]
+    assert HF3 in unread[1]
+    assert HF1 in unread[1]
+    assert "hidden-facts-none" not in section_html
+
+
+def test_unparseable_proposition_keeps_its_row(operator_client: Client, engine: FakeEngine) -> None:
+    unvalidated(engine, page1(hidden_facts=[hidden_fact(HF1, proposition={"bogus": 7})]))
+    r = hidden_row(tab(operator_client), HF1)
+    proposition = cell(r, "proposition")
+    assert proposition.startswith('<details class="raw-proposition"><summary>More</summary>')
+    assert "&quot;bogus&quot;: 7" in proposition
+    # The other cells render; the fact link is bare without a subject and predicate.
+    assert cell(r, "fact") == (
+        f'<a href="/stories/{STORY}/inspect/canon/{HF1}/lineage/">'
+        f'<code title="{HF1}">…4P7R0HF1</code></a>'
+    )
+    assert "Mara (player)" in cell(r, "known-to")
+    assert cell(r, "valid") == "[30, …) min"
+    assert "turn 3" in cell(r, "committed")
+
+
+def test_hidden_facts_ignore_filters(operator_client: Client, engine: FakeEngine) -> None:
+    html = tab(operator_client, "?state=open&discharged=undischarged")
+    assert re.findall(r'<tr id="hf-([^"]+)">', hidden_facts(html)) == [HF1, HF2]
+    assert len(reads(engine)) == 1
+
+
+def test_a_failed_story_read_degrades_hidden_facts_to_ids(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", STORY_PATH, 503, json=error_json("database_unavailable", "down"))
+    engine.respond("GET", PREDICATES, 503, json=error_json("database_unavailable", "down"))
+    r = hidden_row(tab(operator_client), HF1)
+    assert cell(r, "known-to") == (
+        f'<code title="{MARA}">…4P7R0T3A</code>, <code title="{CX1}">…4P7R0CX1</code>'
+    )
+    proposition = cell(r, "proposition")
+    assert f'<code title="{TOBIN}">…4P7R0T3B</code>' in proposition
+    assert f'<code title="{LOC}">…4P7R0PR1</code>' in proposition
+
+
+def test_failed_ledger_read_has_no_hidden_section(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", LEDGER, 503, json=error_json("ledger_unavailable", "later"))
+    html = tab(operator_client)
+    assert "Engine error 503 ledger_unavailable" in html
+    assert 'id="hidden-facts"' not in html
+    engine.respond("GET", LEDGER, 404, json=error_json("not_found", "gone"))
+    html = tab(operator_client)
+    assert NOT_FOUND in html
+    assert 'id="hidden-facts"' not in html
+
+
+def test_one_ledger_read_per_render(operator_client: Client, engine: FakeEngine) -> None:
+    html = tab(operator_client)
+    assert f'id="hf-{HF1}"' in html
+    assert len(reads(engine)) == 1
+    # No separate hidden-facts read: only the shell's reads, the registry and the ledger.
+    assert {r.url.path for r in engine.requests} == {
+        f"/stories/{STORY}",
+        f"/stories/{STORY}/effective-config",
+        f"/stories/{STORY}/predicates",
+        LEDGER_PATH,
+    }
+
+
+# --- could-have-known flags (#208) ---------------------------------------------------------------
+
+
+def flag_line(name: str, severity: str, title: str, gap: str, css: str) -> str:
+    return (
+        f'<span class="flag-line {css}">{name} · <span title="{title}">{severity}</span> · '
+        f"gap {gap} min</span>"
+    )
+
+
+TOBIN_REF = f'<span class="character" title="{TOBIN}">Tobin</span>'
+MARA_REF = f'<span class="character" title="{MARA}">Mara (player)</span>'
+
+
+def test_could_have_known_lines_and_titles(operator_client: Client, engine: FakeEngine) -> None:
+    html = tab(operator_client)
+    assert "<th>Level</th><th>Could have known</th><th>Rejected bindings</th>" in html
+    assert cell(row(html, TH2), "could-have-known") == (
+        flag_line(TOBIN_REF, "Mild", "under one story-day", "600", "flag-mild")
+        + "<br>"
+        + flag_line(MARA_REF, "Strong", "30 story-days or more", "64,800", "flag-strong")
+    )
+    flags = [
+        {"character_id": MARA, "severity": "moderate", "gap_minutes": 4320},
+        {"character_id": CX1, "severity": "very_strong", "gap_minutes": 9},
+        {"character_id": MARA, "severity": "Mild", "gap_minutes": 1},
+        {"character_id": MARA, "severity": "moderate", "gap_minutes": 4320},
+    ]
+    # Flags show whatever the thunk's state (TH1 is open).
+    engine.respond(
+        "GET", LEDGER, 200, json=page1(thunks=[thunk(TH1, could_have_known_flags=flags)])
+    )
+    lines = cell(row(tab(operator_client), TH1), "could-have-known").split("<br>")
+    moderate = flag_line(MARA_REF, "Moderate", "under 30 story-days", "4,320", "flag-moderate")
+    assert lines == [
+        moderate,
+        flag_line(
+            f'<code title="{CX1}">…4P7R0CX1</code>',
+            "Very strong",
+            "very_strong",
+            "9",
+            "flag-other",
+        ),
+        # Severity matching is exact and case-sensitive.
+        flag_line(MARA_REF, "Mild", "Mild", "1", "flag-other"),
+        moderate,  # duplicates kept
+    ]
+
+
+def test_no_flags_reads_a_dash(operator_client: Client, engine: FakeEngine) -> None:
+    html = tab(operator_client)
+    assert cell(row(html, TH1), "could-have-known") == "—"
+    assert cell(row(html, TH3), "could-have-known") == "—"
+    assert "could_have_known_flags_as_sent" not in html
+
+
+def test_malformed_flag_goes_to_more(operator_client: Client, engine: FakeEngine) -> None:
+    good = {"character_id": TOBIN, "severity": "mild", "gap_minutes": 600}
+    bad = {"character_id": MARA, "severity": "strong", "gap_minutes": "lots"}
+    sketch = thunk(TH1)["sketch"]
+    sketch["could_have_known_flags_as_sent"] = "from the sketch"
+    unvalidated(
+        engine,
+        page1(
+            thunks=[
+                thunk(TH1, sketch=sketch, could_have_known_flags=[good, bad]),
+                thunk(TH3, could_have_known_flags=[bad]),
+            ],
+            next_after_id=None,
+        ),
+    )
+    html = tab(operator_client)
+    r1 = row(html, TH1)
+    # The typed flag still renders.
+    assert cell(r1, "could-have-known") == flag_line(
+        TOBIN_REF, "Mild", "under one story-day", "600", "flag-mild"
+    )
+    more = re.search(r"<pre>(.*?)</pre>", cell(r1, "more"), re.S)
+    assert more is not None
+    shown = json.loads(more[1].replace("&quot;", '"'))
+    # Set after the sketch's extras: it wins the name clash.
+    assert shown["could_have_known_flags_as_sent"] == [good, bad]
+    # A thunk whose only flag is unread reads "—" and still counts as flagged.
+    assert cell(row(html, TH3), "could-have-known") == "—"
+    assert "could_have_known_flags_as_sent" in cell(row(html, TH3), "more")
+    counts = text(re.findall(r'<p class="ledger-counts">(.*?)</p>', html, re.S)[0])
+    assert counts.endswith("Could-have-known flags: 2")
+
+
+@pytest.mark.parametrize(
+    ("query", "body", "label"),
+    [
+        ("", {"next_after_id": None}, ""),
+        ("?state=open", {"next_after_id": None}, " matching filters"),
+        (f"?after_id={TH3}", {"next_after_id": None}, " on this page"),
+        ("?discharged=discharged", {}, " on this page, matching filters"),
+    ],
+)
+def test_flag_count_uses_the_counts_label(
+    operator_client: Client, engine: FakeEngine, query: str, body: dict[str, Any], label: str
+) -> None:
+    engine.respond("GET", LEDGER, 200, json=page1(**body))
+    html = tab(operator_client, query)
+    assert (f'<span class="flag-counts">Could-have-known flags{label}: 1</span></p>') in html
+    # Shown when 0.
+    engine.respond("GET", LEDGER, 200, json=page1(thunks=[thunk(TH1)], **body))
+    html = tab(operator_client, query)
+    assert f'<span class="flag-counts">Could-have-known flags{label}: 0</span></p>' in html
+
+
+def test_the_flag_legend_sits_under_a_thunk_table_only(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    legend = (
+        '<p class="muted flag-legend">Could have known: the resolution bound a character who, by '
+        "story-time, could already have known it. A warning only; the resolution stands.</p>"
+    )
+    assert legend in tab(operator_client)
+    engine.respond("GET", LEDGER, 200, json=page1(thunks=[], ledger=[], next_after_id=None))
+    assert "flag-legend" not in tab(operator_client)

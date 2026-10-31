@@ -3,8 +3,10 @@
 {% comment %}
 The Ledger tab (#148): the GET filters (state, discharged; Apply drops after_id), then one page of
 GET /stories/{id}/inspect/ledger (viewpoint=omniscient, limit=100): the counts beside the story's
-revision, one row per thunk (_thunk_row.html) with its entries under it, then the "Owed on hidden
-facts" group (first page only) and "Entries for thunks not on this page". The form stays above
+revision (and the could-have-known flag count, #208), one row per thunk (_thunk_row.html, with its
+"Could have known" column) with its entries under it and the flag legend, then the "Hidden facts"
+section (#208, _hidden_facts.html; first page only, unfiltered), the "Owed on hidden facts" group
+(first page only) and "Entries for thunks not on this page". The form stays above
 every error; an invalid filter makes no ledger call. Rows come from console/ledger.py.
 {% endcomment %}
 {% block tab_content %}
@@ -19,18 +21,20 @@ every error; an invalid filter makes no ledger call. Rows come from console/ledg
 {% elif ledger_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
 {% elif ledger_error %}{% include "console/_engine_error.html" with engine_error=ledger_error %}
 {% elif ledger %}{% with c=ledger.counts %}
-<p class="ledger-counts">Story revision {{ ledger.revision }} · <span class="thunk-counts">Thunks{% if c.label %} {{ c.label }}{% endif %}: {% for state, n in c.states %}{{ state }} {{ n|count }}{% if not forloop.last %} · {% endif %}{% endfor %}{% if c.other %} · other {{ c.other|count }}{% endif %}</span> · <span class="entry-counts">Entries{% if c.label %} {{ c.label }}{% endif %}: discharged {{ c.discharged|count }} · undischarged {{ c.undischarged|count }}</span></p>
+<p class="ledger-counts">Story revision {{ ledger.revision }} · <span class="thunk-counts">Thunks{% if c.label %} {{ c.label }}{% endif %}: {% for state, n in c.states %}{{ state }} {{ n|count }}{% if not forloop.last %} · {% endif %}{% endfor %}{% if c.other %} · other {{ c.other|count }}{% endif %}</span> · <span class="entry-counts">Entries{% if c.label %} {{ c.label }}{% endif %}: discharged {{ c.discharged|count }} · undischarged {{ c.undischarged|count }}</span> · <span class="flag-counts">Could-have-known flags{% if c.label %} {{ c.label }}{% endif %}: {{ c.flagged|count }}</span></p>
 {% endwith %}
 {% if cast_unavailable %}<p class="muted cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
 {% if ledger.rows %}
 <table class="ledger">
-  <thead><tr><th>Thunk</th><th>Description</th><th>Open slot</th><th>Proposition</th><th>State</th><th>Introduced</th><th>Salient</th><th>Valid time</th><th>Resolved by</th><th>Level</th><th>Rejected bindings</th><th>More</th></tr></thead>
+  <thead><tr><th>Thunk</th><th>Description</th><th>Open slot</th><th>Proposition</th><th>State</th><th>Introduced</th><th>Salient</th><th>Valid time</th><th>Resolved by</th><th>Level</th><th>Could have known</th><th>Rejected bindings</th><th>More</th></tr></thead>
   <tbody>
   {% for row in ledger.rows %}{% include "console/inspect/_thunk_row.html" %}
   {% endfor %}
   </tbody>
 </table>
+<p class="muted flag-legend">Could have known: the resolution bound a character who, by story-time, could already have known it. A warning only; the resolution stands.</p>
 {% else %}<p class="ledger-none">{{ empty.text }}</p>{% endif %}
+{% if ledger.hidden_facts is not None %}{% include "console/inspect/_hidden_facts.html" with rows=ledger.hidden_facts unread=ledger.hidden_facts_unread story_id=story_id predicate_names=predicate_names cast_names=cast_names %}{% endif %}
 {% if ledger.hidden %}
 <h2>Owed on hidden facts</h2>
 {% include "console/inspect/_ledger_entries.html" with entries=ledger.hidden proposition=True %}

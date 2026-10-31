@@ -1853,3 +1853,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Fixtures use the shared Alice/Bob/Pat cast (Alice stands in for the story's "Carol") and a source of Pat for the partial row.
   **Why:** #188's shared cast fixture; C15 shapes checked against Engine origin/main `ExposureItemBody`.
   **Issue:** #193
+- **Decision:** `console.ledger.hidden_fact_row` imports `console.scene.valid_text` inside the function.
+  **Why:** `console.scene` already imports `console.ledger.fact_link`, so a module-level import is circular. The AC names `valid_text`, so the shared formatter is used rather than `positions.valid_minutes_text`.
+  **Issue:** #208
+- **Decision:** `ledger_view(hidden_facts_unread=)` is typed `list[Any] | dict[str, Any] | None` (the brief said `list[Any] | None`).
+  **Why:** That's the type of `Ledger.unparsed` values (a wrong-container value is kept raw too), so the view passes `.get("hidden_facts")` without a cast.
+  **Issue:** #208
+- **Decision:** When every hidden fact is unread, the section shows only the unread `<details>`, with no empty table and no "None" line.
+  **Why:** "None" would be false when the Engine sent facts. The AC shows "None" only when the list is empty and nothing is unparsed.
+  **Issue:** #208
+- **Decision:** In the fixtures, TH2 (resolved) carries the mild (Tobin, 600) and strong (Mara, 64800) flags. HF1 is `characters` [Mara, non-cast CX1], turn 3. HF2 is `engine`, turn 0, which exercises the turn-0 link.
+  **Why:** The test plan's amended fixture. The shapes were checked against the recorded `HiddenFactBody`/`CouldHaveKnownFlagBody` (C15).
+  **Issue:** #208
