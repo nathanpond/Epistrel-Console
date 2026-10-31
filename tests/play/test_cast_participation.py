@@ -11,6 +11,7 @@ import pytest
 from django.contrib.messages import get_messages
 from django.http import HttpRequest
 from django.test import Client, override_settings
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from console.cast_panel import Shown
 from console.engine.client import EngineClient
@@ -388,6 +389,26 @@ def test_an_invalid_weight_makes_no_call(operator_client: Client, engine: FakeEn
     response = operator_client.post(WEIGHT_URL, {"idempotency_key": KEY, "weight": "huge"})
     assert flashes(response) == [("error", "Choose a weight.")]
     assert writes(engine, "POST") == []
+
+
+@pytest.mark.parametrize("path", ["weight", "participation"])
+def test_hostile_ids_never_redirect_off_site(
+    operator_client: Client, engine: FakeEngine, path: str
+) -> None:
+    """The return address is built from the URL's ids, so an off-site-looking id stays local."""
+    url = f"/stories/%5C%5Cevil.example/characters/@evil.example/{path}/"
+    response = operator_client.post(url, {"idempotency_key": KEY, "weight": "huge"})
+    location = response["Location"]
+    assert location.startswith("/stories/"), location
+    assert url_has_allowed_host_and_scheme(location, allowed_hosts={"testserver"})
+
+
+def test_an_off_site_return_address_falls_back_to_the_story_list(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(story_characters, "cast_row_url", lambda *_: "https://evil.example/")
+    response = operator_client.post(WEIGHT_URL, {"idempotency_key": KEY, "weight": "huge"})
+    assert response["Location"] == "/stories/"
 
 
 # --- gating and refusals -----------------------------------------------------------------------

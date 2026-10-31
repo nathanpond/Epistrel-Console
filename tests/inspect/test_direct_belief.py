@@ -36,6 +36,7 @@ from console.forms.beliefs import (
     SCALAR_INVALID,
     UNKNOWN_PREDICATE_TEXT,
     nested_depth,
+    scalar_syntax,
 )
 from console.inspect import GATE_UNREAD
 from console.models import EngineOperation
@@ -404,6 +405,45 @@ def test_scalar_syntax_refused_zero_calls(
     operator_client: Client, engine: FakeEngine, typed: str
 ) -> None:
     html = post(operator_client, confidence_scalar=typed)
+    assert errors_of(html, "confidence_scalar") == [SCALAR_INVALID]
+    assert writes(engine) == []
+
+
+@pytest.mark.parametrize(
+    ("typed", "valid"),
+    [
+        ("0", True),
+        (".5", True),
+        ("0.300", True),
+        ("1.", False),
+        (".", False),
+        ("", False),
+        ("0.5.1", False),
+        ("1E-1", False),
+        ("+0.5", False),
+        ("0 5", False),
+    ],
+)
+def test_scalar_syntax(typed: str, valid: bool) -> None:
+    assert scalar_syntax(typed) is valid
+
+
+def test_scalar_syntax_is_linear_on_a_long_adversarial_string() -> None:
+    """CodeQL py/polynomial-redos: the old regex backtracked on a long run of digits."""
+    zeros = "0" * 50000
+    assert scalar_syntax(zeros) is True
+    assert scalar_syntax(zeros + "x") is False
+    assert scalar_syntax(zeros + "." + zeros) is True
+    assert scalar_syntax(zeros + "." + zeros + "x") is False
+
+
+def test_a_long_zero_scalar_is_sent_as_zero(operator_client: Client, engine: FakeEngine) -> None:
+    post(operator_client, confidence_scalar="0" * 50000)
+    assert sent(engine)["confidence_scalar"] == 0
+
+
+def test_a_long_adversarial_scalar_is_refused(operator_client: Client, engine: FakeEngine) -> None:
+    html = post(operator_client, confidence_scalar="0" * 50000 + "x")
     assert errors_of(html, "confidence_scalar") == [SCALAR_INVALID]
     assert writes(engine) == []
 

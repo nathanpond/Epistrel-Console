@@ -44,8 +44,8 @@ ATTRIBUTED_PREFIX = "attributed_to_"
 ATTRIBUTED_FIELD = re.compile(r"^attributed_to_\d+$")
 DEPTH_SETTING = "character_knowledge.nested_beliefs.depth"
 DEPTH_DEFAULT, DEPTH_MIN, DEPTH_MAX = 2, 2, 5
-SCALAR_PATTERN = re.compile(r"^\d*\.?\d+$")
 THOUSANDTH = Decimal("0.001")
+
 
 CHOOSE_CHARACTER = "Choose a character"
 AS_IN_PROPOSITION = "(as in the proposition)"
@@ -90,6 +90,15 @@ ENGINE_FIELDS: Mapping[str, str] = {
     "attributed_holder": NESTED_FIELDSET,
     "attributed_confidence_level": "attributed_confidence_level",
 }
+
+
+def scalar_syntax(text: str) -> bool:
+    """Whether ``text`` is ``digits``, ``.digits`` or ``digits.digits`` (no sign, exponent,
+    comma or trailing dot), checked in one linear pass (no backtracking regex on typed input)."""
+    whole, dot, fraction = text.partition(".")
+    if not dot:
+        return whole.isdecimal()
+    return (not whole or whole.isdecimal()) and fraction.isdecimal()
 
 
 def nested_depth(effective: Mapping[str, Any] | None) -> int:
@@ -248,7 +257,7 @@ class DirectBeliefForm(forms.Form):
         typed = str(self.cleaned_data.get("confidence_scalar") or "").strip()
         if not typed:
             return None
-        if not SCALAR_PATTERN.match(typed):
+        if not scalar_syntax(typed):
             raise forms.ValidationError(SCALAR_INVALID)
         try:
             value = Decimal(typed)

@@ -5,6 +5,7 @@ Run by ci.yml's engine-smoke job against the Engine ``edge`` image; locally, see
 """
 
 import re
+import time
 
 import pytest
 from django.test import Client, override_settings
@@ -429,6 +430,22 @@ def test_play_one_turn_live(url: str, key: str, operator_client: Client, operato
         client.delete_story(story_id, idempotency_key=new_ulid())
 
 
+def _delete_when_idle(client: EngineClient, story_id: str, *, wait: float = 60.0) -> None:
+    """Delete the story, retrying while the Engine answers 423 ``story_busy`` (a turn on a
+    partitioned profile leaves background knowledge jobs running; the delete must wait for
+    them), up to ``wait`` seconds."""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            client.delete_story(story_id, idempotency_key=new_ulid())
+            return
+        except EngineError as exc:
+            if exc.code != "story_busy" or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
+@pytest.mark.engine_auth
 def test_two_primary_sequential_turn_live(
     url: str, key: str, operator_client: Client, operator: object
 ) -> None:
@@ -490,7 +507,7 @@ def test_two_primary_sequential_turn_live(
         assert isinstance(row.response, dict)
         assert len(row.response["order"]) == 2, row.response
     finally:
-        client.delete_story(story_id, idempotency_key=new_ulid())
+        _delete_when_idle(client, story_id)
 
 
 def _structured_profile(client: EngineClient) -> str:
@@ -552,13 +569,13 @@ def test_m5_knowledge_reads_live(url: str, key: str) -> None:
         stories.append(on)
         off = _knowledge_story(client, profile, 1)
         stories.append(off)
-        [player] = [c.id for c in client.get_story(on).characters if c.is_player]
+        [player] = [c.id for c in client.get_story(on).cast if c.is_player]
         beliefs = client.inspect_beliefs(on, player)
         assert beliefs.beliefs == []
         assert beliefs.character == player
         assert client.inspect_divergences(on).items == []
         assert client.inspect_exposures(on, character=player).items == []
-        [off_player] = [c.id for c in client.get_story(off).characters if c.is_player]
+        [off_player] = [c.id for c in client.get_story(off).cast if c.is_player]
         for read in (
             lambda: client.inspect_beliefs(off, off_player),
             lambda: client.inspect_divergences(off),
@@ -569,4 +586,4 @@ def test_m5_knowledge_reads_live(url: str, key: str) -> None:
             assert caught.value.code == "module_off"
     finally:
         for story_id in stories:
-            client.delete_story(story_id, idempotency_key=new_ulid())
+            _delete_when_idle(client, story_id)

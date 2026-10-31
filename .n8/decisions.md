@@ -2174,3 +2174,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `create_body` puts `cast.groups` back after `drop_empty`, with null entries dropped.
   **Why:** The AC exempts groups from `drop_empty`. Doing it in `create_body` leaves `drop_empty`'s other callers alone.
   **Issue:** #206
+- **Decision:** (Rule 1) CI fix: `test_two_primary_sequential_turn_live` is now `engine_auth`, so the release smoke (`engine_live and not engine_auth`, Engine 0.1.1 with no M5 routes) leaves it out, like the other two M5 live tests (`test_m5_knowledge_reads_live` was already marked, and `test_story_settings_live.py` carries the mark module-wide). Its cleanup goes through `_delete_when_idle`, which retries the delete on 423 `story_busy` for up to 60 s, because a turn on Structured v2 leaves background knowledge jobs running.
+  **Why:** engine-smoke failed on `story_busy` at delete. engine-release-smoke got a 404 on the pre-M5 Engine. No live test waited for jobs before this, so there was no existing pattern to follow.
+  **Issue:** #200
+- **Decision:** (Rule 1) `test_m5_knowledge_reads_live` finds the player through `Story.cast`, not `Story.characters`, which holds raw dicts by design.
+  **Why:** This was a test bug (`AttributeError: 'dict' object has no attribute 'is_player'`). The client is right.
+  **Issue:** #186
+- **Decision:** (Rule 2) The belief form's scalar syntax check is now `scalar_syntax()` (`str.partition` plus `isdecimal`), replacing the `^\d*\.?\d+$` regex. It accepts and refuses the same inputs and runs in linear time.
+  **Why:** CodeQL flagged high `py/polynomial-redos` on the regex, which runs on typed input.
+  **Issue:** #194
+- **Decision:** (Rule 2) The role and weight views' return address is now `_cast_back()`. It builds `cast_row_url` from the URL's ids and keeps it only when `url_has_allowed_host_and_scheme` passes, checked in the `if` as `acting.back_to` does. Otherwise it returns the story list.
+  **Why:** CodeQL flagged medium `py/url-redirection` on redirects built from path values.
+  **Issue:** #61

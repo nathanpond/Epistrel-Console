@@ -42,6 +42,7 @@ from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import strip_tags
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST
 
 from console.acting import acting_principal
@@ -562,6 +563,19 @@ def cast_row_url(story_id: str, character_id: str) -> str:
     return f"{_play_url(story_id)}#cast-{character_id}"
 
 
+def _cast_back(request: HttpRequest, story_id: str, character_id: str) -> str:
+    """Where a role or weight write returns: :func:`cast_row_url`, built server-side from the
+    URL's ids and kept only when local (else the story list), so no posted or path value can
+    make the redirect leave the Console."""
+    candidate = cast_row_url(story_id, character_id)
+    # The check sits in the ``if`` itself so code scanning sees the redirect guarded.
+    if url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return candidate
+    return reverse("stories:list")
+
+
 def cast_refusal_text(exc: EngineClientError, story_id: str, name: str) -> str:
     """A refused role or weight write's flash: 404 → ``UNKNOWN_CHARACTER``, 422 ``is_player`` →
     ``PLAYER_NO_ROLE``, C5's wording, else "Couldn't change <name>: <status> <code>"."""
@@ -581,7 +595,7 @@ def _cast_refused(
 ) -> HttpResponse:
     log_engine_error(request, exc)
     messages.error(request, cast_refusal_text(exc, story_id, name))
-    return redirect(cast_row_url(story_id, character_id))
+    return redirect(_cast_back(request, story_id, character_id))
 
 
 def _shown(request: HttpRequest, story_id: str, character_id: str) -> tuple[Shown | None, str]:
@@ -592,7 +606,7 @@ def _shown(request: HttpRequest, story_id: str, character_id: str) -> tuple[Show
 @require_POST
 def character_participation(request: HttpRequest, story_id: str, character_id: str) -> HttpResponse:
     """Set the character's participation role (the cast panel's role form)."""
-    back = cast_row_url(story_id, character_id)
+    back = _cast_back(request, story_id, character_id)
     shown, name = _shown(request, story_id, character_id)
     form = ParticipationForm(request.POST)
     if not form.is_valid():
@@ -625,7 +639,7 @@ def character_participation(request: HttpRequest, story_id: str, character_id: s
 @require_POST
 def character_weight(request: HttpRequest, story_id: str, character_id: str) -> HttpResponse:
     """Make the character minor or major (the cast panel's weight button). Always calls."""
-    back = cast_row_url(story_id, character_id)
+    back = _cast_back(request, story_id, character_id)
     _, name = _shown(request, story_id, character_id)
     weight = request.POST.get("weight")
     if not is_weight(weight):
