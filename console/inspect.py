@@ -15,6 +15,8 @@ view side is :func:`console.views.inspect.inspect_page`; this module only decide
 - Ledger: ``pipeline == "structured"`` **and** ``commitment.enabled`` (``commitment_enabled`` in
   ``core/commit/lifecycle.py`` needs both). A Lite story names ``pipeline``; a structured one with
   commitment off names ``commitment``.
+- Knowledge: ``m5_gate("partitions")`` (#188); the Engine's ``require_partitions`` answers 409
+  ``module_off`` with ``details.module: "partitions"``.
 - Overview, Predicates: always served (the Engine serves the predicate registry under every
   profile).
 
@@ -132,6 +134,7 @@ class Tab(StrEnum):
     MEMORY = "memory"
     RETRIEVAL = "retrieval"
     CANON = "canon"
+    KNOWLEDGE = "knowledge"
     PREDICATES = "predicates"
     LEDGER = "ledger"
     SCENE = "scene"
@@ -370,6 +373,7 @@ def tab_availability(effective: Mapping[str, Any]) -> dict[Tab, Unavailable | No
         Tab.MEMORY: episodic,
         Tab.RETRIEVAL: episodic,
         Tab.CANON: structured,
+        Tab.KNOWLEDGE: m5_gate(PARTITIONS, effective),
         Tab.PREDICATES: None,
         Tab.LEDGER: _ledger(effective),
         Tab.SCENE: structured,
@@ -381,6 +385,7 @@ RULE_MODULES: Mapping[Tab, str] = {
     Tab.MEMORY: EPISODIC,
     Tab.RETRIEVAL: EPISODIC,
     Tab.CANON: PIPELINE,
+    Tab.KNOWLEDGE: PARTITIONS,
     Tab.LEDGER: COMMITMENT,
     Tab.SCENE: PIPELINE,
 }
@@ -416,9 +421,9 @@ def module_off_unavailable(
 # What the story runs with, from the shell's one effective-config read: the capabilities the
 # Engine reports (``capability_names()`` in its ``core/profiles/capabilities.py``: a module on by
 # its name, ``<module>:<level>`` at another level, the pipeline by its level, sorted), the module
-# table (one row per module the Engine delivers in M4, in its ``schema.MODULES`` order), and a link
-# to the Engine's capability map. Nothing is derived Console-side: ``floor`` and required-field
-# repair are never in ``capabilities`` and are not shown.
+# table (one row per module the Engine delivers through M5, in its ``schema.MODULES`` order), and
+# a link to the Engine's capability map. Nothing is derived Console-side: ``floor`` and
+# required-field repair are never in ``capabilities`` and are not shown.
 
 # The Engine serves no capability-map route. A version-tag link is dead for released tags (v0.1.1
 # has no such doc), so the link is to ``main``, unversioned.
@@ -435,6 +440,11 @@ CAPABILITY_LABELS: Mapping[str, str] = {
     "polish": "Polish",
     "rolling_summary": "Rolling summary",
     "partitions": "Per-character partitions",
+    "nested_beliefs": "Nested beliefs",
+    "lazy_resolution": "Lazy resolution",
+    "testimony": "Testimony",
+    "perception": "Perception",
+    "multi_character": "Multi-character renders",
     "budgets": "Budgets",
     "models": "Model routing",
     "repair": "Repair attempts",
@@ -477,16 +487,24 @@ def capabilities(config: EffectiveConfig) -> list[Capability]:
     return [Capability(value, capability_label(value)) for value in values]
 
 
-# One row per module the Engine delivers in M4, in its ``schema.MODULES`` order: (module, switch).
+# One row per module the Engine delivers (through M5), in its ``schema.MODULES`` order: (module,
+# switch). No rows for ``clock``, ``time_claims``, ``scheduled_stops`` or ``states``: undelivered,
+# so never in ``effective``.
 MODULE_ROWS: tuple[tuple[str, str], ...] = (
     ("pipeline", "pipeline"),
     ("rolling_summary", "memory.rolling_summary.enabled"),
     ("episodic", "memory.episodic.enabled"),
     ("consolidation", "memory.consolidation.enabled"),
     ("pins", "pins.enabled"),
+    (PARTITIONS, SETTINGS[PARTITIONS]),
+    (NESTED_BELIEFS, SETTINGS[NESTED_BELIEFS]),
+    (LAZY_RESOLUTION, SETTINGS[LAZY_RESOLUTION]),
+    (TESTIMONY, SETTINGS[TESTIMONY]),
+    (PERCEPTION, SETTINGS[PERCEPTION]),
     ("verification", "verification.level"),
     ("contradiction_checking", "verification.contradiction_checking"),
     ("commitment", "commitment.enabled"),
+    (MULTI_CHARACTER, SETTINGS[MULTI_CHARACTER]),
     ("repair", "repair.max_attempts"),
     ("polish", "repair.polish.enabled"),
     ("budgets", "budgets"),
@@ -498,49 +516,35 @@ RENDER_DIALS: tuple[str, ...] = (
     "render.prompt_token_budget",
     "render.working_memory_beats",
 )
+# Each module's dials, listed under its row: (module, caption, paths). ``nested_beliefs.depth``
+# sits under partitions and shows even when nested beliefs are off.
+MODULE_DIALS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("pipeline", "Structured pipeline dials", RENDER_DIALS),
+    (
+        PARTITIONS,
+        "Character knowledge dials",
+        (
+            "character_knowledge.max_adjudications_per_turn",
+            "character_knowledge.max_lazy_resolutions_per_turn",
+            "character_knowledge.nested_beliefs.depth",
+        ),
+    ),
+    (MULTI_CHARACTER, "Multi-character dials", ("multi_character.interjection_max_words",)),
+)
+UNUSED_UNDER_LITE = " (unused under lite)"
+UNUSED_WHILE_OFF = " (unused while off)"
+
+# The M5 level switches' "off" values, and the levels each reads verbatim; any other value is RAW.
+OFF_VALUES: Mapping[str, str] = {TESTIMONY: "off", PERCEPTION: "none", MULTI_CHARACTER: "combined"}
+KNOWN_LEVELS: Mapping[str, frozenset[str]] = {
+    TESTIMONY: frozenset(TESTIMONY_SERVED),
+    PERCEPTION: frozenset({"co_location", "full"}),
+    MULTI_CHARACTER: frozenset({PER_CHARACTER}),
+}
 
 # A row's state kinds: "on" / "off" / "always on" read as words, a ``level`` verbatim, ``attempts``
 # "on · N attempt(s)", ``raw`` an unexpected value verbatim in ``<code>``.
 ON, OFF, ALWAYS, LEVEL, ATTEMPTS, RAW = "on", "off", "always on", "level", "attempts", "raw"
-
-
-@dataclass(frozen=True)
-class ModuleRow:
-    """One module table row: the module, the switch path it reads, its state kind and the value
-    (a level, an attempt count, or a raw value)."""
-
-    module: str
-    path: str
-    kind: str
-    value: Any = None
-
-    @property
-    def off(self) -> bool:
-        return self.kind == OFF
-
-
-def _state(module: str, value: Any) -> tuple[str, Any]:
-    if module in ALWAYS_ON:
-        return ALWAYS, None
-    if isinstance(value, bool):
-        return (ON if value else OFF), None
-    if module == "repair" and isinstance(value, int):
-        return (ATTEMPTS, value) if value > 0 else (OFF, None)  # the Engine's rule
-    if module in ("pipeline", "verification") and isinstance(value, str) and value:
-        return (OFF, None) if value == OFF else (LEVEL, value)
-    return RAW, value
-
-
-def module_rows(effective: Mapping[str, Any]) -> list[ModuleRow]:
-    """The module table: a row per :data:`MODULE_ROWS` entry whose switch is in ``effective``
-    (the Engine sends only delivered settings, so an undelivered module has no row)."""
-    rows = []
-    for module, path in MODULE_ROWS:
-        value = setting(effective, path)
-        if value is None:
-            continue
-        rows.append(ModuleRow(module, path, *_state(module, value)))
-    return rows
 
 
 @dataclass(frozen=True)
@@ -556,13 +560,81 @@ class Dial:
         return str(self.value)
 
 
-def pipeline_dials(effective: Mapping[str, Any]) -> list[Dial]:
-    """The ``render.*`` dials present in ``effective``, in :data:`RENDER_DIALS` order."""
-    return [
-        Dial(path, value)
-        for path in RENDER_DIALS
-        if (value := setting(effective, path)) is not None
-    ]
+@dataclass(frozen=True)
+class DialGroup:
+    """The dials listed under a module row: the ``caption``, the present ``dials`` in
+    :data:`MODULE_DIALS` order, and the caption's ``note`` (:data:`UNUSED_UNDER_LITE`,
+    :data:`UNUSED_WHILE_OFF` or "")."""
+
+    caption: str
+    dials: tuple[Dial, ...]
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class ModuleRow:
+    """One module table row: the module, the switch path it reads, its state kind and the value
+    (a level, an attempt count, or a raw value), and its dials (``None``: no dial row)."""
+
+    module: str
+    path: str
+    kind: str
+    value: Any = None
+    dials: DialGroup | None = None
+
+    @property
+    def off(self) -> bool:
+        return self.kind == OFF
+
+
+def _state(module: str, value: Any) -> tuple[str, Any]:
+    if module in ALWAYS_ON:
+        return ALWAYS, None
+    if isinstance(value, bool):
+        return (ON if value else OFF), None
+    if module == "repair" and isinstance(value, int):
+        return (ATTEMPTS, value) if value > 0 else (OFF, None)  # the Engine's rule
+    if module in OFF_VALUES:
+        if value == OFF_VALUES[module]:
+            return OFF, None
+        return (LEVEL, value) if value in KNOWN_LEVELS[module] else (RAW, value)
+    if module in ("pipeline", "verification") and isinstance(value, str) and value:
+        return (OFF, None) if value == OFF else (LEVEL, value)
+    return RAW, value
+
+
+def _dial_group(effective: Mapping[str, Any], module: str, kind: str) -> DialGroup | None:
+    """``module``'s :data:`MODULE_DIALS` group, its dials missing from ``effective`` left out
+    (``None`` when it has no group or none is present). The note: unused under lite, else
+    unused while the row reads "off" (a RAW state is not off)."""
+    for owner, caption, paths in MODULE_DIALS:
+        if owner != module:
+            continue
+        dials = tuple(
+            Dial(path, value) for path in paths if (value := setting(effective, path)) is not None
+        )
+        if not dials:
+            return None
+        if setting(effective, SETTINGS[PIPELINE]) == "lite":
+            note = UNUSED_UNDER_LITE
+        else:
+            note = UNUSED_WHILE_OFF if kind == OFF else ""
+        return DialGroup(caption, dials, note)
+    return None
+
+
+def module_rows(effective: Mapping[str, Any]) -> list[ModuleRow]:
+    """The module table: a row per :data:`MODULE_ROWS` entry whose switch is in ``effective``
+    (the Engine sends only delivered settings, so an undelivered module has no row), each with
+    its dial group."""
+    rows = []
+    for module, path in MODULE_ROWS:
+        value = setting(effective, path)
+        if value is None:
+            continue
+        kind, shown = _state(module, value)
+        rows.append(ModuleRow(module, path, kind, shown, _dial_group(effective, module, kind)))
+    return rows
 
 
 FINGERPRINT_PREFIX = "sha256:"
@@ -643,3 +715,36 @@ def memory_action_url(action: str, story_id: str, memory_id: str, next_url: str)
     if len(urlencode({"next": next_url})) - len("next=") > ACTION_NEXT_MAX:
         next_url = retrieval_url(story_id, {"memory": memory_id}) or ""
     return f"{base}?{urlencode({'next': next_url})}"
+
+
+# --- the Knowledge tab's sections (#189) ---------------------------------------------------------
+
+# The sections their stories register (#190, #192, #193): (URL name under ``inspect:``, label).
+KNOWLEDGE_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("beliefs", "Beliefs"),
+    ("divergences", "Divergences"),
+    ("exposures", "Exposures"),
+)
+
+
+@dataclass(frozen=True)
+class SectionLink:
+    """One Knowledge section in the sub-navigation; ``active`` for the page's own."""
+
+    name: str
+    label: str
+    url: str
+    active: bool
+
+
+def knowledge_sections(story_id: str, current: str | None) -> list[SectionLink]:
+    """The Knowledge sections whose URL is registered, in :data:`KNOWLEDGE_SECTIONS` order
+    (#64's nav rule: an unregistered one is left out); ``current`` is the page's URL name."""
+    links = []
+    for name, label in KNOWLEDGE_SECTIONS:
+        try:
+            url = reverse(f"inspect:{name}", args=[story_id])
+        except NoReverseMatch:
+            continue
+        links.append(SectionLink(name, label, url, name == current))
+    return links

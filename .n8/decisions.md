@@ -1733,3 +1733,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** No existing test asserted the old unknown-module wording for `partitions`, so none was updated.
   **Why:** Grep found none; full suite green.
   **Issue:** #188
+- **Decision:** The M4 recordings (`effective_config_structured.json`, `_lite.json`) carry no M5 key, so Knowledge reads them as `UNREAD`; `test_tab_availability`'s M4 cases expect that, its "every tab" case and the shell's "enables every tab" tests moved to the v2 fixture.
+  **Why:** The AC makes the tab's rule exactly `m5_gate("partitions")` (unread included); the real M5 Engine always sends the keys (C15).
+  **Issue:** #189
+- **Decision:** Test urlconf `tests/inspect/urls_knowledge_exposures_only.py` drops every real section route before adding its stub `inspect:exposures`, and adds a non-section `inspect:knowledge-probe` (one exposures read) for the section-409 test; a sibling `urls_knowledge_no_sections.py` serves the empty-shell test.
+  **Why:** Keeps the redirect/sub-nav/empty-shell tests valid after #190/#192/#193 register real sections; the stub section itself stays `lambda ctx: {}` as planned.
+  **Issue:** #189
+- **Decision:** Added `test_m5_known_levels_read_verbatim`, `test_module_dials_leave_out_missing_dials_and_empty_groups`, `test_dial_captions_render_on_the_page` and `test_a_section_reads_409_module_off_renders_the_panel` beyond the named plan.
+  **Why:** They pin AC clauses (defaulted/co_location levels, missing-dial rule, page caption, 409 panel) the named tests cover only partly.
+  **Issue:** #189
+- **Decision:** The plain `p.notice` rule (`border-left: 4px solid #d0d7de`, no background) applies to every existing `p.notice`, not only Knowledge's.
+  **Why:** The planner's styling line names a plain `p.notice` rule; `p.notice.warn` still overrides it.
+  **Issue:** #189

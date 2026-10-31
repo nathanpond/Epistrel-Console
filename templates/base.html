@@ -73,6 +73,10 @@
     nav.tabs a { display: inline-block; padding: 0.3rem 0.9rem; }
     nav.tabs span.disabled { display: inline-block; padding: 0.3rem 0.9rem; color: #8c959f; cursor: default; }
     nav.tabs a[aria-current="page"], nav.tabs span[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
+    nav.subtabs { margin: 0.25rem 0 0.5rem; border-bottom: 1px solid #d0d7de; font-size: 0.9em; }
+    nav.subtabs a { display: inline-block; padding: 0.2rem 0.7rem; }
+    nav.subtabs span.disabled { display: inline-block; padding: 0.2rem 0.7rem; color: #8c959f; cursor: default; }
+    nav.subtabs a[aria-current="page"], nav.subtabs span[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
     .ingest-form fieldset.event { border: 1px solid #d0d7de; margin: 0.5rem 0; }
     .ingest-form .field { margin: 0.3rem 0; }
     .ingest-form textarea { width: 100%; }
@@ -170,6 +174,7 @@
     form.fact-form fieldset { margin: 0.6rem 0; } form.fact-form div.field { margin: 0.3rem 0; }
     form.fact-form div.object-choice { margin: 0.2rem 0; }
     pre.memory-text, div.confirm dd code { white-space: pre-wrap; } /* #144: copyable spans */
+    p.notice { border-left: 4px solid #d0d7de; padding: 0.3rem 0.8rem; } /* #189 */
     /* #152: what a retrieval placed */
     p.notice.warn { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
     table.context-items td.number, table.context-dropped td.number, table.retrieval-timings td.number { text-align: right; }

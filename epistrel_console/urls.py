@@ -174,6 +174,9 @@ inspect_patterns = (
         path("canon/<ulid:fact_id>/lock/", inspect_canon.lock, name="canon-lock"),
         path("canon/<ulid:fact_id>/unlock/", inspect_canon.unlock, name="canon-unlock"),
         path("canon/<ulid:fact_id>/supersede/", inspect_canon.supersede, name="canon-supersede"),
+        # #189: the Knowledge tab; its sections (knowledge/beliefs/, knowledge/divergences/,
+        # knowledge/exposures/) are registered by #190, #192 and #193.
+        path("knowledge/", inspect.knowledge, name="knowledge"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

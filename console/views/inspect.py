@@ -30,6 +30,9 @@ no stub pages).
    this page loaded — reload"; the bar is not recomputed. Any other error escaping ``build``
    goes to the middleware (#43's panel, #87's held wrapper). A page with several reads renders
    each section's own error inside ``build``.
+5. on the Knowledge tab (#189), served and not replaced by a 409, the context gains
+   ``knowledge_sections`` (:func:`console.inspect.knowledge_sections`, the current section from
+   the request's URL name), the sub-navigation of ``console/inspect/knowledge.html``.
 
 Every render answers 200, the held wrapper aside (503). A route that answers empty or
 ``skipped`` where its module is off renders the same reason inline:
@@ -46,7 +49,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_safe
@@ -79,10 +82,10 @@ from console.inspect import (
     capabilities,
     history_turn_url,
     is_module_off,
+    knowledge_sections,
     module_off_unavailable,
     module_rows,
     overview_fingerprint,
-    pipeline_dials,
     position_text,
     profile_flags,
     retrieval_url,
@@ -236,6 +239,10 @@ def inspect_page(
         return render(request, template, context)
     if isinstance(built, HttpResponse):
         return built
+    if tab is Tab.KNOWLEDGE:
+        match = request.resolver_match
+        current = match.url_name if match is not None else None
+        context["knowledge_sections"] = knowledge_sections(story_id, current)
     context.update(built)
     return render(request, context.pop(TEMPLATE_KEY, template), context)
 
@@ -250,7 +257,6 @@ def _overview(ctx: InspectContext) -> dict[str, Any]:
         "pipeline": setting(ctx.effective, SETTINGS[PIPELINE]),
         "capabilities": capabilities(config),
         "modules": module_rows(ctx.effective),
-        "dials": pipeline_dials(ctx.effective),
         "capability_map_url": CAPABILITY_MAP_URL,
         "capability_map_label": CAPABILITY_MAP_LABEL,
     }
@@ -260,6 +266,25 @@ def _overview(ctx: InspectContext) -> dict[str, Any]:
 def overview(request: HttpRequest, story_id: str) -> HttpResponse:
     """``inspect:overview``, the area's entry URL."""
     return inspect_page(request, story_id, Tab.OVERVIEW, OVERVIEW_TEMPLATE, _overview)
+
+
+KNOWLEDGE_TEMPLATE = "console/inspect/knowledge.html"
+
+
+def _knowledge(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
+    """The Knowledge tab's landing (#189): a redirect to the first registered section (the query
+    string dropped), else the empty shell. It runs after the shell's two reads and the gate, so a
+    greyed tab renders its panel and never redirects."""
+    sections = knowledge_sections(ctx.story_id, None)
+    if sections:
+        return redirect(reverse(f"inspect:{sections[0].name}", args=[ctx.story_id]))
+    return {}
+
+
+@require_safe
+def knowledge(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:knowledge``, the Knowledge tab's entry URL (#189)."""
+    return inspect_page(request, story_id, Tab.KNOWLEDGE, KNOWLEDGE_TEMPLATE, _knowledge)
 
 
 def _memory(ctx: InspectContext) -> dict[str, Any]:

@@ -52,14 +52,18 @@ COMMITMENT = Unavailable(
     "Needs the `commitment` module (`commitment.enabled` is off under this story's profile)",
 )
 ALL_ON: dict[Tab, Unavailable | None] = dict.fromkeys(Tab)
+# The M4 recordings (``lite()``, ``structured()``) carry no M5 key, so Knowledge's partitions gate
+# (#189) reads them as unread.
+M4_BASE: dict[Tab, Unavailable | None] = {**ALL_ON, Tab.KNOWLEDGE: UNREAD}
 
 
 def greyed(**tabs: Unavailable) -> dict[Tab, Unavailable | None]:
-    return {**ALL_ON, **{Tab(name): reason for name, reason in tabs.items()}}
+    return {**M4_BASE, **{Tab(name): reason for name, reason in tabs.items()}}
 
 
 CASES: list[tuple[str, dict[str, Any], dict[Tab, Unavailable | None]]] = [
-    ("structured: every tab", structured(), ALL_ON),
+    ("structured v2: every tab", structured_v2(), ALL_ON),
+    ("structured (M4 recording): knowledge unread", structured(), greyed()),
     (
         "lite: memory, retrieval, canon, ledger, scene",
         lite(),
@@ -94,7 +98,7 @@ CASES: list[tuple[str, dict[str, Any], dict[Tab, Unavailable | None]]] = [
     (
         "verification off, commitment on: ledger and canon enabled",
         structured(verification__level="off"),
-        ALL_ON,
+        greyed(),
     ),
     (
         "lite with commitment on: ledger names pipeline",
@@ -131,7 +135,7 @@ CASES: list[tuple[str, dict[str, Any], dict[Tab, Unavailable | None]]] = [
 )
 def test_tab_availability(config: dict[str, Any], expected: dict[Tab, Unavailable | None]) -> None:
     found = tab_availability(config["effective"])
-    assert list(found) == list(Tab)  # an entry for all seven tabs, in bar order
+    assert list(found) == list(Tab)  # an entry for all eight tabs, in bar order
     assert found == expected
 
 
@@ -158,6 +162,7 @@ def test_tab_labels_and_bar_order() -> None:
         "Memory",
         "Retrieval",
         "Canon",
+        "Knowledge",
         "Predicates",
         "Ledger",
         "Scene",
@@ -167,6 +172,7 @@ def test_tab_labels_and_bar_order() -> None:
         "memory",
         "retrieval",
         "canon",
+        "knowledge",
         "predicates",
         "ledger",
         "scene",

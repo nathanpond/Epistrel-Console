@@ -27,7 +27,7 @@ from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
 from tests.history import helpers as history_helpers
-from tests.inspect.helpers import EFFECTIVE, STORY, STORY_PATH, lite, structured
+from tests.inspect.helpers import EFFECTIVE, STORY, STORY_PATH, lite, structured, structured_v2
 from tests.play.helpers import answer_page, error_json, story_json
 
 pytestmark = pytest.mark.django_db
@@ -91,7 +91,7 @@ def answer_config(engine: FakeEngine, body: dict[str, Any]) -> None:
 
 
 def test_structured_story_enables_every_tab(operator_client: Client, engine: FakeEngine) -> None:
-    answer_config(engine, structured())
+    answer_config(engine, structured_v2())
     html = get(operator_client).content.decode()
     tabs = bar(html)
     assert "disabled" not in tabs
@@ -130,9 +130,9 @@ def test_lite_story_greys_the_engine_tabs(operator_client: Client, engine: FakeE
 def test_a_tab_whose_url_is_not_registered_is_absent(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    answer_config(engine, structured())
+    answer_config(engine, structured_v2())
     # Every tab is registered for real now: Overview (#151), Memory (#140), Retrieval (#141),
-    # Canon (#137), Predicates (#136), Ledger (#148) and Scene (#58).
+    # Canon (#137), Knowledge (#189), Predicates (#136), Ledger (#148) and Scene (#58).
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         tabs = bar(get(operator_client).content.decode())
     assert tabs.startswith(f'<a class="active" aria-current="page" href="{URL}">Overview</a>')
