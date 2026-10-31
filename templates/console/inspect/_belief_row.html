@@ -1,0 +1,21 @@
+{% load inspect_tags %}{% comment %}
+One belief (#190): a console.beliefs.BeliefRow as row, one <tr id="b-<belief_id>">. Context:
+predicate_names, cast_names (convention 2's name maps); marks (#191: None hides the Canon cell,
+else the row's console.belief_canon.CanonMark shows through _belief_canon.html); actions (convention 14: a template name for an Actions cell, rendered
+with row in context, or None; #194 sets it). Columns: Proposition, Confidence, How, Holds since,
+Until, About story-time, [Canon], [Actions], More. A proposition that doesn't parse shows "—" and
+its raw JSON in More (C2).
+{% endcomment %}{% with belief=row.belief %}<tr id="b-{{ belief.belief_id }}" class="belief-row">
+  <td class="proposition">{% if row.proposition %}{% include "console/inspect/_proposition.html" with proposition=row.proposition %}{% else %}—{% endif %}</td>
+  <td class="confidence"><span title="{{ belief.current_level }}">{{ row.level_text }}</span>{% if row.scalar_text %} · {{ row.scalar_text }}{% endif %}</td>
+  <td class="how">{% if belief.provenance is None %}{{ row.how_text }}{% else %}<span{% if row.testimony %} class="testimony"{% endif %} title="{{ belief.provenance }}">{{ row.how_text }}</span>{% endif %}</td>
+  <td class="since">{% if row.since.url %}<a href="{{ row.since.url }}">{{ row.since.text }}</a>{% else %}{{ row.since.text }}{% endif %}</td>
+  <td class="until">{% if row.until %}{% if row.until.url %}<a href="{{ row.until.url }}">{{ row.until.text }}</a>{% else %}{{ row.until.text }}{% endif %}{% else %}now{% endif %}</td>
+  <td class="about">{{ row.about }}</td>
+  {% if marks is not None %}<td class="canon">{% if row.mark %}{% include "console/inspect/_belief_canon.html" with mark=row.mark subject=row.proposition.subject_id predicate=row.proposition.predicate_id %}{% else %}—{% endif %}</td>{% endif %}
+  {% if actions %}<td class="actions">{% include actions %}</td>{% endif %}
+  <td class="more"><details><summary>More</summary><dl>
+    {% for item in row.more %}<dt>{{ item.term }}</dt><dd>{% if item.kind == "code" %}<code>{{ item.text }}</code>{% elif item.kind == "time" %}<time datetime="{{ item.title }}" title="{{ item.title }}">{{ item.text }}</time>{% elif item.title %}<span title="{{ item.title }}">{{ item.text }}</span>{% else %}{{ item.text }}{% endif %}</dd>
+    {% endfor %}{% if row.raw_proposition %}<dt>Proposition (as sent)</dt><dd><pre class="raw-proposition">{{ row.raw_proposition }}</pre></dd>{% endif %}
+  </dl></details></td>
+</tr>{% endwith %}

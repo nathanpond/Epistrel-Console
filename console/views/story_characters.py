@@ -20,6 +20,14 @@ player character's GET redirects to the play view; a forced POST shows the Engin
 
 Both pages carry a signed snapshot of what they read, so a refused POST re-renders without an
 Engine read.
+
+#61 (C8): the cast panel's role form POSTs ``…/characters/<cid>/participation/``
+(``stories:character-participation``: ``PATCH …/participation``) and its weight button
+``…/characters/<cid>/weight/`` (``stories:character-weight``: ``POST …/weight``). Both
+POST-redirect-GET to the play view's ``#cast-<cid>`` with a flash (convention 23): the revision
+on success, C5's wording (verb phrase "change roles and weights") on a refusal, else "Couldn't
+change <name>: <status> <code>". A role equal to the row's validly signed ``shown`` makes no call.
+The add form sends ``participation`` only when a role is chosen.
 """
 
 import html
@@ -34,13 +42,14 @@ from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import strip_tags
-from django.views.decorators.http import require_http_methods
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_http_methods, require_POST
 
 from console.acting import acting_principal
 from console.cast import OMNISCIENT
-from console.cast_panel import CAST_MAX
+from console.cast_panel import CAST_MAX, Shown
 from console.confirm import posted_idempotency_key
-from console.engine.choices import RETIRED_SUFFIX, RatingChoices, rating_choices
+from console.engine.choices import RETIRED_SUFFIX, RatingChoices, error_text, rating_choices
 from console.engine.client import EngineClientError, EngineError
 from console.engine.models import ReportEntry, Story
 from console.engine_access import engine_client_for
@@ -55,11 +64,20 @@ from console.forms.media_picker import (
     media_op,
 )
 from console.forms.principal import remember_principals
-from console.forms.story_character import AddCharacterForm, PromoteForm
+from console.forms.story_character import AddCharacterForm, ParticipationForm, PromoteForm
 from console.ids import new_ulid
+from console.inspect import short_id
+from console.participation import (
+    CHOOSE_ROLE,
+    PLAYER_NO_ROLE,
+    is_weight,
+    role_text,
+    weight_label,
+)
 from console.turn_reports import violation_rows
 from console.views.play import error_inspector
 from console.views.story_settings import Refusal
+from console.wording import UNKNOWN_CHARACTER, write_refusal
 
 SNAPSHOT_FIELD = "snapshot"
 ADD_SALT = "console.story_characters.add"
@@ -91,6 +109,15 @@ DUPLICATE_REASONS = frozenset({"duplicate", "duplicate_name"})
 DEFINITION_TRUNCATED = "definition_truncated"
 TRUNCATED_TEXT = "Definition cut to 4000 characters in background flavor"
 IMAGE_LEFT_OUT = "Image {id} was retired and left out"
+# #61: the add body's ``participation`` failures land on the role select.
+PARTICIPATION_PATHS = {
+    path: "participation_role"
+    for path in ("participation", "participation.role", "participation.fixed")
+}
+CAST_VERB = "change roles and weights"
+SAME_ROLE = "{name} already has that role"
+CHOOSE_WEIGHT = "Choose a weight."
+IS_PLAYER = "is_player"
 
 
 def _line(exc: EngineError) -> str:
@@ -253,10 +280,12 @@ def _add(request: HttpRequest, story_id: str) -> HttpResponse:
         if isinstance(refusal, ErrorPanel):
             return _render_add(request, header, form, sections, engine_error=refusal)
         return _render_add(request, header, form, sections, refusal=refusal)
+    role = form.participation
     messages.success(
         request,
         f"Added {added.name} (cast #{added.ordinal}) — timeline revision "
-        f"{added.timeline_revision} — key {added.idempotency_key or key}",
+        f"{added.timeline_revision} — key {added.idempotency_key or key}"
+        + (f" — role {role_text(*role)}" if role is not None else ""),
     )
     return redirect(_play_url(story_id))
 
@@ -330,7 +359,7 @@ def _place_validation(exc: EngineError, form: AddCharacterForm, sections: MediaS
         form.add_error("name", DUPLICATE_NAME.format(name=form.cleaned_data.get("name", "")))
         return
     rows = sections.formsets[STORY_IMAGES].sent_forms()
-    if not apply_engine_errors(exc, form, {STORY_IMAGES: rows}):
+    if not apply_engine_errors(exc, form, {STORY_IMAGES: rows}, PARTICIPATION_PATHS):
         form.add_error(None, exc.message)
 
 
@@ -524,3 +553,108 @@ def warning_line(entry: ReportEntry) -> str:
         text = entry.text or entry.rule or EMPTY
     location = render_to_string("console/_location.html", {"location": entry.location})
     return f"Warning {entry.code}: {text} ({html.unescape(strip_tags(location)).strip()})"
+
+
+# --- role and weight (#61) ----------------------------------------------------------------------
+
+
+def cast_row_url(story_id: str, character_id: str) -> str:
+    """The play view at the character's cast row (``#cast-<cid>``), no query."""
+    return f"{_play_url(story_id)}#cast-{character_id}"
+
+
+def _cast_back(request: HttpRequest, story_id: str, character_id: str) -> str:
+    """Where a role or weight write returns: :func:`cast_row_url`, built server-side from the
+    URL's ids and kept only when local (else the story list), so no posted or path value can
+    make the redirect leave the Console."""
+    candidate = cast_row_url(story_id, character_id)
+    # The check sits in the ``if`` itself so code scanning sees the redirect guarded.
+    if url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return candidate
+    return reverse("stories:list")
+
+
+def cast_refusal_text(exc: EngineClientError, story_id: str, name: str) -> str:
+    """A refused role or weight write's flash: 404 → ``UNKNOWN_CHARACTER``, 422 ``is_player`` →
+    ``PLAYER_NO_ROLE``, C5's wording, else "Couldn't change <name>: <status> <code>"."""
+    if isinstance(exc, EngineError):
+        if exc.http_status == 404:
+            return UNKNOWN_CHARACTER
+        if exc.http_status == 422 and exc.details.get("reason") == IS_PLAYER:
+            return PLAYER_NO_ROLE
+    refusal = write_refusal(exc, story_id, CAST_VERB)
+    if refusal is not None:
+        return refusal.text  # a PAUSED link can't survive the flash
+    return f"Couldn't change {name}: {error_text(exc)}"
+
+
+def _cast_refused(
+    request: HttpRequest, exc: EngineClientError, story_id: str, character_id: str, name: str
+) -> HttpResponse:
+    log_engine_error(request, exc)
+    messages.error(request, cast_refusal_text(exc, story_id, name))
+    return redirect(_cast_back(request, story_id, character_id))
+
+
+def _shown(request: HttpRequest, story_id: str, character_id: str) -> tuple[Shown | None, str]:
+    shown = Shown.unsigned(request.POST.get("shown"), story_id, character_id)
+    return shown, shown.name if shown is not None else short_id(character_id)
+
+
+@require_POST
+def character_participation(request: HttpRequest, story_id: str, character_id: str) -> HttpResponse:
+    """Set the character's participation role (the cast panel's role form)."""
+    back = _cast_back(request, story_id, character_id)
+    shown, name = _shown(request, story_id, character_id)
+    form = ParticipationForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, CHOOSE_ROLE)
+        return redirect(back)
+    role, fixed = form.role_and_fixed
+    if shown is not None and shown.same_role(role, fixed):
+        messages.info(request, SAME_ROLE.format(name=name))
+        return redirect(back)
+    try:
+        result = engine_client_for(request).set_participation(
+            story_id,
+            character_id,
+            role=role,
+            fixed=fixed,
+            idempotency_key=posted_idempotency_key(request),
+        )
+    except EngineClientError as exc:
+        return _cast_refused(request, exc, story_id, character_id, name)
+    character = result.character
+    stored = character.participation
+    text = role_text(stored.role, stored.fixed) if stored is not None else role_text(role, fixed)
+    messages.success(
+        request,
+        f"Set {character.name or name}'s role to {text} — config revision {result.config_revision}",
+    )
+    return redirect(back)
+
+
+@require_POST
+def character_weight(request: HttpRequest, story_id: str, character_id: str) -> HttpResponse:
+    """Make the character minor or major (the cast panel's weight button). Always calls."""
+    back = _cast_back(request, story_id, character_id)
+    _, name = _shown(request, story_id, character_id)
+    weight = request.POST.get("weight")
+    if not is_weight(weight):
+        messages.error(request, CHOOSE_WEIGHT)
+        return redirect(back)
+    try:
+        result = engine_client_for(request).set_weight(
+            story_id, character_id, weight, idempotency_key=posted_idempotency_key(request)
+        )
+    except EngineClientError as exc:
+        return _cast_refused(request, exc, story_id, character_id, name)
+    character = result.character
+    messages.success(
+        request,
+        f"{character.name or name} is now {weight_label(character.weight or weight)} — "
+        f"timeline revision {result.timeline_revision}",
+    )
+    return redirect(back)

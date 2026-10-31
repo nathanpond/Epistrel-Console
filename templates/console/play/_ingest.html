@@ -15,7 +15,7 @@
     </tbody>
   </table>
   <p>Timeline revision {{ iv.timeline_revision }}.{% if iv.gate %} {{ iv.gate }}.{% endif %}</p>
-  <p><a class="button" href="{% url 'stories:detail' iv.story_id %}?tab=ingest" hx-get="{% url 'stories:detail' iv.story_id %}?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#ingest [name=snapshot], #ingest [name=output_viewpoint]">New batch</a></p>
+  <p><a class="button" href="{% url 'stories:detail' iv.story_id %}?tab=ingest" hx-get="{% url 'stories:detail' iv.story_id %}?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#ingest [name=snapshot], #ingest [name=output_viewpoint], #play-form-area [name=transcript_player_view]">New batch</a></p>
   {% endif %}
   <form method="post" action="{% url 'stories:ingest' iv.story_id %}" class="ingest-form"
         hx-post="{% url 'stories:ingest' iv.story_id %}" hx-target="#ingest" hx-swap="outerHTML"
@@ -24,6 +24,7 @@
     <input type="hidden" name="idempotency_key" value="{{ iv.idempotency_key }}">
     <input type="hidden" name="snapshot" value="{{ iv.snapshot }}">
     <input type="hidden" name="output_viewpoint" value="{{ iv.viewpoint }}">
+    <input type="hidden" name="transcript_player_view" id="ingest-transcript-player-view" value="{{ iv.transcript_player_view }}">
     {{ iv.formset.management_form }}
     {% if iv.show_errors %}{{ iv.formset.non_form_errors }}{% if iv.batch_errors %}<ul class="errorlist nonform batch">{% for e in iv.batch_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}{% endif %}
     <fieldset{% if iv.disabled %} disabled{% endif %}>

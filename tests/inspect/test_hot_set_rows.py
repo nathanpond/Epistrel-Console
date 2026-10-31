@@ -9,12 +9,15 @@ from console.cast import CastMember
 from console.engine.models import HotSetBody
 from console.hot_set import (
     AT_CEILING,
+    FRACTION_UNAVAILABLE,
     OVER_BUDGET,
     OVER_CEILING,
     budget_rows,
+    character_budget,
     character_ids,
     episode_rows,
     hot_set_rows,
+    minor_share_row,
 )
 
 A, B, C, Z = "A" * 26, "B" * 26, "C" * 26, "Z" * 26
@@ -42,6 +45,7 @@ def body(
     memory_pins: int | None = None,
     text_pins: int = 0,
     episodes: list[dict[str, Any]] | None = None,
+    per_character: int | None = None,
 ) -> HotSetBody:
     pins = by_character or {}
     raw = {
@@ -51,7 +55,9 @@ def body(
         "stored_counters": None
         if stored_vectors is None
         else {"characters": stored or {}, "story_vectors": stored_vectors},
-        "budgets": BUDGETS,
+        "budgets": BUDGETS
+        if per_character is None
+        else {**BUDGETS, "memories_per_character": per_character},
         "pins": {
             "memory_pins": sum(pins.values()) if memory_pins is None else memory_pins,
             "text_pins": text_pins,
@@ -235,3 +241,83 @@ def test_budget_rows_format_and_source() -> None:
         ("max_pinned_per_character", "2", None, "deployment ceiling", None),
         ("max_pinned_per_story", "5", None, "deployment ceiling", None),
     ]
+
+
+# --- minor characters' scaled budgets (#168) ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("per_character", "fraction", "budget"),
+    [(20, 0.2, 4), (25, 0.3, 7), (3, 0.2, 1), (100, 0.29, 28), (20, 1.0, 20)],
+)
+def test_character_budget_matches_engine_rounding(
+    per_character: int, fraction: float, budget: int
+) -> None:
+    """Engine ``Budgets.character_budget``: the float product truncated, at least 1 (100 x 0.29
+    is 28.999..., which ``round`` would make 29)."""
+    assert character_budget(per_character, fraction, True) == budget
+    assert character_budget(per_character, fraction, False) == per_character
+
+
+def test_minor_row_is_judged_against_scaled_budget() -> None:
+    rows = hot_set_rows(
+        body({A: 5, B: 5}, per_character=20), CAST, minors=frozenset({B}), fraction=0.2
+    )
+    minor, major = rows.counts
+    assert (minor.character_id, minor.minor, minor.budget) == (B, True, 4)
+    assert (minor.headroom, minor.marker) == ("over by 1", OVER_BUDGET)
+    assert minor.scaled_from == (20, 0.2)
+    assert minor.fraction_text == "0.2"
+    assert (major.character_id, major.minor, major.budget) == (A, False, 20)
+    assert (major.headroom, major.marker, major.scaled_from) == ("15 left", None, None)
+
+
+def test_minor_row_with_the_fraction_unknown_has_no_verdict() -> None:
+    rows = hot_set_rows(body({B: 50}, per_character=20), CAST, minors=frozenset({B}))
+    minor = rows.counts[0]
+    assert (minor.minor, minor.budget, minor.marker) == (True, None, None)
+    assert minor.headroom == FRACTION_UNAVAILABLE
+
+
+def test_major_rows_and_story_vectors_are_unscaled() -> None:
+    """Complement: majors, an id outside ``minors``, unknown weights and the Story vectors row
+    keep the unscaled budget."""
+    payload = body({A: 5, B: 5, Z: 5}, per_character=20, story_vectors=150)
+    for minors in (None, frozenset(), frozenset({C})):
+        rows = hot_set_rows(payload, CAST, minors=minors, fraction=0.2)
+        assert [(r.budget, r.minor, r.scaled_from) for r in rows.counts] == [(20, False, None)] * 3
+    rows = hot_set_rows(payload, CAST, minors=frozenset({A, B, Z}), fraction=0.2)
+    vectors = rows.story_vectors
+    assert (vectors.budget, vectors.minor, vectors.scaled_from) == (100, False, None)
+    assert (vectors.headroom, vectors.marker) == ("over by 50", OVER_BUDGET)
+
+
+def test_pins_are_not_scaled() -> None:
+    """Complement: a minor's pins are held to the unscaled per-character ceiling."""
+    rows = hot_set_rows(
+        body({B: 1}, by_character={B: 2}, per_character=20),
+        CAST,
+        minors=frozenset({B}),
+        fraction=0.2,
+    )
+    [pin] = [p for p in rows.pins if p.character_id == B]
+    assert (pin.ceiling, pin.marker) == (2, AT_CEILING)
+    assert rows.story_pins.ceiling == 5
+
+
+def test_minor_share_row() -> None:
+    payload = body(per_character=2000)
+    row = minor_share_row(payload.budgets, 0.2)
+    assert (row.field, row.label, row.value) == (
+        "minor_hot_budget_fraction",
+        "Minor characters' share",
+        "0.2 \u2192 400 per minor",
+    )
+    assert (row.source, row.setting, row.url) == (
+        "deployment setting",
+        "minor_hot_budget_fraction",
+        "/engine/settings/",
+    )
+    assert minor_share_row(payload.budgets, 1).value == "1.0 \u2192 2,000 per minor"
+    unavailable = minor_share_row(payload.budgets, None)
+    assert (unavailable.value, unavailable.title) == ("\u2014", None)

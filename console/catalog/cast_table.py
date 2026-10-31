@@ -1,17 +1,36 @@
 """A scenario's cast as the detail page's tables show it (#73; #74 reuses ``_cast_table.html``):
 one row per role (its character named through :mod:`console.catalog.character_labels`, its
 starting location by the world's name, an eligibility summary) with its seeds nested, and the
-world seeds in their own table."""
+world seeds in their own table. #205 adds the locations' topology (lies in, adjoins) and the
+opening's remote channels, named through the same location lookup (:func:`location_label`).
+#206 adds the cast's groups, each role's relationships as a table, and each seed's confidence
+and nested content."""
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from console.catalog.character_labels import CharacterLabel
-from console.engine.models import RoleEligibility, Scenario, ScenarioRole, Seed
+from console.engine.models import (
+    Location,
+    RoleEligibility,
+    RoleRelationship,
+    Scenario,
+    ScenarioCast,
+    ScenarioChannel,
+    ScenarioRole,
+    Seed,
+)
+from console.wording import humanised
 
 ANYONE = "anyone"
 ANY_AGE = "any"
 LATEST = "latest"
+DEFAULT_BARRIER = "Door open (default)"
+NO_BARRIER = "No barrier"
+DEFAULT_CONFIDENCE = "Believed (default)"  # an unset belief or nested seed (structured genesis)
+DEFAULT_ATTRIBUTED = "Known (default)"
+CONFIDENT_KINDS = ("belief", "nested")
 
 
 @dataclass(frozen=True)
@@ -30,20 +49,166 @@ class LocationCell:
     name: str | None
 
 
+def location_names(scenario: Scenario) -> dict[str, str]:
+    """The world's location names by id (the first location with an id wins)."""
+    names: dict[str, str] = {}
+    for loc in scenario.world.locations:
+        names.setdefault(loc.id, loc.name)
+    return names
+
+
+def location_label(location_id: str, names: Mapping[str, str]) -> LocationCell:
+    """A location named by its id: "Name (``id``)", or ``id`` (undeclared) when ``names``
+    lacks it."""
+    return LocationCell(location_id, names.get(location_id))
+
+
+@dataclass(frozen=True)
+class Barrier:
+    """An adjacency's barrier as shown: humanised (``none`` reads "No barrier") with the raw
+    value as its title; unset (or ``null``) "Door open (default)" with no title."""
+
+    text: str
+    raw: str | None
+
+
+def barrier_text(value: str | None) -> Barrier:
+    if not value:
+        return Barrier(DEFAULT_BARRIER, None)
+    return Barrier(NO_BARRIER if value == "none" else humanised(value), value)
+
+
+@dataclass(frozen=True)
+class Adjoin:
+    place: LocationCell
+    barrier: Barrier
+
+
+@dataclass(frozen=True)
+class LocationTopology:
+    """A Locations table row (#205): the location, the place it lies in and the places its own
+    ``adjacent_to`` names, as stored."""
+
+    location: Location
+    lies_in: LocationCell | None
+    adjoins: list[Adjoin]
+
+
+def location_topology(scenario: Scenario) -> list[LocationTopology]:
+    names = location_names(scenario)
+    return [
+        LocationTopology(
+            loc,
+            location_label(loc.located_in, names) if loc.located_in else None,
+            [
+                Adjoin(location_label(a.location, names), barrier_text(a.barrier))
+                for a in loc.adjacent_to
+            ],
+        )
+        for loc in scenario.world.locations
+    ]
+
+
+@dataclass(frozen=True)
+class Participant:
+    id: str
+    declared: bool
+
+
+@dataclass(frozen=True)
+class ChannelLine:
+    """A remote channel (#205): its id and participants as stored (duplicates kept), each
+    marked when it is no role of the cast."""
+
+    id: str
+    participants: list[Participant]
+
+
+def channel_lines(cast: ScenarioCast, channels: list[ScenarioChannel]) -> list[ChannelLine]:
+    roles = {role.id for role in cast.roles}
+    return [
+        ChannelLine(c.id, [Participant(p, p in roles) for p in c.participants]) for c in channels
+    ]
+
+
+@dataclass(frozen=True)
+class GroupLine:
+    """A cast group (#206): its name and members as stored (duplicates kept)."""
+
+    name: str
+    members: list[str]
+
+
+def group_lines(cast: ScenarioCast) -> list[GroupLine]:
+    return [GroupLine(name, list(members)) for name, members in (cast.groups or {}).items()]
+
+
+@dataclass(frozen=True)
+class RelationshipRow:
+    """A relationships table row (#206): ``trust`` a number (shown to 2 decimals) or ``None``
+    (by name); ``trust_raw`` the JSON of a stored non-number; ``known_by`` the stored audience
+    (``None``: its two roles, the default)."""
+
+    to_role: str
+    name: str
+    trust: float | None
+    trust_raw: str
+    known_by: list[str] | None
+
+
+def relationship_row(relationship: RoleRelationship) -> RelationshipRow:
+    trust: object = relationship.trust
+    number = isinstance(trust, int | float) and not isinstance(trust, bool)
+    return RelationshipRow(
+        relationship.to_role,
+        relationship.name,
+        float(trust) if number else None,  # type: ignore[arg-type]
+        "" if number or trust is None else json.dumps(trust),
+        list(relationship.audience) if relationship.audience else None,
+    )
+
+
+@dataclass(frozen=True)
+class SeedLine:
+    """A seed as its table shows it (#206): ``confidence`` worded (C3, unknown values too), or
+    "Believed (default)" for an unset belief or nested seed, else "—"; ``attributed`` the
+    nested content's confidence worded, or "Known (default)"."""
+
+    seed: Seed
+    confidence: str
+    attributed: str
+
+
+def seed_line(seed: Seed) -> SeedLine:
+    if seed.confidence:
+        confidence = humanised(seed.confidence)
+    else:
+        confidence = DEFAULT_CONFIDENCE if seed.kind in CONFIDENT_KINDS else "—"
+    nested = seed.nested
+    attributed = (
+        humanised(nested.attributed_confidence)
+        if nested is not None and nested.attributed_confidence
+        else DEFAULT_ATTRIBUTED
+    )
+    return SeedLine(seed, confidence, attributed)
+
+
 @dataclass(frozen=True)
 class CastRow:
     role: ScenarioRole
     character: CharacterCell | None
     location: LocationCell | None
     eligibility: str
-    seeds: list[Seed]
+    seeds: list[SeedLine]
+    relationships: list[RelationshipRow]
 
 
 @dataclass(frozen=True)
 class CastTable:
     max_characters_at_start: int | None
     rows: list[CastRow]
-    world_seeds: list[Seed]
+    world_seeds: list[SeedLine]
+    groups: list[GroupLine]
 
 
 def character_ids(scenario: Scenario) -> list[str]:
@@ -93,7 +258,7 @@ def cast_table(
     """``scenario``'s cast and world seeds as the tables show them. ``characters`` are the role
     characters' labels (a missing one is labelled by its id), ``rating_names`` the eligibility
     ratings' names (a missing one shows its id)."""
-    locations = {loc.id: loc.name for loc in scenario.world.locations}
+    locations = location_names(scenario)
     rows: list[CastRow] = []
     for role in scenario.cast.roles:
         character: CharacterCell | None = None
@@ -103,9 +268,7 @@ def cast_table(
             version = role.character.version
             character = CharacterCell(shown, f"@{version}" if version is not None else LATEST)
         location = (
-            LocationCell(role.starting_location, locations.get(role.starting_location))
-            if role.starting_location
-            else None
+            location_label(role.starting_location, locations) if role.starting_location else None
         )
         rows.append(
             CastRow(
@@ -113,11 +276,13 @@ def cast_table(
                 character,
                 location,
                 eligibility_summary(role.eligibility, rating_names),
-                list(role.seeded_memories),
+                [seed_line(s) for s in role.seeded_memories],
+                [relationship_row(r) for r in role.relationships],
             )
         )
     return CastTable(
         scenario.cast.max_characters_at_start,
         rows,
-        list(scenario.starting_state.seeded_memories),
+        [seed_line(s) for s in scenario.starting_state.seeded_memories],
+        group_lines(scenario.cast),
     )

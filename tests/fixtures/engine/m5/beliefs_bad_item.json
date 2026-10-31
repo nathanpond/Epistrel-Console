@@ -1,0 +1,102 @@
+{
+  "character": "01JM5CH0000000000000000002",
+  "beliefs": [
+    {
+      "belief_id": "01JM5BE0000000000000000001",
+      "proposition_id": "01JM5PR0000000000000000001",
+      "proposition": {
+        "subject_id": "01JM5CH0000000000000000003",
+        "predicate_id": "01JM5PD0000000000000000002",
+        "object_id": "01JM5EN0000000000000000002",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 3,
+        "step": 0
+      },
+      "provenance": "testimony",
+      "held_from": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 3,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "01JM5BE0000000000000000002",
+      "proposition_id": "01JM5PR0000000000000000006",
+      "proposition": {
+        "subject_id": "01JM5CH0000000000000000004",
+        "predicate_id": "01JM5PD0000000000000000001",
+        "object_id": "01JM5EN0000000000000000003",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "step": 0
+      },
+      "provenance": "testimony",
+      "held_from": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 3,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    }
+  ],
+  "revision": 7,
+  "next_after": null,
+  "identities": [
+    {
+      "entities": [
+        "01JM5EN0000000000000000001",
+        "01JM5EN0000000000000000003"
+      ],
+      "source": "belief",
+      "record_id": "01JM5BE0000000000000000001"
+    },
+    {
+      "entities": [
+        "01JM5CH0000000000000000003",
+        "01JM5EN0000000000000000002"
+      ],
+      "source": "canon"
+    }
+  ],
+  "output_viewpoint": "omniscient"
+}

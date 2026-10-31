@@ -30,6 +30,9 @@ no stub pages).
    this page loaded — reload"; the bar is not recomputed. Any other error escaping ``build``
    goes to the middleware (#43's panel, #87's held wrapper). A page with several reads renders
    each section's own error inside ``build``.
+5. on the Knowledge tab (#189), served and not replaced by a 409, the context gains
+   ``knowledge_sections`` (:func:`console.inspect.knowledge_sections`, the current section from
+   the request's URL name), the sub-navigation of ``console/inspect/knowledge.html``.
 
 Every render answers 200, the held wrapper aside (503). A route that answers empty or
 ``skipped`` where its module is off renders the same reason inline:
@@ -46,23 +49,27 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_safe
 
+from console.cast import OMNISCIENT
+from console.engine.choices import error_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
-from console.engine.models import EffectiveConfig, Story
+from console.engine.models import EffectiveConfig, OmniscientStoryCharacter, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
 from console.forms.inspect import QUESTION_FIELDS, ConsolidateForm, RetrievalForm
 from console.held import held_context, is_held, render_held
 from console.hot_set import (
+    FRACTION_UNAVAILABLE,
     REASON_LEGEND,
     browse_rows,
     budget_rows,
     episode_rows,
     hot_set_rows,
+    minor_share_row,
     more,
     retirement_rows,
 )
@@ -79,10 +86,10 @@ from console.inspect import (
     capabilities,
     history_turn_url,
     is_module_off,
+    knowledge_sections,
     module_off_unavailable,
     module_rows,
     overview_fingerprint,
-    pipeline_dials,
     position_text,
     profile_flags,
     retrieval_url,
@@ -110,6 +117,7 @@ from console.turn_trace import (
     trace_view,
     withheld,
 )
+from console.wording import minor_ids
 
 OVERVIEW_TEMPLATE = "console/inspect/overview.html"
 MEMORY_TEMPLATE = "console/inspect/memory.html"
@@ -236,6 +244,10 @@ def inspect_page(
         return render(request, template, context)
     if isinstance(built, HttpResponse):
         return built
+    if tab is Tab.KNOWLEDGE:
+        match = request.resolver_match
+        current = match.url_name if match is not None else None
+        context["knowledge_sections"] = knowledge_sections(story_id, current)
     context.update(built)
     return render(request, context.pop(TEMPLATE_KEY, template), context)
 
@@ -250,7 +262,6 @@ def _overview(ctx: InspectContext) -> dict[str, Any]:
         "pipeline": setting(ctx.effective, SETTINGS[PIPELINE]),
         "capabilities": capabilities(config),
         "modules": module_rows(ctx.effective),
-        "dials": pipeline_dials(ctx.effective),
         "capability_map_url": CAPABILITY_MAP_URL,
         "capability_map_label": CAPABILITY_MAP_LABEL,
     }
@@ -262,6 +273,25 @@ def overview(request: HttpRequest, story_id: str) -> HttpResponse:
     return inspect_page(request, story_id, Tab.OVERVIEW, OVERVIEW_TEMPLATE, _overview)
 
 
+KNOWLEDGE_TEMPLATE = "console/inspect/knowledge.html"
+
+
+def _knowledge(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
+    """The Knowledge tab's landing (#189): a redirect to the first registered section (the query
+    string dropped), else the empty shell. It runs after the shell's two reads and the gate, so a
+    greyed tab renders its panel and never redirects."""
+    sections = knowledge_sections(ctx.story_id, None)
+    if sections:
+        return redirect(reverse(f"inspect:{sections[0].name}", args=[ctx.story_id]))
+    return {}
+
+
+@require_safe
+def knowledge(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:knowledge``, the Knowledge tab's entry URL (#189)."""
+    return inspect_page(request, story_id, Tab.KNOWLEDGE, KNOWLEDGE_TEMPLATE, _knowledge)
+
+
 def _memory(ctx: InspectContext) -> dict[str, Any]:
     """The Memory tab (#140): one ``GET /admin/stories/{id}/hot-set`` read, its rows from
     :mod:`console.hot_set` with the shell's cast (``None`` when the story read failed).
@@ -270,7 +300,11 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
     10's line, any other error with #43's panel; ``erasure_pending`` (and a 409 ``module_off``,
     which the route doesn't declare) escape to #87's held wrapper (and the shell's panel). The
     Browse grid renders either way. ``episodic: false`` shows #135's reason inline above the
-    sections, which still render (convention 7)."""
+    sections, which still render (convention 7).
+
+    After a successful hot-set read (#168) it reads the omniscient story (the minors' weights)
+    then the deployment settings (``minor_hot_budget_fraction``); each failure is logged and
+    degrades to a note in ``minor_notes`` (:func:`_minor_budgets`), never failing the tab."""
     browse = browse_rows(ctx.story_id)
     context: dict[str, Any] = {
         "browse": browse,
@@ -290,17 +324,65 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
         return context
     context["consolidate"] = consolidate_section(ctx, body.head_turn)
     cast = ctx.story.cast if ctx.story is not None else None
+    minors, fraction, weights_error, fraction_error = _minor_budgets(ctx)
+    rows = hot_set_rows(body, cast, minors=minors, fraction=fraction)
+    notes = []
+    if weights_error is not None:
+        notes.append(WEIGHTS_UNAVAILABLE.format(code=error_text(weights_error)))
+    # With the weights unknown the story may have minors, so both notes show (#168).
+    may_have_minors = weights_error is not None or any(row.minor for row in rows.counts)
+    if fraction_error is not None and may_have_minors:
+        notes.append(FRACTION_NOTE.format(code=error_text(fraction_error)))
+    budgets = budget_rows(body.budgets)
+    budgets.insert(1, minor_share_row(body.budgets, fraction))
     context.update(
         hot_set=body,
         episodic_off=None if body.episodic else unavailable_for(EPISODIC, ctx.effective),
-        budgets=budget_rows(body.budgets),
-        rows=hot_set_rows(body, cast),
+        budgets=budgets,
+        rows=rows,
+        minor_notes=notes,
+        fraction_unavailable=FRACTION_UNAVAILABLE,
         episodes=episode_rows(body.open_episodes, body.head_turn, cast),
         retirements=retirement_rows(ctx.story_id, body.recent_retirements, cast),
         reason_legend=REASON_LEGEND,
         more=more(body),
     )
     return context
+
+
+WEIGHTS_UNAVAILABLE = (
+    "Minor characters' budgets can't be shown (weights unavailable: {code}) \u2014 a minor's row "
+    "may read under budget while the Engine counts it over"
+)
+FRACTION_NOTE = (
+    "Minor budgets need the deployment's minor_hot_budget_fraction (unavailable: {code})"
+)
+
+
+def _minor_budgets(
+    ctx: InspectContext,
+) -> tuple[frozenset[str] | None, float | None, EngineClientError | None, EngineClientError | None]:
+    """The Memory tab's two extra reads (#168), in order: the omniscient story's minors
+    (``None`` when that read failed; an item that doesn't parse counts as major) and the
+    deployment's ``minor_hot_budget_fraction`` (``None`` when that read failed), with each
+    read's error. Every ``EngineClientError`` (held and ``module_off`` included) degrades."""
+    minors: frozenset[str] | None = None
+    fraction: float | None = None
+    weights_error = fraction_error = None
+    try:
+        story = ctx.client.get_story(ctx.story_id, viewpoint=OMNISCIENT)
+    except EngineClientError as exc:
+        log_engine_error(ctx.request, exc)
+        weights_error = exc
+    else:
+        parsed = (OmniscientStoryCharacter.from_json(item) for item in story.characters)
+        minors = minor_ids(member for member in parsed if member is not None)
+    try:
+        fraction = ctx.client.get_deployment_settings().minor_hot_budget_fraction
+    except EngineClientError as exc:
+        log_engine_error(ctx.request, exc)
+        fraction_error = exc
+    return minors, fraction, weights_error, fraction_error
 
 
 @dataclass(frozen=True)

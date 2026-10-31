@@ -116,6 +116,7 @@ from console.held import is_held, render_held
 from console.ids import is_ulid, new_ulid
 from console.inspect import Tab, is_module_off, module_off_unavailable, retrieval_url, short_id
 from console.models import EngineOperation
+from console.paging import CAST_UNAVAILABLE, CURSOR_DROPPED, paging
 from console.predicates import PredicateRef, Refs, predicate_names
 from console.views.inspect import (
     OMNISCIENT_REQUIRED,
@@ -128,8 +129,6 @@ from console.views.inspect_memory import refusal_text
 CANON_TEMPLATE = "console/inspect/canon.html"
 LINEAGE_TEMPLATE = "console/inspect/canon_lineage.html"
 PAGE_LIMIT = 100  # convention 6
-CURSOR_DROPPED = "That page link was invalid — showing the first page"
-CAST_UNAVAILABLE = "Cast names unavailable — showing ids"
 
 
 def _registry(ctx: InspectContext) -> PredicateList | None:
@@ -139,19 +138,6 @@ def _registry(ctx: InspectContext) -> PredicateList | None:
     except EngineClientError as exc:
         log_engine_error(ctx.request, exc)
         return None
-
-
-def _paging(params: QueryDict, cursor: str | None, next_cursor: str | None) -> dict[str, Any]:
-    """Convention 6's links: ``next_query`` keeps every filter, ``first_query`` drops the
-    cursor; ``paged`` when this page was reached by a (valid) cursor."""
-    first = params.copy()
-    first.pop("cursor", None)
-    following = ""
-    if next_cursor:
-        after = first.copy()
-        after["cursor"] = next_cursor
-        following = after.urlencode()
-    return {"first_query": first.urlencode(), "next_query": following, "paged": bool(cursor)}
 
 
 def _canon(ctx: InspectContext) -> dict[str, Any]:
@@ -228,7 +214,7 @@ def _canon(ctx: InspectContext) -> dict[str, Any]:
         any_filter=form.any_filter,
         # #146: current rows get Lock/Unlock and Supersede…, except under "as recorded at".
         actions=ACTIONS_TEMPLATE if query["as_of_record_time"] is None else None,
-        **_paging(params, cursor, body.next_cursor),
+        **paging(params, cursor, body.next_cursor),
     )
     return context
 

@@ -1,0 +1,9 @@
+{# A multi-character turn's per-character renders (#201). Context: inspector (console.views.play.Inspector), its renders (console.renders.RenderGroup): the turn's input, each rendering character in the Engine's order (reactions before its first beat on top, later ones nested under the beat before them), then any other beats. #}
+<section class="renders">
+<h4>Renders</h4>
+{% for group in inspector.renders %}
+<h5 id="{{ group.anchor }}">{{ group.heading }}</h5>
+{% if group.empty_note %}<p class="muted render-note">{{ group.empty_note }}</p>
+{% else %}<ol class="render-beats">{% for b in group.leading %}{% include "console/play/_render_beat.html" %}{% endfor %}{% for b in group.beats %}{% include "console/play/_render_beat.html" %}{% endfor %}</ol>
+{% endif %}{% endfor %}
+</section>

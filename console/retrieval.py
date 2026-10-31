@@ -56,6 +56,7 @@ from console.inspect import (
 from console.ledger import FactLink, fact_link
 from console.predicates import row_url
 from console.scene import entity_url
+from console.wording import humanised as humanised  # moved (#187); old import kept
 
 EMPTY = "—"
 OPEN_BOUND = "…"
@@ -88,11 +89,6 @@ HIDDEN_BY_FILTER = "That memory is retrieved, but the kind/tier filter hides it.
 
 # The answer's fields no section shows, for "More" (#152 turned the rest into sections).
 MORE_FIELDS: tuple[str, ...] = ("position",)
-
-
-def humanised(value: str) -> str:
-    """Convention 5: ``unresolved_entity`` → "Unresolved entity" (unknown values the same)."""
-    return value.replace("_", " ").capitalize()
 
 
 def decimal3(value: object) -> str:

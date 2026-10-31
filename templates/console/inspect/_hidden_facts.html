@@ -1,0 +1,22 @@
+{% load console_format inspect_tags %}{% comment %}
+The Ledger tab's hidden facts (#208, FR-COMMIT-4; console.ledger.HiddenFactRow), first page only:
+current canon facts scoped away from the shared view, in the Engine's order, unaffected by the
+filters. Context: rows, unread (the Engine's raw list when an item didn't parse, C2), story_id,
+predicate_names, cast_names. Fact ids link #138's lineage view; the committing turn links History.
+{% endcomment %}<h2 id="hidden-facts">Hidden facts <small class="muted">not affected by the filters</small></h2>
+{% if rows %}<table class="hidden-facts">
+  <thead><tr><th>Fact</th><th>Proposition</th><th>Known to</th><th>Valid</th><th>Committed</th></tr></thead>
+  <tbody>
+  {% for row in rows %}<tr id="hf-{{ row.fact.id }}">
+    <td class="fact">{% if row.fact.url %}<a href="{{ row.fact.url }}">{{ row.fact.id|engine_id }}</a>{% else %}{{ row.fact.id|engine_id }}{% endif %}</td>
+    <td class="proposition">{% if row.proposition %}{% include "console/inspect/_proposition.html" with proposition=row.proposition predicate_names=predicate_names cast_names=cast_names story_id=story_id %}{% else %}<details class="raw-proposition"><summary>More</summary><pre>{{ row.raw|pretty_json }}</pre></details>{% endif %}</td>
+    <td class="known-to">{% if row.kind == "engine" %}<span title="Scoped to the engine: no character's partition holds it">Nobody (engine only)</span>{% elif row.kind == "characters" %}{% for ref in row.known_to %}{% include "console/inspect/_entity.html" %}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted">no character</span>{% endfor %}{% else %}<span title="{{ row.scope }}">{{ row.scope_text }}</span>{% if row.known_to %}: {% for ref in row.known_to %}{% include "console/inspect/_entity.html" %}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% endif %}</td>
+    <td class="valid">{{ row.valid }}</td>
+    <td class="committed">{% if row.turn_url %}<a href="{{ row.turn_url }}">turn {{ row.turn }}</a>{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% elif not unread %}<p class="hidden-facts-none">None</p>
+{% endif %}{% if unread %}<details class="hidden-facts-unread"><summary>More</summary><p>Some hidden facts couldn't be read; the Engine's list as sent:</p><pre>{{ unread|pretty_json }}</pre></details>
+{% endif %}

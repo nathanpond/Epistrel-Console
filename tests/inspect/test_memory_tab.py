@@ -23,6 +23,7 @@ from console.engine_access import engine_client_for
 from console.held import held_text
 from console.views import inspect as views
 from tests.fakes.engine import FakeEngine
+from tests.fixtures import engine_fixture
 from tests.inspect.helpers import EFFECTIVE, FIXTURES, STORY, STORY_PATH, structured
 from tests.play.helpers import error_json, story_json
 
@@ -41,7 +42,24 @@ BROWSE_TEXT = (
     "The Engine can't list a story's memories yet (nathanpond/Epistrel#531). "
     "Retrieval shows the memories a question retrieves, filtered by kind and tier."
 )
+SETTINGS = "/admin/settings"
+OMNISCIENT = {"viewpoint": "omniscient"}
+TAG = '<span class="tag minor">minor</span>'
+SCALED_TITLE = "max(1, \u230abudget \u00d7 fraction\u230b), as the Engine computes it"
+WEIGHTS_NOTE = (
+    "Minor characters&#x27; budgets can&#x27;t be shown (weights unavailable: {code}) \u2014 a "
+    "minor&#x27;s row may read under budget while the Engine counts it over"
+)
+FRACTION_NOTE = (
+    "Minor budgets need the deployment&#x27;s minor_hot_budget_fraction (unavailable: {code})"
+)
+UNAVAILABLE = "scaled (fraction unavailable)"
 SECTIONS = ("Budgets", "Counts", "Pins", "Overflow episodes", "Recent retirements")
+
+
+def inspect_fixture(name: str) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads((FIXTURES / f"{name}.json").read_text())
+    return body
 
 
 def fixture(name: str) -> dict[str, Any]:
@@ -61,6 +79,8 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     monkeypatch.setattr(views, "engine_client_for", client_with_fake)
     fake.respond("GET", EFFECTIVE, 200, json=structured())
     fake.respond("GET", STORY_PATH, 200, json=story_json())
+    fake.respond("GET", STORY_PATH, 200, json=inspect_fixture("story_omniscient"), query=OMNISCIENT)
+    fake.respond("GET", SETTINGS, 200, json=engine_fixture("get_deployment_settings"))
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
 
@@ -141,6 +161,7 @@ def test_budgets_are_labelled_formatted_and_sourced(
         text(c[0]): (c[1], text(c[2]))
         for c in (cells(r) for r in re.findall(r"<tr class=[^>]+>(.*?)</tr>", budgets, re.S))
     }
+    found = {label.replace("&#x27;", "'"): value for label, value in found.items()}
     assert found == {
         "Hot memories per character": (
             "2,000",
@@ -162,6 +183,10 @@ def test_budgets_are_labelled_formatted_and_sourced(
         "Keep vectors of memories off the active timeline": (
             '<span title="true">yes</span>',
             "story dial memory.hot_set.retain_dormant_vectors",
+        ),
+        "Minor characters' share": (
+            "0.2 \u2192 400 per minor",
+            "deployment setting minor_hot_budget_fraction",
         ),
         "Pin ceiling per character": ("5", "deployment ceiling"),
         "Pin ceiling per story (memory and text pins)": ("20", "deployment ceiling"),
@@ -571,3 +596,212 @@ def test_a_greyed_memory_tab_makes_no_hot_set_read(
     html = page(operator_client, engine)
     assert "Not available for this story" in html
     assert hot_set_calls(engine) == 0
+
+
+# --- minor characters' scaled budgets (#168) ---------------------------------------------------
+
+
+def minor_body() -> dict[str, Any]:
+    """20 per character; TOBIN (minor in ``story_omniscient_with_minor``) and MARA hold 5."""
+    body = fixture("full")
+    body["budgets"]["memories_per_character"] = 20
+    body["counters"]["characters"] = {MARA: 5, TOBIN: 5}
+    body["stored_counters"]["characters"] = {MARA: 5, TOBIN: 5}
+    return body
+
+
+def with_minor(engine: FakeEngine) -> None:
+    omniscient = inspect_fixture("story_omniscient_with_minor")
+    engine.respond("GET", STORY_PATH, 200, json=omniscient, query=OMNISCIENT)
+
+
+def raw_count_rows(html: str) -> dict[str, list[str]]:
+    found: dict[str, list[str]] = {}
+    for row in rows(html, "hot-set-counts", "count-row"):
+        row_cells = cells(row)
+        title = re.search(r'title="([^"]+)"', row_cells[0])
+        assert title is not None
+        found[title.group(1)] = row_cells
+    return found
+
+
+def omniscient_calls(engine: FakeEngine) -> list[Any]:
+    return [
+        r
+        for r in engine.requests
+        if r.url.path == f"/stories/{STORY}" and r.url.params.get("viewpoint") == "omniscient"
+    ]
+
+
+def settings_calls(engine: FakeEngine) -> list[Any]:
+    return [r for r in engine.requests if r.url.path == SETTINGS]
+
+
+def notes(html: str) -> list[str]:
+    counts = html.index("<h2>Counts</h2>")
+    return re.findall(r'<p class="note">(.*?)</p>', html[counts : html.index("<table", counts)])
+
+
+def test_memory_tab_reads_weights_and_fraction(operator_client: Client, engine: FakeEngine) -> None:
+    with_minor(engine)
+    html = page(operator_client, engine, minor_body())
+
+    order = [r.url.path for r in engine.requests]
+    hot = order.index(HOT_SET_PATH)
+    omniscient = engine.requests.index(omniscient_calls(engine)[0])
+    assert hot < omniscient < engine.requests.index(settings_calls(engine)[0])
+    assert len(omniscient_calls(engine)) == len(settings_calls(engine)) == 1
+    found = raw_count_rows(html)
+    tobin = found[TOBIN]
+    assert TAG in tobin[0]
+    assert "over budget" in tobin[1]
+    assert tobin[2] == f'4 <small title="{SCALED_TITLE}">(minor: 20 \u00d7 0.2)</small>'
+    assert tobin[3] == "over by 1"
+    mara = found[MARA]
+    assert TAG not in mara[0]
+    assert (mara[2], mara[3]) == ("20", "15 left")
+    assert "over budget" not in mara[1]
+    assert notes(html) == []
+    # Only the Counts row is tagged.
+    assert html.count(TAG) == 1
+
+
+def test_a_fraction_of_one_still_shows_the_scaled_cell(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    with_minor(engine)
+    settings = engine_fixture("get_deployment_settings")
+    settings["minor_hot_budget_fraction"] = 1
+    engine.respond("GET", SETTINGS, 200, json=settings)
+    tobin = raw_count_rows(page(operator_client, engine, minor_body()))[TOBIN]
+    assert TAG in tobin[0]
+    assert tobin[2] == f'20 <small title="{SCALED_TITLE}">(minor: 20 \u00d7 1.0)</small>'
+    assert tobin[3] == "15 left"
+
+
+def test_failed_hot_set_read_makes_no_extra_reads(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement: zero omniscient and settings reads when the hot-set read fails."""
+    engine.respond("GET", HOT_SET, 503, json=error_json("database_unavailable", "down"))
+    html = page(operator_client, engine)
+    assert omniscient_calls(engine) == []
+    assert settings_calls(engine) == []
+    assert '<p class="note">' not in html
+
+
+def test_failed_omniscient_read_shows_note_and_unscaled_rows(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond(
+        "GET", STORY_PATH, 503, json=error_json("database_unavailable", "down"), query=OMNISCIENT
+    )
+    html = page(operator_client, engine, minor_body())
+    assert notes(html) == [WEIGHTS_NOTE.format(code="503 database_unavailable")]
+    found = raw_count_rows(html)
+    assert TAG not in html
+    assert (found[TOBIN][2], found[TOBIN][3]) == ("20", "15 left")
+    assert len(settings_calls(engine)) == 1  # still read: the Budgets row needs it
+    budget = table(html, "hot-set-budgets")
+    assert "0.2 \u2192 4 per minor" in budget
+
+
+def test_failed_settings_read_marks_minor_rows_unavailable(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement: no "over budget" marker on a minor row whose fraction is unknown, even over
+    the unscaled budget."""
+    with_minor(engine)
+    engine.respond("GET", SETTINGS, 503, json=error_json("database_unavailable", "down"))
+    body = minor_body()
+    body["counters"]["characters"][TOBIN] = 25  # over even the unscaled 20
+    html = page(operator_client, engine, body)
+    tobin = raw_count_rows(html)[TOBIN]
+    assert TAG in tobin[0]
+    assert "over budget" not in tobin[1]
+    assert (tobin[2], tobin[3]) == (UNAVAILABLE, UNAVAILABLE)
+    assert "<small" not in tobin[2]
+    assert notes(html) == [FRACTION_NOTE.format(code="503 database_unavailable")]
+    share = rows(html, "hot-set-budgets", "budget-minor_hot_budget_fraction")
+    assert cells(share[0])[1] == "\u2014"
+
+
+def test_failed_settings_read_without_minors_shows_no_note(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", SETTINGS, 503, json=error_json("database_unavailable", "down"))
+    html = page(operator_client, engine, minor_body())
+    assert notes(html) == []
+    share = rows(html, "hot-set-budgets", "budget-minor_hot_budget_fraction")
+    assert cells(share[0])[1] == "\u2014"
+
+
+def test_both_reads_failing_show_both_notes(operator_client: Client, engine: FakeEngine) -> None:
+    """Weights unknown, so the story may have minors: the weights note, then the settings
+    note."""
+    engine.respond(
+        "GET", STORY_PATH, 503, json=error_json("database_unavailable", "down"), query=OMNISCIENT
+    )
+    engine.respond("GET", SETTINGS, 401, json=error_json("unauthenticated", "no"))
+    html = page(operator_client, engine, minor_body())
+    assert notes(html) == [
+        WEIGHTS_NOTE.format(code="503 database_unavailable"),
+        FRACTION_NOTE.format(code="401 unauthenticated"),
+    ]
+    assert TAG not in html
+    found = raw_count_rows(html)
+    assert (found[TOBIN][2], found[TOBIN][3]) == ("20", "15 left")
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "headers"),
+    [(503, "erasure_pending", {"Retry-After": "30"}), (404, "not_found", None)],
+    ids=["erasure_pending", "not_found"],
+)
+def test_held_code_on_omniscient_read_degrades(
+    operator_client: Client,
+    engine: FakeEngine,
+    status: int,
+    code: str,
+    headers: dict[str, str] | None,
+) -> None:
+    """Only the hot-set read escapes to the held wrapper; the omniscient read's held code (and
+    404) degrade to the weights note."""
+    engine.respond(
+        "GET", STORY_PATH, status, json=error_json(code, "no"), headers=headers, query=OMNISCIENT
+    )
+    engine.respond("GET", HOT_SET, 200, json=minor_body())
+    response = operator_client.get(URL)
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert held_text("30") not in html
+    assert notes(html) == [WEIGHTS_NOTE.format(code=f"{status} {code}")]
+    assert "As of turn" in html
+
+
+def test_minor_share_row_links_engine_settings(operator_client: Client, engine: FakeEngine) -> None:
+    html = page(operator_client, engine, fixture("full"))
+    [share] = rows(html, "hot-set-budgets", "budget-minor_hot_budget_fraction")
+    label, value, source = cells(share)
+    assert label == "Minor characters&#x27; share"
+    assert value == "0.2 \u2192 400 per minor"
+    assert source == (
+        'deployment setting <a href="/engine/settings/"><code>minor_hot_budget_fraction</code></a>'
+    )
+    order = [
+        text(cells(r)[0])
+        for r in re.findall(r"<tr class=[^>]+>(.*?)</tr>", table(html, "hot-set-budgets"), re.S)
+    ]
+    assert order[:2] == ["Hot memories per character", "Minor characters&#x27; share"]
+    # Only the share row links.
+    assert table(html, "hot-set-budgets").count("<a ") == 1
+
+
+def test_the_minor_tag_follows_a_bare_id_when_the_cast_read_failed(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", STORY_PATH, 503, json=error_json("database_unavailable"))
+    with_minor(engine)
+    tobin = raw_count_rows(page(operator_client, engine, minor_body()))[TOBIN]
+    assert TAG in tobin[0]
+    assert tobin[3] == "over by 1"

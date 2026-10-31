@@ -11,6 +11,8 @@ from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
 from console.ids import new_ulid
+from console.renders import WarningLine, warning_lines
+from console.wording import humanised
 
 register = template.Library()
 
@@ -84,6 +86,23 @@ def humanise(value: Any) -> str:
     if value is None or value == "":
         return EMPTY
     return str(value).replace("_", " ")
+
+
+@register.filter(name="humanised")
+def humanised_filter(value: Any) -> str:
+    """An enum value for an M5 page (#187 convention 16): ``very_cautious`` → ``Very cautious``
+    (``console.wording.humanised``); ``None`` or blank → ``—``; a non-string through ``str()``.
+    The template puts the raw value in ``title`` itself."""
+    if value is None or value == "":
+        return EMPTY
+    return humanised(str(value))
+
+
+@register.filter
+def turn_warnings(value: Any) -> tuple[WarningLine, ...]:
+    """#202: a turn report's ``warnings`` as Warnings lines with short ids and no Retrieval link
+    (the operation detail page: no labels, no story)."""
+    return warning_lines(value or (), {}, "")
 
 
 MIB = 1024 * 1024

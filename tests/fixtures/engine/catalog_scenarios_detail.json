@@ -34,11 +34,18 @@
       {
         "id": "farmhouse",
         "name": "The farmhouse",
-        "description": "Where everyone sleeps."
+        "description": "Where everyone sleeps.",
+        "adjacent_to": [
+          {
+            "location": "barn",
+            "barrier": "door_closed"
+          }
+        ]
       },
       {
         "id": "barn",
-        "name": "The barn"
+        "name": "The barn",
+        "located_in": "farmhouse"
       }
     ],
     "entities": [
@@ -106,7 +113,16 @@
     "scheduled_events": [],
     "predicates": [],
     "closed_sets": [],
-    "rules": []
+    "rules": [],
+    "channels": [
+      {
+        "id": "phone",
+        "participants": [
+          "mother",
+          "son"
+        ]
+      }
+    ]
   },
   "drivers": {
     "director_guidance": "Keep it warm.",

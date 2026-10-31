@@ -12,10 +12,17 @@ import pytest
 
 from console.engine.client import OPERATIONS, Operation
 from console.engine.models import (
+    Adjudication,
     AffectedStory,
     AgeCondition,
+    AuthoredBelief,
+    AuthorPosition,
     Backfill,
     BackfillEstimate,
+    BeliefItem,
+    Beliefs,
+    BeliefTransition,
+    BeliefWritten,
     Bound,
     CardImage,
     CardImages,
@@ -36,6 +43,7 @@ from console.engine.models import (
     CharacterImage,
     CharacterImages,
     CharacterPublished,
+    CharacterWeighted,
     CheckProgress,
     CheckTarget,
     CheckViolation,
@@ -51,6 +59,7 @@ from console.engine.models import (
     ContentRatingList,
     ContentRatingMutation,
     ContentRatingSummary,
+    CouldHaveKnownFlag,
     CreatedCharacter,
     CreationCounts,
     CreationReport,
@@ -58,11 +67,14 @@ from console.engine.models import (
     CurrentEntity,
     CustomInstructions,
     CustomInstructionsWritten,
+    DeferredCharacter,
     DeferredItem,
     DegradationStep,
     DeploymentSettings,
     Disposition,
     Dispositions,
+    DivergenceItem,
+    Divergences,
     DormantChain,
     Drivers,
     EffectiveBudget,
@@ -79,8 +91,11 @@ from console.engine.models import (
     EpisodeBody,
     ErasureCandidate,
     ErasureResult,
+    EscalationDeferred,
     EscalationYield,
     EvaluatedRating,
+    ExposureItem,
+    Exposures,
     ExtractionShadow,
     FactBody,
     FactListBody,
@@ -96,15 +111,18 @@ from console.engine.models import (
     GuardrailViolation,
     HealthChecks,
     HealthResponse,
+    HiddenFact,
     History,
     HistoryItem,
     HotCountsBody,
     HotSetBody,
     HotSetBudgets,
     HotSetPins,
+    IdentityItem,
     ImpactReport,
     Implication,
     InactiveItem,
+    InspectPosition,
     Instant,
     InteractionStyle,
     Interval,
@@ -115,6 +133,7 @@ from console.engine.models import (
     LikesDislikes,
     ListingStatus,
     Location,
+    LocationAdjacency,
     MaterializedEntry,
     MediaAsset,
     MediaPage,
@@ -130,7 +149,10 @@ from console.engine.models import (
     ModelConfigEntry,
     ModelConfigItem,
     ModelConfigMutation,
+    ModeledAt,
     ModelIdentity,
+    NarrativePosition,
+    NestedSeed,
     OffboardingActions,
     OffboardingError,
     OffboardingJob,
@@ -147,6 +169,8 @@ from console.engine.models import (
     OwnedItem,
     OwnedPage,
     OwnerTransfer,
+    Participation,
+    ParticipationSet,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -160,7 +184,6 @@ from console.engine.models import (
     PolicyMutation,
     PolicyScope,
     PolicyTarget,
-    Position,
     Predicate,
     PredicateDecision,
     PredicateList,
@@ -191,6 +214,7 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     Recommendation,
+    Reconcile,
     ReembedRetry,
     ReembedStatus,
     ReferenceImage,
@@ -220,6 +244,7 @@ from console.engine.models import (
     ScenarioCardMediaSet,
     ScenarioCardRole,
     ScenarioCast,
+    ScenarioChannel,
     ScenarioDraft,
     ScenarioListItem,
     ScenarioMediaSet,
@@ -262,6 +287,7 @@ from console.engine.models import (
     TurnGuardrail,
     TurnMessage,
     TurnReport,
+    TurnRole,
     TurnSummary,
     TurnWarning,
     TypedLiteral,
@@ -647,7 +673,7 @@ def test_the_widening_only_adds_media_id() -> None:
         (Thunk, "ThunkBody"),
         (LedgerItem, "LedgerItemBody"),
         (RejectedBinding, "RejectedBindingBody"),
-        (Position, "PositionBody"),
+        (InspectPosition, "epistrel__api__routes__inspect__PositionBody"),
         # #149: eval reports.
         (EscalationYield, "EscalationYieldBody"),
         (YieldCluster, "YieldClusterBody"),
@@ -669,6 +695,34 @@ def test_the_widening_only_adds_media_id() -> None:
         (GuaranteeStatus, "GuaranteeStatus"),
         (GuaranteeRequiredModule, "epistrel__core__profiles__guarantees__RequiredModule"),
         (RequiredSetting, "RequiredSetting"),
+        # #183: the nested components M5's changed components reference.
+        (Adjudication, "AdjudicationBody"),
+        (TurnRole, "RoleBody"),
+        (EscalationDeferred, "EscalationDeferredBody"),
+        (DeferredCharacter, "DeferredCharacterBody"),
+        (Reconcile, "ReconcileBody"),
+        (Participation, "ParticipationBody"),
+        (ModeledAt, "ModeledAtBody"),
+        (CouldHaveKnownFlag, "CouldHaveKnownFlagBody"),
+        (HiddenFact, "HiddenFactBody"),
+        (LocationAdjacency, "LocationAdjacency"),
+        (ScenarioChannel, "ScenarioChannel"),
+        (NestedSeed, "NestedSeed"),
+        # #186: M5's character knowledge and character controls.
+        (Beliefs, "BeliefsBody"),
+        (BeliefItem, "BeliefItemBody"),
+        (IdentityItem, "IdentityItemBody"),
+        (NarrativePosition, "NarrativePositionBody"),
+        (Divergences, "DivergencesBody"),
+        (DivergenceItem, "DivergenceItemBody"),
+        (Exposures, "ExposuresBody"),
+        (ExposureItem, "ExposureItemBody"),
+        (BeliefWritten, "BeliefWritten"),
+        (AuthoredBelief, "AuthoredBeliefBody"),
+        (BeliefTransition, "TransitionBody"),
+        (AuthorPosition, "epistrel__api__routes__admin__beliefs__PositionBody"),
+        (CharacterWeighted, "CharacterWeightedBody"),
+        (ParticipationSet, "ParticipationSetBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -758,6 +812,20 @@ def test_scenario_form_enums_match_the_schema() -> None:
     settings = schemas["StorySettingsDefaults"]["properties"]
     for name, values in SETTING_ENUMS.items():
         assert enum(settings[name]) == list(values), name
+
+
+def test_tie_break_choices_match_the_schema_pattern() -> None:
+    """#198: the one tie-break list both forms offer fits both schemas' pattern."""
+    import re
+
+    from console.story_settings import SETTING_CHOICES
+
+    schemas = DOC["components"]["schemas"]
+    for component in ("CreationSettings", "StorySettingsDefaults"):
+        node = schemas[component]["properties"]["simultaneous_tie_break"]
+        (pattern,) = [o["pattern"] for o in node.get("anyOf") or [node] if "pattern" in o]
+        for value, _ in SETTING_CHOICES["simultaneous_tie_break"]:
+            assert re.fullmatch(pattern, value), (component, value)
 
 
 def test_health_checks_both_declared_statuses() -> None:
@@ -948,3 +1016,109 @@ def test_the_ownership_bodies_widen_only_their_revisions(component: str) -> None
     same = set(recorded["properties"]) - {carried}
     assert all(recorded["properties"][k] == widened["properties"][k] for k in same)
     assert set(recorded["required"]) - set(widened["required"]) == {carried}
+
+
+def test_a_pattern_properties_map_is_a_dict() -> None:
+    """#183: an object with one ``patternProperties`` entry (and no ``properties``) is a
+    ``dict[str, X]`` compared on its value schema; a wrong value type or two patterns bite."""
+    one = {
+        "type": "object",
+        "patternProperties": {"^[a-z]+$": {"type": "array", "items": {"type": "string"}}},
+    }
+    assert compare_type(DOC, dict[str, list[str]], one, "groups") == []
+    assert compare_type(DOC, dict[str, int], one, "groups") != []
+    two = {
+        "type": "object",
+        "patternProperties": {"^a$": {"type": "integer"}, "^b$": {"type": "integer"}},
+    }
+    assert compare_type(DOC, dict[str, int], two, "groups") != []
+
+
+def test_an_open_enum_reads_a_const() -> None:
+    """#183: an ``OPEN_ENUM`` ``str`` passes against a ``const`` (a one-member enum), while a
+    plain ``str`` against an ``enum`` is still reported."""
+    from dataclasses import field as dc_field
+
+    from console.engine.models import OPEN_ENUM
+
+    @dataclass(frozen=True)
+    class Deferred:
+        character_id: str
+        fixed: bool
+        reason: str = dc_field(metadata={OPEN_ENUM: True})
+
+    ref = {"$ref": "#/components/schemas/DeferredCharacterBody"}
+    assert compare_model(DOC, Deferred, ref, "Deferred") == []
+
+    @dataclass(frozen=True)
+    class Plain:
+        object: str
+        winner: str
+        loser: str
+        rule: str
+
+    problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/AdjudicationBody"}, "P")
+    assert any("enum" in p for p in problems)
+
+
+M5_OPERATIONS = (
+    "GET /stories/{story_id}/inspect/beliefs",
+    "GET /stories/{story_id}/inspect/divergences",
+    "GET /stories/{story_id}/inspect/exposures",
+    "POST /admin/stories/{story_id}/beliefs",
+    "PATCH /stories/{story_id}/characters/{character_id}/participation",
+    "POST /stories/{story_id}/characters/{character_id}/weight",
+    "POST /stories/{story_id}/entities/{entity_id}/model",
+)
+
+
+@pytest.mark.parametrize("name", M5_OPERATIONS)
+def test_the_m5_operations_are_registered(name: str) -> None:
+    """#186: the seven M5 operations are registered with a response model, so
+    ``test_registered_operations_match_the_recorded_schema`` checks each one."""
+    assert name in OPERATIONS
+    assert OPERATIONS[name].response_model is not None
+
+
+def test_open_enum_reads_a_const() -> None:
+    """#186: the three M5 pages' ``output_viewpoint`` is a bare ``const`` in the schema, read as
+    a one-member enum by an ``OPEN_ENUM`` field. **Complement:** an open enum over a schema
+    string with neither ``enum`` nor ``const`` is still a problem."""
+    from dataclasses import field as dc_field
+
+    from console.engine.models import OPEN_ENUM
+
+    for component in ("BeliefsBody", "DivergencesBody", "ExposuresBody"):
+        node = DOC["components"]["schemas"][component]["properties"]["output_viewpoint"]
+        assert node.get("const") == "omniscient"
+        assert "enum" not in node
+
+    @dataclass(frozen=True)
+    class Page:
+        items: list[DivergenceItem]
+        revision: int
+        next_after_id: str | None
+        output_viewpoint: str = dc_field(default="omniscient", metadata={OPEN_ENUM: True})
+
+    ref = {"$ref": "#/components/schemas/DivergencesBody"}
+    assert compare_model(DOC, Page, ref, "Page") == []
+
+    @dataclass(frozen=True)
+    class Plain:  # ``BeliefItemBody.kind`` is a plain string: no enum, no const
+        belief_id: str
+        proposition_id: str
+        proposition: Any
+        polarity: str
+        current_level: str
+        current_scalar: float | None
+        since: NarrativePosition
+        provenance: str | None
+        held_from: NarrativePosition
+        held_to: NarrativePosition | None
+        valid_from: int | None
+        valid_to: int | None
+        tx_from: str
+        kind: str = dc_field(metadata={OPEN_ENUM: True})
+
+    problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/BeliefItemBody"}, "P")
+    assert problems == ["P.kind: an open enum's schema is not a string enum"]

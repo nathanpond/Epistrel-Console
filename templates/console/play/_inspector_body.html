@@ -1,10 +1,14 @@
-{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation"; a generated turn ends with #139's lazy "Eval hooks & read set" block. #}
+{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation", then its perception trace (#195); a generated turn shows its composed narrative (or the nothing-perceived notice), the M5 facts and a multi-character turn's Renders (#201) and Composition (#203, shown even when the report can't be read); a generated turn ends with #139's lazy "Eval hooks & read set" block. #}
 {% if inspector.title %}<h3>{{ inspector.title }}</h3>{% endif %}
 {% if inspector.notice %}<p class="notice"><strong>{% if inspector.notice_url %}<a class="notice-link" href="{{ inspector.notice_url }}">{{ inspector.notice }}</a>{% else %}{{ inspector.notice }}{% endif %}</strong></p>{% endif %}
 {% if inspector.error_line %}<p class="error-line"><code>{{ inspector.error_line }}</code></p>{% endif %}
-{% if inspector.facts %}<dl class="facts">{% for label, value in inspector.facts %}<dt>{{ label }}</dt><dd>{% if label == "Operation" %}<code>{{ value }}</code>{% else %}{{ value }}{% endif %}</dd>{% endfor %}</dl>{% endif %}
+{% if inspector.facts or inspector.m5_facts %}<dl class="facts">{% for label, value in inspector.facts %}<dt>{{ label }}</dt><dd>{% if label == "Operation" %}<code>{{ value }}</code>{% else %}{{ value }}{% endif %}</dd>{% endfor %}{% for label, text, raw in inspector.m5_facts %}<dt>{{ label }}</dt><dd title="{{ raw }}">{{ text }}</dd>{% endfor %}</dl>{% endif %}
 {% if inspector.error %}{% include "console/_engine_error.html" with engine_error=inspector.error %}{% endif %}
-{% if inspector.reply %}<blockquote class="reply">{{ inspector.reply }}</blockquote>{% endif %}
+{% if inspector.nothing_perceived %}<p class="notice">This viewpoint perceived nothing this turn — the narrative is empty</p>
+{% elif inspector.reply %}<blockquote class="reply">{{ inspector.reply }}</blockquote>
+{% if inspector.differing_text %}<details class="more"><summary>More</summary><p>Reply text (differs from the narrative)</p><blockquote class="reply">{{ inspector.differing_text }}</blockquote></details>{% endif %}
+{% endif %}{% if inspector.renders %}{% include "console/play/_renders.html" %}{% endif %}
+{% if inspector.composition %}{% include "console/play/_composition.html" with c=inspector.composition %}{% endif %}
 {% if inspector.input_violations %}
 <h4>Input guardrail — violations</h4>
 {% include "console/_violations.html" with violations=inspector.input_violations %}
@@ -19,7 +23,7 @@
 <tbody>{% for v in inspector.report.guardrail.violations %}<tr><td><code>{{ v.policy_id }}</code></td><td>{{ v.name }}</td><td>{{ v.message }}</td><td>{{ v.kind }}</td></tr>{% endfor %}</tbody></table>
 {% endif %}
 {% else %}<p>—</p>{% endif %}
-{% include "console/_turn_report.html" with report=inspector.report %}
+{% include "console/_turn_report.html" with report=inspector.report warning_lines=inspector.warnings %}
 {% endif %}
 {% if inspector.revisions %}
 <dl class="revisions">
@@ -28,9 +32,11 @@
   <dt>Idempotency key</dt><dd>{% if inspector.idempotency_key %}<code>{{ inspector.idempotency_key }}</code>{% else %}—{% endif %}</dd>
   {% if inspector.operation_id %}<dt>Engine operation</dt><dd><code>{{ inspector.operation_id }}</code>{% if inspector.log_pk %} — <a href="{% url 'operations:detail' inspector.log_pk %}">operation log</a>{% endif %}</dd>{% endif %}
   {% if inspector.explain_url or inspector.history_url %}<dt>Retrieval</dt><dd>{% include "console/play/_explain_link.html" %}</dd>{% endif %}
+  {% if inspector.perception_url %}<dt>Perception</dt><dd><a class="perception-link" href="{{ inspector.perception_url }}">Perception trace</a></dd>{% endif %}
 </dl>
 {% else %}
 {% if inspector.operation_id and inspector.log_pk %}<p><a href="{% url 'operations:detail' inspector.log_pk %}">Operation log entry</a></p>{% endif %}
 {% if inspector.explain_url or inspector.history_url %}<p class="explain">{% include "console/play/_explain_link.html" %}</p>{% endif %}
+{% if inspector.perception_url %}<p class="explain"><a class="perception-link" href="{{ inspector.perception_url }}">Perception trace</a></p>{% endif %}
 {% endif %}
 {% if inspector.trace_shown %}{% url 'inspect:turn-trace' inspector.story_id inspector.operation_id as trace_url %}{% if trace_url %}{% include "console/_turn_trace_block.html" %}{% endif %}{% endif %}

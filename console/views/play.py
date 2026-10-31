@@ -23,9 +23,10 @@ same rows, or the refusal placed on them) plus the transcript re-fetched out-of-
 form's viewpoint. Its add/remove-row buttons post to the same endpoint (``console.formset_rows``).
 """
 
-from dataclasses import dataclass, field, replace
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from django.core import signing
@@ -39,6 +40,7 @@ from console import cast as cast_helpers
 from console.canon import cast_names
 from console.cast import CastMember, character_of, viewpoint_for
 from console.cast_panel import CastPanel, cast_panel
+from console.composition import Composition, composition
 from console.confirm import confirm_query, posted_idempotency_key
 from console.creation_report import has_creation_report
 from console.engine.client import (
@@ -51,6 +53,7 @@ from console.engine.client import (
     turn_timeout,
 )
 from console.engine.models import (
+    EffectiveConfig,
     History,
     HistoryItem,
     IngestResponse,
@@ -58,12 +61,14 @@ from console.engine.models import (
     QueuedTurn,
     RespondResponse,
     Story,
+    StorySettings,
     TurnReport,
 )
 from console.engine_access import complete_queued, engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.feedback import FeedbackWidget, collapsed, first_parts
+from console.forms.history import PLAYER_VIEW_CHOICES
 from console.forms.ingest import (
     EVENTS_MAX,
     INGEST_PREFIX,
@@ -73,7 +78,17 @@ from console.forms.ingest import (
 )
 from console.forms.play import DEADLINE_MAX, ERROR_PATHS, STORY_DEFAULT, TurnForm
 from console.formset_rows import edit_rows, wants_edit
-from console.history import NOT_LOADED, BeatTrace, beat_trace, explain_query, explain_url
+from console.history import (
+    NOT_LOADED,
+    BeatTrace,
+    FidelityBadge,
+    audience_filter_label,
+    beat_trace,
+    explain_query,
+    explain_url,
+    fidelity_badge,
+    narrated_label,
+)
 from console.ids import new_ulid
 from console.ingest import (
     ERASED_EVENT,
@@ -86,9 +101,30 @@ from console.ingest import (
     place_ingest_error,
     result_rows,
 )
-from console.inspect import STRUCTURED, history_turn_url, is_structured_pipeline
+from console.inspect import (
+    MULTI_CHARACTER,
+    PARTITIONS,
+    PERCEPTION,
+    PIPELINE,
+    SETTINGS,
+    STRUCTURED,
+    history_turn_url,
+    is_module_off,
+    is_structured_pipeline,
+    setting,
+)
 from console.models import EngineOperation
+from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
+from console.perception import perception_url, turn_links_perception
+from console.renders import (
+    RenderGroup,
+    WarningLine,
+    beat_numbers,
+    is_reaction,
+    turn_renders,
+    warning_lines,
+)
 from console.story_config import (
     ConfigBadge,
     badge_from_report,
@@ -97,6 +133,7 @@ from console.story_config import (
     read_effective_config,
 )
 from console.story_pause import TURN_NOTE, PauseBanner, pause_banner, paused_refusal
+from console.story_settings import scenario_mode
 from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
 from console.timeline import Basis, Link, TurnControls, turn_controls
@@ -107,6 +144,7 @@ from console.turn_reports import (
     violation_rows,
 )
 from console.views.ownership import OwnershipPanel, ownership_context
+from console.wording import busy_notice, humanised
 
 TRANSCRIPT_LIMIT = 50
 POLL_GRACE_S = 30.0  # polling stops this long after the turn's deadline (planner)
@@ -125,6 +163,10 @@ PLACED_CODES = frozenset(
 FORM_ALIASES = {**ERROR_PATHS, "minimum_required": "max_calls"}
 INGEST_KIND = "ingest"  # the operation-log kind of an ingest batch (the client method's name)
 TURN_TAB, INGEST_TAB = "turn", "ingest"
+# #196: the transcript's display-only player view (#62's choices); carried on the turn and ingest
+# POSTs as ``transcript_player_view``, never the turn body's own ``player_view`` (#200).
+PLAYER_VIEWS = frozenset({"character", "story"})
+TRANSCRIPT_PLAYER_VIEW = "transcript_player_view"
 # Ingest errors whose placement on the rows is tried first (console.ingest).
 INGEST_PLACED = frozenset(
     {
@@ -151,10 +193,28 @@ class PlayStory:
     cast: tuple[CastMember, ...]
     default_viewpoint: str | None
     turn_deadline: float | None  # effective_budget.turn_deadline, when the read succeeded
+    # #200's gate and first choices (each ``None`` when its read failed or the key is missing):
+    # the effective ``pipeline``, ``multi_character.renders``, ``perception.level`` and
+    # ``character_knowledge.partitions`` (the perception gate needs it, #188); each non-player's
+    # stored participation ``{cid: (role, fixed)}``; the settings read's multi-character values.
+    renders: str | None = None
+    pipeline: str | None = None
+    perception: str | None = None
+    partitions: bool | None = None
+    roles: dict[str, tuple[str, bool]] = field(default_factory=dict)
+    story_multi: dict[str, Any] | None = None
 
     @classmethod
-    def of(cls, story: Story, turn_deadline: float | None) -> PlayStory:
+    def of(
+        cls,
+        story: Story,
+        turn_deadline: float | None,
+        *,
+        settings: StorySettings | None = None,
+        config: EffectiveConfig | None = None,
+    ) -> PlayStory:
         default = story.settings.get("default_output_viewpoint")
+        effective = config.effective if config is not None else None
         return cls(
             story.id,
             story.name,
@@ -162,6 +222,12 @@ class PlayStory:
             tuple(cast_helpers.members(story.cast)),
             default if isinstance(default, str) and default else None,
             turn_deadline,
+            renders=_text(effective, SETTINGS[MULTI_CHARACTER]),
+            pipeline=_text(effective, SETTINGS[PIPELINE]),
+            perception=_text(effective, SETTINGS[PERCEPTION]),
+            partitions=_flag(effective, SETTINGS[PARTITIONS]),
+            roles=_stored_roles(story),
+            story_multi=_story_multi(settings),
         )
 
     def signed(self) -> str:
@@ -173,6 +239,12 @@ class PlayStory:
                 "cast": [[c.id, c.name, c.is_player] for c in self.cast],
                 "default_viewpoint": self.default_viewpoint,
                 "turn_deadline": self.turn_deadline,
+                "renders": self.renders,
+                "pipeline": self.pipeline,
+                "perception": self.perception,
+                "partitions": self.partitions,
+                "roles": {cid: [role, fixed] for cid, (role, fixed) in self.roles.items()},
+                "story_multi": self.story_multi,
             },
             salt=SNAPSHOT_SALT,
             compress=True,
@@ -187,6 +259,9 @@ class PlayStory:
             raw = signing.loads(value, salt=SNAPSHOT_SALT)
             members = tuple(CastMember(str(i), str(n), bool(p)) for i, n, p in raw["cast"])
             deadline = raw["turn_deadline"]
+            story_multi = raw["story_multi"]
+            if story_multi is not None and not isinstance(story_multi, dict):
+                return None
             found = cls(
                 str(raw["id"]),
                 raw["name"],
@@ -194,10 +269,21 @@ class PlayStory:
                 members,
                 raw["default_viewpoint"],
                 float(deadline) if deadline is not None else None,
+                renders=_optional(raw["renders"], str),
+                pipeline=_optional(raw["pipeline"], str),
+                perception=_optional(raw["perception"], str),
+                partitions=_optional(raw["partitions"], bool),
+                roles=_signed_roles(raw["roles"]),
+                story_multi=story_multi,
             )
         except signing.BadSignature, KeyError, TypeError, ValueError:
             return None
         return found if found.id == story_id else None
+
+    @property
+    def gate(self) -> MultiGate:
+        """#200's gate for the turn form's section, Player view and Whisper to."""
+        return gate(self)
 
     @property
     def archived(self) -> bool:
@@ -232,20 +318,94 @@ class PlayStory:
         return form_viewpoint
 
 
-def _turn_deadline(client: EngineClient, request: HttpRequest, story_id: str) -> float | None:
-    """``effective_budget.turn_deadline``; a failed read degrades to the 45 s default."""
+def _text(effective: dict[str, Any] | None, path: str) -> str | None:
+    value = setting(effective, path) if effective is not None else None
+    return value if isinstance(value, str) else None
+
+
+def _flag(effective: dict[str, Any] | None, path: str) -> bool | None:
+    value = setting(effective, path) if effective is not None else None
+    return value if isinstance(value, bool) else None
+
+
+def _optional[T](value: object, kind: type[T]) -> T | None:
+    """A signed snapshot's value: ``None`` or a ``kind``; anything else fails the snapshot."""
+    if value is None or isinstance(value, kind):
+        return value
+    raise TypeError(value)
+
+
+def _signed_roles(raw: object) -> dict[str, tuple[str, bool]]:
+    """The snapshot's ``roles``: every value a two-item ``[role, fixed]`` list, or it fails."""
+    if not isinstance(raw, dict):
+        raise TypeError(raw)
+    roles: dict[str, tuple[str, bool]] = {}
+    for cid, value in raw.items():
+        if not isinstance(value, list) or len(value) != 2:
+            raise TypeError(value)
+        role, fixed = value
+        if not isinstance(role, str) or not isinstance(fixed, bool):
+            raise TypeError(value)
+        roles[str(cid)] = (role, fixed)
+    return roles
+
+
+def _stored_roles(story: Story) -> dict[str, tuple[str, bool]]:
+    """Each non-player's stored participation from ``GET /stories/{id}`` (raw, so a missing
+    ``fixed`` reads ``False``); a character without one has no entry."""
+    roles: dict[str, tuple[str, bool]] = {}
+    for item in story.characters:
+        if not isinstance(item, dict) or item.get("is_player") is not False:
+            continue
+        participation = item.get("participation")
+        cid = item.get("id")
+        if not isinstance(cid, str) or not isinstance(participation, dict):
+            continue
+        role = participation.get("role")
+        if isinstance(role, str) and role:
+            roles[cid] = (role, participation.get("fixed") is True)
+    return roles
+
+
+def _story_multi(settings: StorySettings | None) -> dict[str, Any] | None:
+    """The settings read's values #200's first choices name (``None``: the read failed)."""
+    if settings is None:
+        return None
+    values = settings.settings
+    found: dict[str, Any] = {name: values.get(name) for name in STORY_MULTI_KEYS}
+    found[SCENARIO_MODE] = scenario_mode(values.get("inactive"))
+    return found
+
+
+def _player_view(value: str | None) -> str:
+    """``value`` when it is exactly ``character`` or ``story``, else ``""`` (#196: any other
+    value, a different case or surrounding spaces included, is ignored and not sent)."""
+    return value if value in PLAYER_VIEWS else ""
+
+
+def _story_settings(
+    client: EngineClient, request: HttpRequest, story_id: str
+) -> StorySettings | None:
+    """The settings read (its turn deadline, #200's story settings); ``None`` when it fails (the
+    deadline then degrades to the 45 s default)."""
     try:
-        return client.get_story_settings(story_id).effective_budget.turn_deadline
+        return client.get_story_settings(story_id)
     except EngineClientError as exc:
         log_engine_error(request, exc)
         return None
 
 
-def read_story(request: HttpRequest, story_id: str) -> tuple[Story, PlayStory]:
-    """``GET /stories/{id}`` (and its turn deadline) as the play view carries it."""
+def read_story(
+    request: HttpRequest, story_id: str
+) -> tuple[Story, PlayStory, EffectiveConfig | None]:
+    """``GET /stories/{id}``, its settings read and its effective-config read (#85; ``None``
+    when it fails) as the play view carries them."""
     client = engine_client_for(request)
     story = client.get_story(story_id)
-    return story, PlayStory.of(story, _turn_deadline(client, request, story_id))
+    settings = _story_settings(client, request, story_id)
+    config = read_effective_config(client, story_id)
+    deadline = settings.effective_budget.turn_deadline if settings is not None else None
+    return story, PlayStory.of(story, deadline, settings=settings, config=config), config
 
 
 def _snapshot(request: HttpRequest, story_id: str, value: str | None) -> PlayStory:
@@ -258,6 +418,9 @@ def _form(play: PlayStory, data: Any = None, *, initial: dict[str, Any] | None =
         data,
         cast=play.cast,
         default_viewpoint=play.default_viewpoint,
+        gate=play.gate,
+        story_multi=play.story_multi,
+        roles=play.roles,
         initial=initial if initial is not None else _initial(play),
     )
 
@@ -283,15 +446,20 @@ class FormView:
     # The browser's wait for a turn POST: the longest deadline a request may ask for, plus the
     # Console's 15 s and a margin, so the Console's own timeout always answers first.
     timeout_s: int = int(turn_timeout(DEADLINE_MAX)) + 30
+    transcript_player_view: str = ""  # #196: the transcript's requested player view ("" = story)
 
 
-def _form_view(play: PlayStory, form: TurnForm, *, waiting: bool = False) -> FormView:
+def _form_view(
+    play: PlayStory, form: TurnForm, *, waiting: bool = False, transcript_player_view: str = ""
+) -> FormView:
+    found = FormView(play.id, form, play.signed(), new_ulid(), waiting)
     if play.archived:
-        return FormView(play.id, form, play.signed(), new_ulid(), True, ARCHIVED_NOTE)
-    if play.paused:
-        return FormView(play.id, form, play.signed(), new_ulid(), True, TURN_NOTE)
-    note = "Waiting for the queued turn to finish." if waiting else ""
-    return FormView(play.id, form, play.signed(), new_ulid(), waiting, note)
+        found = replace(found, disabled=True, note=ARCHIVED_NOTE)
+    elif play.paused:
+        found = replace(found, disabled=True, note=TURN_NOTE)
+    elif waiting:
+        found = replace(found, note="Waiting for the queued turn to finish.")
+    return replace(found, transcript_player_view=transcript_player_view)
 
 
 # --- Transcript ---------------------------------------------------------------------------------
@@ -304,6 +472,13 @@ class Entry:
     controls: TurnControls | None = None  # on the last item of each turn (#53)
     feedback: FeedbackWidget | None = None  # the "Rate" control on a generated message (#83)
     trace: BeatTrace | None = None  # a structured beat's trace, item-level only (#147)
+    fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62, #196)
+
+    @property
+    def reaction(self) -> bool:
+        """#201: a reaction narrated by a primary is indented with "↳ " (never a player-narrated
+        beat, C16)."""
+        return is_reaction(self.item)
 
 
 @dataclass(frozen=True)
@@ -317,9 +492,22 @@ class Transcript:
     start: TurnControls | None = None  # turn 0: "Rewind to start", "Fork from here" (#53)
     archived_note: str = ""
     legend: bool = False  # a structured beat is shown: the verdict legend (#147)
+    classification_legend: bool = False  # a classified say is shown: the legend line (#207)
+    # #196: the requested player view ("" = the story's setting), the read's echo, and a
+    # character read's (label, raw) audience filter (``None``: omniscient or a failed read).
+    player_view: str = ""
+    echoed_player_view: str = ""
+    audience_filter: tuple[str, str] | None = None
+    player_view_disabled: bool = False  # the resolved viewpoint is omniscient
+
+    @property
+    def player_view_choices(self) -> list[tuple[str, str]]:
+        return PLAYER_VIEW_CHOICES
 
 
 def _speaker(item: HistoryItem, labels: dict[str, str]) -> str:
+    if item.narrated_by:  # #62's label, "(narrated by the player)" included (C16)
+        return narrated_label(item, labels)
     if item.actor_character_id:
         return labels.get(item.actor_character_id, item.actor_character_id)
     if item.channel == "message" and item.render_character_ids:
@@ -376,18 +564,34 @@ def _transcript(
     viewpoint: str | None,
     *,
     story: Story | None = None,
+    player_view: str | None = None,
 ) -> Transcript:
     """The last 50 items at ``viewpoint`` (oldest first) with each turn's timeline controls; a
-    failed read degrades this section."""
+    failed read degrades this section. ``player_view`` (#196, display-only) is sent unless the
+    viewpoint resolves to omniscient."""
     cast = play_story.cast
     label = cast_helpers.viewpoint_label(viewpoint, cast)
+    requested = _player_view(player_view)
+    omniscient = play_story.resolve(viewpoint) == cast_helpers.OMNISCIENT
+    sent: Literal["character", "story"] | None = None
+    if requested == "character" and not omniscient:
+        sent = "character"
+    elif requested == "story" and not omniscient:
+        sent = "story"
     try:
         history: History = engine_client_for(request).get_history(
-            play_story.id, viewpoint=viewpoint, limit=TRANSCRIPT_LIMIT
+            play_story.id, viewpoint=viewpoint, limit=TRANSCRIPT_LIMIT, player_view=sent
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return Transcript(play_story.id, viewpoint, label, error=panel_for(exc))
+        return Transcript(
+            play_story.id,
+            viewpoint,
+            label,
+            error=panel_for(exc),
+            player_view=requested,
+            player_view_disabled=omniscient,
+        )
     labels = cast_helpers.character_labels(cast)
     basis = timeline_basis(play_story, history, story)
     items = history.entries
@@ -399,9 +603,11 @@ def _transcript(
             _speaker(item, labels),
             feedback=widget(item.message_id) if rate else None,
             trace=_beat_trace(play_story.id, item, names),
+            fidelity=fidelity_badge(item.fidelity),
         )
         for item, rate in zip(items, first_parts(items), strict=True)
     ]
+    character_read = history.output_viewpoint != cast_helpers.OMNISCIENT
     chains = story.variant_chains if story is not None else []
     return Transcript(
         play_story.id,
@@ -412,6 +618,11 @@ def _transcript(
         start=turn_controls(basis, 0, chains=chains),
         archived_note=play_story.timeline_note,
         legend=any(e.trace is not None for e in entries),
+        classification_legend=any(e.trace is not None and e.trace.classified for e in entries),
+        echoed_player_view=history.player_view if character_read else "",
+        audience_filter=audience_filter_label(history.audience_filter) if character_read else None,
+        player_view=requested,
+        player_view_disabled=omniscient,
     )
 
 
@@ -453,8 +664,20 @@ class Inspector:
     revisions: bool = True  # show the revision/key lines
     explain_url: str = ""  # "Explain retrieval" for a transcript turn (#142)
     history_url: str = ""  # "Explain retrieval in history": the reported turn's anchor (#142)
+    perception_url: str = ""  # "Perception trace" (#195): the turn's grid, active chain
     story_id: str = ""  # the story the inspector is for (#139's trace URL)
     trace_offered: bool = False  # #139: offer the lazy "Eval hooks & read set" block
+    # #201: a multi-character turn's per-character renders ("()" when not shown), the reply
+    # text when it differs from the narrative ``reply`` holds, the nothing-perceived notice in
+    # the reply's place, and the M5 facts as (label, text, raw) after ``facts``.
+    renders: tuple[RenderGroup, ...] = ()
+    differing_text: str = ""
+    nothing_perceived: bool = False
+    m5_facts: tuple[tuple[str, str, str], ...] = ()
+    # #202: the report's Warnings lines, named by the inspector's labels (:func:`_with_warnings`).
+    warnings: tuple[WarningLine, ...] = ()
+    # #203: how a multi-character turn was composed (:func:`_with_composition`).
+    composition: Composition | None = None
 
     @property
     def trace_shown(self) -> bool:
@@ -509,16 +732,8 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
         paused = paused_refusal(exc, story_id if isinstance(story_id, str) else None)
         return Inspector(notice=paused.text, notice_url=paused.url, **base)
     if exc.code == "story_busy":
-        reason = details.get("reason")
-        if reason == "queue_full":
-            depth = details.get("queue_depth")
-            notice = f"Story busy — queue full ({EMPTY if depth is None else depth} waiting)"
-        elif reason == "in_flight":
-            notice = "Story busy — another turn is running"
-        else:
-            notice = "Story busy"
         facts = (("Operation", _detail(details, "operation_id")), *retry)
-        return Inspector(notice=notice, facts=facts, **base)
+        return Inspector(notice=busy_notice(details), facts=facts, **base)
     if exc.code == "guardrail_violation":
         refused = {"error": {"details": details}}
         spend = input_gate_text(refused)
@@ -544,19 +759,30 @@ def error_inspector(exc: EngineClientError, idempotency_key: str) -> Inspector:
             ("Attempts", _detail(details, "attempts")),
             *retry,
         )
-        return Inspector(
+        found = Inspector(
             notice="Model unavailable — nothing was written.",
             facts=facts,
             report=_report({"error": {"details": details}}),
             **base,
         )
+        return _with_warnings(found, {}, "")  # no labels or story here: short ids, no link
     if exc.code == "erased_subject_referenced":
         facts = (
             ("Erasure", _detail(details, "erasure_id")),
             ("Matches", _detail(details, "match_count")),
         )
         return Inspector(notice=ERASED, facts=facts, **base)
+    if is_module_off(exc):  # #200: the profile no longer renders per character
+        return Inspector(notice=RELOAD, facts=(("Module", _detail(details, "module")),), **base)
     return Inspector(title="Turn refused", error=panel_for(exc), idempotency_key=idempotency_key)
+
+
+def _with_warnings(found: Inspector, labels: Mapping[str, str], story_id: str) -> Inspector:
+    """#202: an inspector carrying a report gets its Warnings lines, named by ``labels`` (C4;
+    ``{}``: short ids), the quarantined pin linked into ``story_id``'s Retrieval explorer."""
+    if found.report is None:
+        return found
+    return replace(found, warnings=warning_lines(found.report.warnings, labels, story_id))
 
 
 def _with_history_link(story_id: str, found: Inspector) -> Inspector:
@@ -574,16 +800,160 @@ def _with_history_link(story_id: str, found: Inspector) -> Inspector:
         or found.error_line
     ):
         return found
-    return replace(found, history_url=history_turn_url(story_id, report.turn, report.variant))
+    return replace(
+        found,
+        history_url=history_turn_url(story_id, report.turn, report.variant),
+        perception_url=perception_url(story_id, report.turn),  # #195
+    )
+
+
+def _with_composition(
+    found: Inspector, response: Mapping[str, Any], labels: Mapping[str, str]
+) -> Inspector:
+    """#203: a turn answer's Composition panel, from the raw response mapping (every path's),
+    its reconcile beats linked to the anchors the Renders section rendered, its adjudicated
+    objects to their entity pages when the report says ``structured``."""
+    turn = response.get("turn")
+    capabilities = found.report.capabilities if found.report is not None else None
+    panel = composition(
+        response,
+        labels,
+        found.story_id,
+        structured=STRUCTURED in (capabilities or ()),
+        turn=turn if isinstance(turn, int) and not isinstance(turn, bool) else None,
+        anchors=beat_numbers(found.renders),
+    )
+    return replace(found, composition=panel)
+
+
+def _answer_mapping(result: RespondResponse) -> dict[str, Any]:
+    """#203: the live answer as a mapping (``dataclasses.asdict``), each field the model's
+    lenient parse lost an entry of (``unparsed``) put back raw, so the panel keeps it under
+    More as the logged and polled paths do."""
+    found = asdict(result)
+    found.update(result.unparsed)
+    return found
+
+
+NOTHING_PERCEIVED = "nothing_perceived"
+AUDIENCE_OFF = "none"
+
+
+@dataclass(frozen=True)
+class TurnAnswer:
+    """#201: what the inspector's narrative, M5 facts and Renders read from one finished turn:
+    the live answer or the polled operation's stored result (:meth:`of`), or a logged response
+    (:meth:`logged`). An enum is kept as the Engine's string (C3 words it)."""
+
+    entries: tuple[HistoryItem, ...] = ()
+    order: tuple[str, ...] = ()
+    text: str = ""
+    narrative: str = ""
+    mode: str = ""
+    audience_filter: str = ""
+    player_view: str = ""
+    interaction_mode: str = ""
+
+    @classmethod
+    def of(cls, result: RespondResponse) -> TurnAnswer:
+        return cls(
+            tuple(result.entries),
+            tuple(result.order),
+            result.message.text,
+            result.message.narrative or "",
+            result.message.mode or "",
+            result.audience_filter,
+            result.player_view or "",
+            result.interaction_mode or "",
+        )
+
+    @classmethod
+    def logged(cls, response: object) -> TurnAnswer:
+        """A logged row's ``response``, field by field (not ``RespondResponse.from_json``):
+        ``order``'s string entries (a non-list reads absent), the enums as strings and the beats
+        through the per-item ``HistoryItem`` parse (a malformed item is skipped, C2)."""
+        if not isinstance(response, dict):
+            return cls()
+        beats = response.get("beats")
+        order = response.get("order")
+        message = response.get("message")
+        message = message if isinstance(message, dict) else {}
+        parsed = (HistoryItem.from_json(b) for b in beats) if isinstance(beats, list) else ()
+        return cls(
+            tuple(item for item in parsed if item is not None),
+            tuple(c for c in order if isinstance(c, str)) if isinstance(order, list) else (),
+            _string(message.get("text")),
+            _string(message.get("narrative")),
+            _string(message.get("mode")),
+            _string(response.get("audience_filter")),
+            _string(response.get("player_view")),
+            _string(response.get("interaction_mode")),
+        )
+
+    def m5_facts(self) -> tuple[tuple[str, str, str], ...]:
+        """Interaction mode, Audience filter (unless perception is off: ``none`` with no player
+        view echoed), Player view and Composed, each present one as (label, text, raw)."""
+        facts: list[tuple[str, str, str]] = []
+        if self.interaction_mode:
+            facts.append(
+                ("Interaction mode", humanised(self.interaction_mode), self.interaction_mode)
+            )
+        if self.audience_filter and (self.player_view or self.audience_filter != AUDIENCE_OFF):
+            label, raw = audience_filter_label(self.audience_filter)
+            facts.append(("Audience filter", label, raw))
+        if self.player_view:
+            facts.append(("Player view", humanised(self.player_view), self.player_view))
+        if self.mode:
+            facts.append(("Composed", humanised(self.mode), self.mode))
+        return tuple(facts)
+
+
+def _string(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _with_answer(
+    found: Inspector, answer: TurnAnswer, *, actor: str, labels: Mapping[str, str]
+) -> Inspector:
+    """#201: the reply block holds the narrative when it isn't blank (the text under More when
+    it differs), else the nothing-perceived notice under ``nothing_perceived``, else the text;
+    then the M5 facts and the Renders section."""
+    narrative, text = answer.narrative, answer.text
+    reply, differing, nothing = text, "", False
+    if narrative.strip():
+        reply = narrative
+        if text.strip() and text.strip() != narrative.strip():
+            differing = text
+    elif answer.audience_filter == NOTHING_PERCEIVED:
+        reply, nothing = "", True
+    return replace(
+        found,
+        reply=reply,
+        differing_text=differing,
+        nothing_perceived=nothing,
+        m5_facts=answer.m5_facts(),
+        renders=turn_renders(answer.entries, answer.order, labels, actor),
+    )
 
 
 def result_inspector(
-    story_id: str, result: RespondResponse, idempotency_key: str, operation_id: str
+    story_id: str,
+    result: RespondResponse,
+    idempotency_key: str,
+    operation_id: str,
+    *,
+    actor: str = "",
+    labels: Mapping[str, str] | None = None,
+    response: Mapping[str, Any] | None = None,
 ) -> Inspector:
+    """The inspector for a finished turn: the live answer, or a polled operation's stored
+    result. ``actor`` is the turn's (the posted form's, or the logged request's) for the
+    Renders section's Input group; ``labels`` name the characters (C4). ``response`` is the
+    raw answer the Composition reads (#203: the poll's ``result.body``); ``result`` as a
+    mapping by default."""
     found = Inspector(
         title=f"Turn {result.turn} (variant {result.variant})",
         report=result.report,
-        reply=result.message.text,
         timeline_revision=result.timeline_revision,
         config_revision=result.config_revision,
         idempotency_key=result.idempotency_key or idempotency_key,
@@ -592,6 +962,10 @@ def result_inspector(
         story_id=story_id,
         trace_offered=True,
     )
+    found = _with_answer(found, TurnAnswer.of(result), actor=actor, labels=labels or {})
+    raw = response if response is not None else _answer_mapping(result)
+    found = _with_composition(found, raw, labels or {})
+    found = _with_warnings(found, labels or {}, story_id)
     return _with_history_link(story_id, found)
 
 
@@ -602,9 +976,26 @@ def _log_pk(operation_id: str) -> int | None:
     return row.pk if row is not None else None
 
 
-def row_inspector(row: EngineOperation, story_id: str = "") -> Inspector:
+def _logged_actor(operation_id: str) -> str:
+    """The logged request's ``actor_character_id`` for the operation (a polled turn, #201)."""
+    row = (
+        EngineOperation.objects.filter(engine_operation_id=operation_id).first()
+        if operation_id
+        else None
+    )
+    return _row_actor(row) if row is not None else ""
+
+
+def _row_actor(row: EngineOperation) -> str:
+    """The logged request's actor ("" for a regeneration, which sends none)."""
+    return _string(_body(row).get("actor_character_id"))
+
+
+def row_inspector(
+    row: EngineOperation, story_id: str = "", *, labels: Mapping[str, str] | None = None
+) -> Inspector:
     """The inspector for a turn the operation log holds (#44), for ``story_id`` (the page's;
-    the row's own by default)."""
+    the row's own by default), its characters named by ``labels`` (C4)."""
     report = stored_turn_report(row.response)
     turn = f"Turn {report.turn} (variant {report.variant})" if report and report.turn else "Turn"
     violations = tuple(violation_rows(input_violations(row.response)))
@@ -628,28 +1019,39 @@ def row_inspector(row: EngineOperation, story_id: str = "") -> Inspector:
         story_id=story_id or row.story_id,
         trace_offered=True,
     )
+    answer = TurnAnswer.logged(row.response)
+    found = _with_answer(found, answer, actor=_row_actor(row), labels=labels or {})
+    if isinstance(row.response, dict) and not row.error_code and not violations:
+        found = _with_composition(found, row.response, labels or {})
+    found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 
 
-def _latest_inspector(story_id: str) -> Inspector:
+def _latest_inspector(story_id: str, *, labels: Mapping[str, str] | None = None) -> Inspector:
     """First load: the newest logged turn of this story with a report, else "select a turn"."""
     rows = EngineOperation.objects.filter(story_id=story_id, response__isnull=False).exclude(
         kind__startswith=INGEST_KIND
     )
     for row in rows[:REPORT_SCAN]:
         if _inspectable(row.response):
-            return row_inspector(row, story_id)
+            return row_inspector(row, story_id, labels=labels)
     return NOTHING_SELECTED
 
 
-def selected_inspector(story_id: str, operation_id: str, origin: str = "") -> Inspector:
+def selected_inspector(
+    story_id: str,
+    operation_id: str,
+    origin: str = "",
+    *,
+    labels: Mapping[str, str] | None = None,
+) -> Inspector:
     """The inspector for a clicked history item of story ``story_id``, by the operation that
     recorded it. #139's trace block is offered unless the turn was ingested."""
     rows = list(EngineOperation.objects.filter(engine_operation_id=operation_id)[:REPORT_SCAN])
     for row in rows:
         # An ingest's answer carries the input gate's model calls, not a turn report.
         if not row.kind.startswith(INGEST_KIND) and _inspectable(row.response):
-            return row_inspector(row, story_id)
+            return row_inspector(row, story_id, labels=labels)
     ingested = origin == "ingested" or any(row.kind.startswith(INGEST_KIND) for row in rows)
     return Inspector(
         title=f"Operation {operation_id}",
@@ -673,6 +1075,7 @@ class WaitingCard:
     viewpoint: str
     deadline_s: float
     started_at: str = ""
+    player_view: str = ""  # #196: the transcript's player view, for the end-of-poll re-fetch
 
     @property
     def text(self) -> str:
@@ -690,6 +1093,8 @@ class WaitingCard:
             query["position"] = str(self.position)
         if self.started_at:
             query["started"] = self.started_at
+        if self.player_view:
+            query["player_view"] = self.player_view
         path = reverse("stories:poll", args=[self.story_id, self.operation_id])
         return f"{path}?{urlencode(query)}"
 
@@ -707,8 +1112,9 @@ def _row_deadline(row: EngineOperation, play: PlayStory) -> float:
     return play.turn_deadline if play.turn_deadline is not None else DEFAULT_TURN_DEADLINE_S
 
 
-def _restored_cards(play: PlayStory) -> list[WaitingCard]:
-    """Queued turns of this story still inside their deadline + 30 s, newest first."""
+def _restored_cards(play: PlayStory, player_view: str = "") -> list[WaitingCard]:
+    """Queued turns of this story still inside their deadline + 30 s, newest first, each
+    carrying the page's transcript ``player_view`` (#196)."""
     now = timezone.now()
     cards = []
     for row in EngineOperation.objects.filter(
@@ -727,6 +1133,7 @@ def _restored_cards(play: PlayStory) -> list[WaitingCard]:
                 queued.position if queued else None,
                 viewpoint if isinstance(viewpoint, str) else "",
                 deadline,
+                player_view=player_view,
             )
         )
     return cards
@@ -841,7 +1248,11 @@ def _fork_banner(request: HttpRequest, story_id: str) -> ForkBanner | None:
 
 
 def _turn_inspector(
-    transcript: Transcript, turn: int, story_structured: bool = False
+    transcript: Transcript,
+    turn: int,
+    story_structured: bool = False,
+    *,
+    labels: Mapping[str, str] | None = None,
 ) -> Inspector | None:
     """The inspector for turn ``turn`` of the transcript (``?turn=N``): its reply's operation,
     else any of its items'. Its "Explain retrieval" link (#142) is rebuilt from the transcript's
@@ -853,10 +1264,17 @@ def _turn_inspector(
     chosen = (replies or items)[-1:] if items else []
     if not chosen:
         return None
-    found = selected_inspector(transcript.story_id, chosen[0].operation_id, chosen[0].origin)
+    found = selected_inspector(
+        transcript.story_id, chosen[0].operation_id, chosen[0].origin, labels=labels
+    )
     query = explain_query(items, turn, chosen[0].variant, lambda: story_structured)
     link = explain_url(transcript.story_id, query) if query is not None else None
-    return replace(found, explain_url=link or "", history_url="")
+    perception = (  # #195: History's test for its turn groups
+        perception_url(transcript.story_id, turn)
+        if turn_links_perception(items, turn, lambda: story_structured)
+        else ""
+    )
+    return replace(found, explain_url=link or "", history_url="", perception_url=perception)
 
 
 def _page(
@@ -871,33 +1289,54 @@ def _page(
     viewpoint: str | None = None,
     tab: str = TURN_TAB,
     ingest_view: IngestView | None = None,
+    player_view: str | None = None,
+    operation: str = "",
+    origin: str = "",
 ) -> HttpResponse:
-    story, play = read_story(request, story_id)
-    restored = _restored_cards(play) if cards is None else cards
+    """The full play page. ``operation`` (with its ``origin``) selects the inspector's turn,
+    built after the story read so it names the characters (#201, C4)."""
+    story, play, config = read_story(request, story_id)
+    labels = cast_names(play.cast)
+    if inspector is None and operation:
+        inspector = selected_inspector(story_id, operation, origin, labels=labels)
+    requested = _player_view(player_view)
+    restored = _restored_cards(play, requested) if cards is None else cards
     if form is None:
         form = _form(play, initial=_initial(play, viewpoint))
     form_viewpoint = (
         form["output_viewpoint"].value() if form.is_bound else form.initial.get("output_viewpoint")
     )
     chosen = viewpoint or play.resolve(form_viewpoint)
-    shown = _transcript(request, play, chosen, story=story)
-    config = read_effective_config(engine_client_for(request), story_id)  # #85's header, #181
+    shown = _transcript(request, play, chosen, story=story, player_view=requested)
     if inspector is None and turn is not None:
         structured = config is not None and is_structured_pipeline(config.effective)
-        inspector = _turn_inspector(shown, turn, structured)
+        inspector = _turn_inspector(shown, turn, structured, labels=labels)
     page = PlayPage(
         story,
         play,
-        _form_view(play, form, waiting=bool(restored)),
+        _form_view(play, form, waiting=bool(restored), transcript_player_view=requested),
         shown,
-        inspector if inspector is not None else _latest_inspector(story_id),
-        ingest_view or _ingest_view(play, ingest_formset(play.cast), str(form_viewpoint or "")),
+        inspector if inspector is not None else _latest_inspector(story_id, labels=labels),
+        ingest_view
+        or _ingest_view(
+            play,
+            ingest_formset(play.cast),
+            str(form_viewpoint or ""),
+            transcript_player_view=requested,
+        ),
         restored,
         status_note,
         INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
         _timeline_header(story, play),
         _fork_banner(request, story_id),
-        cast_panel(engine_client_for(request), story),
+        cast_panel(
+            engine_client_for(request),
+            story,
+            # #61: whether the roles take effect (None when the configuration is unread)
+            renders=(
+                setting(config.effective, SETTINGS[MULTI_CHARACTER]) if config is not None else None
+            ),
+        ),
         _ownership(request, story),
         pause_banner(story),
         badge_or_unavailable(story_id, config),
@@ -933,16 +1372,15 @@ def play(request: HttpRequest, story_id: str) -> HttpResponse:
     tab = request.GET.get("tab", TURN_TAB)
     if "tab" in request.GET and is_htmx(request):
         return _form_area(request, story_id, tab)
-    operation = request.GET.get("operation", "")
-    origin = request.GET.get("origin", "")
-    inspector = selected_inspector(story_id, operation, origin) if operation else None
     return _page(
         request,
         story_id,
         turn=_int(request.GET.get("turn")),
-        inspector=inspector,
         viewpoint=request.GET.get("viewpoint") or None,
         tab=tab,
+        player_view=request.GET.get("player_view"),
+        operation=request.GET.get("operation", ""),
+        origin=request.GET.get("origin", ""),
     )
 
 
@@ -951,11 +1389,18 @@ def _form_area(request: HttpRequest, story_id: str, tab: str) -> HttpResponse:
     links include it, and the snapshot, so no Engine read is needed)."""
     play_story = _snapshot(request, story_id, request.GET.get(SNAPSHOT_FIELD))
     viewpoint = request.GET.get("output_viewpoint", "")
+    kept = _player_view(request.GET.get(TRANSCRIPT_PLAYER_VIEW))
     form = _form(play_story, initial=_initial(play_story, viewpoint))
+    waiting = bool(_restored_cards(play_story))
     context = {
         "tab": INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
-        "fv": _form_view(play_story, form, waiting=bool(_restored_cards(play_story))),
-        "iv": _ingest_view(play_story, ingest_formset(play_story.cast), viewpoint),
+        "fv": _form_view(play_story, form, waiting=waiting, transcript_player_view=kept),
+        "iv": _ingest_view(
+            play_story,
+            ingest_formset(play_story.cast),
+            viewpoint,
+            transcript_player_view=kept,
+        ),
     }
     return render(request, "console/play/_form_area.html", context)
 
@@ -963,25 +1408,44 @@ def _form_area(request: HttpRequest, story_id: str, tab: str) -> HttpResponse:
 @require_safe
 def transcript(request: HttpRequest, story_id: str) -> HttpResponse:
     """The transcript partial at ``?viewpoint=`` (or the viewpoint select's ``output_viewpoint``,
-    ``default`` resolved through the snapshot)."""
+    ``default`` resolved through the snapshot), with ``?player_view=`` (the transcript's own
+    toggle, #196) or else the forms' ``transcript_player_view``. The HTMX answer also updates
+    both forms' copies of the value out-of-band."""
     viewpoint = request.GET.get("viewpoint") or None
+    raw = request.GET.get("player_view")
+    if raw is None:
+        raw = request.GET.get(TRANSCRIPT_PLAYER_VIEW)
+    player_view = _player_view(raw)
     if not is_htmx(request):
-        return _page(request, story_id, viewpoint=viewpoint)
+        return _page(request, story_id, viewpoint=viewpoint, player_view=player_view)
     play_story = _snapshot(request, story_id, request.GET.get(SNAPSHOT_FIELD))
     if viewpoint is None:
         viewpoint = play_story.resolve(request.GET.get("output_viewpoint"))
-    found = _transcript(request, play_story, viewpoint)
-    return render(request, "console/play/_transcript.html", {"transcript": found})
+    found = _transcript(request, play_story, viewpoint, player_view=player_view)
+    return render(
+        request, "console/play/_transcript.html", {"transcript": found, "form_inputs": True}
+    )
 
 
 @require_safe
 def inspector(request: HttpRequest, story_id: str) -> HttpResponse:
-    """The inspector for one turn, by ``?operation=`` (the item's ``operation_id``)."""
+    """The inspector for one turn, by ``?operation=`` (the item's ``operation_id``). The HTMX
+    answer names the characters from the page's signed snapshot (``hx-include``; short ids
+    without a valid one, #201) and makes no story read."""
     operation = request.GET.get("operation", "")
     origin = request.GET.get("origin", "")
-    found = selected_inspector(story_id, operation, origin) if operation else NOTHING_SELECTED
     if not is_htmx(request):
-        return _page(request, story_id, inspector=found)
+        if not operation:
+            return _page(request, story_id, inspector=NOTHING_SELECTED)
+        return _page(request, story_id, operation=operation, origin=origin)
+    snapshots = request.GET.getlist(SNAPSHOT_FIELD)
+    shown = PlayStory.unsigned(snapshots[0], story_id) if snapshots else None
+    labels = cast_names(shown.cast) if shown is not None else {}
+    found = (
+        selected_inspector(story_id, operation, origin, labels=labels)
+        if operation
+        else NOTHING_SELECTED
+    )
     return render(request, "console/play/_inspector_body.html", {"inspector": found})
 
 
@@ -1003,8 +1467,10 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
     play_story = _snapshot(request, story_id, request.POST.get(SNAPSHOT_FIELD))
     form = _form(play_story, request.POST)
     key = posted_idempotency_key(request)
+    shown = _player_view(request.POST.get(TRANSCRIPT_PLAYER_VIEW))
     if not form.is_valid():
-        return _turn_answer(request, play_story, form, Inspector(notice=NOT_SENT, revisions=False))
+        refused = Inspector(notice=NOT_SENT, revisions=False)
+        return _turn_answer(request, play_story, form, refused, player_view=shown)
     deadline = form.cleaned_data["deadline_s"]
     if deadline is None:
         deadline = play_story.turn_deadline
@@ -1014,9 +1480,15 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        if isinstance(exc, EngineError) and exc.code in PLACED_CODES:
-            apply_engine_errors(exc, form, aliases=FORM_ALIASES)
-        return _turn_answer(request, play_story, form, error_inspector(exc, key))
+        if is_module_off(exc):
+            form.multi_error = RELOAD  # #200: the section-level error
+        elif (
+            isinstance(exc, EngineError)
+            and exc.code in PLACED_CODES
+            and not form.place_reason(exc)  # #200: a worded details.reason first
+        ):
+            apply_engine_errors(exc, form, aliases={**FORM_ALIASES, **form.role_aliases()})
+        return _turn_answer(request, play_story, form, error_inspector(exc, key), player_view=shown)
     if isinstance(result, QueuedTurn):
         pending = request.session.get(PENDING_KEY, {})
         pending[result.operation_id] = _posted(request.POST)
@@ -1028,6 +1500,7 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
             result.position,
             form.resolved_viewpoint(),
             deadline if deadline is not None else DEFAULT_TURN_DEADLINE_S,
+            player_view=shown,
         )
         waiting = Inspector(
             title="Turn queued",
@@ -1038,16 +1511,24 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
             revisions=False,
         )
         kept = _form(play_story, initial=form.kept_values(clear_input=False))
-        return _turn_answer(request, play_story, kept, waiting, cards=[card])
+        return _turn_answer(request, play_story, kept, waiting, cards=[card], player_view=shown)
     operation_id = result.entries[0].operation_id if result.entries else ""
     fresh = _form(play_story, initial=form.kept_values(clear_input=True))
     return _turn_answer(
         request,
         play_story,
         fresh,
-        result_inspector(story_id, result, key, operation_id),
+        result_inspector(
+            story_id,
+            result,
+            key,
+            operation_id,
+            actor=str(form.cleaned_data.get("actor") or ""),
+            labels=cast_names(play_story.cast),
+        ),
         viewpoint=result.output_viewpoint,
         config_badge=_badge_after(request, story_id, result),
+        player_view=shown,
     )
 
 
@@ -1072,9 +1553,11 @@ def _turn_answer(
     cards: list[WaitingCard] | None = None,
     viewpoint: str | None = None,
     config_badge: ConfigBadge | None = None,
+    player_view: str = "",
 ) -> HttpResponse:
     """The answer to a turn POST. ``viewpoint`` set means the turn finished: the transcript is
-    re-fetched at it (and ``config_badge`` refreshes the header, #85)."""
+    re-fetched at it, at the transcript's ``player_view`` (#196), and ``config_badge``
+    refreshes the header (#85)."""
     if not is_htmx(request):
         return _page(
             request,
@@ -1083,13 +1566,18 @@ def _turn_answer(
             inspector=found,
             cards=cards or [],
             viewpoint=viewpoint,
+            player_view=player_view,
         )
     context: dict[str, Any] = {
         "inspector": found,
-        "fv": _form_view(play_story, form, waiting=bool(cards)),
+        "fv": _form_view(play_story, form, waiting=bool(cards), transcript_player_view=player_view),
         "cards": cards or [],
         "status_note": "",
-        "transcript": (_transcript(request, play_story, viewpoint) if viewpoint else None),
+        "transcript": (
+            _transcript(request, play_story, viewpoint, player_view=player_view)
+            if viewpoint
+            else None
+        ),
         "config_badge": config_badge,
     }
     return render(request, "console/play/_turn_response.html", context)
@@ -1145,16 +1633,19 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
     out-of-band after a recorded batch, to HTMX; the whole page otherwise (no redirect)."""
     play_story = _snapshot(request, story_id, request.POST.get(SNAPSHOT_FIELD))
     viewpoint = request.POST.get("output_viewpoint", "")
+    shown = _player_view(request.POST.get(TRANSCRIPT_PLAYER_VIEW))
+    kept = {"transcript_player_view": shown}
     if wants_edit(request.POST):
         data = edit_rows(
             request.POST, INGEST_PREFIX, max_rows=EVENTS_MAX, new_row=new_row(play_story.cast)
         )
         edited = ingest_formset(play_story.cast, data)
-        view = _ingest_view(play_story, edited, viewpoint, show_errors=False)
+        view = _ingest_view(play_story, edited, viewpoint, show_errors=False, **kept)
         return _ingest_answer(request, play_story, view)
     formset = ingest_formset(play_story.cast, request.POST)
     if not formset.is_valid():
-        return _ingest_answer(request, play_story, _ingest_view(play_story, formset, viewpoint))
+        view = _ingest_view(play_story, formset, viewpoint, **kept)
+        return _ingest_answer(request, play_story, view)
     events = formset.events()
     key = posted_idempotency_key(request)
     timeout = ingest_timeout(play_story.turn_deadline, len(events))
@@ -1176,6 +1667,7 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
             viewpoint,
             batch_errors=tuple(str(e) for e in batch.non_field_errors()),
             outcome=_ingest_outcome(exc, key, placed, batch),
+            **kept,
         )
         return _ingest_answer(request, play_story, view)
     transcript_viewpoint = play_story.resolve(viewpoint)
@@ -1187,6 +1679,7 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
             result.position,
             transcript_viewpoint or "",
             play_story.turn_deadline or DEFAULT_TURN_DEADLINE_S,
+            player_view=shown,
         )
         queued = Inspector(
             title="Ingest queued",
@@ -1197,7 +1690,7 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
             log_pk=_log_pk(result.operation_id),
             revisions=False,
         )
-        view = _ingest_view(play_story, formset, viewpoint, outcome=queued)
+        view = _ingest_view(play_story, formset, viewpoint, outcome=queued, **kept)
         return _ingest_answer(request, play_story, view, cards=[card])
     view = _ingest_view(
         play_story,
@@ -1206,6 +1699,7 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         results=result_rows(result, events, play_story.cast),
         timeline_revision=result.timeline_revision,
         gate=gate_line(result),
+        **kept,
     )
     return _ingest_answer(request, play_story, view, viewpoint=transcript_viewpoint or "")
 
@@ -1219,7 +1713,9 @@ def _ingest_answer(
     viewpoint: str | None = None,
 ) -> HttpResponse:
     """The answer to an ingest POST. ``viewpoint`` set means a batch was recorded (replayed
-    events included): the transcript is re-fetched at it, never appended to."""
+    events included): the transcript is re-fetched at it, at the view's transcript player view
+    (#196), never appended to."""
+    player_view = view.transcript_player_view
     if not is_htmx(request):
         return _page(
             request,
@@ -1229,13 +1725,16 @@ def _ingest_answer(
             tab=INGEST_TAB,
             ingest_view=view,
             form=_form(play_story, initial=_initial(play_story, view.viewpoint)),
+            player_view=player_view,
         )
     context: dict[str, Any] = {
         "iv": view,
         "cards": cards or [],
         "status_note": "",
         "transcript": (
-            _transcript(request, play_story, viewpoint) if viewpoint is not None else None
+            _transcript(request, play_story, viewpoint, player_view=player_view)
+            if viewpoint is not None
+            else None
         ),
     }
     return render(request, "console/play/_ingest_response.html", context)
@@ -1321,6 +1820,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
         viewpoint,
         deadline_s,
         request.GET.get("started", ""),
+        _player_view(request.GET.get("player_view")),
     )
     try:
         op = engine_client_for(request).get_operation(operation_id, viewpoint=viewpoint or None)
@@ -1346,10 +1846,22 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
     if op.status == "committed":
         result = RespondResponse.from_json(op.result.body) if op.result else None
         if result is not None:
-            found = result_inspector(story_id, result, key, operation_id)
+            # #201: the play story first, for the inspector's labels (C4).
+            pending = _pending_form(request, story_id, operation_id, clear_input=True)
+            found = result_inspector(
+                story_id,
+                result,
+                key,
+                operation_id,
+                actor=_logged_actor(operation_id),
+                labels=cast_names(pending[0].cast),
+                response=op.result.body if op.result else None,
+            )
             note = f"Turn {result.turn} committed."
             badge = _badge_after(request, story_id, result)
-            return _poll_end(request, card, found, note, result.output_viewpoint, badge)
+            return _poll_end(
+                request, card, found, note, result.output_viewpoint, badge, pending=pending
+            )
         batch = IngestResponse.from_json(op.result.body) if op.result else None
         if batch is not None:  # a queued ingest (#51)
             found = Inspector(
@@ -1402,22 +1914,36 @@ def _poll_end(
     note: str,
     viewpoint: str | None,
     config_badge: ConfigBadge | None = None,
+    *,
+    pending: tuple[PlayStory, TurnForm] | None = None,
 ) -> HttpResponse:
     """Polling is over: a closing line in the card's place, and out-of-band the inspector (when
     there is something new to show), the transcript (after a committed turn), the form and
     (after a committed turn) the header's configuration block (#85)."""
     committed = viewpoint is not None
-    play_story, form = _pending_form(
+    play_story, form = pending or _pending_form(
         request, card.story_id, card.operation_id, clear_input=committed
     )
     if not is_htmx(request):
-        return _page(request, card.story_id, form=form, inspector=found, cards=[], status_note=note)
+        return _page(
+            request,
+            card.story_id,
+            form=form,
+            inspector=found,
+            cards=[],
+            status_note=note,
+            player_view=card.player_view,
+        )
     context: dict[str, Any] = {
         "card": card,
         "note": note,
         "inspector": found,
-        "fv": _form_view(play_story, form),
-        "transcript": (_transcript(request, play_story, viewpoint) if committed else None),
+        "fv": _form_view(play_story, form, transcript_player_view=card.player_view),
+        "transcript": (
+            _transcript(request, play_story, viewpoint, player_view=card.player_view)
+            if committed
+            else None
+        ),
         "config_badge": config_badge,
     }
     return render(request, "console/play/_poll_response.html", context)

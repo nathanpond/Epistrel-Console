@@ -25,16 +25,27 @@ ADMIN_SETTINGS = "/admin/settings"
 POLICY = "/admin/policies/{policy_id}"
 
 
+# The Engine's filled read of the six M5 settings (#197), added where a recorded fixture lacks them.
+M5_READ_DEFAULTS: dict[str, Any] = {
+    "player_authority": "own_character",
+    "player_view": "character",
+    "interaction_mode": None,
+    "sequence_order": None,
+    "simultaneous_tie_break": None,
+    "reactive_interjections": False,
+}
+
+
 def settings_json(fixture: str = "get_story_settings", **settings: Any) -> dict[str, Any]:
     """The settings read; ``settings`` patches its ``settings`` object."""
     body: dict[str, Any] = copy.deepcopy(engine_fixture(fixture))
-    body["settings"].update(settings)
+    body["settings"] = {**M5_READ_DEFAULTS, **body["settings"], **settings}
     return body
 
 
 def written_json(**settings: Any) -> dict[str, Any]:
     body: dict[str, Any] = copy.deepcopy(engine_fixture("patch_story_settings"))
-    body["settings"].update(settings)
+    body["settings"] = {**M5_READ_DEFAULTS, **body["settings"], **settings}
     return body
 
 

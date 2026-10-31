@@ -1,11 +1,14 @@
 {% comment %}
 #135 convention 9's verdict words, once per page that shows verdicts (#139's trace block; #147's
-beat trace reuses it). Verdicts render verbatim; nothing is labelled "verified" (FR-RESP-1).
+beat trace reuses it). Verdicts render verbatim; nothing is labelled "verified" (FR-RESP-1). With
+``classification`` true (#207: a classified say beat is shown), a last line explains the
+classification tag.
 {% endcomment %}<dl class="verdict-legend">
   <dt>supported</dt><dd>backed by canon or retrieved evidence</dd>
   <dt>contradicted</dt><dd>conflicts with canon</dd>
   <dt>novel</dt><dd>not in canon; the story's rules decide whether it's allowed</dd>
   <dt>uncertain</dt><dd>the evidence couldn't decide</dd>
   <dt>denied</dt><dd>a novel claim the story's rules don't allow</dd>
-  <dt>not checked</dt><dd>no verdict recorded</dd>
+  <dt>not checked</dt><dd>no verdict recorded</dd>{% if classification %}
+  <dt>classification</dt><dd>how a say compares with what its speaker believes (omniscient reads only). A lie or sincere error says nothing about whether the claim is true in canon.</dd>{% endif %}
 </dl>

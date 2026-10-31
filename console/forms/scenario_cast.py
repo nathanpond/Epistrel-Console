@@ -6,7 +6,14 @@ Row prefixes (#64 convention 6; renumbered on every re-render by ``console.forms
 - ``role-<n>-``: a role (:class:`RoleForm`), in the ``role`` formset;
 - ``role-<n>-seed-<m>-``: a seed of role ``n`` (:class:`SeedForm`), in that role's own seed
   formset (management form ``role-<n>-seed-TOTAL_FORMS``);
-- ``wseed-<m>-``: a world seed (``starting_state.seeded_memories``).
+- ``wseed-<m>-``: a world seed (``starting_state.seeded_memories``);
+- ``grp-<n>-``: a cast group (:class:`GroupForm`; #206), sent as ``cast.groups`` in row order.
+
+#206 adds Engine M5's knowledge-seeding fields: the cast's ``groups`` (offered in each seed's
+audience after the role ids, labelled "(group)"), a relationship's ``trust`` and ``audience``
+(typed in the relationships JSON box, null keys dropped), and a seed's ``confidence`` and
+``nested`` content. List-valued checkboxes (group members, seed audiences) go through #205's
+``keep_order`` against the draft's value (C9).
 
 :class:`CastForms` builds the write: :meth:`~CastForms.cast_body` is the whole ``cast`` object
 (the editor sends it whole when :func:`normalize_cast` of it differs from the signed original's)
@@ -27,7 +34,7 @@ required text of a non-blank row are checked before the call.
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -37,10 +44,15 @@ from django.forms.utils import ErrorDict, ErrorList
 from django.http import QueryDict
 
 from console.engine.choices import CharacterChoices
-from console.engine.models import ScenarioCast, ScenarioRole, Seed
+from console.engine.models import NestedSeed, ScenarioCast, ScenarioRole, Seed
 from console.forms.catalog_character import LabelsField, TextField, norm_labels, norm_text
 from console.forms.fields import JsonBoxField
 from console.reports import field_anchor
+from console.story_settings import engine_default_choice, kept_choices
+from console.wording import humanised
+
+if TYPE_CHECKING:
+    from console.forms.scenario import Rows
 
 ROLE = "role"
 SEED = "seed"
@@ -57,6 +69,13 @@ NONE_LABEL = "(none)"
 CHOOSE_LABEL = "— choose a character —"
 MISSING_SUFFIX = " (missing)"
 NEW_SEED = "new"
+GROUP = "grp"
+GROUPS_PATH = "cast.groups"
+NESTED = "nested"
+NESTED_HOLDER = "nested__attributed_holder"
+NESTED_PROPOSITION = "nested__proposition"
+NESTED_CONFIDENCE = "nested__attributed_confidence"
+NESTED_FIELDS = (NESTED_HOLDER, NESTED_PROPOSITION, NESTED_CONFIDENCE)
 
 # The Engine's bounds (``ScenarioCast``, ``ScenarioRole``, ``Seed``, ``RoleEligibility``).
 ROLES_MAX = 32
@@ -71,6 +90,8 @@ AGE_MIN, AGE_MAX = 0, 150
 ELIGIBILITY_LABELS_MAX = 30
 ELIGIBILITY_RATINGS_MAX = 50
 VERSION_MIN, VERSION_MAX = 1, 2_147_483_647
+GROUPS_MAX = 32
+GROUP_NAME_MAX = 60
 
 # The schema's enums (a test compares them with ``openapi.json``).
 ROLE_KINDS = ("npc", "player")
@@ -79,6 +100,33 @@ WITH_CHARACTER = ("default", "locked")
 PARTICIPATION = ("primary", "reactive", "silent")
 DISCLOSURES = ("open", "guarded", "secret")
 SEED_KINDS = ("canon", "belief", "nested", "scheduled")
+SEED_CONFIDENCES = ("suspected", "believed", "known")  # Seed.confidence, NestedSeed's too
+
+# #206: names a group can't take (the Engine resolves levels and groups before role ids).
+AUDIENCE_LEVELS = ("self", "acquaintances", "perceivable", "public")
+RESERVED_GROUP_NAMES = frozenset({*AUDIENCE_LEVELS, WORLD})
+RELATIONSHIP_KEYS = ("to_role", "name", "trust", "audience")  # the schema's order
+GROUP_SUFFIX = " (group)"
+GROUPS_HELP = (
+    "A seed's audience can name a group to mean its members. Use Update form to offer a new "
+    "or renamed group in the audiences."
+)
+GROUP_NEEDS_NAME = "A group needs its name"
+GROUP_NAME_USED = "Already used by row {row}"
+GROUP_IS_LEVEL = "{name} is an audience level"
+GROUP_IS_ROLE = "A role has this id: the group would hide the role in audiences"
+CONFIDENCE_HELP = "How sure the holder is of a belief seed."
+NESTED_NOTE = (
+    "Needs the nested_beliefs module; without it the seed stays deferred. The Console can't "
+    "read nested beliefs back yet (Engine #606)."
+)
+NESTED_NEEDS_BOTH = "A nested belief needs both the role and what it believes"
+NESTED_SELF = "A role can't be its own attributed holder"
+RELATIONSHIPS_HELP = (
+    'A JSON array of {"to_role", "name", "trust" (0 to 1, optional), "audience" (role ids '
+    "that know it, optional; default its two roles)}."
+)
+CONFIDENCE_CHOICES = [(c, humanised(c)) for c in SEED_CONFIDENCES]
 
 ROLE_ID = re.compile(r"^[a-z0-9_]{1,40}$")
 _SEED_PREFIX = re.compile(rf"^{ROLE}-(?P<role>\d+)-{SEED}$")
@@ -118,9 +166,21 @@ def _kept(choices: list[tuple[str, str]], keep: Iterable[str]) -> list[tuple[str
 # --- the draft as the form sees it ----------------------------------------------------------------
 
 
+def _nested(holder: str, proposition: str | None, confidence: str | None) -> dict[str, Any]:
+    """A ``NestedSeed``: the proposition through ``norm_text``, an unset confidence left out."""
+    out: dict[str, Any] = {"attributed_holder": holder, "proposition": norm_text(proposition)}
+    if confidence:
+        out["attributed_confidence"] = confidence
+    return out
+
+
+def _nested_to_write(nested: NestedSeed) -> dict[str, Any]:
+    return _nested(nested.attributed_holder, nested.proposition, nested.attributed_confidence)
+
+
 def seed_to_write(seed: Seed) -> dict[str, Any]:
-    """A seed in the write shape: every key present (unset ``None``), ``id`` only when it has
-    one."""
+    """A seed in the write shape: every #73 key present (unset ``None``), ``id`` only when it
+    has one; M5's ``confidence`` and ``nested`` only when set (#206)."""
     out: dict[str, Any] = {"id": seed.id} if seed.id else {}
     out.update(
         {
@@ -132,7 +192,22 @@ def seed_to_write(seed: Seed) -> dict[str, Any]:
             "valid_time": seed.valid_time,
         }
     )
+    if seed.confidence is not None:
+        out["confidence"] = seed.confidence
+    if seed.nested is not None:
+        out["nested"] = _nested_to_write(seed.nested)
     return out
+
+
+def relationship_to_write(value: object) -> object:
+    """A relationship object without its null-valued keys, the schema's keys first in its
+    order (``to_role``, ``name``, ``trust``, ``audience``), any other key after them as typed
+    (#206). A non-object is left as typed (the Engine's 422 names it)."""
+    if not isinstance(value, Mapping):
+        return value
+    known = {k: value[k] for k in RELATIONSHIP_KEYS if value.get(k) is not None}
+    rest = {k: v for k, v in value.items() if k not in RELATIONSHIP_KEYS and v is not None}
+    return {**known, **rest}
 
 
 def _age_range(value: object) -> list[int | None] | None:
@@ -193,7 +268,9 @@ def role_to_write(role: ScenarioRole, *, companion: bool = False) -> dict[str, A
         "starting_location": role.starting_location,
         "participation": role.participation,
         "seeded_memories": [seed_to_write(s) for s in role.seeded_memories],
-        "relationships": [asdict(r) for r in role.relationships],
+        # M5's optional ``audience``/``trust`` only when set, so a relationship without them
+        # keeps its pre-M5 shape (#183).
+        "relationships": [relationship_to_write(asdict(r)) for r in role.relationships],
         "name_overrides": role.name_overrides,
         "state_initial_values": role.state_initial_values,
     }
@@ -202,9 +279,11 @@ def role_to_write(role: ScenarioRole, *, companion: bool = False) -> dict[str, A
 def cast_to_write(cast: ScenarioCast, *, companion: bool = False) -> dict[str, Any]:
     """The draft's cast in the write shape (the merge patch's original and the form's first
     state)."""
+    groups = {name: list(members) for name, members in (cast.groups or {}).items()}
     return {
         "max_characters_at_start": cast.max_characters_at_start,
         "roles": [role_to_write(r, companion=companion) for r in cast.roles],
+        "groups": groups or None,
     }
 
 
@@ -221,7 +300,12 @@ def _compact(value: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _norm_seed(seed: object) -> object:
-    return _compact(seed) if isinstance(seed, Mapping) else seed
+    if not isinstance(seed, Mapping):
+        return seed
+    out = _compact(seed)
+    if isinstance(out.get(NESTED), Mapping):
+        out[NESTED] = _compact(out[NESTED]) or None
+    return _compact(out)
 
 
 def _norm_role(role: object) -> object:
@@ -230,6 +314,9 @@ def _norm_role(role: object) -> object:
     out: dict[str, Any] = {**ROLE_DEFAULTS, **{k: v for k, v in role.items() if v is not None}}
     seeds = out.get("seeded_memories")
     out["seeded_memories"] = [_norm_seed(s) for s in seeds] if isinstance(seeds, list) else seeds
+    relationships = out.get("relationships")
+    if isinstance(relationships, list):
+        out["relationships"] = [relationship_to_write(r) for r in relationships]
     for key in ("character", "eligibility"):
         if isinstance(out.get(key), Mapping):
             out[key] = _compact(out[key])
@@ -240,20 +327,25 @@ def normalize_cast(cast: object) -> dict[str, Any]:
     """``cast`` with the Engine's defaults filled (``fill: open``, ``required: true``, no
     relationships, no seeds) and null or empty optionals dropped, at the cast, role, seed,
     character and eligibility levels (never inside a JSON box): equal for a draft's cast and an
-    untouched form's."""
+    untouched form's. #206: ``groups`` with its ``null`` entries (an edit's removals) dropped and
+    ``{}`` read as ``null``; the comparison ignores the groups' key order."""
     if not isinstance(cast, Mapping):
         return {}
     roles = cast.get("roles")
+    groups = cast.get("groups")
+    if isinstance(groups, Mapping):
+        groups = {k: v for k, v in groups.items() if v is not None} or None
     out: dict[str, Any] = {
         "max_characters_at_start": cast.get("max_characters_at_start"),
         "roles": [_norm_role(r) for r in roles] if isinstance(roles, list) else roles,
+        "groups": groups,
     }
     return _compact(out)
 
 
-def seed_ids(doc: Mapping[str, Any]) -> set[str]:
-    """Every seed id in ``doc`` (the write shape): the roles' and the world's."""
-    found: set[str] = set()
+def _seeds_by_id(doc: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Every seed in ``doc`` (the write shape) with an id, the roles' then the world's (the
+    first seed with an id wins)."""
     cast = doc.get("cast") if isinstance(doc.get("cast"), Mapping) else {}
     seeds: list[Any] = []
     for role in (cast or {}).get("roles") or []:
@@ -262,10 +354,40 @@ def seed_ids(doc: Mapping[str, Any]) -> set[str]:
     state = doc.get("starting_state")
     if isinstance(state, Mapping):
         seeds.extend(state.get("seeded_memories") or [])
+    found: dict[str, Mapping[str, Any]] = {}
     for seed in seeds:
         if isinstance(seed, Mapping) and isinstance(seed.get("id"), str):
-            found.add(seed["id"])
+            found.setdefault(seed["id"], seed)
     return found
+
+
+def seed_ids(doc: Mapping[str, Any]) -> set[str]:
+    """Every seed id in ``doc`` (the write shape): the roles' and the world's."""
+    return set(_seeds_by_id(doc))
+
+
+def stored_groups(doc: Mapping[str, Any]) -> dict[str, list[str]]:
+    """``doc``'s ``cast.groups`` (the write shape): each group's stored members by name."""
+    cast = doc.get("cast")
+    groups = cast.get("groups") if isinstance(cast, Mapping) else None
+    if not isinstance(groups, Mapping):
+        return {}
+    return {
+        name: [m for m in members if isinstance(m, str)]
+        for name, members in groups.items()
+        if isinstance(name, str) and isinstance(members, list)
+    }
+
+
+def offered_groups(names: Iterable[str], role_ids: Iterable[str]) -> list[str]:
+    """The group names a seed's audience offers (#206): each non-blank trimmed name once, in
+    row order, except one equal to a role id, ``world`` or an audience level (its row carries
+    the error)."""
+    roles = set(role_ids)
+    trimmed = (n.strip() for n in names)
+    return [
+        n for n in dict.fromkeys(trimmed) if n and n not in roles and n not in RESERVED_GROUP_NAMES
+    ]
 
 
 # --- the form's POST state from a document --------------------------------------------------------
@@ -284,15 +406,17 @@ def _management(prefix: str, total: int, cap: int) -> dict[str, str]:
     }
 
 
-def _seed_data(prefix: str, seeds: list[Any], role_ids: set[str]) -> dict[str, list[str]]:
+def _seed_data(prefix: str, seeds: list[Any], offered: set[str]) -> dict[str, list[str]]:
     data: dict[str, list[str]] = {}
     for m, seed in enumerate(seeds):
         if not isinstance(seed, Mapping):
             continue
         at = f"{prefix}-{m}-"
         audience = [a for a in seed.get("audience") or [] if isinstance(a, str)]
-        ticked = [a for a in audience if a in role_ids or a == WORLD]
+        ticked = [a for a in audience if a in offered]
         other = [a for a in audience if a not in ticked]
+        raw_nested = seed.get(NESTED)
+        nested: Mapping[str, Any] = raw_nested if isinstance(raw_nested, Mapping) else {}
         for name, value in (
             ("id", seed.get("id")),
             ("text", seed.get("text")),
@@ -304,6 +428,10 @@ def _seed_data(prefix: str, seeds: list[Any], role_ids: set[str]) -> dict[str, l
                 "valid_time",
                 None if seed.get("valid_time") is None else _box_text(seed["valid_time"]),
             ),
+            ("confidence", seed.get("confidence")),
+            (NESTED_HOLDER, nested.get("attributed_holder")),
+            (NESTED_PROPOSITION, nested.get("proposition")),
+            (NESTED_CONFIDENCE, nested.get("attributed_confidence")),
         ):
             if value is not None:
                 data[f"{at}{name}"] = [str(value)]
@@ -321,7 +449,15 @@ def cast_data(doc: Mapping[str, Any]) -> dict[str, list[str]]:
     cast = cast if isinstance(cast, Mapping) else {}
     roles = [r for r in cast.get("roles") or [] if isinstance(r, Mapping)]
     role_ids = {r["id"] for r in roles if isinstance(r.get("id"), str)}
+    groups = stored_groups(doc)
+    offered = {*role_ids, *offered_groups(groups, role_ids), WORLD}
     data: dict[str, list[str]] = {}
+    for g, (name, members) in enumerate(groups.items()):
+        data[f"{GROUP}-{g}-name"] = [name]
+        if members:
+            data[f"{GROUP}-{g}-members"] = list(members)
+    for key, count in _management(GROUP, len(groups), GROUPS_MAX).items():
+        data[key] = [count]
     if cast.get("max_characters_at_start") is not None:
         data[MAX_FIELD] = [str(cast["max_characters_at_start"])]
     for n, role in enumerate(roles):
@@ -354,12 +490,12 @@ def cast_data(doc: Mapping[str, Any]) -> dict[str, list[str]]:
         ratings = [r for r in eligibility.get("content_ratings") or [] if isinstance(r, str)]
         if ratings:
             data[f"{at}{RATINGS_FIELD}"] = ratings
-        data.update(_seed_data(seed_prefix(n), list(role.get("seeded_memories") or []), role_ids))
+        data.update(_seed_data(seed_prefix(n), list(role.get("seeded_memories") or []), offered))
     for key, value in _management(ROLE, len(roles), ROLES_MAX).items():
         data[key] = [value]
     state = doc.get("starting_state")
     world = state.get("seeded_memories") if isinstance(state, Mapping) else None
-    data.update(_seed_data(WSEED, list(world or []), role_ids))
+    data.update(_seed_data(WSEED, list(world or []), offered))
     return data
 
 
@@ -421,9 +557,18 @@ def posted_role_ids(data: QueryDict) -> list[str]:
     return list(dict.fromkeys(v for v in values if v))
 
 
+def posted_group_names(data: QueryDict) -> list[str]:
+    """The posted group rows' non-blank trimmed names, de-duplicated, in row order."""
+    values = (
+        (data.get(f"{GROUP}-{n}-name") or "").strip()
+        for n in range(_total(data, GROUP, GROUPS_MAX))
+    )
+    return list(dict.fromkeys(v for v in values if v))
+
+
 def row_caps(prefix: str) -> dict[str, int]:
     """The row cap of each cast formset an ``op`` may name (a role's seeds by its prefix)."""
-    caps = {ROLE: ROLES_MAX, WSEED: SEEDS_MAX}
+    caps = {ROLE: ROLES_MAX, WSEED: SEEDS_MAX, GROUP: GROUPS_MAX}
     if _SEED_PREFIX.match(prefix):
         caps[prefix] = SEEDS_MAX
     return caps
@@ -444,6 +589,8 @@ def new_row(data: QueryDict, prefix: str) -> dict[str, list[str]] | None:
         }
     if prefix == WSEED:
         return {"holder": [WORLD], "audience": [WORLD]}
+    if prefix == GROUP:
+        return {}
     match = _SEED_PREFIX.match(prefix)
     if match is None:
         return None
@@ -460,12 +607,14 @@ def _fill_management(data: QueryDict, prefix: str, cap: int) -> None:
 
 def prepared(data: QueryDict) -> QueryDict:
     """``data`` with every cast formset's management form present (a missing one: no rows),
-    and each seed's ticked audience narrowed to the current choices (role ids and ``world``):
-    a token matching none (``self``, a renamed role) moves to "Other audience"."""
+    and each seed's ticked audience narrowed to the current choices (role ids, the offered
+    group names and ``world``): a token matching none (``self``, a renamed role or group)
+    moves to "Other audience"."""
     out = data.copy()
-    for prefix, cap in ((ROLE, ROLES_MAX), (WSEED, SEEDS_MAX)):
+    for prefix, cap in ((ROLE, ROLES_MAX), (WSEED, SEEDS_MAX), (GROUP, GROUPS_MAX)):
         _fill_management(out, prefix, cap)
-    role_ids = set(posted_role_ids(out))
+    role_ids = posted_role_ids(out)
+    choices = {*role_ids, *offered_groups(posted_group_names(out), role_ids), WORLD}
     prefixes = [WSEED]
     for n in range(_total(out, ROLE, ROLES_MAX)):
         prefix = seed_prefix(n)
@@ -475,7 +624,7 @@ def prepared(data: QueryDict) -> QueryDict:
         for m in range(_total(out, prefix, SEEDS_MAX)):
             name = f"{prefix}-{m}-audience"
             ticked = out.getlist(name)
-            moved = [a for a in ticked if a not in role_ids and a != WORLD]
+            moved = [a for a in ticked if a not in choices]
             if not moved:
                 continue
             out.setlist(name, [a for a in ticked if a not in moved])
@@ -533,10 +682,26 @@ class _RowForm(forms.Form):
                 f.widget.attrs["id"] = field_anchor(f"{self.path}.{name.replace('__', '.')}")
 
 
+CONFIDENCE_DEFAULTS = {"confidence": "believed", NESTED_CONFIDENCE: "known"}
+
+
+def _confidence_choices(name: str) -> list[tuple[str, str]]:
+    """A C7 confidence select's choices (#206): "Engine default (<default>)", which sends
+    nothing, then the three levels."""
+    return [engine_default_choice(CONFIDENCE_DEFAULTS[name]), *CONFIDENCE_CHOICES]
+
+
+def _confidence(label: str, name: str, help_text: str = "") -> forms.ChoiceField:
+    return forms.ChoiceField(
+        label=label, required=False, help_text=help_text, choices=_confidence_choices(name)
+    )
+
+
 class SeedForm(_RowForm):
     """One seed (a role's or the world's). ``roles`` are the current role ids (the holder and
-    audience choices, with ``world``); ``original_ids`` the signed original's seed ids (only
-    those are shown, and kept, as the seed's id)."""
+    audience choices, with ``world``); ``groups`` the offered group names (audience choices
+    after the role ids, #206); ``original_ids`` the signed original's seed ids (only those are
+    shown, and kept, as the seed's id)."""
 
     id = forms.CharField(required=False, widget=forms.HiddenInput)
     text = TextField(
@@ -562,12 +727,19 @@ class SeedForm(_RowForm):
     kind = forms.ChoiceField(
         label="Kind", required=False, choices=_choices(SEED_KINDS, UNSET_LABEL)
     )
+    confidence = _confidence("Confidence", "confidence", CONFIDENCE_HELP)
+    nested__attributed_holder = forms.ChoiceField(label="Believes that…", required=False)
+    nested__proposition = TextField(
+        label="…believes", max_length=TEXT_MAX, required=False, widget=_textarea(2)
+    )
+    nested__attributed_confidence = _confidence("At confidence", NESTED_CONFIDENCE)
     valid_time = _box(dict, None, "Valid time")
 
     def __init__(
         self,
         *args: Any,
         roles: list[str],
+        groups: Sequence[str] = (),
         original_ids: frozenset[str] = frozenset(),
         path: str = "",
         **kwargs: Any,
@@ -575,23 +747,48 @@ class SeedForm(_RowForm):
         super().__init__(*args, **kwargs)
         self.path = path
         self.original_ids = original_ids
-        offered = [*roles, WORLD]
+        holders = [*roles, WORLD]
         holder = self.fields["holder"]
         if isinstance(holder, forms.ChoiceField):
-            holder.choices = _kept(_choices(offered, UNSET_LABEL), [self.raw("holder")])
+            holder.choices = _kept(_choices(holders, UNSET_LABEL), [self.raw("holder")])
         audience = self.fields["audience"]
         if isinstance(audience, forms.MultipleChoiceField):
-            audience.choices = [(v, v) for v in offered]
-        self.offered = offered
+            audience.choices = [
+                *((v, v) for v in roles),
+                *((g, f"{g}{GROUP_SUFFIX}") for g in groups),
+                (WORLD, WORLD),
+            ]
+        self.offered = [*roles, *groups, WORLD]
         for name, values in (("disclosure", DISCLOSURES), ("kind", SEED_KINDS)):
             choice = self.fields[name]
             if isinstance(choice, forms.ChoiceField):
                 choice.choices = _kept(_choices(values, UNSET_LABEL), [self.raw(name)])
+        for name in ("confidence", NESTED_CONFIDENCE):
+            choice = self.fields[name]
+            if isinstance(choice, forms.ChoiceField):
+                choice.choices = kept_choices(_confidence_choices(name), self.raw(name) or None)
+        attributed = self.fields[NESTED_HOLDER]
+        if isinstance(attributed, forms.ChoiceField):
+            attributed.choices = _kept(_choices(roles, NONE_LABEL), [self.raw(NESTED_HOLDER)])
         self._anchor()
 
     @property
     def blank(self) -> bool:
-        return not self.raw("text")
+        """Blank (dropped) only when its text, confidence and nested fields all are (#206)."""
+        return not any(self.raw(n) for n in ("text", "confidence", *NESTED_FIELDS))
+
+    @property
+    def nested_open(self) -> bool:
+        """The Nested belief details open: kind ``nested``, a nested value, or an error."""
+        return (
+            self.raw("kind") == NESTED
+            or any(self.raw(n) for n in NESTED_FIELDS)
+            or any(n in self.errors for n in NESTED_FIELDS)
+        )
+
+    @property
+    def nested_note(self) -> str:
+        return NESTED_NOTE
 
     @property
     def shown_id(self) -> str:
@@ -612,21 +809,49 @@ class SeedForm(_RowForm):
         if len(audience) > AUDIENCE_MAX:
             self.add_error("audience", f"At most {AUDIENCE_MAX} audience entries.")
         data["audience_sent"] = audience or None
+        self._clean_nested(data)
         return data
 
-    def seed(self, seed_id: str | None) -> dict[str, Any]:
+    def _clean_nested(self, data: Mapping[str, Any]) -> None:
+        """#206: a nested belief needs both its role and its proposition, and the role can't be
+        the seed's own holder (the Engine would defer the seed silently)."""
+        attributed = data.get(NESTED_HOLDER) or ""
+        typed = (attributed, data.get(NESTED_PROPOSITION), data.get(NESTED_CONFIDENCE))
+        if any(n in self.errors for n in NESTED_FIELDS) or not any(typed):
+            return
+        for name in (NESTED_HOLDER, NESTED_PROPOSITION):
+            if not data.get(name):
+                self.add_error(name, NESTED_NEEDS_BOTH)
+        if attributed and attributed == (data.get("holder") or ""):
+            self.add_error(NESTED_HOLDER, NESTED_SELF)
+
+    def seed(
+        self, seed_id: str | None, stored_audience: Sequence[str] | None = None
+    ) -> dict[str, Any]:
+        """The seed sent; its audience through ``keep_order`` against ``stored_audience`` (the
+        draft seed with the same kept id; C9), so offering groups never reorders it."""
+        from console.forms.scenario import keep_order  # the editor imports this module
+
         data = self.cleaned_data
+        audience = data.get("audience_sent")
+        if audience and stored_audience:
+            audience = keep_order(stored_audience, audience)
         out: dict[str, Any] = {"id": seed_id} if seed_id else {}
         out.update(
             {
                 "text": data["text"],
                 "holder": data.get("holder") or None,
-                "audience": data.get("audience_sent"),
+                "audience": audience,
                 "disclosure": data.get("disclosure") or None,
                 "kind": data.get("kind") or None,
                 "valid_time": data.get("valid_time"),
             }
         )
+        if data.get("confidence"):
+            out["confidence"] = data["confidence"]
+        attributed, proposition = data.get(NESTED_HOLDER), data.get(NESTED_PROPOSITION)
+        if attributed and proposition:
+            out[NESTED] = _nested(attributed, proposition, data.get(NESTED_CONFIDENCE))
         return out
 
 
@@ -652,6 +877,88 @@ SeedFormSet = formset_factory(
     max_num=SEEDS_MAX,
     validate_max=True,
     absolute_max=SEEDS_MAX + 1,
+)
+
+
+class GroupForm(forms.Form):
+    """A ``grp`` row (#206): a cast group's name and members. ``roles``: the role rows' ids in
+    the current form state; a ticked id matching none stays ticked as "<id> (missing)"."""
+
+    name = forms.CharField(label="Name", max_length=GROUP_NAME_MAX, required=False)
+    members = forms.MultipleChoiceField(
+        label="Members", required=False, widget=forms.CheckboxSelectMultiple
+    )
+
+    def __init__(self, *args: Any, roles: Sequence[str] = (), **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        field = self.fields["members"]
+        if isinstance(field, forms.MultipleChoiceField):
+            field.choices = _kept([(v, v) for v in roles], self._ticked())
+
+    def _ticked(self) -> list[str]:
+        if not self.is_bound or not hasattr(self.data, "getlist"):
+            return []
+        return [v for v in self.data.getlist(self.add_prefix("members")) if v]
+
+    @property
+    def blank(self) -> bool:
+        """A blank (or whitespace-only) name and nothing ticked: dropped."""
+        value = self.data.get(self.add_prefix("name")) if self.is_bound else None
+        return not (value or "").strip() and not self._ticked()
+
+    def group(self, stored: Mapping[str, Sequence[str]]) -> tuple[str, list[str]]:
+        """The group sent: its name and members in the form's order, through ``keep_order``
+        against the draft's group of the same name (C9)."""
+        from console.forms.scenario import keep_order  # the editor imports this module
+
+        data = self.cleaned_data
+        name: str = data.get("name") or ""
+        ticked = set(data.get("members") or [])
+        field = self.fields["members"]
+        chosen = [v for v, _ in getattr(field, "choices", []) if v in ticked]
+        previous = stored.get(name)
+        return name, keep_order(previous, chosen) if previous is not None else chosen
+
+
+if TYPE_CHECKING:
+    _GroupFormSetBase = BaseFormSet[GroupForm]
+else:
+    _GroupFormSetBase = BaseFormSet
+
+
+class _GroupFormSet(_GroupFormSetBase):
+    """The ``grp`` rows' name checks (#206), on save only, on the row's ``name``; a row shows
+    its first failing check. ``form_kwargs["roles"]``: the role rows' ids."""
+
+    def clean(self) -> None:
+        roles = set(self.form_kwargs.get("roles") or ())
+        seen: dict[str, int] = {}
+        for index, form in enumerate(self.forms):
+            data = getattr(form, "cleaned_data", None)
+            if data is None or "name" in form.errors:
+                continue
+            name: str = data.get("name") or ""
+            if not name:
+                if data.get("members"):
+                    form.add_error("name", GROUP_NEEDS_NAME)
+                continue
+            if name in seen:
+                form.add_error("name", GROUP_NAME_USED.format(row=seen[name] + 1))
+                continue
+            seen[name] = index
+            if name in RESERVED_GROUP_NAMES:
+                form.add_error("name", GROUP_IS_LEVEL.format(name=name))
+            elif name in roles:
+                form.add_error("name", GROUP_IS_ROLE)
+
+
+GroupFormSet = formset_factory(
+    GroupForm,
+    formset=_GroupFormSet,
+    extra=0,
+    max_num=GROUPS_MAX,
+    validate_max=True,
+    absolute_max=GROUPS_MAX + 1,
 )
 
 
@@ -745,6 +1052,7 @@ class RoleForm(_RowForm):
         for name, (top, empty) in ROLE_BOXES.items():
             label = name.replace("_", " ").capitalize()
             self.fields[name] = _box(top, empty, label)
+        self.fields["relationships"].help_text = RELATIONSHIPS_HELP
         self._anchor()
 
     @property
@@ -847,7 +1155,7 @@ class RoleForm(_RowForm):
             "starting_location": data.get("starting_location") or None,
             "participation": data.get("participation") or None,
             "seeded_memories": seeds,
-            "relationships": data.get("relationships") or [],
+            "relationships": [relationship_to_write(r) for r in data.get("relationships") or []],
             "name_overrides": data.get("name_overrides"),
             "state_initial_values": data.get("state_initial_values"),
         }
@@ -923,12 +1231,14 @@ class _Built:
     seeds: dict[int, list[int]]  # role form index → its sent seeds' form indexes
     world_rows: list[int]
     sent: dict[tuple[int, int] | int, dict[str, Any]]  # a seed form's sent seed
+    groups: dict[str, int] = field(default_factory=dict)  # a sent group's name → its form index
 
 
 class CastForms:
     """The Cast section (the cast limit, the role rows and each role's seed rows) and the World
-    seeds block, bound to ``data``. ``original`` is the signed original (the write shape; only
-    its seed ids are read), ``locations`` the location rows' ids in the current form state."""
+    seeds block, bound to ``data``. ``original`` is the signed original (the write shape; its
+    seed ids, seed audiences and groups are read), ``locations`` the location rows' ids in the
+    current form state. #206's ``grp`` rows are the cast's groups."""
 
     def __init__(
         self,
@@ -940,8 +1250,15 @@ class CastForms:
     ) -> None:
         self.data = data
         self.role_ids = posted_role_ids(self.data)
-        self.original_ids = frozenset(seed_ids(original))
-        seed_kwargs = {"roles": self.role_ids, "original_ids": self.original_ids}
+        self.group_names = offered_groups(posted_group_names(self.data), self.role_ids)
+        self.original_seeds = _seeds_by_id(original)
+        self.original_ids = frozenset(self.original_seeds)
+        self.stored_groups = stored_groups(original)
+        seed_kwargs = {
+            "roles": self.role_ids,
+            "groups": self.group_names,
+            "original_ids": self.original_ids,
+        }
         self.limit = CastLimitForm(self.data)
         total = _total(self.data, ROLE, ROLES_MAX)
         self.seed_sets: list[BaseFormSet[SeedForm]] = [
@@ -961,22 +1278,27 @@ class CastForms:
         self.world = SeedFormSet(
             self.data, prefix=WSEED, form_kwargs={**seed_kwargs, "base_path": WORLD_SEEDS_PATH}
         )
+        self.groups = GroupFormSet(self.data, prefix=GROUP, form_kwargs={"roles": self.role_ids})
         self.companion = choices.companion
         self.cast_errors: list[str] = []
         self.world_errors: list[str] = []
         self._built: _Built | None = None
 
     def _has_seeds(self, n: int) -> bool:
+        """Whether role ``n`` has a seed that isn't blank (its text, confidence or a nested
+        field typed; #206)."""
         prefix = seed_prefix(n)
+        names = ("text", "confidence", *NESTED_FIELDS)
         return any(
-            (self.data.get(f"{prefix}-{m}-text") or "").strip()
+            (self.data.get(f"{prefix}-{m}-{name}") or "").strip()
             for m in range(_total(self.data, prefix, SEEDS_MAX))
+            for name in names
         )
 
     # --- validation ------------------------------------------------------------------------
 
     def _formsets(self) -> list[BaseFormSet[Any]]:
-        return [self.roles, *self.seed_sets, self.world]
+        return [self.roles, self.groups, *self.seed_sets, self.world]
 
     def is_valid(self) -> bool:
         results = [self.limit.is_valid(), *(fs.is_valid() for fs in self._formsets())]
@@ -1014,6 +1336,12 @@ class CastForms:
                 return posted
             return None  # not the original's, or a repeat: the Engine mints one
 
+        def sent_seed(form: SeedForm) -> dict[str, Any]:
+            seed_id = kept_id(form)
+            stored = self.original_seeds.get(seed_id) if seed_id else None
+            audience = stored.get("audience") if stored is not None else None
+            return form.seed(seed_id, audience if isinstance(audience, list) else None)
+
         roles: list[dict[str, Any]] = []
         role_rows: list[int] = []
         seed_rows: dict[int, list[int]] = {}
@@ -1025,7 +1353,7 @@ class CastForms:
             for m, seed_form in enumerate(self.seed_sets[n].forms):
                 if seed_form.blank:
                     continue
-                seed = seed_form.seed(kept_id(seed_form))
+                seed = sent_seed(seed_form)
                 sent[(n, m)] = seed
                 seeds.append(seed)
                 seed_rows[n].append(m)
@@ -1036,15 +1364,26 @@ class CastForms:
         for m, seed_form in enumerate(self.world.forms):
             if seed_form.blank:
                 continue
-            seed = seed_form.seed(kept_id(seed_form))
+            seed = sent_seed(seed_form)
             sent[m] = seed
             world.append(seed)
             world_rows.append(m)
+        groups: dict[str, list[str] | None] = {}
+        group_rows: dict[str, int] = {}
+        for g, group_form in enumerate(self.groups.forms):
+            if group_form.blank:
+                continue
+            name, members = group_form.group(self.stored_groups)
+            groups.setdefault(name, members)
+            group_rows.setdefault(name, g)
+        if groups:  # RFC 7386: a draft group no row names (removed or renamed) is cleared
+            groups.update({old: None for old in self.stored_groups if old not in groups})
         cast = {
             "max_characters_at_start": self.limit.cleaned_data.get(MAX_FIELD),
             "roles": roles,
+            "groups": groups or None,
         }
-        self._built = _Built(cast, world, role_rows, seed_rows, world_rows, sent)
+        self._built = _Built(cast, world, role_rows, seed_rows, world_rows, sent, group_rows)
         return self._built
 
     def cast_body(self) -> dict[str, Any]:
@@ -1063,6 +1402,10 @@ class CastForms:
         of World seeds. ``False`` for any other path."""
         if path == MAX_PATH:
             self.limit.add_error(MAX_FIELD, message)
+            return True
+        if path.startswith(f"{GROUPS_PATH}."):
+            if not self._place_group(path, message):
+                self.cast_errors.append(f"{path}: {message}")
             return True
         if path == CAST_PATH or path.startswith((f"{CAST_PATH}.", f"{CAST_PATH}[")):
             if not self._place_role(path, message):
@@ -1090,6 +1433,30 @@ class CastForms:
                 form.add_error(None, text)
                 return
         self.cast_errors.append(text)
+
+    def _place_group(self, path: str, message: str) -> bool:
+        """``cast.groups.<name>…`` on the sent group row with that name (#206): ``.[key]`` (the
+        name's pattern) on its name, the group itself on its members, ``[i]`` on its members
+        prefixed with that member. ``False`` when no sent row has the name."""
+        rest = path.removeprefix(f"{GROUPS_PATH}.")
+        built = self._build()
+        for name in sorted(built.groups, key=len, reverse=True):
+            if rest != name and not rest.startswith((f"{name}.", f"{name}[")):
+                continue
+            form = self.groups.forms[built.groups[name]]
+            tail = rest[len(name) :]
+            member = re.fullmatch(r"\[(\d+)\]", tail)
+            members = built.cast["groups"][name] or []
+            if not tail:
+                form.add_error("members", message)
+            elif tail == ".[key]":
+                form.add_error("name", message)
+            elif member and int(member[1]) < len(members):
+                form.add_error("members", f"{members[int(member[1])]}: {message}")
+            else:
+                form.add_error(None, f"{path}: {message}")
+            return True
+        return False
 
     def _place_role(self, path: str, message: str) -> bool:
         match = _INDEXED.match(path.removeprefix("cast.roles"))
@@ -1127,6 +1494,13 @@ class CastForms:
             form.add_error(None, message)
             return
         name = re.split(r"[.\[]", rest, maxsplit=1)[0]
+        if name == NESTED:  # #206: the content as a whole on its role, a key on its field
+            target = f"{NESTED}__{rest.removeprefix(f'{NESTED}.')}"
+            if target in NESTED_FIELDS:
+                form.add_error(target, message)
+            else:
+                form.add_error(NESTED_HOLDER, message if rest == NESTED else f"{path}: {message}")
+            return
         if name == "audience":
             token = re.match(r"^audience\[(\d+)\]", rest)
             audience = sent.get("audience") or []
@@ -1163,6 +1537,20 @@ class CastForms:
     @property
     def world_rows(self) -> SeedRows:
         return SeedRows(WSEED, self.world, len(self.world.forms) < SEEDS_MAX)
+
+    @property
+    def group_rows(self) -> Rows:
+        """The Groups row set (#206), shown through #205's ``_rows.html``."""
+        from console.forms.scenario import Rows  # the editor imports this module
+
+        return Rows(
+            "Groups",
+            GROUP,
+            self.groups,
+            len(self.groups.forms) < GROUPS_MAX,
+            field_anchor(GROUPS_PATH),
+            GROUPS_HELP,
+        )
 
 
 def _role_field(form: RoleForm, rest: str, path: str, message: str) -> tuple[str | None, str]:

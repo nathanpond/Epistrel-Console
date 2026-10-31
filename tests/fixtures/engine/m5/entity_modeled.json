@@ -1,0 +1,25 @@
+{
+  "timeline_revision": 9,
+  "character": {
+    "id": "01JM5EN0000000000000000001",
+    "name": "Dock warden",
+    "is_player": false,
+    "true_age": 45,
+    "promoted_to": [],
+    "role_id": null,
+    "source": null,
+    "participation": {
+      "role": "reactive",
+      "fixed": false
+    },
+    "weight": "minor",
+    "modeled_at": {
+      "turn": 3,
+      "variant": 0,
+      "slot_k": 0,
+      "beat": 32767,
+      "step": 2
+    }
+  },
+  "idempotency_key": "01JM5KY0000000000000000004"
+}

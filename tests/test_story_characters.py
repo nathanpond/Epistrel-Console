@@ -414,7 +414,7 @@ def test_promote_shows_on_non_players_only(operator_client: Client, engine: Fake
     html = operator_client.get(PLAY_URL).content.decode()
     assert f'href="{PROMOTE_URL}">Promote to catalog</a>' in html
     assert f"/characters/{MARA}/promote/" not in html
-    assert '<li>Mara (player) <a class="button danger erase"' in html
+    assert f'<li id="cast-{MARA}">Mara (player) <a class="button danger erase"' in html
 
 
 def test_every_cast_member_links_erase_in_this_story(
@@ -465,7 +465,7 @@ def test_promotion_links_unavailable(operator_client: Client, engine: FakeEngine
         [{"status": 200, "json": story_json()}, {"status": 503, "json": unavailable}],
     )
     html = operator_client.get(PLAY_URL).content.decode()
-    assert "Promotion links unavailable: 503 database_unavailable" in html
+    assert "Weights and promotion links unavailable: 503 database_unavailable" in html  # #61
     assert f'href="{PROMOTE_URL}">Promote to catalog</a>' in html
     assert "Promoted →" not in html
 

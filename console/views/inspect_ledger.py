@@ -11,8 +11,10 @@ ledger call is made.
 Reads per render, sequential: #135's effective config and story (cast names), the ledger read,
 then (once it answered) convention 2's one registry read (:func:`console.predicates.
 predicate_names`, ``{}`` on failure: short ids) and one ``operation_links`` over the page's
-discharge ids (Console rows; no Engine call). Full page render on every GET; a rewind needs no
-stale cue, as each GET is a fresh read. Rows: :mod:`console.ledger`.
+discharge ids (Console rows; no Engine call). The first page's hidden facts (#208) come from the
+same ledger read, whatever the filters; the registry names and cast names feed their
+propositions (``predicate_names``, ``cast_names`` in the context). Full page render on every
+GET; a rewind needs no stale cue, as each GET is a fresh read. Rows: :mod:`console.ledger`.
 
 Errors: 409 ``module_off`` escapes to the shell's greyed panel naming ``commitment``
 (convention 7); 422 lands beside the select ``details.field`` names, else above the filters;
@@ -88,7 +90,11 @@ def _ledger(ctx: InspectContext) -> dict[str, Any]:
             first_page=after_id is None,
             partial=bool(body.next_after_id or after_id),
             filtered=form.any_filter,
+            hidden_facts=body.hidden_facts,
+            hidden_facts_unread=body.unparsed.get("hidden_facts"),
         ),
+        predicate_names=refs.names,
+        cast_names=names,
         empty=empty_state(paged=after_id is not None, state_filter=form.state_filter),
         cast_unavailable=CAST_UNAVAILABLE if ctx.story is None else None,
         **paging(params, after_id, body.next_after_id),

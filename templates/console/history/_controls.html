@@ -1,8 +1,10 @@
-{# The history controls (#52), inside the GET form; the viewpoint select re-renders this fragment with HTMX so the audit box follows it. #}
+{# The history controls (#52), inside the GET form; the viewpoint select re-renders this fragment with HTMX so the audit box and the player view (#62) follow it. #}
 {% with form=controls.form %}
 <div id="history-controls">
   {% if controls.show_errors and form.non_field_errors %}<div class="errors">{{ form.non_field_errors }}</div>{% endif %}
   <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{% if controls.show_errors %}{{ form.viewpoint.errors }}{% endif %}</div>
+  <div class="field field-player_view"><label for="id_player_view">Player view:</label> <select name="player_view" id="id_player_view"{% if controls.player_view_disabled %} disabled{% endif %}>{% for value, label in form.player_view.field.choices %}<option value="{{ value }}"{% if form.player_view.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% if controls.player_view_disabled %}{% if form.player_view_kept %}<input type="hidden" name="player_view" value="{{ form.player_view_kept }}">{% endif %} <small class="muted player-view-note">applies to a character viewpoint</small>{% endif %}
+    {% if controls.show_errors %}{{ form.player_view.errors }}{% endif %}</div>
   <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">blank = head ({{ controls.last }})</small>
     <datalist id="as-of-turns">{% for turn in controls.options %}<option value="{{ turn }}">{% if turn == 0 %}0 (genesis){% elif turn == controls.last %}{{ turn }} (head){% else %}{{ turn }}{% endif %}</option>{% endfor %}</datalist>
     {% if controls.show_errors %}{{ form.as_of.errors }}{% endif %}</div>

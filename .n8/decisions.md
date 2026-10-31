@@ -1667,3 +1667,522 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Sixteen cross-story decisions (C1–C16: positions, open enums and lenient parsing, enum wording, character labels, write refusals, gates, choice fields, roles, untouched forms, numeric inputs, paging, URL ids, fake-Engine query matching, fixture realism, player-narrated beats) are written into the M5 milestone description, and each story cites them by number.
   **Why:** They were settled once across stories during the executor simulations, so executors don't re-decide them per story.
 - **Decision:** Executor simulations used plain subagents: 26 on the first drafts, 27 on the revised bodies, and 4 on later splits. They did not use the Workflow tool.
+
+## /n8-exec M5 — 2026-10-30
+
+- **Decision:** `console/engine/openapi.json` re-recorded from `ghcr.io/nathanpond/epistrel:edge`, `org.opencontainers.image.revision` 7d181b35fa64692f6cdbe31e8260042d57d3c784 (= Engine origin/main @ 7d181b3), digest `sha256:8a7043c9ef3e6720feb8b1f19225eaaee9b72a09356e62c00dde56d4eb0f9d79` (180 operations, 490 components); `engine_schema --check` exits 0 and the local live smoke XPASSes `test_live_engine_api_matches_the_recording`.
+  **Why:** AC 1; the milestone PR description must name the revision and digest.
+  **Issue:** #183
+- **Decision:** The smoke stack ran with `compose.smoke.yml`'s content on host port 8001 (a scratch override; same image, stub adapter, db), not 8000.
+  **Why:** 127.0.0.1:8000 was held by the Engine repo's own running stack, which isn't this session's to stop; the recorded schema doesn't depend on the port.
+  **Issue:** #183
+- **Decision:** No drift beyond the AC's field list: every contract row passes on the new recording, so no extra fields were typed and no follow-up issue was filed.
+  **Why:** AC 2's "small addition / follow-up" clause had nothing to cover.
+  **Issue:** #183
+- **Decision:** `_keep_parsing(parent, holder, lenient)` takes the parent class and reads the expected container (list or map) from its field type, so `adjudications: {}` is a wrong container (default + raw kept), not an empty map.
+  **Why:** AC 3's wrong-container rule; deciding by the value's own type would accept a map where the schema has a list.
+  **Issue:** #183
+- **Decision:** Required open enums followed by required fields (`History.audience_filter`/`player_view`, `RespondResponse.audience_filter`, `DeferredCharacter.reason`, `Participation.role`) use the spelled-out `field(metadata={OPEN_ENUM: True})`, as `MediaAsset` does.
+  **Why:** mypy's dataclass plugin reads `open_enum()` as a defaulted field and rejects required fields after it.
+  **Issue:** #183
+- **Decision:** (Rule 1) The scenario cast editor writes each relationship with M5's `audience`/`trust` only when set (`role_to_write`), so a relationship without them keeps its pre-M5 write shape, and one carrying them now keeps them through an edit. Before this, the editor would have sent `audience: null, trust: null` on every relationship.
+  **Why:** The editor serialises relationships with `asdict`, so new model fields leaked into the patch and broke `test_scenario_cast` round trips. The story says no write-path behaviour changes (#205/#206 own the write path).
+  **Issue:** #183
+- **Decision:** The three M5 pages read their lists through #183's existing `_keep_parsing` (via a small `_lenient_page` wrapper), not a new `_lenient_items` helper; `unparsed` is typed `ClassVar[dict[str, list[Any] | dict[str, Any]]]`, as `Ledger`/`RespondResponse` are.
+  **Why:** #183 landed the shared lenient-list helper after this story was planned; a second one would re-define it (brief: reuse, never re-define).
+  **Issue:** #186
+- **Decision:** `contract.py::_open_enum` already reads a `const` (#183); this story only adds `test_open_enum_reads_a_const` on the three pages' `output_viewpoint` with its complement (`BeliefItemBody.kind`, no enum/const, still refused).
+  **Why:** No code change needed; the test plan's coverage still applies.
+  **Issue:** #186
+- **Decision:** Fixture values follow Engine origin/main @ 7d181b3: heard testimony is `current_level: believed`, `current_scalar: null`; exposure `kind: content` (an envelope writes no exposure); an author write is positioned at the head turn's end (`beat 32767`, `step` 1+), `provenance: author`, antecedent `{kind: record, ref: {table: events, id}}`; a modeled entity is `reactive`, not fixed. Ids outside the prescribed prefixes use `PD` (predicate), `SP` (utterance; `U` isn't Crockford), `KY` (idempotency key), `PF` (profile).
+  **Why:** C15; the brief's prefix list names no predicate, utterance or key.
+  **Issue:** #186
+- **Decision:** `test_m5_fixtures_validate`'s complement (a file missing from the table) is its own test, `test_every_m5_fixture_is_in_the_table`, since the main test is parametrised per file.
+  **Why:** A parametrised test can't express a whole-directory check once.
+  **Issue:** #186
+- **Decision:** `test_m5_knowledge_reads_live` was not run locally: the Engine on 127.0.0.1:8000 is an M2 stack without the M5 routes (left running, as asked). It runs in CI's engine-smoke job against edge.
+  **Why:** No M5 Engine reachable locally without stopping another stack.
+  **Issue:** #186
+- **Decision:** The position functions carry a third `@overload` (`FivePart | None` → `str | None`, `position_step` → `tuple[str, str] | None`) beside the planned `None` → `None` and `FivePart` → `str`.
+  **Why:** Callers holding an optional position (most model fields) type-check without narrowing first; behaviour unchanged.
+  **Issue:** #187
+- **Decision:** The `humanised` template filter is `console_format.humanised_filter` registered under the name `humanised`, so the module can import `console.wording.humanised` without shadowing it.
+  **Why:** One function name per module; templates see only `humanised`.
+  **Issue:** #187
+- **Decision:** The conventions 15–24 addendum is in the module docstrings now; the PR body and the #135 comment are the milestone PR's (one PR per milestone), so the addendum text is posted on #187 for the PR author to copy.
+  **Why:** No per-story PR exists to carry it; the first AC's docstring part is done here.
+  **Issue:** #187
+- **Decision:** `level` is validated against `PERCEPTION_LEVELS` (ValueError) in both `m5_gate` and `unavailable_for`, for every module, though only perception uses it.
+  **Why:** One caller-bug check; a stray level on another module is still a bug.
+  **Issue:** #188
+- **Decision:** `unavailable_for` on an M5 module applies the partitions prerequisite only when `character_knowledge.partitions` is present (a missing key falls through to the module's own wording); `pipeline` missing or `effective` None gives the plain wording.
+  **Why:** The 409 path has no UNREAD; it names the module the Engine named, plus what the config shows.
+  **Issue:** #188
+- **Decision:** An empty-string switch value is treated as unknown in "(this story runs …)" (part omitted), as the pipeline clause already treats an empty pipeline.
+  **Why:** Avoids an empty code span; the Engine never sends one (C15).
+  **Issue:** #188
+- **Decision:** v2 fixture `effective`/`deployment_defaults` M5 blocks and `capabilities` computed by running Engine origin/main 7d181b3 code (`resolve_layers(profile_defaults(), structured_settings())`, `capability_names`) from a `git archive` copy in the scratchpad; the Engine checkout was not touched. Capabilities therefore include `budgets` and `models` (the M4 fixture omits them).
+  **Why:** C15 and the story's "run capability_names once"; no regeneration script kept.
+  **Issue:** #188
+- **Decision:** `story_cast.json` copies `get_story.json` (story id `STORY`), with `CharacterBody`-shaped cast entries (no participation), Pat as the default output viewpoint and engine profile PRF002 v2. `tests/inspect/helpers.py` also exports `ALICE`/`BOB`/`PAT` ids and `story_cast()`.
+  **Why:** One shared cast and its ids for #190/#192/#193.
+  **Issue:** #188
+- **Decision:** In the fake Engine, an exhausted `respond_sequence` falls to query answers before its repeating last answer (lookup: failure, side effect, sequence, query answer, query-less).
+  **Why:** The story's lookup order; sequences and query answers are not combined in any test today.
+  **Issue:** #188
+- **Decision:** No existing test asserted the old unknown-module wording for `partitions`, so none was updated.
+  **Why:** Grep found none; full suite green.
+  **Issue:** #188
+- **Decision:** The M4 recordings (`effective_config_structured.json`, `_lite.json`) carry no M5 key, so Knowledge reads them as `UNREAD`; `test_tab_availability`'s M4 cases expect that, its "every tab" case and the shell's "enables every tab" tests moved to the v2 fixture.
+  **Why:** The AC makes the tab's rule exactly `m5_gate("partitions")` (unread included); the real M5 Engine always sends the keys (C15).
+  **Issue:** #189
+- **Decision:** Test urlconf `tests/inspect/urls_knowledge_exposures_only.py` drops every real section route before adding its stub `inspect:exposures`, and adds a non-section `inspect:knowledge-probe` (one exposures read) for the section-409 test; a sibling `urls_knowledge_no_sections.py` serves the empty-shell test.
+  **Why:** Keeps the redirect/sub-nav/empty-shell tests valid after #190/#192/#193 register real sections; the stub section itself stays `lambda ctx: {}` as planned.
+  **Issue:** #189
+- **Decision:** Added `test_m5_known_levels_read_verbatim`, `test_module_dials_leave_out_missing_dials_and_empty_groups`, `test_dial_captions_render_on_the_page` and `test_a_section_reads_409_module_off_renders_the_panel` beyond the named plan.
+  **Why:** They pin AC clauses (defaulted/co_location levels, missing-dial rule, page caption, 409 panel) the named tests cover only partly.
+  **Issue:** #189
+- **Decision:** The plain `p.notice` rule (`border-left: 4px solid #d0d7de`, no background) applies to every existing `p.notice`, not only Knowledge's.
+  **Why:** The planner's styling line names a plain `p.notice` rule; `p.notice.warn` still overrides it.
+  **Issue:** #189
+- **Decision:** "(minor)" in Beliefs' character labels comes from `console.beliefs.story_minor_ids` over the shell's own `get_story` items that parse as `OmniscientStoryCharacter`; the shell's read isn't omniscient (no `weight`), so no label is marked minor today, and no read was added.
+  **Why:** C4 forbids an extra read for "(minor)"; the AC assumed Inspect reads the omniscient cast, but `inspect_page` reads `GET /stories/{id}` without a viewpoint.
+  **Issue:** #190
+- **Decision:** A blank `character` in select mode defaults like an absent one (first non-player).
+  **Why:** Apply always sends the select's value; only a hand-edited URL is blank, and an empty request would otherwise read as "no modeled characters".
+  **Issue:** #190
+- **Decision:** More's "Step" is the `since` position's step (the position the row's Holds since shows); `polarity` (humanised) follows the listed fields as the unnamed one (convention 13); an unparsable proposition adds "Proposition (as sent)" as a `<pre>`.
+  **Why:** The AC names "the position's step" in the singular; polarity has no column.
+  **Issue:** #190
+- **Decision:** Cast-unavailable and cursor-dropped notices sit above the filters; the first-order notice above the table (all above the rows, in the planner's order). The header is an `<h3 class="beliefs-header">` under #189's `<h2>Beliefs</h2>`.
+  **Why:** Reconciles the AC's "above the filters" for the cursor notice with pass 2's "notices above the table" ordering.
+  **Issue:** #190
+- **Decision:** `marks` is a mapping belief id → mark (`None` hides the Canon column; a row without a mark shows "—"), applied by `console.beliefs.belief_rows(story_id, beliefs, marks)` into `BeliefRow.mark`.
+  **Why:** The AC defines only the hook; #191 can fill the mapping without touching the row partial.
+  **Issue:** #190
+- **Decision:** The unparsable-proposition case (C2) is a view-model test, not a page test.
+  **Why:** The schema-validating fake refuses a schema-invalid proposition, and the Engine never sends one (C15).
+  **Issue:** #190
+- **Decision:** `CurrentFacts` carries an extra `error` (the Engine refusal behind `module_off`/`erasure_pending`).
+  **Why:** #87's held wrapper needs the original 503 (Retry-After) re-raised; `read_current_set` logs both as before, so the Canon tab is unchanged.
+  **Issue:** #191
+- **Decision:** The Beliefs view now calls `list_predicates` directly (names + new `PredicateList.cardinality()`) instead of `predicate_names`.
+  **Why:** One registry read must supply both names and cardinality; failure gives `{}` names and `None` cardinality, logged as before.
+  **Issue:** #191
+- **Decision:** Under a failed registry read, only a row whose sole candidate verdict needs the functional rule (both affirmed, equal qualifiers, other object, overlapping) reads "Not compared (predicate registry unavailable)"; other overlapping-but-irrelevant facts leave it "No canon record settles it". The registry notice shows only when some row is affected, or alongside a facts-problem notice.
+  **Why:** Pass 2's "rows needing the functional rule"; "Some beliefs weren't compared" would otherwise be false.
+  **Issue:** #191
+- **Decision:** Summary grammar: noun follows the page count, verb the contradicting count ("1 of 3 beliefs on this page contradicts canon").
+  **Why:** The AC gives only the 1-of-1 and plural forms.
+  **Issue:** #191
+- **Decision:** Under a facts problem or past turn, every row (nested/unparsed included) gets that reason; unsettled and not-compared cells carry `muted` plus `canon-unsettled`/`canon-not-compared`.
+  **Why:** AC: "the column shows Not compared" / "Every Canon cell reads…".
+  **Issue:** #191
+- **Decision:** Updated #190's `test_reads_in_order_and_sub_nav` (facts path appended) and `test_column_order` ("Canon" header) and its hook test (a `CanonMark` instead of a string); its fixture registers an empty current-facts answer.
+  **Why:** #191 makes the canon read and shows the column by design; not a weakening.
+  **Issue:** #191
+- **Decision:** Added `{% canon_filter_url subject predicate %}` in canon_tags for the "+N more" link; fact links reuse `{% lineage_url %}`.
+  **Why:** Templates can't call the URL helpers with arguments.
+  **Issue:** #191
+- **Decision:** A nested result whose recorded request has no parseable `attributed_to` reads "Nested: <holder> thinks … <attributed holder> believes it (depth N, chain not recorded)".
+  **Why:** Pass 2 gives both "(depth N)" and "(chain not recorded)"; one parenthesis keeps it readable.
+  **Issue:** #194
+- **Decision:** `closed` is read item by item only on `?report=` (`parse_written` in the view; non-id items raw in More); the POST render uses the client's strict `BeliefWritten`.
+  **Why:** C2 asks for leniency, C15 says the Engine always sends `list[str]`; #186's model stays untouched.
+  **Issue:** #194
+- **Decision:** A gated POST shows #188's refusal above the form together with the form's own field errors; neither path writes.
+  **Why:** "All errors show together"; the gate check needs no Engine call beyond the shell's config read.
+  **Issue:** #194
+- **Decision:** A 409 `module_off` naming `nested_beliefs` rebuilds the form with `module_off_unavailable(exc, Tab.KNOWLEDGE, effective)` as its gate, so the fieldset greys with the same reason shown above the form.
+  **Why:** The AC's "re-rendered fieldset is greyed (the config read is stale)".
+  **Issue:** #194
+- **Decision:** The write sends the posted key; every rendered form (GET, local refusal, Engine refusal) carries a fresh `new_ulid()`.
+  **Why:** AC: "every render, refused or not, mints a fresh one".
+  **Issue:** #194
+- **Decision:** Attributed-to selects also keep a posted id outside the cast as an extra option (C13's pattern), as Holder does.
+  **Why:** Refusals must keep every input; otherwise a tampered or stale id would silently drop from the select.
+  **Issue:** #194
+- **Decision:** On the direct and result pages no Knowledge sub-section is marked active; each page has its own `<h3>` heading ("Direct a belief", "Belief written") under #189's shell.
+  **Why:** The AC only asks for the Knowledge tab selected; marking Beliefs active would also print its `<h2>`.
+  **Issue:** #194
+- **Decision:** More's raw response is the #44 row's stored response, falling back to the parsed answer when no row was recorded.
+  **Why:** Convention 13's raw answer; the row is what `?report=` shows too.
+  **Issue:** #194
+- **Decision:** Depth values the schema forbids (9, `True`) are covered by a `nested_depth` unit test, not page tests.
+  **Why:** The schema-validating fake refuses them (C15); the clamp and the int-only rule are still tested.
+  **Issue:** #194
+- **Decision:** Updated #190's `test_column_order`: the Actions column and a Change… cell per row are now expected.
+  **Why:** #194 fills #190's `actions` hook by design; not a weakening.
+  **Issue:** #194
+- **Decision:** `label_tags` builds the intent tag separately (corrected or not) and appends the classification tag; `CLASSIFICATION_CLASS`, `CORRECTED_CLASS`, `CORRECTED_SUFFIX`, `CORRECTED_TITLE` are module constants in `console/history.py`; `history.py` now imports `humanised` from `console.wording` instead of the `console.retrieval` re-export.
+  **Why:** AC names the constants and #187's `console.wording` as the source of `humanised`.
+  **Issue:** #207
+- **Decision:** History's `classification_legend` is computed in `_with_traces` after the traces are attached, over every row of every group; no extra read.
+  **Why:** AC; feedback-collapsed rows stay in `group.rows`, so they count.
+  **Issue:** #207
+- **Decision:** Added one test beyond the plan: an omniscient History page shows the classification tag and the legend line once, and not without a classified say.
+  **Why:** the plan's page tests covered only the character complement on History.
+  **Issue:** #207
+- **Decision:** Divergence row view models (`DivergenceRow`, `divergence_rows`, `count_text`, `empty_text`) live in `console/views/inspect_divergences.py`, not a new module.
+  **Why:** the story's artifacts list names only the view; nothing else reuses them yet.
+  **Issue:** #192
+- **Decision:** Speaker labels: options use `character_label(id, cast_names, minor)` (player marked, "(minor)" via `story_minor_ids`); the row cell uses `_character.html` with the plain label and `is_player`.
+  **Why:** C4; mirrors #190's Holder so " (player)" isn't doubled.
+  **Issue:** #192
+- **Decision:** The C2 non-parsing `asserted` case (`divergences_unparsed.json`) is a view-model test, not a page test.
+  **Why:** the fake Engine validates responses against the schema, which forbids such a proposition (C15); #190 did the same.
+  **Issue:** #192
+- **Decision:** `CAST_UNAVAILABLE` sits above the filters (as on Beliefs), so it is above the table whenever one renders; the raw item in More is `dataclasses.asdict(item)`.
+  **Why:** AC says "above the table"; one placement for every outcome. The model keeps every schema field, so asdict equals the sent item.
+  **Issue:** #192
+- **Decision:** "Believed belief id" in More reads "—" when null; the belief link's `#b-` fragment is left out if `believed_belief_id` were ever null with a proposition id.
+  **Why:** C15 says both are set together; defensive at no cost.
+  **Issue:** #192
+- **Decision:** Exposures reuse #192's `Speaker`; its private `_speaker` became public `speaker_of` in console/views/inspect_divergences.py (witness and source labels) instead of a copy.
+  **Why:** reuse, don't copy (C12); one C4 label rule for Knowledge rows.
+  **Issue:** #193
+- **Decision:** Resolved by joins only the parts present (Transition id, resolution operation, belief link) with " · "; a resolved row with nothing to list (no ids and no Beliefs route) shows "—".
+  **Why:** the AC leaves a missing id out; avoids a dangling separator.
+  **Issue:** #193
+- **Decision:** The row's own `operation_id` sits in More (convention 3 link when logged), between Kind and Step, as the AC's More list orders it; there is no separate Operation column.
+  **Why:** the AC's column list has none.
+  **Issue:** #193
+- **Decision:** State and Caught both carry the raw value in `title` (Caught's `partial` the AC's explanatory title); a non-`content` kind shows as `<small class="kind">` after the proposition.
+  **Why:** C3; the AC names the title only for Caught, applied to State for consistency.
+  **Issue:** #193
+- **Decision:** Fixtures use the shared Alice/Bob/Pat cast (Alice stands in for the story's "Carol") and a source of Pat for the partial row.
+  **Why:** #188's shared cast fixture; C15 shapes checked against Engine origin/main `ExposureItemBody`.
+  **Issue:** #193
+- **Decision:** `console.ledger.hidden_fact_row` imports `console.scene.valid_text` inside the function.
+  **Why:** `console.scene` already imports `console.ledger.fact_link`, so a module-level import is circular. The AC names `valid_text`, so the shared formatter is used rather than `positions.valid_minutes_text`.
+  **Issue:** #208
+- **Decision:** `ledger_view(hidden_facts_unread=)` is typed `list[Any] | dict[str, Any] | None` (the brief said `list[Any] | None`).
+  **Why:** That's the type of `Ledger.unparsed` values (a wrong-container value is kept raw too), so the view passes `.get("hidden_facts")` without a cast.
+  **Issue:** #208
+- **Decision:** When every hidden fact is unread, the section shows only the unread `<details>`, with no empty table and no "None" line.
+  **Why:** "None" would be false when the Engine sent facts. The AC shows "None" only when the list is empty and nothing is unparsed.
+  **Issue:** #208
+- **Decision:** In the fixtures, TH2 (resolved) carries the mild (Tobin, 600) and strong (Mara, 64800) flags. HF1 is `characters` [Mara, non-cast CX1], turn 3. HF2 is `engine`, turn 0, which exercises the turn-0 link.
+  **Why:** The test plan's amended fixture. The shapes were checked against the recorded `HiddenFactBody`/`CouldHaveKnownFlagBody` (C15).
+  **Issue:** #208
+- **Decision:** `is_structured()` (and so `beat_trace()`) now leaves out an item with `fidelity: envelope`: it reads as plain text with no beat trace, no predicate read and no legend. (Rule 1)
+  **Why:** The AC assumed an envelope item has no `propositions`. Engine origin/main (`core/history.py` `_items`) sends `propositions: []` and drops `labels`, so the existing rule alone would have drawn an empty trace. The fixtures follow the Engine (C15). The play transcript (#196) inherits the same rule.
+  **Issue:** #62
+- **Decision:** The Player view `<select>` is written by hand in `_controls.html`. It is disabled through `Controls.player_view_disabled`, and the hidden carrier input takes `HistoryForm.player_view_kept` (a valid choice, else nothing).
+  **Why:** This follows the AC's "same hand-written pattern as Include audit", and an invalid value is never carried.
+  **Issue:** #62
+- **Decision:** The plain Text cell of a badged row without a trace gets `class="text"`, so `.fidelity-none .text` strikes it through. Plain text is not wrapped in a span.
+  **Why:** Wrapping every row's text would break #147's Lite byte-identity goldens. With the class only on fidelity rows, Lite markup stays unchanged.
+  **Issue:** #62
+- **Decision:** Two places were updated to drop " · audience filter none" from the omniscient header: the golden `tests/fixtures/inspect/golden/lite_history_items.html` and `test_header_line_shows_the_echoed_read`.
+  **Why:** The AC (convention 21) leaves the audience filter off an omniscient page's header. This change is mandated, not a weakened test.
+  **Issue:** #62
+- **Decision:** The fixtures add Jenni (`…R0T3C`) to the Harbour cast in-test, where she is the narrator and the envelope speaker. Tobin is the character viewpoint.
+  **Why:** A reaction is narrated by a primary NPC, and the player can't play that role. The narrator label needs a cast member.
+  **Issue:** #62
+- **Decision:** The Lite transcript golden (`tests/fixtures/inspect/golden/lite_transcript.html`) gains the Player view control line. That line is the only change; items are byte-identical.
+  **Why:** The AC puts the control under every transcript heading. #62 updated its History golden the same way. This change is mandated, not a weakened test.
+  **Issue:** #196
+- **Decision:** The transcript endpoint's HTMX answer always appends the two out-of-band `transcript_player_view` inputs (`form_inputs` context flag), for the output-viewpoint switch as well as the toggle. Turn, ingest and poll answers, which include `_transcript.html` with `oob`, don't append them.
+  **Why:** One endpoint serves both. On a switch, the value is the one the form just sent, so re-swapping it is a no-op. Those POST answers re-render their own form with the value.
+  **Issue:** #196
+- **Decision:** The omniscient check uses `PlayStory.resolve(viewpoint)` on the viewpoint the transcript reads. The viewpoint that is sent stays as given, so `None` still lets the Engine pick, and then the value is sent.
+  **Why:** This is the AC's "resolved viewpoint". Re-resolving an already-resolved value is idempotent.
+  **Issue:** #196
+- **Decision:** `Entry.speaker` uses #62's `narrated_label` only for items with `narrated_by`. Every other item keeps the existing `_speaker`, which keeps a reply's render-character list and leaves no "—" for actor-less items.
+  **Why:** The AC says "in place of the plain speaker" only for narrated items. It also keeps the Lite golden identical.
+  **Issue:** #196
+- **Decision:** The test that the turn body never gets `player_view` posts only `transcript_player_view`, not a `player_view` field.
+  **Why:** #200 will add its own `player_view` turn-form field. Posting one here would test #200's field rather than this control.
+  **Issue:** #196
+- **Decision:** The perception pool (`console.views.perception.character_views`) returns `(reads, errors)`: the planned `dict[str, History | str]` plus the exceptions behind failed reads.
+  **Why:** "#43's panel for the first `EngineClientError` in cast order" needs the exception, which the reason string loses.
+  **Issue:** #195
+- **Decision:** When every read fails but none is an `EngineClientError` (for example every echo is player view `character`), and they didn't all time out, the page shows only the failure notice: no panel and no grid.
+  **Why:** No AC case covers it. The notice already names each failure, and there is no Engine error to put in a panel.
+  **Issue:** #195
+- **Decision:** A read's turn variant comes from its `turns` summary for that turn, else from its first item. Reads with neither are left out of the variant race check. The heading shows " · vV" for any variant ≠ 0, so v1 shows too.
+  **Why:** One chain read holds one variant per turn. The AC says "(if ≠ 0)" literally.
+  **Issue:** #195
+- **Decision:** Column labels use `console.perception.column_labels`: the name, or the short id when nameless, plus " (<short id>)" (convention 2's 8-character `short_id`) for a shared name and " (player)". They don't use `cast_names`' 6-character " (…xxxxxx)".
+  **Why:** The AC names " (<short id>)" exactly.
+  **Issue:** #195
+- **Decision:** An effective-config 503 `erasure_pending` is re-raised to `HeldStoryMiddleware` (#87's wrapper) instead of being rendered in the view.
+  **Why:** It is the same wrapper with less code. Any other failure is `UNREAD`.
+  **Issue:** #195
+- **Decision:** "Back to turn N in History" is `history_turn_url(story, turn)` with `&variant=T:V` added before the anchor when the page has a chain. The footnote shows only under a rendered grid.
+  **Why:** `history_turn_url` takes no chain parameter. The AC places the footnote "below the grid".
+  **Issue:** #195
+- **Decision:** The History page's perception test is "`propositions` or `fidelity` set" (`console.perception.has_structured_item`), not `is_structured`, which drops envelopes. Lite active-chain pages now make the one lazy effective-config read (`_story_structured`) whenever a turn ≥ 1 is shown.
+  **Why:** That is what the AC says. The read stays at most one per page.
+  **Issue:** #195
+- **Decision:** C7 helpers live in `console/story_settings.py` (`ENGINE_DEFAULT`, `engine_default_choice`, `SETTING_CHOICES`, `kept_choices`, `tie_break_label`, `BOOLEAN_SELECT`, `select_bool`), plus `scenario_mode`, `null_default_text(name, inactive)` and `flash_name(label)`; the form reads `inactive` from `original.get("inactive")`.
+  **Why:** One module for #198/#61/#200/#205 to import; the AC names these exactly.
+  **Issue:** #197
+- **Decision:** `StorySettingsForm.changes(patch)` builds the "<Name>: <value>" flash for all thirteen rows (select label from the field's own choices); the view's raw `name=value` `_shown` is removed.
+  **Why:** The form already holds the choice labels (viewpoint cast labels, kept values).
+  **Issue:** #197
+- **Decision:** `participation:<cid>` options come from a public `participation_options(cast, wanted)` in `console/views/story_settings.py`; a URL `setting` starting `participation:` that isn't in the cast is appended as "Participation: <short id>". Empty name → `short_id`, duplicates → `character_labels`' suffix.
+  **Why:** Keeps old links filtering; the select validates against its choices, so the stale value must be an option.
+  **Issue:** #197
+- **Decision:** `test_the_groups_cover_the_recorded_enum` now asserts no "Other" group (the M5 keys were all that fell there); `engine_profile_version_pin` stays in "Rating and profile" as #54 placed it, not "Other".
+  **Why:** The AC's "falls to Other" remark predates the existing grouping; changing #54's grouping is out of scope.
+  **Issue:** #197
+- **Decision:** Test helpers `settings_json`/`written_json` fill `M5_READ_DEFAULTS` (Engine read values) under the recorded fixtures, which lack the six keys.
+  **Why:** Planner pass 2; C15.
+  **Issue:** #197
+- **Decision:** The live test `test_player_authority_and_interaction_mode_live` was written but not run (no `ENGINE_LIVE_URL` in this environment).
+  **Why:** No live Engine available to the agent.
+  **Issue:** #197
+- **Decision:** C8 lives in `console/participation.py` with extra shared helpers beyond the AC's list: `ROLES`, `Role`/`Weight` literals, `is_role`, `is_weight`, `role_label`, `weight_label`, `WEIGHT_TITLES`, `FIXED_LABEL`, `FIXED_TITLE`, `CHOOSE_ROLE`, and `participation_error(role, fixed, *, is_player=False)` (the two local errors in one check).
+  **Why:** #198/#199/#200/#203 reuse the wording and checks; one function keeps the error order (player first) the same everywhere.
+  **Issue:** #61
+- **Decision:** The signed row snapshot is `console.cast_panel.Shown` (salt `console.cast_panel.participation`), with `Shown.unsigned(value, story_id, cid)` and `same_role(role, fixed)` (false for a shown "—" or unknown role).
+  **Why:** AC's no-op and naming rules in one place; the panel module owns the salt.
+  **Issue:** #61
+- **Decision:** The omniscient read's participation, weight and `modeled_at` are parsed per item (`omniscient_rows`), not via `OmniscientStoryCharacter.from_json`.
+  **Why:** As #72's `promoted_links`: one malformed or partial row (older fixtures lack `true_age`) never loses the others' weights.
+  **Issue:** #61
+- **Decision:** 409 `idempotency_conflict` on a role/weight write flashes "Couldn't change <name>: 409 idempotency_conflict".
+  **Why:** `write_refusal` (#187) has no wording for it (returns `None` → the caller's fallback), and the AC's fallback is that line.
+  **Issue:** #61
+- **Decision:** A weight POST whose `weight` isn't `major`/`minor` flashes "Choose a weight." with no call.
+  **Why:** AC is silent on a forged weight; mirrors the role form's "Choose a role.".
+  **Issue:** #61
+- **Decision:** The add form's role select is labelled "Participation role" (id `f-participation_role`).
+  **Why:** AC names the field, not its label; the id follows #72's `f-<name>` anchor rule.
+  **Issue:** #61
+- **Decision:** #72/#48 assertions on `<li>Mara (player)` / `<li>Tobin <a …promote` and "Promotion links unavailable" (tests/play/test_play_page.py, tests/test_story_characters.py, tests/stories/test_archive_delete.py) and #48's single-key test (tests/play/test_turn_form.py, now strips the cast list) were updated to the new markup.
+  **Why:** The AC changes the row markup (`<li id="cast-<cid>">`, role/weight text), the note wording and adds per-row keys; the tests' intent is unchanged.
+  **Issue:** #61
+- **Decision:** `console/forms/stories.py` imports `console.story_settings` / `console.participation` inside the functions that use them; CharacterForm adds its two role fields in `__init__` (still last in the row). (Rule 3)
+  **Why:** A module-level import is circular: `console.forms` loads under `console.engine_access` (via `console.acting`), and `console.story_settings` reaches `engine_access` again through `console.wording` → `story_pause` → `job_poll`.
+  **Issue:** #198
+- **Decision:** New-story creation settings are listed in `CREATION_SETTINGS` (name → C7 default text), the reactive select a `TypedChoiceField(coerce=select_bool, empty_value=None)`; `StoryForm.settings()` builds `spec["settings"]` (viewpoint first).
+  **Why:** One list drives the fields, `story_spec` and `CreationErrorPaths`' fixed keys.
+  **Issue:** #198
+- **Decision:** A role or "Fixed" on the player's row reports `PLAYER_NO_ROLE` directly (not via `participation_error`, which would give `FIX_NEEDS_ROLE` for "Fixed" alone).
+  **Why:** AC: Fixed alone on the player row gives one error, the player one.
+  **Issue:** #198
+- **Decision:** Scenario editor: the C7 fields' "Engine default (<text>)" texts live in `C7_DEFAULTS` (scenario.py); `BOOLEAN_SETTINGS` names both boolean selects for editor_data/write_doc; labels are #197's `LABELS` (e.g. "Player view (where perception is on)") on both the editor and the detail rows.
+  **Why:** AC asks for #197's labels; the detail rows share them for one wording.
+  **Issue:** #198
+- **Decision:** `setting_label("simultaneous_tie_break", v)` is `tie_break_label(v)` for every value (it equals the choice labels for the two M5 values).
+  **Why:** AC: the tie-break reads through `tie_break_label`.
+  **Issue:** #198
+- **Decision:** Full gate's pytest ran without xdist: xdist collection differs between workers on #61's `test_bad_signature_calls_the_engine` (parametrize ids carry time-stamped signed values), unrelated to this story.
+  **Why:** Brief's fallback rule.
+  **Issue:** #198
+- **Decision:** (Rule 1) Gave `test_bad_signature_calls_the_engine` fixed parametrize `ids=`, fixing #211 inside M5 rather than leaving it for triage.
+  **Why:** The defect is in #61's own test (this milestone). Signed `Shown` values are time-stamped, so xdist workers collected different ids, and every later story's gate fell back to the 11-minute serial run. With the fix, the xdist gate gives 5245 passed, the same count as serial. The milestone PR closes #211.
+  **Issue:** #61, #211
+- **Decision:** The model form keeps only the `as_of`/`viewpoint` the request actually carried and #58's `SceneForm` accepts (no story-default viewpoint added) on the back link, the form action and the redirect.
+  **Why:** "Query kept, invalid values dropped"; adding the default would invent a query the author never had.
+  **Issue:** #199
+- **Decision:** `idempotency_conflict` and any other unworded refusal on the model write render #43's panel (`panel_for`) above the kept form with a fresh key.
+  **Why:** C5's `write_refusal` returns `None` for it by design (convention 18), which is "the shared wording".
+  **Issue:** #199
+- **Decision:** A 409 `module_off` on the write is a refusal line `unavailable_for`-worded via `module_off_unavailable(exc, None, effective)` plus a "Config" link (convention 24); "See the check" is the paused refusal's link text, as #194's form uses.
+  **Why:** Reuse of the existing helpers and link wording.
+  **Issue:** #199
+- **Decision:** "Character: <name>" uses the cast member's plain name (short id when blank), without the " (player)" suffix; the not-a-person kind falls back to the snapshot's kind when `details.kind` is absent, else the sentence ends at "modeled".
+  **Why:** AC says "<cast name>" and no role/weight wording; the Engine always sends `details.kind`, so the fallback is cheap defence only.
+  **Issue:** #199
+- **Decision:** The recorded-fixture cast-membership test appends m5 `entity_modeled.json`'s character to m5 `story.json` (no recorded story lists a modeled minor); Engine origin/main `_character()` confirms `get_story` lists minors with the rest.
+  **Why:** C15: realistic shape, checked on Engine origin/main.
+  **Issue:** #199
+- **Decision:** When both the omniscient and the settings reads fail, both notes show, although no Counts row is then known minor: the settings note shows when the fraction read failed and (the weights read failed or a Counts row is a minor).
+  **Why:** The AC says both "When both fail, both notes show" and "The settings note shows when any Counts row is a minor", which conflict when weights are unknown; unknown weights mean the story may have minors.
+  **Issue:** #168
+- **Decision:** `get_deployment_settings.json` and `update_admin_settings.json` gain `minor_hot_budget_fraction: 0.2` (the planner assumed #183 had re-recorded them; it hadn't).
+  **Why:** C15: the real Engine returns the field; without it the now-required form field would read blank.
+  **Issue:** #168
+- **Decision:** `test_consolidate.py`'s engine fixture registers the omniscient story and settings answers, and its request-order assertion lists the two new reads.
+  **Why:** That test renders the Memory tab, which now makes both reads after the hot set; the section itself still makes no read.
+  **Issue:** #168
+- **Decision:** `CountRow.fraction_text` (property) formats the fraction as `str(float(...))` for the Budget cell; the template prints `FRACTION_UNAVAILABLE` from the context key `fraction_unavailable`.
+  **Why:** Keeps the template free of formatting logic, per the planner's "the template words them".
+  **Issue:** #168
+- **Decision:** The held/404 omniscient-read test is parametrised over `erasure_pending` and `not_found`; `module_off` isn't covered because `GET /stories/{id}` declares no 409.
+  **Why:** The fake Engine refuses undeclared statuses (C15).
+  **Issue:** #168
+- **Decision:** The play snapshot also carries `partitions` (`character_knowledge.partitions`) beside the planned `renders`/`pipeline`/`perception`. (Rule 3)
+  **Why:** #188's `m5_gate` makes perception depend on partitions (`NEEDS_PARTITIONS`). Without the key, the minimal mapping would always read as unread, which would grey Player view and Whisper to everywhere.
+  **Issue:** #200
+- **Decision:** A "Story setting (…)" first choice uses the explicit choice's label in lower case ("director", "request order") or the raw `character`/`story` for Player view. Interjections read "On"/"Off", a null multi-character setting uses #197's `null_default_text`, and a kept `state:<name>` tie-break uses `tie_break_label`.
+  **Why:** This matches #197's lower-case "default (…)" markers and the AC's examples.
+  **Issue:** #200
+- **Decision:** `player_cannot_render` and the other `details.reason` refusals are matched on the reason alone, not also on `details.field`. The `not_yet` sentence is a literal copy of #197's `NOT_YET_TEXT`.
+  **Why:** On respond, the Engine raises each reason from one field only. Importing `console.views.story_settings` from `console/forms/play.py` would be circular, because that view imports `console.views.play`.
+  **Issue:** #200
+- **Decision:** A stored role is read from the raw `characters` items of `GET /stories/{id}`, not from the parsed `Participation`.
+  **Why:** The AC says a missing `fixed` reads `false`. The typed model requires `fixed`, so the parse would drop the participation altogether.
+  **Issue:** #200
+- **Decision:** `read_story` now makes its effective-config read before the transcript's history read (get_story → settings → effective-config → history).
+  **Why:** The AC fixes the order of the three reads inside `read_story`. No test depended on where the effective-config read fell among the others.
+  **Issue:** #200
+- **Decision:** The live test `test_two_primary_sequential_turn_live` was written but not run, because this environment has no `ENGINE_LIVE_URL` or service key.
+  **Why:** Same precedent as #197.
+  **Issue:** #200
+- **Decision:** `turn_renders` applies the show rule itself and returns `()` when the section isn't shown. `shows_renders(entries, order)` and `is_reaction(item)` are public in `console/renders.py`. The transcript's `Entry.reaction` uses `is_reaction`.
+  **Why:** One place holds C16, and the unit test for "on its own it doesn't show the section" runs on `turn_renders` directly.
+  **Issue:** #201
+- **Decision:** `RenderBeat` gains a `position: int = 0` field (1-based place among the parsed beats), plus `reaction`, `fidelity` and `css_class` properties, on top of the planned `(item, label, anchor, reactions)` shape.
+  **Why:** "item i" needs the item's place, and the template needs the reaction and fidelity classes without its own logic.
+  **Issue:** #201
+- **Decision:** The beat line is a separate partial, `templates/console/play/_render_beat.html`, included by `_renders.html` (once more for nested reactions). That makes eight source files, not the planned seven.
+  **Why:** Leading, own and nested beats share one line format. Copying it three times would let the copies drift.
+  **Issue:** #201
+- **Decision:** A literal reading of the Input rule: every item whose actor is the turn's actor and that comes before the cut-off. Reactions are routed only by `narrated_by`. A turn with no known actor, which includes a regeneration, gets no Input group, so its beats go to Other.
+  **Why:** That is the AC as written, with the planner's "cut-off by `actor_character_id` only".
+  **Issue:** #201
+- **Decision:** A logged row's inspector now shows the reply block too (the narrative, else `message.text`). Before this, a logged row showed no reply.
+  **Why:** The AC builds the reply, M5 facts and Renders from the live answer, the poll end and the logged response alike, and the demo's reload step expects the same inspector as the live answer.
+  **Issue:** #201
+- **Decision:** `TurnAnswer` (console/views/play.py) carries a turn's narrative, enums, order and parsed beats. `.of(RespondResponse)` builds it for the live answer and the poll end, and `.logged(row.response)` reads a logged row field by field. One `_with_answer` fills the Inspector from it.
+  **Why:** All three sources share one wording path, and a logged row never goes through `RespondResponse.from_json` (C2).
+  **Issue:** #201
+- **Decision:** A polled turn's actor comes from the logged row's request body (`_logged_actor(operation_id)`). `_poll_end` takes the `pending=` result that `poll` already computed, so the session's pending entry is popped only once.
+  **Why:** The AC names the logged request as the polled turn's actor source, and `_pending_form` pops the entry.
+  **Issue:** #201
+- **Decision:** The non-HTMX `stories:inspector` with no `?operation=` still renders the page with "Select a turn". With an operation, it passes `operation`/`origin` to `_page`, which builds the inspector after its story read.
+  **Why:** This keeps the old behaviour and adds the labels.
+  **Issue:** #201
+- **Decision:** History's Text `<td>` now always has `class="text"`. Before, only fidelity rows without a trace had it. #147's two Lite goldens were re-rendered. The only differences are that attribute and the transcript links' `hx-include="[name=snapshot]"`, both checked by diff. `tests/history/test_items.py::row_of` and one #196 transcript assertion now expect the new markup.
+  **Why:** The AC requires both markup changes. The precedent is #62/#196, which updated the goldens when an AC changed markup. No test was weakened.
+  **Issue:** #201
+- **Decision:** A side effect we accepted: the trace cell of a not-perceived history row now matches `.fidelity-none .text` too (line-through over its labels as well as its text).
+  **Why:** It follows from the class the AC asks for. The beat text in such a cell was already struck through by `.beat-text`.
+  **Issue:** #201
+- **Decision:** `warning_lines` and `render_order_line` name characters through the existing `console.wording.character_label` (cast label, else `console.inspect.short_id`), so no second fallback helper was added.
+  **Why:** It is the same rule (C4), and the brief says to reuse it rather than redefine it.
+  **Issue:** #202
+- **Decision:** `turn_groups` imports `console.renders` inside the function.
+  **Why:** `console.renders` imports `console.history` at module level, so a top-level import would be circular. This follows the project's existing in-function import pattern (console/forms/stories.py).
+  **Issue:** #202
+- **Decision:** The `model_unavailable` error inspector builds its warnings with no labels and story `""`: short ids, no Retrieval link.
+  **Why:** `error_inspector` gets neither labels nor a story id, and adding a story id to `details` would mean guessing a shape the Engine doesn't promise (C15).
+  **Issue:** #202
+- **Decision:** `_turn_report.html` writes the `<li>` markup inline in both branches (given `warning_lines`, or the `turn_warnings` fallback) instead of adding a partial. The pin link gets class `warning-memory`.
+  **Why:** It is one line, and keeps to the story's file budget. The class makes the link easy to target in tests.
+  **Issue:** #202
+- **Decision:** Two #62 player-view assertions were updated to expect the new `reaction` row class on the reaction Jenni narrated.
+  **Why:** The AC adds that class. No test was weakened: the expectation is now derived from `narrated_by`.
+  **Issue:** #202
+- **Decision:** The live answer's composition reads `dataclasses.asdict(result)` with `result.unparsed` laid back over it (raw), so a bad entry the model's C2 parse dropped still lands under More.
+  **Why:** Without it the live path would silently lose dropped entries that the polled and logged paths (raw bodies) show; one `composition()` path, same output on all three.
+  **Issue:** #203
+- **Decision:** More keeps `roles`' dropped entries as a map (id → raw value), the five lists' as lists.
+  **Why:** `roles` is a map; keeping the key is what names the character the bad entry was for.
+  **Issue:** #203
+- **Decision:** Every enum value in the panel (role, source, reason, needed, rule) renders in a `<span>` with its raw value as `title`, known or not; in-cast names are plain text.
+  **Why:** The AC demands the title for sources and unknown values; one rule for all avoids a known/unknown split in the template.
+  **Issue:** #203
+- **Decision:** History's chosen item is the group's last reply item (`is_reply`), else its last item — the same pick as the play page's `_turn_inspector`.
+  **Why:** The AC says "the reply item"; a turn can carry more than one, and the transcript already takes the last.
+  **Issue:** #203
+- **Decision:** The #147 Lite history golden was re-rendered to include the two generated turns' new "Report" header links (the ingested turn gets none); nothing else in it changed (diffed).
+  **Why:** The AC gives every generated turn the link, Lite included. The golden guards #147's trace markup, which is unchanged.
+  **Issue:** #203
+- **Decision:** Added `console.renders.beat_numbers(groups)` (the `beat-N` anchors a Renders section rendered) and a `console/play/_worded.html` partial.
+  **Why:** Reconcile links only to anchors that exist; the partial keeps the span-or-plain rule in one place.
+  **Issue:** #203
+- **Decision:** The Profile version section's refusals use `VersionState(chosen, error, select_error, lines, refusal)`; C5's `WriteRefusal` is wrapped in the existing `Refusal(notice, notice_url, line)` so `_refusal.html` renders it (the HTTP line kept, as the assign section shows).
+  **Why:** Reuses the section partial; `write_refusal` takes no idempotency key, so the posted key isn't needed for the busy line.
+  **Issue:** #63
+- **Decision:** When a success flash appends guarantee sentences, the fingerprint sentence gains a closing "." ("…from the next turn. Guarantees gained: …."); without them it is unchanged.
+  **Why:** Reads as sentences; the AC fixes only the appended sentences' text.
+  **Issue:** #63
+- **Decision:** Local version checks run in this order: token (EXPIRED) → parse ("Pick a version") → equal to the signed current ("Already on that version"); digits are matched with `[0-9]+` so non-ASCII digits are refused.
+  **Why:** A choice can only be compared against a valid signed base; AC says "ASCII digits".
+  **Issue:** #63
+- **Decision:** The CANT_RUN target for "latest" is "<name> v<latest>" from the signed base, or "<name>'s latest version" when the profile read had failed.
+  **Why:** The AC names "<name> vN" but a latest choice carries no number of its own.
+  **Issue:** #63
+- **Decision:** `test_assign_flash_ignores_pinned` asserts an assign's signed base carries no `pinned`, an assign to another profile flashes the fingerprint, and a no-op assign of the own profile still flashes NO_CHANGE.
+  **Why:** The AC's complement read literally (a pinned-only assign result → fingerprint) contradicts "assign bases compare as today"; this pins down "pinned not compared" both ways.
+  **Issue:** #63
+- **Decision:** `tests/fixtures/profile_schema.json` not refreshed: compared as loaded JSON with #183's recorded schema (`EngineProfile.settings` in console/engine/openapi.json), every value matches; the only differences are OpenAPI's float spelling of integer bounds (1.0 vs 1) and `default`s the OpenAPI response rendering leaves out under `models.purposes`/`budgets.model_calls`, not schema changes.
+  **Why:** The plan says refresh only when a value differs; the fixture is the endpoint's own answer.
+  **Issue:** #204
+- **Decision:** The profile-version field strips the `min`/`max` attrs Django's IntegerField adds to its NumberInput (bounds kept server-side, so the stock error messages show).
+  **Why:** C10 and the AC's exact stock messages; no existing C10 IntegerField used `min_value`.
+  **Issue:** #204
+- **Decision:** "That profile has no version N" takes N from the form's cleaned `engine_profile_version`; on "Create anyway" the form is rebuilt from the signed body, so it is the signed body's value.
+  **Why:** `place_refusal` sees the form, not the body; both paths validate the form before placing.
+  **Issue:** #204
+- **Decision:** `place_missing` step 3 falls back to the leaf's own field when the leaf's parent is not a fieldset (root leaf), and an exact-path leaf (step 2) keeps its own field. As a side effect `contradiction_checking` findings now land on the verification fieldset instead of the form top.
+  **Why:** The AC's generic order; no module names in code.
+  **Issue:** #204
+- **Decision:** Structured v1/v2 settings and M5's profile defaults live in `tests/profile_helpers.py` (`STRUCTURED`, `STRUCTURED_V1_SETTINGS`, `STRUCTURED_V2_SETTINGS`, `M5_PROFILE_DEFAULTS`, `structured_profile(version)`, `m5_deployment()`), copied from Engine origin/main seeds (0080 stores `structured_settings()` as is); the shared `get_deployment_settings.json` fixture is left alone.
+  **Why:** Changing the shared deployment fixture would ripple through unrelated tests; the M5 browse tests add 0080's defaults locally.
+  **Issue:** #204
+- **Decision:** The story-setting note merges only into a story-setting clause's own trailing " (any value)" (`_with_note`); a profile-level `setting`'s "(any value)" never gets it. The story value is looked up only when `mode == "story"`, and `rows()` drops `story_settings` outside story mode.
+  **Why:** Planner pass 2 lines; a profile page can't know a story's value.
+  **Issue:** #169
+- **Decision:** `console/guarantees.py`'s module docstring was reworded ("claims an output was checked in full") so the planned grep for "verified" finds nothing; its meaning (FR-RESP-1) is unchanged.
+  **Why:** The test plan's complement greps the module, and the old docstring quoted the word.
+  **Issue:** #169
+- **Decision:** Both guarantee fixtures were regenerated with `json.dumps(indent=2)` so every row carries `story_setting` (only `audience_filtering`'s is set); the Config test overrides `audience_filtering` to `delivered_in: null` because the shared Structured fixture marks it delivered in M5, which would win over the reason.
+  **Why:** C15 / the Engine always serialises the field; the precedence AC puts `delivered_in` first.
+  **Issue:** #169
+- **Decision:** Added two page tests beyond the plan: the profile page shows the default-assumption suffix (Demo 1), and a failed story read on Config shows no suffix or reason with exactly one `GET /stories/{id}`.
+  **Why:** The test plan's "story read failed" complement names the fake call log, which needs a page test.
+  **Issue:** #169
+- **Decision:** `keep_order(stored, chosen)` in `console/forms/scenario.py` is C9's one helper; channel participants and also #68's "Roles present" go through it (the browser posts boxes in role-row order, so a draft stored in another order sent a spurious patch). Chosen values are taken in the field's choice order before `keep_order`.
+  **Why:** AC: "every list-valued checkbox field the editor writes goes through it"; Roles present is one.
+  **Issue:** #205
+- **Decision:** The sent-index map is the pure `adjacency_entries(location_ids, rows)`; `ScenarioEditor.adjacency()` binds it to the forms and is used by `write_doc`, `_place_adjacency` (422) and `place_report`. `adj`/`chan` stay out of `ROW_PATHS` (anchors `f-world-adjacency` and `f-starting_state-channels` come from a separate map) and are placed before the generic indexed match.
+  **Why:** Planner key_link; adjacency paths live under `world.locations[n]`, channels need the id-prefixed participant message.
+  **Issue:** #205
+- **Decision:** A `starting_state.channels[c].participants[p]` error is prefixed with the participant id sent at `p` ("alice: …"); an out-of-range `p` keeps the path.
+  **Why:** AC's "`<id>`: <message>" read as the participant's id, the one thing the row doesn't already show.
+  **Issue:** #205
+- **Decision:** Channel row checks are independent per field (blank id / duplicate id on `id`, >32 on `participants`); adjacency rows show only their first failing check, as the AC orders them. A too-long id (Django's message) skips the id checks.
+  **Why:** AC states first-failing only for adjacency; the channel checks sit on different fields.
+  **Issue:** #205
+- **Decision:** The fake Engine validates responses only, so the "rejects unknown keys" complement is a test helper `schema_valid(engine, body, component)` (ScenarioPatch/ScenarioCreate via the fake's registry); the portcullis draft is served unvalidated (`side_effect`) and the default `topology()` reads `wall`.
+  **Why:** C15 / the schema's enum refuses `portcullis` in a canned answer; writes carrying it would also be refused.
+  **Issue:** #205
+- **Decision:** Extending `catalog_scenarios_detail.json` (farmhouse adjoins barn behind a closed door, barn lies in the farmhouse, channel `phone`) made `test_the_envelope_alone_does_not_differ` see a difference against the #68 draft fixture; that test now copies the detail's topology and channels into its draft. The location lookup became `location_names` (first id wins) + `location_label`, and a `_place.html` partial now renders every "Name (`id`)"/"(undeclared)" cell, the cast table's included.
+  **Why:** The AC keeps the draft fixture as is; the test's intent (envelope-only change) is unchanged.
+  **Issue:** #205
+- **Decision:** "Pre-fix first" shown locally: editing hall's name against the old `draft_to_write`/`LocationForm` sent `world.locations` without `located_in`/`adjacent_to` (assertion failed), not committed red.
+  **Why:** Planner, pass 2.
+  **Issue:** #205
+- **Decision:** `keep_order` and `Rows` (both in `console/forms/scenario.py`, #205) are imported inside the `scenario_cast` functions that use them (`SeedForm.seed`, `GroupForm.group`, `CastForms.group_rows`), not moved.
+  **Why:** `scenario.py` imports `scenario_cast` at module level, so a top-level import would be circular. #205 still owns them.
+  **Issue:** #206
+- **Decision:** Seed audiences now go through `keep_order` against the draft seed with the same kept id. `test_audience_order_and_other_tokens` (#73) was updated to expect the stored order followed by the new tokens (`[mother, son, self, world, Self]`).
+  **Why:** The AC requires it (C9: offering groups never reorders a saved audience). This is a behavior change the AC asks for, not a weakened test.
+  **Issue:** #206
+- **Decision:** The cast sent always carries `groups` (`null` with no rows). The `the_cast` test helper (#73) now includes it.
+  **Why:** The AC says "`cast_to_write` always emits the `groups` key".
+  **Issue:** #206
+- **Decision:** Wording placeholders shown as code in the AC (`<name>` is an audience level, `<id>` (missing)) are rendered as plain text, e.g. "self is an audience level".
+  **Why:** This matches how the existing "(missing)" labels render the same notation.
+  **Issue:** #206
+- **Decision:** The member-list comparison stays list-based in `normalize_cast`, not set-based. Both sides are written through `keep_order`, so a set test would add nothing.
+  **Why:** C9 holds because the editor never reorders stored members.
+  **Issue:** #206
+- **Decision:** The M5 fixture's unknown confidence `certain` is schema-invalid, so M5 pages are served through `side_effect` (unvalidated), as #205's portcullis is. Tests that check request schemas use `m5_draft(certain=False)`.
+  **Why:** The AC asks for the unknown value in the fixture, and the fake validates responses.
+  **Issue:** #206
+- **Decision:** The detail page's Trust shows a stored non-number as raw JSON through `RelationshipRow.trust_raw`. With the strict model this is defensive only.
+  **Why:** The AC names the case. The model refuses non-numbers, so it can't arise from a parsed draft.
+  **Issue:** #206
+- **Decision:** `create_body` puts `cast.groups` back after `drop_empty`, with null entries dropped.
+  **Why:** The AC exempts groups from `drop_empty`. Doing it in `create_body` leaves `drop_empty`'s other callers alone.
+  **Issue:** #206
+- **Decision:** (Rule 1) CI fix: `test_two_primary_sequential_turn_live` is now `engine_auth`, so the release smoke (`engine_live and not engine_auth`, Engine 0.1.1 with no M5 routes) leaves it out, like the other two M5 live tests (`test_m5_knowledge_reads_live` was already marked, and `test_story_settings_live.py` carries the mark module-wide). Its cleanup goes through `_delete_when_idle`, which retries the delete on 423 `story_busy` for up to 60 s, because a turn on Structured v2 leaves background knowledge jobs running.
+  **Why:** engine-smoke failed on `story_busy` at delete. engine-release-smoke got a 404 on the pre-M5 Engine. No live test waited for jobs before this, so there was no existing pattern to follow.
+  **Issue:** #200
+- **Decision:** (Rule 1) `test_m5_knowledge_reads_live` finds the player through `Story.cast`, not `Story.characters`, which holds raw dicts by design.
+  **Why:** This was a test bug (`AttributeError: 'dict' object has no attribute 'is_player'`). The client is right.
+  **Issue:** #186
+- **Decision:** (Rule 2) The belief form's scalar syntax check is now `scalar_syntax()` (`str.partition` plus `isdecimal`), replacing the `^\d*\.?\d+$` regex. It accepts and refuses the same inputs and runs in linear time.
+  **Why:** CodeQL flagged high `py/polynomial-redos` on the regex, which runs on typed input.
+  **Issue:** #194
+- **Decision:** (Rule 2) The role and weight views' return address is now `_cast_back()`. It builds `cast_row_url` from the URL's ids and keeps it only when `url_has_allowed_host_and_scheme` passes, checked in the `if` as `acting.back_to` does. Otherwise it returns the story list.
+  **Why:** CodeQL flagged medium `py/url-redirection` on redirects built from path values.
+  **Issue:** #61

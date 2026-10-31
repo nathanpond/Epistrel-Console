@@ -5,6 +5,8 @@ import copy
 import json
 import re
 from collections.abc import Iterator
+from html import unescape
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,6 +15,7 @@ from django.http import HttpRequest
 from django.test import Client, override_settings
 from django.urls import reverse
 
+from console import twostage
 from console.engine.client import EngineClient
 from console.engine.models import TurnReport
 from console.engine_access import engine_client_for
@@ -22,9 +25,10 @@ from console.models import EngineOperation
 from console.story_settings import config_url as settings_config_url
 from console.views import play, story_config
 from tests.fakes.engine import FakeEngine
-from tests.fakes.guarantees import answer_guarantees
+from tests.fakes.guarantees import STORY_GUARANTEES, answer_guarantees, guarantees_fixture
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import EFFECTIVE, effective_config
+from tests.fixtures import engine_fixture
 from tests.play.helpers import (
     HTMX,
     OPERATION,
@@ -63,6 +67,8 @@ ASSIGN_APPLY = f"/stories/{STORY}/config/profile/apply/"
 PREVIEW = "/stories/{story_id}/impact-preview"
 PATCH = "/stories/{story_id}/profile-overrides"
 PUT = "/stories/{story_id}/engine-profile"
+VERSIONS = "/engine-profiles/{profile_id}/versions"
+VERSION_CHANGE = f"/stories/{STORY}/config/version/"
 WINDOW = "memory.rolling_summary.window_messages"
 ENABLED = "memory.rolling_summary.enabled"
 EPISODIC_K = "memory.episodic.k"
@@ -121,6 +127,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake.respond("GET", LIST, 200, json=profiles_page())
     fake.respond("GET", SCHEMA, 200, json=schema_body())
     fake.respond("GET", "/stories/{story_id}", 200, json=story_json())
+    fake.respond("GET", VERSIONS, 200, json=engine_fixture("list_engine_profile_versions"))
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
 
@@ -300,6 +307,43 @@ def test_the_settings_pages_see_config_link_resolves_here(
     """#54's "Moved to engine profile overrides — see Config" link targets this page."""
     assert settings_config_url(STORY) == CONFIG == reverse("stories:config", args=[STORY])
     assert operator_client.get(settings_config_url(STORY)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("player_view", "provided", "status", "caveat"),
+    [
+        ("story", False, "Not provided (this story's player_view is story)", True),
+        ("character", True, "Provided", False),
+    ],
+    ids=["story", "character"],
+)
+def test_config_guarantees_name_the_storys_player_view(
+    operator_client: Client,
+    engine: FakeEngine,
+    player_view: str,
+    provided: bool,
+    status: str,
+    caveat: bool,
+) -> None:
+    """#169: the Config page's story read gives the audience-filtering row the story's value."""
+    table = guarantees_fixture("structured")
+    for found in table["rows"]:
+        if found["id"] == "audience_filtering":
+            found.update(provided=provided, delivered_in=None)
+    engine.respond("GET", STORY_GUARANTEES, 200, json=table)
+    story = copy.deepcopy(engine_fixture("get_story"))
+    story["settings"]["player_view"] = player_view
+    engine.respond("GET", "/stories/{story_id}", 200, json=story)
+    html = operator_client.get(CONFIG).content.decode()
+    match = re.search(r'<tr id="g-audience_filtering"[^>]*>(.*?)</tr>', html, re.S)
+    assert match is not None
+    tds = re.findall(r"<td[^>]*>(.*?)</td>", match.group(1), re.S)
+    cells = [unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in tds]
+    assert cells[3].endswith(f"; story setting player_view = character (this story: {player_view})")
+    assert f"<code>{player_view}</code>)" in match.group(1)
+    assert cells[5] == status
+    assert ("Audience filtering isn&#x27;t provided" in html) is caveat
+    assert len(requests(engine, "GET", f"/stories/{STORY}")) == 1
 
 
 # --- the overrides form ---------------------------------------------------------------------------
@@ -560,7 +604,8 @@ def test_kept_previous_configuration_when_upgrade_unavailable_and_fingerprint_un
     engine.respond("PATCH", PATCH, 200, json=written(True, config_body(), report))
     [flash] = flashes(_apply(operator_client, html))
     assert flash == (
-        "Applied, but this story keeps its previous configuration (Lite can't backfill history)"
+        "Applied, but this story keeps its previous configuration: the Engine can't backfill its "
+        "history for the modules this version adds"
     )
 
 
@@ -778,3 +823,463 @@ def test_an_invalid_profile_preview_shows_the_overrides_lines(
     shown = html.content.decode()
     assert f"<code>{WINDOW}: 12</code>" in shown
     assert "can&#x27;t run" in shown
+
+
+# --- the profile version (#63) --------------------------------------------------------------------
+
+
+def pinned_config(version: int = 1, *, pinned: bool = True, deleted: bool = False) -> Any:
+    ref = {"id": LITE, "version": version, "pinned": pinned, "deleted": deleted}
+    return config_body(profile=ref)
+
+
+def runs(engine: FakeEngine, version: int = 1, *, pinned: bool = True) -> None:
+    """The story runs Lite ``version`` (pinned or following); Lite's latest is v2."""
+    engine.respond("GET", EFFECTIVE, 200, json=pinned_config(version, pinned=pinned))
+    engine.respond("GET", ITEM, 200, json=profile(version=version))
+
+
+def version_section(html: str) -> str:
+    match = re.search(r'<section class="profile-version" id="version">(.*?)</section>', html, re.S)
+    assert match, "no Profile version section"
+    return match.group(1)
+
+
+def options(html: str) -> list[str]:
+    """The version select's options as written (``value|flags|label``)."""
+    found = re.findall(r'<option value="([^"]*)"([^>]*)>([^<]*)</option>', version_section(html))
+    return [f"{v}|{flags.strip()}|{unescape(label)}" for v, flags, label in found]
+
+
+def change(client: Client, engine: FakeEngine, version: str | None, **extra: str) -> Any:
+    """Render Config, then post its Profile version form with ``version`` (``None`` leaves the
+    field out)."""
+    page = client.get(CONFIG)
+    shown = page.context["versions"]
+    engine.reset()
+    data = {"idempotency_key": shown.key, "confirm_token": shown.token, **extra}
+    if version is not None:
+        data["version"] = version
+    return client.post(VERSION_CHANGE, data)
+
+
+def puts(engine: FakeEngine) -> list[Any]:
+    return requests(engine, "PUT", "/engine-profile")
+
+
+def held_report() -> dict[str, Any]:
+    gained = ["structural_knowledge_separation", "audience_filtering"]
+    story = affected(STORY, capabilities_gained=["partitions"], capabilities_lost=[])
+    return impact(story, warnings=["capabilities gained: partitions"], guarantees_gained=gained)
+
+
+def applied_config(version: int, *, pinned: bool, fingerprint: str = FP_NEW) -> Any:
+    result = pinned_config(version, pinned=pinned)
+    result["fingerprint"] = fingerprint
+    return result
+
+
+@pytest.mark.parametrize(
+    ("version", "pinned", "expected"),
+    [
+        (1, True, "Lite v1 — pinned at v1 (latest is v2)"),
+        (2, True, "Lite v2 — pinned at v2 (the latest)"),
+        (2, False, "Lite v2 — follows latest"),
+    ],
+)
+def test_pin_line_names_the_latest_version(
+    operator_client: Client, engine: FakeEngine, version: int, pinned: bool, expected: str
+) -> None:
+    runs(engine, version, pinned=pinned)
+    html = operator_client.get(CONFIG).content.decode()
+    line = re.search(r'<dd class="profile">(.*?)</dd>', html, re.S)
+    assert line
+    assert text(line.group(1)) == expected
+
+
+def test_a_failed_profile_read_drops_the_latest_clause(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    runs(engine, 1)
+    engine.respond("GET", ITEM, 503, json=error("unavailable"))
+    html = operator_client.get(CONFIG).content.decode()
+    line = re.search(r'<dd class="profile">(.*?)</dd>', html, re.S)
+    assert line
+    assert text(line.group(1)) == f"{LITE} v1 — pinned at v1"
+    assert "latest is" not in html
+    assert "Change version" in version_section(html)  # the section stays
+
+
+def test_a_deleted_profile_keeps_the_latest_clause(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=pinned_config(1, deleted=True))
+    engine.respond("GET", ITEM, 200, json=profile(version=1))
+    html = operator_client.get(CONFIG).content.decode()
+    assert 'pinned at v1 (latest is v2) <span class="badge deleted">deleted</span>' in html
+
+
+def test_version_select_lists_versions_newest_first_and_disables_current(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = operator_client.get(CONFIG).content.decode()
+    assert '<label for="version-select">Version</label>' in html
+    assert '<select id="version-select" name="version">' in html
+    assert options(html) == [
+        "|selected|— pick a version —",
+        "latest|disabled|Latest — follows the profile's edits (current)",
+        "2||v2 · 2026-10-20 12:30:00 UTC · console:nate",
+        "1||v1 · 2026-10-01 09:00:00 UTC · system",
+    ]
+    runs(engine, 1)
+    html = operator_client.get(CONFIG).content.decode()
+    assert options(html) == [
+        "|selected|— pick a version —",
+        "latest||Latest — follows the profile's edits",
+        "2||v2 · 2026-10-20 12:30:00 UTC · console:nate",
+        "1|disabled|v1 · 2026-10-01 09:00:00 UTC · system (current)",
+    ]
+    section = version_section(html)
+    assert '<button type="submit" class="change-version">Change version</button>' in section
+    assert 'name="idempotency_key"' in section
+    assert 'name="confirm_token"' in section
+
+
+def test_a_version_label_without_creator_or_date(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = {"items": [{"version": 1, "created_at": "not a date", "created_by": ""}]}
+    engine.respond("GET", VERSIONS, 200, json=body)
+    assert "1||v1 · not a date" in options(operator_client.get(CONFIG).content.decode())
+
+
+def test_versions_read_failure_keeps_the_page(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", VERSIONS, 503, json=error("unavailable"))
+    response = operator_client.get(CONFIG)
+    html = response.content.decode()
+    assert response.status_code == 200
+    section = version_section(html)
+    assert '<p class="warning versions-unavailable">Versions unavailable — reload</p>' in section
+    assert "version-select" not in section
+    assert '<section class="effective-settings">' in html
+
+
+def test_a_deleted_profile_offers_no_version_form(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=pinned_config(2, pinned=False, deleted=True))
+    section = version_section(operator_client.get(CONFIG).content.decode())
+    assert "This profile is deleted — assign another profile to change versions" in section
+    assert "<form" not in section
+
+
+def test_deleted_profile_makes_no_versions_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=pinned_config(2, pinned=False, deleted=True))
+    operator_client.get(CONFIG)
+    assert requests(engine, "GET", "/versions") == []
+
+
+def test_change_version_sends_put_with_version_and_no_preview(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("PUT", PUT, 200, json=written(True, applied_config(1, pinned=True), impact()))
+    response = change(operator_client, engine, "1")
+    assert response.status_code == 302
+    [call] = puts(engine)
+    assert sent(call) == {"profile_id": LITE, "version": 1, "ignore_warnings": False}
+    assert call.headers["Idempotency-Key"]
+    assert requests(engine, "POST", "/impact-preview") == []
+
+
+def test_unpin_sends_latest_explicitly(operator_client: Client, engine: FakeEngine) -> None:
+    runs(engine, 1)
+    engine.respond("PUT", PUT, 200, json=written(True, applied_config(2, pinned=False), impact()))
+    change(operator_client, engine, "latest")
+    [call] = puts(engine)
+    body = sent(call)
+    assert "version" in body  # left out, the Engine would change nothing
+    assert body["version"] == "latest"
+
+
+def test_held_change_renders_the_preview_and_apply_resends_version(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    runs(engine, 1)
+    engine.respond("PUT", PUT, 200, json=written(False, None, held_report()))
+    response = change(operator_client, engine, "latest")
+    html = response.content.decode()
+    assert response.templates[0].name == "console/stories/config_preview.html"
+    assert "The Engine held this change for confirmation: nothing was written" in html
+    assert "<title>Preview: follow the latest version (v2) — Epistrel Console</title>" in html
+    assert "Follows Lite&#x27;s latest version (v2) from the next turn" in html
+    assert "Apply anyway" in html
+    assert f'href="{CONFIG}#g-structural_knowledge_separation"' in html
+    engine.reset()
+    engine.respond("PUT", PUT, 200, json=written(True, applied_config(2, pinned=False), impact()))
+    applied = _apply(operator_client, html, ASSIGN_APPLY)
+    [call] = puts(engine)
+    assert sent(call) == {"profile_id": LITE, "version": "latest", "ignore_warnings": True}
+    assert flashes(applied)[0].startswith("Now follows the latest version (v2). Applied")
+
+
+def test_a_held_pin_names_the_version(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("PUT", PUT, 200, json=written(False, None, held_report()))
+    html = change(operator_client, engine, "1").content.decode()
+    assert "Preview: pin to v1" in text(html)
+    assert "Runs Lite v1 from the next turn" in html
+
+
+def test_a_held_latest_without_the_profile_read_drops_the_number(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    runs(engine, 1)
+    engine.respond("GET", ITEM, 503, json=error("unavailable"))
+    engine.respond("PUT", PUT, 200, json=written(False, None, held_report()))
+    html = text(change(operator_client, engine, "latest").content.decode())
+    assert "Preview: follow the latest version Back" in html
+    assert f"Follows {LITE}'s latest version from the next turn" in unescape(html)
+
+
+def test_applied_change_flashes_the_pin_and_guarantees(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    report = impact(guarantees_gained=["audience_filtering"], guarantees_lost=["a", "b"])
+    engine.respond("PUT", PUT, 200, json=written(True, applied_config(1, pinned=True), report))
+    [flash] = flashes(change(operator_client, engine, "1"))
+    assert flash == (
+        f'Now pinned at v1. Applied — fingerprint <code title="{FP_NEW}">'
+        f"{short_fingerprint(FP_NEW)}</code>; takes effect from the next turn. "
+        "Guarantees gained: <code>audience_filtering</code>. "
+        "Guarantees lost: <code>a</code>, <code>b</code>."
+    )
+
+
+def test_kept_and_no_change_flashes_name_no_guarantees(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    runs(engine, 1)
+    report = impact(
+        affected(STORY, upgrade_unavailable=True),
+        fingerprint_before=FP_NOW,
+        guarantees_gained=["audience_filtering"],
+    )
+    kept = applied_config(1, pinned=True, fingerprint=FP_NOW)
+    engine.respond("PUT", PUT, 200, json=written(True, kept, report))
+    [flash] = flashes(change(operator_client, engine, "latest"))
+    assert flash == story_config.KEPT
+    report = impact(guarantees_gained=["audience_filtering"])
+    engine.respond("PUT", PUT, 200, json=written(True, pinned_config(1), report))
+    [flash] = flashes(change(operator_client, engine, "latest"))
+    assert flash == story_config.NO_CHANGE
+
+
+def test_same_version_is_refused_with_no_write(operator_client: Client, engine: FakeEngine) -> None:
+    for state, posted in (((2, False), "latest"), ((1, True), "1")):
+        runs(engine, state[0], pinned=state[1])
+        response = change(operator_client, engine, posted)
+        section = version_section(response.content.decode())
+        assert '<p class="errorlist version-error" role="alert">Already on that version</p>' in (
+            section
+        )
+        assert puts(engine) == []
+
+
+@pytest.mark.parametrize(
+    "posted", [None, "", "   ", "0", "-1", "+2", "abc", "2147483648", "\u0661"]
+)
+def test_garbage_version_is_refused_with_no_write(
+    operator_client: Client, engine: FakeEngine, posted: str | None
+) -> None:
+    response = change(operator_client, engine, posted)
+    section = version_section(response.content.decode())
+    assert '<p class="errorlist version-error" role="alert">Pick a version</p>' in section
+    assert puts(engine) == []
+
+
+@pytest.mark.parametrize(("posted", "expected"), [(" 02 ", 2), ("LATEST", "latest")])
+def test_a_padded_number_and_any_case_latest_are_sent(
+    operator_client: Client, engine: FakeEngine, posted: str, expected: Any
+) -> None:
+    runs(engine, 1)
+    engine.respond("PUT", PUT, 200, json=written(True, applied_config(2, pinned=True), impact()))
+    change(operator_client, engine, posted)
+    [call] = puts(engine)
+    assert sent(call)["version"] == expected
+
+
+def test_an_expired_version_token_makes_no_write(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = change(operator_client, engine, "1", **{"confirm_token": "tampered"})
+    assert story_config.EXPIRED in version_section(response.content.decode())
+    assert puts(engine) == []
+
+
+def test_placeholder_posts_nothing_and_asks_to_pick(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = operator_client.get(CONFIG).content.decode()
+    assert '<option value="" selected>— pick a version —</option>' in version_section(html)
+    response = change(operator_client, engine, "")
+    assert "Pick a version" in version_section(response.content.decode())
+    assert puts(engine) == []
+
+
+def test_overrides_that_cant_run_on_the_version(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond(
+        "PUT",
+        PUT,
+        422,
+        json=error("invalid_profile", "window too large", overrides=OVERRIDDEN),
+    )
+    html = change(operator_client, engine, "1").content.decode()
+    section = version_section(html)
+    assert "This story&#x27;s overrides can&#x27;t run on Lite v1: window too large" in section
+    assert f"<code>{WINDOW}: 12</code>" in section
+    assert '<option value="1" selected>' in section
+    assert "assign-error" not in html
+
+
+def test_apply_anyway_refusal_renders_in_the_version_section(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("PUT", PUT, 200, json=written(False, None, held_report()))
+    html = change(operator_client, engine, "1").content.decode()
+    engine.respond("PUT", PUT, 409, json=error("story_archived"))
+    page = _apply(operator_client, html, ASSIGN_APPLY).content.decode()
+    section = version_section(page)
+    assert "This story is archived — unarchive it to change its profile version." in section
+    assert '<option value="1" selected>' in section
+    assert "unarchive it to change its profile version" not in page.split('id="version"')[0]
+
+
+def test_assign_flash_ignores_pinned(operator_client: Client, engine: FakeEngine) -> None:
+    html = _assign_preview(operator_client, engine, impact())
+    base = twostage.unsign(story_config.PROFILE_KIND, hidden(html, "confirm_token"))
+    assert "pinned" not in base.base  # an assign base never compares the pin flag
+    result = config_body(profile={"id": OTHER, "version": 3, "pinned": False, "deleted": False})
+    result["fingerprint"] = FP_NEW
+    engine.respond("PUT", PUT, 200, json=written(True, result, impact()))
+    [flash] = flashes(_apply(operator_client, html, ASSIGN_APPLY))
+    assert flash.startswith("Applied — fingerprint")
+    assert flash != story_config.NO_CHANGE
+    # the story's own profile, unchanged and following: still NO_CHANGE (pinned not compared)
+    engine.respond("PUT", PUT, 200, json=written(True, config_body(), impact()))
+    assert flashes(_apply(operator_client, html, ASSIGN_APPLY))[-1] == story_config.NO_CHANGE
+
+
+def test_pin_flag_only_change_flashes_now_pinned(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("PUT", PUT, 200, json=written(True, pinned_config(2), impact()))
+    [flash] = flashes(change(operator_client, engine, "2"))
+    assert flash.startswith("Now pinned at v2. Applied — fingerprint")
+
+
+def test_an_overrides_apply_that_changes_nothing_still_flashes_no_change(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _preview_page(operator_client, engine, impact())
+    engine.respond("PATCH", PATCH, 200, json=written(True, config_body(), impact()))
+    [flash] = flashes(_apply(operator_client, html))
+    assert flash == story_config.NO_CHANGE
+
+
+def test_pinned_number_missing_from_versions_is_added_as_current(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    runs(engine, 3)
+    items = [
+        {"version": n, "created_at": "2026-10-01T09:00:00Z", "created_by": "system"}
+        for n in (1, 2, 4)
+    ]
+    engine.respond("GET", VERSIONS, 200, json={"items": items})
+    values = [
+        o.split("|")[0] + "|" + o.split("|")[2]
+        for o in options(operator_client.get(CONFIG).content.decode())
+    ]
+    assert values[2:] == [
+        "4|v4 · 2026-10-01 09:00:00 UTC · system",
+        "3|v3 (current)",
+        "2|v2 · 2026-10-01 09:00:00 UTC · system",
+        "1|v1 · 2026-10-01 09:00:00 UTC · system",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (
+            409,
+            error("story_archived"),
+            "This story is archived — unarchive it to change its profile version.",
+        ),
+        (423, error("story_busy", reason="in_flight"), "Story busy — another turn is running"),
+        (
+            409,
+            error("story_paused", story_id=STORY, job_id="J1"),
+            "The story is paused for a check",
+        ),
+        (409, error("revision_conflict", current_revision=9), "reload"),
+    ],
+    ids=["archived", "busy", "paused", "revision"],
+)
+def test_version_refusals_render_in_the_version_section(
+    operator_client: Client, engine: FakeEngine, status: int, body: Any, expected: str
+) -> None:
+    runs(engine, 1)
+    engine.respond("PUT", PUT, status, json=body)
+    page = change(operator_client, engine, "latest").content.decode()
+    section = version_section(page)
+    assert expected in unescape(section)
+    assert '<option value="latest" selected>' in section
+
+
+def test_unknown_version_is_placed_under_the_select(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("PUT", PUT, 422, json=error("validation_error", field="body.version"))
+    section = version_section(change(operator_client, engine, "7").content.decode())
+    assert re.search(
+        r'</select>\s*<p class="errorlist version-error" role="alert">'
+        r"That profile has no version 7</p>",
+        section,
+    )
+    engine.respond("PUT", PUT, 422, json=error("validation_error", field="body.profile_id"))
+    section = version_section(change(operator_client, engine, "1").content.decode())
+    assert "That profile has no version" not in section
+    assert "engine-error" in section or "HTTP 422" in section
+
+
+def test_archived_story_disables_the_version_select(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", "/stories/{story_id}", 200, json=story_json(status="archived"))
+    section = version_section(operator_client.get(CONFIG).content.decode())
+    assert '<select id="version-select" name="version" disabled>' in section
+    assert (
+        '<button type="submit" class="change-version" disabled>Change version</button>' in section
+    )
+    assert '<small class="apply-disabled">Archived — unarchive to apply</small>' in section
+    assert "(current)" in section
+    assert 'name="idempotency_key"' in section
+    assert 'name="confirm_token"' in section
+
+
+def test_kept_wording_no_longer_says_lite() -> None:
+    from console.views import profile_edit
+
+    template = (
+        Path(__file__).resolve().parent.parent / "templates" / "console" / "_impact_report.html"
+    ).read_text(encoding="utf-8")
+    assert "Lite" not in story_config.KEPT
+    assert "Lite" not in profile_edit.UPGRADE_UNAVAILABLE
+    assert "Lite can" not in template
+    assert "This story has history the Engine can't backfill" in template
+    assert profile_edit.UPGRADE_UNAVAILABLE == (
+        "This story has history the Engine can't backfill — it keeps its current configuration"
+    )

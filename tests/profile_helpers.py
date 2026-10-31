@@ -216,3 +216,82 @@ def null(path: str, root: str = "settings") -> str:
 
 def body_of(request: Any) -> Any:
     return json.loads(request.content)
+
+
+# --- the seeded Structured profile (#204) -------------------------------------------------------
+# Copied from the Engine at origin/main: ``core/seeds/profiles.py``'s ``STRUCTURED_M4_SETTINGS``
+# (version 1, migration 0047) and ``STRUCTURED_SETTINGS`` (version 2, migration
+# ``0080_structured_profile_m5``), and ``M5_PROFILE_DEFAULTS`` (what 0080 adds to the
+# deployment's ``profile_defaults``).
+
+STRUCTURED = "00000000000000000000PRF002"
+STRUCTURED_V1_SETTINGS: dict[str, Any] = {
+    "pipeline": "structured",
+    "memory": {
+        "rolling_summary": {"enabled": False},
+        "episodic": {"enabled": True, "k": 40, "hybrid_search": True, "reranking": False},
+        "consolidation": {"enabled": True, "cadence_turns": 20},
+    },
+    "pins": {"enabled": True, "max_pinned": 50},
+    "verification": {
+        "level": "entailment",
+        "extraction_mode": "always",
+        "entailment_gate": 1.0,
+        "contradiction_checking": True,
+    },
+    "commitment": {"enabled": True, "salience": "rules_and_model"},
+    "repair": {"max_attempts": 1, "polish": {"enabled": True, "max_regenerations": 2}},
+    "budgets": {"model_calls": None, "deadline_ms": 45_000},
+    "models": {"generation": {"temperature": 0.8, "top_p": 0.95, "response_length": "medium"}},
+}
+STRUCTURED_V2_SETTINGS: dict[str, Any] = {
+    **STRUCTURED_V1_SETTINGS,
+    "character_knowledge": {
+        "partitions": True,
+        "nested_beliefs": {"enabled": True, "depth": 2},
+        "lazy_resolution": True,
+        "testimony": "model",
+        "max_adjudications_per_turn": 2,
+        "max_lazy_resolutions_per_turn": 20,
+    },
+    "perception": {"level": "full"},
+    "multi_character": {"renders": "per_character", "interjection_max_words": 6},
+    "budgets": {"model_calls": 16, "deadline_ms": 60_000},
+}
+M5_PROFILE_DEFAULTS: dict[str, Any] = {
+    "character_knowledge": {
+        "partitions": False,
+        "nested_beliefs": {"enabled": False, "depth": 2},
+        "lazy_resolution": False,
+        "testimony": "off",
+        "max_adjudications_per_turn": 2,
+        "max_lazy_resolutions_per_turn": 20,
+    },
+    "perception": {"level": "none"},
+    "multi_character": {"renders": "combined", "interjection_max_words": 6},
+}
+
+
+def structured_profile(version: int = 2, **changes: Any) -> dict[str, Any]:
+    """The seeded ``Structured`` profile read at ``version`` (1 or 2; latest is 2)."""
+    settings = STRUCTURED_V2_SETTINGS if version == 2 else STRUCTURED_V1_SETTINGS
+    base: dict[str, Any] = {
+        "id": STRUCTURED,
+        "name": "Structured",
+        "owner_principal": "system",
+        "preset": False,
+        "version": version,
+        "current_version": 2,
+        "settings": copy.deepcopy(settings),
+    }
+    return profile(**{**base, **changes})
+
+
+def m5_deployment(**changes: Any) -> dict[str, Any]:
+    """The deployment settings with M5's ``profile_defaults`` added, as migration 0080 does."""
+    body = deployment(**changes)
+    defaults = dict(body.get("profile_defaults") or {})
+    for key, value in M5_PROFILE_DEFAULTS.items():
+        defaults.setdefault(key, copy.deepcopy(value))
+    body["profile_defaults"] = defaults
+    return body

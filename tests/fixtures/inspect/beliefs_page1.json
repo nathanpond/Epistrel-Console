@@ -1,0 +1,462 @@
+{
+  "character": "0000000000000000000000CA01",
+  "beliefs": [
+    {
+      "belief_id": "0000000000000000000000BE01",
+      "proposition_id": "0000000000000000000000PP01",
+      "proposition": {
+        "subject_id": "0000000000000000000000CA02",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "suspected",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "observation",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE02",
+      "proposition_id": "0000000000000000000000PP02",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": 0.7,
+      "since": {
+        "turn": 1,
+        "variant": 1,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 40000
+      },
+      "provenance": "testimony",
+      "held_from": {
+        "turn": 1,
+        "variant": 1,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 40000
+      },
+      "held_to": {
+        "turn": 3,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 4,
+        "step": 0
+      },
+      "valid_from": 540,
+      "valid_to": 600,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE03",
+      "proposition_id": "0000000000000000000000PP03",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+        "object_id": "0000000000000000000000CA01",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        },
+        "polarity": "negated"
+      },
+      "kind": "first_order",
+      "polarity": "negated",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 1,
+        "beat": 5,
+        "step": 0
+      },
+      "provenance": "inference",
+      "held_from": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 1,
+        "beat": 5,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE04",
+      "proposition_id": "0000000000000000000000PP04",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "discovery",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE05",
+      "proposition_id": "0000000000000000000000PP05",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "correction",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE06",
+      "proposition_id": "0000000000000000000000PP06",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "forgetting",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE07",
+      "proposition_id": "0000000000000000000000PP07",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "revision",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE08",
+      "proposition_id": "0000000000000000000000PP08",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 32767,
+        "step": 0
+      },
+      "provenance": "author",
+      "held_from": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 32767,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE09",
+      "proposition_id": "0000000000000000000000PP09",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 0,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 0,
+        "step": 0
+      },
+      "provenance": "resolution",
+      "held_from": {
+        "turn": 0,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 0,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE10",
+      "proposition_id": "0000000000000000000000PP10",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": null,
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": null,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    },
+    {
+      "belief_id": "0000000000000000000000BE11",
+      "proposition_id": "0000000000000000000000PP11",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "0000000000000000000000PZ99",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "hearsay",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    }
+  ],
+  "revision": 7,
+  "next_after": "0000000000000000000000PP11",
+  "identities": [
+    {
+      "entities": [
+        "0000000000000000000000EN01",
+        "0000000000000000000000EN03"
+      ],
+      "source": "canon",
+      "record_id": "0000000000000000000000FA01"
+    },
+    {
+      "entities": [
+        "0000000000000000000000CA02",
+        "0000000000000000000000EN02"
+      ],
+      "source": "belief",
+      "record_id": "0000000000000000000000BE01"
+    }
+  ],
+  "output_viewpoint": "omniscient"
+}

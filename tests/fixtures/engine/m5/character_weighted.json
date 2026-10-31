@@ -1,0 +1,19 @@
+{
+  "timeline_revision": 8,
+  "character": {
+    "id": "01JM5CH0000000000000000003",
+    "name": "Bob",
+    "is_player": false,
+    "true_age": 52,
+    "promoted_to": [],
+    "role_id": null,
+    "source": null,
+    "participation": {
+      "role": "reactive",
+      "fixed": false
+    },
+    "weight": "minor",
+    "modeled_at": null
+  },
+  "idempotency_key": "01JM5KY0000000000000000003"
+}

@@ -5,11 +5,12 @@ Run by ci.yml's engine-smoke job against the Engine ``edge`` image; locally, see
 """
 
 import re
+import time
 
 import pytest
 from django.test import Client, override_settings
 
-from console.engine.client import EngineClient
+from console.engine.client import ENGINE_PROFILES_PAGE, EngineClient, EngineError
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from console.ids import new_ulid
@@ -427,3 +428,162 @@ def test_play_one_turn_live(url: str, key: str, operator_client: Client, operato
         assert any(item.channel == "message" and item.text for item in history.entries)
     finally:
         client.delete_story(story_id, idempotency_key=new_ulid())
+
+
+def _delete_when_idle(client: EngineClient, story_id: str, *, wait: float = 60.0) -> None:
+    """Delete the story, retrying while the Engine answers 423 ``story_busy`` (a turn on a
+    partitioned profile leaves background knowledge jobs running; the delete must wait for
+    them), up to ``wait`` seconds."""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            client.delete_story(story_id, idempotency_key=new_ulid())
+            return
+        except EngineError as exc:
+            if exc.code != "story_busy" or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.5)
+
+
+@pytest.mark.engine_auth
+def test_two_primary_sequential_turn_live(
+    url: str, key: str, operator_client: Client, operator: object
+) -> None:
+    """#200: as ``test_play_one_turn_live``, on a story with a player and two non-players
+    assigned the seeded ``Structured`` profile v2 (per-character renders): one turn from the play
+    view naming both non-players as render characters, sequentially, answers 200 with an
+    ``order`` of length 2."""
+    client = EngineClient(url, key, principal="console:smoke")
+    ratings = client.list_content_ratings()
+    created = client.create_story(
+        {
+            "name": "Console smoke two primaries",
+            "content_rating_id": ratings[0].id,
+            "characters": [
+                {"name": "Wren", "definition": "A courier.", "true_age": 29, "is_player": True},
+                {"name": "Marcus", "definition": "A smith.", "true_age": 44, "is_player": False},
+                {"name": "Jenni", "definition": "A baker.", "true_age": 37, "is_player": False},
+            ],
+        },
+        idempotency_key=new_ulid(),
+    )
+    story_id = created.story_id
+    assert story_id is not None
+    wren, marcus, jenni = (c.id for c in created.characters)
+    try:
+        client.assign_engine_profile(
+            story_id,
+            _structured_profile(client),
+            ignore_warnings=True,
+            idempotency_key=new_ulid(),
+            version=2,
+        )
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            page = operator_client.get(f"/stories/{story_id}/").content.decode()
+            snapshot = re.search(r'name="snapshot" value="([^"]+)"', page)
+            idempotency_key = re.search(r'name="idempotency_key" value="([^"]+)"', page)
+            assert snapshot is not None, page
+            assert idempotency_key is not None, page
+            assert '<fieldset class="multi-character">' in page  # the section is enabled
+            answer = operator_client.post(
+                f"/stories/{story_id}/turn/",
+                {
+                    "snapshot": snapshot.group(1),
+                    "idempotency_key": idempotency_key.group(1),
+                    "actor": wren,
+                    "say": "Who baked this?",
+                    "output_viewpoint": f"character:{marcus}",
+                    "render_character_ids": [marcus, jenni],
+                    "interaction_mode": "sequential",
+                    f"order_{marcus}": "1",
+                    f"order_{jenni}": "2",
+                },
+                HTTP_HX_REQUEST="true",
+            ).content.decode()
+        row = EngineOperation.objects.filter(story_id=story_id, kind="respond").first()
+        assert row is not None, answer
+        assert row.request["body"]["render_character_ids"] == [marcus, jenni]
+        assert row.http_status == 200, answer
+        assert isinstance(row.response, dict)
+        assert len(row.response["order"]) == 2, row.response
+    finally:
+        _delete_when_idle(client, story_id)
+
+
+def _structured_profile(client: EngineClient) -> str:
+    """The id of the one profile named exactly ``Structured`` (no hard-coded id)."""
+    names: list[str] = []
+    found: list[str] = []
+    cursor: str | None = None
+    while True:
+        profiles, cursor = client.list_engine_profiles(cursor=cursor, limit=ENGINE_PROFILES_PAGE)
+        names.extend(p.name for p in profiles)
+        found.extend(p.id for p in profiles if p.name == "Structured")
+        if not cursor:
+            break
+    assert len(found) == 1, f"expected one profile named 'Structured', saw {names}"
+    return found[0]
+
+
+def _knowledge_story(client: EngineClient, profile: str, version: int) -> str:
+    """A story with ``test_play_one_turn_live``'s cast (no turn played), on ``profile`` pinned
+    to ``version``."""
+    ratings = client.list_content_ratings()
+    created = client.create_story(
+        {
+            "name": f"Console smoke knowledge v{version}",
+            "content_rating_id": ratings[0].id,
+            "characters": [
+                {
+                    "name": "Mara",
+                    "definition": "A harbour pilot.",
+                    "true_age": 34,
+                    "is_player": True,
+                },
+                {"name": "Tobin", "definition": "Her brother.", "true_age": 41, "is_player": False},
+            ],
+        },
+        idempotency_key=new_ulid(),
+    )
+    assert created.story_id is not None
+    client.assign_engine_profile(
+        created.story_id,
+        profile,
+        ignore_warnings=True,
+        idempotency_key=new_ulid(),
+        version=version,
+    )
+    return created.story_id
+
+
+@pytest.mark.engine_auth
+def test_m5_knowledge_reads_live(url: str, key: str) -> None:
+    """#186: on ``Structured`` v2 (partitions on) the three knowledge reads answer empty pages
+    for a story with no turn; **Complement:** on v1 ("Structured (M4)", no partitions) each is
+    409 ``module_off``."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profile = _structured_profile(client)
+    stories: list[str] = []
+    try:
+        on = _knowledge_story(client, profile, 2)
+        stories.append(on)
+        off = _knowledge_story(client, profile, 1)
+        stories.append(off)
+        [player] = [c.id for c in client.get_story(on).cast if c.is_player]
+        beliefs = client.inspect_beliefs(on, player)
+        assert beliefs.beliefs == []
+        assert beliefs.character == player
+        assert client.inspect_divergences(on).items == []
+        assert client.inspect_exposures(on, character=player).items == []
+        [off_player] = [c.id for c in client.get_story(off).cast if c.is_player]
+        for read in (
+            lambda: client.inspect_beliefs(off, off_player),
+            lambda: client.inspect_divergences(off),
+            lambda: client.inspect_exposures(off, character=off_player),
+        ):
+            with pytest.raises(EngineError) as caught:
+                read()
+            assert caught.value.code == "module_off"
+    finally:
+        for story_id in stories:
+            _delete_when_idle(client, story_id)

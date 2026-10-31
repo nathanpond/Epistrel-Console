@@ -3,7 +3,8 @@
 {% comment %}
 The Inspect area's entry tab (#135; content #151): what the story runs with, from the shell's one
 effective-config read. Header line, the pipeline level, the capabilities the Engine reports (labels
-from console/inspect.py, unknown values as <code>), the capability-map link, the module table.
+from console/inspect.py, unknown values as <code>), the capability-map link, the module table (each
+module's dials in a row under it, console.inspect.MODULE_DIALS).
 {% endcomment %}
 {% block tab_content %}
 <p class="overview-header">Profile <code>{{ config.profile.id }}</code> v{{ config.profile.version }}{% if profile_flags %} ({{ profile_flags }}){% endif %}
@@ -32,12 +33,12 @@ from console/inspect.py, unknown values as <code>), the capability-map link, the
       <td>{% if row.kind == "level" %}{{ row.value }}{% elif row.kind == "attempts" %}on · {{ row.value }} attempt{{ row.value|pluralize }}{% elif row.kind == "raw" %}<code>{{ row.value }}</code>{% else %}{{ row.kind }}{% endif %}</td>
       <td><code>{{ row.path }}</code></td>
     </tr>
-    {% if row.module == "pipeline" and dials %}
-    <tr class="pipeline-dials">
+    {% if row.dials %}
+    <tr class="{{ row.module }}-dials">
       <td colspan="3">
-        <div class="dials">Structured pipeline dials{% if pipeline == "lite" %} (unused under lite){% endif %}
+        <div class="dials">{{ row.dials.caption }}{{ row.dials.note }}
           <ul>
-            {% for dial in dials %}<li><code>{{ dial.path }}</code>: {{ dial.shown }}</li>
+            {% for dial in row.dials.dials %}<li><code>{{ dial.path }}</code>: {{ dial.shown }}</li>
             {% endfor %}
           </ul>
         </div>

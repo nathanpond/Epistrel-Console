@@ -1,12 +1,14 @@
 """How history items render (#52): per-turn groups, channels, "no reply", operation links,
 audit records with their rejected drafts and the summary."""
 
+import json
 import re
 from typing import Any
 
 import pytest
 from django.test import Client
 
+from console.inspect import short_id
 from console.models import EngineOperation
 from tests.fakes.engine import FakeEngine
 from tests.history.helpers import (
@@ -19,6 +21,7 @@ from tests.history.helpers import (
     history_json,
     page,
 )
+from tests.play.helpers import story_json
 
 pytestmark = pytest.mark.django_db
 OP = "01M5R5XK5X7GQK27XMD1FZQV27"  # turn 1's operation in the fixture
@@ -49,7 +52,7 @@ def turns(*numbers: int) -> list[dict[str, Any]]:
 
 def row_of(html: str, text: str) -> str:
     rows: list[str] = re.findall(r'<tr class="item[^"]*">.*?</tr>', html, re.S)
-    found = [row for row in rows if f"<td>{text}" in row]
+    found = [row for row in rows if f'<td class="text">{text}' in row]
     assert len(found) == 1, text
     return found[0]
 
@@ -249,3 +252,190 @@ def test_no_summary_section_unless_asked(operator_client: Client, engine: FakeEn
     body.pop("summary")
     answer(engine, history=body)
     assert "<h2>Summary</h2>" not in page(operator_client)
+
+
+# --- the Perception link (#195) -------------------------------------------------------------------
+
+EFFECTIVE = "/stories/{story_id}/effective-config"
+
+
+def perception_links(html: str) -> list[str]:
+    found = re.findall(r'<a class="perception-link" href="([^"]+)">Perception</a>', html)
+    return [h.replace("&amp;", "&") for h in found]
+
+
+def effective_reads(engine: FakeEngine) -> int:
+    return calls_to(engine, "/effective-config")
+
+
+def _predicates() -> dict[str, Any]:
+    from tests.inspect.helpers import FIXTURES
+
+    body: dict[str, Any] = json.loads((FIXTURES / "predicates_list.json").read_text())
+    return body
+
+
+def _structured_turns() -> dict[str, Any]:
+    items = [
+        item(0, 1, "say", "Setup.", propositions=[]),
+        item(1, 1, "say", "Is the ferry late?", propositions=[]),
+        item(1, 2, "message", "Tobin shrugs."),
+        item(2, 1, "say", "Fine.", kind="beat_say", fidelity="envelope"),  # fidelity alone
+    ]
+    return history_json(items=items, turns=turns(0, 1, 2), audit=None)
+
+
+def test_structured_turn_links_perception(operator_client: Client, engine: FakeEngine) -> None:
+    answer(engine, history=_structured_turns())
+    engine.respond("GET", "/stories/{story_id}/predicates", 200, json=_predicates())
+    html = page(operator_client)
+    assert perception_links(html) == [
+        f"/stories/{STORY}/turns/1/perception/",
+        f"/stories/{STORY}/turns/2/perception/",
+    ]
+    assert effective_reads(engine) == 0  # the items say
+    (header,) = [line for line in html.splitlines() if "turn-header" in line and "Turn 1 ·" in line]
+    assert header.index("Explain retrieval") < header.index('class="perception-link"')
+    engine.reset()
+    chain = perception_links(page(operator_client, "variant=1:2"))
+    assert chain == [
+        f"/stories/{STORY}/turns/1/perception/?variant=1%3A2",
+        f"/stories/{STORY}/turns/2/perception/?variant=1%3A2",
+    ]
+
+
+def test_do_only_turn_links_perception_when_story_structured(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    from tests.inspect.helpers import structured
+
+    items = [item(1, 1, "do", "Mara sits."), item(1, 2, "message", "Tobin shrugs.")]
+    answer(engine, history=history_json(items=items, turns=turns(1), audit=None))
+    engine.respond("GET", EFFECTIVE, 200, json=structured())
+    assert perception_links(page(operator_client)) == [f"/stories/{STORY}/turns/1/perception/"]
+    assert effective_reads(engine) == 1
+    engine.reset()
+    assert perception_links(page(operator_client, "variant=1:2")) == []  # a chain view
+    assert effective_reads(engine) == 0
+
+
+def test_lite_turn_has_no_perception_link(operator_client: Client, engine: FakeEngine) -> None:
+    answer(engine)  # the Lite fixture, on a Lite story
+    html = page(operator_client)
+    assert "Turn 1 · variant 1" in html
+    assert perception_links(html) == []
+    assert effective_reads(engine) == 1  # one lazy read for the whole page
+
+
+# --- #202: a multi-render turn's render order; reactions indented ---------------------------------
+
+MARCUS = "01JB2Z8Y5Q3W6K9M1N4P7R0T3D"
+JENNI = "01JB2Z8Y5Q3W6K9M1N4P7R0T3C"
+STORY_PATH = "/stories/{story_id}"
+
+
+def demo_cast(engine: FakeEngine, items: list[dict[str, Any]]) -> None:
+    """#52's reads with ``items`` as turn 1, and Marcus and Jenni in the cast (the #201 demo)."""
+    answer(engine, history=history_json(items=items, turns=turns(1), audit=None, summary=None))
+    story = story_json(next_turn_index=4)
+    story["characters"] = [
+        *story["characters"],
+        {"id": MARCUS, "name": "Marcus", "is_player": False},
+        {"id": JENNI, "name": "Jenni", "is_player": False},
+    ]
+    engine.respond("GET", STORY_PATH, 200, json=story)
+
+
+def header(html: str) -> str:
+    match = re.search(r'<tr class="turn-header"><th colspan="7">(Turn 1 .*?)</th></tr>', html)
+    assert match is not None
+    return match.group(1)
+
+
+def test_multi_render_turn_header_names_the_order(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    outsider = "01JB2Z8Y5Q3W6K9M1N4P7R0ZZ9"
+    items = [
+        item(1, 1, "say", "Anyone here?"),
+        item(
+            1,
+            2,
+            "message",
+            "Marcus and Jenni answer.",
+            render_character_ids=[MARCUS, JENNI, MARCUS, outsider],
+        ),
+        item(1, 3, "message", "A later reply.", render_character_ids=[JENNI, MARCUS]),
+    ]
+    demo_cast(engine, items)
+    html = header(page(operator_client))
+    assert html.startswith(
+        'Turn 1 · variant 1 · <span class="render-order">Renders: Marcus → Jenni → '
+        f"{short_id(outsider)}</span>"
+    )
+    assert html.count("render-order") == 1  # the group's first message_rendered row only
+
+
+def test_single_render_turn_header_has_no_renders_line(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement: one rendering character (a duplicate id counts once) gives no line; the
+    Render column is unchanged."""
+    items = [
+        item(1, 1, "say", "Hello."),
+        item(1, 2, "message", "Marcus answers.", render_character_ids=[MARCUS, MARCUS]),
+    ]
+    demo_cast(engine, items)
+    html = page(operator_client)
+    assert "Renders:" not in html
+    assert 'class="render-order"' not in html
+    assert "<td>Marcus, Marcus</td>" in row_of(html, "Marcus answers.")
+
+
+def test_reaction_rows_are_indented(operator_client: Client, engine: FakeEngine) -> None:
+    items = [
+        item(1, 1, "say", "Anyone here?"),
+        item(
+            1,
+            2,
+            "say",
+            "Jenni gasps.",
+            actor_character_id=JENNI,
+            narrated_by=MARCUS,
+            kind="beat_say",
+        ),
+        item(1, 3, "say", "Mara shrugs.", narrated_by="player", kind="beat_say"),
+        item(1, 4, "message", "Marcus answers.", render_character_ids=[MARCUS, JENNI]),
+    ]
+    demo_cast(engine, items)
+    html = page(operator_client)
+    reaction = row_of(html, "↳ Jenni gasps.")
+    assert re.match(r'<tr class="item channel-say reaction">', reaction)
+    assert "<td>Jenni (narrated by Marcus)</td>" in reaction  # #62's label unchanged
+    # Complement: a player-narrated beat (C16) and an own beat are neither marked nor prefixed.
+    for text in ("Mara shrugs.", "Anyone here?"):
+        row = row_of(html, text)
+        assert "reaction" not in row
+        assert "↳" not in row
+
+
+def test_turn_header_links_report(operator_client: Client, engine: FakeEngine) -> None:
+    """#203: a turn whose chosen item (its reply, else its last item) was generated links its
+    play-page inspector, last in the header. **Complement:** an ingested turn has no link."""
+    items = [
+        item(1, 1, "say", "Anyone here?"),
+        item(1, 2, "message", "Marcus answers.", render_character_ids=[MARCUS, JENNI]),
+    ]
+    demo_cast(engine, items)
+    found = header(page(operator_client))
+    url = f"/stories/{STORY}/?operation={OP}&amp;origin=generated"
+    assert found.endswith(f' <a class="report-link" href="{url}">Report</a>')
+    engine.reset()
+    ingested = [
+        item(1, 1, "say", "Anyone here?", origin="ingested"),
+        item(1, 2, "message", "Tobin answers.", origin="ingested"),
+    ]
+    demo_cast(engine, ingested)
+    html = page(operator_client)
+    assert "report-link" not in header(html)
+    assert "Report</a>" not in html

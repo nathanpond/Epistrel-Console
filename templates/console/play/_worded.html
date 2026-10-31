@@ -1,0 +1,1 @@
+{# A pre-worded value of the Composition panel (#203). Context: w (console.composition.Worded): plain text, or a <span> with its title (a raw enum value, or the full id of a character outside the cast). #}{% if w.title %}<span title="{{ w.title }}">{{ w.text }}</span>{% else %}{{ w.text }}{% endif %}

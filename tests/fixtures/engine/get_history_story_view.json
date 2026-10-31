@@ -1,0 +1,129 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Where is Jenni?",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0101",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_say",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3C",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "The key is under the mat.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0102",
+      "origin": "generated",
+      "propositions": [
+        {
+          "proposition": {
+            "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3C",
+            "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+            "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PL1",
+            "polarity": "affirmed",
+            "qualifiers": {},
+            "valid_time": {
+              "kind": "interval",
+              "start": {
+                "outer": 10,
+                "inner": 12
+              },
+              "end": null
+            }
+          },
+          "verdict": null
+        }
+      ],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "none"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 3,
+      "kind": "beat_do",
+      "actor_character_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Tobin glances toward the kitchen.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0103",
+      "origin": "generated",
+      "propositions": [
+        {
+          "proposition": {
+            "subject_id": "01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+            "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+            "object_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PL1",
+            "polarity": "affirmed",
+            "qualifiers": {},
+            "valid_time": {
+              "kind": "interval",
+              "start": {
+                "outer": 10,
+                "inner": 12
+              },
+              "end": null
+            }
+          },
+          "verdict": null
+        }
+      ],
+      "fidelity": "content",
+      "narrated_by": "01JB2Z8Y5Q3W6K9M1N4P7R0T3C"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JB2Z8Y5Q3W6K9M1N4P7R0T3A"
+      ],
+      "channel": "message",
+      "text": "Jenni: \"The key is under the mat.\" Tobin glances toward the kitchen.",
+      "operation_id": "01JB2Z8Y5Q3W6K9M1N4P7S0001",
+      "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0104",
+      "origin": "generated"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": {
+        "message_id": "01JB2Z8Y5Q3W6K9M1N4P7M0104",
+        "text": "Jenni: \"The key is under the mat.\" Tobin glances toward the kitchen."
+      }
+    }
+  ],
+  "output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3B",
+  "audience_filter": "bypassed_by_player_view",
+  "player_view": "story",
+  "as_of": 1,
+  "timeline_revision": 2,
+  "next_before_turn": null
+}

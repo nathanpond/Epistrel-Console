@@ -1,6 +1,7 @@
 """#54 against the live Engine: the issue's demo on a fresh story. Queue with size 3 (marked
 "story", its config change by ``console:nate``), reset it, pin a memory, save instructions, and
-a story policy that would relax a rule refused with ``cannot_relax``."""
+a story policy that would relax a rule refused with ``cannot_relax``. #197: player authority and
+interaction mode set, read back as "story", and reset."""
 
 import re
 from typing import Any
@@ -26,9 +27,7 @@ def _marker(html: str, name: str) -> str:
     return match.group(1)
 
 
-def test_story_settings_demo_live(operator_client: Client) -> None:
-    url, key = live_url(), live_key()
-    client = EngineClient(url, key, principal="console:smoke")
+def _create_story(client: EngineClient) -> str:
     ratings = client.list_content_ratings()
     created = client.create_story(
         {
@@ -43,6 +42,13 @@ def test_story_settings_demo_live(operator_client: Client) -> None:
     )
     story_id = created.story_id
     assert story_id is not None
+    return story_id
+
+
+def test_story_settings_demo_live(operator_client: Client) -> None:
+    url, key = live_url(), live_key()
+    client = EngineClient(url, key, principal="console:smoke")
+    story_id = _create_story(client)
     page = f"/stories/{story_id}/settings/"
     try:
         with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
@@ -102,5 +108,37 @@ def test_story_settings_demo_live(operator_client: Client) -> None:
             html = operator_client.get(page).content.decode()
             assert "Added story policy “No war”" in html
             assert "<code>policy:" in html
+    finally:
+        client.delete_story(story_id, idempotency_key=new_ulid())
+
+
+def test_player_authority_and_interaction_mode_live(operator_client: Client) -> None:
+    url, key = live_url(), live_key()
+    client = EngineClient(url, key, principal="console:smoke")
+    story_id = _create_story(client)
+    page = f"/stories/{story_id}/settings/"
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            html = operator_client.get(page).content.decode()
+            assert _marker(html, "player_authority") == "default"
+            assert _marker(html, "interaction_mode").startswith("default (")
+            data = form_data(html, page)
+            data.update(player_authority="co_author", interaction_mode="simultaneous")
+            assert operator_client.post(page, data).status_code == 302
+
+            html = operator_client.get(page).content.decode()
+            assert (
+                "Player authority: Co-author (may narrate others&#x27; observable actions), "
+                "Interaction mode: Simultaneous" in html
+            )
+            assert _marker(html, "player_authority") == "story"
+            assert _marker(html, "interaction_mode") == "story"
+
+            data = form_data(html, page)
+            data.update(reset_player_authority="on", reset_interaction_mode="on")
+            assert operator_client.post(page, data).status_code == 302
+            html = operator_client.get(page).content.decode()
+            assert _marker(html, "player_authority") == "default"
+            assert _marker(html, "interaction_mode").startswith("default (")
     finally:
         client.delete_story(story_id, idempotency_key=new_ulid())

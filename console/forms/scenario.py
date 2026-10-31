@@ -5,7 +5,10 @@ One flat :class:`ScenarioForm` whose field names are the Engine's write paths jo
 (#64 convention 6; the one alias is ``metadata.content_rating_id`` → ``metadata__content_rating``,
 as #66), plus one formset per list of objects or multi-line items:
 
-- ``loc``: ``world.locations``, :class:`LocationForm` (id, name, description);
+- ``loc``: ``world.locations``, :class:`LocationForm` (id, name, description, lies in);
+- ``adj``: each location's ``adjacent_to`` as one flat edge list, :class:`AdjacencyForm` (from,
+  to, barrier; #205), each row stored on its "from" location;
+- ``chan``: ``starting_state.channels``, :class:`ChannelForm` (id, participants; #205);
 - ``ent``: ``world.entities``, :class:`EntityForm` (id, name, kind, aliases, description);
 - ``pol``: ``story_settings_defaults.policies``,
   :class:`~console.forms.policy.ScenarioPolicyForm`;
@@ -25,6 +28,8 @@ events, predicates, closed sets and rules) and ``drivers.planned_reveals`` are J
 sent whole when its normalised form changed; the world seeds travel inside ``starting_state``
 (a list, so the merge patch replaces it whole). The role selects (viewpoint, roles present) and
 the cast's holder and audience choices offer the role rows' ids in the current form state.
+List-valued checkbox fields are written through :func:`keep_order` against the draft's value
+(C9): compared as sets, sent in the stored order with new entries appended.
 
 Values are normalised the same way for the draft (:func:`draft_to_write`) and the form
 (:meth:`ScenarioEditor.write_doc`) before they are compared: CRLF → LF and surrounding whitespace
@@ -39,7 +44,8 @@ the field the path names.
 
 import json
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,6 +93,17 @@ from console.forms.scenario_cast import (
 )
 from console.formset_rows import OP_ADD, Op, apply_op
 from console.reports import field_anchor
+from console.story_settings import (
+    BOOLEAN_SELECT,
+    LABELS,
+    NULL_DEFAULT_TEXT,
+    SETTING_CHOICES,
+    engine_default_choice,
+    kept_choices,
+    select_bool,
+    tie_break_label,
+)
+from console.wording import humanised
 
 SEP = "__"
 BODY_PREFIX = "body."
@@ -123,18 +140,39 @@ EVENT_TYPE_MAX, EVENT_TYPES_MAX = 60, 50
 NAME_LIST_ITEM_MAX, NAME_LISTS_MAX = 64, 50  # capabilities, required providers
 OVERRIDABLE_MAX, OVERRIDABLE_ITEMS = 200, 100
 ROLES_PRESENT_MAX = 32
+ADJACENT_MAX = 100  # a location's adjacent_to
+ADJACENCY_ROWS_MAX = 1000  # the adj row set's own cap
+CHANNELS_MAX, CHANNEL_ID_MAX, PARTICIPANTS_MAX = 100, 60, 32
 RETENTION_MIN, RETENTION_MAX = 1, 3650
 
 # --- the schema's enums (a test compares them with ``openapi.json``) ------------------------------
 
 ENTITY_KINDS = ("person", "place", "organization", "item", "event", "other")
+BARRIERS = ("none", "door_open", "door_closed", "window", "thin_wall", "wall")
 SETTING_ENUMS: dict[str, tuple[str, ...]] = {
     "ambiguous_retcon_timing": ("include_if_possible", "ask_author"),
     "backfill_conflict_policy": ("last_mention", "first_mention", "ask"),
     "interaction_mode": ("sequential", "simultaneous"),
     "player_authority": ("own_character", "co_author"),
     "turn_concurrency": ("reject", "queue"),
+    "player_view": ("character", "story"),
+    "sequence_order": ("request", "director"),
 }
+# Engine M5's defaults (#198): C7 choices (#197) instead of "(deployment default)" and " (unknown)".
+C7_SETTINGS = frozenset({"player_view", "sequence_order"})
+# Each C7 field's "Engine default (<text>)" (the tie-break and interjections included).
+C7_DEFAULTS = {
+    "player_view": "character",
+    "sequence_order": NULL_DEFAULT_TEXT["sequence_order"],
+    "simultaneous_tie_break": NULL_DEFAULT_TEXT["simultaneous_tie_break"],
+    "reactive_interjections": "off",
+}
+# The two boolean defaults, sent as ``true``/``false`` and edited as a select.
+BOOLEAN_SETTINGS = (
+    "story_settings_defaults__allow_new_arrivals",
+    "story_settings_defaults__reactive_interjections",
+)
+TIE_BREAK_FIELD = "story_settings_defaults__simultaneous_tie_break"
 BOOLEAN_CHOICES = [(NOT_SET, DEFAULT_LABEL), ("true", "Yes"), ("false", "No")]
 
 # The deferred JSON boxes: field name → (top type, empty value).
@@ -162,6 +200,9 @@ LINE_FIELDS = (
 
 # Row formsets: prefix → (Engine path, row cap).
 LOCATIONS, ENTITIES, POLICIES = "loc", "ent", "pol"
+ADJACENCY, CHANNELS = "adj", "chan"  # #205: no Engine path of their own in ROW_PATHS
+CHANNELS_PATH = "starting_state.channels"
+ADJACENCY_ANCHOR = "f-world-adjacency"
 DRIVER_LISTS = {
     "hook": "drivers.plot_hooks",
     "obj": "drivers.objectives",
@@ -174,12 +215,43 @@ ROW_PATHS = {
     POLICIES: "story_settings_defaults.policies",
     **DRIVER_LISTS,
 }
-ROW_CAPS = {LOCATIONS: ROWS_MAX, ENTITIES: ROWS_MAX, POLICIES: POLICIES_MAX}
+ROW_CAPS = {
+    LOCATIONS: ROWS_MAX,
+    ENTITIES: ROWS_MAX,
+    POLICIES: POLICIES_MAX,
+    ADJACENCY: ADJACENCY_ROWS_MAX,
+    CHANNELS: CHANNELS_MAX,
+}
 ROW_CAPS.update(dict.fromkeys(DRIVER_LISTS, ROWS_MAX))
 NEW_ROWS: dict[str, dict[str, list[str]]] = {
     POLICIES: {"rule_type": [DEFAULT_RULE_TYPE], "rule": [rule_template_text(DEFAULT_RULE_TYPE)]},
 }
 _INDEXED = re.compile(r"^(?P<base>[^\[\]]+)\[(?P<index>\d+)\](?:\.(?P<rest>.+))?$")
+_ADJACENCY_PATH = re.compile(
+    r"^world\.locations\[(?P<location>\d+)\]\.adjacent_to\[(?P<entry>\d+)\](?:\.(?P<rest>.+))?$"
+)
+_PARTICIPANT = re.compile(r"^participants\[(?P<index>\d+)\]$")
+
+# #205's wording.
+LIES_IN_HELP = "Seeded as canon by a structured story; Lite stores it but doesn't use it."
+THIS_PLACE_SUFFIX = " (this place)"
+LIES_IN_ITSELF = "A place can't lie in itself"
+BARRIER_DEFAULT = "door open"  # C7's "Engine default (door open)"
+NO_BARRIER = "No barrier"  # ``none``: a specific label, never mistaken for the blank
+BARRIER_CHOICES = [(b, NO_BARRIER if b == "none" else humanised(b)) for b in BARRIERS]
+ADJACENCY_HELP = "Adjacency is symmetric: declare each pair once."
+CHOOSE_BOTH = "Choose both places"
+ADJOINS_ITSELF = "A place can't adjoin itself"
+PAIR_DECLARED = "Already declared in row {row} (adjacency is symmetric)"
+NO_SUCH_LOCATION = "No location row has this id"
+TOO_MANY_ADJACENT = f"At most {ADJACENT_MAX} adjacent places per location"
+CHANNELS_HELP = (
+    "Channels open when the story starts (a phone call, a radio net). A structured story puts "
+    "each participant on the channel."
+)
+CHANNEL_NEEDS_ID = "A channel needs its id"
+CHANNEL_ID_USED = "Already used by row {row}"
+TOO_MANY_PARTICIPANTS = f"At most {PARTICIPANTS_MAX} participants"
 
 
 # --- the draft as the form sees it ----------------------------------------------------------------
@@ -193,6 +265,37 @@ def _rows(items: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
 def _items(values: Iterable[object]) -> list[str]:
     """A driver list: each item's text normalised, blanks dropped (order and repeats kept)."""
     return [text for text in (norm_text(v) for v in values) if text]
+
+
+def keep_order(stored: Sequence[str], chosen: Iterable[str]) -> list[str]:
+    """C9 (#205): the ``stored`` entries still chosen, in stored order (duplicates kept), then
+    the newly chosen ones in ``chosen``'s order: a list-valued checkbox field written this way
+    compares with the draft's value as a set, so an untouched one sends no change."""
+    picked = list(dict.fromkeys(chosen))
+    wanted, known = set(picked), set(stored)
+    return [s for s in stored if s in wanted] + [c for c in picked if c not in known]
+
+
+def _adjacency(location: str, barrier: str | None) -> dict[str, Any]:
+    """One ``adjacent_to`` entry; an unset (or explicit ``null``) barrier left out."""
+    return {"location": location, **({"barrier": barrier} if barrier else {})}
+
+
+def adjacency_entries(
+    location_ids: Sequence[str], rows: Iterable[tuple[int, str]]
+) -> dict[int, list[int]]:
+    """#205's sent-index map: sent location ``n`` → the adjacency rows (``(row index, from)``
+    pairs, in row order) that make up its ``adjacent_to``, entry ``a`` being the list's
+    ``a``-th. A row attaches to the first location with its ``from`` id; one naming none is
+    left out. Pure, so the write and both error placements read the same map."""
+    first: dict[str, int] = {}
+    for n, location_id in enumerate(location_ids):
+        first.setdefault(location_id, n)
+    entries: dict[int, list[int]] = {}
+    for index, origin in rows:
+        if origin in first:
+            entries.setdefault(first[origin], []).append(index)
+    return entries
 
 
 def _policy(policy: Any) -> dict[str, Any]:
@@ -230,6 +333,8 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
                     "id": loc.id,
                     "name": norm_text(loc.name),
                     "description": norm_text(loc.description),
+                    "located_in": loc.located_in,
+                    "adjacent_to": [_adjacency(a.location, a.barrier) for a in loc.adjacent_to],
                 }
                 for loc in world.locations
             ),
@@ -259,6 +364,10 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
             "predicates": state.predicates,
             "closed_sets": state.closed_sets,
             "rules": state.rules,
+            "channels": [
+                {"id": channel.id, "participants": list(channel.participants)}
+                for channel in state.channels
+            ],
         },
         "drivers": {
             "director_guidance": norm_text(drivers.director_guidance),
@@ -270,6 +379,8 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
         },
         "story_settings_defaults": {
             "allow_new_arrivals": settings.allow_new_arrivals,
+            "reactive_interjections": settings.reactive_interjections,
+            "simultaneous_tie_break": settings.simultaneous_tie_break,
             **{name: getattr(settings, name) for name in SETTING_ENUMS},
             "audit_retention_days": settings.audit_retention_days,
             "default_output_viewpoint": settings.default_output_viewpoint,
@@ -338,12 +449,22 @@ def editor_data(doc: Mapping[str, Any]) -> QueryDict:
             put(name, "\n".join(value or []))
         elif name == "metadata__labels":
             put(name, ", ".join(value or []))
-        elif name == "story_settings_defaults__allow_new_arrivals":
+        elif name in BOOLEAN_SETTINGS:
             put(name, None if value is None else ("true" if value else "false"))
         else:
             put(name, value)
+    locations: list[Mapping[str, Any]] = list(_get(doc, ROW_PATHS[LOCATIONS]) or [])
     rows: dict[str, list[dict[str, Any]]] = {
-        LOCATIONS: list(_get(doc, ROW_PATHS[LOCATIONS]) or []),
+        LOCATIONS: [{k: v for k, v in loc.items() if k != "adjacent_to"} for loc in locations],
+        ADJACENCY: [
+            {"from": loc.get("id"), "to": entry.get("location"), "barrier": entry.get("barrier")}
+            for loc in locations
+            for entry in loc.get("adjacent_to") or []
+        ],
+        CHANNELS: [
+            {"id": channel.get("id"), "participants": channel.get("participants") or []}
+            for channel in _get(doc, CHANNELS_PATH) or []
+        ],
         ENTITIES: [
             {**e, "aliases": "\n".join(e.get("aliases") or [])}
             for e in _get(doc, ROW_PATHS[ENTITIES]) or []
@@ -415,16 +536,196 @@ def _description() -> TextField:
     )
 
 
+def _raw(form: forms.Form, name: str) -> str:
+    """A row field's posted value, stripped (``""`` when absent)."""
+    value = form.data.get(form.add_prefix(name)) if form.is_bound else None
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _place_choices(
+    ids: Iterable[str], blank: str, keep: str, own: str = ""
+) -> list[tuple[str, str]]:
+    """A location select's options: ``blank``, then ``ids``; a posted ``keep`` they lack is
+    kept, labelled "<id> (this place)" when it is the row's ``own`` id, else "<id> (missing)"."""
+    choices = [(NOT_SET, blank), *((v, v) for v in ids)]
+    if keep and keep not in {v for v, _ in choices}:
+        choices.append((keep, f"{keep}{THIS_PLACE_SUFFIX if keep == own else MISSING_SUFFIX}"))
+    return choices
+
+
 class LocationForm(forms.Form):
+    """A location row. ``locations``: the location rows' ids in the current form state, which
+    "Lies in" offers (all but this row's own)."""
+
     id = forms.CharField(label="Id", max_length=ID_MAX, help_text="a-z, 0-9 and _")
     name = TextField(label="Name", max_length=NAME_MAX)
     description = _description()
+    located_in = forms.ChoiceField(label="Lies in", required=False, help_text=LIES_IN_HELP)
+
+    def __init__(self, *args: Any, locations: Sequence[str] = (), **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        own = _raw(self, "id")
+        field = self.fields["located_in"]
+        if isinstance(field, forms.ChoiceField):
+            others = [v for v in locations if v != own]
+            field.choices = _place_choices(others, NONE_LABEL, _raw(self, "located_in"), own)
+
+    def clean(self) -> dict[str, Any] | None:
+        data = super().clean() or {}
+        located_in = data.get("located_in")
+        if located_in and located_in == data.get("id"):
+            self.add_error("located_in", LIES_IN_ITSELF)
+        return data
 
     def row(self) -> dict[str, Any]:
+        """The row in schema order (``adjacent_to`` is the editor's, from the ``adj`` rows)."""
         data = self.cleaned_data
         return _rows(
-            [{"id": data["id"], "name": data["name"], "description": data["description"]}]
+            [
+                {
+                    "id": data["id"],
+                    "name": data["name"],
+                    "description": data["description"],
+                    "located_in": data.get("located_in") or None,
+                }
+            ]
         )[0]
+
+
+class AdjacencyForm(forms.Form):
+    """An ``adj`` row (#205): one ``adjacent_to`` entry of its ``from`` location.
+    ``locations``: the location rows' ids in the current form state."""
+
+    to = forms.ChoiceField(label="To", required=False)
+    barrier = forms.ChoiceField(label="Barrier", required=False)
+
+    def __init__(self, *args: Any, locations: Sequence[str] = (), **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        blank = NONE_LABEL if locations else NO_LOCATIONS
+        for name in ("from", "to"):
+            field = self.fields[name]
+            if isinstance(field, forms.ChoiceField):
+                field.choices = _place_choices(locations, blank, _raw(self, name))
+                if not locations:
+                    field.help_text = NO_LOCATIONS
+        barrier = self.fields["barrier"]
+        if isinstance(barrier, forms.ChoiceField):
+            barrier.choices = [
+                engine_default_choice(BARRIER_DEFAULT),
+                *kept_choices(BARRIER_CHOICES, _raw(self, "barrier") or None),
+            ]
+
+    @property
+    def blank(self) -> bool:
+        """Neither place chosen: dropped, whatever its barrier."""
+        return not _raw(self, "from") and not _raw(self, "to")
+
+    def entry(self) -> dict[str, Any]:
+        data = self.cleaned_data
+        return _adjacency(data["to"], data.get("barrier") or None)
+
+
+# ``from`` is a Python keyword: set as a field right after the class (posted as adj-<n>-from).
+AdjacencyForm.base_fields = {
+    "from": forms.ChoiceField(label="From", required=False),
+    **AdjacencyForm.base_fields,
+}
+
+
+class AdjacencyFormSet(BaseFormSet):  # type: ignore[type-arg]
+    """The ``adj`` rows' cross-row checks (#205), on save only; a row shows its first failing
+    check. Only rows that pass count as declared and toward a ``from``'s cap."""
+
+    def clean(self) -> None:
+        locations = set(self.form_kwargs.get("locations") or ())
+        declared: dict[frozenset[str], int] = {}
+        per_origin: Counter[str] = Counter()
+        for index, form in enumerate(self.forms):
+            data = getattr(form, "cleaned_data", None)
+            if not data or form.errors:
+                continue
+            origin, to = data.get("from") or "", data.get("to") or ""
+            if not origin and not to:
+                continue
+            pair = frozenset((origin, to))
+            if not origin or not to:
+                form.add_error("to" if origin else "from", CHOOSE_BOTH)
+            elif origin == to:
+                form.add_error("to", ADJOINS_ITSELF)
+            elif pair in declared:
+                form.add_error("to", PAIR_DECLARED.format(row=declared[pair] + 1))
+            elif origin not in locations:
+                form.add_error("from", NO_SUCH_LOCATION)
+            elif per_origin[origin] >= ADJACENT_MAX:
+                form.add_error("from", TOO_MANY_ADJACENT)
+            else:
+                declared[pair] = index
+                per_origin[origin] += 1
+
+
+class ChannelForm(forms.Form):
+    """A ``chan`` row (#205): a starting remote channel. ``roles``: the role rows' ids in the
+    current form state; a ticked id matching none stays ticked as "<id> (missing)"."""
+
+    id = forms.CharField(label="Id", max_length=CHANNEL_ID_MAX, required=False)
+    participants = forms.MultipleChoiceField(
+        label="Participants", required=False, widget=forms.CheckboxSelectMultiple
+    )
+
+    def __init__(self, *args: Any, roles: Sequence[str] = (), **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        field = self.fields["participants"]
+        if isinstance(field, forms.MultipleChoiceField):
+            field.choices = _kept([(v, v) for v in roles], self._ticked())
+            if not roles:
+                field.help_text = NO_ROLES
+
+    def _ticked(self) -> list[str]:
+        if not self.is_bound or not hasattr(self.data, "getlist"):
+            return []
+        return [v for v in self.data.getlist(self.add_prefix("participants")) if v]
+
+    @property
+    def blank(self) -> bool:
+        """A blank (or whitespace-only) id and nothing ticked: dropped."""
+        return not _raw(self, "id") and not self._ticked()
+
+    def channel(self, stored: Mapping[str, Sequence[str]]) -> dict[str, Any]:
+        """The channel sent: its participants in the form's order, through :func:`keep_order`
+        against the first stored channel with this id (C9)."""
+        data = self.cleaned_data
+        channel_id: str = data["id"]
+        field = self.fields["participants"]
+        ticked = set(data.get("participants") or [])
+        chosen = [v for v, _ in getattr(field, "choices", []) if v in ticked]
+        previous = stored.get(channel_id)
+        return {
+            "id": channel_id,
+            "participants": keep_order(previous, chosen) if previous is not None else chosen,
+        }
+
+
+class ChannelFormSet(BaseFormSet):  # type: ignore[type-arg]
+    """The ``chan`` rows' checks (#205), on save only."""
+
+    def clean(self) -> None:
+        seen: dict[str, int] = {}
+        for index, form in enumerate(self.forms):
+            data = getattr(form, "cleaned_data", None)
+            if data is None:
+                continue
+            ticked = data.get("participants") or []
+            if "id" not in form.errors:
+                channel_id = data.get("id") or ""
+                if not channel_id:
+                    if ticked:
+                        form.add_error("id", CHANNEL_NEEDS_ID)
+                elif channel_id in seen:
+                    form.add_error("id", CHANNEL_ID_USED.format(row=seen[channel_id] + 1))
+                else:
+                    seen[channel_id] = index
+            if len(set(ticked)) > PARTICIPANTS_MAX:
+                form.add_error("participants", TOO_MANY_PARTICIPANTS)
 
 
 class EntityForm(forms.Form):
@@ -468,12 +769,18 @@ class DriverItemForm(forms.Form):
     )
 
 
-def _formset(form: type[forms.Form], cap: int) -> type[BaseFormSet[Any]]:
-    return formset_factory(form, extra=0, max_num=cap, validate_max=True, absolute_max=cap + 1)
+def _formset(
+    form: type[forms.Form], cap: int, base: type[BaseFormSet[Any]] = BaseFormSet
+) -> type[BaseFormSet[Any]]:
+    return formset_factory(
+        form, formset=base, extra=0, max_num=cap, validate_max=True, absolute_max=cap + 1
+    )
 
 
 FORMSETS: dict[str, type[BaseFormSet[Any]]] = {
     LOCATIONS: _formset(LocationForm, ROWS_MAX),
+    ADJACENCY: _formset(AdjacencyForm, ADJACENCY_ROWS_MAX, AdjacencyFormSet),
+    CHANNELS: _formset(ChannelForm, CHANNELS_MAX, ChannelFormSet),
     ENTITIES: _formset(EntityForm, ROWS_MAX),
     POLICIES: _formset(ScenarioPolicyForm, POLICIES_MAX),
     **{prefix: _formset(DriverItemForm, ROWS_MAX) for prefix in DRIVER_LISTS},
@@ -531,6 +838,15 @@ def _enum(label: str, values: tuple[str, ...]) -> forms.ChoiceField:
     return forms.ChoiceField(label=label, required=False, choices=_enum_choices(values))
 
 
+def _c7(name: str, choices: list[tuple[str, str]]) -> forms.ChoiceField:
+    """An M5 default (#198): C7's "Engine default (<text>)" first, then #197's choices."""
+    return forms.ChoiceField(
+        label=LABELS[name],
+        required=False,
+        choices=[engine_default_choice(C7_DEFAULTS[name]), *choices],
+    )
+
+
 def _fields() -> dict[str, forms.Field]:
     """Every field but the owner, in display order."""
     settings = "story_settings_defaults"
@@ -563,6 +879,10 @@ def _fields() -> dict[str, forms.Field]:
         f"{settings}__player_authority": _enum(
             "Player authority", SETTING_ENUMS["player_authority"]
         ),
+        f"{settings}__player_view": _c7("player_view", SETTING_CHOICES["player_view"]),
+        f"{settings}__sequence_order": _c7("sequence_order", SETTING_CHOICES["sequence_order"]),
+        TIE_BREAK_FIELD: _c7("simultaneous_tie_break", SETTING_CHOICES["simultaneous_tie_break"]),
+        f"{settings}__reactive_interjections": _c7("reactive_interjections", BOOLEAN_SELECT),
         f"{settings}__turn_concurrency": _enum(
             "Turn concurrency", SETTING_ENUMS["turn_concurrency"]
         ),
@@ -706,10 +1026,27 @@ class ScenarioForm(forms.Form):
         for name in SETTING_ENUMS:
             field_name = f"story_settings_defaults__{name}"
             field = self.fields[field_name]
-            if isinstance(field, forms.ChoiceField):
+            if not isinstance(field, forms.ChoiceField):
+                continue
+            if name in C7_SETTINGS:
+                field.choices = [
+                    engine_default_choice(C7_DEFAULTS[name]),
+                    *kept_choices(SETTING_CHOICES[name], data.get(field_name) or None),
+                ]
+            else:
                 field.choices = _kept(
                     _enum_choices(SETTING_ENUMS[name]), [data.get(field_name, "")], UNKNOWN_SUFFIX
                 )
+        tie_break = self.fields[TIE_BREAK_FIELD]
+        if isinstance(tie_break, forms.ChoiceField):
+            tie_break.choices = [
+                engine_default_choice(C7_DEFAULTS["simultaneous_tie_break"]),
+                *kept_choices(
+                    SETTING_CHOICES["simultaneous_tie_break"],
+                    data.get(TIE_BREAK_FIELD) or None,
+                    tie_break_label,
+                ),
+            ]
         for name, field in self.fields.items():
             if name != OWNER:
                 field.widget.attrs["id"] = field_anchor(field_path(name))
@@ -748,6 +1085,7 @@ class Rows:
     formset: BaseFormSet[Any]
     can_add: bool
     anchor: str
+    help: str = ""  # #205: shown under the title
 
 
 def posted_ids(data: QueryDict, prefix: str, field: str = "id") -> list[str]:
@@ -783,20 +1121,31 @@ class ScenarioEditor:
         # The cast's management forms filled and its audiences re-homed (#73): every part of
         # the editor, and the page it renders, reads the same state.
         data = prepared(data)
+        for prefix in (ADJACENCY, CHANNELS):  # #205's row sets: a missing count, no rows
+            if f"{prefix}-TOTAL_FORMS" not in data:
+                data.update(_management(prefix, 0))
         self.data = data
         self.create = create
+        self.original: Mapping[str, Any] = original or {}
         locations = posted_ids(data, LOCATIONS)
+        roles = posted_role_ids(data)
         self.form = ScenarioForm(
             data,
             ratings=ratings,
             profiles=profiles,
             locations=locations,
-            roles=posted_role_ids(data),
+            roles=roles,
             create=create,
             current_rating=current_rating,
         )
+        form_kwargs: dict[str, dict[str, Any]] = {
+            LOCATIONS: {"locations": locations},
+            ADJACENCY: {"locations": locations},
+            CHANNELS: {"roles": roles},
+        }
         self.formsets: dict[str, BaseFormSet[Any]] = {
-            prefix: formset(data, prefix=prefix) for prefix, formset in FORMSETS.items()
+            prefix: formset(data, prefix=prefix, form_kwargs=form_kwargs.get(prefix))
+            for prefix, formset in FORMSETS.items()
         }
         self.cast = CastForms(
             data,
@@ -842,8 +1191,34 @@ class ScenarioEditor:
         return [
             form
             for form in self.formsets[prefix].forms
-            if form.has_changed() and getattr(form, "cleaned_data", None)
+            if form.has_changed()
+            and getattr(form, "cleaned_data", None)
+            and not getattr(form, "blank", False)
         ]
+
+    def adjacency(self) -> dict[int, list[forms.Form]]:
+        """Sent location ``n`` → the ``adj`` rows of its ``adjacent_to``, entry by entry
+        (:func:`adjacency_entries` of the bound rows)."""
+        rows = self.formsets[ADJACENCY].forms
+        location_ids = [f.cleaned_data.get("id") or "" for f in self.sent(LOCATIONS)]
+        sent = {id(form) for form in self.sent(ADJACENCY)}
+        pairs = [
+            (index, form.cleaned_data.get("from") or "")
+            for index, form in enumerate(rows)
+            if id(form) in sent
+        ]
+        return {
+            n: [rows[index] for index in indices]
+            for n, indices in adjacency_entries(location_ids, pairs).items()
+        }
+
+    def _stored_channels(self) -> dict[str, list[str]]:
+        """The draft's participants of the first channel with each id."""
+        stored: dict[str, list[str]] = {}
+        for channel in _get(self.original, CHANNELS_PATH) or []:
+            if isinstance(channel, Mapping) and isinstance(channel.get("id"), str):
+                stored.setdefault(channel["id"], list(channel.get("participants") or []))
+        return stored
 
     # --- what is sent ----------------------------------------------------------------------
 
@@ -857,16 +1232,20 @@ class ScenarioEditor:
             if name == RATING_FIELD:
                 doc.setdefault("metadata", {})["content_rating_id"] = value or None
                 continue
-            if name == "story_settings_defaults__allow_new_arrivals":
-                value = {"true": True, "false": False}.get(value)
+            if name in BOOLEAN_SETTINGS:
+                value = select_bool(value)
             elif name == "world__event_types":
                 value = value or None
             elif name in (LOCATION_FIELD, VIEWPOINT_FIELD, PROFILE_FIELD) or name.startswith(
                 "story_settings_defaults__"
             ):
                 value = value if value not in ("", None) else None
-            if name == ROLES_FIELD:
-                value = list(dict.fromkeys(value))
+            if name == ROLES_FIELD:  # C9: the draft's order kept, new roles last
+                field = self.form.fields[ROLES_FIELD]
+                ticked = set(value)
+                chosen = [v for v, _ in getattr(field, "choices", []) if v in ticked]
+                stored = _get(self.original, "starting_state.opening.roles_present")
+                value = keep_order(stored, chosen) if isinstance(stored, list) else chosen
             *groups, leaf = name.split(SEP)
             node = doc
             for group in groups:
@@ -874,10 +1253,10 @@ class ScenarioEditor:
             node[leaf] = value
         if RATING_FIELD not in self.form.fields:  # the ratings read failed: kept as it was
             doc.setdefault("metadata", {})["content_rating_id"] = self.form.current_rating
-        doc.setdefault("world", {})["locations"] = [
-            f.row()  # type: ignore[attr-defined]
-            for f in self.sent(LOCATIONS)
-        ]
+        locations = [f.row() for f in self.sent(LOCATIONS)]  # type: ignore[attr-defined]
+        for n, rows in self.adjacency().items():
+            locations[n]["adjacent_to"] = [f.entry() for f in rows]  # type: ignore[attr-defined]
+        doc.setdefault("world", {})["locations"] = locations
         doc["world"]["entities"] = [f.row() for f in self.sent(ENTITIES)]  # type: ignore[attr-defined]
         doc.setdefault("story_settings_defaults", {})["policies"] = [
             f.policy()  # type: ignore[attr-defined]
@@ -890,11 +1269,21 @@ class ScenarioEditor:
             ]
         doc["cast"] = self.cast.cast_body()
         doc.setdefault("starting_state", {})["seeded_memories"] = self.cast.world_seeds()
+        stored = self._stored_channels()
+        doc["starting_state"]["channels"] = [
+            f.channel(stored)  # type: ignore[attr-defined]
+            for f in self.sent(CHANNELS)
+        ]
         return doc
 
     def create_body(self) -> dict[str, Any]:
         """``POST /catalog/scenarios``' body: the non-empty groups and the owner."""
         body: dict[str, Any] = drop_empty(self.write_doc())
+        # #206: ``cast.groups`` is exempt (a group's ``[]`` members survive; ``null`` is left out).
+        groups = self.cast.cast_body().get("groups") or {}
+        groups = {name: members for name, members in groups.items() if members is not None}
+        if groups:
+            body.setdefault("cast", {})["groups"] = groups
         body[OWNER] = self.form.cleaned_data[OWNER]
         return body
 
@@ -987,7 +1376,21 @@ class ScenarioEditor:
         if path == RATING_PATH and RATING_FIELD in form.fields:
             form.add_error(RATING_FIELD, message)
             return True
+        adjacency = _ADJACENCY_PATH.match(path)
+        if adjacency:
+            return self._place_adjacency(
+                int(adjacency["location"]),
+                int(adjacency["entry"]),
+                adjacency["rest"],
+                path,
+                message,
+            )
+        if path == CHANNELS_PATH:
+            self.formsets[CHANNELS].non_form_errors().append(message)
+            return True
         match = _INDEXED.match(path)
+        if match and match["base"] == CHANNELS_PATH:
+            return self._place_channel(int(match["index"]), match["rest"], path, message)
         if match:
             base, index, rest = match["base"], int(match["index"]), match["rest"]
             for prefix, row_path in ROW_PATHS.items():
@@ -1012,6 +1415,45 @@ class ScenarioEditor:
                 form.add_error(name, message if name == candidate else f"{path}: {message}")
                 return True
         return False
+
+    def _place_adjacency(
+        self, location: int, entry: int, rest: str | None, path: str, message: str
+    ) -> bool:
+        """``world.locations[n].adjacent_to[a]…`` on the ``adj`` row that produced it."""
+        rows = self.adjacency().get(location, [])
+        if entry >= len(rows):
+            return False
+        row = rows[entry]
+        if rest is None:
+            row.add_error(None, message)
+        elif rest in ("location", "barrier"):
+            row.add_error("to" if rest == "location" else "barrier", message)
+        else:
+            row.add_error(None, f"{path}: {message}")
+        return True
+
+    def _place_channel(self, index: int, rest: str | None, path: str, message: str) -> bool:
+        """``starting_state.channels[c]…`` on the sent ``chan`` row ``c``; a participant's
+        error prefixed with its id."""
+        sent = self.sent(CHANNELS)
+        if index >= len(sent):
+            return False
+        row = sent[index]
+        participant = _PARTICIPANT.match(rest or "")
+        if rest is None:
+            row.add_error(None, message)
+        elif rest in ("id", "participants"):
+            row.add_error(rest, message)
+        elif participant:
+            sent_ids = row.channel(self._stored_channels())["participants"]  # type: ignore[attr-defined]
+            p = int(participant["index"])
+            row.add_error(
+                "participants",
+                f"{sent_ids[p]}: {message}" if p < len(sent_ids) else f"{path}: {message}",
+            )
+        else:
+            row.add_error(None, f"{path}: {message}")
+        return True
 
     def _place_row(
         self, prefix: str, index: int, rest: str | None, path: str, message: str
@@ -1052,14 +1494,19 @@ class ScenarioEditor:
             "obj": "Objectives",
             "mile": "Milestones",
             "end": "Endings",
+            ADJACENCY: "Adjacent places",
+            CHANNELS: "Remote channels",
         }
+        anchors = {ADJACENCY: ADJACENCY_ANCHOR, CHANNELS: field_anchor(CHANNELS_PATH)}
+        helps = {ADJACENCY: ADJACENCY_HELP, CHANNELS: CHANNELS_HELP}
         return {
             prefix: Rows(
                 titles[prefix],
                 prefix,
                 formset,
                 len(formset.forms) < ROW_CAPS[prefix],
-                field_anchor(ROW_PATHS[prefix]),
+                anchors.get(prefix) or field_anchor(ROW_PATHS[prefix]),
+                helps.get(prefix, ""),
             )
             for prefix, formset in self.formsets.items()
         }
@@ -1067,8 +1514,8 @@ class ScenarioEditor:
 
 def apply_row_op(data: QueryDict, op: Op) -> QueryDict:
     """The posted state after a row button (``console.formset_rows.apply_op``), re-templated.
-    The cast's rows (#73) are named by their prefixes too: ``role``, ``role-<n>-seed`` and
-    ``wseed``."""
+    The cast's rows (#73) are named by their prefixes too: ``role``, ``role-<n>-seed``,
+    ``wseed`` and #206's ``grp``."""
     new_rows: dict[str, Mapping[str, list[str]]] = dict(NEW_ROWS) if op.kind == OP_ADD else {}
     if op.kind == OP_ADD:
         cast_row = new_row(data, op.prefix)

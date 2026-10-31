@@ -9,6 +9,7 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
+from console.inspect import short_id
 from console.models import EngineOperation
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
@@ -98,6 +99,76 @@ def test_a_finished_turn_shows_the_reply_and_report(
     (row,) = EngineOperation.objects.all()
     assert row.kind == "respond"
     assert row.outcome == "ok"
+
+
+ROOK = "01JB2Z8Y5Q3W6K9M1N4P7R0T3D"  # not in the cast: its short id
+MEMORY = "01JB2Z8Y5Q3W6K9M1N4P7MEM01"
+
+
+def warnings_row(html: str) -> str:
+    match = re.search(r'<dt>Warnings</dt>\s*<dd class="turn-warnings">(.*?)</dd>', html, re.S)
+    return match.group(1) if match else ""
+
+
+def test_turn_report_warnings_name_characters(operator_client: Client, engine: FakeEngine) -> None:
+    """#202: the Warnings row after Degradation names a cast character, short-ids one outside
+    it, links the quarantined pin's short id into Retrieval and keeps every warning in order."""
+    warnings = [
+        {"kind": "primary_not_present", "character_id": TOBIN},
+        {"kind": "primary_not_present", "character_id": ROOK},
+        {"kind": "pin_quarantined", "memory_id": MEMORY},
+        {"kind": "tie_break_state_not_yet"},
+        {"kind": "tie_break_state_not_yet"},
+    ]
+    engine.respond("POST", RESPOND, 200, json=respond_json(warnings=warnings))
+    answer_page(engine)
+    html = post_turn(operator_client).split('<div id="turn-status"')[0]
+    assert html.index("<dt>Degradation</dt>") < html.index("<dt>Warnings</dt>")
+    assert html.index("<dt>Warnings</dt>") < html.index("<dt>Guardrail</dt>")
+    items = re.findall(r"<li>(.*?)</li>", warnings_row(html), re.S)
+    retrieval = reverse("inspect:retrieval", args=[STORY])
+    assert items == [
+        "Tobin was named but isn&#x27;t in the scene — rendered with nothing perceived",
+        f"{short_id(ROOK)} was named but isn&#x27;t in the scene — rendered with nothing perceived",
+        f'Pinned memory <a class="warning-memory" href="{retrieval}?memory={MEMORY}">'
+        f'<code title="{MEMORY}">{short_id(MEMORY)}</code></a> was quarantined by the output gate',
+        "The story&#x27;s state tie-break arrives in Engine M6 — request order applied",
+        "The story&#x27;s state tie-break arrives in Engine M6 — request order applied",
+    ]
+    assert ROOK not in warnings_row(html).replace(f'title="{ROOK}"', "")
+
+
+def test_a_report_without_warnings_has_no_warnings_row(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement: an empty ``warnings`` list shows no Warnings row."""
+    engine.respond("POST", RESPOND, 200, json=respond_json(warnings=[]))
+    answer_page(engine)
+    html = post_turn(operator_client)
+    assert "<h3>Turn report</h3>" in html
+    assert "<dt>Warnings</dt>" not in html
+
+
+def test_an_error_path_report_shows_its_warnings(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """A 503's report carries warnings too: short ids there (no labels on the error path)."""
+    engine.respond(
+        "POST",
+        RESPOND,
+        503,
+        json=error_json(
+            "model_unavailable",
+            "no model is available for 'generation' (rate_limited)",
+            purpose="generation",
+            reason="rate_limited",
+            model_calls=[],
+            elapsed_ms=1200,
+            warnings=[{"kind": "primary_not_present", "character_id": TOBIN}],
+        ),
+    )
+    html = post_turn(operator_client)
+    assert f"<li>{short_id(TOBIN)} was named but isn&#x27;t in the scene" in warnings_row(html)
 
 
 def test_a_replay_shows_the_same_turn_once(operator_client: Client, engine: FakeEngine) -> None:

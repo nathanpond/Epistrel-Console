@@ -184,6 +184,7 @@
   ],
   "output_viewpoint": "omniscient",
   "audience_filter": "none",
+  "player_view": "character",
   "as_of": 3,
   "timeline_revision": 4,
   "next_before_turn": null

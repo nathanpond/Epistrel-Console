@@ -42,11 +42,12 @@ from django.http import HttpRequest
 from django.urls import reverse
 
 from console.cast import Character, character_labels
-from console.engine.client import EngineClient, EngineClientError
+from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import FactBody, Instant, Interval, Proposition, TypedLiteral
 from console.engine_errors import log_engine_error
+from console.held import ERASURE_PENDING, is_held
 from console.ids import is_ulid
-from console.inspect import history_turn_url
+from console.inspect import history_turn_url, is_module_off
 from console.predicates import PredicateRef, Refs
 
 EMPTY = "—"
@@ -65,6 +66,8 @@ CURRENT_PAGES = 4
 CAPPED = "capped"
 FAILED = "failed"
 RACE = "race"
+MODULE_OFF = "module_off"  # #191: a 409 `module_off` (Lite: no canon)
+HELD = ERASURE_PENDING  # #191: a 503 `erasure_pending` (#87's held story)
 LINEAGE_CAPPED = "lineage_capped"  # #138: a lineage read past its 4 pages
 PROBLEM_TITLES: Mapping[str, str] = {
     CAPPED: "More than 2,000 current versions match; couldn't check whether this closure still "
@@ -139,6 +142,57 @@ class CurrentSet:
     problem: str | None = None
 
 
+@dataclass(frozen=True)
+class CurrentFacts:
+    """:func:`read_current_facts`' answer: the current versions in the order ``list_facts``
+    returned them, or ``problem`` (``capped``, ``failed``, ``race``, ``module_off``,
+    ``erasure_pending``) with no facts. ``error`` is the Engine's refusal behind ``module_off``
+    and ``erasure_pending`` (#191 re-raises the held one; :func:`read_current_set` logs both)."""
+
+    facts: tuple[FactBody, ...] = ()
+    problem: str | None = None
+    error: EngineError | None = None
+
+
+def read_current_facts(
+    request: HttpRequest,
+    client: EngineClient,
+    story_id: str,
+    *,
+    subject: str | None,
+    predicate: str | None,
+    revision: int,
+) -> CurrentFacts:
+    """The shared current read (#137's current-set read, #191's whole-canon read): ``list_facts``
+    without ``include_superseded`` or time filters, ``limit=500``, following cursors for at most
+    4 pages, each page checked for revision before its cursor is followed. Never raises: a
+    ``next_cursor`` after the 4th page is ``capped``; a page whose ``timeline_revision`` isn't
+    ``revision`` is ``race``; a 409 ``module_off`` is ``module_off`` and a 503
+    ``erasure_pending`` is ``erasure_pending`` (neither logged); any other failure, unreachable
+    and not configured included, is ``failed`` (logged)."""
+    facts: list[FactBody] = []
+    cursor: str | None = None
+    for _ in range(CURRENT_PAGES):
+        try:
+            page = client.list_facts(
+                story_id, subject=subject, predicate=predicate, limit=CURRENT_PAGE, cursor=cursor
+            )
+        except EngineClientError as exc:
+            if is_held(exc):
+                return CurrentFacts(problem=HELD, error=exc)
+            if is_module_off(exc):
+                return CurrentFacts(problem=MODULE_OFF, error=exc)
+            log_engine_error(request, exc)
+            return CurrentFacts(problem=FAILED)
+        if page.timeline_revision != revision:
+            return CurrentFacts(problem=RACE)
+        facts.extend(page.facts)
+        cursor = page.next_cursor
+        if cursor is None:
+            return CurrentFacts(tuple(facts))
+    return CurrentFacts(problem=CAPPED)
+
+
 def read_current_set(
     request: HttpRequest,
     client: EngineClient,
@@ -148,26 +202,19 @@ def read_current_set(
     predicate: str | None,
     revision: int,
 ) -> CurrentSet:
-    """``list_facts`` without ``include_superseded`` or time filters, ``limit=500``, following
-    cursors for at most 4 pages. A ``next_cursor`` after the 4th page is ``capped``; any failure
-    ``failed`` (logged); a page whose ``timeline_revision`` isn't ``revision`` is ``race``."""
-    ids: set[str] = set()
-    cursor: str | None = None
-    for _ in range(CURRENT_PAGES):
-        try:
-            page = client.list_facts(
-                story_id, subject=subject, predicate=predicate, limit=CURRENT_PAGE, cursor=cursor
-            )
-        except EngineClientError as exc:
-            log_engine_error(request, exc)
-            return CurrentSet(problem=FAILED)
-        if page.timeline_revision != revision:
-            return CurrentSet(problem=RACE)
-        ids.update(f.id for f in page.facts)
-        cursor = page.next_cursor
-        if cursor is None:
-            return CurrentSet(frozenset(ids))
-    return CurrentSet(problem=CAPPED)
+    """:func:`read_current_facts` as an id set: a ``next_cursor`` after the 4th page is
+    ``capped``; any failure ``failed`` (logged; ``module_off`` and ``erasure_pending`` too); a
+    page whose ``timeline_revision`` isn't ``revision`` is ``race``."""
+    found = read_current_facts(
+        request, client, story_id, subject=subject, predicate=predicate, revision=revision
+    )
+    if found.problem in (HELD, MODULE_OFF):
+        if found.error is not None:
+            log_engine_error(request, found.error)
+        return CurrentSet(problem=FAILED)
+    if found.problem is not None:
+        return CurrentSet(problem=found.problem)
+    return CurrentSet(frozenset(f.id for f in found.facts))
 
 
 @dataclass(frozen=True)

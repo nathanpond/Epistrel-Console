@@ -1,0 +1,23 @@
+{% load inspect_tags console_format %}{% comment %}
+One exposure (#193): a console.views.inspect_exposures.ExposureRow as row, one
+<tr id="x-<id>">. Context: predicate_names, cast_names (convention 2's name maps); genesis,
+content_kind, transition, belief_title (the view's wording); actions (convention 14: a template
+name for an Actions cell, rendered with row in context, or None). Columns: When, Witness, Heard,
+From, Caught, State, Resolved by, [Actions], More. Enums are humanised with the raw value in
+title (C3). Resolved by shows only for a row the Engine counts resolved through as_of.
+{% endcomment %}{% with item=row.item %}<tr id="x-{{ item.id }}" class="exposure-row">
+  <td class="when">{% if row.when.url %}<a href="{{ row.when.url }}">{{ row.when.text }}</a>{% else %}{{ row.when.text }}{% endif %}</td>
+  <td class="witness">{% include "console/inspect/_character.html" with label=row.witness.label character_id=row.witness.character_id is_player=row.witness.is_player %}</td>
+  <td class="heard">{% if row.heard %}{% include "console/inspect/_proposition.html" with proposition=row.heard %}{% else %}—{% endif %}{% if item.kind != content_kind %} <small class="kind" title="{{ item.kind }}">{{ item.kind|humanised }}</small>{% endif %}</td>
+  <td class="from">{% if row.source %}{% include "console/inspect/_character.html" with label=row.source.label character_id=row.source.character_id is_player=row.source.is_player %}{% else %}<span class="muted genesis">{{ genesis }}</span>{% endif %}</td>
+  <td class="caught"><span title="{{ row.fidelity_title }}">{{ item.fidelity|humanised }}</span></td>
+  <td class="state"><span title="{{ item.state }}">{{ item.state|humanised }}</span></td>
+  <td class="resolved-by">{% if row.resolved and row.resolved_parts %}{% if item.resolved_by_transition %}<span class="transition">{{ transition }} {{ item.resolved_by_transition|engine_id }}</span>{% endif %}{% if item.resolution_operation_id %}{% if item.resolved_by_transition %} · {% endif %}{% if row.resolution_op_pk %}<a class="operation-link" href="{% url 'operations:detail' row.resolution_op_pk %}"><code>{{ item.resolution_operation_id }}</code></a>{% else %}<code>{{ item.resolution_operation_id }}</code>{% endif %}{% endif %}{% if row.belief_url %}{% if item.resolved_by_transition or item.resolution_operation_id %} · {% endif %}<a class="belief-link" href="{{ row.belief_url }}" title="{{ belief_title }}">belief</a>{% endif %}{% else %}—{% endif %}</td>
+  {% if actions %}<td class="actions">{% include actions %}</td>{% endif %}
+  <td class="more"><details><summary>More</summary><dl>
+    {% for m in row.more %}<dt>{{ m.term }}</dt><dd>{% if m.kind == "code" %}<code>{{ m.text }}</code>{% else %}{{ m.text }}{% endif %}</dd>
+    {% endfor %}<dt>Operation</dt><dd>{% if row.op_pk %}<a class="operation-link" href="{% url 'operations:detail' row.op_pk %}"><code>{{ item.operation_id }}</code></a>{% else %}<code>{{ item.operation_id }}</code>{% endif %}</dd>
+    <dt>{{ row.step.term }}</dt><dd>{{ row.step.text }}</dd>
+    <dt>Item (as sent)</dt><dd><pre class="raw-item">{{ row.raw_item }}</pre></dd>
+  </dl></details></td>
+</tr>{% endwith %}

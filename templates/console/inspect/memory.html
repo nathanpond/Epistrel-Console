@@ -2,7 +2,8 @@
 {% load console_format inspect_tags %}
 {% comment %}
 The Memory tab (#140): the story's hot set from one GET /admin/stories/{id}/hot-set read. Rows and
-markers come from console/hot_set.py. A failed read replaces the "As of" line and the five sections
+markers come from console/hot_set.py; a minor's Counts row is judged against its scaled budget
+(#168), and `minor_notes` say why one can't be. A failed read replaces the "As of" line and the five sections
 (not_found: convention 10's line; else #43's panel); the Browse grid always renders, and so does
 the last section, "Consolidate a window" (#145; context `consolidate`, a ConsolidateSection).
 {% endcomment %}
@@ -21,14 +22,15 @@ the last section, "Consolidate a window" (#145; context `consolidate`, a Consoli
     <tr class="budget-{{ b.field }}">
       <td>{{ b.label }}</td>
       <td>{% if b.title %}<span title="{{ b.title }}">{{ b.value }}</span>{% else %}{{ b.value }}{% endif %}</td>
-      <td>{{ b.source }}{% if b.setting %} <code>{{ b.setting }}</code>{% endif %}</td>
+      <td>{{ b.source }}{% if b.setting %} {% if b.url %}<a href="{% url 'engine:settings' %}"><code>{{ b.setting }}</code></a>{% else %}<code>{{ b.setting }}</code>{% endif %}{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
 
 <h2>Counts</h2>
-<table class="hot-set-counts">
+{% for note in minor_notes %}<p class="note">{{ note }}</p>
+{% endfor %}<table class="hot-set-counts">
   <thead><tr><th>Character</th><th>Hot (unpinned)</th><th>Budget</th><th>Headroom</th><th>Stored</th></tr></thead>
   <tbody>
   {% for row in rows.counts %}

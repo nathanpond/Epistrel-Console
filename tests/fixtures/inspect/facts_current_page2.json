@@ -1,0 +1,43 @@
+{
+  "facts": [
+    {
+      "id": "0000000000000000000000FC03",
+      "lineage_id": "0000000000000000000000LC03",
+      "proposition_id": "0000000000000000000000QC03",
+      "proposition": {
+        "subject_id": "0000000000000000000000CA01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "polarity": "affirmed",
+        "qualifiers": {},
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "outer": 0,
+            "inner": 0
+          }
+        }
+      },
+      "valid_from": 0,
+      "valid_to": null,
+      "valid_from_inner": 0,
+      "valid_to_inner": null,
+      "tx_from": "2026-10-24T14:03:05.123456Z",
+      "tx_to": null,
+      "provenance": "render",
+      "authority": "narrator",
+      "author_locked": false,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "membership": "canon",
+      "narrative_turn": 1,
+      "superseded_by": null,
+      "supersedes": [],
+      "anchored_to": null
+    }
+  ],
+  "next_cursor": null,
+  "timeline_revision": 7
+}

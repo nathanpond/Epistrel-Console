@@ -1,0 +1,45 @@
+{% extends "console/inspect/knowledge.html" %}{% load console_format inspect_tags %}
+{% comment %}
+A belief write's result (#194), in the Knowledge tab: rendered on the POST response and again at
+inspect:belief-written?report=<pk> from the #44 row (convention 8). Context from
+console/views/inspect_beliefs.py's _written: written (BeliefWritten), belief, transition, holder
+(_character.html's label, character_id, is_player), kind_text, proposition (typed view or None)
+and raw_proposition, confidence, accessibility, held_from(_url), held_to(_url), valid_text,
+valid_at, position(_url), closed and bad_closed, antecedent, transition_confidence,
+raw_response, operation_pk, replayed, report_url, first_order, see_url and see_label,
+not_readable (nested), again_url; missing (convention 10's text) for a ?report= that isn't one.
+{% endcomment %}
+{% block title %}Inspect · Belief written · {{ story_name }}{% endblock %}
+{% block knowledge_content %}
+{% if missing %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
+<p><a href="{{ back_url }}">Back to beliefs</a></p>
+{% else %}
+<h3 class="belief-written">Belief written</h3>
+{% if replayed %}<p class="notice replayed">Already written — this is the Engine's recorded answer</p>{% endif %}
+<dl class="belief-written-details">
+  <dt>Holder</dt><dd class="holder">{% include "console/inspect/_character.html" with label=holder.label character_id=holder.character_id is_player=holder.is_player %}</dd>
+  <dt>Kind</dt><dd class="kind">{{ kind_text }}</dd>
+  <dt>Proposition</dt><dd class="proposition">{% if proposition %}{% include "console/inspect/_proposition.html" %}{% else %}—{% endif %}</dd>
+  <dt>Confidence</dt><dd class="confidence"><span title="{{ belief.confidence_level }}">{{ confidence }}</span></dd>
+  <dt>Accessibility</dt><dd class="accessibility">{{ accessibility }}</dd>
+  <dt>State</dt><dd class="state"><span title="{{ belief.state }}">{{ belief.state|humanised }}</span></dd>
+  <dt>Provenance</dt><dd class="provenance"><span title="{{ belief.provenance }}">{{ belief.provenance|humanised }}</span></dd>
+  <dt>Held from</dt><dd class="held-from">{% if held_from_url %}<a href="{{ held_from_url }}">{{ held_from }}</a>{% else %}{{ held_from }}{% endif %} until <span class="held-to">{% if held_to %}{% if held_to_url %}<a href="{{ held_to_url }}">{{ held_to }}</a>{% else %}{{ held_to }}{% endif %}{% else %}now{% endif %}</span></dd>
+  <dt>Valid-time</dt><dd class="valid">{{ valid_text }}</dd>
+  <dt>Transition</dt><dd class="transition">{{ transition.id|engine_id }} · <span title="{{ transition.kind }}">{{ transition.kind|humanised }}</span> · valid at {{ valid_at }} · {% if position_url %}<a href="{{ position_url }}">{{ position }}</a>{% else %}{{ position }}{% endif %}</dd>
+  <dt>Closed</dt><dd class="closed">{% if closed %}Closed {{ closed|length }} contradicting belief(s): {% for id in closed %}{{ id|engine_id }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}Closed none{% endif %}</dd>
+  <dt>Operation</dt><dd class="operation">{% if operation_pk %}<a class="operation-link" href="{% url 'operations:detail' operation_pk %}"><code>{{ written.operation_id }}</code></a>{% else %}<code>{{ written.operation_id }}</code>{% endif %} · timeline revision {{ written.timeline_revision }}</dd>
+</dl>
+{% if not_readable %}<p class="notice not-readable">{{ not_readable }}</p>{% endif %}
+<details class="belief-written-more"><summary>More</summary><dl>
+  <dt>Lineage id</dt><dd><code>{{ belief.lineage_id }}</code></dd>
+  <dt>Transition antecedent</dt><dd><pre class="antecedent">{{ antecedent }}</pre></dd>
+  <dt>Transition confidence</dt><dd class="transition-confidence">{{ transition_confidence }}</dd>
+  {% if not proposition %}<dt>Proposition (as sent)</dt><dd><pre class="raw-proposition">{{ raw_proposition }}</pre></dd>{% endif %}
+  {% if bad_closed %}<dt>Closed (unreadable items)</dt><dd>{% for item in bad_closed %}<pre class="bad-closed">{{ item }}</pre>{% endfor %}</dd>{% endif %}
+  <dt>Raw response</dt><dd><pre class="raw-response">{{ raw_response }}</pre></dd>
+</dl></details>
+<p class="written-links">{% if see_url %}<a class="see-belief" href="{{ see_url }}">{{ see_label }}</a> · {% endif %}<a class="direct-another" href="{{ again_url }}">Direct another belief</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

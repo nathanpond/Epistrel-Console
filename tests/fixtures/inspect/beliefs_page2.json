@@ -1,0 +1,65 @@
+{
+  "character": "0000000000000000000000CA01",
+  "beliefs": [
+    {
+      "belief_id": "0000000000000000000000BE12",
+      "proposition_id": "0000000000000000000000PP12",
+      "proposition": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN02",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "kind": "first_order",
+      "polarity": "affirmed",
+      "current_level": "believed",
+      "current_scalar": null,
+      "since": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "provenance": "observation",
+      "held_from": {
+        "turn": 1,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "held_to": null,
+      "valid_from": 0,
+      "valid_to": null,
+      "tx_from": "2026-10-30T09:20:03.118204+00:00"
+    }
+  ],
+  "revision": 7,
+  "next_after": null,
+  "identities": [
+    {
+      "entities": [
+        "0000000000000000000000EN01",
+        "0000000000000000000000EN03"
+      ],
+      "source": "canon",
+      "record_id": "0000000000000000000000FA01"
+    },
+    {
+      "entities": [
+        "0000000000000000000000CA02",
+        "0000000000000000000000EN02"
+      ],
+      "source": "belief",
+      "record_id": "0000000000000000000000BE01"
+    }
+  ],
+  "output_viewpoint": "omniscient"
+}

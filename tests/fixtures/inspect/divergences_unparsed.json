@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "0000000000000000000000DV06",
+      "utterance_id": "0000000000000000000000UT06",
+      "speaker": "0000000000000000000000CA02",
+      "asserted_proposition_id": "0000000000000000000000PA06",
+      "asserted": {
+        "subject_id": "0000000000000000000000EN01"
+      },
+      "believed_belief_id": "0000000000000000000000BE06",
+      "believed_proposition_id": "0000000000000000000000PB06",
+      "believed": {
+        "subject_id": "0000000000000000000000EN01",
+        "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+        "object_id": "0000000000000000000000EN03",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "position": {
+        "turn": 6,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "revealed_by_event_id": null,
+      "operation_id": "0000000000000000000000QP06"
+    }
+  ],
+  "revision": 7,
+  "next_after_id": null,
+  "output_viewpoint": "omniscient"
+}

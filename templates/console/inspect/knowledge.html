@@ -1,0 +1,15 @@
+{% extends "console/inspect/base.html" %}
+{% comment %}
+The Knowledge tab (#189): the shell its sections extend (beliefs #190, divergences #192, exposures
+#193, each rendered through inspect_page(..., Tab.KNOWLEDGE, ...)). Context: knowledge_sections
+(console.inspect.SectionLink, only when the tab is served). The sub-navigation lists the
+registered sections (none: no nav), the current one as aria-current and as the <h2>; the
+nested-belief notice shows whenever the tab is served. A section fills
+{% block knowledge_content %}; the default is the empty shell's line.
+{% endcomment %}
+{% block tab_content %}
+{% if knowledge_sections %}<nav class="subtabs" aria-label="Knowledge sections">{% for section in knowledge_sections %}{% if section.active %}<a class="active" aria-current="page" href="{{ section.url }}">{{ section.label }}</a>{% else %}<a href="{{ section.url }}">{{ section.label }}</a>{% endif %}{% endfor %}</nav>{% endif %}
+{% for section in knowledge_sections %}{% if section.active %}<h2>{{ section.label }}</h2>{% endif %}{% endfor %}
+<p class="notice">Shows first-order beliefs. Nested beliefs aren't readable through the Engine's API yet (<a href="https://github.com/nathanpond/Epistrel/issues/606">nathanpond/Epistrel#606</a>).</p>
+{% block knowledge_content %}<p class="none">No Knowledge sections are available yet.</p>{% endblock %}
+{% endblock %}

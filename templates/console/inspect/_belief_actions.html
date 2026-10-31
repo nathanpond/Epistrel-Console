@@ -1,0 +1,5 @@
+{% comment %}
+A belief row's action (#194; #190's actions hook, convention 14): "Change…" opens Direct a belief
+pre-filled from this belief. Context: row (console.beliefs.BeliefRow), story_id, actions_holder
+(the character whose beliefs the page lists).
+{% endcomment %}<a class="button belief-change" href="{% url 'inspect:belief-direct' story_id %}?holder={{ actions_holder|urlencode }}&amp;proposition_id={{ row.belief.proposition_id|urlencode }}">Change…</a>

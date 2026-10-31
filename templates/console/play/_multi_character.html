@@ -1,0 +1,24 @@
+{% load inspect_tags %}{# #200: the turn form's Multi-character section. Enabled only under per-character renders; otherwise greyed (the fieldset disabled) with the reason visible and, without the Config link, as its title (convention 22). Context: form (TurnForm), story_id. #}
+{% with gate=form.gate %}
+<fieldset class="multi-character"{% if not gate.enabled %}{{ gate.reason|gate_attrs:"gate-multi-character" }}{% endif %}>
+  <legend>Multi-character</legend>
+  {% if form.multi_error %}<ul class="errorlist section-error"><li>{{ form.multi_error }}</li></ul>{% endif %}
+  {% if not gate.enabled %}<small class="gate-reason" id="gate-multi-character">{{ gate.reason.reason|code_spans }}{% if gate.config_link %} <a href="{% url 'stories:config' story_id %}">Change it on the story's Config page</a>{% endif %}</small>{% endif %}
+  {% for field in form.section_fields %}
+  <div class="field field-{{ field.name }}">
+    {{ field.label_tag }} {{ field }}
+    {{ field.errors }}
+  </div>
+  {% endfor %}
+  {% with rows=form.section_rows %}{% if rows %}
+  <table class="multi-character-cast">
+    <thead><tr><th>Character</th><th>Render order</th><th>Role this turn</th></tr></thead>
+    <tbody>
+      {% for label, order, role in rows %}
+      <tr><td>{{ label }}</td><td>{{ order }}{{ order.errors }}</td><td>{{ role }}{{ role.errors }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}{% endwith %}
+</fieldset>
+{% endwith %}

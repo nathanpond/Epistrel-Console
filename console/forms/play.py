@@ -5,16 +5,30 @@ It copies only the bounds the recorded schema states (``RespondRequest``, #43): 
 temperature 0-2, top_p 0-1, up to 20 recent messages of up to 2,000 characters, max calls 1-50
 and a deadline of 0.5-600 s. Everything else is the Engine's 422, placed beside the field
 (:data:`ERROR_PATHS`). Empty optional fields are left out of the request.
+
+#200 adds the multi-character section (``interaction_mode``, ``sequence_order``,
+``simultaneous_tie_break``, ``reactive_interjections``, ``order_<cid>``, ``role_<cid>``; enabled
+only under per-character renders), Player view (``player_view``, perception ``co_location`` or
+above) and Whisper to (``whisper_to``, perception ``full``). :meth:`TurnForm.body` sends none of
+them while its gate is closed, whatever the POST carries (:mod:`console.multi_turn`).
+:data:`REASON_WORDING` words the Engine's ``details.reason`` refusals before the generic
+placement.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from django import forms
 from django.core.validators import MaxValueValidator, MinValueValidator
 
+from console import multi_turn
 from console.cast import CastMember, character_choices, character_labels, viewpoint_for
+from console.engine.client import EngineError
+from console.inspect import Unavailable
+from console.multi_turn import MAX_PRIMARIES, MultiGate, first_choice
+from console.participation import ROLE_LABELS, ROLES, role_text
+from console.story_settings import SETTING_CHOICES
 
 INPUT_MAX = 8_000
 LENGTH_MIN, LENGTH_MAX = 1, 4_000
@@ -57,6 +71,40 @@ ERROR_PATHS = {
     "budget": "max_calls",
     "budget.max_calls": "max_calls",
     "budget.deadline_s": "deadline_s",
+    "interaction_mode": "interaction_mode",
+    "sequence_order": "sequence_order",
+    "simultaneous_tie_break": "simultaneous_tie_break",
+    "reactive_interjections": "reactive_interjections",
+    "player_view": "player_view",
+    "player_input.whisper_to": "whisper_to",
+}
+
+# #200: the section's own selects (``order_<cid>`` / ``role_<cid>`` are per cast member).
+SECTION_SELECTS = (
+    "interaction_mode",
+    "sequence_order",
+    "simultaneous_tie_break",
+    "reactive_interjections",
+)
+ORDER_PREFIX, ROLE_PREFIX = "order_", "role_"
+INTERJECTION_CHOICES = [("on", "On"), ("off", "Off")]
+PLAYER_VIEW_CHOICES = [
+    ("character", "Character (audience-filtered)"),
+    ("story", "Story (every beat)"),
+]
+ORDER_CHOICES = [("", "—"), *((str(n), str(n)) for n in range(1, MAX_PRIMARIES + 1))]
+RENDER_FIELD = "render_character_ids"
+TIE_BREAK = "simultaneous_tie_break"
+WHISPER = "whisper_to"
+MULTI_SECTION = "multi_character"  # REASON_WORDING's target for the section-level error
+# An Engine ``details.reason`` → where its sentence goes and the sentence (``None``: built from
+# the form, :meth:`TurnForm.reason_sentence`). Consulted before ``apply_engine_errors``.
+REASON_WORDING: dict[str, tuple[str, str | None]] = {
+    "one_render_character": (RENDER_FIELD, multi_turn.ONE_RENDER),
+    "player_cannot_render": (RENDER_FIELD, None),
+    "too_many_primaries": (RENDER_FIELD, multi_turn.too_many()),
+    "per_character_only": (MULTI_SECTION, multi_turn.RELOAD),
+    "not_yet": (TIE_BREAK, "State tie-breaks arrive in Engine M6"),  # #197's NOT_YET_TEXT
 }
 
 
@@ -153,11 +201,18 @@ class TurnForm(forms.Form):
         *,
         cast: Sequence[CastMember],
         default_viewpoint: str | None,
+        gate: MultiGate | None = None,
+        story_multi: Mapping[str, Any] | None = None,
+        roles: Mapping[str, tuple[str, bool]] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(data, **kwargs)
         self.cast = list(cast)
         self.default_viewpoint = default_viewpoint
+        self.gate = gate if gate is not None else multi_turn.closed()
+        self.story_multi = story_multi
+        self.stored_roles = dict(roles or {})
+        self.multi_error = ""  # the section-level error (#200: per_character_only, module_off)
         characters = character_choices(self.cast)
         labels = character_labels(self.cast)
         viewpoints = [(viewpoint_for(cid), label) for cid, label in characters]
@@ -171,6 +226,93 @@ class TurnForm(forms.Form):
         self._set_choices("output_viewpoint", viewpoints)
         self._set_choices("render_character_ids", characters)
         self._set_choices("characters_present", characters)
+        self._multi_fields(characters, labels)
+
+    @property
+    def non_players(self) -> list[CastMember]:
+        return [c for c in self.cast if not c.is_player]
+
+    @property
+    def section_names(self) -> list[str]:
+        """The fields the section renders itself (the generic field loop skips them)."""
+        rows = [
+            f"{prefix}{c.id}" for c in self.non_players for prefix in (ORDER_PREFIX, ROLE_PREFIX)
+        ]
+        return [*SECTION_SELECTS, *rows]
+
+    def section_rows(self) -> list[tuple[str, forms.BoundField, forms.BoundField]]:
+        """The section's table: ``(character label, its order field, its role field)``."""
+        labels = character_labels(self.cast)
+        return [
+            (labels[c.id], self[f"{ORDER_PREFIX}{c.id}"], self[f"{ROLE_PREFIX}{c.id}"])
+            for c in self.non_players
+        ]
+
+    def section_fields(self) -> list[forms.BoundField]:
+        return [self[name] for name in SECTION_SELECTS]
+
+    def _multi_fields(self, characters: list[tuple[str, str]], labels: dict[str, str]) -> None:
+        """#200's fields: the section's selects and per-character rows, Player view after
+        Output viewpoint and Whisper to after Say."""
+        multi = self.story_multi
+        selects: dict[str, forms.Field] = {}
+        for name, label in (
+            ("interaction_mode", "Interaction mode"),
+            ("sequence_order", "Sequence order"),
+            (TIE_BREAK, "Tie-break"),
+        ):
+            selects[name] = forms.ChoiceField(
+                label=label,
+                required=False,
+                choices=[first_choice(name, multi), *SETTING_CHOICES[name]],
+            )
+        selects["reactive_interjections"] = forms.ChoiceField(
+            label="Reactive interjections",
+            required=False,
+            choices=[first_choice("reactive_interjections", multi), *INTERJECTION_CHOICES],
+        )
+        for c in self.non_players:
+            order_label = f"Render order: {labels[c.id]}"
+            selects[f"{ORDER_PREFIX}{c.id}"] = forms.ChoiceField(
+                label=order_label,
+                required=False,
+                choices=ORDER_CHOICES,
+                widget=forms.Select(attrs={"aria-label": order_label}),
+            )
+            stored = self.stored_roles.get(c.id)
+            first = f"Stored: {role_text(*stored)}" if stored else "Stored: —"
+            role_label = f"Role this turn: {labels[c.id]}"
+            selects[f"{ROLE_PREFIX}{c.id}"] = forms.ChoiceField(
+                label=role_label,
+                required=False,
+                choices=[("", first), *((r, ROLE_LABELS[r]) for r in ROLES)],
+                widget=forms.Select(attrs={"aria-label": role_label}),
+            )
+        player_view = forms.ChoiceField(
+            label="Player view",
+            required=False,
+            choices=[first_choice("player_view", multi), *PLAYER_VIEW_CHOICES],
+        )
+        whisper = forms.MultipleChoiceField(
+            label="Whisper to",
+            required=False,
+            choices=characters,
+            widget=forms.SelectMultiple(attrs={"size": 3}),
+        )
+        _grey(player_view, self.gate.player_view_reason, "gate-player-view")
+        _grey(whisper, self.gate.whisper_reason, "gate-whisper-to")
+        if self.gate.enabled:
+            render = self.fields[RENDER_FIELD]
+            render.help_text = f"{render.help_text} {multi_turn.RENDER_HELP}"
+        ordered: dict[str, forms.Field] = {}
+        for name, found in self.fields.items():
+            ordered[name] = found
+            if name == "say":
+                ordered[WHISPER] = whisper
+            elif name == "output_viewpoint":
+                ordered["player_view"] = player_view
+        ordered.update(selects)
+        self.fields = ordered
 
     def _set_choices(self, name: str, choices: list[tuple[str, str]]) -> None:
         field = self.fields[name]
@@ -191,6 +333,13 @@ class TurnForm(forms.Form):
 
     def clean(self) -> dict[str, Any]:
         data = super().clean() or {}
+        if not self.gate.whisper_enabled:
+            data[WHISPER] = []  # dropped silently, before the "needs something to say" check
+        picked = set(data.get(RENDER_FIELD) or ())
+        if self.gate.enabled and len(picked) > MAX_PRIMARIES:
+            self.add_error(RENDER_FIELD, multi_turn.too_many(len(picked)))
+        if data.get(WHISPER) and not (data.get("say") or "").strip() and "say" not in self.errors:
+            self.add_error(WHISPER, multi_turn.WHISPER_NEEDS_SAY)
         given = (data.get("say") or "").strip() or (data.get("do") or "").strip()
         if not given and "say" not in self.errors and "do" not in self.errors:
             raise forms.ValidationError(NEED_INPUT)
@@ -216,8 +365,13 @@ class TurnForm(forms.Form):
             "player_input": player_input,
             "output_viewpoint": self.resolved_viewpoint(),
         }
+        if data[WHISPER]:
+            player_input[WHISPER] = list(data[WHISPER])
         if data["render_character_ids"]:
-            body["render_character_ids"] = list(data["render_character_ids"])
+            body["render_character_ids"] = self._render_order(list(data["render_character_ids"]))
+        body.update(self._section_body())
+        if self.gate.player_view_enabled and data.get("player_view"):
+            body["player_view"] = data["player_view"]
         prompt: dict[str, Any] = {}
         if data["length"] == CUSTOM:
             prompt["length"] = data["length_custom"]
@@ -249,4 +403,79 @@ class TurnForm(forms.Form):
         if clear_input:
             kept["say"] = ""
             kept["do"] = ""
+            kept[WHISPER] = []
         return kept
+
+    def _render_order(self, picked: list[str]) -> list[str]:
+        """The render characters as sent: under the open section, the numbered picks first
+        (ascending), then the unnumbered ones; ties and unnumbered picks in cast order (the
+        player has no order select, so it is unnumbered). A greyed section keeps the posted
+        order."""
+        if not self.gate.enabled:
+            return picked
+        position = {c.id: index for index, c in enumerate(self.cast)}
+        unique = list(dict.fromkeys(picked))
+
+        def key(cid: str) -> tuple[int, int]:
+            number = self.cleaned_data.get(f"{ORDER_PREFIX}{cid}")
+            rank = int(number) if number else MAX_PRIMARIES + 1
+            return rank, position.get(cid, len(position))
+
+        return sorted(unique, key=key)
+
+    def _section_body(self) -> dict[str, Any]:
+        """The section's keys, only while it is enabled and only those explicitly chosen."""
+        if not self.gate.enabled:
+            return {}
+        data = self.cleaned_data
+        found: dict[str, Any] = {}
+        for name in SECTION_SELECTS[:3]:
+            if data.get(name):
+                found[name] = data[name]
+        roles = {
+            c.id: data[f"{ROLE_PREFIX}{c.id}"]
+            for c in self.non_players
+            if data.get(f"{ROLE_PREFIX}{c.id}")
+        }
+        if roles:
+            found["roles"] = roles
+        interjections = data.get("reactive_interjections")
+        if interjections:
+            found["reactive_interjections"] = interjections == "on"
+        return found
+
+    def role_aliases(self) -> dict[str, str]:
+        """``roles.<cid>`` → ``role_<cid>`` for every role select (a 422 on a role)."""
+        return {f"roles.{c.id}": f"{ROLE_PREFIX}{c.id}" for c in self.non_players}
+
+    def place_reason(self, error: EngineError) -> bool:
+        """Place a 422 whose ``details.reason`` :data:`REASON_WORDING` knows; ``True`` when
+        placed (the Engine's message is then not placed as well)."""
+        reason = error.details.get("reason")
+        if not isinstance(reason, str) or reason not in REASON_WORDING:
+            return False
+        target, sentence = REASON_WORDING[reason]
+        if sentence is None:
+            sentence = self._player_cannot_render()
+        if target == MULTI_SECTION:
+            self.multi_error = sentence
+        else:
+            self.add_error(target, sentence)
+        return True
+
+    def _player_cannot_render(self) -> str:
+        labels = character_labels(self.cast)
+        picked = set(self.cleaned_data.get(RENDER_FIELD) or ())
+        names = [labels[c.id] for c in self.cast if c.is_player and c.id in picked]
+        return multi_turn.player_cannot_render(names)
+
+
+def _grey(field: forms.Field, gate: Unavailable | None, gate_id: str) -> None:
+    """Convention 22 on a widget: ``disabled``, ``aria-describedby`` and the reason as
+    ``title`` (the template renders the visible reason). Not Django's ``Field.disabled``:
+    :meth:`TurnForm.body` is what guarantees nothing is sent."""
+    if gate is None:
+        return
+    field.widget.attrs.update(
+        {"disabled": True, "aria-describedby": gate_id, "title": gate.reason.replace("`", "")}
+    )

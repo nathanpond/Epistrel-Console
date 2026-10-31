@@ -1,0 +1,71 @@
+{
+  "items": [
+    {
+      "id": "01JM5EX0000000000000000001",
+      "witness": "01JM5CH0000000000000000002",
+      "proposition_id": "01JM5PR0000000000000000001",
+      "proposition": {
+        "subject_id": "01JM5CH0000000000000000003",
+        "predicate_id": "01JM5PD0000000000000000002",
+        "object_id": "01JM5EN0000000000000000002",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 0,
+            "outer": 0
+          }
+        }
+      },
+      "source": null,
+      "source_event_id": "01JM5EV0000000000000000001",
+      "kind": "content",
+      "fidelity": "partial",
+      "position": {
+        "turn": 0,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 0,
+        "step": 0
+      },
+      "state": "unresolved",
+      "resolved_by_transition": null,
+      "resolution_operation_id": null,
+      "operation_id": "01JM5QP0000000000000000001"
+    },
+    {
+      "id": "01JM5EX0000000000000000002",
+      "witness": "01JM5CH0000000000000000004",
+      "proposition_id": "01JM5PR0000000000000000002",
+      "proposition": {
+        "subject_id": "01JM5CH0000000000000000003",
+        "predicate_id": "01JM5PD0000000000000000001",
+        "object_id": "01JM5EN0000000000000000003",
+        "valid_time": {
+          "kind": "interval",
+          "start": {
+            "inner": 600,
+            "outer": 600
+          }
+        }
+      },
+      "source": "01JM5CH0000000000000000003",
+      "source_event_id": "01JM5EV0000000000000000002",
+      "kind": "content",
+      "fidelity": "full",
+      "position": {
+        "turn": 2,
+        "variant": 0,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "state": "resolved",
+      "resolved_by_transition": "01JM5TR0000000000000000001",
+      "resolution_operation_id": "01JM5QP0000000000000000003",
+      "operation_id": "01JM5QP0000000000000000002"
+    }
+  ],
+  "revision": 7,
+  "next_after_id": null,
+  "output_viewpoint": "omniscient"
+}

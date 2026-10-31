@@ -1,7 +1,8 @@
 {% comment %}#73: a seed formset (a role's or the world's), edited without JavaScript: Add and
 each row's Remove submit op=add:<prefix> / op=remove:<prefix>-<m>. Each seed shows its Engine id
 ("new" before its first save) and carries it back in a hidden field.
-Context: seeds (console.forms.scenario_cast.SeedRows), title, archived_note.{% endcomment %}
+#206: Confidence after Kind, then the Nested belief details (open for kind nested, a nested
+value or error). Context: seeds (console.forms.scenario_cast.SeedRows), title, archived_note.{% endcomment %}
 <fieldset class="rows seeds" id="{{ seeds.prefix }}">
   <legend>{{ title }}</legend>
   {{ seeds.formset.management_form }}
@@ -16,6 +17,13 @@ Context: seeds (console.forms.scenario_cast.SeedRows), title, archived_note.{% e
     {% include "console/catalog/scenarios/_cast_field.html" with field=seed.audience_other %}
     {% include "console/catalog/scenarios/_cast_field.html" with field=seed.disclosure %}
     {% include "console/catalog/scenarios/_cast_field.html" with field=seed.kind %}
+    {% include "console/catalog/scenarios/_cast_field.html" with field=seed.confidence %}
+    <details class="nested-belief"{% if seed.nested_open %} open{% endif %}><summary>Nested belief</summary>
+      <p class="muted nested-note">{{ seed.nested_note }}</p>
+      {% include "console/catalog/scenarios/_cast_field.html" with field=seed.nested__attributed_holder %}
+      {% include "console/catalog/scenarios/_cast_field.html" with field=seed.nested__proposition %}
+      {% include "console/catalog/scenarios/_cast_field.html" with field=seed.nested__attributed_confidence %}
+    </details>
     <details class="advanced"{% if seed.valid_time.errors %} open{% endif %}><summary>Advanced</summary>
       {% include "console/catalog/scenarios/_cast_field.html" with field=seed.valid_time %}
     </details>

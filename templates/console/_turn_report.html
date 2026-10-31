@@ -1,9 +1,11 @@
 {% comment %}
 The turn-report panel (#44; reused by #48's inspector). Context: `report`, a TurnReport. #85: the
 configuration it ran under (short fingerprint, quality status, profile id@version, config revision;
-"—" for a turn from before the Engine reported them), capabilities under "More".
+"—" for a turn from before the Engine reported them), capabilities under "More". #202: a
+Warnings row when the report has warnings: `warning_lines` (the play inspector's, labelled) or,
+when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
 {% endcomment %}
-{% load console_format impact %}
+{% load console_format impact inspect_tags %}
 <section class="turn-report">
   <h3>Turn report</h3>
   <dl>
@@ -24,6 +26,12 @@ configuration it ran under (short fingerprint, quality status, profile id@versio
       <ul>{% for step in report.degradation %}<li><code>{{ step }}</code> — —</li>{% endfor %}</ul>
       {% else %}none{% endif %}
     </dd>
+    {% if report.warnings %}
+    <dt>Warnings</dt>
+    <dd class="turn-warnings">
+      <ul>{% if warning_lines %}{% for line in warning_lines %}<li>{{ line.before }}{% if line.memory_id %}{% if line.url %}<a class="warning-memory" href="{{ line.url }}">{{ line.memory_id|engine_id }}</a>{% else %}{{ line.memory_id|engine_id }}{% endif %}{% endif %}{{ line.after }}</li>{% endfor %}{% else %}{% for line in report.warnings|turn_warnings %}<li>{{ line.before }}{% if line.memory_id %}{% if line.url %}<a class="warning-memory" href="{{ line.url }}">{{ line.memory_id|engine_id }}</a>{% else %}{{ line.memory_id|engine_id }}{% endif %}{% endif %}{{ line.after }}</li>{% endfor %}{% endif %}</ul>
+    </dd>
+    {% endif %}
     <dt>Guardrail</dt>
     <dd>
       {% if report.guardrail %}

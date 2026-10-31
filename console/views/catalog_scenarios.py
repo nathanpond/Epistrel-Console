@@ -38,7 +38,13 @@ from django.utils.safestring import SafeString
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from console.acting import acting_principal
-from console.catalog.cast_table import cast_table, character_ids, rating_ids
+from console.catalog.cast_table import (
+    cast_table,
+    channel_lines,
+    character_ids,
+    location_topology,
+    rating_ids,
+)
 from console.catalog.character_labels import CharacterLabel, character_labels
 from console.catalog.scenario_report import (
     ShownReport,
@@ -96,6 +102,7 @@ from console.media_slots import (
     infos_to_snapshot,
     slot_infos,
 )
+from console.story_settings import LABELS, setting_label
 from console.views.catalog_lifecycle import SCENARIO as LIFECYCLE_ENTRY
 from console.views.catalog_lifecycle import Follows, follows_label, lifecycle_for
 from console.views.ownership import ownership_context
@@ -125,6 +132,8 @@ FACTS_FIELD = "facts"
 FACTS_SALT = "console.scenario_facts"
 VERSION = "version"
 DESCRIPTION_SHORT = 200
+# Engine M5's story-setting defaults (#198), listed after Player authority in this order.
+M5_DEFAULTS = ("player_view", "sequence_order", "simultaneous_tie_break", "reactive_interjections")
 # The content groups "Draft differs from published" compares (#65's rule; not the envelope).
 COMPARED_GROUPS = (
     "public_card",
@@ -579,9 +588,16 @@ def _detail_page(
         names = _rating_names(client, [*([rating_id] if rating_id else []), *rating_ids(entry)])
         context["rating"] = _rating_name(names, rating_id)
         context["cast"] = cast_table(entry, character_labels(client, character_ids(entry)), names)
+        # #205: the locations' topology and the opening's remote channels.
+        context["topology"] = location_topology(entry)
+        context["channels"] = channel_lines(entry.cast, entry.starting_state.channels)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""
+        defaults = entry.story_settings_defaults
+        context["m5_defaults"] = [
+            (LABELS[name], setting_label(name, getattr(defaults, name))) for name in M5_DEFAULTS
+        ]
     context.update(
         {
             "entry": entry,

@@ -1,0 +1,19 @@
+{% load inspect_tags %}{% comment %}
+One divergence (#192): a console.views.inspect_divergences.DivergenceRow as row, one
+<tr id="d-<id>">. Context: predicate_names, cast_names (convention 2's name maps); actions
+(convention 14: a template name for an Actions cell, rendered with row in context, or None).
+Columns: When, Speaker, Asserted, Believes, Revealed, Operation, [Actions], More. A proposition
+that doesn't parse shows "—" (C2); the raw item is in More.
+{% endcomment %}{% with item=row.item %}<tr id="d-{{ item.id }}" class="divergence-row">
+  <td class="when">{% if row.when.url %}<a href="{{ row.when.url }}">{{ row.when.text }}</a>{% else %}{{ row.when.text }}{% endif %}</td>
+  <td class="speaker">{% include "console/inspect/_character.html" with label=row.speaker.label character_id=row.speaker.character_id is_player=row.speaker.is_player %}{% if row.speaker_url %} <a class="only-speaker" href="{{ row.speaker_url }}">only this speaker</a>{% endif %}</td>
+  <td class="asserted">{% if row.asserted %}{% include "console/inspect/_proposition.html" with proposition=row.asserted %}{% else %}—{% endif %}{% if row.subject_url %} <a class="only-subject" href="{{ row.subject_url }}">only this subject</a>{% endif %}</td>
+  <td class="believes">{% if item.believed is None %}<span class="muted unsettled" title="{{ unsettled_title }}">{{ unsettled }}</span>{% elif row.believed %}{% include "console/inspect/_proposition.html" with proposition=row.believed %}{% else %}—{% endif %}{% if row.belief_url %} <a class="belief-link" href="{{ row.belief_url }}">belief</a>{% endif %}</td>
+  <td class="revealed">{% if item.revealed_by_event_id %}<span class="revealed" title="{{ revealed_title }}">{{ revealed }}</span> {{ item.revealed_by_event_id|engine_id }}{% else %}<span class="muted">{{ not_revealed }}</span>{% endif %}</td>
+  <td class="operation">{% if row.op_pk %}<a class="operation-link" href="{% url 'operations:detail' row.op_pk %}"><code>{{ item.operation_id }}</code></a>{% else %}<code>{{ item.operation_id }}</code>{% endif %}</td>
+  {% if actions %}<td class="actions">{% include actions %}</td>{% endif %}
+  <td class="more"><details><summary>More</summary><dl>
+    {% for m in row.more %}<dt>{{ m.term }}</dt><dd>{% if m.kind == "code" %}<code>{{ m.text }}</code>{% else %}{{ m.text }}{% endif %}</dd>
+    {% endfor %}<dt>Item (as sent)</dt><dd><pre class="raw-item">{{ row.raw_item }}</pre></dd>
+  </dl></details></td>
+</tr>{% endwith %}

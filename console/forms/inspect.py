@@ -36,7 +36,9 @@ from console.engine_form_errors import apply_engine_errors
 from console.forms.history import as_of_options
 from console.ids import is_ulid
 from console.inspect import short_id
+from console.paging import cast_id
 from console.retrieval import KINDS, TIERS
+from console.wording import UNKNOWN_CHARACTER
 
 QUERY_TEXT_MAX = 4000  # the Engine's ``QUERY_TEXT_MAX`` (core/retrieval/pipeline.py)
 # The question's parameters, kept by links that filter its result (the id cells, #141).
@@ -779,3 +781,463 @@ class SceneForm(forms.Form):
                 self.add_error("as_of", exc.message)
             return
         self.add_error(None, exc.message)
+
+
+# --- model an entity as a minor character (#199) --------------------------------------------------
+
+TRUE_AGE_MIN, TRUE_AGE_MAX = 0, 150  # ``ModelEntityRequest.true_age``
+DEFINITION_MAX = 4000  # ``ModelEntityRequest.definition``
+ENTER_TRUE_AGE = "Enter a true age."
+WHOLE_NUMBER = "Enter a whole number."
+TRUE_AGE_RANGE = "True age is 0 to 150."
+DEFINITION_HELP = "Blank: the entity's name"
+DEFINITION_NEEDED = "Enter a definition — this entity has no name."
+
+
+def definition_too_long(length: int) -> str:
+    return f"At most {DEFINITION_MAX:,} characters ({length:,} given)."
+
+
+class ModelEntityForm(forms.Form):
+    """The "Model as a minor character" form (#199): **True age** (a whole number 0 to 150,
+    required, checked here, no HTML min/max: C10) and **Definition** (optional; CRLF → LF, then
+    stripped; at most 4,000 characters after that, no ``maxlength``; blank → left out of the
+    body, so the Engine uses the entity's name). ``unnamed`` (the entity is known to have no
+    name) makes Definition required."""
+
+    true_age = forms.IntegerField(
+        label="True age",
+        error_messages={"required": ENTER_TRUE_AGE, "invalid": WHOLE_NUMBER},
+        widget=forms.NumberInput(),
+    )
+    definition = forms.CharField(
+        label="Definition",
+        required=False,
+        strip=False,
+        help_text=DEFINITION_HELP,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+
+    def __init__(self, data: QueryDict | None = None, *, unnamed: bool = False) -> None:
+        super().__init__(data)
+        self.unnamed = unnamed
+
+    def clean_true_age(self) -> int:
+        age: int = self.cleaned_data["true_age"]
+        if not TRUE_AGE_MIN <= age <= TRUE_AGE_MAX:
+            raise forms.ValidationError(TRUE_AGE_RANGE)
+        return age
+
+    def clean_definition(self) -> str:
+        text = str(self.cleaned_data.get("definition") or "").replace("\r\n", "\n").strip()
+        if len(text) > DEFINITION_MAX:
+            raise forms.ValidationError(definition_too_long(len(text)))
+        if not text and self.unnamed:
+            raise forms.ValidationError(DEFINITION_NEEDED)
+        return text
+
+    def body(self) -> dict[str, Any]:
+        """``model_entity``'s keyword arguments (valid form only): ``true_age``, and
+        ``definition`` only when one was entered."""
+        found: dict[str, Any] = {"true_age": self.cleaned_data["true_age"]}
+        if self.cleaned_data["definition"]:
+            found["definition"] = self.cleaned_data["definition"]
+        return found
+
+    def apply_engine_error(self, exc: EngineError) -> None:
+        """A 422: ``body.true_age`` / ``body.definition`` beside the field, anything else above
+        the form (the Engine's message)."""
+        if not apply_engine_errors(exc, self):
+            self.add_error(None, exc.message)
+
+
+# --- the Knowledge tab's Beliefs section (#190) ---------------------------------------------------
+
+PROPOSITION_INVALID = (
+    "Enter a 26-character proposition id (digits and capital letters, no I, L, O or U)"
+)
+NOT_IN_CAST_SUFFIX = " (not in the cast)"
+UNKNOWN_CHARACTER_REASON = "unknown_character"
+# A 422 ``validation_error``'s ``details.field`` → the Beliefs filter it lands on.
+BELIEFS_FIELDS: Mapping[str, str] = {
+    "query.character": "character",
+    "query.as_of": "as_of",
+    "query.proposition_id": "proposition_id",
+}
+AFTER_FIELD = "query.after"
+
+
+class BeliefsForm(forms.Form):
+    """The Beliefs section's GET filters (``console/views/inspect_beliefs.py``); each name is the
+    Engine's query parameter. The cursor ``after`` isn't a field: Apply starts over.
+
+    **Character.** With the story read (``cast`` given), a select of every non-player cast member
+    in cast order, labelled by ``labels`` (C4's, from the view); absent or blank, it defaults to
+    the first of them (:attr:`defaulted`). A URL id is trimmed and upper-cased, then read by
+    C13's :func:`console.paging.cast_id`: a valid id outside the options (the player, or an id
+    outside the cast) is kept as an extra option, last, and sent; an invalid one is
+    :data:`console.paging.CHARACTER_INVALID`. Without the story read (``cast`` ``None``), a
+    free-text id field read the same way. Blank (no option, or nothing typed) cleans to "": the
+    view then makes no call.
+
+    **As of turn** is parsed as Canon parses a minute (ASCII digits only), up to
+    :data:`TURN_MAX`; **Proposition id** is trimmed, upper-cased and checked with ``is_ulid``."""
+
+    character = forms.CharField(required=False, label="Character")
+    as_of = forms.CharField(
+        required=False,
+        label="As of turn",
+        help_text="Blank for now",
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+    proposition_id = forms.CharField(
+        required=False,
+        label="Proposition id",
+        help_text="Optional — keep one proposition",
+        widget=forms.TextInput(attrs={"size": 30}),
+    )
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        labels: Mapping[str, str],
+    ) -> None:
+        bound = data.copy()
+        for name in ("character", "proposition_id"):
+            value = bound.get(name)
+            if isinstance(value, str):
+                bound[name] = value.strip().upper()
+        self.cast = cast
+        self.defaulted = False
+        self.option_ids: tuple[str, ...] = ()
+        requested = str(bound.get("character") or "")
+        if cast is not None:
+            options = [(c.id, labels.get(c.id) or short_id(c.id)) for c in cast if not c.is_player]
+            self.option_ids = tuple(cid for cid, _ in options)
+            if not requested and options:
+                requested = options[0][0]
+                bound["character"] = requested
+                self.defaulted = True
+            typed = cast_id(requested, self.option_ids)
+            if typed.kept:
+                players = {c.id for c in cast if c.is_player}
+                cast_ids = {c.id for c in cast}
+                if requested in cast_ids:
+                    label = labels.get(requested) or short_id(requested)
+                    if requested in players and PLAYER_SUFFIX not in label:
+                        label += PLAYER_SUFFIX
+                else:
+                    label = f"{short_id(requested)}{NOT_IN_CAST_SUFFIX}"
+                options.append((requested, label))
+        super().__init__(bound)
+        if cast is not None:
+            self.fields["character"].widget = forms.Select(choices=options)
+        else:
+            self.fields["character"].widget = forms.TextInput(attrs={"size": 30})
+
+    def clean_character(self) -> str:
+        typed = cast_id(str(self.cleaned_data.get("character") or ""), self.option_ids)
+        if typed.error:
+            raise forms.ValidationError(typed.error)
+        return typed.value
+
+    def clean_as_of(self) -> int | None:
+        typed = str(self.cleaned_data.get("as_of") or "").strip()
+        if not typed:
+            return None
+        if not (typed.isascii() and typed.isdigit()):
+            raise forms.ValidationError(AS_OF_INVALID)
+        turn = int(typed)
+        if turn > TURN_MAX:
+            raise forms.ValidationError(TURN_TOO_HIGH)
+        return turn
+
+    def clean_proposition_id(self) -> str:
+        proposition_id: str = self.cleaned_data["proposition_id"]
+        if proposition_id and not is_ulid(proposition_id):
+            raise forms.ValidationError(PROPOSITION_INVALID)
+        return proposition_id
+
+    def valid(self, name: str) -> bool:
+        """Whether field ``name`` cleaned (the header keeps the parts that did)."""
+        self.is_valid()
+        return name in self.cleaned_data and name not in self.errors
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_beliefs``' filter arguments (valid form only; no cursor)."""
+        data = self.cleaned_data
+        return {
+            "character": data["character"],
+            "as_of": data["as_of"],
+            "proposition_id": data["proposition_id"] or None,
+        }
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: ``unknown_character`` → :data:`console.wording.UNKNOWN_CHARACTER` beside
+        Character; any other the Engine's message beside the field ``details.field`` names, else
+        above the filters. ``True`` when it named ``query.after`` (the line gets "First page")."""
+        field_name = exc.details.get("field")
+        if exc.details.get("reason") == UNKNOWN_CHARACTER_REASON:
+            self.add_error("character", UNKNOWN_CHARACTER)
+            return False
+        if isinstance(field_name, str) and field_name in BELIEFS_FIELDS:
+            self.add_error(BELIEFS_FIELDS[field_name], exc.message)
+            return False
+        self.add_error(None, exc.message)
+        return field_name == AFTER_FIELD
+
+
+# --- the Knowledge tab's Divergences section (#192) -----------------------------------------------
+
+ANY_SPEAKER = "Any"
+# A 422 ``validation_error``'s ``details.field`` → the Divergences filter it lands on.
+DIVERGENCES_FIELDS: Mapping[str, str] = {
+    "query.speaker": "speaker",
+    "query.subject": "subject",
+    "query.as_of": "as_of",
+}
+AFTER_ID_FIELD = "query.after_id"
+
+
+class DivergencesForm(forms.Form):
+    """The Divergences section's GET filters (``console/views/inspect_divergences.py``); each
+    name is the Engine's query parameter. The cursor ``after_id`` isn't a field: Apply starts
+    over.
+
+    **Speaker.** With the story read (``cast`` given), a select: "Any" (value "", not sent), then
+    the whole cast in cast order (the player included: a player can lie), labelled by ``labels``
+    (C4's, from the view). A URL id is trimmed and upper-cased, then read by C13's
+    :func:`console.paging.cast_id`: a valid id outside the cast is kept as an extra option, last
+    ("<short id> (not in the cast)"), and sent; an invalid one is
+    :data:`console.paging.CHARACTER_INVALID`. Without the story read (``cast`` ``None``), a
+    free-text id field read the same way.
+
+    **Subject** is an entity id (trimmed, upper-cased, ``is_ulid``; :data:`SUBJECT_INVALID`);
+    **As of turn** is parsed as the Beliefs section's (ASCII digits only, up to
+    :data:`TURN_MAX`)."""
+
+    speaker = forms.CharField(required=False, label="Speaker")
+    subject = forms.CharField(
+        required=False, label="Subject", widget=forms.TextInput(attrs={"size": 30})
+    )
+    as_of = forms.CharField(
+        required=False,
+        label="As of turn",
+        help_text="Blank for now",
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        labels: Mapping[str, str],
+    ) -> None:
+        bound = data.copy()
+        for name in ("speaker", "subject"):
+            value = bound.get(name)
+            if isinstance(value, str):
+                bound[name] = value.strip().upper()
+        self.cast = cast
+        self.cast_ids: tuple[str, ...] = tuple(c.id for c in cast or ())
+        options: list[tuple[str, str]] = [("", ANY_SPEAKER)]
+        if cast is not None:
+            options += [(c.id, labels.get(c.id) or short_id(c.id)) for c in cast]
+            requested = str(bound.get("speaker") or "")
+            if cast_id(requested, self.cast_ids).kept:
+                options.append((requested, f"{short_id(requested)}{NOT_IN_CAST_SUFFIX}"))
+        super().__init__(bound)
+        if cast is not None:
+            self.fields["speaker"].widget = forms.Select(choices=options)
+        else:
+            self.fields["speaker"].widget = forms.TextInput(attrs={"size": 30})
+
+    def clean_speaker(self) -> str:
+        typed = cast_id(str(self.cleaned_data.get("speaker") or ""), self.cast_ids)
+        if typed.error:
+            raise forms.ValidationError(typed.error)
+        return typed.value
+
+    def clean_subject(self) -> str:
+        subject: str = self.cleaned_data["subject"]
+        if subject and not is_ulid(subject):
+            raise forms.ValidationError(SUBJECT_INVALID)
+        return subject
+
+    def clean_as_of(self) -> int | None:
+        typed = str(self.cleaned_data.get("as_of") or "").strip()
+        if not typed:
+            return None
+        if not (typed.isascii() and typed.isdigit()):
+            raise forms.ValidationError(AS_OF_INVALID)
+        turn = int(typed)
+        if turn > TURN_MAX:
+            raise forms.ValidationError(TURN_TOO_HIGH)
+        return turn
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_divergences``' filter arguments (valid form only; no cursor):
+        ``None`` for a blank filter, which isn't sent."""
+        data = self.cleaned_data
+        return {
+            "speaker": data["speaker"] or None,
+            "subject": data["subject"] or None,
+            "as_of": data["as_of"],
+        }
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether Speaker, Subject or As of is set (valid form only; a cursor isn't a filter)."""
+        return any(v is not None for v in self.query().values())
+
+    def normalised(self, name: str) -> str:
+        """The bound (trimmed, upper-cased) value of ``speaker`` or ``subject``, valid or not."""
+        return str(self.data.get(name) or "")
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: ``unknown_character`` → :data:`console.wording.UNKNOWN_CHARACTER` beside
+        Speaker; any other the Engine's message beside the filter ``details.field`` names, else
+        above the filters. ``True`` when it named ``query.after_id`` (the line gets "First
+        page")."""
+        field_name = exc.details.get("field")
+        if exc.details.get("reason") == UNKNOWN_CHARACTER_REASON:
+            self.add_error("speaker", UNKNOWN_CHARACTER)
+            return False
+        if isinstance(field_name, str) and field_name in DIVERGENCES_FIELDS:
+            self.add_error(DIVERGENCES_FIELDS[field_name], exc.message)
+            return False
+        self.add_error(None, exc.message)
+        return field_name == AFTER_ID_FIELD
+
+
+# --- the Knowledge tab's Exposures section (#193) -------------------------------------------------
+
+ANY_WITNESS = "Any"
+STATE_CHOICES = (("", "Any"), ("unresolved", "Unresolved"), ("resolved", "Resolved"))
+STATE_INVALID = "Choose Any, Unresolved or Resolved"
+EXPOSURES_AS_OF_HELP = "State as the record stood through this turn"
+# A 422 ``validation_error``'s ``details.field`` → the Exposures filter it lands on.
+EXPOSURES_FIELDS: Mapping[str, str] = {
+    "query.character": "character",
+    "query.state": "state",
+    "query.as_of": "as_of",
+}
+
+
+class ExposuresForm(forms.Form):
+    """The Exposures section's GET filters (``console/views/inspect_exposures.py``); each name is
+    the Engine's query parameter. The cursor ``after_id`` isn't a field: Apply starts over.
+
+    **Witness** (``character``). With the story read (``cast`` given), a select: "Any" (value
+    "", not sent), then every non-player cast member in cast order (exposures belong to
+    partitions; the player has none), labelled by ``labels`` (C4's, from the view). A URL id is
+    trimmed and upper-cased, then read by C13's :func:`console.paging.cast_id`: a valid id
+    outside the options is kept as an extra option, last ("<label> (player)" for the cast's
+    player, else "<short id> (not in the cast)"), and sent; an invalid one is
+    :data:`console.paging.CHARACTER_INVALID`. Without the story read (``cast`` ``None``), a
+    free-text id field read the same way.
+
+    **State** is exactly ``unresolved`` or ``resolved`` (no trimming or case folding), else
+    :data:`STATE_INVALID`. **As of turn** is parsed as the Beliefs section's (ASCII digits only,
+    up to :data:`TURN_MAX`)."""
+
+    character = forms.CharField(required=False, label="Witness")
+    state = forms.ChoiceField(
+        required=False,
+        label="State",
+        choices=STATE_CHOICES,
+        error_messages={"invalid_choice": STATE_INVALID},
+    )
+    as_of = forms.CharField(
+        required=False,
+        label="As of turn",
+        help_text=EXPOSURES_AS_OF_HELP,
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        labels: Mapping[str, str],
+    ) -> None:
+        bound = data.copy()
+        value = bound.get("character")
+        if isinstance(value, str):
+            bound["character"] = value.strip().upper()
+        self.cast = cast
+        self.option_ids: tuple[str, ...] = ()
+        options: list[tuple[str, str]] = [("", ANY_WITNESS)]
+        if cast is not None:
+            witnesses = [c for c in cast if not c.is_player]
+            options += [(c.id, labels.get(c.id) or short_id(c.id)) for c in witnesses]
+            self.option_ids = tuple(c.id for c in witnesses)
+            requested = str(bound.get("character") or "")
+            if cast_id(requested, self.option_ids).kept:
+                if any(c.id == requested and c.is_player for c in cast):
+                    label = labels.get(requested) or short_id(requested)
+                    if PLAYER_SUFFIX not in label:
+                        label += PLAYER_SUFFIX
+                else:
+                    label = f"{short_id(requested)}{NOT_IN_CAST_SUFFIX}"
+                options.append((requested, label))
+        super().__init__(bound)
+        if cast is not None:
+            self.fields["character"].widget = forms.Select(choices=options)
+        else:
+            self.fields["character"].widget = forms.TextInput(attrs={"size": 30})
+
+    def clean_character(self) -> str:
+        typed = cast_id(str(self.cleaned_data.get("character") or ""), self.option_ids)
+        if typed.error:
+            raise forms.ValidationError(typed.error)
+        return typed.value
+
+    def clean_as_of(self) -> int | None:
+        typed = str(self.cleaned_data.get("as_of") or "").strip()
+        if not typed:
+            return None
+        if not (typed.isascii() and typed.isdigit()):
+            raise forms.ValidationError(AS_OF_INVALID)
+        turn = int(typed)
+        if turn > TURN_MAX:
+            raise forms.ValidationError(TURN_TOO_HIGH)
+        return turn
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_exposures``' filter arguments (valid form only; no cursor):
+        ``None`` for a blank filter, which isn't sent."""
+        data = self.cleaned_data
+        return {
+            "character": data["character"] or None,
+            "state": data["state"] or None,
+            "as_of": data["as_of"],
+        }
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether Witness, State or As of is set (valid form only; a cursor isn't a filter)."""
+        return any(v is not None for v in self.query().values())
+
+    def normalised(self, name: str) -> str:
+        """The bound (trimmed, upper-cased) ``character``, valid or not."""
+        return str(self.data.get(name) or "")
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: ``unknown_character`` → :data:`console.wording.UNKNOWN_CHARACTER` beside
+        Witness; any other the Engine's message beside the filter ``details.field`` names, else
+        above the filters. ``True`` when it named ``query.after_id`` (the line gets "First
+        page")."""
+        field_name = exc.details.get("field")
+        if exc.details.get("reason") == UNKNOWN_CHARACTER_REASON:
+            self.add_error("character", UNKNOWN_CHARACTER)
+            return False
+        if isinstance(field_name, str) and field_name in EXPOSURES_FIELDS:
+            self.add_error(EXPOSURES_FIELDS[field_name], exc.message)
+            return False
+        self.add_error(None, exc.message)
+        return field_name == AFTER_ID_FIELD

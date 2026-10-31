@@ -1061,19 +1061,36 @@ class SchemaSettingsForm(forms.Form):
             self.top_warnings.append(f"{sub}: {message}" if sub else message)
 
     def module_group(self, module: str) -> Group | None:
-        """The first fieldset (schema order) whose path's last segment is ``module``."""
+        """The fieldset whose path's last segment is ``module``: the deepest one wins, schema
+        order breaking a tie."""
+        found: Group | None = None
         for group in groups(self.tree):
-            if group.name == module:
-                return group
+            if group.name == module and (found is None or len(group.path) > len(found.path)):
+                found = group
+        return found
+
+    def module_leaf(self, module: str) -> Leaf | None:
+        """The first leaf (schema order) whose path's last segment is ``module``."""
+        for leaf in leaves(self.tree):
+            if leaf.path[-1] == module:
+                return leaf
         return None
 
     def place_missing(self, item: MissingDependency) -> None:
+        """A missing dependency atop its module's fieldset (:meth:`module_group`), else at the
+        leaf its module names exactly, else atop the fieldset holding the first leaf named
+        after the module (that leaf's own field at the root), else at the top of the form. No
+        module is named here: the schema decides."""
         message = missing_text(item)
         group = self.module_group(item.module)
         if group is not None:
             self.group_errors.setdefault(group.dotted, []).append(message)
             return
-        leaf = self.leaf_by_path.get(item.module)
+        leaf = self.leaf_by_path.get(item.module) or self.module_leaf(item.module)
+        parent = ".".join(leaf.path[:-1]) if leaf is not None else ""
+        if leaf is not None and leaf.dotted != item.module and parent in self.group_by_path:
+            self.group_errors.setdefault(parent, []).append(message)
+            return
         if leaf is not None:
             self.add_error(self.field_name(leaf), message)
             return

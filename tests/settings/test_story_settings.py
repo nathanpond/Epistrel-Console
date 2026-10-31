@@ -1,5 +1,7 @@
-"""A story's settings (#54): markers, the merge-patch form, resets, errors and the budget."""
+"""A story's settings (#54, #197): markers, the merge-patch form, resets, errors and the budget,
+and Engine M5's player authority, player view and multi-character settings."""
 
+import html as markup
 import re
 from pathlib import Path
 from typing import Any
@@ -164,7 +166,7 @@ def test_one_change_sends_only_that_field(operator_client: Client, engine: FakeE
     assert body(patch) == {"regenerate_retry_budget": 4}
     assert "X-Epistrel-Expected-Revision" not in patch.headers
     flashed = operator_client.get(URL).content.decode()
-    assert "Saved — config revision 4 (regenerate_retry_budget=4)" in flashed
+    assert "Saved — config revision 4 (Regenerate retry budget: 4)" in flashed
 
 
 def test_queue_with_a_size(operator_client: Client, engine: FakeEngine) -> None:
@@ -396,3 +398,396 @@ def test_an_archived_story_disables_the_forms(operator_client: Client, engine: F
 def test_the_play_page_links_here() -> None:
     template = Path("templates/console/play/play.html").read_text(encoding="utf-8")
     assert "{% url 'stories:settings' story.id %}" in template
+
+
+# --- Engine M5: player authority, player view and the multi-character settings (#197) -----------
+
+M5_KEYS = (
+    "player_authority",
+    "player_view",
+    "interaction_mode",
+    "sequence_order",
+    "simultaneous_tie_break",
+    "reactive_interjections",
+)
+
+
+def _row(html: str, name: str) -> str:
+    match = re.search(rf'<tr class="setting setting-{name}">.*?</tr>', html, re.S)
+    assert match is not None, name
+    return match.group(0)
+
+
+def _options(html: str, name: str) -> list[tuple[str, str]]:
+    select = re.search(rf'<select name="{name}"[^>]*>(.*?)</select>', html, re.S)
+    assert select is not None, name
+    return re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', select.group(1))
+
+
+def _selected(html: str, name: str) -> str:
+    select = re.search(rf'<select name="{name}"[^>]*>(.*?)</select>', html, re.S)
+    assert select is not None, name
+    chosen = re.search(r'<option value="([^"]*)"[^>]*selected', select.group(1))
+    return chosen.group(1) if chosen else ""
+
+
+def _flash(client: Client) -> str:
+    page: str = client.get(URL).content.decode()
+    match = re.search(r"Saved — config revision[^<]*", page)
+    assert match is not None
+    return markup.unescape(match.group(0))
+
+
+def test_new_settings_rows_render_with_default_markers(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+
+    rows = re.findall(r'<tr class="setting setting-(\w+)">', html)
+    assert rows == list(SETTABLE)
+    assert rows[-6:] == list(M5_KEYS)
+    assert _marker(html, "player_authority") == "default"
+    assert _marker(html, "player_view") == "default"
+    assert _marker(html, "interaction_mode") == "default (sequential)"
+    assert _marker(html, "sequence_order") == "default (request order)"
+    assert _marker(html, "simultaneous_tie_break") == "default (request order)"
+    assert _marker(html, "reactive_interjections") == "default"
+    assert _options(html, "player_authority") == [
+        ("own_character", "Own character only"),
+        ("co_author", "Co-author (may narrate others&#x27; observable actions)"),
+    ]
+    assert "Lite stories get this as a prompt instruction only." in _row(html, "player_authority")
+    assert _options(html, "player_view") == [
+        ("character", "Character (audience-filtered)"),
+        ("story", "Story (every beat in full)"),
+    ]
+    assert _options(html, "interaction_mode") == [
+        ("", "Engine default (sequential)"),
+        ("sequential", "Sequential"),
+        ("simultaneous", "Simultaneous"),
+    ]
+    assert _options(html, "sequence_order") == [
+        ("", "Engine default (request order)"),
+        ("request", "Request order"),
+        ("director", "Director"),
+    ]
+    assert _options(html, "simultaneous_tie_break") == [
+        ("", "Engine default (request order)"),
+        ("request_order", "Request order"),
+        ("director", "Director"),
+    ]
+    assert _options(html, "reactive_interjections") == [("false", "Off"), ("true", "On")]
+    assert _selected(html, "player_authority") == "own_character"
+    assert _selected(html, "interaction_mode") == ""
+    assert _selected(html, "reactive_interjections") == "false"
+    for label in (
+        "Player authority",
+        "Player view (where perception is on)",
+        "Interaction mode",
+        "Sequence order (sequential turns)",
+        "Tie-break (simultaneous turns)",
+        "Reactive interjections",
+    ):
+        assert f">{label}</label>" in html
+    # Complement: a null multi-character setting never reads "story" or "unknown", nor resets.
+    for name in M5_KEYS:
+        assert f'name="reset_{name}"' not in html
+    # The M5 keys are rows, not "Other settings".
+    others = html.split("<h3>Other settings</h3>", 1)
+    assert len(others) == 1 or "<code>player_authority</code>" not in others[1]
+
+
+def test_interaction_mode_default_names_the_scenario_value(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    inactive = {"interaction_mode": {"value": "simultaneous", "capability": "multi_character"}}
+    html = _page(operator_client, engine, settings=settings_json(inactive=inactive))
+
+    assert _marker(html, "interaction_mode") == "default (scenario: simultaneous)"
+    assert _options(html, "interaction_mode")[0] == ("", "Engine default (scenario: simultaneous)")
+    assert _marker(html, "sequence_order") == "default (request order)"
+
+    # Complement: a list-shaped or garbage ``inactive`` falls back to sequential.
+    for garbage in (
+        [{"interaction_mode": {"value": "simultaneous"}}],
+        {"interaction_mode": "simultaneous"},
+        {"interaction_mode": {"value": "all_at_once"}},
+        "simultaneous",
+    ):
+        engine.requests.clear()
+        html = _page(operator_client, engine, settings=settings_json(inactive=garbage))
+        assert _marker(html, "interaction_mode") == "default (sequential)", garbage
+        assert _options(html, "interaction_mode")[0] == ("", "Engine default (sequential)")
+
+
+def test_a_stored_multi_setting_reads_story_with_a_reset(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    settings = settings_json(
+        interaction_mode="sequential", sequence_order="director", player_view="story"
+    )
+    html = _page(operator_client, engine, settings=settings)
+
+    assert _marker(html, "interaction_mode") == "story"
+    assert _marker(html, "sequence_order") == "story"
+    assert _marker(html, "player_view") == "story"
+    assert 'name="reset_interaction_mode"' in html
+    assert _options(html, "interaction_mode")[0] == ("", "Engine default (sequential)")
+
+
+def test_changed_multi_settings_patch_only_those_keys(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(
+        operator_client,
+        html,
+        player_authority="co_author",
+        interaction_mode="simultaneous",
+        simultaneous_tie_break="director",
+        reactive_interjections="true",
+    )
+
+    [patch] = writes(engine)
+    assert body(patch) == {
+        "player_authority": "co_author",
+        "interaction_mode": "simultaneous",
+        "simultaneous_tie_break": "director",
+        "reactive_interjections": True,
+    }
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Player authority: Co-author (may narrate others' observable "
+        "actions), Interaction mode: Simultaneous, Tie-break: Director, Reactive interjections: "
+        "On), idempotency key "
+    )
+
+
+def test_unchanged_form_sends_no_patch(operator_client: Client, engine: FakeEngine) -> None:
+    settings = settings_json(
+        player_authority="co_author",
+        interaction_mode="simultaneous",
+        sequence_order="request",
+        simultaneous_tie_break="director",
+        reactive_interjections=True,
+    )
+    html = _page(operator_client, engine, settings=settings)
+
+    response = _post(operator_client, html)
+
+    assert response.status_code == 302
+    # Complement: zero PATCH calls in the fake log.
+    assert [r for r in engine.requests if r.method == "PATCH"] == []
+
+
+def test_explicit_default_choice_is_sent(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json(interaction_mode="sequential"))
+
+    _post(operator_client, html, interaction_mode="sequential", sequence_order="request")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"interaction_mode": "sequential", "sequence_order": "request"}
+
+
+def test_engine_default_choice_over_a_stored_value_sends_null(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine, settings=settings_json(sequence_order="director"))
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, sequence_order="")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"sequence_order": None}
+
+
+def test_reset_sends_null_for_the_new_keys(operator_client: Client, engine: FakeEngine) -> None:
+    settings = settings_json(
+        player_authority="co_author",
+        player_view="story",
+        interaction_mode="simultaneous",
+        sequence_order="director",
+        simultaneous_tie_break="director",
+        reactive_interjections=True,
+    )
+    html = _page(operator_client, engine, settings=settings)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, **{f"reset_{name}": "on" for name in M5_KEYS})
+
+    [patch] = writes(engine)
+    assert body(patch) == dict.fromkeys(M5_KEYS)
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Player authority: default, Player view: default, "
+        "Interaction mode: default, Sequence order: default, Tie-break: default, "
+        "Reactive interjections: default)"
+    )
+
+
+def test_reactive_interjections_off_is_not_sent_when_unchanged(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+    assert _selected(html, "reactive_interjections") == "false"
+
+    _post(operator_client, html, regenerate_retry_budget="3")
+
+    # Complement: a default-false read plus an untouched select sends no reactive_interjections.
+    [patch] = writes(engine)
+    assert body(patch) == {"regenerate_retry_budget": 3}
+
+    html = _page(operator_client, engine, settings=settings_json(reactive_interjections=True))
+    _post(operator_client, html, reactive_interjections="false")
+    assert body(writes(engine)[-1]) == {"reactive_interjections": False}
+
+
+def test_stored_state_tie_break_is_kept_and_not_resent(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    settings = settings_json(simultaneous_tie_break="state:initiative")
+    html = _page(operator_client, engine, settings=settings)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    assert _options(html, "simultaneous_tie_break") == [
+        ("", "Engine default (request order)"),
+        ("request_order", "Request order"),
+        ("director", "Director"),
+        ("state:initiative", "state:initiative (M6: request order applies)"),
+    ]
+    assert _selected(html, "simultaneous_tie_break") == "state:initiative"
+    assert _marker(html, "simultaneous_tie_break") == "story"
+
+    _post(operator_client, html, player_view="story")
+
+    # Complement: a save that changes another field doesn't carry the tie-break.
+    [patch] = writes(engine)
+    assert body(patch) == {"player_view": "story"}
+
+
+def test_unknown_stored_value_is_kept_as_a_choice(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    settings = settings_json(player_authority="full_author", interaction_mode="round_robin")
+    html = _page(operator_client, engine, settings=settings)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    assert _options(html, "player_authority")[-1] == ("full_author", "Full author")
+    assert _selected(html, "player_authority") == "full_author"
+    assert _marker(html, "player_authority") == "story"
+    assert _options(html, "interaction_mode") == [
+        ("", "Engine default (sequential)"),
+        ("sequential", "Sequential"),
+        ("simultaneous", "Simultaneous"),
+        ("round_robin", "Round robin"),
+    ]
+    assert "(unknown)" not in _row(html, "interaction_mode")
+
+    _post(operator_client, html, regenerate_retry_budget="1")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"regenerate_retry_budget": 1}
+
+
+def test_not_yet_422_lands_beside_tie_break(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+    engine.respond(
+        "PATCH",
+        SETTINGS,
+        422,
+        json={
+            "error": {
+                "code": "validation_error",
+                "message": "state tie-breaks are not available yet",
+                "details": {"field": "body.interaction_mode", "reason": "not_yet"},
+                "errors": [
+                    {"field": "body.interaction_mode", "message": "not available yet"},
+                ],
+            }
+        },
+    )
+
+    page = _post(operator_client, html, interaction_mode="simultaneous").content.decode()
+
+    assert "State tie-breaks arrive in Engine M6" in _row(page, "simultaneous_tie_break")
+    assert page.count("State tie-breaks arrive in Engine M6") == 1
+    assert "not available yet" not in _row(page, "interaction_mode")
+
+
+def test_a_422_on_a_new_key_lands_beside_its_row(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    engine.respond(
+        "PATCH",
+        SETTINGS,
+        422,
+        json=error("validation_error", "sequence order is refused", field="body.sequence_order"),
+    )
+
+    page = _post(operator_client, html, sequence_order="director").content.decode()
+
+    assert "sequence order is refused" in _row(page, "sequence_order")
+
+
+def test_flash_names_changes_with_labels(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine, settings=settings_json(interaction_mode="simultaneous"))
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(
+        operator_client,
+        html,
+        turn_concurrency="queue",
+        interaction_mode="",
+        allow_new_arrivals=None,
+        regenerate_retry_budget="5",
+        default_output_viewpoint="",
+    )
+
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Turn concurrency: queue, Default output viewpoint: default, "
+        "Regenerate retry budget: 5, Allow new arrivals: Off, Interaction mode: default)"
+    )
+
+
+def test_blank_required_new_select_is_a_field_error(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    engine.requests.clear()
+
+    response = _post(operator_client, html, player_authority="", reactive_interjections="")
+
+    page = response.content.decode()
+    assert response.status_code == 200
+    assert "This field is required." in _row(page, "player_authority")
+    assert "This field is required." in _row(page, "reactive_interjections")
+    # Complement: zero PATCH calls.
+    assert engine.requests == []
+
+
+def test_note_links_config_without_an_effective_config_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+
+    form = re.search(rf'<form method="post" action="{URL}".*?</form>', html, re.S)
+    assert form is not None
+    note = re.search(r'<p class="note settings-note">(.*?)</p>', form.group(0), re.S)
+    assert note is not None
+    assert note.group(1) == (
+        "Interaction mode, sequence order, tie-break and reactive interjections apply only when "
+        "the story's profile renders characters one by one "
+        "(<code>multi_character.renders: per_character</code>); player view only where "
+        "perception is on. A turn can override each. "
+        f'See <a href="/stories/{STORY}/config/">Config</a>.'
+    )
+    # Above Save, inside the fieldset; no setting is greyed.
+    assert form.group(0).index("settings-note") < form.group(0).index("Save settings")
+    assert form.group(0).index("<fieldset>") < form.group(0).index("settings-note")
+    for name in M5_KEYS:
+        assert "disabled" not in _row(html, name)
+    # Complement: no effective-config read.
+    assert not any(r.url.path.endswith("/effective-config") for r in engine.requests)

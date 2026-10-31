@@ -1,0 +1,59 @@
+{% extends "console/inspect/knowledge.html" %}{% load inspect_tags %}
+{% comment %}
+The Knowledge tab's Beliefs section (#190): the GET filters (names = the Engine's query params;
+Apply carries no cursor), then one page of GET /stories/{id}/inspect/beliefs
+(viewpoint=omniscient, limit=100) for one character: the header and count lines, the notices,
+#191's canon notices and summary line, the rows (_belief_row.html, Engine order; #191's Canon
+column) and the paging links, then the Identities section. #194: "Direct a belief…" under the header line (direct_url),
+and each row's Change… (actions = _belief_actions.html, actions_holder).
+The filters and their errors stay above every error (convention 10); an invalid filter makes no
+beliefs call. Context from console/views/inspect_beliefs.py, wording from console/beliefs.py.
+{% endcomment %}
+{% block knowledge_content %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}{% if after_refused %} <a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}</div>{% endif %}
+<form method="get" action="{{ filter_url }}" class="beliefs-form">
+  <div class="field field-character">{{ form.character.label_tag }} {{ form.character }}{{ form.character.errors }}</div>
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
+  <div class="field field-proposition_id">{{ form.proposition_id.label_tag }} {{ form.proposition_id }} <small class="muted">{{ form.proposition_id.help_text }}</small>{{ form.proposition_id.errors }}</div>
+  <button type="submit">Apply</button> <a class="beliefs-clear" href="{{ filter_url }}">Clear</a>
+</form>
+
+{% if prompt %}<p class="none beliefs-prompt">{{ prompt }}</p>{% endif %}
+{% if header %}<h3 class="beliefs-header">{{ header }}</h3>{% endif %}
+<p class="direct-belief"><a href="{{ direct_url }}">Direct a belief…</a></p>
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif beliefs_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif beliefs_error %}{% include "console/_engine_error.html" with engine_error=beliefs_error %}
+{% elif beliefs %}
+<p class="beliefs-count">{{ count }}</p>
+<p class="notice first-order">{{ first_order }}</p>
+{% for notice in canon_notices %}<p class="notice canon-notice">{{ notice|code_spans }}</p>
+{% endfor %}{% if canon_summary %}<p class="canon-summary">{{ canon_summary }}</p>{% endif %}
+{% if rows %}
+<table class="beliefs">
+  <thead><tr><th>Proposition</th><th>Confidence</th><th>How</th><th>Holds since</th><th>Until</th><th>About story-time</th>{% if marks is not None %}<th>Canon</th>{% endif %}{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_belief_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% elif player_notice %}<p class="notice player-notice">{{ player_notice }}</p>
+{% else %}<p class="none beliefs-none">{{ empty }}</p>{% endif %}
+<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% if show_identities %}
+<section class="identities">
+<h3>{{ identities_heading }}</h3>
+{% if identities_first_page %}<p class="none identities-first-page">{{ identities_first_page }}</p>
+{% elif identities %}<ul class="identities">
+{% for identity in identities %}<li class="identity">{% for ref in identity.entities %}{% include "console/inspect/_entity.html" %}{% if not forloop.last %} = {% endif %}{% endfor %} · <span class="identity-source" title="{{ identity.source }}">{{ identity.source_text }}</span> {% if identity.url %}<a href="{{ identity.url }}"><code>{{ identity.record_id }}</code></a>{% else %}<code>{{ identity.record_id }}</code>{% endif %}</li>
+{% endfor %}</ul>
+{% else %}<p class="none identities-none">None</p>{% endif %}
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

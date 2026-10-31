@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load inspect_tags %}{% comment %}
+A turn's perception trace (#195, console.views.perception): beats × characters, reconstructed
+from one story-view history read per character. Order: caveat, cap note, failure notice, grid,
+footnote. Context: story, story_name, turn, back_url, config_url; one of notice, unavailable
+(#188's greyed panel), engine_error (#43's panel), replaced (a line in the grid's place) or grid
+(console.perception.PerceptionGrid); caveat, cap_note, failures, footnote once reads were made.
+{% endcomment %}
+{% block title %}Perception — turn {{ turn }} — {{ story_name }} — Epistrel Console{% endblock %}
+{% block heading %}Perception — turn {{ turn }}{% if grid.variant %} · v{{ grid.variant }}{% endif %} — {{ story_name }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'stories:detail' story.id %}">Play</a> · <a class="inspect-link" href="{% url 'inspect:overview' story.id %}">Inspect</a> · <a href="{% url 'stories:settings' story.id %}">Settings</a> · <a class="config-tab" href="{{ config_url }}">Config</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story.id }}</code></p>
+<p><a class="history-back" href="{{ back_url }}">Back to turn {{ turn }} in History</a></p>
+{% if notice %}<p class="notice">{{ notice }}</p>
+{% elif unavailable %}{% include "console/inspect/_unavailable.html" %}
+{% else %}
+{% if caveat %}<p class="warning perception-caveat">{{ caveat }}</p>{% endif %}
+{% if cap_note %}<p class="notice perception-cap">{{ cap_note }}</p>{% endif %}
+{% if failures %}<p class="warning perception-failures">{{ failures }}</p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}
+{% elif replaced %}<p class="perception-replaced">{{ replaced }}</p>
+{% elif grid %}
+<table class="perception">
+  <thead><tr><th scope="col">Beat</th>{% for column in grid.columns %}<th scope="col"{% if column.failure %} class="column-unavailable"{% endif %}>{{ column.header }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for row in grid.rows %}
+    <tr><th scope="row">{{ row.head }} <span class="beat-text" title="{{ row.full_text }}">{{ row.text }}</span></th>{% for cell in row.cells %}<td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.title %} title="{{ cell.title }}"{% endif %}>{{ cell.text }}</td>{% endfor %}</tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted perception-footnote">{{ footnote|code_spans }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

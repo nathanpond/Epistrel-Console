@@ -11,6 +11,11 @@ Input the form refuses makes no history call: a page size outside the three, a n
 negative turn, and audit records asked for without the omniscient viewpoint (the Engine's
 403 ``omniscient_required``, refused here first). A well-formed ``as_of`` above the head passes
 through, so the Engine's 422 shows.
+
+"Player view" (``player_view``, #62) asks for the filtered (``character``) or the full, marked
+(``story``) history of a character viewpoint; blank sends nothing (the story's setting). An
+explicit ``omniscient`` viewpoint never sends it: :meth:`HistoryForm.clean` blanks it in
+``cleaned_data`` (the submitted value stays, so the page keeps it for a character viewpoint).
 """
 
 from collections.abc import Sequence
@@ -27,12 +32,21 @@ AUDIT_NEEDS_OMNISCIENT = "Audit records need the omniscient viewpoint"
 DATALIST_ALL_UP_TO = 500  # every turn is listed up to this head; above it, a sample
 DATALIST_STEP = 50
 DATALIST_TAIL = 50
+# #62: shared with the play transcript's toggle (#196).
+PLAYER_VIEW_CHOICES = [
+    ("", "story setting"),
+    ("character", "Character (filtered)"),
+    ("story", "Story (everything, marked)"),
+]
 
 
 class HistoryForm(forms.Form):
     """The controls. ``cast`` fills the viewpoint and actor selects (``GET /stories/{id}``)."""
 
     viewpoint = forms.ChoiceField(required=False, label="Viewpoint")
+    player_view = forms.ChoiceField(
+        required=False, choices=PLAYER_VIEW_CHOICES, label="Player view"
+    )
     as_of = forms.IntegerField(required=False, min_value=0, label="As of turn")
     actor_character_id = forms.ChoiceField(required=False, label="Actor")
     include_audit = forms.BooleanField(required=False, label="Include audit")
@@ -70,6 +84,8 @@ class HistoryForm(forms.Form):
         cleaned = super().clean()
         if cleaned and cleaned.get("include_audit") and cleaned.get("viewpoint") != OMNISCIENT:
             self.add_error("include_audit", AUDIT_NEEDS_OMNISCIENT)
+        if cleaned and cleaned.get("viewpoint") == OMNISCIENT and "player_view" in cleaned:
+            cleaned["player_view"] = ""  # applies to a character viewpoint only (#62)
         return cleaned
 
     def query(self) -> dict[str, Any]:
@@ -85,6 +101,7 @@ class HistoryForm(forms.Form):
             "variant": data["variant"] or None,
             "include_audit": bool(data["include_audit"]),
             "include_summary": bool(data["include_summary"]),
+            "player_view": data["player_view"] or None,
         }
 
     def value(self, name: str) -> str:
@@ -100,6 +117,13 @@ class HistoryForm(forms.Form):
     @property
     def omniscient(self) -> bool:
         return self.value("viewpoint") == OMNISCIENT
+
+    @property
+    def player_view_kept(self) -> str:
+        """The submitted player view when it is one of the choices, else "" (the hidden input
+        that carries it while the select is disabled)."""
+        value = self.value("player_view")
+        return value if value in {key for key, _ in PLAYER_VIEW_CHOICES if key} else ""
 
 
 def as_of_options(last: int) -> list[int]:

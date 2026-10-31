@@ -1,0 +1,66 @@
+{
+  "timeline_revision": 8,
+  "belief": {
+    "id": "0000000000000000000000BW01",
+    "holder_character_id": "0000000000000000000000CA01",
+    "kind": "first_order",
+    "attributed_holder_id": null,
+    "depth": 1,
+    "proposition_id": "0000000000000000000000PP05",
+    "proposition": {
+      "subject_id": "0000000000000000000000EN01",
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR1",
+      "object_id": "0000000000000000000000EN04",
+      "valid_time": {
+        "kind": "interval",
+        "start": {
+          "inner": 0,
+          "outer": 0
+        }
+      }
+    },
+    "polarity": "affirmed",
+    "confidence_level": "suspected",
+    "confidence_scalar": 0.3,
+    "accessibility": 1.0,
+    "state": "held",
+    "provenance": "author",
+    "held_from": {
+      "turn": 3,
+      "variant": 0,
+      "slot_k": 0,
+      "beat": 32767,
+      "step": 1
+    },
+    "held_to": null,
+    "valid_from": 0,
+    "valid_to": null,
+    "lineage_id": "0000000000000000000000BW01"
+  },
+  "transition": {
+    "id": "0000000000000000000000TR01",
+    "kind": "author",
+    "antecedent": {
+      "kind": "record",
+      "ref": {
+        "table": "events",
+        "id": "0000000000000000000000EV01"
+      }
+    },
+    "valid_at": 540,
+    "confidence_level": "suspected",
+    "confidence_scalar": 0.3,
+    "position": {
+      "turn": 3,
+      "variant": 0,
+      "slot_k": 0,
+      "beat": 32767,
+      "step": 1
+    }
+  },
+  "closed": [
+    "0000000000000000000000BE02"
+  ],
+  "operation_id": "0000000000000000000000OP01",
+  "idempotency_key": "0000000000000000000000KY01"
+}

@@ -6,13 +6,17 @@ raises :class:`UnconfiguredEngineCall`. Both subclass ``AssertionError``, which 
 probe always re-raise, so a test fails instead of receiving a made-up answer. Every canned JSON
 body is validated against the schema's response schema for that status before it is served, and
 a status whose schema declares a body must be given one.
+
+A canned answer may be keyed on the query string too (``respond(..., query={"cursor": "X"})``,
+#188's C14): a request carrying every listed parameter with that value gets it, the most
+specific match winning, so page-1/page-2 tests don't rely on call order.
 """
 
 import copy
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -93,6 +97,7 @@ class FakeEngine:
             if method in item
         ]
         self._canned: dict[tuple[str, str], _Canned] = {}
+        self._queried: dict[tuple[str, str], list[tuple[dict[str, str], _Canned]]] = {}
         self._sequences: dict[tuple[str, str], list[_Canned]] = {}
         self._served: dict[tuple[str, str], _Canned] = {}
         self._failures: dict[tuple[str, str], Exception] = {}
@@ -126,14 +131,33 @@ class FakeEngine:
         json: object | None = None,
         headers: dict[str, str] | None = None,
         delay: float = 0.0,
+        *,
+        query: Mapping[str, str] | None = None,
     ) -> None:
         """Answer ``method path`` (a schema path template) with this, until replaced (a
         :meth:`side_effect` on it too).
+
+        With ``query``, answer only a request whose query string carries every listed parameter
+        with that value (extra parameters allowed; a repeated parameter matches when any of its
+        values does); the most specific match wins (first registered on a tie), else the
+        query-less answer. A ``query`` answer adds or replaces the answer for exactly that
+        ``query`` and leaves the query-less answer, sequences and side effects alone; a plain
+        answer replaces only the query-less one (and clears a sequence and a side effect).
 
         Refused unless the schema declares the operation and the status, and the JSON body
         validates against that status's response schema.
         """
         method = method.upper()
+        if query is not None:
+            wanted = {str(k): str(v) for k, v in query.items()}
+            canned = self._validated(method, path, status, json, headers, delay)
+            answers = self._queried.setdefault((method, path), [])
+            for i, (registered, _) in enumerate(answers):
+                if registered == wanted:
+                    answers[i] = (wanted, canned)
+                    return
+            answers.append((wanted, canned))
+            return
         self._sequences.pop((method, path), None)
         self._effects.pop((method, path), None)  # a canned answer replaces a side effect
         self._canned[(method, path)] = self._validated(method, path, status, json, headers, delay)
@@ -222,6 +246,16 @@ class FakeEngine:
                 return template
         return None
 
+    def _query_answer(self, key: tuple[str, str], params: httpx.QueryParams) -> _Canned | None:
+        matching = [
+            (registered, canned)
+            for registered, canned in self._queried.get(key, [])
+            if all(value in params.get_list(name) for name, value in registered.items())
+        ]
+        if not matching:
+            return None
+        return max(matching, key=lambda answer: len(answer[0]))[1]  # first on a tie
+
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         method, path = request.method, request.url.path
@@ -245,9 +279,18 @@ class FakeEngine:
             if template is None:
                 raise UndeclaredEngineCall(f"{method} {path} is not in the Engine's schema")
             queued = self._sequences.get((method, template))
-            canned = queued.pop(0) if queued else self._canned.get((method, template))
+            if queued:
+                canned = queued.pop(0)
+            else:
+                canned = self._query_answer((method, template), request.url.params)
+                if canned is None:
+                    canned = self._canned.get((method, template))
             if canned is None:
-                raise UnconfiguredEngineCall(f"no answer registered for {method} {template}")
+                queries = [q for q, _ in self._queried.get((method, template), [])]
+                raise UnconfiguredEngineCall(
+                    f"no answer registered for {method} {template}"
+                    f" (query {request.url.query.decode('ascii')!r}; registered queries {queries})"
+                )
         if canned.delay:
             time.sleep(canned.delay)
         if canned.json is None:

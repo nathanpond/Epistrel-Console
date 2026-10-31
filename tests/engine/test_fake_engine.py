@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import jsonschema
 import pytest
@@ -111,3 +113,57 @@ def test_fail_raises_transport_error(fake_engine: FakeEngine) -> None:
     fake_engine.fail("GET", "/health", httpx.ConnectError("refused"))
     with pytest.raises(httpx.ConnectError):
         get(fake_engine, "/health")
+
+
+# #186: each M5 fixture and the answer it is (method, route template, status). The
+# ``*_bad_item.json`` files are not schema-valid on purpose (the leniency tests read them).
+M5_FIXTURES = {
+    "story": ("GET", "/stories/{story_id}", 200),
+    "beliefs_page1": ("GET", "/stories/{story_id}/inspect/beliefs", 200),
+    "beliefs_empty": ("GET", "/stories/{story_id}/inspect/beliefs", 200),
+    "divergences": ("GET", "/stories/{story_id}/inspect/divergences", 200),
+    "exposures": ("GET", "/stories/{story_id}/inspect/exposures", 200),
+    "belief_written": ("POST", "/admin/stories/{story_id}/beliefs", 201),
+    "participation_set": (
+        "PATCH",
+        "/stories/{story_id}/characters/{character_id}/participation",
+        200,
+    ),
+    "character_weighted": ("POST", "/stories/{story_id}/characters/{character_id}/weight", 200),
+    "entity_modeled": ("POST", "/stories/{story_id}/entities/{entity_id}/model", 201),
+}
+ID_KEYS = frozenset({"id", "character", "witness", "speaker"})
+
+
+def _id_strings(value: object, key: str | None = None) -> list[str]:
+    """Every string in ``value`` under a key that names an id (``id``, ``*_id``,
+    ``character``, ``witness``, ``speaker``, each of ``entities``)."""
+    if isinstance(value, dict):
+        return [s for k, v in value.items() for s in _id_strings(v, k)]
+    if isinstance(value, list):
+        inner = "id" if key == "entities" else None
+        return [s for v in value for s in _id_strings(v, inner)]
+    named = key is not None and (key in ID_KEYS or key.endswith("_id"))
+    return [value] if named and isinstance(value, str) else []
+
+
+@pytest.mark.parametrize("name", sorted(M5_FIXTURES))
+def test_m5_fixtures_validate(fake_engine: FakeEngine, name: str) -> None:
+    from console.ids import is_ulid
+    from tests.fixtures import ENGINE
+
+    method, route, status = M5_FIXTURES[name]
+    body = json.loads((ENGINE / "m5" / f"{name}.json").read_text(encoding="utf-8"))
+    fake_engine.respond(method, route, status, json=body)  # validated against the schema
+    ids = _id_strings(body)
+    assert ids
+    assert [i for i in ids if not is_ulid(i)] == []
+
+
+def test_every_m5_fixture_is_in_the_table() -> None:
+    """**Complement:** a file under ``m5/`` (but a ``*_bad_item.json``) missing from the table
+    fails."""
+    from tests.fixtures import ENGINE
+
+    files = {p.stem for p in (ENGINE / "m5").glob("*.json") if not p.stem.endswith("_bad_item")}
+    assert files == set(M5_FIXTURES)

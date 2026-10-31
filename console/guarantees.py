@@ -4,11 +4,17 @@
 The table is read whole from the Engine (``GET /engine-profiles/{id}/guarantees`` on the profile
 page, ``GET /stories/{id}/guarantees`` on a story's Config page) and shown in its order. Text
 here carries backtick spans that the partial renders as ``<code>`` (``code_spans``). Nothing here
-calls an output "verified" (FR-RESP-1): only the claims detected in an output are checked.
+claims an output was checked in full (FR-RESP-1): only the claims detected in an output are
+checked.
+
+A row may also need a story setting (``story_setting``, #169: audience filtering needs
+``player_view = character``). A profile's table can't know a story's value, so its Needs says the
+table assumes the default; a story's Config page passes the story's ``settings`` (from the read
+it already makes) as ``story_settings``, and Needs and Status name the story's value.
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -22,6 +28,13 @@ DOCS_URL = "https://github.com/nathanpond/Epistrel/blob/main/docs/guarantees.md"
 DOCS_LABEL = "Guarantee table (Engine docs, main)"
 NO_TABLE = "No guarantee table for that version"
 CONFIG_SCOPE = "this story's effective configuration, overrides included"
+STORY_SETTING_PREFIX = "story setting "
+PROFILE_STORY_SETTING_NOTE = "each story's own setting; this table assumes the default"
+STORY_VALUE_NOTE = "this story: `{}`"
+STORY_SETTING_REASON = "this story's `{}` is `{}`"
+ANY_VALUE = " (any value)"
+
+Mode = Literal["profile", "story"]
 
 KIND_LABELS = {"deterministic": "By rules", "model_dependent": "By a model"}
 
@@ -67,10 +80,41 @@ def setting_text(setting: RequiredSetting) -> str:
     return f"`{setting.path}` = {_either([f'`{_value(v)}`' for v in setting.values])}"
 
 
-def needs_text(row: GuaranteeStatus) -> str:
+def story_setting_text(setting: RequiredSetting) -> str:
+    """ "story setting `path` = `v`": :func:`setting_text` with the story-setting prefix."""
+    return STORY_SETTING_PREFIX + setting_text(setting)
+
+
+def _story_value(setting: RequiredSetting, story_settings: Mapping[str, Any] | None) -> str | None:
+    """The story's value for ``setting`` as :func:`_value` text (the flat key ``path``, as the
+    Engine's ``met_by`` reads it), or ``None`` when unknown: no settings read, or no such key."""
+    if story_settings is None or setting.path not in story_settings:
+        return None
+    return _value(story_settings[setting.path])
+
+
+def _with_note(clause: str, note: str) -> str:
+    """``clause`` with `` (note)``, merged into a trailing "(any value)" as "(any value; note)"."""
+    if not note:
+        return clause
+    if clause.endswith(ANY_VALUE):
+        return f"{clause[: -len(ANY_VALUE)]} (any value; {note})"
+    return f"{clause} ({note})"
+
+
+def needs_text(
+    row: GuaranteeStatus,
+    *,
+    mode: Mode | None = None,
+    story_settings: Mapping[str, Any] | None = None,
+) -> str:
     """What the step needs: each module ("`m`", "`m` at `l` or above", "`m` at `l`" when
-    exact), then the setting, joined with "; ". Nothing needed reads "none (every profile)",
-    or "none (outside stories)" for a step that runs outside stories."""
+    exact), then the setting, then the story setting, joined with "; ". Nothing needed reads
+    "none (every profile)", or "none (outside stories)" for a step that runs outside stories.
+
+    The story-setting clause ends, on the profile page (``mode="profile"``), with the note that
+    the table assumes the default; on a story's Config page (``"story"``), with the story's
+    value from ``story_settings`` when known; with no ``mode``, with nothing."""
     parts: list[str] = []
     for required in row.requires:
         if required.level is None:
@@ -81,20 +125,39 @@ def needs_text(row: GuaranteeStatus) -> str:
             parts.append(f"`{required.module}` at `{required.level}` or above")
     if row.setting is not None:
         parts.append(setting_text(row.setting))
+    if row.story_setting is not None:
+        note = ""
+        if mode == "profile":
+            note = PROFILE_STORY_SETTING_NOTE
+        elif mode == "story":
+            value = _story_value(row.story_setting, story_settings)
+            note = "" if value is None else STORY_VALUE_NOTE.format(value)
+        parts.append(_with_note(story_setting_text(row.story_setting), note))
     if parts:
         return "; ".join(parts)
     return "none (outside stories)" if row.provided is None else "none (every profile)"
 
 
-def status_text(row: GuaranteeStatus) -> str:
+def status_text(row: GuaranteeStatus, *, story_settings: Mapping[str, Any] | None = None) -> str:
     """``provided`` decides first: "Outside stories" (null), "Provided" (true), else "Not
-    provided", naming the milestone when ``delivered_in`` is set."""
+    provided", naming the milestone when ``delivered_in`` is set, else the story setting when
+    the story's known value (``story_settings``) is outside the row's non-empty ``values``.
+
+    The comparison is by :func:`_value` text, not by Python equality as the Engine's ``met_by``
+    is; they differ only for values like ``1``/``true``, which ``player_view`` (a string enum)
+    never has. When modules are unmet too, the reason still names the story setting (accurate,
+    not exhaustive: Needs lists every need)."""
     if row.provided is None:
         return "Outside stories"
     if row.provided:
         return "Provided"
     if row.delivered_in is not None:
         return f"Not provided (delivered in {row.delivered_in})"
+    setting = row.story_setting
+    if setting is not None and setting.values:
+        value = _story_value(setting, story_settings)
+        if value is not None and value not in {_value(v) for v in setting.values}:
+            return f"Not provided ({STORY_SETTING_REASON.format(setting.path, value)})"
     return "Not provided"
 
 
@@ -120,7 +183,13 @@ class GuaranteeRow:
     muted: bool
 
 
-def rows(table: GuaranteeTable) -> list[GuaranteeRow]:
+def rows(
+    table: GuaranteeTable, *, mode: Mode, story_settings: Mapping[str, Any] | None = None
+) -> list[GuaranteeRow]:
+    """The rows in the table's order. ``story_settings`` counts only in story mode, so a
+    profile page never shows a story's value or reason."""
+    if mode != "story":
+        story_settings = None
     seen: set[str] = set()
     shown: list[GuaranteeRow] = []
     for row in table.rows:
@@ -131,8 +200,8 @@ def rows(table: GuaranteeTable) -> list[GuaranteeRow]:
                 row=row,
                 anchor=anchor,
                 kind_label=KIND_LABELS[row.kind],
-                needs=needs_text(row),
-                status=status_text(row),
+                needs=needs_text(row, mode=mode, story_settings=story_settings),
+                status=status_text(row, story_settings=story_settings),
                 muted=row.provided is not True,
             )
         )
@@ -157,11 +226,14 @@ def section(
     *,
     profile_name: str = "",
     note: str = "",
+    story_settings: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The Guarantees section's context for ``_guarantees.html``: the table and its rows and
     caveats, or the failure kept inside the section (logged, no page banner). On the profile
     route a 404 is "No guarantee table for that version"; any other failure, on either route,
-    is #43's panel. ``note`` follows the caption (the Config scope, the version race)."""
+    is #43's panel. ``note`` follows the caption (the Config scope, the version race).
+    ``story_settings`` (the Config page's story read, ``None`` when it failed) only builds the
+    rows (#169)."""
     context: dict[str, Any] = {
         "guarantees": None,
         "guarantees_error": None,
@@ -181,6 +253,6 @@ def section(
             context["guarantees_error"] = panel_for(result)
         return context
     context["guarantees"] = result
-    context["guarantee_rows"] = rows(result)
+    context["guarantee_rows"] = rows(result, mode=mode, story_settings=story_settings)
     context["guarantee_caveats"] = caveats(result) if result.rows else []
     return context

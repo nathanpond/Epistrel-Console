@@ -16,7 +16,10 @@ from console.views import (
     feedback,
     history,
     inspect,
+    inspect_beliefs,
     inspect_canon,
+    inspect_divergences,
+    inspect_exposures,
     inspect_ledger,
     inspect_memory,
     inspect_predicates,
@@ -28,6 +31,7 @@ from console.views import (
     offboarding,
     operations,
     ownership,
+    perception,
     personas,
     play,
     policies,
@@ -71,6 +75,12 @@ story_patterns = (
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         path("<str:story_id>/history/", history.history, name="history"),
+        # #195: one turn's perception trace, reconstructed per character.
+        path(
+            "<str:story_id>/turns/<int:turn>/perception/",
+            perception.perception,
+            name="perception",
+        ),
         # #83: rate, re-rate and retract feedback on one rendered message.
         path(
             "<str:story_id>/messages/<str:message_id>/feedback/",
@@ -123,6 +133,11 @@ story_patterns = (
             story_config.profile_apply,
             name="config-profile-apply",
         ),
+        path(  # #63: pin the story to a profile version or follow the latest
+            "<str:story_id>/config/version/",
+            story_config.version_change,
+            name="config-version",
+        ),
         path(
             "<str:story_id>/characters/new/",
             story_characters.character_new,
@@ -132,6 +147,16 @@ story_patterns = (
             "<str:story_id>/characters/<str:character_id>/promote/",
             story_characters.character_promote,
             name="character-promote",
+        ),
+        path(
+            "<str:story_id>/characters/<str:character_id>/participation/",
+            story_characters.character_participation,
+            name="character-participation",
+        ),
+        path(
+            "<str:story_id>/characters/<str:character_id>/weight/",
+            story_characters.character_weight,
+            name="character-weight",
         ),
         # #80: change the story's rating, confirm a tighten, follow its check.
         path("<str:story_id>/rating/", story_rating.rating_page, name="rating"),
@@ -174,6 +199,18 @@ inspect_patterns = (
         path("canon/<ulid:fact_id>/lock/", inspect_canon.lock, name="canon-lock"),
         path("canon/<ulid:fact_id>/unlock/", inspect_canon.unlock, name="canon-unlock"),
         path("canon/<ulid:fact_id>/supersede/", inspect_canon.supersede, name="canon-supersede"),
+        # #189: the Knowledge tab; its sections (knowledge/beliefs/, knowledge/divergences/,
+        # knowledge/exposures/) are registered by #190, #192 and #193.
+        path("knowledge/", inspect.knowledge, name="knowledge"),
+        # #190: one character's beliefs (its partition) and the identities it holds.
+        path("knowledge/beliefs/", inspect_beliefs.beliefs, name="beliefs"),
+        # #194: direct a belief (first-order or nested) and its result page again.
+        path("knowledge/beliefs/direct/", inspect_beliefs.direct, name="belief-direct"),
+        path("knowledge/beliefs/written/", inspect_beliefs.written, name="belief-written"),
+        # #192: the story's divergences (lies).
+        path("knowledge/divergences/", inspect_divergences.divergences, name="divergences"),
+        # #193: what witnesses heard (exposures) and whether each resolved.
+        path("knowledge/exposures/", inspect_exposures.exposures, name="exposures"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(
@@ -197,6 +234,12 @@ inspect_patterns = (
         # other id is a 404), both in the Scene tab.
         path("scene/", inspect_scene.scene, name="scene"),
         path("entities/<ulid:entity_id>/", inspect_scene.entity, name="entity"),
+        # #199: model the entity as a minor character (form, write, PRG to the entity page).
+        path(
+            "entities/<ulid:entity_id>/model/",
+            inspect_scene.entity_model,
+            name="entity-model",
+        ),
         # #143: a retrieved memory's row actions (``<ulid:…>``: any other id is a 404).
         path("memories/<ulid:memory_id>/pin/", inspect_memory.pin, name="memory-pin"),
         path("memories/<ulid:memory_id>/unpin/", inspect_memory.unpin, name="memory-unpin"),

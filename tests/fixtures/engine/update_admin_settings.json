@@ -19,6 +19,7 @@
     "max_pinned_per_character": 200,
     "max_pinned_per_story": 2000,
     "memory_importance_half_life_turns": 200,
+    "minor_hot_budget_fraction": 0.2,
     "erasure_shared_media": "purge",
     "feedback_text_max_chars": 2000,
     "feedback_retention": "story_lifetime",

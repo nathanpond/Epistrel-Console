@@ -459,9 +459,120 @@ def test_malformed_labels_render_no_tags(labels: Any) -> None:
 
 
 def test_later_label_fields_go_to_more() -> None:
-    t = trace(beat(labels={**SAY_LABELS, "classification": "sincere"}))
+    t = trace(beat(labels={**SAY_LABELS, "later_label": "sincere"}))
     assert len(t.tags) == 3
     assert [p.label for p in t.more] == ["labels"]
+
+
+# --- classification and corrected intent (#207) --------------------------------------------------
+
+CLASSIFICATION_LINE = (
+    "<dt>classification</dt><dd>how a say compares with what its speaker believes (omniscient "
+    "reads only). A lie or sincere error says nothing about whether the claim is true in "
+    "canon.</dd>"
+)
+
+
+def classified(classification: Any = "lie", **labels: Any) -> dict[str, Any]:
+    return beat(labels={**SAY_LABELS, "classification": classification, **labels})
+
+
+def legend(**context: Any) -> str:
+    return render_to_string("console/_verdict_legend.html", context)
+
+
+@pytest.mark.parametrize(
+    ("raw", "text", "css"),
+    [
+        ("sincere", "Sincere", "classification-sincere"),
+        ("sincere_error", "Sincere error", "classification-sincere_error"),
+        ("lie", "Lie", "classification-lie"),
+        ("joke", "Joke", "classification-joke"),
+        (
+            "hallucination_repaired",
+            "Hallucination repaired",
+            "classification-hallucination_repaired",
+        ),
+        ("white lie", "White lie", "classification-white-lie"),
+    ],
+)
+def test_classification_tag_for_each_value(raw: str, text: str, css: str) -> None:
+    t = trace(classified(raw))
+    assert len(t.tags) == 4
+    tag = t.tags[3]
+    assert (tag.text, tag.title, tag.css_class) == (
+        text,
+        f"classification: {raw}",
+        f"beat-classification {css}",
+    )
+    assert t.classified
+    assert (
+        ' · <span class="beat-label" title="objective: true">True</span>'
+        f' · <span class="beat-label beat-classification {css}" title="classification: {raw}">'
+        f"{text}</span></span>"
+    ) in render(t)
+
+
+def test_a_classification_that_slugifies_to_nothing_gets_only_the_base_class() -> None:
+    tag = trace(classified("!!")).tags[3]
+    assert tag.css_class == "beat-classification"
+
+
+@pytest.mark.parametrize("classification", [None, DROP, ""])
+def test_null_or_absent_classification_adds_no_tag(classification: Any) -> None:
+    labels = dict(SAY_LABELS)
+    if classification is not DROP:
+        labels["classification"] = classification
+    t = trace(beat(labels=labels))
+    assert len(t.tags) == 3
+    assert not t.classified
+    assert "beat-classification" not in render(t)
+
+
+def test_intent_corrected_reads_sincere_corrected() -> None:
+    t = trace(classified("sincere", intent_corrected=True))
+    intent = t.tags[0]
+    assert intent.text == "Sincere (corrected)"
+    assert intent.css_class == "intent-corrected"
+    assert intent.title == (
+        "intent: sincere — declared deceptive; relabelled sincere because the speaker's beliefs "
+        "support it"
+    )
+    assert '<span class="beat-label intent-corrected" title="intent: sincere — declared' in render(
+        t
+    )
+
+
+@pytest.mark.parametrize("corrected", [False, None, DROP])
+def test_intent_corrected_false_leaves_the_intent_tag(corrected: Any) -> None:
+    labels = dict(SAY_LABELS)
+    if corrected is not DROP:
+        labels["intent_corrected"] = corrected
+    t = trace(beat(labels=labels))
+    assert t.tags[0].text == "Sincere"
+    assert t.tags[0].css_class == ""
+    assert (
+        '<span class="beat-labels"><span class="beat-label" title="intent: sincere">Sincere</span>'
+        in render(t)
+    )
+    assert "(corrected)" not in render(t)
+
+
+def test_classification_fields_no_longer_go_to_more() -> None:
+    t = trace(classified("lie", intent_corrected=True))
+    assert t.more == ()
+    assert "<h6>labels</h6>" not in render(t)
+    # Complement: a wrong-typed value stays in extras and sends the raw labels to More.
+    assert [p.label for p in trace(classified(3)).more] == ["labels"]
+    assert [p.label for p in trace(classified("lie", intent_corrected="yes")).more] == ["labels"]
+
+
+def test_legend_line_only_with_a_classification() -> None:
+    assert CLASSIFICATION_LINE in legend(classification=True)
+    assert "<dt>classification</dt>" not in legend(classification=False)
+    assert "<dt>classification</dt>" not in legend()
+    shown = legend(classification=True)
+    assert shown.index("<dt>not checked</dt>") < shown.index("<dt>classification</dt>")
 
 
 def latent(visibility: Any) -> dict[str, Any]:
@@ -549,8 +660,16 @@ def test_malformed_detected_entries_go_to_more_and_count() -> None:
 
 
 def test_verified_never_appears() -> None:
-    for t in (trace(beat(), trace_of()), trace(beat()), trace(beat(), trace_of(None))):
+    corrected = classified("sincere", intent_corrected=True)
+    for t in (
+        trace(beat(), trace_of()),
+        trace(beat()),
+        trace(beat(), trace_of(None)),
+        trace(classified("lie")),
+        trace(corrected, trace_of()),
+    ):
         assert "verified" not in render(t).lower()
+    assert "verified" not in legend(classification=True).lower()
 
 
 # --- the history page ---------------------------------------------------------------------------
@@ -607,6 +726,7 @@ def history_body(turns: list[int], *, structured: bool = True) -> dict[str, Any]
         ],
         "output_viewpoint": "omniscient",
         "audience_filter": "none",
+        "player_view": "character",
         "as_of": max(turns),
         "timeline_revision": 9,
         "next_before_turn": min(turns) if min(turns) > 1 else None,
@@ -678,6 +798,22 @@ def test_traces_off_reads_no_trace_and_the_registry_once(
     assert '<mark title="age · contradicted">41</mark>' in html
     assert "located_at" in html
     assert '<input type="checkbox" name="traces" value="1" id="id_traces"> Show all traces' in html
+
+
+def test_an_omniscient_page_shows_the_classification_and_its_legend_line(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = history_body([2, 3])
+    body["items"][2]["labels"] = {**SAY_LABELS, "classification": "lie"}
+    answer_history(engine, body)
+    html = page(operator_client)
+    assert 'class="beat-label beat-classification classification-lie"' in html
+    assert html.count("<dt>classification</dt>") == 1
+    assert html.index("<dt>classification</dt>") < html.index('<table class="history">')
+    # Complement: no classified say, no legend line.
+    engine.reset()
+    answer_history(engine, history_body([2, 3]))
+    assert "<dt>classification</dt>" not in page(operator_client)
 
 
 def test_traces_on_reads_each_structured_turn_once(

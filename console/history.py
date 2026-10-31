@@ -10,7 +10,10 @@
 - :func:`explain_query` / :func:`explain_url`: a structured turn's "Explain retrieval" link
   into the Retrieval explorer (#142), rebuilt from the turn's transcript items;
 - :func:`beat_trace`: a structured beat's labels, visibility, highlighted detected claims and
-  Trace (#147), from the item and, when loaded, its turn's eval hooks (#139).
+  Trace (#147), from the item and, when loaded, its turn's eval hooks (#139);
+- :func:`audience_filter_label`, :func:`fidelity_badge` and :func:`narrated_label`: the audience
+  filter a character read applied, how the viewpoint perceived each beat and who narrated it
+  (#62; the play transcript reuses them, #196). One wording and style (convention 20).
 
 #53 builds its timeline controls onto these groups.
 """
@@ -24,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 from django.urls import reverse
+from django.utils.text import slugify
 
 from console.engine.models import (
     BeatProposition,
@@ -41,8 +45,8 @@ from console.engine.models import (
 )
 from console.inspect import retrieval_url
 from console.models import EngineOperation
-from console.retrieval import humanised
 from console.turn_trace import MorePart, TurnTrace, declared_beat, inline_json
+from console.wording import character_label, humanised
 
 if TYPE_CHECKING:
     from console.feedback import FeedbackWidget
@@ -226,6 +230,76 @@ def operation_links(story_id: str, operation_ids: Iterable[str]) -> dict[str, in
     return links
 
 
+# --- Audience filter, fidelity and narrators (#62) ----------------------------------------------
+
+ENVELOPE = "envelope"
+NOT_PERCEIVED = "none"
+PLAYER_NARRATOR = "player"  # ``narrated_by`` of a beat the player narrated (co_author, C16)
+AUDIENCE_FILTER_LABELS = {
+    "none": "None (perception off: every beat in full)",
+    "co_location": "Co-location",
+    "full": "Full",
+    "nothing_perceived": "Nothing perceived (this viewpoint perceived none of these beats)",
+    "bypassed_by_player_view": (
+        "Bypassed by player view: every beat in full, marked with what this character would "
+        "have perceived"
+    ),
+}
+
+
+def audience_filter_label(value: str) -> tuple[str, str]:
+    """``(label, raw)`` for a history read's ``audience_filter``; an unknown value humanised
+    (C3)."""
+    return AUDIENCE_FILTER_LABELS.get(value) or humanised(value), value
+
+
+@dataclass(frozen=True)
+class FidelityBadge:
+    """How the viewpoint perceived a beat, when not in full: the badge's text and ``title``,
+    and the class added to the item's row (``""``: none)."""
+
+    text: str
+    title: str
+    row_class: str = ""
+
+
+FIDELITY_BADGES: dict[str, FidelityBadge] = {
+    ENVELOPE: FidelityBadge(
+        "envelope",
+        "This character perceived only that it happened; the text is the envelope",
+        "fidelity-envelope",
+    ),
+    NOT_PERCEIVED: FidelityBadge(
+        "not perceived",
+        "Shown because player view is story; this character did not perceive this beat",
+        "fidelity-none",
+    ),
+}
+
+
+def fidelity_badge(value: str | None) -> FidelityBadge | None:
+    """``None`` for ``content`` or no fidelity; an unknown value's badge is humanised (C3),
+    titled with the raw value, with no row class."""
+    if not value or value == "content":
+        return None
+    return FIDELITY_BADGES.get(value) or FidelityBadge(humanised(value), value)
+
+
+def narrated_label(item: HistoryItem, labels: Mapping[str, str]) -> str:
+    """The Actor column: the actor's label ("—" when none), then " (narrated by <name>)" for a
+    narrated item: the narrator's cast label (a short id outside the cast, C4), or "the player"
+    (C16)."""
+    actor = _label(item.actor_character_id, labels) if item.actor_character_id else "—"
+    if not item.narrated_by:
+        return actor
+    narrator = (
+        "the player"
+        if item.narrated_by == PLAYER_NARRATOR
+        else character_label(item.narrated_by, labels)
+    )
+    return f"{actor} (narrated by {narrator})"
+
+
 # --- Turn groups --------------------------------------------------------------------------------
 
 
@@ -240,6 +314,8 @@ class Row:
     same_message: bool = False  # shares message_id with the row before it (say + do)
     feedback: FeedbackWidget | None = None  # the "Rate" control (#83, set by the view)
     trace: BeatTrace | None = None  # a structured beat's trace (#147, set by the view)
+    fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62)
+    reaction: bool = False  # narrated by a primary, not the player (#202, #201's rule)
 
 
 @dataclass
@@ -250,6 +326,9 @@ class TurnGroup:
     audit: list[AuditRecord] = field(default_factory=list)
     no_reply: bool = False
     explain_url: str | None = None  # "Explain retrieval" (#142, set by the view)
+    perception_url: str | None = None  # "Perception" (#195, set by the view)
+    render_order: str = ""  # "Renders: A → B" for a multi-render turn (#202)
+    report_url: str | None = None  # "Report" (#203, set by the view): the play inspector
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:
@@ -272,7 +351,10 @@ def turn_groups(
     """The page's turns in ascending order. Audit records render under their turn only for
     turns on this page (an erasure marker with no turn under turn 0, which only the oldest page
     holds). A turn ≥ 1 with no reply item says "no reply" (not while an actor filter is
-    set)."""
+    set). #202: a reaction row is marked, and a group's render order comes from its first
+    ``message_rendered`` row on this page."""
+    from console.renders import is_reaction, render_order_line  # console.renders imports us
+
     groups: dict[tuple[int, int | None], TurnGroup] = {}
 
     def group(turn: int, variant: int | None) -> TurnGroup:
@@ -290,10 +372,20 @@ def turn_groups(
             and previous.message_id == item.message_id
             and previous.turn == item.turn
         )
-        actor = _label(item.actor_character_id, labels) if item.actor_character_id else "—"
         render = tuple(_label(c, labels) for c in item.render_character_ids or ())
-        row = Row(item, actor, render, links.get(item.operation_id), same)
-        group(item.turn or 0, item.variant).rows.append(row)
+        row = Row(
+            item,
+            narrated_label(item, labels),
+            render,
+            links.get(item.operation_id),
+            same,
+            fidelity=fidelity_badge(item.fidelity),
+            reaction=is_reaction(item),
+        )
+        owner = group(item.turn or 0, item.variant)
+        if item.kind == REPLY_KIND and not any(r.item.kind == REPLY_KIND for r in owner.rows):
+            owner.render_order = render_order_line(item, labels)
+        owner.rows.append(row)
         previous = item
     by_turn: dict[int, TurnGroup] = {}
     for g in groups.values():
@@ -395,10 +487,12 @@ EN_DASH = "\u2013"  # between the bounds of "(invalid span 12-40)"
 
 @dataclass(frozen=True)
 class LabelTag:
-    """One utterance label as a tag: the humanised value, ``title`` "intent: sincere"."""
+    """One utterance label as a tag: the humanised value, ``title`` "intent: sincere";
+    ``css_class`` is added after ``beat-label`` (the classification tag's, a corrected intent's)."""
 
     text: str
     title: str
+    css_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -469,15 +563,45 @@ class BeatTrace:
     def beat_known(self) -> bool:
         return self.item.beat is not None
 
+    @property
+    def classified(self) -> bool:
+        """A classification tag is shown: the legend explains it (#207)."""
+        return any(t.css_class.startswith(CLASSIFICATION_CLASS) for t in self.tags)
+
+
+CLASSIFICATION_CLASS = "beat-classification"
+CORRECTED_CLASS = "intent-corrected"
+CORRECTED_SUFFIX = " (corrected)"
+CORRECTED_TITLE = (
+    "intent: {raw} — declared deceptive; relabelled sincere because the speaker's beliefs "
+    "support it"
+)
+
 
 def label_tags(labels: UtteranceLabels) -> tuple[LabelTag, ...]:
-    """Intent · belief · objective, humanised (convention 5), the raw value in ``title``."""
-    pairs = (
-        ("intent", labels.intent),
-        ("belief", labels.belief_relation),
-        ("objective", labels.objective_relation),
-    )
-    return tuple(LabelTag(humanised(value), f"{name}: {value}") for name, value in pairs)
+    """Intent · belief · objective, humanised (convention 5), the raw value in ``title``; then,
+    when the Engine classified the say (#207, omniscient reads only), its classification
+    (humanised, C3; ``title`` "classification: lie", class ``beat-classification
+    classification-<slug>``). An ``intent_corrected`` intent reads "Sincere (corrected)"."""
+    if labels.intent_corrected:
+        intent = LabelTag(
+            humanised(labels.intent) + CORRECTED_SUFFIX,
+            CORRECTED_TITLE.format(raw=labels.intent),
+            CORRECTED_CLASS,
+        )
+    else:
+        intent = LabelTag(humanised(labels.intent), f"intent: {labels.intent}")
+    tags = [
+        intent,
+        LabelTag(humanised(labels.belief_relation), f"belief: {labels.belief_relation}"),
+        LabelTag(humanised(labels.objective_relation), f"objective: {labels.objective_relation}"),
+    ]
+    raw = labels.classification
+    if raw:
+        slug = slugify(raw)
+        css = f"{CLASSIFICATION_CLASS} classification-{slug}" if slug else CLASSIFICATION_CLASS
+        tags.append(LabelTag(humanised(raw), f"classification: {raw}", css))
+    return tuple(tags)
 
 
 def valid_span(claim: DetectedClaim, text: str) -> bool:
@@ -541,6 +665,16 @@ def turn_label(turn: int | None, variant: int | None) -> str:
     return f"{label}.{variant}" if variant and variant != 1 else label
 
 
+def report_item(items: Sequence[HistoryItem]) -> HistoryItem | None:
+    """#203: a turn group's chosen item (its last reply item, else its last item) when it was
+    generated with an operation id, which its "Report" link opens; else ``None``."""
+    replies = [item for item in items if is_reply(item)]
+    chosen = (replies or list(items))[-1:]
+    if not chosen or chosen[0].origin != "generated" or not chosen[0].operation_id:
+        return None
+    return chosen[0]
+
+
 def inspector_url(story_id: str, item: HistoryItem) -> str:
     """The turn selected in the play page's inspector, where #139's trace block reads it."""
     base = reverse("stories:detail", args=[story_id])
@@ -594,11 +728,11 @@ def beat_trace(
     inspector_hint: bool = False,
     open_trace: bool = False,
 ) -> BeatTrace | None:
-    """``None`` for an item that isn't a structured beat (``propositions`` absent). Otherwise
+    """``None`` for an item that isn't a structured beat (:func:`is_structured`). Otherwise
     the beat's trace. ``state`` is the caller's (:data:`NOT_LOADED`, :data:`UNAVAILABLE`) when
     there is no ``trace``; with one it follows the read (withheld: unavailable; no hooks;
     loaded). An ingested item is always :data:`NO_TRACE`."""
-    if item.propositions is None:
+    if not is_structured(item):
         return None
     names = cast_names or {}
     labels = UtteranceLabels.from_json(item.labels) if item.labels is not None else None
@@ -653,8 +787,10 @@ def beat_trace(
 
 
 def is_structured(item: HistoryItem) -> bool:
-    """A structured beat: ``propositions`` is set (possibly ``[]``)."""
-    return item.propositions is not None
+    """A structured beat with a trace: ``propositions`` is set (possibly ``[]``) and the beat
+    isn't an envelope (#62: the Engine sends an envelope with ``propositions: []`` and no
+    labels; it reads as plain text)."""
+    return item.propositions is not None and item.fidelity != ENVELOPE
 
 
 def summary_rows(segments: Sequence[SummarySegment] | None) -> list[SummarySegment]:

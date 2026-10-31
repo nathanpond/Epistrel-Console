@@ -1,8 +1,10 @@
 {% load console_format %}{% comment %}
 One Counts row of the Memory tab (#140, console.hot_set.CountRow): a character, or the Story
-vectors row (character_id empty). Stored is "not stored yet" when the Engine has stored none.
-{% endcomment %}<td>{% if row.character_id %}{% include "console/inspect/_character.html" with label=row.label character_id=row.character_id is_player=row.is_player %}{% else %}{{ row.label }}{% endif %}</td>
+vectors row (character_id empty). Stored is "not stored yet" when the Engine has stored none. A minor
+row (#168) has the "minor" tag and its scaled budget, or (budget None) the fraction-unavailable
+text.
+{% endcomment %}<td>{% if row.character_id %}{% include "console/inspect/_character.html" with label=row.label character_id=row.character_id is_player=row.is_player %}{% if row.minor %} <span class="tag minor">minor</span>{% endif %}{% else %}{{ row.label }}{% endif %}</td>
 <td>{{ row.hot|count }}{% if row.marker %} <strong class="marker">{{ row.marker }}</strong>{% endif %}</td>
-<td>{{ row.budget|count }}</td>
+<td>{% if row.budget is None %}{{ fraction_unavailable }}{% elif row.scaled_from %}{{ row.budget|count }} <small title="max(1, ⌊budget × fraction⌋), as the Engine computes it">(minor: {{ row.scaled_from.0|count }} × {{ row.fraction_text }})</small>{% else %}{{ row.budget|count }}{% endif %}</td>
 <td>{{ row.headroom }}</td>
 <td>{% if row.stored is None %}not stored yet{% else %}{{ row.stored|count }}{% if row.differs %} <strong class="marker">{{ row.differs }}</strong>{% endif %}{% endif %}</td>
