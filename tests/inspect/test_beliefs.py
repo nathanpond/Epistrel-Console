@@ -302,9 +302,10 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
         "Until",
         "About story-time",
         "Canon",  # #191
+        "Actions",  # #194's Change…
         "More",
     ]
-    assert 'class="actions"' not in html
+    assert html.count('<td class="actions">') == html.count('class="belief-row"')
 
 
 def test_column_hooks_render_canon_and_actions() -> None:

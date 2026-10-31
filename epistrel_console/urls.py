@@ -180,6 +180,9 @@ inspect_patterns = (
         path("knowledge/", inspect.knowledge, name="knowledge"),
         # #190: one character's beliefs (its partition) and the identities it holds.
         path("knowledge/beliefs/", inspect_beliefs.beliefs, name="beliefs"),
+        # #194: direct a belief (first-order or nested) and its result page again.
+        path("knowledge/beliefs/direct/", inspect_beliefs.direct, name="belief-direct"),
+        path("knowledge/beliefs/written/", inspect_beliefs.written, name="belief-written"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

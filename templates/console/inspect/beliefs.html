@@ -4,7 +4,8 @@ The Knowledge tab's Beliefs section (#190): the GET filters (names = the Engine'
 Apply carries no cursor), then one page of GET /stories/{id}/inspect/beliefs
 (viewpoint=omniscient, limit=100) for one character: the header and count lines, the notices,
 #191's canon notices and summary line, the rows (_belief_row.html, Engine order; #191's Canon
-column) and the paging links, then the Identities section.
+column) and the paging links, then the Identities section. #194: "Direct a belief…" under the header line (direct_url),
+and each row's Change… (actions = _belief_actions.html, actions_holder).
 The filters and their errors stay above every error (convention 10); an invalid filter makes no
 beliefs call. Context from console/views/inspect_beliefs.py, wording from console/beliefs.py.
 {% endcomment %}
@@ -21,6 +22,7 @@ beliefs call. Context from console/views/inspect_beliefs.py, wording from consol
 
 {% if prompt %}<p class="none beliefs-prompt">{{ prompt }}</p>{% endif %}
 {% if header %}<h3 class="beliefs-header">{{ header }}</h3>{% endif %}
+<p class="direct-belief"><a href="{{ direct_url }}">Direct a belief…</a></p>
 {% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
 {% elif beliefs_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
 {% elif beliefs_error %}{% include "console/_engine_error.html" with engine_error=beliefs_error %}

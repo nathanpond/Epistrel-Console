@@ -1784,3 +1784,33 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added `{% canon_filter_url subject predicate %}` in canon_tags for the "+N more" link; fact links reuse `{% lineage_url %}`.
   **Why:** Templates can't call the URL helpers with arguments.
   **Issue:** #191
+- **Decision:** A nested result whose recorded request has no parseable `attributed_to` reads "Nested: <holder> thinks … <attributed holder> believes it (depth N, chain not recorded)".
+  **Why:** Pass 2 gives both "(depth N)" and "(chain not recorded)"; one parenthesis keeps it readable.
+  **Issue:** #194
+- **Decision:** `closed` is read item by item only on `?report=` (`parse_written` in the view; non-id items raw in More); the POST render uses the client's strict `BeliefWritten`.
+  **Why:** C2 asks for leniency, C15 says the Engine always sends `list[str]`; #186's model stays untouched.
+  **Issue:** #194
+- **Decision:** A gated POST shows #188's refusal above the form together with the form's own field errors; neither path writes.
+  **Why:** "All errors show together"; the gate check needs no Engine call beyond the shell's config read.
+  **Issue:** #194
+- **Decision:** A 409 `module_off` naming `nested_beliefs` rebuilds the form with `module_off_unavailable(exc, Tab.KNOWLEDGE, effective)` as its gate, so the fieldset greys with the same reason shown above the form.
+  **Why:** The AC's "re-rendered fieldset is greyed (the config read is stale)".
+  **Issue:** #194
+- **Decision:** The write sends the posted key; every rendered form (GET, local refusal, Engine refusal) carries a fresh `new_ulid()`.
+  **Why:** AC: "every render, refused or not, mints a fresh one".
+  **Issue:** #194
+- **Decision:** Attributed-to selects also keep a posted id outside the cast as an extra option (C13's pattern), as Holder does.
+  **Why:** Refusals must keep every input; otherwise a tampered or stale id would silently drop from the select.
+  **Issue:** #194
+- **Decision:** On the direct and result pages no Knowledge sub-section is marked active; each page has its own `<h3>` heading ("Direct a belief", "Belief written") under #189's shell.
+  **Why:** The AC only asks for the Knowledge tab selected; marking Beliefs active would also print its `<h2>`.
+  **Issue:** #194
+- **Decision:** More's raw response is the #44 row's stored response, falling back to the parsed answer when no row was recorded.
+  **Why:** Convention 13's raw answer; the row is what `?report=` shows too.
+  **Issue:** #194
+- **Decision:** Depth values the schema forbids (9, `True`) are covered by a `nested_depth` unit test, not page tests.
+  **Why:** The schema-validating fake refuses them (C15); the clamp and the int-only rule are still tested.
+  **Issue:** #194
+- **Decision:** Updated #190's `test_column_order`: the Actions column and a Change… cell per row are now expected.
+  **Why:** #194 fills #190's `actions` hook by design; not a weakening.
+  **Issue:** #194

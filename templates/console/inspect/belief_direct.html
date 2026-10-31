@@ -1,0 +1,39 @@
+{% extends "console/inspect/knowledge.html" %}{% load inspect_tags %}
+{% comment %}
+Direct a belief (#194, console/views/inspect_beliefs.py's direct), in the Knowledge tab:
+console.forms.beliefs.DirectBeliefForm, POSTing to inspect:belief-direct. A refusal, #188's gate
+refusal or #43's panel stays above the form; the result page (belief_written.html) replaces this
+page on success. The Nested fieldset is greyed (never hidden) when the nested_beliefs gate is
+closed (nested_gate, #188's gate_attrs and _gated_control.html). Context: form, idempotency_key
+(fresh on every render), action_url, back_url, predicates_url, cast_unavailable, prefill_failed,
+nested_gate, nested_legend, nested_line, not_readable, refusal and refusal_url, write_error.
+{% endcomment %}
+{% block title %}Inspect · Direct a belief · {{ story_name }}{% endblock %}
+{% block knowledge_content %}
+<p class="beliefs-back"><a href="{{ back_url }}">Back to beliefs</a></p>
+<h3 class="belief-direct">Direct a belief</h3>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if prefill_failed %}<p class="notice prefill-failed">{{ prefill_failed }}</p>{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist belief-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">See the check</a>{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="belief-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  <div class="field field-holder">{{ form.holder.label_tag }} {{ form.holder }}{{ form.holder.errors }}</div>
+  <div class="field field-proposition">{{ form.proposition.label_tag }} {{ form.proposition }} <small class="muted"><a href="{{ predicates_url }}">Predicate ids are on the Predicates tab</a></small>{{ form.proposition.errors }}</div>
+  <div class="field field-polarity">{{ form.polarity.label_tag }} {{ form.polarity }} <small class="muted">{{ form.polarity.help_text }}</small>{{ form.polarity.errors }}</div>
+  <div class="field field-confidence_level">{{ form.confidence_level.label_tag }} {{ form.confidence_level }}{{ form.confidence_level.errors }}</div>
+  <div class="field field-confidence_scalar">{{ form.confidence_scalar.label_tag }} {{ form.confidence_scalar }} <small class="muted">{{ form.confidence_scalar.help_text }}</small>{{ form.confidence_scalar.errors }}</div>
+  <div class="field field-disclosure">{{ form.disclosure.label_tag }} {{ form.disclosure }}{{ form.disclosure.errors }}</div>
+  <fieldset class="belief-nested"{{ nested_gate|gate_attrs:"gate-nested" }}><legend>{{ nested_legend }}</legend>
+    {% include "console/_gated_control.html" with gate=nested_gate gate_id="gate-nested" %}
+    <p class="nested-line">{{ nested_line }} <small class="muted">(outermost first)</small></p>
+    {% if form.nested_errors %}<ul class="errorlist nested-errors">{% for error in form.nested_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    {% for field in form.attributed_fields %}<div class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{{ field.errors }}</div>
+    {% endfor %}<div class="field field-attributed_confidence_level">{{ form.attributed_confidence_level.label_tag }} {{ form.attributed_confidence_level }}{{ form.attributed_confidence_level.errors }}</div>
+    <p class="notice not-readable">{{ not_readable }}</p>
+  </fieldset>
+  <p><button type="submit" class="belief-write">Write belief</button> <a href="{{ back_url }}">Cancel</a></p>
+</form>
+{% endblock %}
