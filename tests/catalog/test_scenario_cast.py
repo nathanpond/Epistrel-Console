@@ -1140,6 +1140,39 @@ def test_group_name_rules_refused_locally(
     ]
 
 
+def test_a_fully_blank_group_row_is_dropped(operator_client: Client, engine: FakeEngine) -> None:
+    """#222: a group row with a whitespace-only name and no members sends nothing."""
+    data = with_rows(m5_form(operator_client, engine), "grp", [{"name": "   "}])
+    assert data["grp-TOTAL_FORMS"] == "3"
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 302
+    assert writes(engine) == []
+
+
+@pytest.mark.parametrize("button", ["refresh", "add:grp"])
+def test_group_and_nested_checks_stay_quiet_until_save(
+    operator_client: Client, engine: FakeEngine, button: str
+) -> None:
+    """#220: a reserved group name and a half-filled nested seed raise no error on "Update
+    form" or a row button; Save refuses both, all without an Engine call."""
+    data = with_rows(m5_form(operator_client, engine), "grp", [{"name": "self"}])
+    data["role-1-seed-0-nested__attributed_holder"] = "alice"  # no proposition
+    data["op"] = button
+    response = operator_client.post(EDIT, as_post(data))
+    assert response.status_code == 200
+    assert engine.requests == []
+    cast = response.context["editor"].cast
+    assert all(form.errors == {} for form in cast.groups.forms)
+    assert all(form.errors == {} for seeds in cast.seed_sets for form in seeds.forms)
+    assert "self is an audience level" not in response.content.decode()
+    response = saved(operator_client, posted(response))
+    assert engine.requests == []
+    assert group_errors(response, 2) == {"name": ["self is an audience level"]}
+    assert seed_errors(response, 1, 0) == {
+        "nested__proposition": ["A nested belief needs both the role and what it believes"]
+    }
+
+
 def test_audience_offers_groups_and_rehomes_a_renamed_group(
     operator_client: Client, engine: FakeEngine
 ) -> None:
@@ -1173,6 +1206,19 @@ def test_audience_offers_groups_and_rehomes_a_renamed_group(
     seeds = valid_changes(engine)["cast"]["roles"][0]["seeded_memories"]
     assert seeds[0]["audience"] == ["family", "alice"]
     assert seeds[1]["audience"] == ["alice", "family"]
+
+
+def test_believes_that_offers_none_and_the_roles_never_world(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#221: the nested seed's "Believes that…" offers (none) plus the role ids, on a role
+    seed and a world seed alike, never ``world``."""
+    cast = m5_page(operator_client, engine).context["editor"].cast
+    expected = [("", "(none)"), ("alice", "alice"), ("bob", "bob"), ("carol", "carol")]
+    for form in (cast.seed_sets[0].forms[3], cast.seed_sets[1].forms[0], *cast.world.forms):
+        choices = list(form.fields["nested__attributed_holder"].choices)
+        assert choices == expected
+        assert "world" not in [value for value, _ in choices]
 
 
 def test_seed_confidence_unset_sends_no_key(operator_client: Client, engine: FakeEngine) -> None:
