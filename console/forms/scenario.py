@@ -95,6 +95,7 @@ from console.formset_rows import OP_ADD, Op, apply_op
 from console.reports import field_anchor
 from console.story_settings import (
     BOOLEAN_SELECT,
+    CO_AUTHOR_KNOWLEDGE_HELP,
     LABELS,
     NULL_DEFAULT_TEXT,
     SETTING_CHOICES,
@@ -157,11 +158,14 @@ SETTING_ENUMS: dict[str, tuple[str, ...]] = {
     "turn_concurrency": ("reject", "queue"),
     "player_view": ("character", "story"),
     "sequence_order": ("request", "director"),
+    "co_author_knowledge": ("confirm", "free"),
 }
-# Engine M5's defaults (#198): C7 choices (#197) instead of "(deployment default)" and " (unknown)".
-C7_SETTINGS = frozenset({"player_view", "sequence_order"})
+# M5's and M6's defaults (#198, #233): C7 choices (#197) instead of "(deployment default)" and
+# " (unknown)".
+C7_SETTINGS = frozenset({"player_view", "sequence_order", "co_author_knowledge"})
 # Each C7 field's "Engine default (<text>)" (the tie-break and interjections included).
 C7_DEFAULTS = {
+    "co_author_knowledge": "confirm",
     "player_view": "character",
     "sequence_order": NULL_DEFAULT_TEXT["sequence_order"],
     "simultaneous_tie_break": NULL_DEFAULT_TEXT["simultaneous_tie_break"],
@@ -838,12 +842,14 @@ def _enum(label: str, values: tuple[str, ...]) -> forms.ChoiceField:
     return forms.ChoiceField(label=label, required=False, choices=_enum_choices(values))
 
 
-def _c7(name: str, choices: list[tuple[str, str]]) -> forms.ChoiceField:
-    """An M5 default (#198): C7's "Engine default (<text>)" first, then #197's choices."""
+def _c7(name: str, choices: list[tuple[str, str]], *, help_text: str = "") -> forms.ChoiceField:
+    """An M5 or M6 default (#198, #233): C7's "Engine default (<text>)" first, then #197's
+    choices."""
     return forms.ChoiceField(
         label=LABELS[name],
         required=False,
         choices=[engine_default_choice(C7_DEFAULTS[name]), *choices],
+        help_text=help_text,
     )
 
 
@@ -878,6 +884,11 @@ def _fields() -> dict[str, forms.Field]:
         ),
         f"{settings}__player_authority": _enum(
             "Player authority", SETTING_ENUMS["player_authority"]
+        ),
+        f"{settings}__co_author_knowledge": _c7(
+            "co_author_knowledge",
+            SETTING_CHOICES["co_author_knowledge"],
+            help_text=CO_AUTHOR_KNOWLEDGE_HELP,
         ),
         f"{settings}__player_view": _c7("player_view", SETTING_CHOICES["player_view"]),
         f"{settings}__sequence_order": _c7("sequence_order", SETTING_CHOICES["sequence_order"]),

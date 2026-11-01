@@ -2,7 +2,7 @@
 
 One page with sections, each read separately so a failed read degrades only its section (#43):
 
-- **Settings**: the thirteen settable story settings with their "story" / "default" markers
+- **Settings**: the fourteen settable story settings with their "story" / "default" markers
   (:mod:`console.story_settings`; the multi-character ones name what ``null`` means), a
   reset-to-default per field, and old keys the read still returns under "Other settings". Save
   sends a merge patch of the changed fields only and flashes each change as "<Name>: <value>".

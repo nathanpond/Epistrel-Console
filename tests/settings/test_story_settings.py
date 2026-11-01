@@ -1,5 +1,6 @@
-"""A story's settings (#54, #197): markers, the merge-patch form, resets, errors and the budget,
-and Engine M5's player authority, player view and multi-character settings."""
+"""A story's settings (#54, #197, #233): markers, the merge-patch form, resets, errors and the
+budget, Engine M5's player authority, player view and multi-character settings, and Engine M6's
+co-author knowledge."""
 
 import html as markup
 import re
@@ -10,11 +11,13 @@ from django.test import Client
 
 from console.models import EngineOperation
 from console.story_settings import (
+    CO_AUTHOR_KNOWLEDGE_HELP,
     CONSTANT_DEFAULTS,
     DEPLOYMENT_DEFAULTS,
     NULLABLE,
     POLICIES,
     SETTABLE,
+    SETTING_CHOICES,
     SUPERSEDED,
 )
 from tests.fakes.engine import FakeEngine, recorded_schema
@@ -34,11 +37,6 @@ from tests.settings.helpers import (
     writes,
     written_json,
 )
-
-M6_NOT_YET_EDITABLE = {"co_author_knowledge"}
-"""M6 story settings the recorded ``StorySettingsPatch`` has and no form edits yet: a temporary,
-explicit exemption, not coverage. S14c removes ``co_author_knowledge`` (its form then edits it,
-and the config-change filter's "Other" group empties)."""
 
 
 def _page(client: Client, engine: FakeEngine, **answers: Any) -> str:
@@ -131,7 +129,7 @@ def test_a_failed_deployment_read_marks_unknown_and_the_page_renders(
 def test_the_default_table_matches_the_recorded_settings_patch() -> None:
     patch = recorded_schema()["components"]["schemas"]["StorySettingsPatch"]
     properties = set(patch["properties"])
-    assert properties == {*SETTABLE, POLICIES, *M6_NOT_YET_EDITABLE}
+    assert properties == {*SETTABLE, POLICIES}
     assert set(CONSTANT_DEFAULTS) | set(NULLABLE) == set(SETTABLE)
     assert not set(CONSTANT_DEFAULTS) & set(NULLABLE)
     assert not set(SUPERSEDED) & properties
@@ -450,7 +448,8 @@ def test_new_settings_rows_render_with_default_markers(
 
     rows = re.findall(r'<tr class="setting setting-(\w+)">', html)
     assert rows == list(SETTABLE)
-    assert rows[-6:] == list(M5_KEYS)
+    assert len(rows) == 14
+    assert rows[-7:] == ["player_authority", "co_author_knowledge", *M5_KEYS[1:]]
     assert _marker(html, "player_authority") == "default"
     assert _marker(html, "player_view") == "default"
     assert _marker(html, "interaction_mode") == "default (sequential)"
@@ -796,3 +795,80 @@ def test_note_links_config_without_an_effective_config_read(
         assert "disabled" not in _row(html, name)
     # Complement: no effective-config read.
     assert not any(r.url.path.endswith("/effective-config") for r in engine.requests)
+
+
+# --- #233: Engine M6's co-author knowledge -------------------------------------------------------
+
+
+def test_co_author_knowledge_row_and_marker(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+
+    assert _marker(html, "co_author_knowledge") == "default"
+    assert _options(html, "co_author_knowledge") == [
+        ("confirm", "Confirm (accept, with a notice)"),
+        ("free", "Free (accept, no notice)"),
+    ]
+    assert _selected(html, "co_author_knowledge") == "confirm"
+    assert ">Co-author knowledge</label>" in html
+    assert CO_AUTHOR_KNOWLEDGE_HELP in _row(html, "co_author_knowledge")
+    assert 'name="reset_co_author_knowledge"' not in html
+    # Not greyed (C6 greys only what the Engine refuses).
+    assert "disabled" not in _row(html, "co_author_knowledge")
+
+    engine.reset()
+    html = _page(operator_client, engine, settings=settings_json(co_author_knowledge="free"))
+    assert _marker(html, "co_author_knowledge") == "story"
+    assert _selected(html, "co_author_knowledge") == "free"
+    assert 'name="reset_co_author_knowledge"' in html
+
+
+def test_co_author_knowledge_change_patches_only_it(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json(co_author_knowledge="free"))
+
+    _post(operator_client, html, co_author_knowledge="free")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"co_author_knowledge": "free"}
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Co-author knowledge: Free (accept, no notice))"
+    )
+
+
+def test_co_author_knowledge_reset_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine, settings=settings_json(co_author_knowledge="free"))
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, reset_co_author_knowledge="on")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"co_author_knowledge": None}
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Co-author knowledge: default)"
+    )
+
+
+def test_unknown_stored_value_is_kept(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine, settings=settings_json(co_author_knowledge="strict"))
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    assert _options(html, "co_author_knowledge")[-1] == ("strict", "Strict")
+    assert _selected(html, "co_author_knowledge") == "strict"
+    assert _marker(html, "co_author_knowledge") == "story"
+
+    _post(operator_client, html, regenerate_retry_budget="1")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"regenerate_retry_budget": 1}
+
+
+def test_co_author_knowledge_choices_match_the_schema() -> None:
+    schemas = recorded_schema()["components"]["schemas"]
+    values = [value for value, _ in SETTING_CHOICES["co_author_knowledge"]]
+    patch = schemas["StorySettingsPatch"]["properties"]["co_author_knowledge"]
+    [enum] = [branch["enum"] for branch in patch["anyOf"] if "enum" in branch]
+    assert values == enum
+    assert CONSTANT_DEFAULTS["co_author_knowledge"] == "confirm"
+    assert CONSTANT_DEFAULTS["co_author_knowledge"] in enum

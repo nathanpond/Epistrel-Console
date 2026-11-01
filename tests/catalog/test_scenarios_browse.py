@@ -202,10 +202,29 @@ def test_the_detail_shows_every_section(operator_client: Client, engine: FakeEng
     assert 'href="/catalog/scenarios/01JC000000000000000000SCN2/edit/"' in html
 
 
+def test_detail_lists_co_author_knowledge(operator_client: Client, engine: FakeEngine) -> None:
+    """#233: "Co-author knowledge" with ``setting_label``, right after Player authority; ``None``
+    reads "—"."""
+    body = detail()
+    body["story_settings_defaults"]["co_author_knowledge"] = "free"
+    engine.respond("GET", S_ITEM, 200, json=body)
+    html = detail_page(operator_client, engine)
+    section = html[html.index('<section id="story-settings-defaults">') :]
+    section = section[: section.index("</dl>")]
+    rows = re.findall(r"<dt>([^<]*)</dt><dd>([^<]*)</dd>", section)
+    labels = [label for label, _ in rows]
+    start = labels.index("Player authority")
+    assert rows[start + 1] == ("Co-author knowledge", "Free (accept, no notice)")
+    engine.reset()
+    body["story_settings_defaults"]["co_author_knowledge"] = None
+    engine.respond("GET", S_ITEM, 200, json=body)
+    assert "Co-author knowledge —" in text(detail_page(operator_client, engine))
+
+
 def test_detail_lists_the_new_story_setting_defaults(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """#198: four rows after Player authority, before Turn concurrency."""
+    """#198 and #233: five rows after Player authority, before Turn concurrency."""
     body = detail()
     body["story_settings_defaults"].update(
         player_view="story", simultaneous_tie_break="state:initiative", reactive_interjections=True
@@ -217,7 +236,8 @@ def test_detail_lists_the_new_story_setting_defaults(
     rows = re.findall(r"<dt>([^<]*)</dt><dd>([^<]*)</dd>", section)
     labels = [label for label, _ in rows]
     start = labels.index("Player authority")
-    assert rows[start + 1 : start + 6] == [
+    assert rows[start + 1 : start + 7] == [
+        ("Co-author knowledge", "—"),
         ("Player view (where perception is on)", "Story (every beat in full)"),
         ("Sequence order (sequential turns)", "—"),
         ("Tie-break (simultaneous turns)", "state:initiative (M6: request order applies)"),

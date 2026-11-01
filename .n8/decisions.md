@@ -2326,3 +2326,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The anchor in `m6/clock.json` is anchored at offset 130 (turn 3, beat 2), so its components and `display` are "now"'s, matching the AC's fixed `display`; components follow `Anchor.document()` at origin/main (`hour` a `[5, 11]` range, `segments` `[[0, 300, 720]]`), and the calendar is `{"kind": "gregorian"}`.
   **Why:** D18 says the anchor's components are the anchoring offset's; anchoring at the clock's own offset keeps the fixture consistent with the required "+02h 10m (Saturday, between 05:00 and 12:00 (morning))".
   **Issue:** #232
+- **Decision:** `CREATION_HELP["co_author_knowledge"]` in `console/forms/stories.py` repeats `CO_AUTHOR_KNOWLEDGE_HELP`'s text instead of importing it; `test_new_story_sends_co_author_knowledge_only_when_chosen` pins the rendered help to the constant.
+  **Why:** `console.forms.stories` must not import `console.story_settings` at load time: the module's own import note records a cycle through `console.engine_access` and `console.wording`. The pin test means the copy can't drift.
+  **Issue:** #233
+- **Decision:** `test_detail_lists_co_author_knowledge` is in `tests/catalog/test_scenarios_browse.py`, beside the #198 detail test (whose expected rows now include "Co-author knowledge" first), not in `test_scenarios_edit.py`.
+  **Why:** The scenario detail page's helpers (`detail`, `detail_page`) and its existing settings-row test live in the browse file. Only the file differs from the test plan.
+  **Issue:** #233
+- **Decision:** `test_co_author_knowledge_round_trips` asserts that `draft_to_write` carries the draft's `free`, that the editor reads it back selected, that an unrelated save leaves it out of the merge patch, that choosing `free` or an explicit `confirm` sends it, and that Engine default over a stored value sends `null`. Run against the pre-fix source, it failed (`KeyError: 'co_author_knowledge'`).
+  **Why:** The editor saves a key-level merge patch, so "dropping" meant the round trip left the key out of the write shape and the form. The test pins the write shape and both directions of the select.
+  **Issue:** #233
+- **Decision:** `tests/settings/helpers.py`'s `M5_READ_DEFAULTS` gains `"co_author_knowledge": "confirm"`. `test_create.py`'s `SIX` becomes `SEVEN` with it second, so the parametrised 422-placement case covers it too, and `CREATION_ERROR_PATHS` counts 9. One `engine_live` case (`test_co_author_knowledge_live`: default → free → story → reset → default) is added.
+  **Why:** This is the test upkeep the story's Claude's Discretion lines prescribe. The recorded fixtures predate M6 and lack the key, so an untouched form would otherwise send `confirm`.
+  **Issue:** #233

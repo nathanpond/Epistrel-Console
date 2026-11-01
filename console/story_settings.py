@@ -1,8 +1,9 @@
 """A story's settings as the settings page shows them (#54): which fields the Console edits, what
 each one's default is, and whether the story overrides it.
 
-The page edits thirteen settable settings: #54's seven and Engine M5's six (#197: player
-authority, player view and the multi-character settings). The Engine's settings read fills
+The page edits fourteen settable settings: #54's seven, Engine M5's six (#197: player
+authority, player view and the multi-character settings) and Engine M6's one (#233: co-author
+knowledge, FR-RESP-14). The Engine's settings read fills
 defaults in and carries no override marker, so the marker is worked out here (planner, replan
 2026-10-24):
 
@@ -46,6 +47,7 @@ SETTABLE = (
     "audit_retention_days",
     "allow_new_arrivals",
     "player_authority",
+    "co_author_knowledge",
     "player_view",
     "interaction_mode",
     "sequence_order",
@@ -59,6 +61,7 @@ CONSTANT_DEFAULTS: dict[str, Any] = {
     "regenerate_retry_budget": 2,
     "allow_new_arrivals": True,
     "player_authority": "own_character",
+    "co_author_knowledge": "confirm",
     "player_view": "character",
     "reactive_interjections": False,
 }
@@ -85,6 +88,7 @@ LABELS = {
     "audit_retention_days": "Audit retention (days)",
     "allow_new_arrivals": "Allow new arrivals — used by structured-pipeline stories",
     "player_authority": "Player authority",
+    "co_author_knowledge": "Co-author knowledge",
     "player_view": "Player view (where perception is on)",
     "interaction_mode": "Interaction mode",
     "sequence_order": "Sequence order (sequential turns)",
@@ -110,11 +114,16 @@ BUDGET_SOURCES = {
 
 ENGINE_DEFAULT = ""
 BOOLEAN_SELECT = [("false", "Off"), ("true", "On")]
-# Each M5 setting's explicit choices (never an Engine-default entry); #198 reuses them.
+# Each of M5's and M6's settings' explicit choices (never an Engine-default entry); #198 and
+# #233 reuse them.
 SETTING_CHOICES: dict[str, list[tuple[str, str]]] = {
     "player_authority": [
         ("own_character", "Own character only"),
         ("co_author", "Co-author (may narrate others' observable actions)"),
+    ],
+    "co_author_knowledge": [
+        ("confirm", "Confirm (accept, with a notice)"),
+        ("free", "Free (accept, no notice)"),
     ],
     "player_view": [
         ("character", "Character (audience-filtered)"),
@@ -125,6 +134,10 @@ SETTING_CHOICES: dict[str, list[tuple[str, str]]] = {
     "simultaneous_tie_break": [("request_order", "Request order"), ("director", "Director")],
     "reactive_interjections": BOOLEAN_SELECT,
 }
+# When co-author knowledge matters (#233): the settings, new-story and scenario forms' help.
+CO_AUTHOR_KNOWLEDGE_HELP = (
+    "Only under Co-author player authority with per-character partitions on; no effect under Lite."
+)
 # The Engine's ``state:<name>`` tie-break (M6; 422 ``not_yet`` until then).
 STATE_TIE_BREAK = re.compile(r"^state:[a-z][a-z0-9_]{0,63}$")
 INTERACTION_MODES = ("sequential", "simultaneous")

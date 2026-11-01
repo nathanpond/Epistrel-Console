@@ -917,6 +917,37 @@ def test_scenario_form_enums_match_the_schema() -> None:
         assert enum(settings[name]) == list(values), name
 
 
+def test_co_author_knowledge_enums_match_the_schema() -> None:
+    """#233: every surface's co-author knowledge values are the recorded enum, and the creation
+    default is the Engine's."""
+    from console.forms.scenario import C7_DEFAULTS, C7_SETTINGS
+    from console.forms.stories import CREATION_SETTINGS
+    from console.forms.story_from_scenario import OVERRIDE_TYPES
+    from console.story_settings import CONSTANT_DEFAULTS, SETTING_CHOICES
+
+    schemas = DOC["components"]["schemas"]
+
+    def enum(node: dict[str, typing.Any]) -> list[str]:
+        options = node.get("anyOf") or [node]
+        (values,) = [o["enum"] for o in options if "enum" in o]
+        return list(values)
+
+    defaults = schemas["StorySettingsDefaults"]["properties"]["co_author_knowledge"]
+    override = OVERRIDE_TYPES["story_settings_defaults.co_author_knowledge"]
+    assert override.kind == "enum"
+    assert list(override.options) == enum(defaults)
+    assert "co_author_knowledge" in C7_SETTINGS
+    choices = [value for value, _ in SETTING_CHOICES["co_author_knowledge"]]
+    assert choices == enum(schemas["StorySettingsPatch"]["properties"]["co_author_knowledge"])
+    creation = schemas["CreationSettings"]["properties"]["co_author_knowledge"]
+    assert "anyOf" not in creation  # a plain enum: never null at creation
+    assert choices == enum(creation)
+    default = creation["default"]
+    assert CONSTANT_DEFAULTS["co_author_knowledge"] == default
+    assert CREATION_SETTINGS["co_author_knowledge"] == default
+    assert C7_DEFAULTS["co_author_knowledge"] == default
+
+
 def test_tie_break_choices_match_the_schema_pattern() -> None:
     """#198: the one tie-break list both forms offer fits both schemas' pattern."""
     import re

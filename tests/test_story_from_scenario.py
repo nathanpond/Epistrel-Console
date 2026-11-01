@@ -565,6 +565,31 @@ def test_overrides_send_only_changed_allowed_paths(client: Client, engine: FakeE
     }
 
 
+def test_co_author_knowledge_override_is_a_select(client: Client, engine: FakeEngine) -> None:
+    """#233: the override row is a select of the two values, not a JSON box."""
+    body = scenario()
+    path = "story_settings_defaults.co_author_knowledge"
+    body["creation_rules"]["overridable"] = [path, *OVERRIDABLE]
+    response = step2(client, engine, body)
+    html = response.content.decode()
+    select = re.search(r'<select name="ovr-0"[^>]*>(.*?)</select>', html, re.S)
+    assert select is not None
+    values = re.findall(r'<option value="([^"]*)"', select.group(1))
+    assert values == ["", "confirm", "free"]
+    assert '<textarea name="ovr-0"' not in html
+
+    engine.respond("POST", STORIES, 201, json=created())
+    client.post(URL, filled(response, ovr__0="free"))
+    assert sent(posts(engine)[0])["overrides"] == {path: "free"}
+
+    # Complement: untouched, the path is absent from the body.
+    engine.reset()
+    response = step2(client, engine, body)
+    engine.respond("POST", STORIES, 201, json=created())
+    client.post(URL, filled(response))
+    assert path not in sent(posts(engine)[0]).get("overrides", {})
+
+
 def test_unchanged_overrides_send_nothing_and_default_sends_null(
     client: Client, engine: FakeEngine
 ) -> None:

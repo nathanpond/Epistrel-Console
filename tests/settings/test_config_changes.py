@@ -21,7 +21,6 @@ from tests.settings.helpers import (
     section,
     story_json,
 )
-from tests.settings.test_story_settings import M6_NOT_YET_EDITABLE  # S14c deletes it
 
 CHANGES_PATH = f"/stories/{STORY}/config-changes"
 
@@ -127,9 +126,10 @@ def test_the_groups_cover_the_recorded_enum() -> None:
     assert "engine_profile_version_pin" in {value for value, _ in groups["Rating and profile"]}
     # M6's creation-time ``required_providers`` (no PATCH sets it) has a group of its own.
     assert {value for value, _ in groups["Providers"]} == {"required_providers"}
-    # Every other recorded name has a group: the M5 settings fall under "Settings" (#197), and
-    # "Other" is exactly the M6 settings no form edits yet (S14c removes them, emptying it).
-    assert {value for value, _ in groups["Other"]} == M6_NOT_YET_EDITABLE
+    # Every other recorded name has a group: the M5 settings and M6's co-author knowledge fall
+    # under "Settings" (#197, #233), so no "Other" group renders.
+    assert "co_author_knowledge" in {value for value, _ in groups["Settings"]}
+    assert "Other" not in groups
     # ``participation:<id>`` is a prefixed key (the recorded pattern), not an enum value.
     assert not any(value.startswith("participation:") for value in grouped)
     accepted = setting_filter(RECORDED, "/stories/{story_id}/config-changes")

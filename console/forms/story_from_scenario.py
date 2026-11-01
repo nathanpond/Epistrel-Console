@@ -172,6 +172,7 @@ OVERRIDE_TYPES: dict[str, OverrideType] = {
     f"{SETTINGS}backfill_conflict_policy": OverrideType(
         "enum", ("last_mention", "first_mention", "ask")
     ),
+    f"{SETTINGS}co_author_knowledge": OverrideType("enum", ("confirm", "free")),
     f"{SETTINGS}default_output_viewpoint": OverrideType("text"),
     f"{SETTINGS}interaction_mode": OverrideType("enum", ("sequential", "simultaneous")),
     f"{SETTINGS}player_authority": OverrideType("enum", ("own_character", "co_author")),

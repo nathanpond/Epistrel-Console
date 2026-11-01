@@ -132,8 +132,14 @@ FACTS_FIELD = "facts"
 FACTS_SALT = "console.scenario_facts"
 VERSION = "version"
 DESCRIPTION_SHORT = 200
-# Engine M5's story-setting defaults (#198), listed after Player authority in this order.
-M5_DEFAULTS = ("player_view", "sequence_order", "simultaneous_tie_break", "reactive_interjections")
+# M5's and M6's story-setting defaults (#198, #233), listed after Player authority in this order.
+M5_DEFAULTS = (
+    "co_author_knowledge",
+    "player_view",
+    "sequence_order",
+    "simultaneous_tie_break",
+    "reactive_interjections",
+)
 # The content groups "Draft differs from published" compares (#65's rule; not the envelope).
 COMPARED_GROUPS = (
     "public_card",

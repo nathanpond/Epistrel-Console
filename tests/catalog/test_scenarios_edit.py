@@ -788,6 +788,7 @@ def test_the_new_defaults_follow_player_authority_with_c7_choices(
     html = edit_page(operator_client, engine).content.decode()
     order = [
         "story_settings_defaults__player_authority",
+        "story_settings_defaults__co_author_knowledge",
         *M5_FIELDS,
         "story_settings_defaults__turn_concurrency",
     ]
@@ -870,6 +871,62 @@ def test_stored_state_tie_break_is_kept(operator_client: Client, engine: FakeEng
     data["visual_style__prompt"] = "Ink"
     save(operator_client, engine, data)
     assert changes(engine) == {"visual_style": {"prompt": "Ink"}}
+
+
+CO_AUTHOR_FIELD = "story_settings_defaults__co_author_knowledge"
+
+
+def test_co_author_knowledge_round_trips(operator_client: Client, engine: FakeEngine) -> None:
+    """#233: a draft holding ``free`` reads back into the editor as ``free`` and the draft's write
+    shape carries it, so a save never loses it (before #233 the editor had no field for it and
+    :func:`draft_to_write` left it out)."""
+    from console.engine.models import Scenario
+    from console.forms.scenario import draft_to_write
+
+    stored = with_defaults(co_author_knowledge="free")
+    parsed = Scenario.from_json(stored)
+    assert parsed is not None
+    write = draft_to_write(parsed)
+    assert write["story_settings_defaults"]["co_author_knowledge"] == "free"
+    response = edit_page(operator_client, engine, stored)
+    html = response.content.decode()
+    assert options(html, CO_AUTHOR_FIELD) == [
+        ("", "Engine default (confirm)"),
+        ("confirm", "Confirm (accept, with a notice)"),
+        ("free", "Free (accept, no notice)"),
+    ]
+    assert "Only under Co-author player authority with per-character partitions on" in html
+    data = posted(response)
+    assert data[CO_AUTHOR_FIELD] == "free"
+    # Another change re-saves without touching it (the merge patch keeps the stored "free").
+    data["story_settings_defaults__audit_retention_days"] = "45"
+    save(operator_client, engine, data)
+    assert changes(engine) == {"story_settings_defaults": {"audit_retention_days": 45}}
+    # Setting it over the Engine default sends it; an explicit confirm is sent (C7).
+    for value in ("free", "confirm"):
+        engine.reset()
+        data = form(operator_client, engine)
+        data[CO_AUTHOR_FIELD] = value
+        save(operator_client, engine, data)
+        assert changes(engine) == {"story_settings_defaults": {"co_author_knowledge": value}}
+    # Engine default over the stored value sends null.
+    engine.reset()
+    data = form(operator_client, engine, stored)
+    data[CO_AUTHOR_FIELD] = ""
+    save(operator_client, engine, data)
+    assert changes(engine) == {"story_settings_defaults": {"co_author_knowledge": None}}
+
+
+def test_untouched_editor_sends_no_change(operator_client: Client, engine: FakeEngine) -> None:
+    """#233: the new field present, an untouched editor sends nothing, stored value or not."""
+    for body in (None, with_defaults(co_author_knowledge="free")):
+        engine.reset()
+        response = edit_page(operator_client, engine, body)
+        assert f'name="{CO_AUTHOR_FIELD}"' in response.content.decode()
+        data = posted(response)
+        response = operator_client.post(EDIT, as_post(data))
+        assert response.status_code == 302
+        assert engine.requests == []
 
 
 def test_unchanged_new_defaults_are_not_in_the_patch(
