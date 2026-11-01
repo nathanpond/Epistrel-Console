@@ -29,6 +29,7 @@ from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
 from tests.fixtures import engine_fixture
 from tests.play.helpers import answer_page, story_json
+from tests.profile_helpers import low_cap_warning
 from tests.ratings.helpers import TEEN, answer_ratings, calls, error, text
 
 pytestmark = pytest.mark.django_db
@@ -744,6 +745,34 @@ def test_applied_false_renders_the_confirm_and_create_anyway_resends_with_a_fres
     assert held_row.story_id == ""
     assert (held_row.entity_type, held_row.entity_id) == ("scenario", SCN)
     assert creation_row(STORY) == created_row
+
+
+def test_not_created_shows_budget_warnings(client: Client, engine: FakeEngine) -> None:
+    """#234: the held creation's impact report shows its own budget warnings."""
+    body = held()
+    body["impact"]["budget_warnings"] = [low_cap_warning()]
+    html = create(client, engine, answer=(200, body)).content.decode()
+    assert views.NOT_CREATED in html
+    assert "Budget warnings (do not hold the change)" in html
+    assert html.count('<ul class="budget-warnings">') == 1
+    assert "Below safety minimum: <code>model_calls</code> 1; a turn needs at least 3" in html
+
+
+def test_the_creation_report_shows_its_budget_warnings(client: Client, engine: FakeEngine) -> None:
+    body = created(impact=impact(budget_warnings=[low_cap_warning()]))
+    response = create(client, engine, answer=(201, body))
+    assert response.status_code == 302
+    html = client.get(REPORT_URL).content.decode()
+    assert "Budget warnings (do not hold the change)" in html
+    assert "Below safety minimum: <code>model_calls</code> 1" in html
+
+
+def test_a_held_creation_without_budget_warnings_shows_no_section(
+    client: Client, engine: FakeEngine
+) -> None:
+    html = create(client, engine, answer=(200, held())).content.decode()
+    assert views.NOT_CREATED in html
+    assert "Budget warnings" not in html
 
 
 def test_a_second_applied_false_renders_the_page_again_with_a_new_payload(

@@ -2338,3 +2338,12 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `tests/settings/helpers.py`'s `M5_READ_DEFAULTS` gains `"co_author_knowledge": "confirm"`. `test_create.py`'s `SIX` becomes `SEVEN` with it second, so the parametrised 422-placement case covers it too, and `CREATION_ERROR_PATHS` counts 9. One `engine_live` case (`test_co_author_knowledge_live`: default → free → story → reset → default) is added.
   **Why:** This is the test upkeep the story's Claude's Discretion lines prescribe. The recorded fixtures predate M6 and lack the key, so an untouched form would otherwise send `confirm`.
   **Issue:** #233
+- **Decision:** The `budget_warning` filter renders a non-`below_safety_minimum` warning as "<code>: `<setting>`" through `code_spans` (so the setting path is in `<code>`), and a `below_safety_minimum` one as `warning_text` through `code_spans`; anything that isn't a `ProfileValidationWarning` renders "".
+  **Why:** The story's Claude's Discretion (pass 1/2) prescribes this; `warning_text` itself is unchanged so flashes keep #84's raw backticks via `warning_flash_text`.
+  **Issue:** #234
+- **Decision:** `_put` gains `warn_in_flash` (default True) and loses `validation`; with it False ("Apply anyway") `_put` adds the "Warnings: …" info flash itself after the success flash. `_validation_texts` and the impact page's `validation_warnings` context are removed; the signed APPLY payload no longer writes `warnings`, and an old payload carrying one is applied with the key ignored.
+  **Why:** Each warning appears once per response, sourced from the write's own answer (the Engine validated what it wrote). Tolerating old payloads keeps open confirm pages working across the deploy.
+  **Issue:** #234
+- **Decision:** The Stage cell carries `class="call-stage"`, and beyond the named test plan I added tests for the creation report's budget warnings, an applied edit without warnings (no suffix), a held creation without warnings (no section), and the `budget_warning` filter's non-minimum/escaping/non-model cases.
+  **Why:** The AC lists the creation report among the pages that show the section, and the filter's other branches had no coverage; the class gives tests and styling a stable hook without changing the column text.
+  **Issue:** #234

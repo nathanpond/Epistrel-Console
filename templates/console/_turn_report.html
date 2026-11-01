@@ -4,6 +4,7 @@ configuration it ran under (short fingerprint, quality status, profile id@versio
 "—" for a turn from before the Engine reported them), capabilities under "More". #202: a
 Warnings row when the report has warnings: `warning_lines` (the play inspector's, labelled) or,
 when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
+#234: the Model calls table's Stage column (`ModelCall.stage`, raw: a plain string, "—" when absent).
 {% endcomment %}
 {% load console_format impact inspect_tags %}
 <section class="turn-report">
@@ -50,11 +51,11 @@ when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
   <h4>Model calls ({{ report.model_calls|length }})</h4>
   {% if report.model_calls %}
   <table class="model-calls">
-    <thead><tr><th>Purpose</th><th>Model</th><th>Attempt</th><th>Outcome</th><th>Latency</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th><th>Finish</th><th>Request id</th></tr></thead>
+    <thead><tr><th>Purpose</th><th>Stage</th><th>Model</th><th>Attempt</th><th>Outcome</th><th>Latency</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th><th>Finish</th><th>Request id</th></tr></thead>
     <tbody>
       {% for call in report.model_calls %}
       <tr>
-        <td>{{ call.purpose }}</td><td><code>{{ call.model }}</code></td><td>{{ call.attempt }}</td><td>{{ call.outcome }}</td>
+        <td>{{ call.purpose }}</td><td class="call-stage">{% if call.stage %}<code>{{ call.stage }}</code>{% else %}—{% endif %}</td><td><code>{{ call.model }}</code></td><td>{{ call.attempt }}</td><td>{{ call.outcome }}</td>
         <td>{{ call.latency_ms }} ms</td><td>{{ call.tokens_in }}</td><td>{{ call.tokens_out }}</td>
         <td>{{ call.cost|default_if_none:"" }}</td><td>{{ call.finish_reason|default_if_none:"—" }}</td>
         <td>{% if call.request_id %}<code>{{ call.request_id }}</code>{% endif %}</td>

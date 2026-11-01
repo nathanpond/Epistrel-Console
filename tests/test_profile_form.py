@@ -28,6 +28,7 @@ from console.forms.profile_schema_form import (
     missing_text,
     schema_digest,
     validation_banner,
+    warning_flash_text,
     warning_text,
 )
 from tests.fakes.engine import FakeEngine
@@ -428,6 +429,16 @@ def test_banner_texts() -> None:
     )
 
 
+def test_warning_flash_text_keeps_backticks() -> None:
+    warning = ProfileValidationWarning(
+        "below_safety_minimum", "budgets.model_calls", 1, 3, {"guardrail": 2}
+    )
+    expected = (
+        "Below safety minimum: `model_calls` 1; a turn needs at least 3 (reservation: guardrail=2)"
+    )
+    assert warning_flash_text(warning) == warning_text(warning) == expected
+
+
 def test_invalid_profile_details_are_placed() -> None:
     built = SchemaSettingsForm({}, schema=schema_model())
     built.is_valid()
@@ -520,3 +531,16 @@ def test_leaf_and_group_types() -> None:
     assert leaf.has_bounds
     assert leaf.dotted == "a"
     assert Group(("a", "b")).name == "b"
+
+
+def test_the_budget_warning_filter_puts_settings_in_code() -> None:
+    from console.templatetags.impact import budget_warning
+
+    low = ProfileValidationWarning("below_safety_minimum", "budgets.model_calls", 1, 3, {"g": 2})
+    assert budget_warning(low) == (
+        "Below safety minimum: <code>model_calls</code> 1; a turn needs at least 3 "
+        "(reservation: g=2)"
+    )
+    other = ProfileValidationWarning("other_code", "a.<b>", 1, 2, {})
+    assert budget_warning(other) == "other_code: <code>a.&lt;b&gt;</code>"
+    assert budget_warning({"code": "below_safety_minimum"}) == ""

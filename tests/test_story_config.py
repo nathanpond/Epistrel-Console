@@ -50,6 +50,7 @@ from tests.profile_helpers import (
     edit_body,
     fresh_cache,
     impact,
+    low_cap_warning,
     other_profile,
     profile,
     schema_body,
@@ -417,6 +418,38 @@ def test_the_preview_links_lost_guarantees_to_the_config_table(
             f'title="Opens this row of the guarantee table in a new tab"><code>{g}</code></a>'
         ) in html
     assert "Lost by at least one following story" not in html  # story mode
+
+
+def test_the_preview_shows_budget_warnings(operator_client: Client, engine: FakeEngine) -> None:
+    """#234: the preview's impact report shows the Engine's budget warnings."""
+    report = impact(affected(), budget_warnings=[low_cap_warning()])
+    html = preview(operator_client, engine, report, **{field_of(WINDOW): "20"}).content.decode()
+    section = html.split("Budget warnings (do not hold the change)</h4>")[1].split("</ul>")[0]
+    assert '<ul class="budget-warnings">' in section
+    assert (
+        '<li class="warning">Below safety minimum: <code>model_calls</code> 1; a turn needs at '
+        "least 3 (reservation: generation=1, guardrail_input=1, guardrail_output=1)</li>"
+    ) in section
+    # The section sits after the holding warnings, before the unmet recommendations.
+    assert (
+        html.index("<h4>Warnings</h4>")
+        < html.index("Budget warnings")
+        < html.index("Recommendations unmet")
+    )
+
+
+@pytest.mark.parametrize("budget", [[], None])
+def test_a_preview_without_budget_warnings_shows_no_section(
+    operator_client: Client, engine: FakeEngine, budget: list[Any] | None
+) -> None:
+    report = impact(affected())
+    if budget is not None:
+        report["budget_warnings"] = budget
+    else:
+        report.pop("budget_warnings", None)
+    html = preview(operator_client, engine, report, **{field_of(WINDOW): "20"}).content.decode()
+    assert "Impact report" in html
+    assert "Budget warnings" not in html
 
 
 def test_nothing_changed_makes_no_call(operator_client: Client, engine: FakeEngine) -> None:

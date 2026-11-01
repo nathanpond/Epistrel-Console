@@ -239,6 +239,35 @@ def test_detail_shows_request_response_and_the_turn_report(
     assert "Fetch from Engine" not in html
 
 
+def model_calls_table(html: str) -> tuple[list[str], list[list[str]]]:
+    table = html.split('<table class="model-calls">')[1].split("</table>")[0]
+    head = re.findall(r"<th>(.*?)</th>", table)
+    rows = [
+        re.findall(r"<td[^>]*>(.*?)</td>", r) for r in re.findall(r"<tr>(.*?)</tr>", table, re.S)
+    ]
+    return head, [r for r in rows if r]
+
+
+def test_turn_report_model_calls_show_the_stage(operator_client: Client) -> None:
+    """#234: Stage after Purpose, raw in ``<code>`` (an unknown stage too), "—" when absent."""
+    staged, unstaged = engine_fixture("respond")["model_calls"][:2]
+    later = {**staged, "purpose": "follow_up", "stage": "later_stage"}
+    row = make_row(
+        response={
+            "elapsed_ms": 5,
+            "model_calls": [{**staged, "stage": "render"}, {**unstaged, "stage": None}, later],
+        }
+    )
+    html = operator_client.get(f"/operations/{row.pk}/").content.decode()
+    head, rows = model_calls_table(html)
+    assert head[:3] == ["Purpose", "Stage", "Model"]
+    assert len(head) == 11
+    assert "Model calls (3)" in html
+    assert [r[1] for r in rows] == ["<code>render</code>", "—", "<code>later_stage</code>"]
+    assert rows[2][0] == "follow_up"  # neither column humanised
+    assert "Later stage" not in html
+
+
 def test_operation_detail_warnings_use_short_ids(operator_client: Client) -> None:
     """#202: the operation detail's Warnings row has no labels and no story: short ids (the
     full id in ``title``) and no Retrieval link."""
