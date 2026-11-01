@@ -2260,3 +2260,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Fixtures follow the Engine (C15). The `tests/fixtures/engine/m5/` belief fixtures still had kind strings (`testimony`/`author`) as `provenance`. They now carry transition ids, with the kind in `provenance_kind`.
   **Why:** #229 had fixed only the `inspect/` fixtures.
   **Issue:** #227
+
+## /n8-plan M6 — 2026-11-01
+
+- **Decision:** M6 is planned as 40 stories (#231–#268, plus #185 and #209 rewritten as full stories) under epics #21 and #22. The roadmap's two coarse phases are re-sliced into 7, and the dependency graph is the execution order. Cross-story conventions D1–D19 are in the M6 milestone description; M5's C1–C16 still apply.
+  **Why:** Round one ("all recs good") pulled in K1–K6. Size limits split S3, S6, S11, S13, S14 (#185), S16, S21, S22 and S24.
+  **Issue:** #21, #22
+- **Decision:** Four Engine requests were filed at planning: nathanpond/Epistrel#679 (outbox list), #680 (State definition read), #681 (operations filterable by label) and #682 (OpenAPI omits `?viewpoint=` on State/scheduled-event reads, and the 404 on `POST /stories` for an unregistered provider). Until they ship, the affected pages show what the Engine serves and say what's missing (D11, D18).
+  **Why:** Round two Q5, "all recs good". Every other Engine gap is recorded only as a D18 line.
+  **Issue:** #235, #246, #257, #232
+- **Decision:** Triage: #185 becomes M6 story #185 (notices), with #263 (correct) and #233 (co-author setting) split from it. #209 (inter-turn slot rewind/fork) moves into M6, because Engine M6 writes slots. #129 (ingest 200 replayed) is folded into #231 and closes with it.
+  **Why:** Round one triage, "all recs good". Engine #533 declared the 200, and Engine M6 records inter-turn slots.
+  **Issue:** #185, #209, #129, #231
+- **Decision:** A State proposal approved with changes can't clear a suggested unit or entity; blank keeps the suggestion and the Console never sends `null`.
+  **Why:** The founder's round-two ruling stands, although pass 2 found its premise wrong: an explicit `null` override *would* clear the suggestion. This was shown at the gate and accepted ("go").
+  **Issue:** #266
+- **Decision:** Console M6 can be executed now but not verified: Engine M6 is open, with 14 verification bugs (2026-11-01).
+  **Why:** CLAUDE.md: each Console milestone mirrors Engine M<n> and can't be verified before it.
+  **Issue:** M6
