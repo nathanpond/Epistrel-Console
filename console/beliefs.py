@@ -10,8 +10,11 @@ only in "More"); enum values are C3's ``humanised`` with the raw value in ``titl
 labels are C4's (``console.wording.character_label``). Counts follow C11 (``console.ledger``'s
 "on this page" / "matching filters" qualifiers).
 
-``provenance`` is the id of the belief transition that produced the row (the Engine's design;
-its belief read carries no acquisition kind), shown as an id (convention 2's ``engine_id``), #227.
+How (#190, #227): ``provenance_kind`` (Engine #654), the producing transition's kind, is C3's
+``humanised`` with the raw value in ``title``; ``testimony`` reads "Testimony — heard from <source>"
+(the source character's C4 label, or "another character" when the Engine names none) and is
+marked (class ``testimony``). ``provenance`` itself is the producing transition's id, shown in
+"More" as an id, never as a kind.
 
 Shown as sent (C15): level and scalar aren't reconciled, ``held_to`` isn't checked against the
 as-of turn, identities always read the current record. A proposition that doesn't parse (C2)
@@ -33,8 +36,11 @@ from console.positions import (
     position_step,
     valid_minutes_text,
 )
-from console.wording import humanised, minor_ids
+from console.wording import character_label, humanised, minor_ids
 
+TESTIMONY = "testimony"
+TESTIMONY_TEXT = "Testimony — heard from {source}"
+ANOTHER_CHARACTER = "another character"
 FIRST_ORDER_NOTICE = "Only first-order beliefs held at suspected or above are listed."
 PLAYER_NOTICE = "The player's character has no partition — the Engine keeps no beliefs for it"
 NO_CHARACTERS = "This story has no modeled characters"
@@ -86,6 +92,8 @@ class BeliefRow:
     proposition: Proposition | None
     level_text: str
     scalar_text: str | None
+    how_text: str
+    testimony: bool
     since: Linked
     until: Linked | None
     about: str
@@ -98,8 +106,34 @@ def _linked(story_id: str, position: Any) -> Linked:
     return Linked(knowledge_position_text(position), knowledge_position_url(story_id, position))
 
 
+def how_text(
+    kind: str | None,
+    source: str | None,
+    names: Mapping[str, str],
+    minor: frozenset[str] = frozenset(),
+) -> str:
+    """The acquisition kind, humanised (an unknown value the same way); testimony spelled out
+    with its source's C4 label ("another character" when none is named); "—" for none."""
+    if kind is None:
+        return EMPTY
+    if kind == TESTIMONY:
+        label = character_label(source, names, minor) if source else ANOTHER_CHARACTER
+        return TESTIMONY_TEXT.format(source=label)
+    return humanised(kind)
+
+
 def _more(belief: BeliefItem, proposition: Proposition | None) -> tuple[MoreItem, ...]:
     step = position_step(belief.since)
+    transition = (
+        MoreItem("Producing transition", belief.provenance, "code")
+        if belief.provenance is not None
+        else MoreItem("Producing transition", EMPTY)
+    )
+    source = (
+        (MoreItem("Testimony source", belief.provenance_source_character, "code"),)
+        if belief.provenance_source_character is not None
+        else ()
+    )
     return (
         MoreItem("Belief id", belief.belief_id, "code"),
         MoreItem("Proposition id", belief.proposition_id, "code"),
@@ -112,11 +146,17 @@ def _more(belief: BeliefItem, proposition: Proposition | None) -> tuple[MoreItem
             EMPTY if proposition is None else proposition_time_text(proposition.valid_time),
         ),
         MoreItem("Polarity", humanised(belief.polarity), title=belief.polarity),
+        transition,
+        *source,
     )
 
 
 def belief_row(
-    story_id: str, belief: BeliefItem, marks: Mapping[str, Any] | None = None
+    story_id: str,
+    belief: BeliefItem,
+    marks: Mapping[str, Any] | None = None,
+    names: Mapping[str, str] | None = None,
+    minor: frozenset[str] = frozenset(),
 ) -> BeliefRow:
     proposition = belief.proposition_view
     scalar = belief.current_scalar
@@ -125,6 +165,10 @@ def belief_row(
         proposition=proposition,
         level_text=humanised(belief.current_level),
         scalar_text=None if scalar is None else f"{scalar:.3f}",
+        how_text=how_text(
+            belief.provenance_kind, belief.provenance_source_character, names or {}, minor
+        ),
+        testimony=belief.provenance_kind == TESTIMONY,
         since=_linked(story_id, belief.since),
         until=None if belief.held_to is None else _linked(story_id, belief.held_to),
         about=valid_minutes_text(belief.valid_from, belief.valid_to),
@@ -137,10 +181,14 @@ def belief_row(
 
 
 def belief_rows(
-    story_id: str, beliefs: Sequence[BeliefItem], marks: Mapping[str, Any] | None = None
+    story_id: str,
+    beliefs: Sequence[BeliefItem],
+    marks: Mapping[str, Any] | None = None,
+    names: Mapping[str, str] | None = None,
+    minor: frozenset[str] = frozenset(),
 ) -> list[BeliefRow]:
-    """The rows in the Engine's order."""
-    return [belief_row(story_id, b, marks) for b in beliefs]
+    """The rows in the Engine's order; ``names``/``minor`` label a testimony source (C4)."""
+    return [belief_row(story_id, b, marks, names, minor) for b in beliefs]
 
 
 # --- identities ---------------------------------------------------------------------------------

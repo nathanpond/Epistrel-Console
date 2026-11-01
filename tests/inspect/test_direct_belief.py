@@ -545,6 +545,18 @@ def test_every_render_mints_a_fresh_key(operator_client: Client, engine: FakeEng
 # --- the result page ---
 
 
+def test_result_marks_kept_testimony(operator_client: Client, engine: FakeEngine) -> None:
+    """#227: a write that changed a testimony belief in place keeps that transition's kind
+    (Engine #654); the Provenance row marks it with its source's cast label."""
+    written = fixture("belief_written_first_order")
+    written["belief"]["provenance_kind"] = "testimony"
+    written["belief"]["provenance_source_character"] = BOB
+    engine.respond("POST", WRITE, 201, json=written)
+    html = post(operator_client)
+    assert detail(html, "provenance") == "Testimony — heard from Bob · …0000TR01"
+    assert '<span class="testimony" title="testimony">Testimony — heard from Bob</span>' in html
+
+
 def test_result_first_order(operator_client: Client, engine: FakeEngine) -> None:
     html = post(operator_client, confidence_level="suspected", confidence_scalar="0.3")
     assert '<h3 class="belief-written">Belief written</h3>' in html
@@ -554,8 +566,10 @@ def test_result_first_order(operator_client: Client, engine: FakeEngine) -> None
     assert detail(html, "confidence") == "Suspected · 0.300"
     assert detail(html, "accessibility") == "1.000"
     assert detail(html, "state") == "Held"
-    assert detail(html, "provenance") == "…0000TR01"  # the transition's id (#227)
-    assert f'<dd class="provenance"><code title="{P}TR01">' in html
+    # #227: the producing transition's kind (Engine #654), then its id
+    assert detail(html, "provenance") == "Author · …0000TR01"
+    assert '<dd class="provenance"><span title="author">Author</span> · ' in html
+    assert f'<code title="{P}TR01">…0000TR01</code></dd>' in html
     assert detail(html, "held-from") == "turn 3 · after the turn until now"
     assert detail(html, "valid") == "[0, …) min"
     transition = detail(html, "transition")

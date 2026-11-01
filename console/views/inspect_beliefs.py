@@ -46,10 +46,12 @@ from console.beliefs import (
     IDENTITIES_FIRST_PAGE,
     NO_CHARACTERS,
     PLAYER_NOTICE,
+    TESTIMONY,
     belief_rows,
     count_text,
     empty_text,
     header_text,
+    how_text,
     identity_rows,
     story_minor_ids,
     time_text,
@@ -171,7 +173,7 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
             cardinality=None if registry is None else registry.cardinality(),
             as_of=as_of,
         )
-    rows = belief_rows(ctx.story_id, body.beliefs, column.marks)
+    rows = belief_rows(ctx.story_id, body.beliefs, column.marks, names, minor)
     filtered = as_of is not None or proposition is not None
     context.update(
         beliefs=body,
@@ -361,6 +363,11 @@ def _written(
             transition.confidence_level, transition.confidence_scalar
         ),
         "accessibility": f"{belief.accessibility:.3f}",
+        # #227: the producing transition's kind (Engine #654), testimony with its source (C4)
+        "provenance_text": how_text(
+            belief.provenance_kind, belief.provenance_source_character, names
+        ),
+        "provenance_testimony": belief.provenance_kind == TESTIMONY,
         "held_from": knowledge_position_text(belief.held_from),
         "held_from_url": knowledge_position_url(story_id, belief.held_from),
         "held_to": knowledge_position_text(belief.held_to),

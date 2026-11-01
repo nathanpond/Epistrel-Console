@@ -5,7 +5,10 @@ configuration and the shared Alice/Bob/Pat cast (``story_cast.json``; Pat is the
 ``beliefs_page1.json`` is Alice's first page (revision 7, ``next_after`` ``PP11``):
 
 Each row's ``provenance`` is the producing transition's id, as the Engine sends it (#227):
-``BE<nn>``'s is ``TB<nn>``.
+``BE<nn>``'s is ``TB<nn>``. Its ``provenance_kind`` (Engine #654) runs observation, testimony
+(``BE02``, from Bob), inference, discovery, correction, forgetting, revision, author, resolution
+for ``BE01`` to ``BE09``; ``BE10`` has none, ``BE11`` is ``author_fiat`` and ``BE12`` testimony
+with no source named.
 
 - ``BE01``: suspected, no scalar, ``located_at(Bob, …EN03)``, since turn 1 · beat 2;
 - ``BE02``: believed 0.7, since turn 1 · v1 · beat 2 (step 40000), held to turn 3 · beat 4,
@@ -35,7 +38,7 @@ from django.test import Client, override_settings
 from django.utils.html import escape
 
 from console.belief_canon import UNSETTLED, CanonMark
-from console.beliefs import belief_rows
+from console.beliefs import belief_rows, how_text
 from console.engine.client import EngineClient
 from console.engine.models import Beliefs
 from console.engine_access import engine_client_for
@@ -218,7 +221,7 @@ def test_rows_render_each_column(operator_client: Client, engine: FakeEngine) ->
     html = page(operator_client)
     first = row(html, BE[1])
     assert cell(first, "confidence") == '<span title="suspected">Suspected</span>'
-    assert cell(first, "provenance") == f'<code title="{P}TB01">…0000TB01</code>'
+    assert cell(first, "how") == '<span title="observation">Observation</span>'
     assert cell(first, "since") == f'<a href="{link(1)}">turn 1 · beat 2</a>'
     assert cell(first, "until") == "now"
     assert cell(first, "about") == "[0, …) min"
@@ -226,6 +229,9 @@ def test_rows_render_each_column(operator_client: Client, engine: FakeEngine) ->
 
     testimony = row(html, BE[2])
     assert cell(testimony, "confidence") == '<span title="believed">Believed</span> · 0.700'
+    assert cell(testimony, "how") == (
+        '<span class="testimony" title="testimony">Testimony — heard from Bob</span>'
+    )
     assert cell(testimony, "since") == f'<a href="{link(1, 1)}">turn 1 · v1 · beat 2</a>'
     assert cell(testimony, "until") == f'<a href="{link(3)}">turn 3 · beat 4</a>'
     assert cell(testimony, "about") == "[540, 600) min"
@@ -235,29 +241,47 @@ def test_rows_render_each_column(operator_client: Client, engine: FakeEngine) ->
     assert cell(negated, "since") == f'<a href="{link(2)}">turn 2⁺¹ · beat 5</a>'
     assert '<strong class="polarity">NOT</strong>' not in cell(first, "proposition")
 
-    for n in range(2, 10):
-        assert cell(row(html, BE[n]), "provenance") == (
-            f'<code title="{P}TB{n:02}">…0000TB{n:02}</code>'
-        )
+    words = ["Inference", "Discovery", "Correction", "Forgetting", "Revision", "Author"]
+    for n, word in enumerate([*words, "Resolution"], start=3):
+        assert cell(row(html, BE[n]), "how") == f'<span title="{word.lower()}">{word}</span>'
     assert text(cell(row(html, BE[8]), "since")) == "turn 2 · after the turn"
     assert text(cell(row(html, BE[9]), "since")) == "turn 0 · start"
-    assert cell(row(html, BE[10]), "provenance") == "—"
+    assert cell(row(html, BE[10]), "how") == "—"
     assert cell(row(html, BE[10]), "about") == "[…, …) min"
-    assert cell(row(html, BE[11]), "provenance") == f'<code title="{P}TB11">…0000TB11</code>'
+    assert cell(row(html, BE[11]), "how") == '<span title="author_fiat">Author fiat</span>'
 
 
-def test_provenance_is_an_id_never_a_kind(operator_client: Client, engine: FakeEngine) -> None:
-    """#227: the Engine's ``provenance`` is the producing transition's id. It's shown as an id
-    (full value in ``title``, never lower-cased) and the column doesn't promise a kind."""
+def test_how_shows_the_kind_and_marks_testimony(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#227: How shows ``provenance_kind`` (Engine #654), never the transition id; testimony is
+    marked with its source's cast label, or "another character" when the Engine names none."""
     html = page(operator_client)
     head = re.search(r'<table class="beliefs">\s*<thead><tr>(.*?)</tr></thead>', html, re.S)
     assert head is not None
-    assert '<th title="The belief transition that produced it">Provenance</th>' in head.group(1)
-    assert "<th>How</th>" not in head.group(1)
-    first = cell(row(html, BE[1]), "provenance")
-    assert first.lower() != first
-    assert 'class="testimony"' not in html
-    assert "Testimony — heard from another character" not in html
+    assert ">How</th>" in head.group(1)
+    assert ">Provenance</th>" not in head.group(1)
+    assert html.count('class="testimony"') == 1
+    for n in range(1, 12):
+        assert f"TB{n:02}" not in cell(row(html, BE[n]), "how")
+    second = operator_client.get(URL, {"character": ALICE, "after": PP11}).content.decode()
+    assert cell(row(second, BE[12]), "how") == (
+        '<span class="testimony" title="testimony">Testimony — heard from another character</span>'
+    )
+
+
+def test_how_text_view_model() -> None:
+    """C3/C4: an unknown kind is humanised; a testimony source outside the cast reads as its
+    short id, a minor one carries " (minor)"; no kind reads "—"."""
+    names = {P + "CA02": "Bob"}
+    assert how_text("hearsay", None, names) == "Hearsay"
+    assert how_text(None, None, names) == "—"
+    assert how_text("testimony", P + "CA02", names) == "Testimony — heard from Bob"
+    assert how_text("testimony", P + "CA02", names, frozenset({P + "CA02"})) == (
+        "Testimony — heard from Bob (minor)"
+    )
+    assert how_text("testimony", P + "CA09", names) == "Testimony — heard from …0000CA09"
+    assert how_text("testimony", None, names) == "Testimony — heard from another character"
 
 
 def more_items(row_html: str) -> list[tuple[str, str]]:
@@ -278,6 +302,8 @@ def test_more_lists_the_unnamed_fields(operator_client: Client, engine: FakeEngi
         ("Tx from", "2026-10-30 09:20:03 UTC"),
         ("Proposition valid-time", "interval [0, …) min"),
         ("Polarity", "Affirmed"),
+        ("Producing transition", P + "TB02"),  # #227: the id, in More
+        ("Testimony source", P + "CA02"),
     ]
     assert '<time datetime="2026-10-30T09:20:03.118204+00:00"' in cell(testimony, "more")
     assert '<span title="first_order">First order</span>' in cell(testimony, "more")
@@ -305,7 +331,7 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
     assert re.findall(r"<th[^>]*>(.*?)</th>", head.group(1)) == [
         "Proposition",
         "Confidence",
-        "Provenance",
+        "How",
         "Holds since",
         "Until",
         "About story-time",
@@ -348,7 +374,7 @@ def test_canon_and_actions_columns_absent_when_unset() -> None:
     assert re.findall(r'<td class="([a-z]+)"', html) == [
         "proposition",
         "confidence",
-        "provenance",
+        "how",
         "since",
         "until",
         "about",

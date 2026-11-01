@@ -25,6 +25,8 @@
     "accessibility": 1.0,
     "state": "held",
     "provenance": "0000000000000000000000TR03",
+    "provenance_kind": "author",
+    "provenance_source_character": null,
     "held_from": {
       "turn": 3,
       "variant": 0,
