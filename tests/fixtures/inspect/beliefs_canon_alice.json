@@ -30,6 +30,8 @@
         "step": 0
       },
       "provenance": "0000000000000000000000TC01",
+      "provenance_kind": "author",
+      "provenance_source_character": null,
       "held_from": {
         "turn": 1,
         "variant": 0,
@@ -71,6 +73,8 @@
         "step": 0
       },
       "provenance": "0000000000000000000000TC02",
+      "provenance_kind": "author",
+      "provenance_source_character": null,
       "held_from": {
         "turn": 1,
         "variant": 0,
@@ -112,6 +116,8 @@
         "step": 0
       },
       "provenance": "0000000000000000000000TC03",
+      "provenance_kind": "author",
+      "provenance_source_character": null,
       "held_from": {
         "turn": 1,
         "variant": 0,

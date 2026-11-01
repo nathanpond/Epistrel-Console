@@ -24,7 +24,9 @@
     "confidence_scalar": 0.6,
     "accessibility": 1.0,
     "state": "held",
-    "provenance": "author",
+    "provenance": "01JM5TR0000000000000000002",
+    "provenance_kind": "author",
+    "provenance_source_character": null,
     "held_from": {
       "turn": 3,
       "variant": 0,

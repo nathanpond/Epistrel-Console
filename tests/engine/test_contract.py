@@ -1113,11 +1113,13 @@ def test_open_enum_reads_a_const() -> None:
         current_scalar: float | None
         since: NarrativePosition
         provenance: str | None
+        provenance_source_character: str | None
         held_from: NarrativePosition
         held_to: NarrativePosition | None
         valid_from: int | None
         valid_to: int | None
         tx_from: str
+        provenance_kind: str | None = dc_field(metadata={OPEN_ENUM: True})
         kind: str = dc_field(metadata={OPEN_ENUM: True})
 
     problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/BeliefItemBody"}, "P")

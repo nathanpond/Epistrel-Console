@@ -28,6 +28,8 @@
         "step": 0
       },
       "provenance": "0000000000000000000000TB12",
+      "provenance_kind": "testimony",
+      "provenance_source_character": null,
       "held_from": {
         "turn": 1,
         "variant": 0,

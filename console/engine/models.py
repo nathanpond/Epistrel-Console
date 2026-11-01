@@ -2469,9 +2469,11 @@ class AuthorPosition(NarrativePosition):
 class BeliefItem(Model):
     """``BeliefItemBody``: one belief the character holds now, its ``belief_state`` row
     (``current_level``, ``current_scalar``, ``polarity``, ``since``) joined with its belief record
-    (``kind``, ``provenance``: the acquisition, ``held_from``/``held_to``, valid-time in
-    story-minutes). ``proposition`` stays raw JSON (C2); :attr:`proposition_view` is its typed
-    view."""
+    (``kind``, ``provenance``: the producing transition's id, ``held_from``/``held_to``,
+    valid-time in story-minutes). ``provenance_kind`` is that transition's kind (an open enum,
+    ``None`` exactly when ``provenance`` is) and ``provenance_source_character`` its testimony
+    source (``None`` unless the kind is ``testimony``), Engine #654. ``proposition`` stays raw
+    JSON (C2); :attr:`proposition_view` is its typed view."""
 
     belief_id: str
     proposition_id: str
@@ -2482,6 +2484,8 @@ class BeliefItem(Model):
     current_scalar: float | None
     since: NarrativePosition
     provenance: str | None
+    provenance_kind: str | None = field(metadata={OPEN_ENUM: True})  # a required field follows
+    provenance_source_character: str | None
     held_from: NarrativePosition
     held_to: NarrativePosition | None
     valid_from: int | None
@@ -2635,8 +2639,10 @@ def _lenient_page[M: Model](
 class AuthoredBelief(Model):
     """``AuthoredBeliefBody``: the belief after an author write: its kind (``first_order``, or
     ``nested`` with its attributed holder and depth), proposition, dual confidence, accessibility
-    and hold state, the transition that produced it (``provenance``), the positions it is held
-    between, valid-time and lineage. ``proposition`` stays raw JSON (C2)."""
+    and hold state, the transition that produced it (``provenance``) with that transition's kind
+    (``provenance_kind``, an open enum) and testimony source (``provenance_source_character``,
+    Engine #654), the positions it is held between, valid-time and lineage. ``proposition`` stays
+    raw JSON (C2)."""
 
     id: str
     holder_character_id: str
@@ -2651,6 +2657,8 @@ class AuthoredBelief(Model):
     accessibility: float
     state: str
     provenance: str
+    provenance_kind: str = field(metadata={OPEN_ENUM: True})  # a required field follows
+    provenance_source_character: str | None
     held_from: AuthorPosition
     held_to: AuthorPosition | None
     valid_from: int | None

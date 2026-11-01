@@ -189,7 +189,9 @@ def test_belief_read_sends_omniscient_and_only_given_filters(fake_engine: FakeEn
     fake_engine.respond("GET", BELIEFS, 200, json=m5("beliefs_page1"))
     page = client(fake_engine).inspect_beliefs(STORY, ALICE)
     assert isinstance(page, Beliefs)
-    assert page.beliefs[0].provenance == "testimony"
+    assert page.beliefs[0].provenance == "01JM5TB0000000000000000001"
+    assert page.beliefs[0].provenance_kind == "testimony"  # Engine #654 (#227)
+    assert page.beliefs[0].provenance_source_character == "01JM5CH0000000000000000002"
     [request] = fake_engine.requests
     assert request.url.path == f"/stories/{STORY}/inspect/beliefs"
     assert request.url.query.decode() == f"viewpoint=omniscient&character={ALICE}&limit=100"

@@ -2233,3 +2233,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 1) The `.fidelity-none` strike-through now targets `.beat-text`, `span.text` and `td.text:not(:has(.beat-text))`, replacing `.fidelity-none .text`. A trace row strikes only its beat text. A plain row (no trace) still strikes its plain Text cell, as #62's plan says.
   **Why:** The first attempt wrapped the plain text in a new span. That broke `test_lite_history_items_are_byte_identical`, because Lite markup must not change. `:has()` reaches the same result with no markup change, and the Console targets desktop browsers only.
   **Issue:** #228
+
+## Ad-hoc — 2026-10-31
+
+- **Change:** #227 (beliefs How/Provenance) will be resolved by an Engine change, not by amending #190. The Engine is to expose `provenance_kind` (and optionally `provenance_source_character`) on `BeliefItemBody`/`AuthoredBeliefBody` (nathanpond/Epistrel#654). The Console will then show the acquisition kind and mark testimony again.
+  **Why:** The owner chose option (a). The Engine's belief reads carry only the producing transition's id, so #190 outcome 1 and the "testimony → #190" coverage item can't be met in the Console alone.
+  **Affects:** M5 (#227, story #190, #194's Provenance row, epics #19/#20), which stays open and blocked until Engine #654 ships in an `edge` build. M6+ Console plans are not affected.
+
+## /n8-exec M5 (provenance kind, round 3) — 2026-11-01
+
+- **Decision:** Unblocked #227. Engine #654 is closed, its PR nathanpond/Epistrel#664 merged as `b8fd182`, and the Engine's "Publish edge" workflow ran green on `b8fd182`. Its `docs/openapi.json` there carries `provenance_kind` and `provenance_source_character` on `BeliefItemBody` and `AuthoredBeliefBody`. Removed the `blocked` and `needs-owner-action` labels.
+  **Why:** The owner's 2026-10-31 decision (option a) said to re-run once the field ships in an `edge` build.
+  **Issue:** #227
+- **Decision:** Branched `milestone/m5-provenance-kind` from local `main`, which carries the unpushed ad-hoc commit `56f9ebb` (this file's 2026-10-31 Ad-hoc entry). The PR lands that commit too.
+  **Why:** That commit is n8SDLC state recording the decision this work fulfils, and `main` is protected against direct pushes. Leaving it out would keep the ledger entry off the remote.
+  **Issue:** #227
+- **Decision:** Updated the recorded schema `console/engine/openapi.json` only for `BeliefItemBody`, `AuthoredBeliefBody` and the new `BeliefTransitionKind`, copied from the Engine's `docs/openapi.json` at `b8fd182`. I did not re-record the whole edge document.
+  **Why:** The edge is now at Engine M6 (`info.version` `m6`), and dozens of other components and paths changed. Re-recording all of it would pull M6 drift into an M5 fix and start Console M6 work early. The daily `engine-drift` check still reports the rest.
+  **Issue:** #227
+- **Decision:** The beliefs column is **How** again, as #190 specifies. It shows `provenance_kind` through C3's `humanised`, with the raw value in `title`. Testimony reads "Testimony — heard from <source>", where source is the C4 cast label of `provenance_source_character` (short id outside the cast, " (minor)" when minor), or "another character" when the Engine names none. It carries class `testimony` (bold, not colour, as before). The transition id (`provenance`) moved to More as "Producing transition", and the source id appears there as "Testimony source". The belief-written page's Provenance row reads "<kind text> · <transition id>".
+  **Why:** #190's AC and #227's Expected section call for the kind with testimony marked. The Engine now names the source, so the source is shown rather than the generic phrase. The id is still reachable, but the column no longer shows it as a kind.
+  **Issue:** #227 (#190, #194)
+- **Decision:** `provenance_kind` and `provenance_source_character` are required model fields (no default), and `provenance_kind` is an open enum.
+  **Why:** The schema marks both required, and the contract test treats a field as required exactly when it has no default. An open enum renders a future kind raw instead of failing the read. Released Engines (v0.1.1) predate M5's belief reads entirely, so no older body can lack the fields.
+  **Issue:** #227
+- **Decision:** Fixtures follow the Engine (C15). The `tests/fixtures/engine/m5/` belief fixtures still had kind strings (`testimony`/`author`) as `provenance`. They now carry transition ids, with the kind in `provenance_kind`.
+  **Why:** #229 had fixed only the `inspect/` fixtures.
+  **Issue:** #227
