@@ -7,6 +7,13 @@ the action. ``next`` is validated with ``url_has_allowed_host_and_scheme`` (an o
 missing value falls back to the view's default). Display data is never trusted for the action:
 the POST acts on the URL's id.
 
+**D8's extensions** (#235, M6), each optional so every other page renders as before:
+``blocked`` (a ``<p class="warning">`` above the buttons, after ``error``, and the submit
+rendered ``disabled``; a POST then re-renders the page, 200, and never calls ``perform``, in
+plain and confirmed modes alike), ``fact_urls`` (a fact whose label is a key renders its value in
+``<a href>``) and ``error_url``/``error_link`` (" — <a href>error_link</a>" inside the error
+paragraph, only when ``error``, ``error_url`` and ``error_link`` are all set).
+
 Each render mints a fresh ``idempotency_key`` (hidden field), so a double-submit of one page
 replays at the Engine and a new visit is a new attempt.
 
@@ -104,6 +111,16 @@ class ConfirmPage:
     fields_template: str = ""  # extra inputs inside the Confirm form
     buttons_template: str = ""  # extra buttons after Confirm (#144's Edit)
     error: str = ""  # shown above the buttons (#134)
+    # D8's shared extensions (#235); each default renders the page exactly as before.
+    blocked: str = ""  # why the page can't proceed: a warning and a disabled submit, no perform
+    fact_urls: Mapping[str, str] = field(default_factory=dict)  # fact label → its value's link
+    error_url: str = ""  # a link after ``error`` (a ``WorldRefusal.url``) ...
+    error_link: str = ""  # ... labelled "Config", "Providers" or "Reconciliation"
+
+    @property
+    def fact_rows(self) -> tuple[tuple[str, str, str], ...]:
+        """``facts`` as (label, value, link): the link "" unless ``fact_urls`` names the label."""
+        return tuple((label, value, self.fact_urls.get(label, "")) for label, value in self.facts)
 
 
 def render_confirm(
@@ -144,6 +161,11 @@ def confirm_action(
     if require_confirmed:
         page = dataclasses.replace(page, hidden={**page.hidden, CONFIRMED_FIELD: "1"})
     if request.method == "POST":
+        if page.blocked:  # a stale or hand-made POST: re-render, never perform
+            key = request.POST.get(KEY_FIELD, "")
+            return render_confirm(
+                request, page, extra=extra, idempotency_key=key if _KEY.match(key) else None
+            )
         if not require_confirmed:
             return perform(posted_idempotency_key(request))
         key = request.POST.get(KEY_FIELD, "")

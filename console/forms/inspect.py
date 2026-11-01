@@ -677,6 +677,25 @@ def turn_too_high(head: int) -> str:
     return f"Turn must be 0\u2013{head}"
 
 
+def viewpoint_choices(cast: Sequence[Character] | None, requested: str) -> list[tuple[str, str]]:
+    """A viewpoint select's choices (#58; D4's World picker shares them): "Omniscient" first, then
+    each cast member as ``character:<id>`` in the Engine's cast order, the player marked. Without
+    the story read (``cast`` ``None``), "Omniscient" and the requested value shown raw."""
+    choices = [(OMNISCIENT, OMNISCIENT_LABEL)]
+    if cast is None:
+        if requested and requested != OMNISCIENT:
+            choices.append((requested, requested))
+        return choices
+    players = {c.id for c in cast if c.is_player}
+    return [
+        *choices,
+        *(
+            (viewpoint_for(cid), f"{label}{PLAYER_SUFFIX}" if cid in players else label)
+            for cid, label in character_choices(cast)
+        ),
+    ]
+
+
 class SceneForm(forms.Form):
     """The Scene tab's and the entity page's GET form (#58): **Turn** (``as_of``; blank = the
     head, not sent) and **Viewpoint** (always sent: "Omniscient" first, then each cast member as
@@ -730,19 +749,7 @@ class SceneForm(forms.Form):
 
     @staticmethod
     def _choices(cast: Sequence[Character] | None, requested: str) -> list[tuple[str, str]]:
-        choices = [(OMNISCIENT, OMNISCIENT_LABEL)]
-        if cast is None:
-            if requested and requested != OMNISCIENT:
-                choices.append((requested, requested))
-            return choices
-        players = {c.id for c in cast if c.is_player}
-        return [
-            *choices,
-            *(
-                (viewpoint_for(cid), f"{label}{PLAYER_SUFFIX}" if cid in players else label)
-                for cid, label in character_choices(cast)
-            ),
-        ]
+        return viewpoint_choices(cast, requested)
 
     def clean_as_of(self) -> int | None:
         as_of: int | None = self.cleaned_data.get("as_of")

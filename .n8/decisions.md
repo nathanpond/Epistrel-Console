@@ -2347,3 +2347,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The Stage cell carries `class="call-stage"`, and beyond the named test plan I added tests for the creation report's budget warnings, an applied edit without warnings (no suffix), a held creation without warnings (no section), and the `budget_warning` filter's non-minimum/escaping/non-model cases.
   **Why:** The AC lists the creation report among the pages that show the section, and the filter's other branches had no coverage; the class gives tests and styling a stable hook without changing the column text.
   **Issue:** #234
+- **Decision:** `effect_line`'s `notes` carries `DISPATCHED_NOTE` ("dispatched · outbox", exported from `console/effects.py`) at D10's position for a dispatched change, with the full id only in `EffectLine.outbox_id`; templates render the id (through the `outbox_id` filter and `outbox_url`) right after that note.
+  **Why:** D10 fixes the notes' order with the outbox note before "+N min requested", while the Claude's Discretion lines keep the id out of the plain-text notes. A placeholder note keeps both: the order is in `notes` and the id is never part of the text.
+  **Issue:** #235
+- **Decision:** `SlotResult.operation_id` falls back to `row.engine_operation_id` (the `EngineOperation` column) where the plan says `row.engine_id`; `slot_result` takes any object with `pk` and `engine_operation_id` (an `OperationRow` protocol).
+  **Why:** The #44 model has no `engine_id` field; `engine_operation_id` is the column holding the Engine's operation id.
+  **Issue:** #235
+- **Decision:** `world_refusal`'s `event_settled` text lowercases the humanised status ("This event is already cancelled — it can't be changed"), and `clock_change_text`'s "(unchanged)" form shows the after side's `display`.
+  **Why:** D9's "<humanised status>" sits mid-sentence and its degraded text reads "already settled" in lowercase; C3's capitalised form would read "already Cancelled". For "(unchanged)" the after display is the clock as it now stands.
+  **Issue:** #235
+- **Decision:** `state_values` puts ids outside the cast in the `values` map's own (JSON) order; `viewpoint_line` reads a `None` or blank viewpoint as omniscient; `ConfirmPage` gains a `fact_rows` property (label, value, link) so `_confirm.html` looks up `fact_urls` without a template tag.
+  **Why:** "Key order" in the plan is the map's order (the Engine's), not a sort. A missing viewpoint is the Engine's default read. Django templates can't index a mapping by a loop variable, and a property keeps every existing `render_confirm` caller unchanged; the pre-#235 byte-for-byte test pins that.
+  **Issue:** #235
+- **Decision:** `STATE_DEFINITION_REQUEST` (nathanpond/Epistrel#680) lives in `console/world.py` beside D18, and `STATE_NOT_FOUND` is the template "This story has no State “{state}”" filled by `state_not_found_text(name)` (`str.replace`, as `{label}` is).
+  **Why:** D18 cites the constant and #265 imports it; it has no other D19/D11 home. `STATE_NOT_FOUND` needs a name inside the sentence, and the exported constant stays the one source of its wording.
+  **Issue:** #235
+- **Decision:** No PR is opened for #235 (per-story run on the milestone branch); the milestone PR body must carry D1–D19 in full, copied from the M6 milestone description, and the completion comment says so.
+  **Why:** The run's rules forbid opening a PR per story; the AC's "the PR body carries D1–D19" is met when the milestone PR is written.
+  **Issue:** #235
