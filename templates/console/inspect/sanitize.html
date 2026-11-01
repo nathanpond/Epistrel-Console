@@ -1,14 +1,16 @@
 {% extends "base.html" %}{% load inspect_tags %}{% comment %}
 Sanitize one memory's text (#144): a bare #43-style page (no Inspect shell). Its GET's one read is
-the explorer's question asked again, for the text (`text`, None when not shown). A valid POST
+the explorer's question asked again, or (from_list, #236) the memory list's page read again, for
+the text (`text`, None when not shown). A valid POST
 renders the confirm page; only its Confirm calls the Engine.
-Context: story_id, memory_id, memory_short, form (SanitizeForm), text, idempotency_key, next_url;
+Context: story_id, memory_id, memory_short, form (SanitizeForm), text, idempotency_key, next_url,
+from_list;
 after a refused call: refusal (convention 10's text), violations (#47's rows) or engine_error
 (#43's panel), all above the fields.
 {% endcomment %}
 {% block title %}Sanitize memory {{ memory_short }} — Epistrel Console{% endblock %}
 {% block heading %}<span title="{{ memory_id }}">Sanitize memory {{ memory_short }}</span>{% endblock %}
-{% block content %}<p><a href="{{ next_url }}">← Back to the explorer</a></p>
+{% block content %}<p><a href="{{ next_url }}">{% if from_list %}← Back to the memory list{% else %}← Back to the explorer{% endif %}</a></p>
 {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
 <div class="confirm sanitize">
   <p>Every occurrence of the span in the memory's text is replaced by the surrogate, which passes the input gate first. The memory is re-indexed and re-embedded.</p>
@@ -17,10 +19,10 @@ after a refused call: refusal (convention 10's text), violations (#47's rows) or
     <dt>Story id</dt><dd><code>{{ story_id }}</code></dd>
   </dl>
   {% if text is not None %}
-  <h2>Text <small>as the explorer's question retrieves it now</small></h2>
+  <h2>Text <small>{% if from_list %}as the list shows it now{% else %}as the explorer's question retrieves it now{% endif %}</small></h2>
   <pre class="memory-text">{{ text }}</pre>
   {% else %}
-  <p class="text-not-shown">Text not shown — see the explorer</p>
+  <p class="text-not-shown">{% if from_list %}Text not shown — see the memory list{% else %}Text not shown — see the explorer{% endif %}</p>
   {% endif %}
   <form method="post">
     {% csrf_token %}

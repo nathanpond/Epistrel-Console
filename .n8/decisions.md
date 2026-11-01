@@ -2365,3 +2365,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** No PR is opened for #235 (per-story run on the milestone branch); the milestone PR body must carry D1–D19 in full, copied from the M6 milestone description, and the completion comment says so.
   **Why:** The run's rules forbid opening a PR per story; the AC's "the PR body carries D1–D19" is met when the milestone PR is written.
   **Issue:** #235
+- **Decision:** The memory list's Holder select lists every cast member (the player included, marked " (player)"); a kept out-of-cast id is "<short id> (not in the cast)". The holder cell uses `_character.html` with the cast name (no player suffix in the label) and `is_player`, so the player reads "Mara (player)" once.
+  **Why:** The AC says "every cast member … the player marked"; a memory can be held by the player's character, unlike an exposure witness. `cast_names` already carries the suffix for the options, while `_character.html` adds it itself.
+  **Issue:** #236
+- **Decision:** Any 422 from the list read other than `viewpoint_unresolved` goes through `MemoryListForm.apply_engine_error` (beside `query.<filter>`, else above the filters, "First page" for `query.cursor`), not only `validation_error`.
+  **Why:** ExposuresForm's precedent; the route declares only `validation_error` and `viewpoint_unresolved` as 422s, so this changes nothing for declared answers and keeps an undeclared 422 beside the filters rather than in a panel.
+  **Issue:** #236
+- **Decision:** "Clear filters" shows when any filter parameter in the URL is non-blank (valid or not); "· filtered" counts only filters actually sent (the valid form's query).
+  **Why:** An invalid filter is still something to clear; the heading only exists after a read, so it reflects what was sent (Discretion pass 1).
+  **Issue:** #236
+- **Decision:** The sanitize page's memory-list branch reads with its own `MEMORY_LIST_LIMIT = 100` constant in `inspect_memory.py` instead of importing the list view's `PAGE_LIMIT`.
+  **Why:** `inspect_memories` imports `inspect_memory` (`shown_reason`); importing back would be circular. Both are C11's page size, so the sanitize read sees the same page the list showed.
+  **Issue:** #236
+- **Decision:** A consolidation output with no window, scope or level but with sources shows only the sources `<details>`; with nothing set at all the cell is empty apart from the operation `title` (no defensive placeholder).
+  **Why:** C15: the Engine always records a window for its consolidation operations; no defensive case for an impossible shape.
+  **Issue:** #236
+- **Decision:** `console/operation_log.py`'s `queued_job_text` ("its outputs appear in Retrieval …", the #44 detail page) is left unchanged; only the Memory tab's `QUEUED_TEXT`/`CONSOLIDATE_UNREADABLE` now say "in the memory list".
+  **Why:** The Discretion names only those two texts; the #44 wording is still true (outputs are retrievable) and belongs to another page's tests.
+  **Issue:** #236
+- **Decision:** Malformed-entry and unknown-enum tests serve the page through `FakeEngine.side_effect` (unvalidated), since `respond` validates against the recorded schema, which refuses a missing `kind` or an unlisted enum value.
+  **Why:** D16: refusal/odd bodies are inline; the fake has no unvalidated `respond`, and `side_effect` is its documented escape for answers the schema can't express.
+  **Issue:** #236

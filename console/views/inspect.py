@@ -87,6 +87,7 @@ from console.inspect import (
     history_turn_url,
     is_module_off,
     knowledge_sections,
+    memory_list_url,
     module_off_unavailable,
     module_rows,
     overview_fingerprint,
@@ -299,16 +300,16 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
     A failed read replaces the "As of" line and the sections: 404 ``not_found`` with convention
     10's line, any other error with #43's panel; ``erasure_pending`` (and a 409 ``module_off``,
     which the route doesn't declare) escape to #87's held wrapper (and the shell's panel). The
-    Browse grid renders either way. ``episodic: false`` shows #135's reason inline above the
-    sections, which still render (convention 7).
+    Browse section (the memory-list link and its kind x tier grid, #236) renders either
+    way. ``episodic: false`` shows #135's reason inline above the sections, which still render
+    (convention 7).
 
     After a successful hot-set read (#168) it reads the omniscient story (the minors' weights)
     then the deployment settings (``minor_hot_budget_fraction``); each failure is logged and
     degrades to a note in ``minor_notes`` (:func:`_minor_budgets`), never failing the tab."""
-    browse = browse_rows(ctx.story_id)
     context: dict[str, Any] = {
-        "browse": browse,
-        "browse_links": all(link.url for row in browse for link in row.links),
+        "browse": browse_rows(ctx.story_id),
+        "memory_list_url": memory_list_url(ctx.story_id),
     }
     try:
         body = ctx.client.get_hot_set(ctx.story_id)
@@ -390,16 +391,15 @@ class ConsolidateSection:
     """The Memory tab's "Consolidate a window" section (#145). ``unavailable`` (the
     ``consolidation`` capability is off: #135's greyed note) wins over ``no_turns`` (head 0);
     otherwise the GET ``form`` to ``url`` with the key minted at this render. The two
-    Retrieval links (convention 11: pre-filled, no read; ``None`` while that tab isn't
-    registered) show in every state."""
+    memory-list links (#236; convention 11: pre-filled, no read) show in every state."""
 
     unavailable: Unavailable | None
     no_turns: bool
     form: ConsolidateForm | None
     url: str
     idempotency_key: str
-    semantic_url: str | None
-    reflection_url: str | None
+    semantic_url: str
+    reflection_url: str
 
 
 def consolidate_section(ctx: InspectContext, head: int | None) -> ConsolidateSection:
@@ -420,8 +420,8 @@ def consolidate_section(ctx: InspectContext, head: int | None) -> ConsolidateSec
         form=form,
         url=reverse("inspect:consolidate", args=[ctx.story_id]),
         idempotency_key=new_ulid(),
-        semantic_url=retrieval_url(ctx.story_id, {"kind": "semantic"}),
-        reflection_url=retrieval_url(ctx.story_id, {"kind": "reflection"}),
+        semantic_url=memory_list_url(ctx.story_id, {"kind": "semantic"}),
+        reflection_url=memory_list_url(ctx.story_id, {"kind": "reflection"}),
     )
 
 
@@ -476,6 +476,15 @@ def explain_banner(
     )
 
 
+def _memory_list_link(story_id: str) -> str | None:
+    """The Candidates note's link to the memory list (#236); ``None`` (the words unlinked)
+    while ``inspect:memory-list`` isn't registered."""
+    try:
+        return memory_list_url(story_id)
+    except NoReverseMatch:
+        return None
+
+
 def _retrieval(ctx: InspectContext) -> dict[str, Any]:
     """The Retrieval tab (#141) and, for a past turn's re-run, #142's reconstruction banner
     (:func:`explain_banner`) above whatever the read answered."""
@@ -488,6 +497,7 @@ def _retrieval(ctx: InspectContext) -> dict[str, Any]:
         "clear_url": retrieval_url(ctx.story_id, {}),
         "head": head,
         "legend": legend(ctx.effective),
+        "memory_list_url": _memory_list_link(ctx.story_id),
     }
     if "q" not in ctx.request.GET:
         form.filters_only()

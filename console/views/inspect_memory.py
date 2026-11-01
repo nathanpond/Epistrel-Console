@@ -16,7 +16,8 @@ The explorer's memory rows (``console/inspect/_memory_actions.html``) carry the 
   POST renders the confirmed-mode confirm page; its Confirm POSTs
   ``POST /admin/stories/{id}/memories/{mid}/sanitize {span, surrogate}``. No Engine route reads
   one memory and its text must not travel in a URL, so the page's GET re-asks the explorer's
-  question (held in ``next``) and shows this memory's text when the answer has it.
+  question (held in ``next``) and shows this memory's text when the answer has it; opened from
+  the memory list (#236), it reads that list's page again instead.
 
 Every write POST-redirect-GETs to ``next`` (the explorer's full path through ``safe_next``,
 falling back to ``inspect:retrieval``) with a flash naming the memory's state after the call
@@ -71,16 +72,18 @@ from console.engine_errors import log_engine_error, panel_for
 from console.forms.inspect import (
     SANITIZE_MAX,
     ConsolidateForm,
+    MemoryListForm,
     QuarantineForm,
     RetrievalForm,
     SanitizeForm,
 )
 from console.held import is_held, render_held
-from console.ids import new_ulid
+from console.ids import is_ulid, new_ulid
 from console.inspect import (
     CONSOLIDATION,
     Tab,
     is_module_off,
+    memory_list_url,
     module_off_unavailable,
     short_id,
     unavailable_for,
@@ -102,6 +105,7 @@ SURROGATE_KEEPS_SPAN = "The surrogate contains the span, so the span stays in th
 EMPTY_SURROGATE = "(empty — removes the span)"
 GUARDRAIL_VIOLATION = "guardrail_violation"
 
+MEMORY_LIST_LIMIT = 100  # the memory list's page size (#236), so the same page is read
 REASON_SHOWN = 80  # a flash shows the reason's first 80 characters
 NOT_FOUND = "Not found (it may have been deleted or truncated)"
 UNREADABLE = "the Engine's answer couldn't be read; re-run the question to see its state"
@@ -403,14 +407,47 @@ def quarantine(request: HttpRequest, story_id: str, memory_id: str) -> HttpRespo
 # --- sanitize (#144) -----------------------------------------------------------------------------
 
 
+def from_memory_list(story_id: str, back: str) -> bool:
+    """Whether ``back`` is this story's memory list (#236)."""
+    return urlsplit(back).path == memory_list_url(story_id)
+
+
+def _list_text(
+    request: HttpRequest, story_id: str, memory_id: str, params: QueryDict
+) -> str | None:
+    """The memory's text as the memory list (#236) shows it now: one
+    ``GET /admin/stories/{id}/memories`` with ``params``' filters and cursor (a cursor that isn't
+    a ULID is dropped: page 1), searched for this id. ``None`` for filters the list's form
+    refuses (no read), a failed read (logged) or a page without this memory."""
+    form = MemoryListForm(params, cast=None)
+    if not form.is_valid():
+        return None
+    typed = params.get("cursor", "")
+    cursor = typed if is_ulid(typed) else None
+    try:
+        body = engine_client_for(request).list_story_memories(
+            story_id, limit=MEMORY_LIST_LIMIT, cursor=cursor, **form.query()
+        )
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None
+    for found in body.memories:
+        if found.id == memory_id:
+            return found.text
+    return None
+
+
 def explorer_text(request: HttpRequest, story_id: str, memory_id: str, back: str) -> str | None:
-    """The memory's text as the explorer's question retrieves it now: ``back`` is the explorer's
-    path for this story with its question (``q``, ``as_of``, ``actor``, ``include_quarantined``),
-    asked again (one ``GET /stories/{id}/retrieve``, omniscient, #135 convention 1) and searched
-    for this id among its memories, assessments and episodes. ``None`` (no read, or nothing
-    shown) for any other ``next``, no ``q``, a question the form refuses, a failed read or an
-    answer without this memory."""
+    """The memory's text as the page ``back`` names shows it now. The memory list (#236): its
+    filters and cursor read again (:func:`_list_text`). The explorer: ``back`` is its path for
+    this story with its question (``q``, ``as_of``, ``actor``, ``include_quarantined``), asked
+    again (one ``GET /stories/{id}/retrieve``, omniscient, #135 convention 1) and searched for
+    this id among its memories, assessments and episodes. ``None`` (no read, or nothing shown)
+    for any other ``next``, no ``q``, a question the form refuses, a failed read or an answer
+    without this memory."""
     parts = urlsplit(back)
+    if parts.path == memory_list_url(story_id):
+        return _list_text(request, story_id, memory_id, QueryDict(parts.query))
     if parts.path != reverse(Tab.RETRIEVAL.url_name, args=[story_id]):
         return None
     params = QueryDict(parts.query)
@@ -524,6 +561,7 @@ def sanitize(request: HttpRequest, story_id: str, memory_id: str) -> HttpRespons
         "memory_id": memory_id,
         "memory_short": short_id(memory_id),
         "next_url": back,
+        "from_list": from_memory_list(story_id, back),
     }
     if request.method != "POST":
         text = explorer_text(request, story_id, memory_id, back)
@@ -561,8 +599,8 @@ CONSOLIDATE_LINES = (
     "A window with nothing to consolidate still queues a job, which writes nothing.",
 )
 QUEUED_TEXT = (
-    "Consolidation queued (job {job_id}). Its semantic facts and reflections appear in Retrieval "
-    "when the worker finishes — use the links under Consolidate a window."
+    "Consolidation queued (job {job_id}). Its semantic facts and reflections appear in the memory "
+    "list when the worker finishes — use the links under Consolidate a window."
 )
 JOINED_TEXT = (
     " This is the job your request of {when} joined: the Engine gives a repeated request the job "
@@ -571,7 +609,7 @@ JOINED_TEXT = (
 REPLAYED_TEXT = "Already queued (repeated submit) — job {job_id}."
 CONSOLIDATE_UNREADABLE = (
     "Consolidation requested — the Engine's answer couldn't be read; its outputs, if any, appear "
-    "in Retrieval as semantic facts and reflections"
+    "in the memory list as semantic facts and reflections"
 )
 
 

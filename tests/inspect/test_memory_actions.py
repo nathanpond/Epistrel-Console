@@ -28,6 +28,7 @@ from console.views import inspect as views
 from console.views import inspect_memory
 from console.views.inspect_memory import memory_state, pin_limit_text, shown_reason
 from tests.fakes.engine import FakeEngine
+from tests.fixtures import engine_fixture
 from tests.inspect.helpers import EFFECTIVE, FIXTURES, STORY, STORY_PATH, structured
 from tests.play.helpers import error_json, story_json
 
@@ -728,6 +729,103 @@ def test_the_sanitize_page_without_a_text_says_so(
     assert hidden(html, "shown_text") == ""
     expected_reads = 1 if case in ("failed read", "not retrieved") else 0
     assert len(retrieves(engine)) == expected_reads
+
+
+LIST = f"/stories/{STORY}/inspect/memory/list/"
+MEMORIES = "/admin/stories/{story_id}/memories"
+LISTED = "01JM6MM0000000000000000001"  # on m6/memories_page1.json
+LISTED_TEXT = "Mara paid the harbour fee."
+LIST_CURSOR = "01JM6MM0000000000000000002"
+
+
+def list_reads(engine: FakeEngine) -> list[httpx.Request]:
+    return [r for r in engine.requests if r.url.path == f"/admin/stories/{STORY}/memories"]
+
+
+def open_sanitize(client: Client, memory_id: str, back: str) -> str:
+    response = client.get(f"{url('sanitize', memory_id)}?{urlencode({'next': back})}")
+    assert response.status_code == 200
+    return response.content.decode()
+
+
+@pytest.mark.parametrize("action", ["pin", "unpin"])
+def test_a_row_action_from_the_list_returns_to_the_same_page(
+    operator_client: Client, engine: FakeEngine, action: str
+) -> None:
+    back = f"{LIST}?{urlencode({'kind': 'episodic', 'quarantined': 'true', 'cursor': LIST_CURSOR})}"
+    response = post(operator_client, action, next=back)
+    assert response.status_code == 302
+    assert response["Location"] == back
+
+
+def test_sanitize_from_the_list_shows_the_text(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", MEMORIES, 200, json=engine_fixture("m6/memories_empty"))
+    engine.respond(
+        "GET",
+        MEMORIES,
+        200,
+        json=engine_fixture("m6/memories_page1"),
+        query={"cursor": LIST_CURSOR, "kind": "episodic"},
+    )
+    back = f"{LIST}?{urlencode({'kind': 'episodic', 'pinned': 'false', 'cursor': LIST_CURSOR})}"
+    html = open_sanitize(operator_client, LISTED, back)
+    (read,) = list_reads(engine)
+    assert dict(read.url.params) == {
+        "viewpoint": "omniscient",
+        "limit": "100",
+        "kind": "episodic",
+        "pinned": "false",
+        "cursor": LIST_CURSOR,
+    }
+    assert retrieves(engine) == []
+    assert writes(engine) == []
+    assert f'<pre class="memory-text">{LISTED_TEXT}</pre>' in html
+    assert hidden(html, "shown_text") == LISTED_TEXT
+    assert "as the list shows it now" in html
+    assert "← Back to the memory list" in html
+    assert f'name="next" value="{back.replace("&", "&amp;")}"' in html
+
+
+@pytest.mark.parametrize("case", ["invalid filter", "failed read", "not on the page"])
+def test_sanitize_from_the_list_without_a_text_says_so(
+    operator_client: Client, engine: FakeEngine, case: str
+) -> None:
+    engine.respond("GET", MEMORIES, 200, json=engine_fixture("m6/memories_page1"))
+    back = f"{LIST}?kind=episodic"
+    memory_id = LISTED
+    if case == "invalid filter":
+        back = f"{LIST}?kind=bogus"
+    elif case == "failed read":
+        engine.respond("GET", MEMORIES, 503, json=error_json("database_unavailable", "down"))
+    else:
+        memory_id = f"{M}99"
+    html = open_sanitize(operator_client, memory_id, back)
+    assert "Text not shown — see the memory list" in html
+    assert 'class="memory-text"' not in html
+    assert len(list_reads(engine)) == (0 if case == "invalid filter" else 1)
+    assert retrieves(engine) == []
+
+
+def test_sanitize_from_the_list_drops_a_bad_cursor(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", MEMORIES, 200, json=engine_fixture("m6/memories_page1"))
+    html = open_sanitize(operator_client, LISTED, f"{LIST}?cursor=nope")
+    (read,) = list_reads(engine)
+    assert "cursor" not in read.url.params
+    assert LISTED_TEXT in html
+
+
+def test_sanitize_from_elsewhere_never_reads_the_list(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    open_sanitize(operator_client, MID, EXPLORER_NEXT)
+    assert len(retrieves(engine)) == 1
+    assert list_reads(engine) == []
+    engine.requests.clear()
+    html = open_sanitize(operator_client, MID, f"/stories/{STORY}/history/?kind=episodic")
+    assert engine.requests == []
+    assert "Text not shown — see the explorer" in html
 
 
 def test_a_valid_sanitize_post_renders_the_confirm_page_with_no_call(

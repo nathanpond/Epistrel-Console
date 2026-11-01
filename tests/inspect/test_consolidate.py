@@ -46,16 +46,16 @@ OTHER_STORY = "01JB2Z8Y5Q3W6K9M1N4P7R0T2W"
 KEY = "01JB2Z8Y5Q3W6K9M1N4P7R0K01"
 KEY_2 = "01JB2Z8Y5Q3W6K9M1N4P7R0K02"
 QUEUED = (
-    f"Consolidation queued (job {JOB}). Its semantic facts and reflections appear in Retrieval "
-    "when the worker finishes — use the links under Consolidate a window."
+    f"Consolidation queued (job {JOB}). Its semantic facts and reflections appear in the memory "
+    "list when the worker finishes — use the links under Consolidate a window."
 )
 JOINED = " This is the job your request of {when} joined: the Engine gives a repeated request"
 DETAIL = (
     f"Consolidation queued as job {JOB} — the Engine reports no progress for consolidation "
     "jobs; its outputs appear in Retrieval as semantic facts and reflections when it finishes."
 )
-SEMANTIC = f'<a href="/stories/{STORY}/inspect/retrieval/?kind=semantic">Find semantic facts</a>'
-REFLECTION = f'<a href="/stories/{STORY}/inspect/retrieval/?kind=reflection">Find reflections</a>'
+SEMANTIC = f'<a href="/stories/{STORY}/inspect/memory/list/?kind=semantic">Find semantic facts</a>'
+REFLECTION = f'<a href="/stories/{STORY}/inspect/memory/list/?kind=reflection">Find reflections</a>'
 NO_TURNS = "No turns yet — nothing to consolidate."
 GREYED = "Needs the <code>consolidation</code> module"
 

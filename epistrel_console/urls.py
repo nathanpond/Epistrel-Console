@@ -21,6 +21,7 @@ from console.views import (
     inspect_divergences,
     inspect_exposures,
     inspect_ledger,
+    inspect_memories,
     inspect_memory,
     inspect_predicates,
     inspect_scene,
@@ -188,6 +189,8 @@ inspect_patterns = (
         path("memory/", inspect.memory, name="memory"),
         # #145: request consolidation of a turn window (form, confirm, call).
         path("memory/consolidate/", inspect_memory.consolidate, name="consolidate"),
+        # #236: every memory of the story, filtered and paged (Engine #531).
+        path("memory/list/", inspect_memories.memory_list, name="memory-list"),
         path("retrieval/", inspect.retrieval, name="retrieval"),
         # #137: the story's canon facts on both time axes.
         path("canon/", inspect_canon.canon, name="canon"),

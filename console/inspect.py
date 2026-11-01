@@ -701,6 +701,13 @@ def retrieval_url(story_id: str, params: Mapping[str, str]) -> str | None:
     return f"{base}?{urlencode(params)}" if params else base
 
 
+def memory_list_url(story_id: str, params: Mapping[str, str] | None = None) -> str:
+    """The Memory tab's memory list (``inspect:memory-list``, #236), pre-filled with ``params``
+    (its filters, no read)."""
+    base = reverse("inspect:memory-list", args=[story_id])
+    return f"{base}?{urlencode(params)}" if params else base
+
+
 # The longest URL-encoded ``next`` a memory action link carries (#143); a longer explorer path
 # falls back to the explorer pre-filled with the memory alone (convention 11).
 ACTION_NEXT_MAX = 2000

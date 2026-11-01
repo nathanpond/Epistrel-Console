@@ -30,7 +30,7 @@ from django.urls import reverse
 
 from console.cast import Character, character_labels
 from console.engine.models import EpisodeBody, HotSetBody, HotSetBudgets, RetirementBody
-from console.inspect import history_turn_url, retrieval_url
+from console.inspect import history_turn_url, memory_list_url, retrieval_url
 
 OVER_BUDGET = "over budget"
 AT_CEILING = "at ceiling"
@@ -57,7 +57,7 @@ REASON_LEGEND: Mapping[str, str] = {
     ),
 }
 
-# The Browse grid (convention 11): kind rows x tier columns.
+# The Browse grid (convention 11): kind rows x tier columns, each a link into the memory list.
 KINDS: tuple[str, ...] = ("episodic", "semantic", "reflection")
 TIERS: tuple[str, ...] = ("hot", "retired")
 
@@ -190,7 +190,7 @@ class RetirementRow:
 @dataclass(frozen=True)
 class BrowseLink:
     label: str
-    url: str | None
+    url: str
 
 
 @dataclass(frozen=True)
@@ -484,8 +484,8 @@ def retirement_rows(
 
 
 def browse_rows(story_id: str) -> list[BrowseRow]:
-    """The Browse grid: a Retrieval link per kind x tier (``url`` ``None`` while #141 isn't
-    registered)."""
+    """The Browse grid: a memory-list link (#236) per kind x tier, with ``kind`` and
+    ``retrieval_tier`` set."""
     return [
         BrowseRow(
             kind,
@@ -493,7 +493,7 @@ def browse_rows(story_id: str) -> list[BrowseRow]:
             [
                 BrowseLink(
                     f"{kind.capitalize()} · {tier}",
-                    retrieval_url(story_id, {"kind": kind, "tier": tier}),
+                    memory_list_url(story_id, {"kind": kind, "retrieval_tier": tier}),
                 )
                 for tier in TIERS
             ],
