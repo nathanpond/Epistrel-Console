@@ -475,7 +475,7 @@ def explain_url(story_id: str, query: ExplainQuery) -> str | None:
 LOADED = "loaded"  # the turn's eval hooks were read
 NO_HOOKS = "no_hooks"  # the read succeeded and the turn recorded no eval hooks
 NOT_LOADED = "not_loaded"  # no read was made ("Show all traces" off, past the cap, the play page)
-UNAVAILABLE = "unavailable"  # the read failed, missed the deadline or was withheld
+UNAVAILABLE = "unavailable"  # the read failed or missed the deadline
 NO_TRACE = "none"  # an ingested operation: nothing was verified or repaired
 NOT_CHECKED = "not checked"  # convention 9: a null verdict
 SAY_CHANNEL = "say"
@@ -686,8 +686,6 @@ def _state(item: HistoryItem, trace: TurnTrace | None, state: str) -> str:
         return NO_TRACE
     if trace is None:
         return state
-    if trace.withheld_for is not None:
-        return UNAVAILABLE
     return LOADED if trace.eval_hooks is not None else NO_HOOKS
 
 
@@ -730,8 +728,8 @@ def beat_trace(
 ) -> BeatTrace | None:
     """``None`` for an item that isn't a structured beat (:func:`is_structured`). Otherwise
     the beat's trace. ``state`` is the caller's (:data:`NOT_LOADED`, :data:`UNAVAILABLE`) when
-    there is no ``trace``; with one it follows the read (withheld: unavailable; no hooks;
-    loaded). An ingested item is always :data:`NO_TRACE`."""
+    there is no ``trace``; with one it follows the read (no hooks; loaded). An ingested item
+    is always :data:`NO_TRACE`."""
     if not is_structured(item):
         return None
     names = cast_names or {}

@@ -80,7 +80,6 @@ TRACE_WORKERS = 4
 TRACE_DEADLINE_S = 10.0  # shared by every trace read of one page
 TRACE_CAP_NOTE = f"Escalation and repair loaded for the first {TRACE_TURNS_MAX} turns on this page."
 TIMEOUT = "timeout"
-WITHHELD = "withheld: produced for another viewpoint"
 
 
 @dataclass(frozen=True)
@@ -307,7 +306,7 @@ def turn_traces(
     request: HttpRequest | None = None,
 ) -> dict[str, TurnTrace | str]:
     """Each operation's trace (#139's :func:`read_turn_trace`), or why it is unavailable: the
-    notice reason ("timeout", "HTTP 503 database_unavailable", "unreachable", "withheld: …").
+    notice reason ("timeout", "HTTP 503 database_unavailable", "unreachable", "HTTP 409 …").
 
     The reads run on a pool of 4 local to this call, under one deadline for all of them; reads
     still running then are abandoned (they end on the client's own read timeout) and the page
@@ -335,8 +334,7 @@ def turn_traces(
         elif exc is not None:
             raise exc
         else:
-            trace = future.result()
-            found[op_id] = WITHHELD if trace.withheld_for is not None else trace
+            found[op_id] = future.result()
     return found
 
 

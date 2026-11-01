@@ -1,7 +1,7 @@
 {% comment %}
 #139: a turn's eval hooks and read set, the body of the lazy "Eval hooks & read set" block
 (console/_turn_trace_block.html). Context (console.views.inspect.turn_trace): state, story_id,
-operation (the record read), trace (console.turn_trace.TraceView), withheld (on that state),
+operation (the record read), trace (console.turn_trace.TraceView),
 engine_error / the held context on errors. Verdict words follow #135 convention 9.
 {% endcomment %}{% load console_format inspect_tags %}<div class="turn-trace-content" data-state="{{ state }}">
 {% if state == "held" %}{% include "console/stories/_held.html" %}
@@ -9,10 +9,7 @@ engine_error / the held context on errors. Verdict words follow #135 convention 
 {% elif state == "not_found" %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
 {% elif state == "not_turn" %}<p class="not-turn">Not a turn — no eval hooks or read set</p>
 {% else %}
-{% if state == "withheld" %}
-<p class="notice withheld">The Engine shows eval hooks only to an omniscient read, and {% if withheld.passed %}refused that read; the window should have closed — try again shortly.{% else %}refuses that read{% if withheld.until %} until about <time datetime="{{ withheld.until|date:'c' }}" title="{{ withheld.until|date:'c' }} (estimated from the current setting)">{{ withheld.until|date:"Y-m-d H:i" }} UTC</time>{% endif %} for a turn produced for {% if withheld.character_id %}character {{ withheld.character_id|engine_id }}{% elif withheld.viewpoint == "omniscient" %}omniscient{% elif withheld.viewpoint %}<code>{{ withheld.viewpoint }}</code>{% else %}another viewpoint{% endif %}.{% endif %}{% if withheld.assumed_default %} (assuming the default 24 h window; deployment settings unreadable){% endif %}</p>
-<p class="muted">(A Lite turn has no eval hooks.)</p>
-{% elif state == "not_committed" %}
+{% if state == "not_committed" %}
 <p class="no-hooks">No eval hooks: the turn is <span title="{{ operation.status }}">{{ operation.status|humanise }}</span></p>
 {% elif state == "no_hooks" %}
 <p class="no-hooks">No eval hooks recorded (a Lite turn, or one committed before the Engine recorded them)</p>

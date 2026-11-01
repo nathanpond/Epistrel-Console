@@ -29,7 +29,7 @@ list renders ``[a, b]``; a string matching the Engine's id pattern is an entity 
 :func:`lineage_component` keeps those connected to a fact through supersede links (not
 ``lineage_id``: an automatic supersede and a remainder start new ones), :func:`lineage_states`
 applies the state rule without the current-set read, and :func:`bar_spans` lays out the bars.
-:func:`find_fact` resolves an id alone (until nathanpond/Epistrel#535's single-fact read).
+:func:`active_fact` resolves an id alone with ``get_fact`` (Engine #535).
 """
 
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -510,7 +510,8 @@ def fact_view(fact: FactBody, names: Mapping[str, str], story_id: str | None) ->
 # The lineage read: every version of one subject and predicate, pages of 500, at most 4 of them.
 LINEAGE_PAGE = 500
 LINEAGE_PAGES = 4
-CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+ACTIVE = "active"  # the Engine's ``membership`` of a version on the active timeline
+FACT_NOT_FOUND = "fact_not_found"
 
 
 def lineage_url(
@@ -524,38 +525,18 @@ def lineage_url(
     return url
 
 
-def ulid_predecessor(value: str) -> str | None:
-    """The id just before ``value`` in the Engine's id order: the last Crockford character
-    decremented, with borrow. ``None`` for the all-zero id (or anything not an Engine id)."""
-    if not is_ulid(value) or set(value) == {"0"}:
-        return None
-    chars = list(value)
-    for i in range(len(chars) - 1, -1, -1):
-        position = CROCKFORD.index(chars[i])
-        if position:
-            chars[i] = CROCKFORD[position - 1]
-            break
-        chars[i] = CROCKFORD[-1]
-    return "".join(chars)
-
-
-def find_fact(client: EngineClient, story_id: str, fact_id: str) -> FactBody | None:
-    """One version by id, until the Engine has a single-fact read (nathanpond/Epistrel#535):
-    ``include_superseded=true&limit=1`` after the id's predecessor (the list is ordered by id
-    and the cursor means "after this id"). ``None`` when the version returned isn't
-    ``fact_id`` (not in the active timeline). Raises :class:`EngineClientError` on failure."""
-    return locate_fact(client, story_id, fact_id)[0]
-
-
-def locate_fact(client: EngineClient, story_id: str, fact_id: str) -> tuple[FactBody | None, int]:
-    """:func:`find_fact`'s read, with the page's ``timeline_revision`` (#146: the supersede
-    page's state check compares its current-set read with it)."""
-    page = client.list_facts(
-        story_id, include_superseded=True, limit=1, cursor=ulid_predecessor(fact_id)
-    )
-    if page.facts and page.facts[0].id == fact_id:
-        return page.facts[0], page.timeline_revision
-    return None, page.timeline_revision
+def active_fact(client: EngineClient, story_id: str, fact_id: str) -> FactBody | None:
+    """One version by id with ``get_fact`` (Engine #535), only when it is on the active
+    timeline (``membership == "active"``). ``None`` for any other membership and for a 404
+    ``fact_not_found`` (an answer, not logged); anything else raises
+    :class:`EngineClientError` (the story's 404 ``not_found`` and ``module_off`` included)."""
+    try:
+        fact = client.get_fact(story_id, fact_id)
+    except EngineError as exc:
+        if exc.http_status == 404 and exc.code == FACT_NOT_FOUND:
+            return None
+        raise
+    return fact if fact.membership == ACTIVE else None
 
 
 def read_lineage(

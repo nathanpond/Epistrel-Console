@@ -146,11 +146,10 @@ def operation(turn: int, eval_hooks: Any = DROP, **over: Any) -> dict[str, Any]:
     return body
 
 
-def trace_of(eval_hooks: Any = DROP, withheld_for: str | None = None) -> TurnTrace:
+def trace_of(eval_hooks: Any = DROP) -> TurnTrace:
     record = OperationRecord.from_json(operation(2, eval_hooks))
     assert record is not None
-    parsed = EvalHooks.parse(record.eval_hooks) if withheld_for is None else None
-    return TurnTrace(record, parsed, ReadSet.parse(record.read_set), withheld_for)
+    return TurnTrace(record, EvalHooks.parse(record.eval_hooks), ReadSet.parse(record.read_set))
 
 
 def trace(body: dict[str, Any], turn_trace: TurnTrace | None = None, **kw: Any) -> BeatTrace:
@@ -292,7 +291,6 @@ def test_states() -> None:
     assert trace(beat(), None, state=UNAVAILABLE).state == UNAVAILABLE
     assert trace(beat(), trace_of()).state == LOADED
     assert trace(beat(), trace_of(None)).state == NO_HOOKS
-    assert trace(beat(), trace_of(withheld_for="character:x")).state == UNAVAILABLE
     assert trace(beat(origin="ingested"), trace_of()).state == NO_TRACE
 
 
@@ -873,7 +871,7 @@ def test_a_lite_page_makes_no_trace_or_registry_read(
     assert predicate_reads(engine) == 0
 
 
-def test_failed_withheld_and_late_reads_mark_their_turns_unavailable(
+def test_failed_and_late_reads_mark_their_turns_unavailable(
     operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(history_views, "TRACE_DEADLINE_S", 0.1)
@@ -881,23 +879,21 @@ def test_failed_withheld_and_late_reads_mark_their_turns_unavailable(
     def failing(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json=error_json("database_unavailable"))
 
-    def withheld(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("viewpoint"):
-            return httpx.Response(409, json=fixture("idempotency_conflict"))
-        return httpx.Response(200, json=operation(4, viewpoint=f"character:{TOBIN}"))
+    def conflict(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json=fixture("idempotency_conflict"))
 
     def late(request: httpx.Request) -> httpx.Response:
         time.sleep(0.5)
         return httpx.Response(200, json=operation(5))
 
     answer_history(engine, history_body([2, 3, 4, 5]))
-    answer_operations(engine, {op_id(3): failing, op_id(4): withheld, op_id(5): late})
+    answer_operations(engine, {op_id(3): failing, op_id(4): conflict, op_id(5): late})
     response = operator_client.get(f"{URL}?viewpoint=omniscient&traces=1")
     assert response.status_code == 200
     html = response.content.decode()
     assert (
         '<p class="warning trace-notice">Turn trace unavailable: T3 (HTTP 503 '
-        "database_unavailable), T4 (withheld: produced for another viewpoint), T5 (timeout)</p>"
+        "database_unavailable), T4 (HTTP 409 idempotency_conflict), T5 (timeout)</p>"
     ) in html
     assert "engine-error" not in html.split('<section class="items">')[1]
     for turn in (3, 4, 5):

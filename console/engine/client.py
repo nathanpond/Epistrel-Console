@@ -2970,7 +2970,9 @@ class EngineClient:
         """``GET /operations/{id}``: the Engine's record of one operation.
 
         ``viewpoint`` is needed to see a turn's stored ``result`` (the output viewpoint it was
-        produced for); another named viewpoint is 409 ``idempotency_conflict``.
+        produced for). An ``omniscient`` read always gets ``eval_hooks`` and ``read_set.keys``
+        (Engine #534) with ``result`` null; another named character viewpoint is 409
+        ``idempotency_conflict``.
         """
         params = {"viewpoint": viewpoint} if viewpoint else None
         path = f"/operations/{quote(operation_id, safe='')}"

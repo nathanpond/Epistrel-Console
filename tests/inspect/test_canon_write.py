@@ -59,6 +59,8 @@ NEW = f"/stories/{STORY}/inspect/canon/new/"
 WRITTEN = f"/stories/{STORY}/inspect/canon/written/"
 FACTS = "/admin/stories/{story_id}/facts"
 FACTS_PATH = f"/admin/stories/{STORY}/facts"
+FACT = "/admin/stories/{story_id}/facts/{fact_id}"
+FACT_PATH = f"/admin/stories/{STORY}/facts/{P}FW1"
 LOCK = "/admin/stories/{story_id}/facts/{fact_id}/lock"
 SUPERSEDE = "/admin/stories/{story_id}/facts/{fact_id}/supersede"
 PREDICATES = "/stories/{story_id}/predicates"
@@ -103,12 +105,17 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake.respond("GET", STORY_PATH, 200, json=story_json())
     fake.respond("GET", PREDICATES, 200, json=fixture("predicates_write"))
     fake.respond("GET", FACTS, 200, json=fixture("facts_write"))
+    fake.respond("GET", FACT, 200, json=version(membership="active"))
     fake.respond("POST", FACTS, 201, json=written())
     fake.respond("POST", SUPERSEDE, 201, json=written())
     fake.respond("POST", LOCK, 200, json=written(superseded=[FW1], memory_id=None, warnings=[]))
     fake.respond("DELETE", LOCK, 200, json=written(superseded=[FW1], memory_id=None, warnings=[]))
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake
+
+
+def is_fact_or_registry_read(request: httpx.Request) -> bool:
+    return request.url.path.startswith(FACTS_PATH) or request.url.path == PREDICATES_PATH
 
 
 def writes(engine: FakeEngine) -> list[httpx.Request]:
@@ -440,7 +447,7 @@ def test_a_greyed_canon_tab_greys_the_new_page_with_no_calls(
     engine.respond("GET", EFFECTIVE, 200, json=lite())
     html = get(operator_client, f"{NEW}?predicate={LOC}")
     assert "Not available for this story" in html
-    assert not [r for r in engine.requests if r.url.path in (FACTS_PATH, PREDICATES_PATH)]
+    assert not [r for r in engine.requests if is_fact_or_registry_read(r)]
     response = commit(operator_client)
     assert "Not available for this story" in response.content.decode()
     assert not writes(engine)
@@ -1082,9 +1089,10 @@ def test_the_supersede_page_is_pre_filled_from_the_version(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     html = open_supersede(operator_client, f"?next={TAB}")
-    (read,) = [r for r in engine.requests if r.url.path == FACTS_PATH]
-    assert read.url.params["include_superseded"] == "true"
-    assert read.url.params["limit"] == "1"
+    (read,) = [r for r in engine.requests if r.url.path.startswith(FACTS_PATH)]
+    assert read.url.path == FACT_PATH  # one get_fact (Engine #535), no list read
+    assert dict(read.url.params) == {"viewpoint": "omniscient"}
+    assert "limit" not in read.url.params
     key_part = re.search(r'<dl class="supersede-key">(.*?)</dl>', html, re.S)
     assert key_part is not None
     assert "Tobin" in key_part.group(1)
@@ -1186,51 +1194,88 @@ def test_a_new_row_naming_a_key_qualifier_is_refused(
 
 
 def closed_version() -> dict[str, Any]:
-    return version(tx_to="2026-10-24T16:30:00Z", superseded_by=P + "FX1")
+    return version(tx_to="2026-10-24T16:30:00Z", superseded_by=P + "FX1", membership="active")
+
+
+def list_reads(engine: FakeEngine) -> list[httpx.Request]:
+    return [r for r in engine.requests if r.url.path == FACTS_PATH]
 
 
 def test_a_closed_version_that_is_still_current_gets_the_form(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    engine.respond_sequence(
-        "GET",
-        FACTS,
-        [
-            {"status": 200, "json": page(closed_version())},
-            {"status": 200, "json": page(closed_version())},
-        ],
-    )
+    engine.respond("GET", STORY_PATH, 200, json=story_json(timeline_revision=7))
+    engine.respond("GET", FACT, 200, json=closed_version())
+    engine.respond("GET", FACTS, 200, json=page(closed_version()))
     html = open_supersede(operator_client)
     assert "current (closure undone)" in html
     assert 'class="fact-form supersede-form"' in html
-    reads = [r for r in engine.requests if r.url.path == FACTS_PATH]
-    assert len(reads) == 2
-    assert reads[1].url.params["subject"] == TOBIN
-    assert reads[1].url.params["predicate"] == LOC
+    (read,) = list_reads(engine)  # the current-set read only
+    assert read.url.params["subject"] == TOBIN
+    assert read.url.params["predicate"] == LOC
 
 
 def test_a_closed_version_found_superseded_gets_the_message_and_no_form(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    engine.respond_sequence(
-        "GET",
-        FACTS,
-        [{"status": 200, "json": page(closed_version())}, {"status": 200, "json": page()}],
-    )
+    engine.respond("GET", STORY_PATH, 200, json=story_json(timeline_revision=7))
+    engine.respond("GET", FACT, 200, json=closed_version())
+    engine.respond("GET", FACTS, 200, json=page())
     html = open_supersede(operator_client)
     assert "That version was already superseded. Supersede the current one:" in html
     assert f'href="/stories/{STORY}/inspect/canon/{FW1}/lineage/"' in html
     assert 'class="fact-form supersede-form"' not in html
 
 
-def test_a_version_not_in_the_timeline_flashes_and_returns_to_canon(
+@pytest.mark.parametrize(("revision", "decided"), [(7, True), (8, False)])
+def test_a_closed_version_checks_against_the_story_revision(
+    operator_client: Client, engine: FakeEngine, revision: int, decided: bool
+) -> None:
+    # The current-set pages are at revision 7; the shell's story read decides the check.
+    engine.respond("GET", STORY_PATH, 200, json=story_json(timeline_revision=revision))
+    engine.respond("GET", FACT, 200, json=closed_version())
+    engine.respond("GET", FACTS, 200, json=page(closed_version()))
+    html = open_supersede(operator_client)
+    assert len(list_reads(engine)) == 1
+    assert ("current (closure undone)" in html) is decided
+    assert ("closed · not confirmed" in html) is not decided
+
+
+def test_without_the_story_read_a_closed_version_is_unconfirmed(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    engine.respond("GET", FACTS, 200, json=page(version(id=P + "FW9")))
+    engine.respond("GET", STORY_PATH, 503, json=error_json("database_unavailable"))
+    engine.respond("GET", FACT, 200, json=closed_version())
+    html = open_supersede(operator_client)
+    assert "closed · not confirmed" in html
+    assert list_reads(engine) == []  # complement: no current-set read
+
+
+@pytest.mark.parametrize("membership", ["discarded", "dormant", "superseded", "fact_not_found"])
+def test_an_inactive_version_redirects_with_the_flash(
+    operator_client: Client, engine: FakeEngine, membership: str
+) -> None:
+    if membership == "fact_not_found":
+        engine.respond("GET", FACT, 404, json=error_json("fact_not_found"))
+    else:
+        engine.respond("GET", FACT, 200, json=version(membership=membership))
     response = operator_client.get(SUPERSEDE_URL)
     assert response.status_code == 302
     assert response["Location"] == TAB
     assert flashes(response) == [("error", NOT_IN_TIMELINE)]
+    # Complement: no registry read and no form.
+    assert not [r for r in engine.requests if r.url.path == PREDICATES_PATH]
+    assert list_reads(engine) == []
+
+
+def test_a_missing_story_on_the_fact_read_is_the_not_found_page(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", FACT, 404, json=error_json("not_found"))
+    response = operator_client.get(SUPERSEDE_URL)
+    body = response.content.decode()
+    assert NOT_FOUND in body
+    assert 'class="fact-form supersede-form"' not in body
 
 
 def test_an_instant_version_is_pre_filled_as_its_interval(
@@ -1240,10 +1285,14 @@ def test_an_instant_version_is_pre_filled_as_its_interval(
     proposition["valid_time"] = {"kind": "instant", "at": 10, "until": 11, "granularity": "minute"}
     engine.respond(
         "GET",
-        FACTS,
+        FACT,
         200,
-        json=page(
-            version(proposition=proposition, valid_from_inner=10, valid_to=11, valid_to_inner=11)
+        json=version(
+            proposition=proposition,
+            valid_from_inner=10,
+            valid_to=11,
+            valid_to_inner=11,
+            membership="active",
         ),
     )
     html = open_supersede(operator_client)
@@ -1306,7 +1355,7 @@ def test_a_greyed_canon_tab_greys_the_supersede_page(
     engine.respond("GET", EFFECTIVE, 200, json=lite())
     html = open_supersede(operator_client)
     assert "Not available for this story" in html
-    assert not [r for r in engine.requests if r.url.path in (FACTS_PATH, PREDICATES_PATH)]
+    assert not [r for r in engine.requests if is_fact_or_registry_read(r)]
 
 
 def test_the_supersede_back_link_follows_next(operator_client: Client, engine: FakeEngine) -> None:

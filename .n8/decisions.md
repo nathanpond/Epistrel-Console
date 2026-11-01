@@ -2386,3 +2386,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Malformed-entry and unknown-enum tests serve the page through `FakeEngine.side_effect` (unvalidated), since `respond` validates against the recorded schema, which refuses a missing `kind` or an unlisted enum value.
   **Why:** D16: refusal/odd bodies are inline; the fake has no unvalidated `respond`, and `side_effect` is its documented escape for answers the schema can't express.
   **Issue:** #236
+- **Decision:** `console.canon.active_fact` wraps `EngineClient.get_fact`: a 404 `fact_not_found` (unlogged) or any membership other than `active` is `None`; everything else re-raises, so `_locate`/`_supersede_form` keep their existing error mapping (story `not_found`, `module_off`, held). `FACT_NOT_FOUND` now lives once in `console/canon.py`.
+  **Why:** The story's Discretion (pass 1 and 2); `membership == "active"` is the Engine's own word, and the old list read returned active versions only.
+  **Issue:** #237
+- **Decision:** The supersede page's closed-version check compares the current-set read with the shell's story read's `timeline_revision`; without that read `current()` answers `CurrentSet(problem=RACE)` with no Engine call, so the version reads `closed · not confirmed`.
+  **Why:** `FactBody` carries no revision; the story read precedes the fact read, so equal revisions still prove nothing moved (Discretion).
+  **Issue:** #237
+- **Decision:** The withheld path is removed whole: `TurnTrace` is `(operation, eval_hooks, read_set)`, `read_turn_trace` is one omniscient read, and a 409 `idempotency_conflict` is an ordinary error (#43's panel in the inspector, "HTTP 409 idempotency_conflict" in History). The no-viewpoint fixture `operation_turn_no_viewpoint.json` is deleted (no other reader); `idempotency_conflict.json` stays (History's test uses it).
+  **Why:** Engine #534 shipped (`core/operation_view.read_operation` gives omniscient reads the hooks); the story's AC and test plan.
+  **Issue:** #237
+- **Decision:** Test `get_fact` answers set `membership="active"` explicitly instead of editing the shared fixtures, whose versions carry the pre-M6 values `canon`/`latent`.
+  **Why:** `FactBody.membership` is a plain string in the schema, so the fixtures validate; changing them would touch every Canon test for no behaviour change. The lineage and supersede tests state the membership they depend on.
+  **Issue:** #237
+- **Decision:** `views/history.py`'s `turn_traces` docstring lists "HTTP 409 …" in place of "withheld: …" among the notice reasons; the play page's "outside the 24 h window or another viewpoint" notice is left as is.
+  **Why:** That notice is about the stored `result`, which #534 doesn't change (Discretion pass 2).
+  **Issue:** #237
