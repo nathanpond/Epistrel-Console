@@ -2401,3 +2401,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `views/history.py`'s `turn_traces` docstring lists "HTTP 409 …" in place of "withheld: …" among the notice reasons; the play page's "outside the 24 h window or another viewpoint" notice is left as is.
   **Why:** That notice is about the stored `result`, which #534 doesn't change (Discretion pass 2).
   **Issue:** #237
+- **Decision:** A present but blank `?version=` under `?profile=` counts as invalid (flash `INVALID_VERSION`, nothing sent), as the profile detail page treats it; the status form only carries `version` when it parsed.
+  **Why:** "anything else is ignored with the flash"; matches `profiles.profile_detail`'s `raw is not None` rule.
+  **Issue:** #238
+- **Decision:** Strict version parsing lives in `console/views/stories.py` as `parse_version` (ASCII digits, 1–2147483647) with `VERSION_MAX`; `stories.py` imports `INVALID_VERSION` and `detail_url` from `console/views/profiles.py` (no import cycle: profiles does not import stories).
+  **Why:** Discretion pass 1/2; `profiles._positive` left unchanged.
+  **Issue:** #238
+- **Decision:** The invalid-id header renders "Showing stories using `<code>ID</code>` That isn't an engine profile id · Clear" (message in `span.invalid-profile`); the client is created only after validation.
+  **Why:** AC "beside the 'Showing stories using …' line"; zero Engine calls is asserted on `engine.requests`.
+  **Issue:** #238
+- **Decision:** `_owned_row` and the new `_related_row` share `_named(kind, id, name)`; `test_columns_per_type` makes a second request with an inline one-related-item-per-type body. `tests/test_principals.py` `section()` also stops at `</section>` so the last table (related engine profiles) can be read.
+  **Why:** Discretion pass 1/2; the old helper raised on the page's final heading, which no test had read before.
+  **Issue:** #238
+- **Decision:** `test_links_per_type`'s related expectations change from id links to name links (the story's AC replaces them); added `test_a_related_null_reads_a_dash`, `test_a_version_filter_with_no_match_says_so`, `test_a_version_without_a_profile_is_ignored_silently` and a `stories_url` unit test beyond the plan.
+  **Why:** They pin Discretion lines (null cells, empty-state text with a version, silent ignore) the planned tests did not cover.
+  **Issue:** #238
+- **Decision:** The plan's `test_an_invalid_version_is_ignored_with_a_flash` is named `test_an_invalid_list_version_is_ignored_with_a_flash` in `tests/test_profiles_browse.py`.
+  **Why:** That file already has a profile-detail test of the planned name; reusing it shadowed the older test (ruff F811 / mypy no-redef).
+  **Issue:** #238

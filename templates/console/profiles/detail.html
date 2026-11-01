@@ -19,7 +19,7 @@
   <dt>Created</dt><dd>{{ profile.created_at|engine_time }}</dd>
   <dt>Updated</dt><dd>{{ profile.updated_at|engine_time }}</dd>
 </dl>
-<p><a class="stories-using" href="{{ stories_url }}">Stories using this profile</a></p>
+<p><a class="stories-using" href="{{ stories_url }}">Stories using this profile</a>{% if version_stories_url %} · <a class="stories-on-version" href="{{ version_stories_url }}">Stories on version {{ profile.version }}</a>{% endif %}</p>
 {% include "console/_ownership.html" %}
 <h2>Settings</h2>
 {% include "console/profiles/_settings.html" %}

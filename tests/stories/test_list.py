@@ -148,3 +148,14 @@ def test_list_failure_renders_the_error_panel(operator_client: Client, engine: F
     )
     html = operator_client.get("/stories/").content.decode()
     assert "Engine error 503 unavailable" in html
+
+
+def test_the_plain_list_sends_no_profile_filter(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#238: only ``?profile=`` sends ``engine_profile``; a bare list's query is empty."""
+    serve(engine, summary(ACTIVE, "Harbour", "active"))
+    html = operator_client.get("/stories/").content.decode()
+    (listing,) = calls(engine, "GET", "/stories")
+    assert listing.url.query == b""
+    assert "Profile version" not in html

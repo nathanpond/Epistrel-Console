@@ -24,10 +24,8 @@ from console.confirm import (
     safe_next,
     shown_name,
 )
-from console.engine.choices import error_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import StorySummary
-from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
@@ -44,7 +42,9 @@ from console.forms import (
 from console.forms.stories import CREATION_ERROR_PATHS
 from console.formset_rows import edit_rows, wants_edit
 from console.held import HELD_PARAM, HELD_STATUS
-from console.ids import new_ulid
+from console.ids import is_ulid, new_ulid
+from console.views.profiles import INVALID_VERSION
+from console.views.profiles import detail_url as profile_detail_url
 
 EMPTY = "—"
 PAUSED_NOTE = "Paused while the check runs"  # #80's wording
@@ -69,7 +69,6 @@ class StoryRow:
     story: StorySummary
     cast_size: int | None  # None when the story's own read failed (or was skipped: held)
     actions_query: str  # ?name=…&next=… for the action links
-    profile_version: int | None = None  # ?profile= only (#78): the version the story runs on
 
     @property
     def held(self) -> bool:
@@ -101,13 +100,14 @@ def _list_row(
 def story_list(request: HttpRequest) -> HttpResponse:
     """Every story ``GET /stories`` returns, archived included, in the Engine's order. The list
     item has no cast, so each row's cast size comes from ``GET /stories/{id}`` (sequential).
-    ``?profile=<id>`` narrows it to the stories using that engine profile (#78)."""
+    ``?profile=<id>`` (and ``?version=<n>``) narrows it to the stories on that engine profile
+    through the Engine's ``engine_profile`` filter (#78, #238)."""
     filters = StoryFilterForm(request.GET)
     status = filters.chosen_status()
+    raw_profile = request.GET.get(PROFILE_PARAM, "").strip()
+    if raw_profile:
+        return _stories_using_profile(request, filters, status, raw_profile.upper())
     client = engine_client_for(request)
-    profile_id = request.GET.get(PROFILE_PARAM, "").strip()
-    if profile_id:
-        return _stories_using_profile(request, client, filters, status, profile_id)
     stories = client.list_stories(status=status)
     here = request.get_full_path()
     rows = [_list_row(client, request, story, here) for story in stories]
@@ -128,34 +128,63 @@ def story_list(request: HttpRequest) -> HttpResponse:
     )
 
 
-# --- Stories using an engine profile (#78) ------------------------------------------------------
+# --- Stories using an engine profile (#78, #238) ------------------------------------------------
 
 PROFILE_PARAM = "profile"
+VERSION_PARAM = "version"
 PROFILE_PAGE = 50
 PROFILE_UNREAD = "Couldn't read this profile"
 NO_PROFILE_STORIES = "No stories use this profile."
+INVALID_PROFILE = "That isn't an engine profile id"
+VERSION_MAX = 2147483647
 
 
-@dataclass(frozen=True)
-class Unchecked:
-    """A story whose ``GET /stories/{id}`` failed or was cut by the deadline."""
+def no_version_stories(version: int) -> str:
+    return f"No stories run version {version} of this profile."
 
-    story: StorySummary
-    reason: str
+
+def parse_version(raw: str) -> int | None:
+    """``raw`` as a profile version: ASCII digits only, 1 to :data:`VERSION_MAX`, else ``None``
+    ("007" is 7)."""
+    if not (raw.isascii() and raw.isdigit()):
+        return None
+    number = int(raw)
+    return number if 1 <= number <= VERSION_MAX else None
 
 
 def _stories_using_profile(
     request: HttpRequest,
-    client: EngineClient,
     filters: StoryFilterForm,
     status: str | None,
     profile_id: str,
 ) -> HttpResponse:
-    """The stories (with ``status``, when chosen) running under ``profile_id`` at any version.
-    ``StorySummaryBody`` has no profile, so each story is read (``GET /stories/{id}``) on the
-    fan-out pool under its 10 s deadline; a failed or cut read is counted and listed, not
-    matched (nathanpond/Epistrel#527 asks for an Engine filter). Paged Console-side."""
-    stories = client.list_stories(status=status)
+    """The stories (with ``status``, when chosen) the Engine lists under ``profile_id`` (C13
+    normalised): any version, or ``?version=<n>`` only. Both are checked before any call; an id
+    the Engine's pattern refuses makes none. The Engine's answer is rendered as it comes (C15),
+    paged Console-side; each row on the page reads its cast (``GET /stories/{id}``)."""
+    raw_version = request.GET.get(VERSION_PARAM)
+    version = parse_version(raw_version) if raw_version is not None else None
+    if raw_version is not None and version is None:
+        messages.warning(request, INVALID_VERSION)
+    clear = request.GET.copy()
+    for key in (PROFILE_PARAM, VERSION_PARAM, "page"):
+        clear.pop(key, None)
+    context: dict[str, Any] = {
+        "filters": filters,
+        "status": status or "",
+        "profile_id": profile_id,
+        "clear_query": clear.urlencode(),
+        "held_name": HELD_NAME,
+        "held_status": HELD_STATUS_TEXT,
+    }
+    if not is_ulid(profile_id):
+        context.update(rows=[], profile_invalid=INVALID_PROFILE)
+        return render(request, "console/stories/list.html", context)
+
+    client = engine_client_for(request)
+    stories = client.list_stories(
+        status=status, engine_profile=profile_id, engine_profile_version=version
+    )
     profile_name: str | None = None
     profile_error = ""
     try:
@@ -163,48 +192,31 @@ def _stories_using_profile(
     except EngineClientError as exc:
         log_engine_error(request, exc)
         profile_error = PROFILE_UNREAD
-    results = fan_out(client.get_story, [story.id for story in stories])
+    page = Paginator(stories, PROFILE_PAGE).get_page(request.GET.get("page"))
     here = request.get_full_path()
-    rows: list[StoryRow] = []
-    unchecked: list[Unchecked] = []
-    for summary in stories:
-        read = results.get(summary.id)
-        if isinstance(read, EngineClientError) or read is None:
-            reason = error_text(read) if isinstance(read, EngineClientError) else "not read"
-            unchecked.append(Unchecked(summary, reason))
-            continue
-        if read.engine_profile.id != profile_id:
-            continue
-        rows.append(
-            StoryRow(
-                summary,
-                len(read.characters),
-                confirm_query(summary.name, here),
-                read.engine_profile.version,
-            )
-        )
-    page = Paginator(rows, PROFILE_PAGE).get_page(request.GET.get("page"))
+    rows = [_list_row(client, request, story, here) for story in page.object_list]
     keep = request.GET.copy()
     keep.pop("page", None)
-    clear = request.GET.copy()
-    clear.pop(PROFILE_PARAM, None)
-    clear.pop("page", None)
-    context = {
-        "rows": list(page.object_list),
-        "page": page,
-        "page_query": keep.urlencode(),
-        "filters": filters,
-        "status": status or "",
-        "empty_text": NO_PROFILE_STORIES,
-        "profile_id": profile_id,
-        "profile_name": profile_name,
-        "profile_error": profile_error,
-        "profile_url": entity_url("engine_profile", profile_id),
-        "clear_query": clear.urlencode(),
-        "unchecked": unchecked,
-        "held_name": HELD_NAME,
-        "held_status": HELD_STATUS_TEXT,
-    }
+    keep[PROFILE_PARAM] = profile_id
+    if version is None:
+        keep.pop(VERSION_PARAM, None)
+    else:
+        keep[VERSION_PARAM] = str(version)
+    profile_url = (
+        profile_detail_url(profile_id, version)
+        if version is not None
+        else entity_url("engine_profile", profile_id)
+    )
+    context.update(
+        rows=rows,
+        page=page,
+        page_query=keep.urlencode(),
+        empty_text=no_version_stories(version) if version is not None else NO_PROFILE_STORIES,
+        profile_version=version,
+        profile_name=profile_name,
+        profile_error=profile_error,
+        profile_url=profile_url,
+    )
     return render(request, "console/stories/list.html", context)
 
 

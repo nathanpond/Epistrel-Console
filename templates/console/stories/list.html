@@ -5,11 +5,11 @@
 <p><a href="{% url 'stories:new' %}">New story</a> · <a class="from-scenario" href="{% url 'stories:from-scenario' %}">New story from scenario</a></p>
 
 {% if profile_id %}
-<p class="profile-filter">Showing stories using {% if profile_name %}<em>{% if profile_url %}<a href="{{ profile_url }}">{{ profile_name }}</a>{% else %}{{ profile_name }}{% endif %}</em>{% else %}<code>{{ profile_id }}</code>{% endif %} · <a class="clear-profile" href="?{{ clear_query }}">Clear</a>{% if profile_error %} <span class="lookup-failed">({{ profile_error }})</span>{% endif %}</p>
+<p class="profile-filter">Showing stories using {% if profile_invalid %}<code>{{ profile_id }}</code> <span class="invalid-profile">{{ profile_invalid }}</span>{% else %}{% if profile_name %}<em>{% if profile_url %}<a href="{{ profile_url }}">{{ profile_name }}</a>{% else %}{{ profile_name }}{% endif %}</em>{% else %}<code>{{ profile_id }}</code>{% endif %}{% if profile_version %} version {{ profile_version }}{% endif %}{% endif %} · <a class="clear-profile" href="?{{ clear_query }}">Clear</a>{% if profile_error %} <span class="lookup-failed">({{ profile_error }})</span>{% endif %}</p>
 {% endif %}
 
 <form method="get" action="" class="filters">
-  {% if profile_id %}<input type="hidden" name="profile" value="{{ profile_id }}">{% endif %}
+  {% if profile_id %}<input type="hidden" name="profile" value="{{ profile_id }}">{% if profile_version %}<input type="hidden" name="version" value="{{ profile_version }}">{% endif %}{% endif %}
   <label>Status
     <select name="status">
       {% for value, label in filters.fields.status.choices %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -32,13 +32,13 @@
       <td>{{ row.story.timeline_revision }}</td>
       <td>{{ row.story.content_rating.name|default:"—" }}</td>
       <td>{% if row.cast_size is None %}—{% else %}{{ row.cast_size }}{% endif %}</td>
-      {% if profile_id %}<td class="profile-version">{{ row.profile_version }}</td>{% endif %}
+      {% if profile_id %}<td class="profile-version">{{ row.story.engine_profile.version }}{% if row.story.engine_profile.pinned %} <span class="pinned" title="Kept at this version, not following the profile's latest">(pinned)</span>{% endif %}</td>{% endif %}
       <td>{% if not row.held %}<a class="history-link" href="{% url 'stories:history' row.story.id %}">History</a> {% endif %}{% include "console/stories/_actions.html" with story=row.story query=row.actions_query %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
-{% else %}
+{% elif not profile_invalid %}
 <p class="empty">{{ empty_text }}</p>
 {% endif %}
 {% if page and page.paginator.num_pages > 1 %}
@@ -47,13 +47,5 @@
   Page {{ page.number }} of {{ page.paginator.num_pages }}
   {% if page.has_next %}<a href="?{{ page_query }}{% if page_query %}&amp;{% endif %}page={{ page.next_page_number }}">Next page</a>{% endif %}
 </p>
-{% endif %}
-{% if unchecked %}
-<details class="unchecked">
-  <summary>{{ unchecked|length }} {% if unchecked|length == 1 %}story{% else %}stories{% endif %} couldn't be checked</summary>
-  <ul>
-    {% for item in unchecked %}<li>{{ item.story.name|default:"(unnamed)" }} <code>{{ item.story.id }}</code> <span class="muted">({{ item.reason }})</span></li>{% endfor %}
-  </ul>
-</details>
 {% endif %}
 {% endblock %}
