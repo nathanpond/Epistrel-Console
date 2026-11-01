@@ -21,6 +21,7 @@ def summary(story_id: str, name: str | None, status: str, **extra: Any) -> dict[
         },
         "created_at": "2026-10-24T21:36:26Z",
         "archived_at": "2026-10-24T22:00:00Z" if status == "archived" else None,
+        "engine_profile": {"id": "00000000000000000000PRF001", "version": 1, "pinned": False},
     }
 
 

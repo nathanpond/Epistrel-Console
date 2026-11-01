@@ -249,11 +249,20 @@
     "states": [
       {
         "name": "weather",
-        "value": "rain"
+        "type": "enum",
+        "constraints": {
+          "allowed_values": [
+            "rain",
+            "sun"
+          ]
+        },
+        "initial_value": "rain"
       }
     ],
     "clock": {
-      "start": "06:00"
+      "anchor": {
+        "time": "06:00"
+      }
     },
     "scheduled_events": [],
     "predicates": [],

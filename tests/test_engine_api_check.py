@@ -34,12 +34,12 @@ def serving(fake: FakeEngine, doc: object, status: int = 200) -> FakeEngine:
 
 def test_recorded_schema_matches(fake_engine: FakeEngine) -> None:
     result = check(serving(fake_engine, recorded_schema()))
-    assert result == ApiCheck("matches", None, None, "m3")
+    assert result == ApiCheck("matches", None, None, "m6")
     assert result.as_json() == {
         "verdict": "matches",
         "summary": None,
         "reason": None,
-        "engine_version": "m3",
+        "engine_version": "m6",
     }
 
 

@@ -2278,3 +2278,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Console M6 can be executed now but not verified: Engine M6 is open, with 14 verification bugs (2026-11-01).
   **Why:** CLAUDE.md: each Console milestone mirrors Engine M<n> and can't be verified before it.
   **Issue:** M6
+
+## /n8-exec M6 — 2026-11-01
+
+- **Decision:** Recorded `console/engine/openapi.json` from the pulled `ghcr.io/nathanpond/epistrel:edge` (revision label `b8fd182b284a26b5ca7245770cf331db7c712267`, digest `sha256:832af4bedc391468a69ecda381a96dd07a794b3abee7060df29ecccd33f8f852`; 211 operations, 566 components) with the repo's smoke compose, but under a separate project name (`n8-231-smoke`) and an extra override publishing the engine on `127.0.0.1:8011` instead of 8000. `engine_schema --check` against it exits 0.
+  **Why:** Port 8000 on this host is held by the Engine repo's own dev stack (`epistrel-engine-1`, image `epistrel:dev`), which isn't ours to stop. Only the published port differs; the image, env and DB are the smoke compose's.
+  **Issue:** #231
+- **Decision:** The recorded edge shows no drift beyond the fields #231 lists (component-by-component diff against the M5 recording), so nothing extra was typed and no follow-up was filed.
+  **Why:** The image is exactly `b8fd182`, the revision the plan was measured against.
+  **Issue:** #231
+- **Decision:** `StorySummary.engine_profile` is annotated `StoryProfileRef` although the class is defined later (beside `ProfileVersionRef`, as planned); Python 3.14's deferred annotations and `get_type_hints` resolve it.
+  **Why:** Keeps the planned placement without moving `ProfileVersionRef`'s block.
+  **Issue:** #231
+- **Decision:** `test_operation_labels_match_the_schema` lives in `tests/engine/test_contract.py` (as the test plan names it); extra M6 tests beyond the plan were added to `tests/engine/test_client.py`: `test_respond_without_the_m6_turn_fields_reads_defaults`, `test_respond_keeps_malformed_m6_entries_raw` (the plan's complement cases split out), `test_regenerate_inherits_the_lenient_m6_lists`, `test_history_keeps_a_turns_malformed_notice_raw`, `test_a_non_bool_incomplete_fails_the_history_page`, `test_timeline_answers_parse_their_effect_entries`.
+  **Why:** Each pins a rule the story states (inheritance, strict write answers, strict `incomplete`) that the named tests only touched in passing.
+  **Issue:** #231
+- **Decision:** `tests/engine_panel/test_admin_settings.py::test_help_texts_show_the_schema_defaults` subtracts `M6_NOT_YET_EDITABLE` too, although `provider_allowed_hosts` has no schema default (so it passes either way).
+  **Why:** The AC names the set as used by both tests; subtracting it keeps #241's removal a one-line change in one place.
+  **Issue:** #231
+- **Decision:** `RelatedItem` display fields in the principal-lookup fixtures follow the Engine's `core/principals.py` `OWNED` table at origin/main (related items read the owned item's display fields): story name+status, null version/listing_status; scenario all four; media caption+state, null version/listing_status.
+  **Why:** C15 (fixtures follow the Engine).
+  **Issue:** #231
+- **Decision:** `tests/test_engine_api_check.py::test_recorded_schema_matches` now expects `engine_version` `m6` (the recorded `info.version`).
+  **Why:** The test asserts the recording's own version; the M5 recording still said `m3`.
+  **Issue:** #231
+- **Decision:** Several fixtures the issue expected to need repair (`tests/test_reactivation_check.py`, `tests/test_offboarding.py`, `tests/models/test_reembed.py` partly) needed none or were found by the suite instead; the repair set is what the suite reported, plus inline story-list bodies in `tests/models/test_reembed.py`, `tests/test_eval_reports.py` and `tests/test_profiles_browse.py`.
+  **Why:** Those tests' bodies don't hit the changed components (or aren't served through the validating fake).
+  **Issue:** #231

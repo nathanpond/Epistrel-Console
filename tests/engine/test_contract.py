@@ -48,6 +48,7 @@ from console.engine.models import (
     CheckTarget,
     CheckViolation,
     ClassCapabilityCounts,
+    ClockValue,
     CompanionDraft,
     CompanionPublished,
     CompanionRef,
@@ -153,6 +154,7 @@ from console.engine.models import (
     ModelIdentity,
     NarrativePosition,
     NestedSeed,
+    Notice,
     OffboardingActions,
     OffboardingError,
     OffboardingJob,
@@ -162,6 +164,7 @@ from console.engine.models import (
     OffboardingWarning,
     OmniscientStoryCharacter,
     Opening,
+    OperationLabel,
     OperationRecord,
     OperationStage,
     OutcomeCounts,
@@ -171,6 +174,7 @@ from console.engine.models import (
     OwnerTransfer,
     Participation,
     ParticipationSet,
+    PendingEffect,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -215,6 +219,7 @@ from console.engine.models import (
     RebuildResult,
     Recommendation,
     Reconcile,
+    ReconciliationCount,
     ReembedRetry,
     ReembedStatus,
     ReferenceImage,
@@ -228,6 +233,7 @@ from console.engine.models import (
     Relations,
     RelationshipBody,
     ReplyMessage,
+    RequiredEffect,
     RequiredModule,
     RequiredSetting,
     ResolutionBody,
@@ -261,6 +267,7 @@ from console.engine.models import (
     SettingTags,
     ShadowSample,
     StartingState,
+    StateEffect,
     StoredResult,
     Story,
     StoryCharacter,
@@ -269,6 +276,7 @@ from console.engine.models import (
     StoryList,
     StoryPause,
     StoryPauseProgress,
+    StoryProfileRef,
     StoryProfileWrite,
     StoryRating,
     StoryReembed,
@@ -284,6 +292,7 @@ from console.engine.models import (
     Thunk,
     TruncateResult,
     TurnBudget,
+    TurnClock,
     TurnGuardrail,
     TurnMessage,
     TurnReport,
@@ -723,11 +732,28 @@ def test_the_widening_only_adds_media_id() -> None:
         (AuthorPosition, "epistrel__api__routes__admin__beliefs__PositionBody"),
         (CharacterWeighted, "CharacterWeightedBody"),
         (ParticipationSet, "ParticipationSetBody"),
+        # #231: the nested components M6's changed components reference.
+        (StateEffect, "StateEffectModel"),
+        (Notice, "NoticeBody"),
+        (TurnClock, "TurnClockBody"),
+        (ClockValue, "ClockValueBody"),
+        (RequiredEffect, "RequiredEffectBody"),
+        (PendingEffect, "PendingEffectBody"),
+        (ReconciliationCount, "ReconciliationCountBody"),
+        (StoryProfileRef, "StoryProfileRef"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
     ref = {"$ref": f"#/components/schemas/{component}"}
     assert compare_model(WIDENED, model, ref, component) == []
+
+
+def test_operation_labels_match_the_schema() -> None:
+    """``OperationLabel`` lists the recorded enum (#257's filter reads it); the record's
+    ``label`` itself is an open enum (C2)."""
+    recorded = DOC["components"]["schemas"]["OperationLabel"]["enum"]
+    assert list(typing.get_args(OperationLabel)) == recorded
+    assert len(recorded) == 6
 
 
 def test_companion_draft_reads_fields_of_scenario_full() -> None:

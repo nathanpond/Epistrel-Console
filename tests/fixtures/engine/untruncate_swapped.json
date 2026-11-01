@@ -10,5 +10,7 @@
     "turn": 4,
     "variant": 1
   },
-  "dormant_operations": 1
+  "dormant_operations": 1,
+  "reconciliation_required": [],
+  "cancelled_on_reactivation": []
 }

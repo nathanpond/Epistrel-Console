@@ -45,7 +45,8 @@
   },
   "engine_profile": {
     "id": "00000000000000000000PRF001",
-    "version": 1
+    "version": 1,
+    "pinned": false
   },
   "undo_available": false,
   "dormant_chains": [],

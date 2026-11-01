@@ -38,6 +38,14 @@ from tests.fakes.engine import DOC_URI, FakeEngine
 
 pytestmark = pytest.mark.django_db
 
+SUNNY = {
+    "name": "weather",
+    "type": "enum",
+    "constraints": {"allowed_values": ["rain", "sun"]},
+    "initial_value": "sun",
+}
+"""A valid ``ScenarioState`` (M6) that differs from the fixture's ``rain`` start."""
+
 
 def edit_page(client: Client, engine: FakeEngine, body: dict[str, Any] | None = None) -> Any:
     answer_edit_reads(engine, body)
@@ -154,7 +162,7 @@ def test_each_section_round_trips_into_the_patch(
     data["drivers__director_guidance"] = ""
     data["hook-0-text"] = "A letter arrives.\nIt is unsigned."
     data["drivers__planned_reveals"] = "[]"
-    data["starting_state__states"] = '[{"name": "weather", "value": "sun"}]'
+    data["starting_state__states"] = json.dumps([SUNNY])
     response = save(operator_client, engine, data)
     assert response.status_code == 302, response.content.decode()[:2000]
     assert flashes(response) == ["Saved — draft revision 6."]
@@ -195,7 +203,7 @@ def test_each_section_round_trips_into_the_patch(
                 "starting_location": "barn",
                 "roles_present": ["mother", "son"],
             },
-            "states": [{"name": "weather", "value": "sun"}],
+            "states": [SUNNY],
         },
         "story_settings_defaults": {
             "allow_new_arrivals": False,
@@ -285,7 +293,10 @@ def test_clearing_the_clock_sends_null(operator_client: Client, engine: FakeEngi
 
 def test_reformatting_a_json_box_sends_nothing(operator_client: Client, engine: FakeEngine) -> None:
     data = form(operator_client, engine)
-    data["starting_state__states"] = '[{"value":"rain",  "name":"weather"}]'
+    data["starting_state__states"] = (
+        '[{"initial_value":"rain",  "constraints":{"allowed_values":["rain","sun"]},'
+        '"type":"enum","name":"weather"}]'
+    )
     data["creation_rules__bounds"] = '{"audit_retention_days":{"max":90}}'
     response = operator_client.post(EDIT, as_post(data))
     assert response.status_code == 302

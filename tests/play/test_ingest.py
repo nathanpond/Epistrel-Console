@@ -113,11 +113,11 @@ def ingest_json(*replayed: bool) -> dict[str, Any]:
 
 
 def answer_ingest(engine: FakeEngine, *, replayed: bool = False) -> None:
-    """The Engine answers a replay 200, but the recorded schema declares only 201 for ingest,
-    and the fake serves only declared statuses: a replay here is a 201 with every event
-    ``replayed`` and ``Idempotent-Replay: true`` (all the Console reads)."""
+    """New events answer 201; a replay answers the 200 the recorded schema declares (#129), with
+    every event ``replayed`` and ``Idempotent-Replay: true``."""
     headers = {"Idempotent-Replay": "true"} if replayed else None
-    engine.respond("POST", INGEST, 201, json=ingest_json(replayed, replayed), headers=headers)
+    status = 200 if replayed else 201
+    engine.respond("POST", INGEST, status, json=ingest_json(replayed, replayed), headers=headers)
     engine.respond("GET", "/stories/{story_id}/history", 200, json=history())
 
 
@@ -285,6 +285,7 @@ def test_a_replayed_batch_shows_replayed_and_appends_nothing(
     replay = EngineOperation.objects.order_by("-pk").first()
     assert replay is not None
     assert replay.replayed is True
+    assert replay.http_status == 200  # the declared replay status (#129)
 
 
 def test_without_htmx_the_page_is_rendered_with_the_results(

@@ -16,9 +16,11 @@ from console.engine.client import (
 )
 from console.engine.models import (
     Adjudication,
+    ClockValue,
     CouldHaveKnownFlag,
     DeferredCharacter,
     EscalationDeferred,
+    ForkResult,
     HealthChecks,
     HealthResponse,
     History,
@@ -28,19 +30,28 @@ from console.engine.models import (
     LocationAdjacency,
     MaterializedEntry,
     NestedSeed,
+    Notice,
     OmniscientStoryCharacter,
+    OperationRecord,
     Participation,
     Proposition,
     Reconcile,
+    ReconciliationCount,
     RegenerateResult,
     ReplyMessage,
+    RequiredEffect,
     RespondResponse,
     Seed,
+    StartingState,
+    StateEffect,
     StoryList,
     StorySettingsDefaults,
+    TruncateResult,
+    TurnClock,
     TurnRole,
     UtteranceLabels,
     WorkersCheck,
+    rejected_entries,
 )
 from tests.fakes.engine import FakeEngine, recorded_schema, with_test_thing
 from tests.fixtures import engine_fixture
@@ -571,6 +582,25 @@ def _item() -> dict[str, Any]:
     return item
 
 
+# M6 (#231): minimal valid nested bodies, reused below.
+STATE_EFFECT: dict[str, Any] = {
+    "state": "gold",
+    "scope_key": C1,
+    "reason": "spent",
+    "source": "turn",
+    "contingency": "none",
+    "status": "committed",
+}
+NOTICE: dict[str, Any] = {
+    "id": "01JM6NT0000000000000000001",
+    "kind": "implausible_knowledge",
+    "character_id": C1,
+    "claim_text": "Mara knew the vault code.",
+    "turn": 3,
+    "correctable": True,
+}
+
+
 @pytest.mark.parametrize(
     ("model", "body", "name"),
     [
@@ -588,6 +618,9 @@ def _item() -> dict[str, Any]:
         (StorySettingsDefaults, {}, "sequence_order"),
         (ReplyMessage, {"message_id": "01M5R0QNTZV2CSB478YYC57Y3V", "text": "Hi."}, "mode"),
         (DeferredCharacter, {"character_id": C1, "reason": "budget", "fixed": False}, "reason"),
+        (StateEffect, STATE_EFFECT, "owner"),
+        (Notice, NOTICE, "kind"),
+        (StorySettingsDefaults, {}, "co_author_knowledge"),
     ],
 )
 def test_open_enums_keep_unknown_values(model: Any, body: dict[str, Any], name: str) -> None:
@@ -829,3 +862,278 @@ def test_utterance_labels_keep_odd_values(
         corrected,
         extras,
     )
+
+
+# --- M6 models (#231) -----------------------------------------------------------------------------
+
+OP_ID = "01JM6QP0000000000000000001"
+
+
+def test_operation_with_a_staged_label_parses() -> None:
+    body = {
+        **engine_fixture("get_operation"),
+        "label": "staged_turn",
+        "staged": True,
+        "stages": [{"name": "outcome", "status": "done", "at": None, "revision": 12}],
+    }
+    record = OperationRecord.from_json(body)
+    assert record is not None
+    assert (record.label, record.staged) == ("staged_turn", True)
+    assert record.stages[0].revision == 12
+    # Complement: a label the Console doesn't know yet is kept as its string (C2).
+    later = OperationRecord.from_json({**body, "label": "later_label"})
+    assert later is not None
+    assert later.label == "later_label"
+    # An operation without the M6 fields reads the defaults.
+    plain = OperationRecord.from_json(engine_fixture("get_operation"))
+    assert plain is not None
+    assert plain.staged is False
+
+
+def test_creation_report_parses_m6_outcomes() -> None:
+    entry = MaterializedEntry.from_json(
+        {
+            "field_ref": "starting_state.states[0]",
+            "location": {"entry": "01JB2Z8Y5Q3W6K9M1N4P7R0SC1", "version": "draft"},
+            "outcomes": ["state", "clock", "event"],
+        }
+    )
+    assert entry is not None
+    assert entry.outcomes == ["state", "clock", "event"]
+
+
+COMMITTED_SET: dict[str, Any] = {
+    **STATE_EFFECT,
+    "kind": "set",
+    "old_value": 10,
+    "new_value": 4,
+}
+PENDING_EXTERNAL: dict[str, Any] = {
+    **STATE_EFFECT,
+    "state": "balance",
+    "status": "pending",
+    "owner": "external",
+    "effect_id": "01JM6EF0000000000000000001",
+    "old_value": 120,
+    "new_value": None,
+}
+REQUIRED: dict[str, Any] = {
+    "outbox_id": "01JM6OB0000000000000000001",
+    "provider": "bank",
+    "status": "dispatched",
+    "value": "120",
+}
+CLOCK: dict[str, Any] = {
+    "before": {"offset": 360, "display": "06:00"},
+    "after": {"offset": 375, "display": "06:15"},
+}
+M6_TURN_FIELDS = (
+    "state_effects",
+    "settled_effects",
+    "notices",
+    "reconciliation_required",
+    "clock",
+    "reconciliation",
+)
+
+
+def test_respond_parses_the_m6_turn_fields() -> None:
+    body = _respond(
+        state_effects=[COMMITTED_SET, PENDING_EXTERNAL],
+        settled_effects=[COMMITTED_SET],
+        clock=CLOCK,
+        reconciliation={"count": 2},
+        notices=[NOTICE],
+        reconciliation_required=[REQUIRED],
+    )
+    turn = RespondResponse.from_json(body)
+    assert turn is not None
+    first, pending = turn.state_effects
+    assert (first.state, first.old_value, first.new_value, first.kind) == ("gold", 10, 4, "set")
+    assert (pending.status, pending.owner) == ("pending", "external")
+    assert pending.effect_id == "01JM6EF0000000000000000001"
+    assert pending.new_value is None
+    assert turn.settled_effects == [first]
+    assert turn.clock == TurnClock(ClockValue(360, "06:00"), ClockValue(375, "06:15"))
+    assert turn.reconciliation == ReconciliationCount(2)
+    assert turn.notices == [
+        Notice(
+            "01JM6NT0000000000000000001",
+            "implausible_knowledge",
+            C1,
+            "Mara knew the vault code.",
+            3,
+            True,
+        )
+    ]
+    assert turn.notices[0].external_effects is False
+    assert turn.reconciliation_required == [
+        RequiredEffect("01JM6OB0000000000000000001", "bank", "dispatched", "120")
+    ]
+    assert turn.unparsed == {}
+
+
+def test_respond_without_the_m6_turn_fields_reads_defaults() -> None:
+    body = _respond()
+    for name in M6_TURN_FIELDS:
+        body.pop(name, None)
+    turn = RespondResponse.from_json(body)
+    assert turn is not None
+    assert (turn.state_effects, turn.settled_effects, turn.notices) == ([], [], [])
+    assert turn.reconciliation_required == []
+    assert (turn.clock, turn.reconciliation) == (None, None)
+
+
+def test_respond_keeps_malformed_m6_entries_raw() -> None:
+    no_status = {k: v for k, v in STATE_EFFECT.items() if k != "status"}
+    no_claim = {k: v for k, v in NOTICE.items() if k != "claim_text"}
+    effects = [COMMITTED_SET, no_status]
+    notices = [no_claim, NOTICE]
+    turn = RespondResponse.from_json(_respond(state_effects=effects, notices=notices))
+    assert turn is not None
+    assert [e.state for e in turn.state_effects] == ["gold"]
+    assert [n.id for n in turn.notices] == [NOTICE["id"]]
+    assert turn.unparsed == {"state_effects": effects, "notices": notices}
+    # A wrong container reads as the default, with the raw value in ``unparsed``.
+    odd = RespondResponse.from_json(_respond(state_effects={}))
+    assert odd is not None
+    assert odd.state_effects == []
+    assert odd.unparsed == {"state_effects": {}}
+
+
+def test_regenerate_inherits_the_lenient_m6_lists() -> None:
+    bad = {"outbox_id": "01JM6OB0000000000000000002"}
+    result = RegenerateResult.from_json(
+        _respond(reconciliation_required=[REQUIRED, bad], previous_variant=1)
+    )
+    assert result is not None
+    assert [r.provider for r in result.reconciliation_required] == ["bank"]
+    assert result.unparsed == {"reconciliation_required": [REQUIRED, bad]}
+
+
+def test_a_malformed_turn_clock_fails_the_answer() -> None:
+    """Single-object turn fields stay strict (D15 makes only lists lenient)."""
+    assert RespondResponse.from_json(_respond(clock={"before": {"offset": 1}})) is None
+    assert RespondResponse.from_json(_respond(reconciliation={"count": "two"})) is None
+
+
+def _history_with_turns(*turns: dict[str, Any]) -> dict[str, Any]:
+    body: dict[str, Any] = engine_fixture("get_history")
+    body["turns"] = list(turns)
+    return body
+
+
+def test_history_keeps_a_turns_malformed_effect_raw() -> None:
+    bad = {"state": "gold"}
+    second_effects = [COMMITTED_SET, bad]
+    body = _history_with_turns(
+        {"turn": 1, "variant": 1, "message": None, "state_effects": [COMMITTED_SET]},
+        {
+            "turn": 2,
+            "variant": 1,
+            "message": None,
+            "incomplete": True,
+            "state_effects": second_effects,
+        },
+    )
+    history = History.from_json(body)
+    assert history is not None
+    first, second = history.turns
+    assert [e.state for e in second.state_effects] == ["gold"]
+    assert second.unparsed == {"state_effects": second_effects}
+    assert first.unparsed == {}
+    assert len(first.state_effects) == 1
+    # The raw body the caller passed is left as it was.
+    assert body["turns"][1]["state_effects"] == second_effects
+    # Complement: ``incomplete`` reads ``True``, and an absent one ``False``.
+    assert (second.incomplete, first.incomplete) == (True, False)
+
+
+def test_history_keeps_a_turns_malformed_notice_raw() -> None:
+    notices = [NOTICE, {"id": "x"}]
+    history = History.from_json(
+        _history_with_turns({"turn": 1, "variant": 1, "message": None, "notices": notices})
+    )
+    assert history is not None
+    (turn,) = history.turns
+    assert [n.id for n in turn.notices] == [NOTICE["id"]]
+    assert turn.unparsed == {"notices": notices}
+
+
+def test_a_non_bool_incomplete_fails_the_history_page() -> None:
+    body = _history_with_turns({"turn": 1, "variant": 1, "message": None, "incomplete": "yes"})
+    assert History.from_json(body) is None
+
+
+def test_rejected_entries_only_the_bad_ones() -> None:
+    bad = {"state": "gold"}
+    raw = [COMMITTED_SET, bad, PENDING_EXTERNAL]
+    assert rejected_entries(raw, StateEffect.from_json) == [bad]
+    # Complement: a non-list raw value is one rejected entry; a clean list rejects nothing.
+    assert rejected_entries({}, StateEffect.from_json) == [{}]
+    assert rejected_entries([COMMITTED_SET, PENDING_EXTERNAL], StateEffect.from_json) == []
+
+
+def test_beat_effects_are_typed_beside_the_raw() -> None:
+    effects = [COMMITTED_SET, {"state": "gold"}]
+    item = HistoryItem.from_json({**_item(), "effects": effects})
+    assert item is not None
+    assert [e.state for e in item.effect_entries] == ["gold"]
+    assert item.effects_unparsed == [{"state": "gold"}]
+    assert item.effects == effects
+    # ``None`` has no entries either way; an odd value reaches More as one rejected entry.
+    none = HistoryItem.from_json({**_item(), "effects": None})
+    assert none is not None
+    assert (none.effect_entries, none.effects_unparsed) == ([], [])
+    odd = HistoryItem.from_json({**_item(), "effects": {"gold": 4}})
+    assert odd is not None
+    assert (odd.effect_entries, odd.effects_unparsed) == ([], [{"gold": 4}])
+
+
+@pytest.mark.parametrize(
+    ("model", "fixture", "name"),
+    [
+        (TruncateResult, "truncate", "reconciliation_required"),
+        (ForkResult, "fork", "effects_pending_in_source"),
+    ],
+)
+def test_timeline_answers_need_their_effect_lists(model: Any, fixture: str, name: str) -> None:
+    body: dict[str, Any] = engine_fixture(fixture)
+    assert model.from_json(body) is not None
+    assert model.from_json({k: v for k, v in body.items() if k != name}) is None
+
+
+def test_timeline_answers_parse_their_effect_entries() -> None:
+    pending = {"outbox_id": "01JM6OB0000000000000000003", "status": "intended", "effect": {}}
+    fork = ForkResult.from_json({**engine_fixture("fork"), "effects_pending_in_source": [pending]})
+    assert fork is not None
+    assert fork.effects_pending_in_source[0].status == "intended"
+    truncated = TruncateResult.from_json(
+        {**engine_fixture("truncate"), "reconciliation_required": [REQUIRED]}
+    )
+    assert truncated is not None
+    assert truncated.reconciliation_required[0].outbox_id == REQUIRED["outbox_id"]
+    # Write answers stay strict (D15): one bad entry fails the answer.
+    assert (
+        TruncateResult.from_json({**engine_fixture("truncate"), "reconciliation_required": [{}]})
+        is None
+    )
+
+
+def test_scenario_states_stay_raw() -> None:
+    state = {
+        "name": "weather",
+        "type": "enum",
+        "constraints": {"allowed_values": ["rain", "sun"]},
+        "initial_value": "rain",
+        "visibility": "player_visible",
+    }
+    clock = {"anchor": {"time": "06:00", "day": 1}, "mode": "paced"}
+    event = {"proposition": "The market opens.", "planned": "09:00", "place": "square"}
+    starting = StartingState.from_json(
+        {"states": [state], "clock": clock, "scheduled_events": [event]}
+    )
+    assert starting is not None
+    assert starting.states[0] == state
+    assert starting.clock == clock
+    assert starting.scheduled_events[0] == event

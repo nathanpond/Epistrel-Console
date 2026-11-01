@@ -476,7 +476,11 @@ def test_the_versions_page_highlights_nothing_when_opened_directly(
 
 def _story(story_id: str, name: str, profile_id: str, version: int) -> dict[str, Any]:
     body: dict[str, Any] = copy.deepcopy(engine_fixture("get_story"))
-    body.update(id=story_id, name=name, engine_profile={"id": profile_id, "version": version})
+    body.update(
+        id=story_id,
+        name=name,
+        engine_profile={"id": profile_id, "version": version, "pinned": False},
+    )
     return body
 
 

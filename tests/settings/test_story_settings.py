@@ -35,6 +35,11 @@ from tests.settings.helpers import (
     written_json,
 )
 
+M6_NOT_YET_EDITABLE = {"co_author_knowledge"}
+"""M6 story settings the recorded ``StorySettingsPatch`` has and no form edits yet: a temporary,
+explicit exemption, not coverage. S14c removes ``co_author_knowledge`` (its form then edits it,
+and the config-change filter's "Other" group empties)."""
+
 
 def _page(client: Client, engine: FakeEngine, **answers: Any) -> str:
     answer_page(engine, **answers)
@@ -126,7 +131,7 @@ def test_a_failed_deployment_read_marks_unknown_and_the_page_renders(
 def test_the_default_table_matches_the_recorded_settings_patch() -> None:
     patch = recorded_schema()["components"]["schemas"]["StorySettingsPatch"]
     properties = set(patch["properties"])
-    assert properties == {*SETTABLE, POLICIES}
+    assert properties == {*SETTABLE, POLICIES, *M6_NOT_YET_EDITABLE}
     assert set(CONSTANT_DEFAULTS) | set(NULLABLE) == set(SETTABLE)
     assert not set(CONSTANT_DEFAULTS) & set(NULLABLE)
     assert not set(SUPERSEDED) & properties

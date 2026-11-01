@@ -276,6 +276,8 @@ def budget_source(source: str) -> str:
 
 PROFILE_OVERRIDES = "profile_overrides"
 RATING_AND_PROFILE = ("content_rating_id", "engine_profile_id", "engine_profile_version_pin")
+PROVIDERS = ("required_providers",)
+"""Creation-time settings no PATCH sets: the providers a story requires (M6)."""
 
 
 def setting_groups(
@@ -283,14 +285,15 @@ def setting_groups(
 ) -> list[tuple[str, list[tuple[str, str]]]]:
     """The recorded ``setting`` enum as select groups: current settings, the
     ``participation:<id>`` keys given as ``(name, label)`` (#197; the enum lists none), historical
-    ones (the superseded dials), profile overrides, and the story's rating and profile. A name
-    the groups do not expect goes to "Other"."""
+    ones (the superseded dials), profile overrides, the story's rating and profile, and its
+    required providers ("Providers", M6). A name the groups do not expect goes to "Other"."""
     groups: dict[str, list[tuple[str, str]]] = {
         "Settings": [],
         "Participation": list(participation),
         "Historical": [],
         "Profile overrides": [],
         "Rating and profile": [],
+        "Providers": [],
         "Other": [],
     }
     for name in names:
@@ -303,6 +306,8 @@ def setting_groups(
             group = "Profile overrides"
         elif name in RATING_AND_PROFILE:
             group = "Rating and profile"
+        elif name in PROVIDERS:
+            group = "Providers"
         else:
             group = "Other"
         groups[group].append((name, name))

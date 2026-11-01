@@ -8,5 +8,7 @@
     "variant": 2
   },
   "activated_operations": 1,
-  "dormant_operations": 2
+  "dormant_operations": 2,
+  "reconciliation_required": [],
+  "cancelled_on_reactivation": []
 }
