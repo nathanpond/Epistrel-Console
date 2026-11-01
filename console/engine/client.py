@@ -23,6 +23,7 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    AnalysisQueued,
     Beliefs,
     BeliefWritten,
     CatalogCharacter,
@@ -35,7 +36,10 @@ from console.engine.models import (
     CatalogVersionList,
     CharacterPublished,
     CharacterWeighted,
+    ClockAdvanced,
+    ClockSettingsWritten,
     CompanionDraft,
+    Compensated,
     ConfigChanges,
     ConsolidationQueued,
     ContentRating,
@@ -55,7 +59,9 @@ from console.engine.models import (
     ErasureStatus,
     EscalationYield,
     Exposures,
+    ExternalFacts,
     ExtractionShadow,
+    FactBody,
     FactListBody,
     FactWritten,
     ForkResult,
@@ -72,6 +78,7 @@ from console.engine.models import (
     MediaKind,
     MediaPage,
     MediaUploaded,
+    MemoryList,
     MemoryWritten,
     MessageFeedback,
     Model,
@@ -105,6 +112,13 @@ from console.engine.models import (
     ProfileVersionList,
     ProfileWritten,
     Promotion,
+    ProposalApproved,
+    ProposalDismissed,
+    ProviderBindings,
+    ProviderBindingWritten,
+    ProviderDetail,
+    ProviderList,
+    ProviderMutation,
     QueuedTurn,
     RatingApplied,
     RatingCheck,
@@ -116,6 +130,7 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     ReconcileResult,
+    Reconciliation,
     ReembedRetry,
     ReembedStatus,
     RegenerateResult,
@@ -131,6 +146,14 @@ from console.engine.models import (
     ScenarioPublished,
     ScenarioStatus,
     SceneBody,
+    ScheduledEvents,
+    ScheduledEventWritten,
+    SettledNow,
+    StateDeclared,
+    StateDefinitionWritten,
+    StateProposals,
+    StateView,
+    StateWritten,
     Story,
     StoryCharacterAdded,
     StoryCreated,
@@ -139,6 +162,7 @@ from console.engine.models import (
     StoryScope,
     StorySettings,
     StorySettingsWrite,
+    StoryStates,
     StoryStatusChange,
     StorySummary,
     SubjectRef,
@@ -149,6 +173,7 @@ from console.engine.models import (
     ValidationResult,
     VariantChain,
     Variants,
+    WorldClock,
 )
 from console.engine.timeouts import (
     CATALOG_PUBLISH,
@@ -648,6 +673,29 @@ def erasure_about(arguments: Mapping[str, Any]) -> RecordedAbout | None:
     return RecordedAbout(SUBJECT_ENTITY.get(subject.kind, subject.kind), subject.id, story)
 
 
+# --- provider registry recording (#232) ------------------------------------------------------
+
+PROVIDERS_PATH = "/admin/external-providers"
+PROVIDER_ENTITY = "external_provider"  # not a registry type: the log shows the name in <code>
+
+
+def _provider_about(name: object) -> RecordedAbout:
+    return RecordedAbout(PROVIDER_ENTITY, name if isinstance(name, str) and name else None, None)
+
+
+def provider_about(arguments: Mapping[str, Any]) -> RecordedAbout:
+    """A provider write's row (replace, delete): the provider named by the ``name`` argument."""
+    return _provider_about(arguments.get("name"))
+
+
+def provider_registration_about(arguments: Mapping[str, Any]) -> RecordedAbout:
+    """A registration's row: the provider its body names (``RecordedAbout("external_provider",
+    None, None)`` when the body's ``name`` is missing or not a string)."""
+    registration = arguments.get("registration")
+    name = registration.get("name") if isinstance(registration, Mapping) else None
+    return _provider_about(name)
+
+
 class EngineClient:
     def __init__(
         self,
@@ -784,10 +832,25 @@ class EngineClient:
         return doc
 
     @operation("GET", "/stories", response_model=StoryList)
-    def list_stories(self, status: str | None = None) -> list[StorySummary]:
-        """``GET /stories``: every story, newest first (optionally only one ``status``)."""
-        params = {"status": status} if status is not None else None
-        response = self._request("GET", "/stories", params=params)
+    def list_stories(
+        self,
+        status: str | None = None,
+        *,
+        engine_profile: str | None = None,
+        engine_profile_version: int | None = None,
+    ) -> list[StorySummary]:
+        """``GET /stories``: every story, newest first (optionally only one ``status``; M6
+        (Engine #527): only those on profile ``engine_profile``, and at its
+        ``engine_profile_version``). Each argument is sent only when given; a version without a
+        profile is passed through unchecked (the Engine's 422)."""
+        params: dict[str, str] = {}
+        if status is not None:
+            params["status"] = status
+        if engine_profile is not None:
+            params["engine_profile"] = engine_profile
+        if engine_profile_version is not None:
+            params["engine_profile_version"] = str(engine_profile_version)
+        response = self._request("GET", "/stories", params=params or None)
         return _parse(response, StoryList).items
 
     @operation("POST", "/stories", response_model=StoryCreated)
@@ -1359,6 +1422,58 @@ class EngineClient:
         response = self._request("GET", f"/admin{_story_path(story_id)}/facts", params=params)
         return _parse(response, FactListBody)
 
+    @operation("GET", "/admin/stories/{story_id}/facts/{fact_id}", response_model=FactBody)
+    def get_fact(self, story_id: str, fact_id: str) -> FactBody:
+        """``GET /admin/stories/{id}/facts/{fid}`` (Engine #535): one fact version by id, current
+        or closed (``tx_to`` set). Always ``viewpoint=omniscient``; the id is passed through as
+        given. 404 ``fact_not_found``; 409 ``module_off`` for a Lite story."""
+        path = f"/admin{_story_path(story_id)}/facts/{quote(fact_id, safe='')}"
+        params = {"viewpoint": OMNISCIENT_VIEWPOINT}
+        return _parse(self._request("GET", path, params=params), FactBody)
+
+    @operation("GET", "/admin/stories/{story_id}/memories", response_model=MemoryList)
+    def list_story_memories(
+        self,
+        story_id: str,
+        *,
+        kind: str | None = None,
+        retrieval_tier: str | None = None,
+        holder_character_id: str | None = None,
+        from_turn: int | None = None,
+        to_turn: int | None = None,
+        quarantined: bool | None = None,
+        pinned: bool | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> MemoryList:
+        """``GET /admin/stories/{id}/memories`` (Engine #531): a page of the story's memories on
+        its active timeline by id (``limit`` 1 to 500, ``cursor`` continues), only those of
+        ``kind`` (``episodic``, ``semantic``, ``reflection``), ``retrieval_tier`` (``hot``,
+        ``retired``), held by ``holder_character_id``, in the inclusive narrative-turn range
+        ``from_turn``..``to_turn``, quarantined or not and pinned or not when given; a
+        consolidation output carries ``consolidation``. Always ``viewpoint=omniscient``. A
+        ``None`` filter is left out (``from_turn=0`` and ``quarantined=False`` are sent; an
+        empty string is sent as given); an empty ``cursor`` is left out. 422 when ``to_turn``
+        is before ``from_turn``."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        for name, text in (
+            ("kind", kind),
+            ("retrieval_tier", retrieval_tier),
+            ("holder_character_id", holder_character_id),
+        ):
+            if text is not None:
+                params[name] = text
+        for name, number in (("from_turn", from_turn), ("to_turn", to_turn)):
+            if number is not None:
+                params[name] = str(number)
+        for name, flag in (("quarantined", quarantined), ("pinned", pinned)):
+            if flag is not None:
+                params[name] = "true" if flag else "false"
+        if cursor:
+            params["cursor"] = cursor
+        path = f"/admin{_story_path(story_id)}/memories"
+        return _parse(self._request("GET", path, params=params), MemoryList)
+
     # --- commitments: thunks and the promissory ledger (#148) --------------------------------
 
     @operation("GET", "/stories/{story_id}/inspect/ledger", response_model=Ledger)
@@ -1481,6 +1596,532 @@ class EngineClient:
             params["after_id"] = after_id
         path = f"{_story_path(story_id)}/inspect/exposures"
         return _parse(self._request("GET", path, params=params), Exposures)
+
+    # --- States (M6) ------------------------------------------------------------------------------
+    # D18: the Engine reads ``?viewpoint=`` on ``GET …/states``, ``GET …/states/{name}`` and
+    # ``GET …/scheduled-events`` through its request context, so its OpenAPI doesn't declare it
+    # there (Engine bug nathanpond/Epistrel#682). The client sends it anyway (D4: ``omniscient``
+    # unless given, never the story's default); the fake Engine doesn't check query names, and
+    # ``test_the_three_viewpoint_reads_are_undeclared`` pins the omission.
+    #
+    # D8: the timeline-moving slot writes (set, declare, approve, advance, the three scheduled-
+    # event writes, settle now, compensate) send ``X-Epistrel-Expected-Revision`` when given and
+    # wait the turn timeout (the Engine queues them behind a running turn under
+    # ``turn_concurrency: queue``); the configuration writes send no expected revision and wait
+    # ``MUTATION_TIMEOUT_S``.
+
+    @operation("GET", "/stories/{story_id}/states", response_model=StoryStates)
+    def get_states(self, story_id: str, *, viewpoint: str = OMNISCIENT_VIEWPOINT) -> StoryStates:
+        """``GET /stories/{id}/states`` (FR-STATE-9, FR-STORE-31): the States ``viewpoint`` may
+        read (``omniscient`` or ``character:<id>``; a character is never given a ``hidden``
+        State) and the world clock. ``viewpoint`` is always sent, though the recorded schema
+        doesn't declare it here (D18); ``actor_character_id`` is never sent. 409 ``module_off``
+        (``states``) while States are off; 422 ``viewpoint_unresolved``."""
+        params = {"viewpoint": viewpoint}
+        path = f"{_story_path(story_id)}/states"
+        return _parse(self._request("GET", path, params=params), StoryStates)
+
+    @operation("GET", "/stories/{story_id}/states/{name}", response_model=StateView)
+    def get_state(
+        self,
+        story_id: str,
+        name: str,
+        *,
+        viewpoint: str = OMNISCIENT_VIEWPOINT,
+        as_of: str | None = None,
+    ) -> StateView:
+        """``GET /stories/{id}/states/{name}`` (FR-STATE-9): one State for ``viewpoint`` (always
+        sent, undeclared in the recorded schema, D18), folded through ``as_of`` when given: the
+        D7 boundary ``N`` or ``N+k``, sent as given (httpx encodes ``+`` as ``%2B``); ``None``
+        leaves it out (the story as it stands). 404 for a State declared after ``as_of``, an
+        unknown name, ``world_clock`` or a ``hidden`` State read for a character; 409
+        ``module_off``; 422 ``viewpoint_unresolved``."""
+        params = {"viewpoint": viewpoint}
+        if as_of is not None:
+            params["as_of"] = as_of
+        return _parse(self._request("GET", _state_path(story_id, name), params=params), StateView)
+
+    @operation("PUT", "/stories/{story_id}/states/{name}", response_model=StateWritten)
+    def set_state(
+        self,
+        story_id: str,
+        name: str,
+        body: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> StateWritten:
+        """``PUT /stories/{id}/states/{name}`` (FR-STATE-9): set a story-owned State as the
+        consumer, at an inter-turn slot. ``body`` is a ``StateSetRequest`` (``value`` or a
+        signed ``delta``, ``scope_key`` for a per-character State, ``reason``), sent as given.
+        422 ``state_constraint_violation``, ``state_readonly_external``, ``state_unpermitted``,
+        ``state_derived``, ``validation_error`` (``reason: reserved_state``); 409
+        ``module_off``, ``revision_conflict``, ``story_archived``, ``story_paused``; 423
+        ``story_busy``."""
+        response = self._slot_write(
+            "PUT", _state_path(story_id, name), dict(body), expected_revision, idempotency_key
+        )
+        return _parse(response, StateWritten)
+
+    @operation("POST", "/stories/{story_id}/states", response_model=StateDeclared)
+    def declare_state(
+        self,
+        story_id: str,
+        definition: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> StateDeclared:
+        """``POST /stories/{id}/states {definition}`` (FR-STATE-3): declare a State at an
+        inter-turn slot (201); ``definition`` (a ``StateDeclaration``) is sent as given. 409
+        ``module_off``; 422 ``state_name_taken``, ``validation_error``."""
+        response = self._slot_write(
+            "POST",
+            f"{_story_path(story_id)}/states",
+            {"definition": dict(definition)},
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, StateDeclared)
+
+    @operation(
+        "PATCH",
+        "/stories/{story_id}/states/{name}/definition",
+        response_model=StateDefinitionWritten,
+    )
+    def update_state_definition(
+        self, story_id: str, name: str, patch: Mapping[str, Any], *, idempotency_key: str
+    ) -> StateDefinitionWritten:
+        """``PATCH /stories/{id}/states/{name}/definition``: a JSON merge patch over the
+        definition's mutable members, sent as given (a story configuration write: no expected
+        revision). 422 ``immutable_field`` for an identity member,
+        ``state_constraint_violation`` when the current value breaks a new constraint; 409
+        ``module_off``."""
+        response = self._request(
+            "PATCH",
+            f"{_state_path(story_id, name)}/definition",
+            json=dict(patch),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, StateDefinitionWritten)
+
+    @operation("GET", "/stories/{story_id}/state-proposals", response_model=StateProposals)
+    def list_state_proposals(self, story_id: str) -> StateProposals:
+        """``GET /stories/{id}/state-proposals`` (FR-STATE-3): the Engine's proposed States,
+        oldest first, with their evidence. 409 ``module_off`` while States are off."""
+        path = f"{_story_path(story_id)}/state-proposals"
+        return _parse(self._request("GET", path), StateProposals)
+
+    @operation("POST", "/stories/{story_id}/state-proposals/analyze", response_model=AnalysisQueued)
+    def analyze_state_proposals(self, story_id: str, *, idempotency_key: str) -> AnalysisQueued:
+        """``POST /stories/{id}/state-proposals/analyze`` (no body; FR-STATE-3): an analysis of
+        the whole history by a worker, answered 202 :class:`AnalysisQueued` (a ``maintenance``
+        operation: no revision moves, so no expected revision; the Engine has no status read
+        for the job, D18). Any other 2xx is ``bad_response``. 409 ``module_off``."""
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/state-proposals/analyze",
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+        if response.status_code != 202:
+            raise EngineError(
+                "bad_response",
+                f"the Engine answered {response.status_code} to a State-proposal analysis",
+                {},
+                response.status_code,
+            )
+        return _parse(response, AnalysisQueued)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/state-proposals/{proposal_id}/approve",
+        response_model=ProposalApproved,
+    )
+    def approve_state_proposal(
+        self,
+        story_id: str,
+        proposal_id: str,
+        *,
+        definition: Mapping[str, Any] | None = None,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ProposalApproved:
+        """``POST /stories/{id}/state-proposals/{pid}/approve``: declare the proposed State at an
+        inter-turn slot (201), as suggested (``{}``) or with ``definition``'s members overriding
+        the suggestions (``{"definition": …}``, sent as given). 404 ``not_found`` (``reason:
+        no_pending_proposal``); 409 ``module_off``; 422 ``state_name_taken``."""
+        body: dict[str, Any] = {} if definition is None else {"definition": dict(definition)}
+        response = self._slot_write(
+            "POST",
+            _proposal_path(story_id, proposal_id, "approve"),
+            body,
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, ProposalApproved)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/state-proposals/{proposal_id}/dismiss",
+        response_model=ProposalDismissed,
+    )
+    def dismiss_state_proposal(
+        self, story_id: str, proposal_id: str, *, idempotency_key: str
+    ) -> ProposalDismissed:
+        """``POST /stories/{id}/state-proposals/{pid}/dismiss`` (no body): dismiss a pending
+        proposal; it is never proposed again. Not a slot operation (its answer has no
+        position), so no expected revision. 404 ``not_found`` (``reason:
+        no_pending_proposal``); 409 ``module_off``."""
+        response = self._request(
+            "POST",
+            _proposal_path(story_id, proposal_id, "dismiss"),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProposalDismissed)
+
+    # --- the world clock and scheduled events (M6) --------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/clock", response_model=WorldClock)
+    def get_clock(self, story_id: str) -> WorldClock:
+        """``GET /stories/{id}/clock`` (FR-CLOCK-1,3,5): the clock as the story stands, its
+        anchor, level, mode and settings. Served under every configuration (never gated)."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/clock"), WorldClock)
+
+    @operation("PATCH", "/stories/{story_id}/clock", response_model=ClockSettingsWritten)
+    def update_clock(
+        self, story_id: str, patch: Mapping[str, Any], *, idempotency_key: str
+    ) -> ClockSettingsWritten:
+        """``PATCH /stories/{id}/clock``: change the clock's settings (a ``ClockPatch``, sent as
+        given; a story configuration write: no expected revision). 422 ``validation_error``
+        (``shape``) for a bad pacing table, bands or calendar."""
+        response = self._request(
+            "PATCH",
+            f"{_story_path(story_id)}/clock",
+            json=dict(patch),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ClockSettingsWritten)
+
+    @operation("POST", "/stories/{story_id}/clock/advance", response_model=ClockAdvanced)
+    def advance_clock(
+        self,
+        story_id: str,
+        *,
+        reason: str,
+        minutes: int | None = None,
+        to: int | str | None = None,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ClockAdvanced:
+        """``POST /stories/{id}/clock/advance {reason, minutes?, to?}`` (FR-CLOCK-5): move the
+        clock forward between turns at an inter-turn slot, by ``minutes`` or ``to`` a target (an
+        offset, or ``"HH:MM"`` sent as given). Each of ``minutes``/``to`` is sent only when not
+        ``None``; both or neither is the Engine's 422. 409 ``module_off`` (``clock``),
+        ``clock_backward``; 422 ``clock_unanchored``, ``clock_external``; 423 ``story_busy``."""
+        body: dict[str, Any] = {"reason": reason}
+        if minutes is not None:
+            body["minutes"] = minutes
+        if to is not None:
+            body["to"] = to
+        response = self._slot_write(
+            "POST",
+            f"{_story_path(story_id)}/clock/advance",
+            body,
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, ClockAdvanced)
+
+    @operation("GET", "/stories/{story_id}/scheduled-events", response_model=ScheduledEvents)
+    def list_scheduled_events(
+        self, story_id: str, *, viewpoint: str = OMNISCIENT_VIEWPOINT
+    ) -> ScheduledEvents:
+        """``GET /stories/{id}/scheduled-events`` (FR-CLOCK-9): the events ``viewpoint`` holds
+        (``omniscient``: every canon event; a character: the canon events it takes part in and
+        its own belief-only schedules). ``viewpoint`` is always sent, though the recorded
+        schema doesn't declare it here (D18). Never gated; 422 ``viewpoint_unresolved``."""
+        params = {"viewpoint": viewpoint}
+        path = f"{_story_path(story_id)}/scheduled-events"
+        return _parse(self._request("GET", path, params=params), ScheduledEvents)
+
+    @operation("POST", "/stories/{story_id}/scheduled-events", response_model=ScheduledEventWritten)
+    def create_scheduled_event(
+        self,
+        story_id: str,
+        body: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ScheduledEventWritten:
+        """``POST /stories/{id}/scheduled-events`` (FR-CLOCK-9,19): create a canon event at an
+        inter-turn slot (201); ``body`` is a ``ScheduledEventCreate``, sent as given. 409
+        ``module_off``; 422 ``clock_unanchored``, ``viewpoint_unresolved``,
+        ``validation_error`` (``unknown_character``, ``unknown_place``)."""
+        response = self._slot_write(
+            "POST",
+            f"{_story_path(story_id)}/scheduled-events",
+            dict(body),
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, ScheduledEventWritten)
+
+    @operation(
+        "PATCH",
+        "/stories/{story_id}/scheduled-events/{event_id}",
+        response_model=ScheduledEventWritten,
+    )
+    def reschedule_scheduled_event(
+        self,
+        story_id: str,
+        event_id: str,
+        *,
+        planned: int | str | None = None,
+        shared_owners: Sequence[str] | None = None,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ScheduledEventWritten:
+        """``PATCH /stories/{id}/scheduled-events/{eid} {planned?, shared_owners?}``: reschedule
+        an event (it returns to ``pending``) and/or replace the characters it is shared with.
+        Each is sent only when not ``None`` (``shared_owners=[]`` is sent as ``[]``); with both
+        ``None`` the body is ``{}`` and the Engine's 422 surfaces. 409 ``module_off``; 422
+        ``validation_error`` (``event_settled``), ``viewpoint_unresolved``."""
+        body: dict[str, Any] = {}
+        if planned is not None:
+            body["planned"] = planned
+        if shared_owners is not None:
+            body["shared_owners"] = list(shared_owners)
+        response = self._slot_write(
+            "PATCH", _event_path(story_id, event_id), body, expected_revision, idempotency_key
+        )
+        return _parse(response, ScheduledEventWritten)
+
+    @operation(
+        "DELETE",
+        "/stories/{story_id}/scheduled-events/{event_id}",
+        response_model=ScheduledEventWritten,
+    )
+    def cancel_scheduled_event(
+        self,
+        story_id: str,
+        event_id: str,
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ScheduledEventWritten:
+        """``DELETE /stories/{id}/scheduled-events/{eid}``: cancel an event at an inter-turn
+        slot, answered 200 with the event after it. 409 ``module_off``; 422
+        ``validation_error`` (``event_settled``)."""
+        response = self._slot_write(
+            "DELETE", _event_path(story_id, event_id), None, expected_revision, idempotency_key
+        )
+        return _parse(response, ScheduledEventWritten)
+
+    # --- external providers (M6) ----------------------------------------------------------------
+
+    @operation("GET", "/admin/external-providers", response_model=ProviderList)
+    def list_providers(self) -> ProviderList:
+        """``GET /admin/external-providers`` (FR-EXT-1,6): every registered provider by name and
+        the deployment's ``config_revision``."""
+        return _parse(self._request("GET", PROVIDERS_PATH), ProviderList)
+
+    @operation("GET", "/admin/external-providers/{name}", response_model=ProviderDetail)
+    def get_provider(self, name: str) -> ProviderDetail:
+        """``GET /admin/external-providers/{name}``: one provider, with the ``config_revision``
+        it was read at. 404 for an unknown name; the name is passed through as given."""
+        return _parse(self._request("GET", _provider_path(name)), ProviderDetail)
+
+    @operation(
+        "POST",
+        "/admin/external-providers",
+        response_model=ProviderMutation,
+        record_about=provider_registration_about,
+    )
+    def register_provider(
+        self, registration: Mapping[str, Any], *, idempotency_key: str
+    ) -> ProviderMutation:
+        """``POST /admin/external-providers`` (a ``ProviderRegistration``, sent as given): register
+        a provider (201), a deployment configuration change (no expected revision). 409
+        ``provider_exists``; 422 ``invalid_manifest`` (``details.field``, ``details.reason``)."""
+        response = self._request(
+            "POST",
+            PROVIDERS_PATH,
+            json=dict(registration),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProviderMutation)
+
+    @operation(
+        "PUT",
+        "/admin/external-providers/{name}",
+        response_model=ProviderMutation,
+        record_about=provider_about,
+    )
+    def replace_provider(
+        self, name: str, spec: Mapping[str, Any], *, idempotency_key: str
+    ) -> ProviderMutation:
+        """``PUT /admin/external-providers/{name}`` (a ``ProviderSpec``, sent as given): replace
+        a registration (one that changes nothing writes nothing: the ``config_revision`` stays).
+        404; 422 ``invalid_manifest``."""
+        response = self._request(
+            "PUT",
+            _provider_path(name),
+            json=dict(spec),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProviderMutation)
+
+    @operation("DELETE", "/admin/external-providers/{name}", record_about=provider_about)
+    def delete_provider(self, name: str, *, idempotency_key: str) -> None:
+        """``DELETE /admin/external-providers/{name}``: delete a provider (204). 404; 409
+        ``provider_in_use`` (the stories whose States name it)."""
+        response = self._request(
+            "DELETE",
+            _provider_path(name),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+
+    @operation("GET", "/stories/{story_id}/providers", response_model=ProviderBindings)
+    def list_provider_bindings(self, story_id: str) -> ProviderBindings:
+        """``GET /stories/{id}/providers``: the story's provider bindings (the single-binding
+        read ``GET …/providers/{name}/binding`` is not used: it answers 404 for "no binding"
+        and "no story" alike)."""
+        path = f"{_story_path(story_id)}/providers"
+        return _parse(self._request("GET", path), ProviderBindings)
+
+    @operation(
+        "PUT",
+        "/stories/{story_id}/providers/{name}/binding",
+        response_model=ProviderBindingWritten,
+    )
+    def bind_provider(
+        self,
+        story_id: str,
+        name: str,
+        external_ids: Mapping[str, str],
+        *,
+        idempotency_key: str,
+    ) -> ProviderBindingWritten:
+        """``PUT /stories/{id}/providers/{name}/binding {external_ids}``: bind the story to a
+        provider with its ids there (idempotent; no expected revision). 404 for an unknown
+        provider; 422 ``binding_incomplete`` when the ids leave a ``{binding.<key>}`` of the
+        manifest uncovered (the key pattern and the 32-key cap are the Engine's 422 too)."""
+        path = f"{_story_path(story_id)}/providers/{quote(name, safe='')}/binding"
+        response = self._request(
+            "PUT",
+            path,
+            json={"external_ids": dict(external_ids)},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, ProviderBindingWritten)
+
+    @operation("GET", "/stories/{story_id}/inspect/external-facts", response_model=ExternalFacts)
+    def inspect_external_facts(
+        self,
+        story_id: str,
+        *,
+        as_of: int | None = None,
+        limit: int = 100,
+        after_id: str | None = None,
+    ) -> ExternalFacts:
+        """``GET /stories/{id}/inspect/external-facts`` (FR-EXT-2,4, FR-ADMIN-5): a page of the
+        values external providers answered for the story by id (``limit`` 1 to 500,
+        ``after_id`` continues), those positioned through turn ``as_of`` when given, with the
+        facts citing each. A raw read: no provider is called. Always ``viewpoint=omniscient``.
+        ``as_of=None`` is left out (``as_of=0`` is sent); an empty ``after_id`` is left out."""
+        params: dict[str, str] = {"viewpoint": OMNISCIENT_VIEWPOINT, "limit": str(limit)}
+        if as_of is not None:
+            params["as_of"] = str(as_of)
+        if after_id:
+            params["after_id"] = after_id
+        path = f"{_story_path(story_id)}/inspect/external-facts"
+        return _parse(self._request("GET", path, params=params), ExternalFacts)
+
+    # --- reconciliation (M6) --------------------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/reconciliation", response_model=Reconciliation)
+    def get_reconciliation(self, story_id: str) -> Reconciliation:
+        """``GET /stories/{id}/reconciliation`` (FR-EXT-10,14,18,22): every effect dispatched to
+        a write-capable provider that isn't confirmed, oldest first, and why. Never gated."""
+        path = f"{_story_path(story_id)}/reconciliation"
+        return _parse(self._request("GET", path), Reconciliation)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/reconciliation/{outbox_id}/settle-now",
+        response_model=SettledNow,
+    )
+    def settle_now(
+        self,
+        story_id: str,
+        outbox_id: str,
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> SettledNow:
+        """``POST /stories/{id}/reconciliation/{oid}/settle-now`` (no body; FR-EXT-22): settle a
+        listed effect now, re-checked at this moment: ``settled`` at an inter-turn slot, or
+        ``queued`` behind an incomplete staged turn. 409 ``settle_refused`` (``reasons``),
+        ``module_off``; 404 ``not_found`` (``reason: no_listing``)."""
+        response = self._slot_write(
+            "POST",
+            _outbox_path(story_id, outbox_id, "settle-now"),
+            None,
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, SettledNow)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/reconciliation/{outbox_id}/compensate",
+        response_model=Compensated,
+    )
+    def compensate(
+        self,
+        story_id: str,
+        outbox_id: str,
+        effect: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> Compensated:
+        """``POST /stories/{id}/reconciliation/{oid}/compensate {effect}`` (FR-EXT-22): issue a
+        compensating effect (``{state, scope_key?, delta | value, reason}``, sent as given) as a
+        new outbox row at an inter-turn slot (201). 404 ``not_found`` (``reason: no_listing``);
+        409 ``module_off``; 422 ``provider_read_only``, ``state_unpermitted``."""
+        response = self._slot_write(
+            "POST",
+            _outbox_path(story_id, outbox_id, "compensate"),
+            {"effect": dict(effect)},
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, Compensated)
+
+    def _slot_write(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> EngineResponse:
+        """A D8 slot write: ``X-Epistrel-Expected-Revision`` only when given, the turn timeout."""
+        headers = {"Idempotency-Key": idempotency_key}
+        if expected_revision is not None:
+            headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
+        return self._request(method, path, json=body, headers=headers, timeout=turn_timeout(None))
 
     # --- the scene and an entity's standing profile (#58) -------------------------------------
 
@@ -2025,6 +2666,35 @@ class EngineClient:
         response = self._timeline(
             story_id,
             "regenerate",
+            body=body,
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+            timeout=timeout,
+        )
+        return _parse(response, RegenerateResult)
+
+    @operation("POST", "/stories/{story_id}/correct", response_model=RegenerateResult)
+    def correct(
+        self,
+        story_id: str,
+        body: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+        timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
+    ) -> RegenerateResult:
+        """``POST /stories/{id}/correct`` (FR-RESP-14): replace the latest turn with new player
+        input, played as its next variant (the replaced one becomes dormant). ``body`` is a
+        ``CorrectRequest`` (``turn``, ``player_input``, and ``render_character_ids`` /
+        ``output_viewpoint`` / ``prompt_params`` / ``budget`` overrides), sent as given; the
+        declared ``?viewpoint=`` query is left out, as on :meth:`regenerate` (the output
+        viewpoint travels in the body). Never queued (423 ``story_busy``), so there is no
+        ``Prefer``. 409 ``not_latest_turn``, ``already_corrected``; an external effect the
+        replaced turn dispatched is listed in ``reconciliation_required``. ``timeout``:
+        :func:`turn_timeout`."""
+        response = self._timeline(
+            story_id,
+            "correct",
             body=body,
             expected_revision=expected_revision,
             idempotency_key=idempotency_key,
@@ -3814,6 +4484,31 @@ def _purpose_path(purpose: str) -> str:
 def _rating_path(rating_id: str) -> str:
     """``/admin/content-ratings/<id>``, the id percent-encoded."""
     return f"/admin/content-ratings/{quote(rating_id, safe='')}"
+
+
+def _state_path(story_id: str, name: str) -> str:
+    """``/stories/<id>/states/<name>``, both percent-encoded."""
+    return f"{_story_path(story_id)}/states/{quote(name, safe='')}"
+
+
+def _proposal_path(story_id: str, proposal_id: str, action: str) -> str:
+    """``/stories/<id>/state-proposals/<pid>/<action>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/state-proposals/{quote(proposal_id, safe='')}/{action}"
+
+
+def _event_path(story_id: str, event_id: str) -> str:
+    """``/stories/<id>/scheduled-events/<eid>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/scheduled-events/{quote(event_id, safe='')}"
+
+
+def _outbox_path(story_id: str, outbox_id: str, action: str) -> str:
+    """``/stories/<id>/reconciliation/<oid>/<action>``, both ids percent-encoded."""
+    return f"{_story_path(story_id)}/reconciliation/{quote(outbox_id, safe='')}/{action}"
+
+
+def _provider_path(name: str) -> str:
+    """``/admin/external-providers/<name>``, the name percent-encoded."""
+    return f"{PROVIDERS_PATH}/{quote(name, safe='')}"
 
 
 def _policy_path(policy_id: str) -> str:

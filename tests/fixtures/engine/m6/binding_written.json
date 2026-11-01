@@ -1,0 +1,25 @@
+{
+  "timeline_revision": 12,
+  "idempotency_key": null,
+  "provider": "bank",
+  "external_ids": {
+    "account_id": "acct-7731"
+  },
+  "bound_at": "2026-10-31T17:50:00Z",
+  "warnings": [
+    {
+      "code": "below_safety_minimum",
+      "setting": "budgets.max_model_calls",
+      "model_calls": 6,
+      "minimum_required": 8,
+      "reservation": {
+        "guardrail_input": 1,
+        "guardrail_output": 1,
+        "generation": 6
+      }
+    }
+  ],
+  "activated_required_providers": [
+    "bank"
+  ]
+}

@@ -2305,3 +2305,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Several fixtures the issue expected to need repair (`tests/test_reactivation_check.py`, `tests/test_offboarding.py`, `tests/models/test_reembed.py` partly) needed none or were found by the suite instead; the repair set is what the suite reported, plus inline story-list bodies in `tests/models/test_reembed.py`, `tests/test_eval_reports.py` and `tests/test_profiles_browse.py`.
   **Why:** Those tests' bodies don't hit the changed components (or aren't served through the validating fake).
   **Issue:** #231
+- **Decision:** Outcome ids in `tests/fixtures/engine/m6/` use the prefix `01JM60C` (digit zero), not D16's `01JM6OC`.
+  **Why:** `O` is outside the Crockford alphabet, so `01JM6OC…` fails `console.ids.is_ulid` (and the Engine's ULID pattern); `0C` is the nearest valid spelling. D16's prefix table in the M6 milestone description still reads `01JM6OC` and wants the same correction.
+  **Issue:** #232
+- **Decision:** `analyze_state_proposals` is registered with `response_model=AnalysisQueued` (not `status_models={202: …}` as `consolidate_story` is), and refuses a non-202 2xx as `bad_response` in the method.
+  **Why:** The AC asks every new operation to carry a response model; the schema declares only the 202, so the contract checks the same component either way, and the operation log's 202 branch (`queued`) runs before any model check.
+  **Issue:** #232
+- **Decision:** `ProviderBindingWritten` is a standalone model, not a subclass of `ProviderBinding`.
+  **Why:** The AC names only `ProviderDetail`/`ProviderMutation` (of `Provider`) and `ListedMemory` (of `MemoryView`) as subclasses; `BindingMutation` adds a required `timeline_revision` beside defaulted fields, which a standalone dataclass states most plainly.
+  **Issue:** #232
+- **Decision:** `register_provider`'s `record_about` reads the `registration` argument's `name` and answers `RecordedAbout("external_provider", None, None)` when it is missing or not a string; `replace_provider`/`delete_provider` read the `name` argument.
+  **Why:** The AC and pass-1 discretion line; the operation log keeps its rule that a row takes the hook's entity only with an id (so a nameless registration's row stays untyped, no operation-log change here).
+  **Issue:** #232
+- **Decision:** `test_m6_fixtures_validate`'s id rule also reads the keys of a `values` map (a per-character State's cast ids) and skips a model call's `request_id`; files with no Engine id at all (the clock, the provider registry, bindings, `states_alice`, `state_view`, `state_definition_written`, `memories_empty`) are listed in `M6_ID_LESS`, and every other file must yield at least one id.
+  **Why:** `request_id` is the model provider's id (`stub-…`), not an Engine ULID; the cast ids of `trust.values` are the fixtures' most important ids and are keys, not values. The id-less list keeps the "at least one id" check meaningful for the rest.
+  **Issue:** #232
+- **Decision:** Beyond the plan's tests, `tests/engine/test_client_m6.py` adds a table-driven round trip for all 30 operations, strict-write-answer and nested-strictness checks, the bodyless-write and never-an-expected-revision complements as their own tests, and a `record_about` unit test; the live smoke's complement asserts `details.module`.
+  **Why:** Each pins a rule the AC states (D15's strictness, D8's header split, the recording hook) that the named tests reach only in passing.
+  **Issue:** #232
+- **Decision:** The anchor in `m6/clock.json` is anchored at offset 130 (turn 3, beat 2), so its components and `display` are "now"'s, matching the AC's fixed `display`; components follow `Anchor.document()` at origin/main (`hour` a `[5, 11]` range, `segments` `[[0, 300, 720]]`), and the calendar is `{"kind": "gregorian"}`.
+  **Why:** D18 says the anchor's components are the anchoring offset's; anchoring at the clock's own offset keeps the fixture consistent with the required "+02h 10m (Saturday, between 05:00 and 12:00 (morning))".
+  **Issue:** #232

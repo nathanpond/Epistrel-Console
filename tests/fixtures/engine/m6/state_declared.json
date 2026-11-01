@@ -1,0 +1,35 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "definition": {
+    "name": "rope",
+    "type": "number",
+    "scope": "story",
+    "constraints": {
+      "non_negative": true
+    },
+    "initial_value": 3,
+    "aliases": [],
+    "unit": "coils",
+    "entity_id": null,
+    "visibility": "player_visible",
+    "owner": "story",
+    "provider_id": null,
+    "external_value_name": null,
+    "silent": false,
+    "rules": {},
+    "authorization": {},
+    "transfer": {},
+    "reservation_expiry_minutes": null,
+    "created_by": "consumer"
+  },
+  "position": "3⁺2",
+  "slot": {
+    "turn": 3,
+    "variant": 0,
+    "slot_k": 2,
+    "beat": 0,
+    "step": 0
+  },
+  "operation_id": "01JM6QP0000000000000000012"
+}

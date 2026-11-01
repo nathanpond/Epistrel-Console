@@ -1,0 +1,60 @@
+{
+  "items": [
+    {
+      "event_id": "01JM6RD0000000000000000001",
+      "provider": "bank",
+      "value_name": "balance",
+      "state_id": "01JM6SD0000000000000000004",
+      "scope_key": null,
+      "value": 4200,
+      "read_at": "2026-10-31T18:02:11Z",
+      "turn": 3,
+      "variant": 0,
+      "source": "live",
+      "facts": [
+        {
+          "fact_id": "01JM6FA0000000000000000001",
+          "proposition": {
+            "subject_id": "01JM6CH0000000000000000001",
+            "predicate_id": "01JM6FA0000000000000000090",
+            "literal": {
+              "kind": "quantity",
+              "value": 4200,
+              "unit": "gold"
+            },
+            "valid_time": {
+              "kind": "interval",
+              "start": {
+                "inner": 130,
+                "outer": 130
+              }
+            }
+          },
+          "scope": "objective",
+          "valid_from": 130,
+          "valid_to": null,
+          "provenance": "external",
+          "authority": "provider",
+          "tx_from": "2026-10-31T18:02:11Z",
+          "tx_to": null
+        }
+      ]
+    },
+    {
+      "event_id": "01JM6RD0000000000000000002",
+      "provider": "bank",
+      "value_name": "balance",
+      "state_id": "01JM6SD0000000000000000004",
+      "scope_key": null,
+      "value": null,
+      "read_at": null,
+      "turn": 4,
+      "variant": 0,
+      "source": "last_known",
+      "facts": []
+    }
+  ],
+  "revision": 12,
+  "next_after_id": "01JM6RD0000000000000000002",
+  "output_viewpoint": "omniscient"
+}

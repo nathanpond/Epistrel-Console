@@ -1,0 +1,35 @@
+{
+  "id": "01JM6FA0000000000000000002",
+  "lineage_id": "01JM6FA0000000000000000003",
+  "proposition_id": "01JM6FA0000000000000000004",
+  "proposition": {
+    "subject_id": "01JM6CH0000000000000000001",
+    "predicate_id": "01JM6FA0000000000000000091",
+    "object_id": "01JM6EN0000000000000000001",
+    "valid_time": {
+      "kind": "interval",
+      "start": {
+        "inner": 0,
+        "outer": 0
+      }
+    }
+  },
+  "valid_from": 0,
+  "valid_to": null,
+  "valid_from_inner": 0,
+  "valid_to_inner": null,
+  "tx_from": "2026-10-31T17:00:00Z",
+  "tx_to": "2026-10-31T18:00:00Z",
+  "provenance": "author",
+  "authority": "author",
+  "author_locked": false,
+  "visibility": {
+    "scope": "objective",
+    "characters": null
+  },
+  "membership": "active",
+  "narrative_turn": 2,
+  "superseded_by": "01JM6FA0000000000000000005",
+  "supersedes": [],
+  "anchored_to": null
+}

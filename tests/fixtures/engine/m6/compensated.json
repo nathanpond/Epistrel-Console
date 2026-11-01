@@ -1,0 +1,16 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "outbox_id": "01JM6BX0000000000000000004",
+  "compensates": "01JM6BX0000000000000000003",
+  "status": "intended",
+  "position": "3⁺2",
+  "slot": {
+    "turn": 3,
+    "variant": 0,
+    "slot_k": 2,
+    "beat": 0,
+    "step": 0
+  },
+  "operation_id": "01JM6QP0000000000000000052"
+}

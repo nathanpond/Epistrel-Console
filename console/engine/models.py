@@ -5503,3 +5503,614 @@ class ReconcileResult(KeepsExtra):
     settled: int
     failed: int
     pending_count: int
+
+
+# --- M6: States, the world clock, scheduled events, providers and effects (#232) --------------
+#
+# D15 (C2 extended): State values, definitions, the anchor, the calendar, manifests and effects
+# stay raw JSON (``Any`` / ``dict[str, Any]``); every schema enum or const is an ``open_enum``;
+# the read pages' lists (``states``, ``events``, ``proposals``, ``listings``, ``items``,
+# ``providers``, ``bindings``, ``memories``) are read entry by entry (``_lenient_page``), a
+# list that lost an entry kept raw in ``unparsed`` (a page shows only ``rejected_entries`` of
+# it); a nested list inside an entry is strict, so one bad inner item drops the whole entry.
+# Write answers are strict: one that doesn't parse is ``bad_response``. ``slot`` and
+# ``position`` maps are ``dict[str, int]``, viewed as a :class:`NarrativePosition` through
+# :func:`_five_part` (D7; a map missing a part is ``None``); the Engine's ``N⁺k`` ``position``
+# string stays a plain ``str``.
+
+
+def _five_part(mapping: dict[str, int] | None) -> NarrativePosition | None:
+    """A ``{turn, variant, slot_k, beat, step}`` map as a :class:`NarrativePosition`, strictly:
+    ``None`` for ``None`` or a map missing any part (D7)."""
+    return None if mapping is None else NarrativePosition.from_json(mapping)
+
+
+@dataclass(frozen=True)
+class StoryState(Model):
+    """``StateBody``: one State as the viewpoint reads it: its ``name``, ``type`` (a plain
+    string), ``scope``, ``visibility`` and ``owner`` (open enums), ``unit``; its ``value`` (a
+    story-scoped State; ``None`` for undefined and for an absent key alike) or ``values`` by
+    character id (a per-character one; every cast member, ``None`` for an undefined value), both
+    raw JSON (D15); and ``since_position``, the position of the last change folded in (``None``:
+    the initial value), viewed through :attr:`since`."""
+
+    name: str
+    type: str
+    scope: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    visibility: str = field(metadata={OPEN_ENUM: True})
+    owner: str = field(metadata={OPEN_ENUM: True})
+    unit: str | None
+    since_position: dict[str, int] | None
+    value: Any = None
+    values: dict[str, Any] | None = None
+
+    @property
+    def since(self) -> NarrativePosition | None:
+        return _five_part(self.since_position)
+
+
+@dataclass(frozen=True)
+class ClockSettings(Model):
+    """``ClockSettingsBody``: the world clock's settings (FR-CLOCK-3,5,8,9): ``mode`` and
+    ``time_awareness`` (open enums), the ``pacing_table`` rows ``[from_words, to_words (None: no
+    end), minutes]``, the unprompted-skip cap, the due-event stop and its grace, the two
+    tolerances, the time-of-day ``bands`` ``[name, from, to]`` and the ``calendar`` (raw), and in
+    ``external`` mode the provider and value the clock reads. The inner arrays are typed as the
+    schema gives them."""
+
+    mode: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    pacing_table: list[list[int | None]]
+    max_unprompted_skip_minutes: int
+    stop_at_due_events: bool
+    grace_minutes: int
+    time_statement_tolerance_minutes: int
+    elapsed_tolerance_factor: float
+    time_awareness: str = field(metadata={OPEN_ENUM: True})
+    bands: list[list[str]]
+    calendar: dict[str, Any]
+    provider_id: str | None = None
+    external_value_name: str | None = None
+
+
+@dataclass(frozen=True)
+class WorldClock(Model):
+    """``ClockBody``: the clock as the story stands: its ``offset`` (minutes from the story's
+    start) and ``display`` (shown verbatim, D6), its ``anchor`` (raw; ``None``: unanchored; its
+    components are the anchoring offset's, D18), the ``level`` the configuration runs it at and
+    its ``mode`` (open enums), and its ``settings``."""
+
+    offset: int
+    display: str
+    anchor: dict[str, Any] | None
+    level: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    mode: str = field(metadata={OPEN_ENUM: True})
+    settings: ClockSettings
+
+
+@dataclass(frozen=True)
+class StoryStates(Model):
+    """``StatesBody``: the States the viewpoint may read, the world clock (only here, never among
+    ``states``), the story's revision and the viewpoint the read was produced for (a plain
+    string). ``from_json`` reads ``states`` entry by entry (D15); a ``clock`` that doesn't parse
+    fails the read."""
+
+    states: list[StoryState]
+    clock: WorldClock
+    timeline_revision: int
+    output_viewpoint: str
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("states", StoryState),))
+
+
+@dataclass(frozen=True)
+class StateView(Model):
+    """``StateViewBody``: one State through ``as_of`` (the Engine's ``N`` / ``N+k`` boundary;
+    ``None``: the story as it stands)."""
+
+    state: StoryState
+    as_of: str | None
+    timeline_revision: int
+    output_viewpoint: str
+
+
+@dataclass(frozen=True)
+class StateWritten(Model):
+    """``StateWrittenBody``: a consumer set: the State's ``old_value`` and ``new_value`` (raw;
+    ``None``: undefined), its inter-turn slot (``position`` ``N⁺k``; ``slot`` the full position,
+    :attr:`slot_position`), the slot's operation, the change it wrote and the story's revision
+    after it."""
+
+    state: str
+    old_value: Any
+    new_value: Any
+    position: str
+    slot: dict[str, int]
+    operation_id: str
+    change_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.slot)
+
+
+@dataclass(frozen=True)
+class StateDeclared(Model):
+    """``StateDeclaredBody``: a declaration: the stored ``definition`` (raw), its inter-turn
+    slot, the slot's operation and the story's revision after it."""
+
+    definition: dict[str, Any]
+    position: str
+    slot: dict[str, int]
+    operation_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.slot)
+
+
+@dataclass(frozen=True)
+class StateDefinitionWritten(Model):
+    """``StateDefinitionWriteBody``: a definition change (a story configuration write): the
+    ``definition`` as it now stands (raw) and the story's configuration and timeline revisions
+    (the timeline's unchanged)."""
+
+    definition: dict[str, Any]
+    config_revision: int
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ProposalEvidence(Model):
+    """``EvidenceBody``: one beat a proposed State recurs in: its event, turn, the quoted text
+    and the claim's character span (``None``: the whole text)."""
+
+    event_id: str
+    turn: int
+    text: str
+    span: list[int] | None
+
+
+@dataclass(frozen=True)
+class StateProposal(Model):
+    """``StateProposalBody``: a State the Engine proposes (FR-STATE-3): the suggested name, type,
+    scope, unit and entity, its evidence (strict inside the entry), its ``status`` (a plain
+    string), the analysis that filed it and, once approved, the definition it became."""
+
+    id: str
+    name: str
+    status: str
+    suggested_type: str
+    suggested_scope: str
+    suggested_unit: str | None
+    suggested_entity_id: str | None
+    definition_id: str | None
+    evidence: list[ProposalEvidence]
+    created_by_operation_id: str
+    created_at: str
+    decided_at: str | None
+
+
+@dataclass(frozen=True)
+class StateProposals(Model):
+    """``StateProposalsBody``: the proposals, oldest first. ``from_json`` reads ``proposals``
+    entry by entry (D15)."""
+
+    proposals: list[StateProposal]
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("proposals", StateProposal),))
+
+
+@dataclass(frozen=True)
+class AnalysisQueued(Model):
+    """``AnalysisQueuedBody``: the 202 of a State-proposal analysis: its job (the Engine has no
+    status read for it, D18) and ``maintenance`` operation; no revision moves."""
+
+    job_id: str
+    operation_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ProposalApproved(Model):
+    """``ProposalApprovedBody``: an approval: the State it declared (``definition``, raw), the
+    proposal after it, the inter-turn slot and its operation, and the story's revision."""
+
+    definition: dict[str, Any]
+    proposal: StateProposal
+    position: str
+    slot: dict[str, int]
+    operation_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.slot)
+
+
+@dataclass(frozen=True)
+class ProposalDismissed(Model):
+    """``ProposalDismissedBody``: a dismissal: the proposal after it (never proposed again) and
+    the story's revision. No slot: it isn't a slot operation."""
+
+    proposal: StateProposal
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ClockSettingsWritten(Model):
+    """``ClockSettingsWriteBody``: a clock settings change (a story configuration write): the
+    settings after it and the configuration and timeline revisions."""
+
+    settings: ClockSettings
+    config_revision: int
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ClockAdvanced(Model):
+    """``ClockAdvancedBody``: a consumer advance: the clock ``before`` and ``after``, the slot's
+    operation and the ``world_clock`` change it wrote, the slot's full ``position`` (a map,
+    :attr:`slot_position`) and the story's revision after it."""
+
+    before: ClockValue
+    after: ClockValue
+    change_id: str
+    operation_id: str
+    position: dict[str, int]
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.position)
+
+
+@dataclass(frozen=True)
+class ScheduledEvent(Model):
+    """``ScheduledEventBody``: one scheduled event as the viewpoint reads it: ``label``
+    (``canon`` or a character's ``belief``; an open enum), ``status`` (a plain string; ``None``
+    for a belief), the ``planned`` offset, ``owner`` (a character id, ``author`` or ``world``),
+    who it's shared with and involves, its place and grace, the offset it stopped the clock at
+    and, for a belief, the holder's ``confidence``."""
+
+    event_id: str
+    name: str | None
+    label: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    status: str | None
+    planned: int | None
+    owner: str | None
+    shared_owners: list[str]
+    participants: list[str]
+    place_id: str | None
+    grace_minutes: int | None
+    stopped_clock_at: int | None
+    confidence: str | None
+
+
+@dataclass(frozen=True)
+class ScheduledEvents(Model):
+    """``ScheduledEventsBody``: the events the viewpoint holds (by planned time, canon first),
+    the viewpoint (a plain string) and the story's revision. ``from_json`` reads ``events``
+    entry by entry (D15)."""
+
+    events: list[ScheduledEvent]
+    output_viewpoint: str
+    timeline_revision: int
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("events", ScheduledEvent),))
+
+
+@dataclass(frozen=True)
+class ScheduledEventWritten(Model):
+    """``ScheduledEventWrittenBody``: a create, reschedule or cancel: the inter-turn slot's
+    operation and the event after it (no slot map in the answer)."""
+
+    event: ScheduledEvent
+    operation_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class Provider(Model):
+    """``ProviderBody``: a registered external-data provider, as registered (``manifest`` raw,
+    template text and ``{secret.<NAME>}`` references, never a secret), its capabilities (plain
+    strings), when it was created and last changed and the deployment ``config_revision`` of its
+    last change."""
+
+    name: str
+    trust_tier: str
+    transport: str
+    manifest: dict[str, Any]
+    write_capable: bool
+    confirmation: str | None
+    dedupes_dispatch: bool | None
+    returns_resulting_values: bool | None
+    unavailability: str
+    freshness_minutes: int | None
+    confirm_wait_max_seconds: int
+    changed_at_revision: int
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class ProviderDetail(Provider):
+    """``ProviderItem``: one provider with the deployment ``config_revision`` it was read at."""
+
+    config_revision: int
+
+
+@dataclass(frozen=True)
+class ProviderMutation(Provider):
+    """``ProviderMutation``: a provider after a register or replace, with the deployment
+    ``config_revision`` the write produced."""
+
+    config_revision: int
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderList(Model):
+    """``ProviderList``: every registered provider by name and the deployment's
+    ``config_revision``. ``from_json`` reads ``providers`` entry by entry (D15)."""
+
+    providers: list[Provider]
+    config_revision: int
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("providers", Provider),))
+
+
+@dataclass(frozen=True)
+class ProviderBinding(Model):
+    """``BindingBody``: a story's binding to one provider: its ids there (``{binding.<key>}``
+    values) and when it was bound."""
+
+    provider: str
+    external_ids: dict[str, str]
+    bound_at: str
+
+
+@dataclass(frozen=True)
+class ProviderBindings(Model):
+    """``BindingList``: the story's bindings. ``from_json`` reads ``bindings`` entry by entry
+    (D15)."""
+
+    bindings: list[ProviderBinding]
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("bindings", ProviderBinding),))
+
+
+@dataclass(frozen=True)
+class ProviderBindingWritten(Model):
+    """``BindingMutation``: a binding after a bind, the story's revision, the profile validator's
+    warnings for the story after it and the required providers it activated (``None``: none
+    named)."""
+
+    provider: str
+    external_ids: dict[str, str]
+    bound_at: str
+    timeline_revision: int
+    warnings: list[ProfileValidationWarning] = field(default_factory=list)
+    activated_required_providers: list[str] | None = None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ExternalFact(Model):
+    """``ExternalFactBody``: a fact version citing an external read: its proposition (raw, C2;
+    :attr:`proposition_view` is its typed view), scope, valid-time, provenance, authority and
+    when it was recorded and closed (``tx_to``: ``None`` while current)."""
+
+    fact_id: str
+    proposition: Any
+    scope: str
+    valid_from: int | None
+    valid_to: int | None
+    provenance: str
+    authority: str
+    tx_from: str
+    tx_to: str | None
+
+    @property
+    def proposition_view(self) -> Proposition | None:
+        return Proposition.from_json(self.proposition)
+
+
+@dataclass(frozen=True)
+class ExternalRead(Model):
+    """``ExternalReadItemBody``: one snapshotted external value: the ``external_read`` event,
+    the provider and value name, the State id and scope key (``None``: story-scoped; the Engine
+    names no State, D18), the ``value`` read (raw; ``None``: unknown), when, the turn and
+    variant that read it, its ``source`` (a plain string) and the facts citing it (strict
+    inside the entry)."""
+
+    event_id: str
+    provider: str
+    value_name: str
+    state_id: str | None
+    scope_key: str | None
+    value: Any
+    read_at: str | None
+    turn: int | None
+    variant: int | None
+    source: str
+    facts: list[ExternalFact]
+
+
+@dataclass(frozen=True)
+class ExternalFacts(Model):
+    """``ExternalFactsBody``: a page of the story's external reads by id (``next_after_id``
+    continues), the story's revision. ``from_json`` reads ``items`` entry by entry (D15)."""
+
+    items: list[ExternalRead]
+    revision: int
+    next_after_id: str | None
+    output_viewpoint: str = open_enum(default="omniscient")
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", ExternalRead),))
+
+
+@dataclass(frozen=True)
+class ListingOutcome(Model):
+    """``OutcomeView``: the latest outcome recorded for a listed effect."""
+
+    kind: str
+    received_at: str
+    received_via: str
+
+
+@dataclass(frozen=True)
+class Reverification(Model):
+    """``Reverification``: a late success's re-check (``passed`` or ``failed``, an open enum)
+    and the reasons it failed (settle-reason codes)."""
+
+    reverification: str = field(metadata={OPEN_ENUM: True})
+    reasons: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ReconciliationListing(Model):
+    """``Listing``: one external effect Epistrel can't report as applied: its outbox id (the
+    provider idempotency key), provider, ``status`` (a plain string), why it's listed
+    (``reason``, an open enum) and since when. The value, effect (raw), outcome,
+    re-verification and compensating effect are optional, so a row an erasure redacted
+    (``{outbox_id, provider, status, reason, since}``) parses."""
+
+    outbox_id: str
+    provider: str
+    status: str
+    reason: str = field(metadata={OPEN_ENUM: True})  # spelled out: a required field follows
+    since: str
+    value: str | None = None
+    effect: dict[str, Any] | None = None
+    outcome: ListingOutcome | None = None
+    reverification: Reverification | None = None
+    compensated_by: str | None = None
+
+
+@dataclass(frozen=True)
+class Reconciliation(Model):
+    """``Reconciliation``: the story's unconfirmed external effects, oldest first. ``from_json``
+    reads ``listings`` entry by entry (D15)."""
+
+    listings: list[ReconciliationListing]
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("listings", ReconciliationListing),))
+
+
+@dataclass(frozen=True)
+class SettledNow(Model):
+    """``SettledNowBody``: a settle-now: the effect and its confirmed outcome record, the
+    re-verification then (``reverification``, ``reasons``; plain strings) and ``result``:
+    ``settled`` at the inter-turn slot (``position``, ``slot``, by ``operation_id``) or
+    ``queued`` behind an incomplete staged turn (``slot`` ``None``)."""
+
+    outbox_id: str
+    outcome_id: str
+    result: str
+    reverification: str
+    reasons: list[str]
+    timeline_revision: int
+    operation_id: str | None = None
+    position: str | None = None
+    slot: dict[str, int] | None = None
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.slot)
+
+
+@dataclass(frozen=True)
+class Compensated(Model):
+    """``CompensatedBody``: a compensation: the new ``intended`` outbox row that compensates
+    ``compensates``, its inter-turn slot and operation, and the story's revision."""
+
+    outbox_id: str
+    compensates: str
+    status: str
+    position: str
+    slot: dict[str, int]
+    operation_id: str
+    timeline_revision: int
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.slot)
+
+
+@dataclass(frozen=True)
+class ConsolidationProvenance(Model):
+    """``ConsolidationProvenance``: the consolidation that wrote a memory: its operation, the
+    turn window and scope it covers, its level and the memories it compresses."""
+
+    operation_id: str
+    from_turn: int | None = None
+    to_turn: int | None = None
+    level: int | None = None
+    scope: str | None = None
+    source_memory_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ListedMemory(MemoryView):
+    """``ListedMemory``: a memory as the admin memory list shows it (#531): a
+    :class:`MemoryView` plus ``consolidation`` (``None`` unless a consolidation wrote it)."""
+
+    consolidation: ConsolidationProvenance | None = None
+
+
+@dataclass(frozen=True)
+class MemoryList(Model):
+    """``MemoryListBody``: a page of the story's memories on its active timeline by id
+    (``next_cursor`` continues; ``None`` on the last), the story's revision. ``from_json`` reads
+    ``memories`` entry by entry (D15)."""
+
+    memories: list[ListedMemory]
+    next_cursor: str | None
+    timeline_revision: int
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("memories", ListedMemory),))

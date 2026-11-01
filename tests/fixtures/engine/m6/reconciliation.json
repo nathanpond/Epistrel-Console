@@ -1,0 +1,72 @@
+{
+  "listings": [
+    {
+      "outbox_id": "01JM6BX0000000000000000001",
+      "provider": "bank",
+      "value": "balance",
+      "status": "unknown",
+      "reason": "unconfirmed",
+      "since": "2026-10-31T18:05:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -50,
+        "reason": "Mara pays the harbour fee"
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000002",
+      "provider": "bank",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "late_success_after_expiry",
+      "since": "2026-10-31T18:07:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -120,
+        "reason": "Mara buys the lantern"
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-10-31T18:20:00Z",
+        "received_via": "ingest"
+      },
+      "reverification": {
+        "reverification": "failed",
+        "reasons": [
+          "precondition:ownership"
+        ]
+      },
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000003",
+      "provider": "bank",
+      "value": "balance",
+      "status": "compensated",
+      "reason": "confirmed_discarded_origin",
+      "since": "2026-10-31T18:09:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -30,
+        "reason": "Rope for the boat"
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-10-31T18:10:00Z",
+        "received_via": "dispatch"
+      },
+      "reverification": null,
+      "compensated_by": "01JM6BX0000000000000000004"
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000005",
+      "provider": "bank",
+      "status": "failed",
+      "reason": "failed",
+      "since": "2026-10-31T18:11:00Z"
+    }
+  ]
+}

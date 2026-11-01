@@ -1,0 +1,12 @@
+{
+  "timeline_revision": 12,
+  "idempotency_key": null,
+  "outbox_id": "01JM6BX0000000000000000002",
+  "outcome_id": "01JM60C0000000000000000001",
+  "result": "queued",
+  "reverification": "passed",
+  "reasons": [],
+  "operation_id": null,
+  "position": null,
+  "slot": null
+}

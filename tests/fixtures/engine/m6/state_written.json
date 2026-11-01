@@ -1,0 +1,17 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "state": "gold",
+  "old_value": 120,
+  "new_value": 125,
+  "position": "3⁺2",
+  "slot": {
+    "turn": 3,
+    "variant": 0,
+    "slot_k": 2,
+    "beat": 0,
+    "step": 0
+  },
+  "operation_id": "01JM6QP0000000000000000011",
+  "change_id": "01JM6CG0000000000000000011"
+}

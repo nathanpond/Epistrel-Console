@@ -167,3 +167,129 @@ def test_every_m5_fixture_is_in_the_table() -> None:
 
     files = {p.stem for p in (ENGINE / "m5").glob("*.json") if not p.stem.endswith("_bad_item")}
     assert files == set(M5_FIXTURES)
+
+
+# #232 (D16): each M6 fixture and the answer it is (method, route template, status). The
+# ``*_bad_item.json`` files are not schema-valid on purpose (the leniency tests read them).
+M6_FIXTURES = {
+    "story": ("GET", "/stories/{story_id}", 200),
+    "states": ("GET", "/stories/{story_id}/states", 200),
+    "states_alice": ("GET", "/stories/{story_id}/states", 200),
+    "state_view": ("GET", "/stories/{story_id}/states/{name}", 200),
+    "state_written": ("PUT", "/stories/{story_id}/states/{name}", 200),
+    "state_declared": ("POST", "/stories/{story_id}/states", 201),
+    "state_definition_written": ("PATCH", "/stories/{story_id}/states/{name}/definition", 200),
+    "state_proposals": ("GET", "/stories/{story_id}/state-proposals", 200),
+    "analysis_queued": ("POST", "/stories/{story_id}/state-proposals/analyze", 202),
+    "proposal_approved": (
+        "POST",
+        "/stories/{story_id}/state-proposals/{proposal_id}/approve",
+        201,
+    ),
+    "proposal_dismissed": (
+        "POST",
+        "/stories/{story_id}/state-proposals/{proposal_id}/dismiss",
+        200,
+    ),
+    "clock": ("GET", "/stories/{story_id}/clock", 200),
+    "clock_unanchored": ("GET", "/stories/{story_id}/clock", 200),
+    "clock_settings_written": ("PATCH", "/stories/{story_id}/clock", 200),
+    "clock_advanced": ("POST", "/stories/{story_id}/clock/advance", 200),
+    "scheduled_events": ("GET", "/stories/{story_id}/scheduled-events", 200),
+    "scheduled_events_alice": ("GET", "/stories/{story_id}/scheduled-events", 200),
+    "scheduled_event_written": ("POST", "/stories/{story_id}/scheduled-events", 201),
+    "providers": ("GET", "/admin/external-providers", 200),
+    "provider": ("GET", "/admin/external-providers/{name}", 200),
+    "provider_mutation": ("POST", "/admin/external-providers", 201),
+    "bindings": ("GET", "/stories/{story_id}/providers", 200),
+    "binding_written": ("PUT", "/stories/{story_id}/providers/{name}/binding", 200),
+    "external_facts": ("GET", "/stories/{story_id}/inspect/external-facts", 200),
+    "reconciliation": ("GET", "/stories/{story_id}/reconciliation", 200),
+    "settled_now": ("POST", "/stories/{story_id}/reconciliation/{outbox_id}/settle-now", 200),
+    "settled_now_queued": (
+        "POST",
+        "/stories/{story_id}/reconciliation/{outbox_id}/settle-now",
+        200,
+    ),
+    "compensated": ("POST", "/stories/{story_id}/reconciliation/{outbox_id}/compensate", 201),
+    "corrected": ("POST", "/stories/{story_id}/correct", 200),
+    "memories_page1": ("GET", "/admin/stories/{story_id}/memories", 200),
+    "memories_empty": ("GET", "/admin/stories/{story_id}/memories", 200),
+    "fact": ("GET", "/admin/stories/{story_id}/facts/{fact_id}", 200),
+}
+M6_ID_KEYS = frozenset({"id", "compensates", "compensated_by"})
+M6_SKIPPED = frozenset({"external_ids", "manifest", "request_id"})
+# The answers that carry no Engine id at all (the clock, the provider registry, bindings).
+M6_ID_LESS = frozenset(
+    {
+        "clock",
+        "clock_unanchored",
+        "clock_settings_written",
+        "providers",
+        "provider",
+        "provider_mutation",
+        "bindings",
+        "binding_written",
+        "states_alice",
+        "state_view",
+        "state_definition_written",
+        "memories_empty",
+    }
+)
+
+
+def _m6_id_strings(value: object, key: str | None = None) -> list[str]:
+    """Every string in ``value`` under a key that names an id: ``id``, ``*_id``, ``*_ids`` (each
+    item), ``compensates`` and ``compensated_by``, and the keys of a ``values`` map (a
+    per-character State's cast ids). ``external_ids`` (provider-side values such as
+    ``account_id``), manifest contents and a model call's ``request_id`` (the model
+    provider's) are skipped.
+
+    Besides D16's prefixes, State definitions and State ids use ``01JM6SD``, and outcomes
+    ``01JM60C`` (D16's ``01JM6OC`` holds a letter O, outside the Crockford alphabet a ULID
+    uses, so a digit zero stands in)."""
+    if key in M6_SKIPPED:
+        return []
+    if isinstance(value, dict):
+        keyed = list(value) if key == "values" else []  # a per-character State's cast ids
+        return keyed + [s for k, v in value.items() for s in _m6_id_strings(v, k)]
+    if isinstance(value, list):
+        inner = "id" if key is not None and key.endswith("_ids") else None
+        return [s for v in value for s in _m6_id_strings(v, inner)]
+    named = key is not None and (key in M6_ID_KEYS or key.endswith("_id"))
+    return [value] if named and isinstance(value, str) else []
+
+
+@pytest.mark.parametrize("name", sorted(M6_FIXTURES))
+def test_m6_fixtures_validate(fake_engine: FakeEngine, name: str) -> None:
+    from console.ids import is_ulid
+    from tests.fixtures import ENGINE
+
+    method, route, status = M6_FIXTURES[name]
+    body = json.loads((ENGINE / "m6" / f"{name}.json").read_text(encoding="utf-8"))
+    fake_engine.respond(method, route, status, json=body)  # validated against the schema
+    ids = _m6_id_strings(body)
+    assert bool(ids) is (name not in M6_ID_LESS)
+    assert [i for i in ids if not is_ulid(i)] == []
+
+
+def test_every_m6_fixture_is_in_the_table() -> None:
+    """**Complement:** a file under ``m6/`` (but a ``*_bad_item.json``) missing from the table
+    fails."""
+    from tests.fixtures import ENGINE
+
+    files = {p.stem for p in (ENGINE / "m6").glob("*.json") if not p.stem.endswith("_bad_item")}
+    assert files == set(M6_FIXTURES)
+
+
+def test_the_m6_id_rule_skips_provider_side_values() -> None:
+    """The id rule reads ``*_ids`` items and the two outbox links, and skips ``external_ids``
+    and manifests (their ``account_id`` is the provider's, not an Engine id)."""
+    body = {
+        "source_memory_ids": ["a"],
+        "compensates": "b",
+        "external_ids": {"account_id": "acct-1"},
+        "manifest": {"values": {"x": {"provider_id": "p"}}},
+        "outbox_id": "c",
+    }
+    assert sorted(_m6_id_strings(body)) == ["a", "b", "c"]
