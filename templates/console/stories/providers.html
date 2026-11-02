@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load console_format inspect_tags %}
+{% block title %}{% if story_label %}{{ story_label }} — Providers{% else %}Providers{% endif %} — Epistrel Console{% endblock %}
+{% block heading %}{% if story_label %}{{ story_label }} — Providers{% else %}Providers{% endif %}{% endblock %}
+{% block content %}
+{% if not_found %}
+<p class="not-found">{{ not_found }}</p>
+<p><a href="{% url 'stories:list' %}">All stories</a></p>
+{% else %}
+<p><a href="{% url 'stories:detail' story_id %}">Play</a> · <a href="{% url 'stories:history' story_id %}">History</a> · <a class="settings-link" href="{% url 'stories:settings' story_id %}">Settings</a> · <a class="config-tab" href="{% url 'stories:config' story_id %}">Config</a> · <a href="{% url 'stories:list' %}">All stories</a> · <code>{{ story_id }}</code></p>
+{% if engine_error %}
+{% include "console/_engine_error.html" %}
+{% else %}
+{% if archived_note %}<p class="warning archived-note">{{ archived_note }}</p>{% endif %}
+<p class="needs-notice">{{ needs_notice|code_spans }}</p>
+{% if registry_unread %}<p class="warning registry-unread">{{ registry_unread }}</p>{% include "console/_engine_error.html" with engine_error=registry_error %}{% endif %}
+{% if registry_empty %}<p class="empty registry-empty">{% url 'engine:providers' as registry_url %}{% if registry_url %}<a href="{{ registry_url }}">{{ registry_empty }}</a>{% else %}{{ registry_empty }}{% endif %}</p>{% endif %}
+<p class="bindings-count">{{ count_text }}</p>
+{% if rows %}
+<table class="provider-bindings">
+  <thead><tr><th>Provider</th><th>Ids</th><th>Bound</th><th>Manifest needs</th><th>Status</th><th>Action</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    {% if row.unread is not None %}
+    <tr class="unread unread-{{ row.kind }}">
+      <td colspan="5">{% if row.kind == "binding" %}{{ unread_binding }}{% else %}{{ unread_provider }}{% endif %}</td>
+      <td><details class="more"><summary>More</summary><pre>{{ row.unread }}</pre></details></td>
+    </tr>
+    {% else %}
+    <tr id="binding-{{ row.name }}">
+      <td class="binding-provider">{% if row.url %}<a href="{{ row.url }}"><code>{{ row.name }}</code></a>{% else %}<code>{{ row.name }}</code>{% endif %}</td>
+      <td class="binding-ids">{% if row.ids is None %}{{ not_bound }}{% elif row.ids %}{% for key, value in row.ids %}<code>{{ key }}</code> = <code class="bound-id">{{ value }}</code>{% if not forloop.last %}<br>{% endif %}{% endfor %}{% else %}{{ no_ids }}{% endif %}</td>
+      <td class="binding-bound">{% if row.bound_at %}{{ row.bound_at|engine_time }}{% else %}{{ empty }}{% endif %}</td>
+      <td class="binding-needs">{% if row.needs is None %}{{ empty }}{% elif row.needs %}{% for key in row.needs %}<code>{{ key }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}{{ no_ids }}{% endif %}</td>
+      <td class="binding-status" title="{{ row.status_title }}">{{ row.status|code_spans }}</td>
+      <td class="binding-action">{% if row.action_url %}<a class="bind-link" href="{{ row.action_url }}">{{ row.action }}</a>{% endif %}</td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -500,19 +500,25 @@ def test_provider_codes() -> None:
         "This provider is read-only — it can't take a compensating effect"
     )
     # Complement: while ``stories:providers`` doesn't resolve, the link is "".
-    unbound = refusal(err("provider_unbound", {"providers": ["bank", "shop"]}, 409))
-    assert unbound == WorldRefusal("This story has no binding to bank, shop — bind it first")
-    assert refusal(err("provider_unbound", {"providers": [1]}, 409)) == WorldRefusal(
-        "This story has no binding to its providers — bind it first"
-    )
+    with override_settings(ROOT_URLCONF="tests.stories.urls_without_providers"):
+        unbound = refusal(err("provider_unbound", {"providers": ["bank", "shop"]}, 409))
+        assert unbound == WorldRefusal("This story has no binding to bank, shop — bind it first")
+        assert refusal(err("provider_unbound", {"providers": [1]}, 409)) == WorldRefusal(
+            "This story has no binding to its providers — bind it first"
+        )
 
 
 def test_provider_unbound_links_the_bindings_page() -> None:
+    """#247 registered ``stories:providers``: the real urlconf links it (and the D19 stub
+    urlconf still does)."""
+    unbound = refusal(err("provider_unbound", {"providers": ["bank"]}, 409))
+    assert unbound is not None
+    assert unbound.url == reverse("stories:providers", args=[STORY])
+    assert unbound.url == f"/stories/{STORY}/providers/"
     with override_settings(ROOT_URLCONF="tests.urls_with_engine_operation"):
-        unbound = refusal(err("provider_unbound", {"providers": ["bank"]}, 409))
-        assert unbound is not None
-        assert unbound.url == reverse("stories:providers", args=[STORY])
-        assert unbound.url == f"/stories/{STORY}/providers/"
+        stubbed = refusal(err("provider_unbound", {"providers": ["bank"]}, 409))
+        assert stubbed is not None
+        assert stubbed.url == f"/stories/{STORY}/providers/"
 
 
 @pytest.mark.parametrize(

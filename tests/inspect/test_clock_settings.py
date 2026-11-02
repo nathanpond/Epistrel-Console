@@ -550,6 +550,7 @@ def test_engine_422_beside_a_field(operator_client: Client, engine: FakeEngine) 
     )
 
 
+@override_settings(ROOT_URLCONF="tests.stories.urls_without_providers")
 def test_provider_unbound_names_the_binding_page(
     operator_client: Client, engine: FakeEngine
 ) -> None:
@@ -563,7 +564,7 @@ def test_provider_unbound_names_the_binding_page(
     html = response.content.decode()
     assert "This story has no binding to bank — bind it first" in html
     assert scrape(html).data["provider_value"] == "bank.story_minutes"
-    # stories:providers isn't registered yet (#247): plain text, no link.
+    # Without stories:providers (a urlconf lacking #247's page): plain text, no link.
     assert "Story bindings</a>" not in html
 
 

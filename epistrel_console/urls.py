@@ -52,6 +52,7 @@ from console.views import (
     story_characters,
     story_config,
     story_from_scenario,
+    story_providers,
     story_rating,
     story_settings,
     timeline,
@@ -145,6 +146,13 @@ story_patterns = (
             "<str:story_id>/config/version/",
             story_config.version_change,
             name="config-version",
+        ),
+        # #247: the story's provider bindings and the bind form for one provider.
+        path("<str:story_id>/providers/", story_providers.providers, name="providers"),
+        path(
+            "<str:story_id>/providers/<str:name>/bind/",
+            story_providers.provider_bind,
+            name="provider-bind",
         ),
         path(
             "<str:story_id>/characters/new/",

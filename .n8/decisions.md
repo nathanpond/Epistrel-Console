@@ -2581,3 +2581,22 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A 503 `erasure_pending` on a register/replace re-renders the form (503) with #87's held fragment. On a delete it renders `provider.html`'s held state (503). A replace whose snapshot re-read fails keeps the posted key (nothing was written).
   **Why:** D17's storyless-page rule, and D8's "nothing sent keeps the key".
   **Issue:** #246
+- **Decision:** The bind form's signed snapshot carries one extra member beyond the planned `{story_id, story_name, story_status, provider, keys, existing}`: `unread` (an unreadable existing binding entry names this provider).
+  **Why:** The "The existing binding couldn't be read — saving replaces it" notice then survives a re-render with no read. It is a pure display flag; the no-op check still treats the binding as absent.
+  **Issue:** #247
+- **Decision:** "Story not found" (404) is rendered by the Providers page and bind form themselves (no shared helper exists); an `EngineError` 404 on `get_story` or `list_provider_bindings` gives it, any other failure #43's panel. A bind-form PUT 404 without `details.provider` shows "Story not found" above the form with status 404.
+  **Why:** The AC fixes the wording. No Console module had a story-not-found page to reuse.
+  **Issue:** #247
+- **Decision:** A binding with an empty id map shows "no ids" in the Ids column, and the page's count line reads "1 binding" / "N bindings" (parsed entries only, D15).
+  **Why:** The AC names a count but not its words, and is silent on an empty map. "no ids" matches the Manifest-needs wording.
+  **Issue:** #247
+- **Decision:** Labels use `<code>` for unused kept keys too ("`<code>old</code>` (not used by the manifest — blank drops it)"). `id__<key>` fields use `use_required_attribute = False`, so a blank submit reaches the server's message, as the demo shows.
+  **Why:** This matches the per-key labels (C10's server-side errors).
+  **Issue:** #247
+- **Decision:** `test_provider_codes`'s unlinked `provider_unbound` complement now runs under a new urlconf, `tests/stories/urls_without_providers.py` (story routes minus `providers`/`provider-bind`). `test_provider_unbound_links_the_bindings_page` now asserts the real urlconf's link, and the D19 stub urlconf still links it.
+  `tests/inspect/test_clock_settings.py::test_provider_unbound_names_the_binding_page` uses the same urlconf for its unlinked case. `m6/bindings_orphan` joins `tests/engine/test_fake_engine.py`'s M6 fixture table (schema-validated, id-less).
+  **Why:** Registering `stories:providers` made the old complement's "" unreachable under the real routes. D19 pins the unlinked case with a urlconf that lacks the name.
+  **Issue:** #247
+- **Decision:** `tests/stories/conftest.py`'s fake-Engine fixture now also patches `console.views.story_providers` and `console.views.story_settings`.
+  **Why:** The new page, and the settings-page link test, need the fake behind those views.
+  **Issue:** #247

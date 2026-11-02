@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% load inspect_tags %}
+{% block title %}{% if story_label %}{{ story_label }} — Bind {{ name }}{% else %}Bind {{ name }}{% endif %} — Epistrel Console{% endblock %}
+{% block heading %}{% if story_label %}{{ story_label }} — {% endif %}Bind {% if provider_link and not missing %}<a href="{{ provider_link }}"><code>{{ name }}</code></a>{% else %}<code>{{ name }}</code>{% endif %}{% endblock %}
+{% block content %}
+{% if not_found %}
+<p class="not-found">{{ not_found }}</p>
+<p><a href="{% url 'stories:list' %}">All stories</a></p>
+{% else %}
+<p><a class="back-to-providers" href="{% url 'stories:providers' story_id %}">Back to Providers</a></p>
+{% if missing %}
+<p class="not-found">{{ missing }}</p>
+{% elif not form %}
+{% include "console/_engine_error.html" %}
+{% else %}
+{% if archived_note %}<p class="warning archived-note">{{ archived_note }}</p>{% endif %}
+<p class="substitutes">{{ substitutes }}</p>
+{% if existing_unread %}<p class="warning existing-unread">{{ existing_unread }}</p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% for line in above %}<p class="refusal">{% if above_url and forloop.first %}<a href="{{ above_url }}">{{ line|code_spans }}</a>{% else %}{{ line|code_spans }}{% endif %}</p>{% endfor %}
+<form method="post" action="{% url 'stories:provider-bind' story_id name %}" class="binding-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {{ form.non_field_errors }}
+  {% for f in form %}{% include "console/stories/_field.html" with f=f show_errors=True %}{% endfor %}
+  <p><button type="submit">{{ button }}</button> <a href="{{ providers_url }}">Cancel</a></p>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -207,6 +207,7 @@ M6_FIXTURES = {
     "provider": ("GET", "/admin/external-providers/{name}", 200),
     "provider_mutation": ("POST", "/admin/external-providers", 201),
     "bindings": ("GET", "/stories/{story_id}/providers", 200),
+    "bindings_orphan": ("GET", "/stories/{story_id}/providers", 200),  # #247
     "binding_written": ("PUT", "/stories/{story_id}/providers/{name}/binding", 200),
     "external_facts": ("GET", "/stories/{story_id}/inspect/external-facts", 200),
     "reconciliation": ("GET", "/stories/{story_id}/reconciliation", 200),
@@ -238,6 +239,7 @@ M6_ID_LESS = frozenset(
         "provider",
         "provider_mutation",
         "bindings",
+        "bindings_orphan",
         "binding_written",
         "states_alice",
         "states_empty",
