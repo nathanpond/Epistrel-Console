@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load console_format inspect_tags %}
+{% block title %}{% if registering %}Register a provider{% else %}Replace registration — {{ name }}{% endif %} — Epistrel Console{% endblock %}
+{% block heading %}{% if registering %}Register a provider{% else %}Replace registration — <code>{{ name }}</code>{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:home' %}">← Engine</a> · {% if registering %}<a href="{% url 'engine:providers' %}">All providers</a>{% else %}<a href="{% url 'engine:provider' name %}">Back to {{ name }}</a> · <a href="{% url 'engine:providers' %}">All providers</a>{% endif %}</p>
+{% if not registering %}<p class="muted">Save replaces every field of the registration; nothing is sent when nothing changed.</p>{% endif %}
+{% if held %}
+{% include "console/stories/_held.html" with held_text=held.held_text retry_url=held.retry_url delete_url="" ledger_url="" %}
+{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if above %}<p class="not-found provider-gone">{% if above_url %}{{ name }} is no longer registered — <a href="{{ above_url }}">register it again</a>{% else %}{{ above }}{% endif %}</p>{% endif %}
+<form method="post" action="{% if registering %}{% url 'engine:provider-new' %}{% else %}{% url 'engine:provider-edit' name %}{% endif %}" class="provider-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if not registering %}<input type="hidden" name="snapshot" value="{{ snapshot }}">{% endif %}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <div class="field field-{{ field.name }}">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.name == "manifest" or field.name == "unavailability" %}<small class="muted">{{ field.help_text|code_spans }}</small>{% elif field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+    {% if field.name == "name" and name_exists_url %}
+    <ul class="errorlist">{% for error in field.errors %}<li>{% if error == name_exists_text %}A provider named “{{ name_taken }}” is already registered — <a href="{{ name_exists_url }}">open it</a> to replace its registration{% else %}{{ error }}{% endif %}</li>{% endfor %}</ul>
+    {% else %}
+    {{ field.errors }}
+    {% endif %}
+    {% if field.name == "manifest" %}
+    {% if manifest_failures %}
+    <ul class="manifest-failures">
+      {% for f in manifest_failures %}
+      <li{% if f.reason %} title="{{ f.reason }}"{% endif %}>{% if f.member %}<code>{{ f.member }}</code>{% else %}manifest{% endif %}: {{ f.message }}{% if f.settings_url %} — add the host to <code>provider_allowed_hosts</code> in <a href="{{ f.settings_url }}">Deployment settings</a>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if example %}
+    <details class="manifest-example"><summary>Example</summary><pre>{{ example|pretty_json }}</pre></details>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+  <p><button type="submit">{% if registering %}Register{% else %}Save{% endif %}</button>{% if not registering %} <a href="{% url 'engine:provider' name %}">Cancel</a>{% endif %}</p>
+</form>
+{% endblock %}

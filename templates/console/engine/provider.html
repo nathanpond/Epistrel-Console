@@ -15,6 +15,7 @@
 {% include "console/_engine_error.html" %}
 <p><a href="{% url 'engine:providers' %}">All providers</a></p>
 {% else %}
+<p class="provider-actions"><a class="replace-provider" href="{% url 'engine:provider-edit' name %}">Replace registration</a> · <a class="delete-provider" href="{% url 'engine:provider-delete' name %}?{{ delete_query }}">Delete</a></p>
 <section class="registration">
   <h2>Registration</h2>
   <table class="registration">

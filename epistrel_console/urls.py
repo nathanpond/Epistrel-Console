@@ -347,6 +347,11 @@ engine_patterns = (
         # #240: the deployment's external-data providers, read-only.
         path("providers/", providers.provider_list, name="providers"),
         path("providers/<str:name>/", providers.provider_detail, name="provider"),
+        # #246: register (outside providers/<name>/: "new" is a valid provider name), replace,
+        # delete.
+        path("provider-registration/", providers.provider_new, name="provider-new"),
+        path("providers/<str:name>/replace/", providers.provider_edit, name="provider-edit"),
+        path("providers/<str:name>/delete/", providers.provider_delete, name="provider-delete"),
         # #84: the deployment's profile defaults, in the schema-generated form.
         path(
             "profile-defaults/edit/",

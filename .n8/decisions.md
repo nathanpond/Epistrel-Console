@@ -2563,3 +2563,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Adding `states` to the play snapshot breaks the signature of any open play page's snapshot once: the next POST re-reads the story, and the HTMX inspector shows short ids until the page is reloaded.
   **Why:** This was accepted at planning (pass 1). It is noted here for the PR.
   **Issue:** #245
+- **Decision:** `SPEC_FIELDS` and the register page's initial values are read from the recorded `ProviderSpec` (property order, `default`s), and the enum choices from its `enum`s, so the guard test and the form can't drift from the schema.
+  **Why:** The story's "schema order" and guard-test lines; one source for the ten members `spec()` always sends.
+  **Issue:** #246
+- **Decision:** The Name input carries `maxlength=64` as a widget attribute only, not Django's `max_length` validator, so a 65-character name reads `NAME_INVALID` like every other bad name.
+  **Why:** Discretion says `max_length=64` and the AC says a failing name reads `NAME_INVALID`; the validator would have shown Django's own length message instead.
+  **Issue:** #246
+- **Decision:** The no-op check compares the manifest as canonical JSON and the other nine members by type and value (`True` never equals `1`).
+  **Why:** Discretion (pass 2) says to use plain equality for the other members. Python's `==` treats `True == 1`, so the type check stops a changed value from passing as unchanged.
+  **Issue:** #246
+- **Decision:** The Saved flash ends "…keeps what it resolved." and, when `config_revision` > snapshot + 1, appends " The deployment's configuration also changed elsewhere since you loaded this page; see Config changes" as a second sentence.
+  **Why:** The AC's literal ". The…" after a sentence that already ends with a period would read "resolved.. The"; the settings page's note has no final period either.
+  **Issue:** #246
+- **Decision:** Manifest-line members strip `body.manifest.` (`values.balance.read.url`); `body` and `body.manifest` read "manifest". A non-manifest path in an `invalid_manifest`/`validation_error` 422 goes through `apply_engine_errors`. A 422 with nothing placeable shows the panel. Manifest lines also add one plain error on Manifest ("The Engine refused this manifest") so `aria-invalid` applies.
+  **Why:** This follows the AC and the demo's member text. Pass 1's "minus `body.`" wording would have shown `manifest.values…`, which contradicts the demo.
+  **Issue:** #246
+- **Decision:** A 503 `erasure_pending` on a register/replace re-renders the form (503) with #87's held fragment. On a delete it renders `provider.html`'s held state (503). A replace whose snapshot re-read fails keeps the posted key (nothing was written).
+  **Why:** D17's storyless-page rule, and D8's "nothing sent keeps the key".
+  **Issue:** #246

@@ -5,6 +5,7 @@
 {% block content %}
 <p><a href="{% url 'engine:home' %}">← Engine</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a></p>
 <p class="scope">The deployment's registered external-data providers, as the Engine answers them.</p>
+<p class="provider-actions"><a class="register-provider" href="{% url 'engine:provider-new' %}">Register a provider</a></p>
 
 {% if held %}
 {% include "console/stories/_held.html" with held_text=held.held_text retry_url=held.retry_url delete_url="" ledger_url="" %}
