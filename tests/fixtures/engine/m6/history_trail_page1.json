@@ -1,0 +1,216 @@
+{
+  "items": [
+    {
+      "turn": 5,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I pay for the lantern and a room.",
+      "operation_id": "01JM6QP0000000000000000005",
+      "message_id": "01JM6MM0000000000000000051",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 5,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_do",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Turn 5's deed.",
+      "operation_id": "01JM6QP0000000000000000005",
+      "message_id": "01JM6MM0000000000000000052",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [
+        {
+          "state": "gold",
+          "scope_key": null,
+          "old_value": 120,
+          "new_value": 115,
+          "reason": "paid for the lantern",
+          "source": "turn",
+          "contingency": "unconditional",
+          "status": "committed",
+          "delta": -5
+        },
+        {
+          "state": "room_booked",
+          "scope_key": null,
+          "old_value": false,
+          "new_value": true,
+          "reason": "booked a room at the inn",
+          "source": "turn",
+          "contingency": "reservation",
+          "status": "held"
+        }
+      ],
+      "fidelity": "content"
+    },
+    {
+      "turn": 6,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I look around.",
+      "operation_id": "01JM6QP0000000000000000006",
+      "message_id": "01JM6MM0000000000000000061",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 7,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I wire the shop.",
+      "operation_id": "01JM6QP0000000000000000007",
+      "message_id": "01JM6MM0000000000000000071",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 7,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_do",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Turn 7's deed.",
+      "operation_id": "01JM6QP0000000000000000007",
+      "message_id": "01JM6MM0000000000000000072",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [
+        {
+          "state": "bank_balance",
+          "scope_key": "01JM6CH0000000000000000001",
+          "old_value": 300,
+          "new_value": 280,
+          "reason": "wired the shop",
+          "source": "turn",
+          "contingency": "conditional",
+          "status": "pending",
+          "outbox_id": "01JM6BX0000000000000000021",
+          "delta": -20
+        }
+      ],
+      "fidelity": "content"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 5,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000059",
+        "text": "Turn 5's reply."
+      },
+      "state_effects": [
+        {
+          "state": "gold",
+          "scope_key": null,
+          "old_value": 120,
+          "new_value": 115,
+          "reason": "paid for the lantern",
+          "source": "turn",
+          "contingency": "unconditional",
+          "status": "committed",
+          "delta": -5
+        },
+        {
+          "state": "room_booked",
+          "scope_key": null,
+          "old_value": false,
+          "new_value": true,
+          "reason": "booked a room at the inn",
+          "source": "turn",
+          "contingency": "reservation",
+          "status": "held"
+        }
+      ]
+    },
+    {
+      "turn": 6,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000069",
+        "text": "Turn 6's reply."
+      }
+    },
+    {
+      "turn": 7,
+      "variant": 1,
+      "message": null,
+      "state_effects": [
+        {
+          "state": "bank_balance",
+          "scope_key": "01JM6CH0000000000000000001",
+          "old_value": 300,
+          "new_value": 280,
+          "reason": "wired the shop",
+          "source": "turn",
+          "contingency": "conditional",
+          "status": "pending",
+          "outbox_id": "01JM6BX0000000000000000021",
+          "delta": -20
+        }
+      ],
+      "incomplete": true
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "player_view": "character",
+  "as_of": 7,
+  "timeline_revision": 12,
+  "next_before_turn": 5
+}

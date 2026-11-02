@@ -2723,3 +2723,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 3) Registered `history_world`/`history_world_alice` in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` table (validated against `GET /stories/{story_id}/history`, ids checked as ULIDs); message ids use the `01JM6MM` prefix since D16 lists none for transcript messages.
   **Why:** `test_every_m6_fixture_is_in_the_table` requires every `m6/` fixture be listed and schema-validated.
   **Issue:** #254
+- **Decision:** The Effects trail names scopes with `console.cast.character_labels(story.cast)` (`{}` when the shell's story read failed, giving short ids and `CAST_UNAVAILABLE` above the blocks, shown only when a block renders).
+  **Why:** The story says "the same helper #245/#254 use"; #254's History passes `character_labels` to `state_change_rows`.
+  **Issue:** #255
+- **Decision:** An empty `?before_turn=` is treated as no cursor (first page, no `CURSOR_DROPPED`); only a non-empty value that isn't ASCII digits is dropped with the notice.
+  **Why:** An empty value is a blank field, not a malformed link; the AC lists non-digit values only.
+  **Issue:** #255
+- **Decision:** `test_errors_stay_in_section`'s "a 500 panel" case uses an unreachable Engine (`httpx.ConnectError`) and adds a 503 `database_unavailable` and a cursorless 422; the cast-unavailable case fails the story read the same way.
+  **Why:** The schema-validating fake refuses a 500 on `GET /stories/{id}/history` and `GET /stories/{id}` (neither declares one; C15), and the other cases exercise the same `panel_for` branch.
+  **Issue:** #255
+- **Decision:** (Rule 3) Added `effects-trail` to `tests/inspect/urls_world_stub_sections.py`'s `STUBBED`, and registered `history_trail_page1`/`history_trail_page2` in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES`.
+  **Why:** Routing the real section made the Effects landing redirect in `test_effects_shell_without_sections` (as #249 did for `reconciliation`); every `m6/` fixture must be in the table.
+  **Issue:** #255
+- **Decision:** The paging links read "Newest page · Older →" in one `<p class="paging">`, and a refused cursor's 422 shows `CURSOR_REFUSED` with a "Newest page" link keeping no other query parameter (the cursor is the page's only input).
+  **Why:** Convention 6/C12's links via `console.paging.paging(..., param="before_turn")`; the Claude's Discretion lines say a 422 on a cursor makes no second read.
+  **Issue:** #255

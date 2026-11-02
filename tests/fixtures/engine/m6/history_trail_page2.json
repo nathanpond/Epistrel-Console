@@ -1,0 +1,182 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Hello.",
+      "operation_id": "01JM6QP0000000000000000001",
+      "message_id": "01JM6MM0000000000000000011",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Alice, look at this ledger.",
+      "operation_id": "01JM6QP0000000000000000002",
+      "message_id": "01JM6MM0000000000000000021",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_do",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Turn 2's deed.",
+      "operation_id": "01JM6QP0000000000000000002",
+      "message_id": "01JM6MM0000000000000000022",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [
+        {
+          "state": "trust",
+          "scope_key": "01JM6CH0000000000000000002",
+          "old_value": 2,
+          "new_value": 1,
+          "reason": "Alice saw the forged ledger",
+          "source": "turn",
+          "contingency": "unconditional",
+          "status": "committed"
+        }
+      ],
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I wait.",
+      "operation_id": "01JM6QP0000000000000000003",
+      "message_id": "01JM6MM0000000000000000031",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 4,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I nod.",
+      "operation_id": "01JM6QP0000000000000000004",
+      "message_id": "01JM6MM0000000000000000041",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000019",
+        "text": "Turn 1's reply."
+      }
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000029",
+        "text": "Turn 2's reply."
+      },
+      "state_effects": [
+        {
+          "state": "trust",
+          "scope_key": "01JM6CH0000000000000000002",
+          "old_value": 2,
+          "new_value": 1,
+          "reason": "Alice saw the forged ledger",
+          "source": "turn",
+          "contingency": "unconditional",
+          "status": "committed"
+        }
+      ]
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000039",
+        "text": "Turn 3's reply."
+      }
+    },
+    {
+      "turn": 4,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000049",
+        "text": "Turn 4's reply."
+      }
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "player_view": "character",
+  "as_of": 7,
+  "timeline_revision": 12,
+  "next_before_turn": null
+}

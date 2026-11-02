@@ -21,6 +21,7 @@ from console.views import (
     inspect_canon,
     inspect_clock,
     inspect_divergences,
+    inspect_effects_trail,
     inspect_exposures,
     inspect_external,
     inspect_ledger,
@@ -290,6 +291,8 @@ inspect_patterns = (
             inspect_reconciliation.reconciliation,
             name="reconciliation",
         ),
+        # #255: the Effects trail section (every State change the story's turns committed).
+        path("effects/trail/", inspect_effects_trail.effects_trail, name="effects-trail"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(
