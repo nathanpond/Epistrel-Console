@@ -137,11 +137,35 @@ AGE_MIN_FIELD = "eligibility__age_range_min"
 AGE_MAX_FIELD = "eligibility__age_range_max"
 LABELS_FIELD = "eligibility__labels"
 RATINGS_FIELD = "eligibility__content_ratings"
+INITIAL_VALUES_HELP = (
+    "Starting values for this role's character, by State name: only character-scoped States "
+    "(declared in States below)"
+)
+INITIAL_VALUE_INVALID = "{name}: a starting value is a number, true/false or text"
+
+
+def _same_json(a: Any, b: Any) -> bool:
+    """JSON equality that tells ``true`` from ``1`` (key order ignored)."""
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
 ROLE_BOXES: dict[str, tuple[type, Any]] = {
     "relationships": (list, []),
     "name_overrides": (dict, None),
     "state_initial_values": (dict, None),
 }
+
+
+def stored_initial_values(original: Mapping[str, Any]) -> dict[str, Any]:
+    """#267: the draft roles' ``state_initial_values`` by role id (the first role with an id
+    wins)."""
+    cast_doc = original.get("cast")
+    roles = cast_doc.get("roles") if isinstance(cast_doc, Mapping) else None
+    found: dict[str, Any] = {}
+    for role in roles or []:
+        if isinstance(role, Mapping) and isinstance(role.get("id"), str):
+            found.setdefault(role["id"], role.get("state_initial_values"))
+    return found
 
 
 def seed_prefix(role_index: int) -> str:
@@ -994,10 +1018,12 @@ class RoleForm(_RowForm):
         locations: list[str],
         has_seeds: bool = False,
         path: str = "",
+        stored_values: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.path = path
+        self.stored_values: Mapping[str, Any] = stored_values or {}
         self.has_seeds = has_seeds
         self.companion = choices.companion
         for name, values in (("kind", ROLE_KINDS), ("fill", FILLS)):
@@ -1053,6 +1079,7 @@ class RoleForm(_RowForm):
             label = name.replace("_", " ").capitalize()
             self.fields[name] = _box(top, empty, label)
         self.fields["relationships"].help_text = RELATIONSHIPS_HELP
+        self.fields["state_initial_values"].help_text = INITIAL_VALUES_HELP
         self._anchor()
 
     @property
@@ -1117,6 +1144,20 @@ class RoleForm(_RowForm):
         if len(labels) > ELIGIBILITY_LABELS_MAX:
             raise forms.ValidationError(f"At most {ELIGIBILITY_LABELS_MAX} labels.")
         return labels
+
+    def clean_state_initial_values(self) -> dict[str, Any] | None:
+        """#267: each value a number, ``true``/``false`` or a string (the first bad key named);
+        a box equal to the draft role's of the same id is left to the Engine's report."""
+        value: dict[str, Any] | None = self.cleaned_data.get("state_initial_values")
+        if value is None:
+            return None
+        role_id = self.raw("id")
+        if role_id in self.stored_values and _same_json(self.stored_values[role_id], value):
+            return value
+        for name, item in value.items():
+            if not isinstance(item, bool | int | float | str):
+                raise forms.ValidationError(INITIAL_VALUE_INVALID.replace("{name}", name))
+        return value
 
     def clean_relationships(self) -> list[Any]:
         value: list[Any] = self.cleaned_data.get("relationships") or []
@@ -1273,7 +1314,12 @@ class CastForms:
         self.roles: BaseFormSet[RoleForm] = RoleFormSet(
             self.data,
             prefix=ROLE,
-            form_kwargs={"choices": choices, "locations": locations, "rows": rows},
+            form_kwargs={
+                "choices": choices,
+                "locations": locations,
+                "rows": rows,
+                "stored_values": stored_initial_values(original),
+            },
         )
         self.world = SeedFormSet(
             self.data, prefix=WSEED, form_kwargs={**seed_kwargs, "base_path": WORLD_SEEDS_PATH}

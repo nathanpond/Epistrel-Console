@@ -162,7 +162,7 @@ def test_each_section_round_trips_into_the_patch(
     data["drivers__director_guidance"] = ""
     data["hook-0-text"] = "A letter arrives.\nIt is unsigned."
     data["drivers__planned_reveals"] = "[]"
-    data["starting_state__states"] = json.dumps([SUNNY])
+    data["state-0-initial_value"] = "sun"  # #267: the States row set (was a JSON box)
     response = save(operator_client, engine, data)
     assert response.status_code == 302, response.content.decode()[:2000]
     assert flashes(response) == ["Saved — draft revision 6."]
@@ -265,7 +265,7 @@ def test_event_types_cleared_send_null(operator_client: Client, engine: FakeEngi
     [
         ("starting_state__clock", "{oops", "Enter valid JSON"),
         ("starting_state__clock", "[1, 2]", "Enter a JSON object"),
-        ("starting_state__states", '{"a": 1}', "Enter a JSON array"),
+        ("starting_state__scheduled_events", '{"a": 1}', "Enter a JSON array"),
         ("starting_state__rules", "[NaN]", "NaN is not valid JSON"),
         ("creation_rules__bounds", '{"a": 1, "a": 2}', "duplicate key"),
         ("drivers__planned_reveals", "{}", "Enter a JSON array"),
@@ -293,10 +293,8 @@ def test_clearing_the_clock_sends_null(operator_client: Client, engine: FakeEngi
 
 def test_reformatting_a_json_box_sends_nothing(operator_client: Client, engine: FakeEngine) -> None:
     data = form(operator_client, engine)
-    data["starting_state__states"] = (
-        '[{"initial_value":"rain",  "constraints":{"allowed_values":["rain","sun"]},'
-        '"type":"enum","name":"weather"}]'
-    )
+    data["state-0-name"] = "  weather "  # #267: a States row, stripped as the draft is
+    data["state-0-constraints_allowed_values"] = "rain\r\n\r\nsun\r\n"
     data["creation_rules__bounds"] = '{"audit_retention_days":{"max":90}}'
     response = operator_client.post(EDIT, as_post(data))
     assert response.status_code == 302
@@ -675,6 +673,11 @@ def test_parse_op() -> None:
     assert parse_op("add:loc") == Op("add", "loc")
     assert parse_op("remove:pol-12") == Op("remove", "pol", 12)
     assert parse_op("remove:pol-x") == Op("refresh")  # malformed: changes nothing
+    # #267: the States rows move up and down.
+    assert parse_op("up:state-2") == Op("up", "state", 2)
+    assert parse_op("down:state-0") == Op("down", "state", 0)
+    assert parse_op("up:state") == Op("refresh")
+    assert parse_op("down:state-1").edits_rows
     assert parse_op("refresh").edits_rows
     assert not parse_op("save").edits_rows
 

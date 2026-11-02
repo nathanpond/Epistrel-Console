@@ -1,7 +1,8 @@
 {% load console_format %}{% comment %}#73 (#74 reuses it): a scenario's cast as a table of roles with
 their seeds nested, and the world seeds in their own table. Context: cast
 (console.catalog.cast_table.CastTable). #206: the groups (a dt/dd pair, one line per group in
-stored order), each role's relationships as a table, the seeds' confidence and nested content.{% endcomment %}
+stored order), each role's relationships as a table, the seeds' confidence and nested content.
+#267: each role's initial State values, one D5 line per name.{% endcomment %}
 <section id="cast">
   <h2>Cast</h2>
   <p>Most characters at start: {% if cast.max_characters_at_start is None %}— (deployment default){% else %}{{ cast.max_characters_at_start }}{% endif %}</p>
@@ -45,7 +46,7 @@ stored order), each role's relationships as a table, the seeds' confidence and n
                   </tbody>
                 </table>{% else %}—{% endif %}</dd>
               <dt>Name overrides</dt><dd><pre>{{ role.name_overrides|pretty_json }}</pre></dd>
-              <dt>Initial state values</dt><dd><pre>{{ role.state_initial_values|pretty_json }}</pre></dd>
+              <dt>Initial State values</dt><dd class="initial-values">{% for line in row.initial_values %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</dd>
             </dl>
           </details>
           {% endif %}

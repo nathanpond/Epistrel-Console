@@ -114,6 +114,8 @@ def json_name(f: Field[Any]) -> str:
 def _from_json(cls: type, obj: object) -> object | None:
     if not isinstance(obj, dict):
         return None
+    if getattr(cls, "STRICT", False) and not set(obj) <= {json_name(f) for f in fields(cls)}:
+        return None  # a strict view (#267): an unknown key fails, as ``extra="forbid"`` does
     hints = typing.get_type_hints(cls)
     kwargs: dict[str, object] = {}
     for f in fields(cls):
@@ -131,7 +133,10 @@ def _from_json(cls: type, obj: object) -> object | None:
 
 
 class Model:
-    """Base for response models: adds ``from_json``."""
+    """Base for response models: adds ``from_json``. ``STRICT`` (#267's read-only views of a
+    schema with ``additionalProperties: false``): a key the model doesn't know fails it."""
+
+    STRICT: ClassVar[bool] = False
 
     @classmethod
     def from_json(cls, obj: object) -> Self | None:
@@ -4000,6 +4005,48 @@ class Seed(Model):
     valid_time: dict[str, Any] | None = None
     confidence: str | None = open_enum(default=None)
     nested: NestedSeed | None = None
+
+
+@dataclass(frozen=True)
+class StateConstraints(Model):
+    """``StateConstraints`` (#267's read-only view): a scenario State's bounds, strict like the
+    Engine's ``StartingObject`` (``extra="forbid"``)."""
+
+    STRICT: ClassVar[bool] = True
+
+    allowed_values: list[str] | None = None
+    max: int | float | None = None
+    min: int | float | None = None
+    non_negative: bool | None = None
+    tolerance: int | float | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioState(Model):
+    """``ScenarioState`` (#267's read-only view, read by the editor and the detail page; the
+    write path keeps raw dicts): a State a story created from the scenario tracks from genesis.
+    Strict: an unknown key or a mistyped member fails to parse. ``initial_value`` stays raw
+    (D15) and the three objects are raw JSON."""
+
+    STRICT: ClassVar[bool] = True
+
+    name: str
+    type: str = open_enum()
+    scope: str | None = open_enum(default=None)
+    constraints: StateConstraints | None = None
+    initial_value: bool | int | float | str | None = None
+    aliases: list[str] | None = None
+    unit: str | None = None
+    entity_id: str | None = None
+    visibility: str | None = open_enum(default=None)
+    owner: str | None = open_enum(default=None)
+    provider_id: str | None = None
+    external_value_name: str | None = None
+    silent: bool | None = None
+    rules: dict[str, Any] | None = None
+    authorization: dict[str, Any] | None = None
+    transfer: dict[str, Any] | None = None
+    reservation_expiry_minutes: int | None = None
 
 
 @dataclass(frozen=True)

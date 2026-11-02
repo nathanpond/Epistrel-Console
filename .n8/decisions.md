@@ -2978,3 +2978,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added `state-proposals` to `tests/inspect/urls_world_stub_sections.py`'s `STUBBED` set, so #239's stubbed World urlconfs keep exactly their stub sections now that the real Proposed States route is registered.
   **Why:** Rule 3: four `test_world_shell.py` nav tests pin the stubbed sub-navigation; that file already drops each later section's real route the same way.
   **Issue:** #266
+- **Decision:** "Untouched" States rows are found by comparing each row's posted rendering (every field stripped, JSON boxes compared as parsed objects) with each draft entry's own rendering, a consuming multiset match; a matched row is sent as the draft entry itself and its local errors are cleared.
+  **Why:** The plan's match is on normalised `state_to_write` values, but a stored entry that fails a local check (a stored `world_clock` name, a mismatched value) has no cleaned value to normalise. Comparing renderings works for every stored entry and never re-parses it, so an untouched editor can't send a PATCH.
+  **Issue:** #267
+- **Decision:** In the detail page's States table, scope `character` reads "Per character" (the editor's choice label, which the demo uses). Other enum values are humanised (C3), with the raw value in `title`.
+  **Why:** The AC says the values are humanised, but the demo expects "Per character". C3 allows a specific label where the story gives one, so I used it.
+  **Issue:** #267
+- **Decision:** `console.formset_rows` gains `op=up:<prefix>-<n>` / `op=down:<prefix>-<n>` (parse_op/apply_op; `Op.edits_rows` covers them), so the States rows can reorder in the multi-formset editor.
+  **Why:** The planner's pass-1 decision gives the States rows up/down buttons, but the editor's single `op` button only carried add/remove/refresh. edit_rows already moved rows, so only the op plumbing was missing.
+  **Issue:** #267
+- **Decision:** `Model.STRICT` (a ClassVar, default False) makes `from_json` refuse unknown keys. `ScenarioState` and `StateConstraints` set it, with numbers typed `int | float | None`. `tests/engine/contract.py` now compares `X | Y | None` against an `anyOf` with one option per member plus `null`.
+  **Why:** The AC requires strict views that pass their contract rows. The lenient model base ignored extra keys, and the comparer supported only `X | None`. `float` alone would have turned a stored `0` into `0.0` on the page. Rule 3.
+  **Issue:** #267
+- **Decision:** A kept unknown type (a stored `clock`): when its initial value is edited, the text must parse as a strict JSON scalar. Otherwise the field shows the new text `SCALAR_INVALID` ("Enter a JSON value: a number, true/false or text in double quotes").
+  **Why:** The planner's round-trip decision names the parse rule but no wording. #261 has no text for a type outside its four.
+  **Issue:** #267
+- **Decision:** The editor's `state_initial_values` check skips a box that equals the draft role's box with the same id (JSON equality that tells `true` from `1`). The draft boxes reach the role rows through a new `stored_values` form kwarg (`stored_initial_values(original)`).
+  **Why:** The AC limits local checks to new or changed role boxes, and RoleForm had no view of the draft.
+  **Issue:** #267
+- **Decision:** I moved the three `test_scenarios_edit.py` cases that typed into `starting_state__states` to the row set. `test_each_section_round_trips_into_the_patch` now sets `state-0-initial_value`. The JSON-box parametrisation uses `starting_state__scheduled_events` for its "Enter a JSON array" case. The reformatting case now pads the name and allowed values.
+  **Why:** The test plan asks for this; the box no longer exists.
+  **Issue:** #267
+- **Decision:** The States section of the scenario detail page is its own partial, `_state_table.html`, included between Opening and Story-setting defaults. The plan named `detail.html`.
+  **Why:** It keeps `detail.html` short and lets a unit test render the table with an off-schema entry, which the schema-validating fake Engine won't serve. It's a template split only; no behaviour changes.
+  **Issue:** #267

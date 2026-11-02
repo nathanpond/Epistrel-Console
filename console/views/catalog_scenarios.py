@@ -44,6 +44,7 @@ from console.catalog.cast_table import (
     character_ids,
     location_topology,
     rating_ids,
+    state_rows,
 )
 from console.catalog.character_labels import CharacterLabel, character_labels
 from console.catalog.scenario_report import (
@@ -597,6 +598,8 @@ def _detail_page(
         # #205: the locations' topology and the opening's remote channels.
         context["topology"] = location_topology(entry)
         context["channels"] = channel_lines(entry.cast, entry.starting_state.channels)
+        # #267: the starting States.
+        context["states"] = state_rows(entry.starting_state.states, entry.cast, entry)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""

@@ -2,6 +2,7 @@
 its versions."""
 
 import re
+from typing import Any
 
 import pytest
 from django.test import Client
@@ -542,3 +543,112 @@ def test_a_scenario_without_channels_shows_a_dash(
     engine.respond("GET", S_ITEM, 200, json=body)
     html = detail_page(operator_client, engine)
     assert '<dt>Remote channels</dt><dd class="channels">—</dd>' in html
+
+
+# --- #267: the starting States and the roles' initial values --------------------------------------
+
+
+def states_detail(**changes: Any) -> dict[str, Any]:
+    body = fixture("draft_states", **changes)
+    body["starting_state"]["states"][0]["entity_id"] = "alice"
+    body["starting_state"]["states"][1]["entity_id"] = "ghost"
+    return body
+
+
+def state_cells(html: str, name: str) -> list[str]:
+    section = html[html.index('<section id="states">') :]
+    section = section[: section.index("</section>")]
+    start = section.index(f"<td><code>{name}</code></td>")
+    row = section[start : section.index("</tr>", start)]
+    return [c.strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.S)]
+
+
+def test_the_detail_page_shows_states_and_initial_values(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", S_ITEM, 200, json=states_detail())
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    html = detail_page(operator_client, engine)
+    gold = state_cells(html, "gold")
+    assert gold[1:8] == [
+        "Number",
+        "Per character",
+        "Player visible (default)",
+        "Story (default)",
+        "gold",
+        "100 gold",
+        "min 0",
+    ]
+    assert gold[9] == "<code>alice</code> (role)"
+    assert '<td title="character">Per character</td>' in html
+    assert "<td>Player visible (default)</td>" in html  # an unset one has no title
+    door = state_cells(html, "door_open")
+    assert door[3] == "Hidden"
+    assert door[6] == "false"
+    assert door[9] == "<code>ghost</code> (undeclared)"
+    assert "<dt>Silent</dt><dd>Yes</dd>" in html
+    bank = state_cells(html, "bank_balance")
+    assert text(bank[4]) == "External · bank · balance"
+    assert bank[6] == '<span class="undefined">undefined</span>'
+    assert bank[8] == "coins"
+    assert "<dt>Reservation expiry</dt><dd>30 min</dd>" in html
+    # The roles' initial values, by D5 with the State's type and unit.
+    lines = re.findall(r'<dd class="initial-values">(.*?)</dd>', html, flags=re.S)
+    assert lines == ["gold: 250 gold", "mood: &quot;tense&quot; (undeclared State)"]
+    # "Deferred" no longer lists the States.
+    deferred = html[html.index('<section id="deferred">') :]
+    assert "<dt>States</dt>" not in deferred
+    # Complement: the public card shows none of it.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=card_of(states_detail()))
+    html = detail_page(operator_client, engine, "?projection=card")
+    assert 'id="states"' not in html
+    assert "Initial State values" not in html
+
+
+def test_the_state_table_lines() -> None:
+    from django.template.loader import render_to_string
+
+    from console.catalog.cast_table import initial_value_lines, state_rows
+    from console.engine.models import Scenario, ScenarioRole
+
+    body = states_detail()
+    # Deliberately off-schema: an entry missing ``type`` (shown raw), one with every bound.
+    body["starting_state"]["states"].append({"name": "broken"})
+    body["starting_state"]["states"][0]["constraints"] = {
+        "min": 0,
+        "max": 100,
+        "non_negative": True,
+        "tolerance": 2,
+    }
+    scenario = Scenario.from_json(
+        {**body, "starting_state": {**body["starting_state"], "states": []}}
+    )
+    assert scenario is not None
+    rows = state_rows(body["starting_state"]["states"], scenario.cast, scenario)
+    assert rows[0].constraints == "min 0 · max 100 · non-negative · tolerance 2"
+    enum = state_rows(
+        [{"name": "w", "type": "enum", "constraints": {"allowed_values": ["rain", "sun"]}}],
+        scenario.cast,
+        scenario,
+    )
+    assert enum[0].constraints == "one of rain, sun"
+    html = render_to_string("console/catalog/scenarios/_state_table.html", {"states": rows})
+    assert (
+        '<tr class="state-raw"><td colspan="11"><pre>{&quot;name&quot;: &quot;broken&quot;}</pre>'
+        in html
+    )
+    bob = ScenarioRole.from_json(
+        {
+            "id": "bob",
+            "public_label": "Bob",
+            "setup_description": "x",
+            "kind": "npc",
+            "state_initial_values": {"door_open": True, "gold": 1200},
+        }
+    )
+    assert bob is not None
+    assert initial_value_lines(bob, body["starting_state"]["states"]) == [
+        "door_open: true (not a per-character State)",
+        "gold: 1,200 gold",
+    ]

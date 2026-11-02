@@ -4,13 +4,16 @@ starting location by the world's name, an eligibility summary) with its seeds ne
 world seeds in their own table. #205 adds the locations' topology (lies in, adjoins) and the
 opening's remote channels, named through the same location lookup (:func:`location_label`).
 #206 adds the cast's groups, each role's relationships as a table, and each seed's confidence
-and nested content."""
+and nested content. #267 adds the starting States table (:func:`state_rows`) and each role's initial
+State values (:func:`initial_value_lines`), values formatted by D5."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from console.catalog.character_labels import CharacterLabel
+from console.effects import provider_url
 from console.engine.models import (
     Location,
     RoleEligibility,
@@ -19,9 +22,11 @@ from console.engine.models import (
     ScenarioCast,
     ScenarioChannel,
     ScenarioRole,
+    ScenarioState,
     Seed,
 )
 from console.wording import humanised
+from console.world import NUMBER, state_value_text
 
 ANYONE = "anyone"
 ANY_AGE = "any"
@@ -201,6 +206,7 @@ class CastRow:
     eligibility: str
     seeds: list[SeedLine]
     relationships: list[RelationshipRow]
+    initial_values: list[str]
 
 
 @dataclass(frozen=True)
@@ -278,6 +284,7 @@ def cast_table(
                 eligibility_summary(role.eligibility, rating_names),
                 [seed_line(s) for s in role.seeded_memories],
                 [relationship_row(r) for r in role.relationships],
+                initial_value_lines(role, scenario.starting_state.states),
             )
         )
     return CastTable(
@@ -286,3 +293,169 @@ def cast_table(
         [seed_line(s) for s in scenario.starting_state.seeded_memories],
         group_lines(scenario.cast),
     )
+
+
+# --- #267: the starting States ------------------------------------------------------------------
+
+STORY_DEFAULT = "Story (default)"
+VISIBLE_DEFAULT = "Player visible (default)"
+UNDECLARED_STATE = " (undeclared State)"
+NOT_PER_CHARACTER = " (not a per-character State)"
+SCOPE_LABELS = {"character": "Per character"}  # the editor's choice label
+CHARACTER_SCOPE = "character"
+EXTERNAL = "external"
+
+
+@dataclass(frozen=True)
+class EnumCell:
+    """An Engine enum as shown (C3), ``raw`` its value for the cell's ``title`` (``None``: unset,
+    the default's label shown without one)."""
+
+    text: str
+    raw: str | None
+
+
+@dataclass(frozen=True)
+class EntityCell:
+    """A State's ``entity_id`` and what it names: "role", "location", "entity" or ``None``
+    (undeclared)."""
+
+    id: str
+    kind: str | None
+
+
+@dataclass(frozen=True)
+class OwnerCell:
+    """The owner: ``external`` with its provider (linked when the provider page resolves, D19)
+    and value name, each ``None`` when missing; else an :class:`EnumCell`."""
+
+    cell: EnumCell
+    external: bool
+    provider: str | None
+    provider_url: str | None
+    value_name: str | None
+
+
+@dataclass(frozen=True)
+class StateRow:
+    """A States table row: ``state`` the parsed entry, or ``None`` with ``raw`` its JSON."""
+
+    state: ScenarioState | None
+    raw: str = ""
+    type: EnumCell | None = None
+    scope: EnumCell | None = None
+    visibility: EnumCell | None = None
+    owner: OwnerCell | None = None
+    initial: str = ""
+    constraints: str = "—"
+    aliases: str = "—"
+    entity: EntityCell | None = None
+    more: list[tuple[str, str]] | None = None
+    objects: list[tuple[str, Any]] | None = None
+
+
+def _enum(value: str | None, default: str, labels: Mapping[str, str] | None = None) -> EnumCell:
+    if not value:
+        return EnumCell(default, None)
+    return EnumCell((labels or {}).get(value) or humanised(value), value)
+
+
+def constraints_text(state: ScenarioState) -> str:
+    """ "min 0 · max 100 · non-negative · tolerance 2 · one of rain, sun" (only those set;
+    numbers by D5 without a unit), or "—"."""
+    c = state.constraints
+    if c is None:
+        return "—"
+    parts: list[str] = []
+    if c.min is not None:
+        parts.append(f"min {state_value_text(c.min, NUMBER)}")
+    if c.max is not None:
+        parts.append(f"max {state_value_text(c.max, NUMBER)}")
+    if c.non_negative:
+        parts.append("non-negative")
+    if c.tolerance is not None:
+        parts.append(f"tolerance {state_value_text(c.tolerance, NUMBER)}")
+    if c.allowed_values:
+        parts.append(f"one of {', '.join(c.allowed_values)}")
+    return " · ".join(parts) or "—"
+
+
+def _kinds(cast: ScenarioCast, scenario: Scenario) -> dict[str, str]:
+    kinds: dict[str, str] = {}
+    for role in cast.roles:
+        kinds.setdefault(role.id, "role")
+    for loc in scenario.world.locations:
+        kinds.setdefault(loc.id, "location")
+    for ent in scenario.world.entities:
+        kinds.setdefault(ent.id, "entity")
+    return kinds
+
+
+def state_row(entry: Any, kinds: Mapping[str, str]) -> StateRow:
+    state = ScenarioState.from_json(entry)
+    if state is None:
+        return StateRow(None, raw=json.dumps(entry, ensure_ascii=False))
+    owner = state.owner
+    owner_cell = OwnerCell(
+        _enum(owner, STORY_DEFAULT),
+        owner == EXTERNAL,
+        state.provider_id or None,
+        provider_url(state.provider_id),
+        state.external_value_name or None,
+    )
+    more: list[tuple[str, str]] = []
+    if state.silent is not None:
+        more.append(("Silent", "Yes" if state.silent else "No"))
+    if state.reservation_expiry_minutes is not None:
+        more.append(("Reservation expiry", f"{state.reservation_expiry_minutes} min"))
+    objects = [
+        (label, value)
+        for label, value in (
+            ("Rules", state.rules),
+            ("Authorization", state.authorization),
+            ("Transfer", state.transfer),
+        )
+        if value is not None
+    ]
+    return StateRow(
+        state,
+        type=_enum(state.type, ""),
+        scope=_enum(state.scope, STORY_DEFAULT, SCOPE_LABELS),
+        visibility=_enum(state.visibility, VISIBLE_DEFAULT),
+        owner=owner_cell,
+        initial=state_value_text(state.initial_value, state.type, state.unit),
+        constraints=constraints_text(state),
+        aliases=", ".join(state.aliases) if state.aliases else "—",
+        entity=EntityCell(state.entity_id, kinds.get(state.entity_id)) if state.entity_id else None,
+        more=more or None,
+        objects=objects or None,
+    )
+
+
+def state_rows(states: Sequence[Any], cast: ScenarioCast, scenario: Scenario) -> list[StateRow]:
+    """The detail page's States table: one row per stored entry, in order."""
+    kinds = _kinds(cast, scenario)
+    return [state_row(entry, kinds) for entry in states]
+
+
+def initial_value_lines(role: ScenarioRole, states: Sequence[Any]) -> list[str]:
+    """A role's "Initial State values", in the box's key order: "<name>: <D5 text>" with the
+    first State of that name's type and unit; "(undeclared State)" after compact JSON for a
+    name no State has, "(not a per-character State)" for one that isn't character-scoped."""
+    declared: dict[str, Mapping[str, Any]] = {}
+    for entry in states:
+        if isinstance(entry, Mapping) and isinstance(entry.get("name"), str):
+            declared.setdefault(entry["name"], entry)
+    lines: list[str] = []
+    for name, value in (role.state_initial_values or {}).items():
+        state = declared.get(name)
+        if state is None:
+            lines.append(f"{name}: {json.dumps(value, ensure_ascii=False)}{UNDECLARED_STATE}")
+            continue
+        kind = state.get("type") if isinstance(state.get("type"), str) else None
+        unit = state.get("unit") if isinstance(state.get("unit"), str) else None
+        text = f"{name}: {state_value_text(value, kind, unit)}"
+        if state.get("scope") != CHARACTER_SCOPE:
+            text += NOT_PER_CHARACTER
+        lines.append(text)
+    return lines

@@ -1,0 +1,31 @@
+{% load console_format %}{% comment %}#267: a scenario's starting States on the detail page. Context: states
+(console.catalog.cast_table.StateRow list). Enum cells humanised with the raw value in title; an
+unset one reads its default with no title. An entry that doesn't parse as ScenarioState is one
+full-width row of raw JSON.{% endcomment %}
+<section id="states">
+  <h2>States</h2>
+  {% if states %}
+  <table class="scenario-states">
+    <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Visibility</th><th>Owner</th><th>Unit</th><th>Initial value</th><th>Constraints</th><th>Aliases</th><th>Entity</th><th>More</th></tr></thead>
+    <tbody>
+      {% for row in states %}{% if row.state %}{% with st=row.state %}
+      <tr class="state-row">
+        <td><code>{{ st.name }}</code></td>
+        <td{% if row.type.raw %} title="{{ row.type.raw }}"{% endif %}>{{ row.type.text }}</td>
+        <td{% if row.scope.raw %} title="{{ row.scope.raw }}"{% endif %}>{{ row.scope.text }}</td>
+        <td{% if row.visibility.raw %} title="{{ row.visibility.raw }}"{% endif %}>{{ row.visibility.text }}</td>
+        <td class="owner"{% if row.owner.cell.raw %} title="{{ row.owner.cell.raw }}"{% endif %}>{% if row.owner.external %}External{% if row.owner.provider %} · {% if row.owner.provider_url %}<a href="{{ row.owner.provider_url }}"><code>{{ row.owner.provider }}</code></a>{% else %}<code>{{ row.owner.provider }}</code>{% endif %}{% endif %}{% if row.owner.value_name %} · <code>{{ row.owner.value_name }}</code>{% endif %}{% else %}{{ row.owner.cell.text }}{% endif %}</td>
+        <td>{% if st.unit %}{{ st.unit }}{% else %}—{% endif %}</td>
+        <td class="initial">{% if st.initial_value is None %}<span class="undefined">undefined</span>{% else %}{{ row.initial }}{% endif %}</td>
+        <td class="constraints">{{ row.constraints }}</td>
+        <td>{{ row.aliases }}</td>
+        <td class="entity">{% if row.entity %}<code>{{ row.entity.id }}</code> ({% if row.entity.kind %}{{ row.entity.kind }}{% else %}undeclared{% endif %}){% else %}—{% endif %}</td>
+        <td class="more">{% if row.more or row.objects %}<details><summary>More</summary><dl>{% for label, text in row.more %}<dt>{{ label }}</dt><dd>{{ text }}</dd>{% endfor %}{% for label, value in row.objects %}<dt>{{ label }}</dt><dd><pre>{{ value|pretty_json }}</pre></dd>{% endfor %}</dl></details>{% else %}—{% endif %}</td>
+      </tr>
+      {% endwith %}{% else %}
+      <tr class="state-raw"><td colspan="11"><pre>{{ row.raw }}</pre></td></tr>
+      {% endif %}{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>—</p>{% endif %}
+</section>

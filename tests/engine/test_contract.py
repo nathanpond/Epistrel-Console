@@ -285,6 +285,7 @@ from console.engine.models import (
     ScenarioPolicy,
     ScenarioPublicCard,
     ScenarioRole,
+    ScenarioState,
     ScenarioStatus,
     ScenarioVideo,
     SceneBody,
@@ -296,6 +297,7 @@ from console.engine.models import (
     SettledNow,
     ShadowSample,
     StartingState,
+    StateConstraints,
     StateDeclared,
     StateDefinitionWritten,
     StateEffect,
@@ -818,11 +820,30 @@ def test_the_widening_only_adds_media_id() -> None:
         (MemoryList, "MemoryListBody"),
         (ListedMemory, "ListedMemory"),
         (ConsolidationProvenance, "ConsolidationProvenance"),
+        # #267: the scenario editor's and detail page's read-only views.
+        (ScenarioState, "ScenarioState"),
+        (StateConstraints, "StateConstraints"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
     ref = {"$ref": f"#/components/schemas/{component}"}
     assert compare_model(WIDENED, model, ref, component) == []
+
+
+def test_scenario_state_views_are_strict() -> None:
+    """#267: the fixture's three States parse (``gold`` with its ``StateConstraints``); an
+    extra key, or ``constraints.min`` as a string, fails to parse (``extra="forbid"``)."""
+    from tests.fixtures import engine_fixture
+
+    stored = engine_fixture("catalog_scenarios_draft_states")["starting_state"]["states"]
+    parsed = [ScenarioState.from_json(entry) for entry in stored]
+    assert [s.name for s in parsed if s is not None] == ["gold", "door_open", "bank_balance"]
+    gold = parsed[0]
+    assert gold is not None
+    assert gold.constraints == StateConstraints(min=0)
+    assert ScenarioState.from_json({**stored[0], "colour": "gold"}) is None
+    assert ScenarioState.from_json({**stored[0], "constraints": {"min": "0"}}) is None
+    assert StateConstraints.from_json({"min": 0, "step": 1}) is None
 
 
 def test_operation_labels_match_the_schema() -> None:

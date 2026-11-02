@@ -13,15 +13,17 @@ as #66), plus one formset per list of objects or multi-line items:
 - ``pol``: ``story_settings_defaults.policies``,
   :class:`~console.forms.policy.ScenarioPolicyForm`;
 - ``hook``, ``obj``, ``mile``, ``end``: ``drivers.plot_hooks``, ``objectives``, ``milestones``
-  and ``endings``, :class:`DriverItemForm` (one textarea each, so an item may span lines).
+  and ``endings``, :class:`DriverItemForm` (one textarea each, so an item may span lines);
+- ``state``: ``starting_state.states``,
+  :class:`~console.forms.scenario_states.ScenarioStateForm` (#267).
 
 :class:`ScenarioEditor` holds the form and the formsets, always bound: to the POST, or (on a GET)
 to :func:`editor_data` of the draft, so a first render, a re-render after a row button and a
 refused save all read the same state. A row is added or removed by an ``op`` button
 (``console.formset_rows``) with no Engine call; a fully blank row is dropped.
 
-The sections Lite stores but does not use yet (``starting_state``'s states, clock, scheduled
-events, predicates, closed sets and rules) and ``drivers.planned_reveals`` are JSON boxes
+The sections Lite stores but does not use yet (``starting_state``'s clock, scheduled events,
+predicates, closed sets and rules) and ``drivers.planned_reveals`` are JSON boxes
 (:class:`~console.forms.fields.JsonBoxField`), parsed and type-checked before any call;
 ``creation_rules.bounds`` too. ``public_card.media`` is #71's Media section
 (``console.forms.media_picker``), which the views set into the patch whole. The cast (#73) is
@@ -90,6 +92,18 @@ from console.forms.scenario_cast import (
     prepared,
     row_caps,
     seed_to_write,
+)
+from console.forms.scenario_states import (
+    NEW_STATE_ROW,
+    SNAPSHOT_FIELDS,
+    STATE,
+    STATES_HELP,
+    STATES_MAX,
+    STATES_PATH,
+    ScenarioStateForm,
+    StateFormSet,
+    state_editor_row,
+    state_to_write,
 )
 from console.formset_rows import OP_ADD, Op, apply_op
 from console.reports import field_anchor
@@ -181,7 +195,6 @@ BOOLEAN_CHOICES = [(NOT_SET, DEFAULT_LABEL), ("true", "Yes"), ("false", "No")]
 
 # The deferred JSON boxes: field name → (top type, empty value).
 DEFERRED_BOXES: dict[str, tuple[type, Any]] = {
-    "starting_state__states": (list, []),
     "starting_state__clock": (dict, None),
     "starting_state__scheduled_events": (list, []),
     "starting_state__predicates": (list, []),
@@ -218,6 +231,7 @@ ROW_PATHS = {
     ENTITIES: "world.entities",
     POLICIES: "story_settings_defaults.policies",
     **DRIVER_LISTS,
+    STATE: STATES_PATH,
 }
 ROW_CAPS = {
     LOCATIONS: ROWS_MAX,
@@ -225,16 +239,20 @@ ROW_CAPS = {
     POLICIES: POLICIES_MAX,
     ADJACENCY: ADJACENCY_ROWS_MAX,
     CHANNELS: CHANNELS_MAX,
+    STATE: STATES_MAX,
 }
 ROW_CAPS.update(dict.fromkeys(DRIVER_LISTS, ROWS_MAX))
 NEW_ROWS: dict[str, dict[str, list[str]]] = {
     POLICIES: {"rule_type": [DEFAULT_RULE_TYPE], "rule": [rule_template_text(DEFAULT_RULE_TYPE)]},
+    STATE: NEW_STATE_ROW,  # #267: all blank, so an added untouched row is dropped
 }
 _INDEXED = re.compile(r"^(?P<base>[^\[\]]+)\[(?P<index>\d+)\](?:\.(?P<rest>.+))?$")
 _ADJACENCY_PATH = re.compile(
     r"^world\.locations\[(?P<location>\d+)\]\.adjacent_to\[(?P<entry>\d+)\](?:\.(?P<rest>.+))?$"
 )
 _PARTICIPANT = re.compile(r"^participants\[(?P<index>\d+)\]$")
+_LINE = re.compile(r"^\[(?P<index>\d+)\]$")
+STATE_LINE_FIELDS = ("aliases", "constraints_allowed_values")
 
 # #205's wording.
 LIES_IN_HELP = "Seeded as canon by a structured story; Lite stores it but doesn't use it."
@@ -362,7 +380,7 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
                 "starting_location": opening.starting_location,
                 "roles_present": list(dict.fromkeys(opening.roles_present)),
             },
-            "states": state.states,
+            "states": [state_to_write(s) for s in state.states],
             "clock": state.clock,
             "scheduled_events": state.scheduled_events,
             "predicates": state.predicates,
@@ -487,6 +505,7 @@ def editor_data(doc: Mapping[str, Any]) -> QueryDict:
     }
     for prefix, path in DRIVER_LISTS.items():
         rows[prefix] = [{"text": item} for item in _get(doc, path) or []]
+    rows[STATE] = [state_editor_row(s) for s in _get(doc, STATES_PATH) or []]
     for prefix, items in rows.items():
         for index, row in enumerate(items):
             for key, value in row.items():
@@ -788,6 +807,7 @@ FORMSETS: dict[str, type[BaseFormSet[Any]]] = {
     ENTITIES: _formset(EntityForm, ROWS_MAX),
     POLICIES: _formset(ScenarioPolicyForm, POLICIES_MAX),
     **{prefix: _formset(DriverItemForm, ROWS_MAX) for prefix in DRIVER_LISTS},
+    STATE: _formset(ScenarioStateForm, STATES_MAX, StateFormSet),
 }
 
 
@@ -927,7 +947,6 @@ def _fields() -> dict[str, forms.Field]:
         "drivers__planned_reveals": _box(
             "drivers__planned_reveals", "Planned reveals", deferred=False
         ),
-        "starting_state__states": _box("starting_state__states", "States", deferred=True),
         "starting_state__clock": _box("starting_state__clock", "Clock", deferred=True),
         "starting_state__scheduled_events": _box(
             "starting_state__scheduled_events", "Scheduled events", deferred=True
@@ -1132,7 +1151,7 @@ class ScenarioEditor:
         # The cast's management forms filled and its audiences re-homed (#73): every part of
         # the editor, and the page it renders, reads the same state.
         data = prepared(data)
-        for prefix in (ADJACENCY, CHANNELS):  # #205's row sets: a missing count, no rows
+        for prefix in (ADJACENCY, CHANNELS, STATE):  # #205's, #267's: a missing count, no rows
             if f"{prefix}-TOTAL_FORMS" not in data:
                 data.update(_management(prefix, 0))
         self.data = data
@@ -1153,6 +1172,12 @@ class ScenarioEditor:
             LOCATIONS: {"locations": locations},
             ADJACENCY: {"locations": locations},
             CHANNELS: {"roles": roles},
+            STATE: {
+                "roles": roles,
+                "locations": locations,
+                "entities": posted_ids(data, ENTITIES),
+                "stored": list(_get(self.original, STATES_PATH) or []),
+            },
         }
         self.formsets: dict[str, BaseFormSet[Any]] = {
             prefix: formset(data, prefix=prefix, form_kwargs=form_kwargs.get(prefix))
@@ -1198,7 +1223,10 @@ class ScenarioEditor:
 
     def sent(self, prefix: str) -> list[forms.Form]:
         """The rows of ``prefix`` that are sent, in order (blank rows dropped): the Engine's list
-        index is the index here."""
+        index is the index here. A ``state`` row is sent whenever it isn't blank (#267: an
+        untouched row whose own checks failed is the draft's entry, sent as stored)."""
+        if prefix == STATE:
+            return [f for f in self.formsets[STATE].forms if not getattr(f, "blank", False)]
         return [
             form
             for form in self.formsets[prefix].forms
@@ -1284,6 +1312,10 @@ class ScenarioEditor:
         doc["starting_state"]["channels"] = [
             f.channel(stored)  # type: ignore[attr-defined]
             for f in self.sent(CHANNELS)
+        ]
+        doc["starting_state"]["states"] = [
+            f.state()  # type: ignore[attr-defined]
+            for f in self.sent(STATE)
         ]
         return doc
 
@@ -1399,9 +1431,14 @@ class ScenarioEditor:
         if path == CHANNELS_PATH:
             self.formsets[CHANNELS].non_form_errors().append(message)
             return True
+        if path == STATES_PATH:
+            self.formsets[STATE].non_form_errors().append(message)
+            return True
         match = _INDEXED.match(path)
         if match and match["base"] == CHANNELS_PATH:
             return self._place_channel(int(match["index"]), match["rest"], path, message)
+        if match and match["base"] == STATES_PATH:
+            return self._place_state(int(match["index"]), match["rest"], path, message)
         if match:
             base, index, rest = match["base"], int(match["index"]), match["rest"]
             for prefix, row_path in ROW_PATHS.items():
@@ -1466,6 +1503,34 @@ class ScenarioEditor:
             row.add_error(None, f"{path}: {message}")
         return True
 
+    def _place_state(self, index: int, rest: str | None, path: str, message: str) -> bool:
+        """``starting_state.states[i]…`` on the sent ``state`` row ``i`` (#267): a member on
+        its field, ``constraints.<x>`` on ``constraints_<x>``, an alias or an allowed value
+        ``[k]`` as "Line k+1: …", anything deeper (the JSON boxes' insides included) prefixed
+        with the path."""
+        sent = self.sent(STATE)
+        if index >= len(sent):
+            return False
+        row = sent[index]
+        if rest is None:
+            row.add_error(None, message)
+            return True
+        name = re.split(r"[.\[]", rest, maxsplit=1)[0]
+        tail = rest[len(name) :]
+        if name == "constraints" and tail.startswith("."):
+            member = re.split(r"[.\[]", tail[1:], maxsplit=1)[0]
+            name, tail = f"constraints_{member}", tail[1 + len(member) :]
+        line = _LINE.match(tail)
+        if name not in row.fields or name in SNAPSHOT_FIELDS:
+            row.add_error(None, f"{path}: {message}")
+        elif not tail:
+            row.add_error(name, message)
+        elif line and name in STATE_LINE_FIELDS:
+            row.add_error(name, f"Line {int(line['index']) + 1}: {message}")
+        else:
+            row.add_error(name, f"{path}: {message}")
+        return True
+
     def _place_row(
         self, prefix: str, index: int, rest: str | None, path: str, message: str
     ) -> bool:
@@ -1507,9 +1572,10 @@ class ScenarioEditor:
             "end": "Endings",
             ADJACENCY: "Adjacent places",
             CHANNELS: "Remote channels",
+            STATE: "States",
         }
         anchors = {ADJACENCY: ADJACENCY_ANCHOR, CHANNELS: field_anchor(CHANNELS_PATH)}
-        helps = {ADJACENCY: ADJACENCY_HELP, CHANNELS: CHANNELS_HELP}
+        helps = {ADJACENCY: ADJACENCY_HELP, CHANNELS: CHANNELS_HELP, STATE: STATES_HELP}
         return {
             prefix: Rows(
                 titles[prefix],

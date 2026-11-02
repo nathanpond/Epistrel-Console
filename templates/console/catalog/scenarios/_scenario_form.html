@@ -1,7 +1,7 @@
 {% comment %}
 #68: the scenario editor, create and edit; #73 adds the Cast and World seeds (cast: CastForms);
 #71 adds the Media section (media: the media sections by path); #205 the Adjacent places (adj) and
-Remote channels (chan) row sets. Each main field's id is its report anchor (f-<path>). Context: form, sections, row_sets,
+Remote channels (chan) row sets; #267 the States (state) row set. Each main field's id is its report anchor (f-<path>). Context: form, sections, row_sets,
 create, snap, snapshot, idempotency_key, rating_note, archived_note, action_url; #74 (edit only):
 publish_idempotency_key, next, facts, validate_url, unsaved, archived_publish, companion_name.
 {% endcomment %}<form method="post" action="{{ action_url }}" class="scenario-form" novalidate>
@@ -53,6 +53,8 @@ publish_idempotency_key, next, facts, validate_url, unsaved, archived_publish, c
     {% include "console/catalog/scenarios/_seeds.html" with seeds=editor.cast.world_rows title="World seeds" %}
     {% include "console/catalog/scenarios/_refresh.html" %}
   </fieldset>
+
+  {% include "console/catalog/scenarios/_states.html" with rows=row_sets.state %}
 
   {% with section=sections.story_settings_defaults %}<fieldset class="section" id="{{ section.anchor }}"><legend>{{ section.title }}</legend>
     {% include "console/catalog/scenarios/_fields.html" %}
