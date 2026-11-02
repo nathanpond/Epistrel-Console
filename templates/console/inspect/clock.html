@@ -6,7 +6,8 @@ two clock flags (D2's labels), the clock-off notice (D1), the mode (and an exter
 provider and value), the anchor as established (console.clock.anchor_view: the components at the
 anchoring offset, D18) and the settings table (console.clock.settings_rows). Errors stay in the
 section (convention 10). Context: clock, offset, level, flags, off_notice, mode, external,
-provider_id, external_value_name, anchor, settings_rows, settings_url, advance_url, not_found,
+provider_id, external_value_name, anchor, settings_rows, settings_url, advance_url (greyed with
+D1's reason while advance_gate, m6_gate(CLOCK), is closed: #252), advance_gate, not_found,
 clock_error.
 {% endcomment %}
 {% block world_content %}
@@ -19,7 +20,7 @@ clock_error.
 <p class="clock-level">Level: <span title="{{ clock.level }}">{{ level }}</span></p>
 {% if flags %}<p class="clock-flags">{{ flags|join:" · " }}</p>{% endif %}
 <p class="clock-mode">Mode: <span title="{{ clock.mode }}">{{ mode }}</span>{% if external %} · Reads <code>{{ provider_id }}</code> · <code>{{ external_value_name }}</code>{% endif %}</p>
-<p class="clock-actions"><a href="{{ settings_url }}">Change clock settings</a>{% if advance_url %} · <a href="{{ advance_url }}">Advance the clock</a>{% endif %}</p>
+<p class="clock-actions"><a href="{{ settings_url }}">Change clock settings</a>{% if advance_url %} · {% if advance_gate %}<span class="disabled clock-advance" aria-disabled="true"{{ advance_gate|gate_attrs:"gate-advance" }}>Advance the clock</span> {% include "console/_gated_control.html" with gate=advance_gate gate_id="gate-advance" %}{% else %}<a class="clock-advance" href="{{ advance_url }}">Advance the clock</a>{% endif %}{% endif %}</p>
 
 <h3>As established</h3>
 {% if anchor is None %}<p class="none clock-unanchored">Unanchored — the story hasn't established a date or time of day yet</p>

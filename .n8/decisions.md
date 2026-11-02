@@ -2678,3 +2678,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #242's `test_column_order` now expects the Actions column, and `state_written_trust` joined the M6 fixture table in `tests/engine/test_fake_engine.py` (validated against the schema like every other M6 fixture).
   **Why:** #242's test pinned the empty actions hook that this story fills; the fixture table's complement test requires every `m6/` file to be listed (Rule 3).
   **Issue:** #251
+- **Decision:** D9's `clock_external` sentence is now the exported `console.world.CLOCK_EXTERNAL_TEXT`, used by `world_refusal` and by #252's advance page for an external clock on GET.
+  **Why:** The AC asks the GET to show "D9's `clock_external` sentence" with no call; exporting it (as `READONLY_EXTERNAL_TEXT` is) keeps one copy of the wording (D17) instead of redefining it in the view.
+  **Issue:** #252
+- **Decision:** `ClockAdvanceForm.minutes` reuses #243's `WholeNumberField`/`_digits` (ASCII digits, `INT_MAX` 2147483647, `SKIP_INVALID` "Enter a whole number of minutes, 0 or more.", `INT_TOO_BIG`); `reason` is a plain `CharField` with its 1–200 bound checked in `clean_reason` so no `maxlength` renders (C10).
+  **Why:** The AC's messages and bound are exactly #243's; reusing them avoids a second digit parser in the same module.
+  **Issue:** #252
+- **Decision:** `test_gate_unread_post_makes_no_write` covers two cases: an effective config whose `clock` key is missing (D1's `UNREAD`, so `gate_refusal` shows `GATE_UNREAD` above the form) and a 503 on the effective-config route (the Inspect shell's panel; `build` never runs). Both make zero advance requests.
+  **Why:** A failed effective-config read stops `inspect_page` before the page's build, so `GATE_UNREAD` can only show through a read that succeeded but lacks the switch; the 503 case still pins "no write".
+  **Issue:** #252
+- **Decision:** The advance page omits the hidden `expected_revision` input entirely when the shell's story read failed (rather than rendering it empty); a 422 request-validation error at bare `body` lands as `apply_engine_errors`'s non-field "body: <message>".
+  **Why:** The AC says the field is "absent when that read failed"; the bare-`body` placement is the shared helper's existing behaviour, which the Discretion ("a non-field error above the form") accepts.
+  **Issue:** #252
+- **Decision:** Result-page expectations follow #232's `m6/clock_advanced.json` (130 → 190, "Advanced by +01h 00m", "Slot: turn 3⁺² · start"), not the story's illustrative "+00h 30m"/"turn 2⁺¹"; the new `m6/clock_advanced_to_time.json` (130 → 1080, turn 2⁺², ids `…0252`) is listed in the fake-engine fixture table.
+  **Why:** The Discretion says the fake doesn't compute and the fixture stays as is; the fixture table's complement test requires every `m6/` file to be listed (Rule 3).
+  **Issue:** #252

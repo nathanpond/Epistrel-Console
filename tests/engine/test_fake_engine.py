@@ -200,6 +200,7 @@ M6_FIXTURES = {
     "clock_custom_calendar": ("GET", "/stories/{story_id}/clock", 200),  # #243
     "clock_settings_written": ("PATCH", "/stories/{story_id}/clock", 200),
     "clock_advanced": ("POST", "/stories/{story_id}/clock/advance", 200),
+    "clock_advanced_to_time": ("POST", "/stories/{story_id}/clock/advance", 200),  # #252
     "scheduled_events": ("GET", "/stories/{story_id}/scheduled-events", 200),
     "scheduled_events_alice": ("GET", "/stories/{story_id}/scheduled-events", 200),
     "scheduled_events_statuses": ("GET", "/stories/{story_id}/scheduled-events", 200),  # #244

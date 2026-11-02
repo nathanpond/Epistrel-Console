@@ -1,0 +1,34 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags world_tags %}
+{% comment %}
+Advance the clock (#252, console/views/inspect_clock.py's clock_advance), below the Clock section
+(current inspect:clock): "The clock is at <clock_value>" from the GET's one get_clock (no line on a
+POST re-render, or when that read failed: #43's panel above the form), then
+console.forms.clock.ClockAdvanceForm POSTing to inspect:clock-advance with D8's hidden
+expected_revision and the page's idempotency key. An external clock gets D9's clock_external
+sentence in place of the form. The submit is greyed with D1's reason (gate, _gated_control.html)
+while the clock is off; inputs stay editable. A refusal or #43's panel stays above the form, a
+field's refusal beside it (field_link: clock_backward's "Rewind…" link when it is placed on a
+field); the result page (clock_advanced.html) replaces this page on success. Context: back_url,
+action_url, gate, idempotency_key, expected_revision, clock, external, read_error, form,
+refusal, refusal_url, refusal_link, field_link, write_error.
+{% endcomment %}
+{% block title %}Inspect · Advance the clock · {{ story_name }}{% endblock %}
+{% block world_content %}
+<p class="clock-back"><a href="{{ back_url }}">Back to Clock</a></p>
+<h3 class="clock-advance-title">Advance the clock</h3>
+{% if external %}<p class="notice clock-external">{{ external }}</p>
+{% else %}
+{% if clock %}<p class="clock-is-at">The clock is at {{ clock|clock_value }}</p>{% endif %}
+{% if read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist clock-advance-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% elif refusal_link %} {{ refusal_link }}{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="clock-advance-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if expected_revision %}<input type="hidden" name="expected_revision" value="{{ expected_revision }}">{% endif %}
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  {% for field in form %}<div class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{{ field.errors }}{% if field_link and field_link.field == field.name %}<p class="field-link">{% if field_link.url %}<a href="{{ field_link.url }}">{{ field_link.label }}</a>{% else %}{{ field_link.label }}{% endif %}</p>{% endif %}</div>
+  {% endfor %}<p><button type="submit" class="clock-advance-submit"{{ gate|gate_attrs:"gate-advance" }}>Advance the clock</button>{% include "console/_gated_control.html" with gate=gate gate_id="gate-advance" %} <a href="{{ back_url }}">Cancel</a></p>
+</form>
+{% endif %}
+{% endblock %}

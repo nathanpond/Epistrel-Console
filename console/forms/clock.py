@@ -17,6 +17,12 @@ value changed; a changed value typed under another mode is a field error (no cal
 snapshot's own value being ignored there. ``ClockPatch`` has no ``anchor`` member, so there is
 no anchor control.
 
+:class:`ClockAdvanceForm` (#252; D6, D8) is the advance: ``minutes`` (ASCII digits, at most
+:data:`INT_MAX`, the Engine's ``PG_INT_MAX``) or ``to`` (D6's ``PlannedField``: an int offset or
+``"HH:MM"`` sent as given), exactly one, and a trimmed ``reason`` of 1 to 200 code points. The
+neither/both error is a non-field error, skipped when ``minutes`` or ``to`` already has its own
+error (one message per mistake). No ``min``/``max``/``maxlength`` (C10).
+
 The Engine's own rules (contiguous pacing rows from 0 words, only the last open-ended; bands
 tiling the day; a custom calendar's year equal to its months' days) are not re-checked: its 422
 lands above the table. Row caps are the Console's (no-JavaScript editor), never below the
@@ -33,6 +39,7 @@ from django.forms import BaseFormSet, formset_factory
 from django.forms.utils import ErrorDict, ErrorList
 
 from console.forms.fields import JsonBoxField
+from console.forms.world import PlannedField
 from console.merge_patch import diff
 from console.wording import humanised
 
@@ -359,3 +366,66 @@ class ClockSettingsForm(forms.Form):
 def saved_text(patch: Mapping[str, Any]) -> str:
     """ "Pacing table, Bands" (the saved flash's members, in :data:`MEMBER_LABELS` order)."""
     return ", ".join(label for key, label in MEMBER_LABELS.items() if key in patch)
+
+
+# --- the advance form (#252) --------------------------------------------------------------------
+
+REASON_MAX = 200
+REASON_REQUIRED = "Enter a reason"
+REASON_TOO_LONG = "At most 200 characters."
+ADVANCE_NEITHER = "Enter minutes to advance by, or a time to advance to"
+ADVANCE_BOTH = "Enter minutes or a target time, not both"
+TO_HELP = (
+    "Minutes from the story's start (e.g. 600), or a time of day (HH:MM): the next time it comes "
+    "round"
+)
+UNANCHORED_HINT = "This clock is unanchored: a time of day can't be placed yet — use minutes"
+REASON_HELP = "Recorded with the advance (1\u2013200 characters)"
+
+
+class ClockAdvanceForm(forms.Form):
+    """``POST /stories/{id}/clock/advance``'s ``{reason, minutes | to}`` (module docstring).
+    ``unanchored`` appends :data:`UNANCHORED_HINT` to ``to``'s help."""
+
+    minutes = WholeNumberField(label="Advance by (minutes)", required=False, invalid=SKIP_INVALID)
+    to = PlannedField(label="Or advance to", required=False, help_text=TO_HELP)
+    reason = forms.CharField(
+        label="Reason",
+        required=False,
+        strip=True,
+        help_text=REASON_HELP,
+    )
+
+    def __init__(self, data: Any = None, *, unanchored: bool = False) -> None:
+        super().__init__(data)
+        if unanchored:
+            self.fields["to"].help_text = f"{TO_HELP}. {UNANCHORED_HINT}"
+
+    def clean_reason(self) -> str:
+        reason: str = self.cleaned_data.get("reason") or ""
+        if not reason:
+            raise forms.ValidationError(REASON_REQUIRED, code="required")
+        if len(reason) > REASON_MAX:
+            raise forms.ValidationError(REASON_TOO_LONG, code="max_length")
+        return reason
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if "minutes" in self.errors or "to" in self.errors:
+            return cleaned  # one message per mistake
+        minutes, to = cleaned.get("minutes"), cleaned.get("to")
+        if minutes is None and to is None:
+            raise forms.ValidationError(ADVANCE_NEITHER, code="neither")
+        if minutes is not None and to is not None:
+            raise forms.ValidationError(ADVANCE_BOTH, code="both")
+        return cleaned
+
+    def body(self) -> dict[str, Any]:
+        """``{"reason", "minutes"}`` or ``{"reason", "to"}`` (call after :meth:`is_valid`)."""
+        data = self.cleaned_data
+        body: dict[str, Any] = {"reason": data["reason"]}
+        if data.get("minutes") is not None:
+            body["minutes"] = data["minutes"]
+        else:
+            body["to"] = data["to"]
+        return body

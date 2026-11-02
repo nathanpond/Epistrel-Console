@@ -1,0 +1,36 @@
+{% extends "console/inspect/world.html" %}{% load console_format %}
+{% comment %}
+A clock advance's result (#252), below the Clock section (current inspect:clock): rendered on the
+POST response and again at inspect:clock-advanced?report=<pk> from the #44 row (the reason from
+the stored request body; "—" when it has none). The clock change is D6's clock_change_text and
+offset_text; D8's lines come from console.world.slot_result (slot: SlotResult; ClockAdvanced
+carries no N⁺k string, so no "Engine position" row). Context from
+console/views/inspect_clock.py's _advanced: advanced (ClockAdvanced), change_line, advanced_by,
+reason, slot, replayed, again_url, back_url, report_url, raw_answer; missing (convention 10's
+text) for a ?report= that isn't one.
+{% endcomment %}
+{% block title %}Inspect · Clock advanced · {{ story_name }}{% endblock %}
+{% block world_content %}
+{% if missing %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
+<p class="clock-back"><a href="{{ back_url }}">Back to Clock</a></p>
+{% else %}
+<h3 class="clock-advanced-title">Clock advanced</h3>
+{% if replayed %}<p class="notice replayed">Replayed (repeated submit)</p>{% endif %}
+<ul class="clock-advanced-lines">
+  <li class="change">Clock: {{ change_line }}</li>
+  <li class="advanced-by">Advanced by {{ advanced_by }}</li>
+  <li class="reason">Reason: {{ reason }}</li>
+  {% if slot.slot_text is not None %}<li class="slot">Slot: {% if slot.slot_url %}<a href="{{ slot.slot_url }}">{{ slot.slot_text }}</a>{% else %}{{ slot.slot_text }}{% endif %}</li>{% endif %}
+  <li class="operation">Operation: {% if slot.operation_pk %}<a class="operation-link" href="{% url 'operations:detail' slot.operation_pk %}"><code>{{ slot.operation_id }}</code></a>{% else %}<code>{{ slot.operation_id|default:"—" }}</code>{% endif %}</li>
+  <li class="revision">{{ slot.revision_text }}</li>
+</ul>
+<details class="clock-advanced-more"><summary>More</summary><dl>
+  <dt>Change id</dt><dd><code>{{ advanced.change_id }}</code></dd>
+  <dt>Offset before (min)</dt><dd class="offset-before">{{ advanced.before.offset }}</dd>
+  <dt>Offset after (min)</dt><dd class="offset-after">{{ advanced.after.offset }}</dd>
+  <dt>Raw answer</dt><dd><pre class="raw-response">{{ raw_answer|pretty_json }}</pre></dd>
+</dl></details>
+<p class="advanced-links"><a class="clock-back" href="{{ back_url }}">Back to Clock</a> · <a class="advance-again" href="{{ again_url }}">Advance again</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

@@ -150,9 +150,18 @@ def test_change_link(operator_client: Client, engine: FakeEngine) -> None:
     )
 
 
-def test_advance_link_absent_until_registered(operator_client: Client, engine: FakeEngine) -> None:
+def test_advance_link_present(operator_client: Client, engine: FakeEngine) -> None:
     html = page(operator_client)
-    assert "Advance the clock" not in html
+    assert f'<a class="clock-advance" href="{URL}advance/">Advance the clock</a>' in html
+
+
+def test_advance_link_greyed_when_clock_off(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", EFFECTIVE, 200, json=lite_m6())
+    html = page(operator_client)
+    link = re.search(r'<span class="disabled clock-advance"[^>]*>Advance the clock</span>', html)
+    assert link is not None
+    assert "clock.level" in link.group(0)
+    assert f'href="{URL}advance/"' not in html
 
 
 def test_clock_section_is_current(operator_client: Client, engine: FakeEngine) -> None:

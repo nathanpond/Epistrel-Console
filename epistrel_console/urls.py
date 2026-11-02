@@ -257,6 +257,9 @@ inspect_patterns = (
         # #243: the Clock section and its settings page.
         path("world/clock/", inspect_clock.clock, name="clock"),
         path("world/clock/settings/", inspect_clock.clock_settings, name="clock-settings"),
+        # #252: advance the clock between turns, and its result again from the #44 row.
+        path("world/clock/advance/", inspect_clock.clock_advance, name="clock-advance"),
+        path("world/clock/advanced/", inspect_clock.clock_advanced, name="clock-advanced"),
         # #244: the Scheduled events section.
         path(
             "world/scheduled-events/",

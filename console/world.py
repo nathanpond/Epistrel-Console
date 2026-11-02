@@ -375,6 +375,10 @@ ENGINE_NOTHING_CHANGED = "The Engine found nothing to change"
 
 READONLY_EXTERNAL_TEXT = "This State's value belongs to its provider — it can't be set here"
 RESERVED_STATE_TEXT = "`world_clock` is the world clock — use the Clock section"
+# Exported so #252's advance page shows the same sentence for an external clock with no call.
+CLOCK_EXTERNAL_TEXT = (
+    "This clock follows its provider's value (external mode) — it can't be advanced here"
+)
 PLACE_UNKNOWN = "That isn't a place in this story"
 STATE_NOT_FOUND = "This story has no State “{state}”"
 COMPENSATE_VERB = "compensate an effect"
@@ -780,10 +784,7 @@ def world_refusal(
             field=placed or member("to"),
         )
     if code == "clock_external":
-        return WorldRefusal(
-            "This clock follows its provider's value (external mode) — it can't be advanced here",
-            field=placed,
-        )
+        return WorldRefusal(CLOCK_EXTERNAL_TEXT, field=placed)
     if code == "provider_unbound":
         providers = details.get("providers")
         named = (

@@ -35,8 +35,30 @@ above that table; then D9's ``world_refusal`` (beside the field it names, else a
 ``provider_unbound`` with its bindings link above the form); request-validation ``errors[]``
 through ``apply_engine_errors``; anything else #43's panel above the form. No gate on the form
 or the POST (D1).
+
+``inspect:clock-advance`` (``world/clock/advance/``, GET/HEAD/POST, #252; D1, D6, D8, D9) is the
+advance form, below the Clock section. GET makes the shell's reads and one ``get_clock``: "The
+clock is at <clock_value>", the external check (an ``external`` clock gets D9's
+``clock_external`` sentence in place of the form, which wins over the gate) and the unanchored
+hint on ``to`` (``anchor: null`` only; a partial anchor relies on the Engine's
+``clock_unanchored``). A failed read is #43's panel above a kept form. The submit is greyed with
+D1's reason while ``m6_gate(CLOCK, …)`` is closed; the inputs stay editable. D8's hidden
+``expected_revision`` is the shell's ``Story.timeline_revision`` (``ClockBody`` carries none),
+absent when the story read failed.
+
+A POST makes no ``get_clock`` (so no "is at" line, external check or hint): ``gate_refusal`` on
+``minutes``/``to``/``reason`` first (a refusal re-renders, no write), then the form (invalid:
+re-render, no write), then one ``advance_clock`` with the posted ``expected_revision`` and the
+page's idempotency key. The result page (``clock_advanced.html``) renders on the POST response
+and again at ``inspect:clock-advanced?report=<pk>`` from the #44 row (:func:`advanced_row`).
+Refusals follow D8's re-render rule: an answered refusal mints a fresh key and refreshes the
+revision from the POST's shell story read; local invalid input and an unknown outcome keep the
+posted ones. Placement: D9's ``world_refusal`` (beside the field it names, else above the form;
+``clock_backward`` with a "Rewind…" link to the story's History), then request-validation
+``errors[]`` through ``apply_engine_errors``, then #43's panel.
 """
 
+import dataclasses
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -46,6 +68,7 @@ from django.contrib import messages
 from django.core import signing
 from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import redirect
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
 from console.clock import (
@@ -61,11 +84,12 @@ from console.clock import (
 )
 from console.confirm import posted_idempotency_key
 from console.engine.client import EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import WorldClock
+from console.engine.models import ClockAdvanced, WorldClock
 from console.engine_errors import log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.forms.clock import (
     EXTERNAL,
+    ClockAdvanceForm,
     ClockSettingsForm,
     row_caps,
     saved_text,
@@ -73,13 +97,20 @@ from console.forms.clock import (
 from console.formset_rows import OP, apply_op, parse_op
 from console.held import is_held
 from console.ids import new_ulid
-from console.inspect import SCHEDULED_STOPS, Tab, m6_gate
-from console.views.inspect import InspectContext, inspect_page
+from console.inspect import CLOCK, SCHEDULED_STOPS, Tab, gate_refusal, m6_gate
+from console.models import EngineOperation
+from console.views.inspect import TEMPLATE_KEY, InspectContext, inspect_page
 from console.wording import humanised
 from console.world import (
+    CLOCK_EXTERNAL_TEXT,
     ENGINE_NOTHING_CHANGED,
+    EXPECTED_REVISION_FIELD,
+    clock_change_text,
     config_revision_text,
+    expected_revision,
     nothing_changed,
+    offset_text,
+    slot_result,
     world_refusal,
 )
 
@@ -136,6 +167,7 @@ def _clock(ctx: InspectContext) -> dict[str, Any]:
     context: dict[str, Any] = {
         "settings_url": settings_url(ctx.story_id),
         "advance_url": advance_url(ctx.story_id),
+        "advance_gate": m6_gate(CLOCK, ctx.effective),  # D1: the advance's own gate
     }
     try:
         clock = ctx.client.get_clock(ctx.story_id)
@@ -355,4 +387,227 @@ def clock_settings(request: HttpRequest, story_id: str) -> HttpResponse:
     """``inspect:clock-settings``: the settings form, then ``PATCH /stories/{id}/clock``."""
     return inspect_page(
         request, story_id, Tab.WORLD, SETTINGS_TEMPLATE, _settings, current="inspect:clock"
+    )
+
+
+# --- the advance page (#252) --------------------------------------------------------------------
+
+ADVANCE_TEMPLATE = "console/inspect/clock_advance.html"
+ADVANCED_TEMPLATE = "console/inspect/clock_advanced.html"
+ADVANCE_KIND = "advance_clock"
+ADVANCE_VERB = "advance the clock"
+REPORT_PARAM = "report"
+REWIND_LINK = "Rewind…"
+NO_REASON = "—"
+# D1: the advance is gated on the clock at ``prompt_only`` (every field the form carries).
+ADVANCE_GATED: Mapping[str, tuple[str, str | None]] = {
+    "minutes": (CLOCK, "prompt_only"),
+    "to": (CLOCK, "prompt_only"),
+    "reason": (CLOCK, "prompt_only"),
+}
+
+
+def advance_page_url(story_id: str) -> str:
+    return reverse("inspect:clock-advance", args=[story_id])
+
+
+def advanced_url(story_id: str, pk: int) -> str:
+    """``inspect:clock-advanced?report=<pk>``."""
+    return f"{reverse('inspect:clock-advanced', args=[story_id])}?{REPORT_PARAM}={pk}"
+
+
+def history_url(story_id: str) -> str:
+    """The story's History (where the rewind controls live); "" while it doesn't resolve."""
+    try:
+        return reverse("stories:history", args=[story_id])
+    except NoReverseMatch:
+        return ""
+
+
+def _story_revision(ctx: InspectContext) -> str:
+    """D8: the shell's story read's ``timeline_revision`` ("" when that read failed)."""
+    revision = ctx.story.timeline_revision if ctx.story is not None else None
+    return str(revision) if isinstance(revision, int) and not isinstance(revision, bool) else ""
+
+
+def advanced_row(pk: object, story_id: str) -> tuple[EngineOperation, ClockAdvanced] | None:
+    """The #44 row ``pk`` and its answer when it is an ``ok`` ``advance_clock`` of this story
+    whose stored response parses as ``ClockAdvanced``; else ``None``."""
+    try:
+        row = EngineOperation.objects.get(pk=int(str(pk)))
+    except EngineOperation.DoesNotExist, ValueError:
+        return None
+    if (
+        row.kind != ADVANCE_KIND
+        or row.story_id != story_id
+        or row.outcome != EngineOperation.Outcome.OK
+    ):
+        return None
+    parsed = ClockAdvanced.from_json(row.response)
+    if parsed is None:
+        return None
+    return row, parsed
+
+
+def _stored_reason(row: EngineOperation) -> str | None:
+    stored = row.request if isinstance(row.request, dict) else {}
+    body = stored.get("body")
+    reason = body.get("reason") if isinstance(body, dict) else None
+    return reason if isinstance(reason, str) and reason else None
+
+
+def _advanced(
+    ctx: InspectContext,
+    result: ClockAdvanced,
+    row: EngineOperation | None,
+    *,
+    reason: str | None,
+    raw: Any,
+) -> dict[str, Any]:
+    """The result page's context (on the POST response, and for ``?report=``)."""
+    story_id = ctx.story_id
+    back = clock_url(story_id)
+    return {
+        TEMPLATE_KEY: ADVANCED_TEMPLATE,
+        "advanced": result,
+        "change_line": clock_change_text(result.before, result.after),
+        "advanced_by": offset_text(result.after.offset - result.before.offset),
+        "reason": reason or NO_REASON,
+        "slot": slot_result(story_id, result, row, back),
+        "replayed": row is not None and row.replayed,
+        "again_url": advance_page_url(story_id),
+        "back_url": back,
+        "report_url": advanced_url(story_id, row.pk) if row is not None else None,
+        "raw_answer": raw,
+    }
+
+
+def _advanced_report(ctx: InspectContext) -> dict[str, Any]:
+    found = advanced_row(ctx.request.GET.get(REPORT_PARAM), ctx.story_id)
+    if found is None:
+        return {"missing": NOT_FOUND, "back_url": clock_url(ctx.story_id)}
+    row, result = found
+    return _advanced(ctx, result, row, reason=_stored_reason(row), raw=row.response)
+
+
+@require_safe
+def clock_advanced(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:clock-advanced?report=<pk>``: an advance's result page again, from the #44
+    row."""
+    return inspect_page(
+        request,
+        story_id,
+        Tab.WORLD,
+        ADVANCED_TEMPLATE,
+        _advanced_report,
+        current="inspect:clock",
+    )
+
+
+def _advance_refused(
+    ctx: InspectContext,
+    exc: EngineClientError,
+    form: ClockAdvanceForm,
+    page: dict[str, Any],
+) -> dict[str, Any]:
+    """A refused advance: the form again (D8's key and revision rule), the refusal placed."""
+    if is_held(exc):
+        raise exc
+    log_engine_error(ctx.request, exc)
+    unknown = isinstance(exc, EngineUnreachable) or (
+        isinstance(exc, EngineError) and exc.code == BAD_RESPONSE
+    )
+    if unknown or not isinstance(exc, EngineError):
+        page["write_error"] = panel_for(exc)  # the outcome is unknown: the posted key and revision
+        return page
+    page["idempotency_key"] = new_ulid()  # D8: an answered refusal is a new attempt
+    revision = _story_revision(ctx)
+    if revision:
+        page["expected_revision"] = revision
+    refusal = world_refusal(exc, ctx.story_id, ADVANCE_VERB, ctx.effective)
+    if refusal is not None:
+        url, link = refusal.url, REFUSAL_LINKS.get(exc.code, "See the check")
+        if exc.code == "clock_backward":
+            url, link = history_url(ctx.story_id), REWIND_LINK
+        if refusal.field in form.fields and not refusal.url:
+            form.add_error(refusal.field, refusal.text)
+            if exc.code == "clock_backward":
+                page["field_link"] = {"field": refusal.field, "url": url, "label": link}
+        else:
+            page.update(
+                refusal=refusal.text,
+                refusal_url=url,
+                refusal_link=link if url or exc.code == "clock_backward" else "",
+            )
+        return page
+    if exc.http_status == 422 and apply_engine_errors(exc, form):
+        return page
+    page["write_error"] = panel_for(exc)
+    return page
+
+
+def _advance(ctx: InspectContext) -> dict[str, Any]:
+    request = ctx.request
+    story_id = ctx.story_id
+    page: dict[str, Any] = {
+        "back_url": clock_url(story_id),
+        "action_url": advance_page_url(story_id),
+        "gate": m6_gate(CLOCK, ctx.effective),
+        "idempotency_key": new_ulid(),  # #43: every render mints a fresh key
+        "expected_revision": _story_revision(ctx),
+    }
+    if request.method != "POST":
+        unanchored = False
+        try:
+            clock = ctx.client.get_clock(story_id)
+        except EngineClientError as exc:
+            if is_held(exc):
+                raise
+            log_engine_error(request, exc)
+            page["read_error"] = panel_for(exc)
+        else:
+            if clock.mode == EXTERNAL:
+                page["external"] = CLOCK_EXTERNAL_TEXT
+                return page
+            page["clock"] = clock
+            unanchored = clock.anchor is None
+        page["form"] = ClockAdvanceForm(unanchored=unanchored)
+        return page
+    form = ClockAdvanceForm(request.POST)
+    page.update(
+        form=form,
+        idempotency_key=posted_idempotency_key(request),
+        expected_revision=request.POST.get(EXPECTED_REVISION_FIELD, ""),
+    )
+    valid = form.is_valid()
+    refused = gate_refusal(request.POST, ctx.effective, ADVANCE_GATED)
+    if refused is not None:
+        page["refusal"] = refused.reason
+        return page
+    if not valid:
+        return page
+    body = form.body()
+    try:
+        result = ctx.client.advance_clock(
+            story_id,
+            reason=body["reason"],
+            minutes=body.get("minutes"),
+            to=body.get("to"),
+            expected_revision=expected_revision(request.POST),
+            idempotency_key=posted_idempotency_key(request),
+        )
+    except EngineClientError as exc:
+        return _advance_refused(ctx, exc, form, page)
+    pk = getattr(ctx.client, "last_operation_id", None)
+    row = EngineOperation.objects.filter(pk=pk).first() if isinstance(pk, int) else None
+    raw = row.response if row is not None else dataclasses.asdict(result)
+    return _advanced(ctx, result, row, reason=body["reason"], raw=raw)
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def clock_advance(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:clock-advance``: the advance form, then ``POST /stories/{id}/clock/advance`` and
+    the result page on the POST response (#252)."""
+    return inspect_page(
+        request, story_id, Tab.WORLD, ADVANCE_TEMPLATE, _advance, current="inspect:clock"
     )
