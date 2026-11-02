@@ -1,0 +1,50 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags %}
+{% comment %}
+Set a State (#251, console/views/inspect_state_set.py's state_set), below the States section
+(current inspect:states): "Set <name>", the current value (_state_row.html's value cell: a
+story-scoped value or the per-character <dl>) and "Story revision R", then
+console.forms.states.StateSetForm POSTing to inspect:state-set with D8's hidden
+expected_revision and the page's idempotency key. A refusal or #43's panel stays above the form,
+a field's refusal beside it; the result page (state_written.html) replaces this page on success.
+In place of the form: the States gate's inline panel, the not-found line (missing), the read's
+panel (read_error) or why the Console can't set the State (cannot_set; the world clock links
+the Clock section). No JavaScript: Value and Amount both render, the help text says which is
+used. Context: state_name, back_url, clock_url, gate_unavailable, cannot_set, missing,
+read_error, row, revision_line, form, unit, action_url, cast_unavailable, idempotency_key,
+expected_revision, refusal, refusal_url, refusal_link, write_error.
+{% endcomment %}
+{% block title %}Inspect · Set {% firstof state_name request.resolver_match.kwargs.name %} · {{ story_name }}{% endblock %}
+{% block section_unavailable %}<h3 class="state-set-title">Set {% firstof state_name request.resolver_match.kwargs.name %}</h3>
+<p class="states-back"><a href="{% url 'inspect:states' story_id %}">Back to States</a></p>
+{{ block.super }}{% endblock %}
+{% block world_content %}
+<h3 class="state-set-title">Set {{ state_name }}</h3>
+{% if gate_unavailable %}{% include "console/inspect/_unavailable.html" with unavailable=gate_unavailable inline=True %}
+{% elif missing %}<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
+{% elif read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}
+{% else %}
+{% if row %}<dl class="state-current">
+  <dt>Current value</dt><dd class="value">{% if row.per_character is not None %}<dl class="state-values">{% for line in row.per_character %}<dt>{{ line.label }}</dt><dd>{% if line.undefined %}<span class="undefined">{{ line.text }}</span>{% else %}{{ line.text }}{% endif %}</dd>{% endfor %}</dl>{% elif row.value_is_undefined %}<span class="undefined">{{ row.value_text }}</span>{% else %}{{ row.value_text }}{% endif %}</dd>
+</dl>
+<p class="state-revision">{{ revision_line }}</p>{% endif %}
+{% if cannot_set %}<p class="notice cannot-set">{{ cannot_set|code_spans }}{% if clock_url and state_name == "world_clock" %} <a href="{{ clock_url }}">Clock</a>{% endif %}</p>
+{% elif form %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist state-set-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="state-set-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="expected_revision" value="{{ expected_revision }}">
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  {% if form.change %}<fieldset class="field field-change"><legend>{{ form.change.label }}</legend>{{ form.change }} <small class="muted">{{ form.change.help_text }}</small>{{ form.change.errors }}</fieldset>{% endif %}
+  <div class="field field-value">{{ form.value.label_tag }} {{ form.value }}{% if unit %} {{ unit }}{% endif %}{{ form.value.errors }}</div>
+  {% if form.delta %}<div class="field field-delta">{{ form.delta.label_tag }} {{ form.delta }}{% if unit %} {{ unit }}{% endif %}{{ form.delta.errors }}</div>{% endif %}
+  {% if form.scope_key %}<div class="field field-scope_key">{{ form.scope_key.label_tag }} {{ form.scope_key }}{{ form.scope_key.errors }}</div>{% endif %}
+  <div class="field field-reason">{{ form.reason.label_tag }} {{ form.reason }}{{ form.reason.errors }}</div>
+  <p><button type="submit" class="state-set-submit">Set</button></p>
+</form>
+{% endif %}
+{% endif %}
+<p class="states-back"><a href="{{ back_url }}">Back to States</a></p>
+{% endblock %}

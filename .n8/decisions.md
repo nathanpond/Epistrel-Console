@@ -2657,3 +2657,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The golden `tests/fixtures/inspect/golden/lite_history_items.html` was re-rendered. Its seven unlogged operation-id cells now carry the `engine-operation-link` anchor, and nothing else in it changed (diff checked). The module docstring records this, as #203's change did.
   **Why:** The AC links an item with no log row to `operations:engine`. The golden pinned the pre-#250 markup (Rule 3).
   **Issue:** #250
+- **Decision:** The Set page checks the name `world_clock` before any State read and shows D9's `reserved_state` sentence (linking `inspect:clock`) with no read and no PUT; a read State of `type: clock` gets the same.
+  **Why:** The Engine's `GET …/states/{name}` answers 404 for `world_clock` (Engine `read_state` at origin/main), so a `type: clock` check alone would never fire; the pass-2 discretion asks for the reserved sentence on the Set page (C15: follow what the Engine returns).
+  **Issue:** #251
+- **Decision:** D9's `reserved_state` sentence is exported as `console.world.RESERVED_STATE_TEXT` (used by `world_refusal` and by #251's pre-check) rather than written a second time.
+  **Why:** D17 forbids a page story redefining a wording constant; exporting the existing literal from its owner module keeps one source (Rule 3, no wording change).
+  **Issue:** #251
+- **Decision:** `inspect_page` gained `gate_section: bool = True`; `inspect:state-written` passes `False`, so it marks States current (D3) without applying the States gate.
+  **Why:** The pass-2 discretion says the report page isn't gated by the States module (it reads only the #44 row), but D3 has every page below a section pass that section as `current`, which made the shell grey it. The keyword defaults to the old behaviour for every other page (Rule 3).
+  **Issue:** #251
+- **Decision:** A "Change by" result replaces the Value line with "Changed by +5 gold (120 gold → 125 gold)" (no "Value:" prefix); a set reads "Value: 120 gold → 125 gold".
+  **Why:** The AC gives both texts and the demo shows the Changed-by line verbatim; one line per result keeps them from repeating the change.
+  **Issue:** #251
+- **Decision:** The Character select is a `CharField` with a `Select` widget, not a `ChoiceField`; `clean_scope_key` normalises (C13) and checks `is_ulid`, and a posted id not in the cast is kept as the "(not in the cast)" option.
+  **Why:** A `ChoiceField` would answer Django's "Select a valid choice" for a kept or lower-case id, where C13 and the discretion ask for the id to be sent when it passes `is_ulid` and `CHARACTER_INVALID` otherwise. The free-text fallback (story read failed) uses the same clean, blank being `CHOOSE_CHARACTER`.
+  **Issue:** #251
+- **Decision:** `CAST_UNAVAILABLE` shows above the form only for a per-character State (the only form that uses the cast); a request-validation 422 carrying `details.errors` is placed with `apply_engine_errors` before falling back to #43's panel; `GIVE_REASON` ("Give a reason.") and `ENTER_VALUE` live in `console/forms/states.py` with the story's other constants.
+  **Why:** Small placement calls the story leaves open; they follow #243's refusal ladder and the story's artifact list.
+  **Issue:** #251
+- **Decision:** #242's `test_column_order` now expects the Actions column, and `state_written_trust` joined the M6 fixture table in `tests/engine/test_fake_engine.py` (validated against the schema like every other M6 fixture).
+  **Why:** #242's test pinned the empty actions hook that this story fills; the fixture table's complement test requires every `m6/` file to be listed (Rule 3).
+  **Issue:** #251

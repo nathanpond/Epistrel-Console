@@ -1,0 +1,35 @@
+{% extends "console/inspect/world.html" %}{% load console_format inspect_tags %}
+{% comment %}
+A State set's result (#251), below the States section (current inspect:states): rendered on the
+POST response (values through D5 with the read State's type and unit) and again at
+inspect:state-written?report=<pk> from the #44 row (convention 8; no State read: compact JSON
+values). D8's lines come from console.world.slot_result (slot: SlotResult). The Engine's N⁺k
+position string shows only in More (D7). Context from console/views/inspect_state_set.py's
+_written: state_name, written (StateWritten), character, value_line, reason, slot, replayed,
+as_of_url, again_url, back_url, report_url, raw_answer; missing (convention 10's text) for a
+?report= that isn't one.
+{% endcomment %}
+{% block title %}Inspect · Set {% firstof state_name request.resolver_match.kwargs.name %} · {{ story_name }}{% endblock %}
+{% block world_content %}
+{% if missing %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
+<p class="states-back"><a href="{{ back_url }}">Back to States</a></p>
+{% else %}
+<h3 class="state-written-title">Set {{ state_name }}</h3>
+{% if replayed %}<p class="notice replayed">Replayed (repeated submit)</p>{% endif %}
+<ul class="state-written-lines">
+  {% if character %}<li class="character">Character: {{ character }}</li>{% endif %}
+  <li class="value">{{ value_line }}</li>
+  {% if reason %}<li class="reason">Reason: {{ reason }}</li>{% endif %}
+  {% if slot.slot_text is not None %}<li class="slot">Slot: {% if slot.slot_url %}<a href="{{ slot.slot_url }}">{{ slot.slot_text }}</a>{% else %}{{ slot.slot_text }}{% endif %}</li>{% endif %}
+  <li class="operation">Operation: {% if slot.operation_pk %}<a class="operation-link" href="{% url 'operations:detail' slot.operation_pk %}"><code>{{ slot.operation_id }}</code></a>{% else %}<code>{{ slot.operation_id|default:"—" }}</code>{% endif %}</li>
+  <li class="revision">{{ slot.revision_text }}</li>
+</ul>
+<details class="state-written-more"><summary>More</summary><dl>
+  <dt>Change id</dt><dd><code>{{ written.change_id }}</code></dd>
+  {% if slot.engine_position %}<dt>Engine position</dt><dd class="engine-position">{{ slot.engine_position }}</dd>{% endif %}
+  <dt>Raw answer</dt><dd><pre class="raw-response">{{ raw_answer|pretty_json }}</pre></dd>
+</dl></details>
+<p class="written-links">{% if as_of_url %}<a class="as-of-slot" href="{{ as_of_url }}">See {{ state_name }} as of this slot</a> · {% endif %}<a class="set-again" href="{{ again_url }}">Set again</a> · <a class="states-back" href="{{ slot.back_url }}">Back to States</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

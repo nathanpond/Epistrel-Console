@@ -199,11 +199,11 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
         "Visibility",
         "Owner",
         "Since",
+        "Actions",  # #251's Set… (convention 14's actions hook)
         "More",
     ]
     cells = re.findall(r'<td class="([a-z]+)">', row(html, "gold"))
-    assert cells == ["name", "value", "scope", "visibility", "owner", "since", "more"]
-    assert 'class="actions"' not in html
+    assert cells == ["name", "value", "scope", "visibility", "owner", "since", "actions", "more"]
 
 
 def test_actions_hook_renders_a_column() -> None:

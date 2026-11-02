@@ -1,0 +1,7 @@
+{% comment %}
+A States row's actions (#251; #265 adds Change definition): "Set…" to inspect:state-set (the
+plain Set page: the form chooses the character, whatever the list's viewpoint or the one-State
+page's boundary), or "—" with the reason in title for a row the Console can't set (an external
+owner, the world clock, a type outside number, boolean, enum and text). Context: row
+(console.states.StateRow), story_id.
+{% endcomment %}{% if row.set_blocked %}<span class="no-set" title="{{ row.set_blocked }}">—</span>{% else %}<a class="state-set" href="{% url 'inspect:state-set' story_id row.name %}">Set…</a>{% endif %}

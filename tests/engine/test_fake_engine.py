@@ -179,6 +179,7 @@ M6_FIXTURES = {
     "states_empty": ("GET", "/stories/{story_id}/states", 200),  # #242
     "state_view_trust": ("GET", "/stories/{story_id}/states/{name}", 200),  # #242
     "state_written": ("PUT", "/stories/{story_id}/states/{name}", 200),
+    "state_written_trust": ("PUT", "/stories/{story_id}/states/{name}", 200),  # #251
     "state_declared": ("POST", "/stories/{story_id}/states", 201),
     "state_definition_written": ("PATCH", "/stories/{story_id}/states/{name}/definition", 200),
     "state_proposals": ("GET", "/stories/{story_id}/state-proposals", 200),

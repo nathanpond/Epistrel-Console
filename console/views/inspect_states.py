@@ -57,6 +57,7 @@ from console.world import boundary_text, viewpoint_line
 
 STATES_TEMPLATE = "console/inspect/states.html"
 STATE_TEMPLATE = "console/inspect/state.html"
+ACTIONS_TEMPLATE = "console/inspect/_state_actions.html"  # #251's Set… (#265 adds to it)
 NOT_FOUND = "Not found (it may have been deleted or truncated)"
 
 
@@ -93,7 +94,7 @@ def _states(ctx: InspectContext) -> dict[str, Any]:
     context: dict[str, Any] = {
         "form": form,
         "cast_unavailable": CAST_UNAVAILABLE if ctx.story is None else None,
-        "actions": None,  # convention 14: #251 (Set) and #265 (Change definition)
+        "actions": ACTIONS_TEMPLATE,  # convention 14: #251's Set…; #265 adds Change definition
     }
     if not form.is_valid():
         return context
@@ -128,7 +129,7 @@ def _state(name: str) -> Any:
     def build(ctx: InspectContext) -> dict[str, Any]:
         """One State: the gate first, then the form, then (valid form) one ``get_state``."""
         cast, names, order = _cast(ctx)
-        context: dict[str, Any] = {"state_name": name, "actions": None}
+        context: dict[str, Any] = {"state_name": name, "actions": ACTIONS_TEMPLATE}
         closed = module_gate(STATES, ctx.effective)
         if closed is not None:
             context.update(gate_unavailable=closed, back_url=states_url(ctx.story_id, None))

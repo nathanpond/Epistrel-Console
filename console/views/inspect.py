@@ -217,10 +217,13 @@ def inspect_page(
     build: Build,
     *,
     current: str | None = None,
+    gate_section: bool = True,
 ) -> HttpResponse:
     """Render Inspect tab ``tab`` of story ``story_id`` with ``template`` (see the module
     docstring for the reads, the gate and the error handling). ``current`` (World and Effects
-    only) is the section URL name to mark current, defaulting to the request's own."""
+    only) is the section URL name to mark current, defaulting to the request's own;
+    ``gate_section=False`` marks it without applying its gate (a write's ``?report=`` page,
+    which reads only the local #44 row: #251's ``inspect:state-written``)."""
     client = engine_client_for(request)
     try:
         config: EffectiveConfig | EngineClientError = client.get_effective_config(story_id)
@@ -262,7 +265,11 @@ def inspect_page(
         if section is not None:
             _, label, module, level = section
             context["section_label"] = label
-            closed = module_gate(module, config.effective, level) if module is not None else None
+            closed = (
+                module_gate(module, config.effective, level)
+                if module is not None and gate_section
+                else None
+            )
             if closed is not None:
                 context["section_unavailable"] = closed  # D3: no read for a greyed section
                 return render(request, template, context)

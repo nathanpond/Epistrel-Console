@@ -47,6 +47,14 @@ STATES_EMPTY_FOR = "No States are readable from {label}'s viewpoint"
 STATES_UNPARSED = "Some States couldn't be read"
 NOT_READABLE = "No State “{name}” is readable here. It may not exist, be hidden from this viewpoint"
 POSITION_PARTS = ("turn", "variant", "slot_k", "beat", "step")
+# #251's Set: the types the Console can set, and why a row offers no "Set…" (its ``title``).
+WORLD_CLOCK = "world_clock"
+CLOCK_TYPE = "clock"
+EXTERNAL_OWNER = "external"
+SETTABLE_TYPES = ("number", "boolean", "enum", "text")
+OWNED_BY_PROVIDER = "Owned by its provider"
+SET_FROM_CLOCK = "Set from the Clock section"
+TYPE_NOT_SETTABLE = "The Console can't set this type"
 
 
 class StateNameConverter:
@@ -68,6 +76,24 @@ def state_url(story_id: str, name: str, **params: Any) -> str:
     url = reverse("inspect:state", args=[story_id, name])
     kept = {key: value for key, value in params.items() if value is not None and value != ""}
     return f"{url}?{urlencode(kept)}" if kept else url
+
+
+def set_url(story_id: str, name: str, scope_key: str | None = None) -> str:
+    """``inspect:state-set`` (#251) for ``name``, carrying ``scope_key`` when given."""
+    url = reverse("inspect:state-set", args=[story_id, name])
+    return f"{url}?{urlencode({'scope_key': scope_key})}" if scope_key else url
+
+
+def unsettable_title(state: StoryState) -> str | None:
+    """Why the Console offers no "Set…" for ``state`` (#251), or ``None`` when it does: an
+    external owner, the world clock, or a type outside number, boolean, enum and text."""
+    if state.owner == EXTERNAL_OWNER:
+        return OWNED_BY_PROVIDER
+    if state.name == WORLD_CLOCK or state.type == CLOCK_TYPE:
+        return SET_FROM_CLOCK
+    if state.type not in SETTABLE_TYPES:
+        return TYPE_NOT_SETTABLE
+    return None
 
 
 def link_params(viewpoint: str | None) -> dict[str, str]:
@@ -151,6 +177,11 @@ class StateRow:
     since_url: str | None
     more: list[tuple[str, str]]
     state: StoryState
+
+    @property
+    def set_blocked(self) -> str | None:
+        """#251's row actions: why "Set…" isn't offered (``None``: it is)."""
+        return unsettable_title(self.state)
 
 
 def _enum(raw: Any) -> tuple[str, str]:

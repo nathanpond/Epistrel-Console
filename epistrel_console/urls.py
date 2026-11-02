@@ -30,6 +30,7 @@ from console.views import (
     inspect_reconciliation,
     inspect_scene,
     inspect_scheduled_events,
+    inspect_state_set,
     inspect_states,
     media,
     media_picker,
@@ -246,6 +247,13 @@ inspect_patterns = (
         # #242: the States section and one State as of a boundary.
         path("world/states/", inspect_states.states, name="states"),
         path("world/state/<state_name:name>/", inspect_states.state, name="state"),
+        # #251: set a State between turns, and its result again from the #44 row.
+        path("world/state/<state_name:name>/set/", inspect_state_set.state_set, name="state-set"),
+        path(
+            "world/state/<state_name:name>/set/written/",
+            inspect_state_set.state_written,
+            name="state-written",
+        ),
         # #243: the Clock section and its settings page.
         path("world/clock/", inspect_clock.clock, name="clock"),
         path("world/clock/settings/", inspect_clock.clock_settings, name="clock-settings"),

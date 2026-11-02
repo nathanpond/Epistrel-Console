@@ -374,6 +374,7 @@ ENGINE_NOTHING_CHANGED = "The Engine found nothing to change"
 # --- D9: exported refusal sentences ------------------------------------------------------------
 
 READONLY_EXTERNAL_TEXT = "This State's value belongs to its provider — it can't be set here"
+RESERVED_STATE_TEXT = "`world_clock` is the world clock — use the Clock section"
 PLACE_UNKNOWN = "That isn't a place in this story"
 STATE_NOT_FOUND = "This story has no State “{state}”"
 COMPENSATE_VERB = "compensate an effect"
@@ -872,9 +873,7 @@ def _validation_refusal(
     """D9's ``validation_error`` rows, by ``reason``."""
     reason = details.get("reason")
     if reason == "reserved_state":
-        return WorldRefusal(
-            "`world_clock` is the world clock — use the Clock section", field=placed
-        )
+        return WorldRefusal(RESERVED_STATE_TEXT, field=placed)
     if reason == "immutable_field":
         if placed is None:
             return WorldRefusal("This field can't change once a State is declared")
