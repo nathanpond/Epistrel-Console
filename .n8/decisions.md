@@ -2849,3 +2849,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The States gate reason shows beside every row's Kind whenever the gate is closed, including `GATE_UNREAD` on a snapshot without `states.level` (M4/M5-shaped configurations).
   **Why:** AC: "`None` values (a failed read) give `GATE_UNREAD` (C6)" and the reason is shown beside each row's Kind; outcomes and turn kinds are still sent.
   **Issue:** #260
+- **Decision:** `inspect:state-new` and `inspect:state-declared` render with `inspect_page(..., current="inspect:states", gate_section=False)`; the Declare page's `build` checks `module_gate(STATES, …)` itself: a gated GET shows the inline panel, a gated POST re-renders the posted inputs unbound (no field errors, posted key and revision kept) with the reason and the Config link above the form.
+  **Why:** AC asks for a POST re-render with the reason above the form, which the shell's section gate (panel only) can't give; Discretion: "A gated POST checks the gate before `is_valid()`: the kept inputs render without field errors".
+  **Issue:** #261
+- **Decision:** `declaration_refusal` places this story's three wordings, then the D9-worded `validation_error` reasons via `world_refusal`, then other `validation_error` shape errors (box sub-paths on the box with the sub-path prefixed, the rest through `apply_engine_errors` with the `definition.`/`constraints.` alias map), then the rest of `world_refusal` (with the same alias map as `field_map`), then #43's panel. A D8 refresh mutates the bound form's data (fresh key, POST's story revision) so placed errors survive. It never returns an `HttpResponse` today (a 404 falls to the panel); the union stays as the AC's contract for #266.
+  **Why:** Discretion's order and D8's re-render rule; rebinding a fresh form (the #253 pattern) would drop the errors placed on it.
+  **Issue:** #261
+- **Decision:** A 5xx other than held `erasure_pending` is treated as an unknown outcome (panel, posted key and revision kept); not covered by a view test because the schema-validating fake refuses undeclared 5xx answers for `POST …/states`.
+  **Why:** Discretion (pass 2); the fake only serves statuses the recorded OpenAPI declares.
+  **Issue:** #261
+- **Decision:** `definition_rows` (the `_state_definition.html` rows) lives in `console/views/inspect_state_declare.py` beside `declaration_refusal`, so #266 imports both from one place; field errors on the Declare form render through `code_spans` (D9's `reserved_state` sentence carries a code span).
+  **Why:** D17: this story defines no shared helper in the D-modules; the partial needs its rows built in Python (member order, C3, D5).
+  **Issue:** #261
+- **Decision:** The D19 unlinked rendering of the Provider help (no `engine:providers`) is pinned by patching the view module's `reverse`, not by a new urlconf.
+  **Why:** the existing `urls_without_providers.py` drops `engine:provider`/`stories:providers` but not `engine:providers`; a one-test patch avoids another urlconf file.
+  **Issue:** #261
+- **Decision:** (Rule 3) #242's three `test_states.py` assertions that pinned the empty `states_header_actions` hook (`<p class="states-count">4 States</p>`) now expect the count followed by the "Declare a State…" link.
+  **Why:** this story fills that hook by design; the count text is still asserted.
+  **Issue:** #261

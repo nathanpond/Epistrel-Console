@@ -140,7 +140,7 @@ def test_reads_in_order_and_header(operator_client: Client, engine: FakeEngine) 
     assert "Viewpoint: Omniscient · revision 12" in html
     assert "World clock: " in html
     assert '<span class="clock" title="offset 130 min">+02h 10m (Saturday' in html
-    assert '<p class="states-count">4 States</p>' in html
+    assert '<p class="states-count">4 States · <a class="state-declare-link"' in html
     assert "<h2>States</h2>" in html
     assert 'aria-current="page" href="/stories/' + STORY + '/inspect/world/states/">States' in html
 
@@ -247,7 +247,7 @@ def test_character_viewpoint_omits_hidden_states(
     assert 'id="state-trust"' not in html
     assert "trust" not in html
     assert "Viewpoint: Alice — hidden States are left out · revision 12" in html
-    assert '<p class="states-count">3 States</p>' in html
+    assert '<p class="states-count">3 States · <a class="state-declare-link"' in html
     # the Name link keeps the viewpoint
     assert f'href="{STATE}gold/?viewpoint=character%3A{ALICE}"' in html
 
@@ -494,7 +494,7 @@ def test_unparsed_states_notice(operator_client: Client, engine: FakeEngine) -> 
     assert len(raws) == 1
     assert "door_open" in raws[0]
     assert "gold" not in raws[0]
-    assert '<p class="states-count">1 State</p>' in html
+    assert '<p class="states-count">1 State · <a class="state-declare-link"' in html
 
 
 def test_all_unparsed_shows_notice_only(operator_client: Client, engine: FakeEngine) -> None:

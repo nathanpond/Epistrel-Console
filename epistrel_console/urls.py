@@ -31,6 +31,7 @@ from console.views import (
     inspect_reconciliation,
     inspect_scene,
     inspect_scheduled_events,
+    inspect_state_declare,
     inspect_state_set,
     inspect_states,
     media,
@@ -253,6 +254,13 @@ inspect_patterns = (
         path("world/", inspect.world, name="world"),
         # #242: the States section and one State as of a boundary.
         path("world/states/", inspect_states.states, name="states"),
+        # #261: declare a State between turns, and its result again from the #44 row.
+        path("world/states/new/", inspect_state_declare.state_new, name="state-new"),
+        path(
+            "world/states/new/declared/",
+            inspect_state_declare.state_declared,
+            name="state-declared",
+        ),
         path("world/state/<state_name:name>/", inspect_states.state, name="state"),
         # #251: set a State between turns, and its result again from the #44 row.
         path("world/state/<state_name:name>/set/", inspect_state_set.state_set, name="state-set"),
