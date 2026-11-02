@@ -2503,3 +2503,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 1) #239's `test_world_shell_without_sections` now runs on a new urlconf with no World section (`tests/inspect/urls_world_no_sections.py`), not the real one.
   **Why:** Now that `inspect:states` is registered, the real World landing redirects to States. The test is about the empty shell, so it needs routes where no section is registered.
   **Issue:** #242
+- **Decision:** D8's "nothing to change" base for the clock PATCH is `console.views.inspect_clock.base_revision(ctx)` = `getattr(ctx.config, "config_revision", None)`. At the recorded schema it is always `None`, so the usual "<members>: saved — Configuration revision now <n>" flash shows. `test_engine_found_nothing_to_change` monkeypatches `base_revision` to stand one in. The gap is filed as #270.
+  **Why:** Neither the Engine's `EffectiveConfig` nor its `StoryBody` carries a story `config_revision`, and the pass-2 Discretion line already says "base revision unknown → usual flash". Reading it through `getattr` makes the rule start working if the Engine adds the field.
+  **Issue:** #243
+- **Decision:** `ClockSettingsForm` owns both row formsets (`self.pacing`, `self.bands`), and its `is_valid()` validates all three. Each bound row is an extra row (`RowFormSet.initial_form_count` is 0 when bound), so a wholly blank row is skipped and dropped, and a partly filled one is validated as required.
+  **Why:** The AC names one form with `patch(original)`. The formsets' `empty_permitted` gives the Discretion's "blank row dropped, partial row required" rule with no extra code.
+  **Issue:** #243
+- **Decision:** The band row fields are named `name`, `from` and `to`, as the AC and the Engine's columns name them. `from` and `to` are added to `BandRowForm.base_fields` after the class is built, because `from` is a Python keyword.
+  **Why:** This keeps the posted names (`bands-0-from`) the same as the AC's and the test plan's wording.
+  **Issue:** #243
+- **Decision:** A refusal that carries a link (D9's `provider_unbound` → "Story bindings", `module_off` → "Config", a paused story's check) is shown above the form even when it names a field. A linkless D9 refusal naming a form field goes beside that field (e.g. `calendar`, `mode`, `provider_value`).
+  **Why:** The link must survive. A field error can't carry the link.
+  **Issue:** #243
+- **Decision:** A kept extra choice for `mode` or `time_awareness` (a value outside the known choices) is labelled with its humanised value, with no "(missing)" suffix.
+  **Why:** C3 says enum values are shown humanised, with no "unknown" suffix. Submitting the value unchanged makes no diff.
+  **Issue:** #243
+- **Decision:** A missing or bad snapshot on a row-button POST also triggers the one fallback `get_clock`.
+  **Why:** The row caps and the kept choices come from the snapshot. The AC's rule that "a missing or bad snapshot is replaced by one fresh `get_clock`" covers every POST, and the "no Engine call" tests post a valid snapshot.
+  **Issue:** #243
+- **Decision:** `tests/engine/test_fake_engine.py`'s M6 id rule now skips `provider_id`, and the two new clock fixtures are in its table (id-less).
+  **Why:** An external clock's `provider_id` is a provider's name (a slug, D16), not an Engine ULID, so the rule's "every `*_id` is a ULID" check would refuse `m6/clock_external.json`.
+  **Issue:** #243
+- **Decision:** The off notice sits at the top of the Clock section, above the Now line and the tables. The anchor's More always lists `revision`, `reference` and `segments`, and a malformed anchor's raw JSON is shown in an open `<details>`.
+  **Why:** The AC says the notice goes "above the table" without naming which. The top of the section keeps it visible.
+  **Issue:** #243

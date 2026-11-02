@@ -19,6 +19,7 @@ from console.views import (
     inspect,
     inspect_beliefs,
     inspect_canon,
+    inspect_clock,
     inspect_divergences,
     inspect_exposures,
     inspect_ledger,
@@ -232,6 +233,9 @@ inspect_patterns = (
         # #242: the States section and one State as of a boundary.
         path("world/states/", inspect_states.states, name="states"),
         path("world/state/<state_name:name>/", inspect_states.state, name="state"),
+        # #243: the Clock section and its settings page.
+        path("world/clock/", inspect_clock.clock, name="clock"),
+        path("world/clock/settings/", inspect_clock.clock_settings, name="clock-settings"),
         path("effects/", inspect.effects, name="effects"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),

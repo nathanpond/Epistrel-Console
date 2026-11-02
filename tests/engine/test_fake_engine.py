@@ -195,6 +195,8 @@ M6_FIXTURES = {
     ),
     "clock": ("GET", "/stories/{story_id}/clock", 200),
     "clock_unanchored": ("GET", "/stories/{story_id}/clock", 200),
+    "clock_external": ("GET", "/stories/{story_id}/clock", 200),  # #243
+    "clock_custom_calendar": ("GET", "/stories/{story_id}/clock", 200),  # #243
     "clock_settings_written": ("PATCH", "/stories/{story_id}/clock", 200),
     "clock_advanced": ("POST", "/stories/{story_id}/clock/advance", 200),
     "scheduled_events": ("GET", "/stories/{story_id}/scheduled-events", 200),
@@ -220,12 +222,15 @@ M6_FIXTURES = {
     "fact": ("GET", "/admin/stories/{story_id}/facts/{fact_id}", 200),
 }
 M6_ID_KEYS = frozenset({"id", "compensates", "compensated_by"})
-M6_SKIPPED = frozenset({"external_ids", "manifest", "request_id"})
+# An external clock's ``provider_id`` is a provider's name, a slug (D16), not an Engine id (#243).
+M6_SKIPPED = frozenset({"external_ids", "manifest", "request_id", "provider_id"})
 # The answers that carry no Engine id at all (the clock, the provider registry, bindings).
 M6_ID_LESS = frozenset(
     {
         "clock",
         "clock_unanchored",
+        "clock_external",
+        "clock_custom_calendar",
         "clock_settings_written",
         "providers",
         "provider",
