@@ -43,6 +43,7 @@ from console.cast_panel import CastPanel, cast_panel
 from console.composition import Composition, composition
 from console.confirm import confirm_query, posted_idempotency_key
 from console.creation_report import has_creation_report
+from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
 from console.engine.client import (
     DEFAULT_TURN_DEADLINE_S,
     EngineClient,
@@ -107,6 +108,7 @@ from console.inspect import (
     PERCEPTION,
     PIPELINE,
     SETTINGS,
+    STATES,
     STRUCTURED,
     history_turn_url,
     is_module_off,
@@ -143,6 +145,7 @@ from console.turn_reports import (
     stored_turn_report,
     violation_rows,
 )
+from console.turn_world import TurnWorld, turn_world
 from console.views.ownership import OwnershipPanel, ownership_context
 from console.wording import busy_notice, humanised
 
@@ -200,6 +203,8 @@ class PlayStory:
     renders: str | None = None
     pipeline: str | None = None
     perception: str | None = None
+    # #245: the effective ``states.level`` (``None`` when missing or unread); #260's gate reads it.
+    states: str | None = None
     partitions: bool | None = None
     roles: dict[str, tuple[str, bool]] = field(default_factory=dict)
     story_multi: dict[str, Any] | None = None
@@ -225,6 +230,7 @@ class PlayStory:
             renders=_text(effective, SETTINGS[MULTI_CHARACTER]),
             pipeline=_text(effective, SETTINGS[PIPELINE]),
             perception=_text(effective, SETTINGS[PERCEPTION]),
+            states=_text(effective, SETTINGS[STATES]),
             partitions=_flag(effective, SETTINGS[PARTITIONS]),
             roles=_stored_roles(story),
             story_multi=_story_multi(settings),
@@ -242,6 +248,7 @@ class PlayStory:
                 "renders": self.renders,
                 "pipeline": self.pipeline,
                 "perception": self.perception,
+                "states": self.states,
                 "partitions": self.partitions,
                 "roles": {cid: [role, fixed] for cid, (role, fixed) in self.roles.items()},
                 "story_multi": self.story_multi,
@@ -272,6 +279,7 @@ class PlayStory:
                 renders=_optional(raw["renders"], str),
                 pipeline=_optional(raw["pipeline"], str),
                 perception=_optional(raw["perception"], str),
+                states=_optional(raw["states"], str),
                 partitions=_optional(raw["partitions"], bool),
                 roles=_signed_roles(raw["roles"]),
                 story_multi=story_multi,
@@ -473,6 +481,18 @@ class Entry:
     feedback: FeedbackWidget | None = None  # the "Rate" control on a generated message (#83)
     trace: BeatTrace | None = None  # a structured beat's trace, item-level only (#147)
     fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62, #196)
+    # #245 (D13): the first item of a staged turn still waiting on its outcome carries the badge,
+    # linked to the turn's Engine operation page once ``operations:engine`` resolves (D19).
+    incomplete: bool = False
+    incomplete_url: str = ""
+
+    @property
+    def incomplete_text(self) -> str:
+        return INCOMPLETE_TEXT
+
+    @property
+    def incomplete_title(self) -> str:
+        return INCOMPLETE_TITLE
 
     @property
     def reaction(self) -> bool:
@@ -607,6 +627,7 @@ def _transcript(
         )
         for item, rate in zip(items, first_parts(items), strict=True)
     ]
+    entries = _with_incomplete(entries, history)
     character_read = history.output_viewpoint != cast_helpers.OMNISCIENT
     chains = story.variant_chains if story is not None else []
     return Transcript(
@@ -624,6 +645,42 @@ def _transcript(
         player_view=requested,
         player_view_disabled=omniscient,
     )
+
+
+def _incomplete_turns(history: History) -> set[tuple[int, int | None]]:
+    """(turn, variant) keys of the page's incomplete turns: by turn number (the active chain),
+    by (turn, variant) only for a turn with two summaries (``variant`` ``None`` = any)."""
+    counts: dict[int, int] = {}
+    for summary in history.turns:
+        counts[summary.turn] = counts.get(summary.turn, 0) + 1
+    return {
+        (s.turn, s.variant if counts[s.turn] > 1 else None) for s in history.turns if s.incomplete
+    }
+
+
+def _with_incomplete(entries: list[Entry], history: History) -> list[Entry]:
+    """#245 (D13): the first transcript item of each incomplete turn carries the badge, linked
+    to the first non-empty ``operation_id`` among that turn's items (plain text without one, or
+    while ``operations:engine`` is unregistered)."""
+    marks = _incomplete_turns(history)
+    if not marks:
+        return entries
+    seen: set[int] = set()
+    marked = []
+    for entry in entries:
+        turn, variant = entry.item.turn, entry.item.variant
+        if (
+            turn is not None
+            and turn not in seen
+            and ((turn, None) in marks or (turn, variant) in marks)
+        ):
+            seen.add(turn)
+            ids = (e.item.operation_id for e in entries if e.item.turn == turn)
+            operation = next((i for i in ids if i), "")
+            url = engine_operation_url(operation) if operation else None
+            entry = replace(entry, incomplete=True, incomplete_url=url or "")
+        marked.append(entry)
+    return marked
 
 
 def _beat_trace(story_id: str, item: HistoryItem, names: dict[str, str]) -> BeatTrace | None:
@@ -678,6 +735,8 @@ class Inspector:
     warnings: tuple[WarningLine, ...] = ()
     # #203: how a multi-character turn was composed (:func:`_with_composition`).
     composition: Composition | None = None
+    # #245: what the turn did to the world (:func:`_with_world`); ``None``: no strip.
+    world: TurnWorld | None = None
 
     @property
     def trace_shown(self) -> bool:
@@ -826,6 +885,14 @@ def _with_composition(
     return replace(found, composition=panel)
 
 
+def _with_world(
+    found: Inspector, response: Mapping[str, Any], labels: Mapping[str, str]
+) -> Inspector:
+    """#245: the World strip, from the same raw answer mapping as the Composition (every
+    path's), named by the inspector's labels (C4). No Engine read."""
+    return replace(found, world=turn_world(response, found.story_id, labels))
+
+
 def _answer_mapping(result: RespondResponse) -> dict[str, Any]:
     """#203: the live answer as a mapping (``dataclasses.asdict``), each field the model's
     lenient parse lost an entry of (``unparsed``) put back raw, so the panel keeps it under
@@ -965,6 +1032,7 @@ def result_inspector(
     found = _with_answer(found, TurnAnswer.of(result), actor=actor, labels=labels or {})
     raw = response if response is not None else _answer_mapping(result)
     found = _with_composition(found, raw, labels or {})
+    found = _with_world(found, raw, labels or {})
     found = _with_warnings(found, labels or {}, story_id)
     return _with_history_link(story_id, found)
 
@@ -1023,6 +1091,7 @@ def row_inspector(
     found = _with_answer(found, answer, actor=_row_actor(row), labels=labels or {})
     if isinstance(row.response, dict) and not row.error_code and not violations:
         found = _with_composition(found, row.response, labels or {})
+        found = _with_world(found, row.response, labels or {})
     found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 

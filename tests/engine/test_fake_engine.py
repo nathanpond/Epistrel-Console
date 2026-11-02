@@ -218,6 +218,7 @@ M6_FIXTURES = {
     ),
     "compensated": ("POST", "/stories/{story_id}/reconciliation/{outbox_id}/compensate", 201),
     "corrected": ("POST", "/stories/{story_id}/correct", 200),
+    "respond_world": ("POST", "/stories/{story_id}/respond", 200),  # #245
     "memories_page1": ("GET", "/admin/stories/{story_id}/memories", 200),
     "memories_empty": ("GET", "/admin/stories/{story_id}/memories", 200),
     "fact": ("GET", "/admin/stories/{story_id}/facts/{fact_id}", 200),

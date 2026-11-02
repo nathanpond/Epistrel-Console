@@ -2545,3 +2545,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The viewpoint line has the class `viewpoint-line`, and the picker form's id is `events-viewpoint`. Belief rows show `participants` "—" in the cell and More.
   **Why:** These are cosmetic choices. The Engine always sends a belief's participants empty.
   **Issue:** #244
+- **Decision:** `StateChangeRow` carries two extra members beyond the planned `(line, notes, outbox_id, outbox_url, more)`: `status_title` and `contingency_title` (the raw values for the cells' `title`, `""` for an empty contingency).
+  **Why:** #235's `EffectLine` holds only the humanised words, and the AC puts the raw status and contingency in `title`; carrying them on the row keeps `_state_changes.html` free of any `StateEffect` access, so #254/#255 can reuse it with `state_change_rows` alone.
+  **Issue:** #245
+- **Decision:** The dispatched note comes from #235's `EffectLine.notes` itself: `effect_line` already puts `DISPATCHED_NOTE` at D10's position, so `state_change_rows` turns that entry into `Note("dispatched · outbox", outbox_id, outbox_url)` in place rather than inserting one (the pass-2 discretion assumed `notes` left it out).
+  **Why:** That's the shape #235 shipped. Inserting a second note would duplicate it.
+  **Issue:** #245
+- **Decision:** The strip's "couldn't be read" lines (`<p class="warning">`, one per list) sit together after the settled table and before the Not-undone block, not beside each list's own table.
+  **Why:** `TurnWorld.unread` is one tuple in the planned shape. A list whose every entry failed has no table to sit beside, and keeping the lines together means the strip's order stays fixed.
+  **Issue:** #245
+- **Decision:** The Incomplete badge text and title reach `_transcript.html` through two `Entry` properties (`incomplete_text`, `incomplete_title`) that return #235's `INCOMPLETE_TEXT`/`INCOMPLETE_TITLE`.
+  **Why:** Templates can't import constants. This keeps the wording in `console/effects.py` (D17) without a template tag.
+  **Issue:** #245
+- **Decision:** The test fixture `m6/respond_world.json` is story-scoped `gold` plus a per-character `bank_balance` and Alice's capped `transfer_out`. It is registered in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` (POST respond, 200), whose completeness test requires every `m6/` file to be listed. The play page tests serve the M6 story with Structured v3 through a `side_effect` on effective-config, and they post the turn at the story's default viewpoint.
+  **Why:** The schema and id rules apply to every M6 fixture (D16). With the Structured v3 configuration the form refuses an explicit `omniscient` viewpoint, which this story doesn't test.
+  **Issue:** #245
+- **Decision:** Adding `states` to the play snapshot breaks the signature of any open play page's snapshot once: the next POST re-reads the story, and the HTMX inspector shows short ids until the page is reloaded.
+  **Why:** This was accepted at planning (pass 1). It is noted here for the PR.
+  **Issue:** #245

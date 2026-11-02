@@ -1,0 +1,14 @@
+{# The play inspector's World strip (#245). Context: world (console.turn_world.TurnWorld), built from the turn answer the inspector shows; it makes no Engine read. In order: the world clock (D6), the turn's State changes and the late settlements (the shared table), the couldn't-be-read lines, the external effects that stay listed (D11 ids, linked), the reconciliation count (D12), then the outbox-list notice (D11) and the viewpoint line (D4); More holds what didn't parse. #}
+{% load world_tags console_format %}<section class="world-strip">
+<h4>World</h4>
+{% if world.clock %}<p class="world-clock">World clock: {% if world.clock_unchanged %}{{ world.clock.after|clock_value }} (unchanged){% else %}{{ world.clock.before|clock_value }} → {{ world.clock.after|clock_value }}{% endif %}</p>{% endif %}
+{% if world.state_rows %}{% include "console/_state_changes.html" with rows=world.state_rows caption="State changes this turn" %}{% endif %}
+{% if world.settled_rows %}{% include "console/_state_changes.html" with rows=world.settled_rows caption="Settled since the last turn" %}{% endif %}
+{% for line in world.unread %}<p class="warning">{{ line }}</p>
+{% endfor %}{% if world.required %}<p>External effects that stay listed for reconciliation</p>
+<ul class="not-undone">{% for r in world.required %}<li>{% if r.url %}<a href="{{ r.url }}">{{ r.outbox_id|outbox_id }}</a>{% else %}{{ r.outbox_id|outbox_id }}{% endif %} · {{ r.provider }} · <span title="{{ r.status_raw }}">{{ r.status }}</span>{% if r.value is not None %} · {{ r.value }}{% endif %}</li>{% endfor %}</ul>
+{% endif %}{% if world.reconcile %}<p class="reconcile">{% if world.reconcile.1 %}<a href="{{ world.reconcile.1 }}">{{ world.reconcile.0 }}</a>{% else %}{{ world.reconcile.0 }}{% endif %}</p>
+{% endif %}{% if world.outbox_notice %}<p class="notice">{{ world.outbox_notice }}</p>
+{% endif %}{% if world.viewpoint %}<p class="viewpoint">{{ world.viewpoint }}</p>
+{% endif %}{% if world.raw_more %}<details class="more"><summary>More</summary>{% for label, entries in world.raw_more %}<p>{{ label }}</p>{% for entry in entries %}<pre>{{ entry|pretty_json }}</pre>{% endfor %}{% endfor %}</details>
+{% endif %}</section>
