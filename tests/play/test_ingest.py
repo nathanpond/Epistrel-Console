@@ -2,7 +2,6 @@
 results table, the transcript re-fetched (never appended), and each refusal placed on its row
 or in the tab's panel. Every ingest is in the operation log (#44)."""
 
-import json
 import re
 from typing import Any
 
@@ -34,7 +33,10 @@ from tests.play.helpers import (
     answer_page,
     calls,
     error_json,
+    ingest_data,
     operation_json,
+    post_ingest,
+    sent,
     snapshot,
     story_json,
 )
@@ -77,34 +79,6 @@ def narration(text: str = "Fog rolls in.", event_id: str = "evt-2", **more: str)
     }
 
 
-def ingest_data(*rows: dict[str, str], **fields: Any) -> dict[str, Any]:
-    """An ingest POST as the tab's form sends it."""
-    data: dict[str, Any] = {
-        "idempotency_key": KEY,
-        "snapshot": snapshot(),
-        "output_viewpoint": "default",
-        "ingest-TOTAL_FORMS": str(len(rows)),
-        "ingest-INITIAL_FORMS": "0",
-        "ingest-MIN_NUM_FORMS": "1",
-        "ingest-MAX_NUM_FORMS": "50",
-    }
-    for index, row in enumerate(rows):
-        for name, value in row.items():
-            data[f"ingest-{index}-{name}"] = value
-    data.update(fields)
-    return data
-
-
-def post_ingest(client: Client, *rows: dict[str, str], htmx: bool = True, **fields: Any) -> str:
-    response = client.post(
-        reverse("stories:ingest", args=[STORY]),
-        ingest_data(*rows, **fields),
-        headers=HTMX if htmx else {},
-    )
-    assert response.status_code == 200
-    return response.content.decode()
-
-
 def ingest_json(*replayed: bool) -> dict[str, Any]:
     body: dict[str, Any] = engine_fixture("ingest")
     for result, flag in zip(body["results"], replayed, strict=False):
@@ -124,12 +98,6 @@ def answer_ingest(engine: FakeEngine, *, replayed: bool = False) -> None:
 def history() -> dict[str, Any]:
     found: dict[str, Any] = engine_fixture("get_history_ingested")
     return found
-
-
-def sent(engine: FakeEngine) -> dict[str, Any]:
-    (request,) = calls(engine, "POST", INGEST_PATH)
-    body: dict[str, Any] = json.loads(request.content)
-    return body
 
 
 def oob(html: str, element_id: str) -> str:
@@ -234,10 +202,11 @@ def test_a_batch_is_sent_shows_its_results_and_refetches_the_transcript(
     tab = html.split('<div id="transcript"')[0]
     assert "<h3>Results</h3>" in tab
     first = "<td><code>evt-1</code></td><td>player turn</td><td>Mara</td>"
-    assert f"{first}<td><code>{OP1}</code></td><td>1</td>" in tab
+    what = '<td class="what">—</td>'  # #260: the turn kinds have nothing in What
+    assert f"{first}{what}<td><code>{OP1}</code></td><td>1</td>" in tab
     assert (
-        f"<td><code>evt-2</code></td><td>narration</td><td>—</td><td><code>{OP2}</code></td><td>2</td>"
-        in tab
+        f"<td><code>evt-2</code></td><td>narration</td><td>—</td>{what}"
+        f"<td><code>{OP2}</code></td><td>2</td>" in tab
     )
     assert tab.count('<td class="replayed">no</td>') == 2
     assert "Timeline revision 3. Input gate: 0 model calls, 71 ms." in tab

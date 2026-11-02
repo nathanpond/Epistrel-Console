@@ -280,9 +280,6 @@ C5 first.
   batch on a paused story (a pause never refuses outcomes), but the Console keeps the Ingest
   tab disabled on archived and paused stories for every batch (#260), so an outcome can't be
   sent from the Console there. Recorded as a known Console limit, not an Engine gap.
-- **Consumer events nobody sends.** No M6 story sends `state_change` or `outcome` ingest events
-  (`IngestEvent`'s new fields). The planner confirms this is intended. #260 (provisional)
-  retires this line when it lands; until then, and if #260 is dropped, it stays.
 
 **D19 — Links to a route a later story registers (owner #235; `console/effects.py`,
 `console/world.py`).** A helper that reverses a URL name another story registers returns `None`

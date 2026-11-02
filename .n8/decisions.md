@@ -2828,3 +2828,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The from-scenario fixture is `tests/fixtures/engine/catalog_scenarios_providers.json` (beside `catalog_scenarios_detail.json`), not the plan's `m6/scenario_providers.json`. It is the `scenario()` test body with `required_providers: ["bank"]` and an external State `stock_level` naming `shop`.
   **Why:** `test_fake_engine`'s M6 table requires every `*_id` in an `m6/` file to be a ULID. The from-scenario tests' role and entity ids (`traveller`, `farmhouse`, …) aren't, and the existing tests' role-keyed helpers depend on them.
   **Issue:** #259
+- **Decision:** The ingest tab now follows D8's re-render key rule: local invalid input (the form's own checks, the States gate) and a transport/`bad_response` error keep the posted idempotency key; an answered Engine refusal and every success render a fresh one (#51 rendered a fresh key on every re-render).
+  **Why:** the story's Discretion (reconcile 2) cites D8's rule for the ingest form; a resend after an unknown outcome must replay, not write twice.
+  **Issue:** #260
+- **Decision:** `tests/play/test_ingest.py`'s results assertion gains the new What cell (`<td class="what">—</td>`) for its player-turn and narration rows, beyond the test plan's "intro line and kind options" allowance.
+  **Why:** the What column the AC adds sits between Actor and Operation id, so the existing exact-row assertion can't pass unchanged; only the cell was added.
+  **Issue:** #260
+- **Decision:** `ResultRow` gains, besides `what`, `what_url` and `turn_shown`, an `outcome` (the humanised outcome) and `from_outbox` member; for an outcome `what` holds the id so the template renders it through the `outbox_id` filter (linked when `outbox_url` resolves), then " → <Outcome>". `from_outbox` triggers D11's notice (an `effect_id` alone doesn't).
+  **Why:** the id must go through the filter while the state-change text is plain; two small members keep the template free of formatting logic.
+  **Issue:** #260
+- **Decision:** Every ingest error string (row, field, non-form and batch) now renders through `code_spans`, with the errorlist classes kept (`errorlist`, `errorlist nonfield`, `errorlist nonform`, `errorlist nonform batch`); the `module_off`/`states` Config link is a `<p class="batch-link">` after the batch errors (`IngestView.batch_link`, filled from a new `BatchErrors.link`).
+  **Why:** Discretion pass 1 (errors through `code_spans`, link as a separate line); D1/D9 reasons carry backtick spans.
+  **Issue:** #260
+- **Decision:** `resulting_values` also refuses a non-finite number that JSON parsing produces from an overflowing literal (`1e999` → `inf`), not only the `NaN`/`Infinity` constants `JsonBoxField` already refuses; key length is checked 1–80 and values bool/number/text ≤ 200 (`VALUE_INVALID` for null, objects, lists).
+  **Why:** the AC refuses non-finite numbers; `json.loads` turns `1e999` into `inf` without calling `parse_constant`.
+  **Issue:** #260
+- **Decision:** The shared ingest helpers `ingest_data`, `post_ingest` (gaining `story=`) and `sent` moved to `tests/play/helpers.py`; `snapshot()` gains `effective=`. `test_transcript_player_view.py` now imports `post_ingest` from helpers (mypy's explicit-export rule).
+  **Why:** the test plan's helper-move rule; only the helpers both files need moved.
+  **Issue:** #260
+- **Decision:** The States gate reason shows beside every row's Kind whenever the gate is closed, including `GATE_UNREAD` on a snapshot without `states.level` (M4/M5-shaped configurations).
+  **Why:** AC: "`None` values (a failed read) give `GATE_UNREAD` (C6)" and the reason is shown beside each row's Kind; outcomes and turn kinds are still sent.
+  **Issue:** #260

@@ -13,28 +13,57 @@ as sent (blank rows were dropped before sending, so ``events[i]`` is ``sent[i]``
 - ``erased_subject_referenced`` and ``guardrail_violation`` (each violation's ``locator``) →
   the row's own errors.
 
+#260 adds the ``state_change`` and ``outcome`` kinds' refusals:
+
+- ``effect_not_found``: ``details.locator`` → that row's ``outbox_id`` or ``effect_id`` (the one
+  ``details`` names), :data:`EFFECT_NOT_FOUND`;
+- the State refusals raised at the batch's commit, with ``details.state`` and no locator
+  (``state_unpermitted``, ``state_readonly_external``, ``state_derived``,
+  ``state_constraint_violation``, and ``not_found`` with ``details.state``) → the ``state``
+  field of the one sent ``state_change`` row naming that State, in D9's wording
+  (``world_refusal(exc, story_id, "ingest events", effective)``); none or several such rows →
+  above the rows. ``not_found`` without ``details.state`` places nothing (the inspector's panel);
+- a commit-time ``validation_error`` naming a State member in ``details.field`` (``state``,
+  ``scope_key``, ``value``, ``delta``, ``reason``) and no row → that field of the batch's one
+  ``state_change`` row, else above the rows;
+- ``module_off`` naming ``states`` → above the rows, D1's reason and the Config link
+  (:attr:`BatchErrors.link`);
+- ``validation_error`` with ``reason: mixed_outcomes`` → :data:`MIXED_OUTCOMES` above the rows.
+
+:func:`states_gate` is D1's ``states`` gate on a ``state_change`` row, read from the play
+page's signed snapshot (#245's ``PlayStory.states``); outcomes are never gated.
+
 Anything that names no row, or a row the batch does not have, goes to the batch's errors above
 the rows.
 """
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from django import forms
+from django.utils.safestring import SafeString
 
 from console.cast import CastMember, character_labels
+from console.effects import outbox_list_notice_html, outbox_url
 from console.engine.client import EngineError
 from console.engine.models import IngestResponse
 from console.engine_form_errors import apply_engine_errors
 from console.forms.ingest import (
     EVENTS_MAX,
+    MIXED_OUTCOMES,
     NARRATION,
+    OUTCOME,
+    STATE_CHANGE,
     BaseIngestFormSet,
     IngestEventForm,
 )
+from console.inspect import PIPELINE, SETTINGS, STATES, Unavailable, module_gate
 from console.turn_reports import spend_text, violation_rows
+from console.wording import character_label, humanised
+from console.world import signed_delta_text, world_refusal
 
 if TYPE_CHECKING:
     from console.views.play import Inspector
@@ -47,12 +76,60 @@ CONFLICT = "client_event_conflict: {id} was already ingested with a different pa
 UNKNOWN_ACTOR = "Not a character of this story: {id}."
 EVENTS = "events"
 _EVENT = re.compile(r"^(?:body\.)?events\[(?P<index>\d+)\](?:\.(?P<rest>.+))?$")
-KIND_LABELS = {"player_turn": "player turn", NARRATION: "narration"}
+KIND_LABELS = {
+    "player_turn": "player turn",
+    NARRATION: "narration",
+    STATE_CHANGE: "state change",
+    OUTCOME: "outcome",
+}
+EFFECT_NOT_FOUND = "This story has no external effect {id}."
+INGEST_VERB = "ingest events"  # D9's verb phrase for an ingest batch's refusals
+CONFIG_LINK = "Config"
+STATE_CODES = frozenset(
+    {
+        "state_unpermitted",
+        "state_readonly_external",
+        "state_derived",
+        "state_constraint_violation",
+    }
+)
+STATE_MEMBERS = frozenset({"state", "scope_key", "value", "delta", "reason"})
+
+
+class WorldSource(Protocol):
+    """What :func:`states_gate` reads from the play page's snapshot (``PlayStory``)."""
+
+    @property
+    def pipeline(self) -> str | None: ...
+
+    @property
+    def states(self) -> str | None: ...
+
+
+def world_effective(source: WorldSource) -> dict[str, Any]:
+    """The minimal effective mapping (``pipeline``, ``states.level``) the snapshot stands for,
+    each key left out when unknown (as ``console.multi_turn.effective_of`` does for #200)."""
+    effective: dict[str, Any] = {}
+    if source.pipeline is not None:
+        effective[SETTINGS[PIPELINE]] = source.pipeline
+    if source.states is not None:
+        effective["states"] = {"level": source.states}
+    return effective
+
+
+def states_gate(source: WorldSource) -> Unavailable | None:
+    """D1's ``states`` gate (at ``prompt_only``) on a ``state_change`` row; ``None``: open.
+    An unread level is ``GATE_UNREAD`` (C6)."""
+    return module_gate(STATES, world_effective(source))
 
 
 @dataclass(frozen=True)
 class ResultRow:
-    """One ingested event as the results table shows it."""
+    """One ingested event as the results table shows it. ``what``: a state change's
+    "<state> <delta or value>[ · <character>]", or an outcome's id (``outcome`` then holds
+    its humanised outcome, ``what_url`` the Reconciliation link of an outbox id); "" for the
+    turn kinds. ``turn_shown``: the Engine's turn, ``None`` ("—") for an outcome (turn 0: no
+    narrative position)."""
 
     client_event_id: str
     kind: str
@@ -60,25 +137,62 @@ class ResultRow:
     operation_id: str
     turn: int
     replayed: bool
+    turn_shown: int | None = None
+    what: str = ""
+    what_url: str | None = None
+    outcome: str = ""
+    from_outbox: bool = False
+
+
+def _value_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _state_change_text(event: dict[str, Any], names: dict[str, str]) -> str:
+    delta = event.get("delta")
+    change = signed_delta_text(delta) if delta is not None else _value_text(event.get("value"))
+    text = f"{event.get('state', '')} {change}"
+    scope = event.get("scope_key")
+    if isinstance(scope, str) and scope:
+        text += f" · {character_label(scope, names)}"
+    return text
 
 
 def result_rows(
-    response: IngestResponse, events: Sequence[dict[str, Any]], cast: Sequence[CastMember]
+    response: IngestResponse,
+    events: Sequence[dict[str, Any]],
+    cast: Sequence[CastMember],
+    story_id: str,
 ) -> tuple[ResultRow, ...]:
     """The results beside the events sent (the Engine answers in request order)."""
     labels = character_labels(cast)
     rows = []
     for index, result in enumerate(response.results):
         event = events[index] if index < len(events) else {}
+        kind = event.get("kind")
         actor_id = event.get("actor_character_id")
+        extra: dict[str, Any] = {"turn_shown": result.turn}
+        if kind == STATE_CHANGE:
+            extra["what"] = _state_change_text(event, labels)
+        elif kind == OUTCOME:
+            outbox = event.get("outbox_id")
+            shown = outbox if isinstance(outbox, str) and outbox else event.get("effect_id")
+            extra.update(
+                turn_shown=None,
+                what=str(shown or ""),
+                what_url=outbox_url(story_id, outbox),
+                outcome=humanised(str(event.get("outcome", ""))),
+                from_outbox=isinstance(outbox, str) and bool(outbox),
+            )
         rows.append(
             ResultRow(
                 result.client_event_id,
-                KIND_LABELS.get(str(event.get("kind")), str(event.get("kind", "—"))),
+                KIND_LABELS.get(str(kind), str(event.get("kind", "—"))),
                 labels.get(actor_id, actor_id) if isinstance(actor_id, str) else "",
                 result.operation_id,
                 result.turn,
                 result.replayed,
+                **extra,
             )
         )
     return tuple(rows)
@@ -91,6 +205,7 @@ class BatchErrors(forms.Form):
     def __init__(self) -> None:
         super().__init__({})
         self.is_valid()
+        self.link: tuple[str, str] | None = None  # (text, url) shown beside the batch errors
 
 
 @dataclass(frozen=True)
@@ -112,6 +227,15 @@ class IngestView:
     timeline_revision: int | None = None
     gate: str = ""
     transcript_player_view: str = ""  # #196: the transcript's requested player view
+    states_gate: Unavailable | None = None  # #260: why a state_change row can't be sent
+    batch_link: tuple[str, str] | None = None  # (text, url): a module_off refusal's Config link
+
+    @property
+    def outbox_notice(self) -> SafeString | None:
+        """D11's notice, under results naming an outbox id."""
+        if any(row.from_outbox for row in self.results):
+            return outbox_list_notice_html()
+        return None
 
     @property
     def can_add(self) -> bool:
@@ -151,10 +275,31 @@ def _details_index(details: dict[str, Any]) -> int | None:
 
 
 def place_ingest_error(
-    exc: EngineError, sent: Sequence[IngestEventForm], batch: BatchErrors
+    exc: EngineError,
+    sent: Sequence[IngestEventForm],
+    batch: BatchErrors,
+    *,
+    story_id: str = "",
+    effective: dict[str, Any] | None = None,
 ) -> int:
     """Add ``exc``'s errors to the rows ``sent`` (or ``batch``); returns how many landed on a
-    row. Call after the formset validated."""
+    row. Call after the formset validated. ``story_id`` and ``effective`` (the snapshot's
+    :func:`world_effective`) word the State refusals (D9)."""
+    if exc.code == "effect_not_found":
+        return _effect_not_found(exc, sent, batch)
+    if exc.code in STATE_CODES or (exc.code == "not_found" and _details_state(exc) is not None):
+        return _state_refusal(exc, sent, batch, story_id, effective)
+    if exc.code == "module_off":
+        if exc.details.get("module") == STATES:
+            refusal = world_refusal(exc, story_id, INGEST_VERB, effective)
+            if refusal is not None:
+                batch.add_error(None, refusal.text)
+                if refusal.url:
+                    batch.link = (CONFIG_LINK, refusal.url)
+        return 0
+    if exc.code == "validation_error" and exc.details.get("reason") == "mixed_outcomes":
+        batch.add_error(None, MIXED_OUTCOMES)
+        return 0
     if exc.code == "client_event_conflict":
         return _conflicts(exc, sent, batch)
     if exc.code == "erased_subject_referenced":
@@ -180,8 +325,59 @@ def place_ingest_error(
         batch.add_error(None, f"{exc.code}: {exc.message}")
         return 0
     if exc.code == "validation_error":
-        return _validation(exc, sent, batch)
+        return _validation(exc, sent, batch, story_id, effective)
     return 0
+
+
+def _effect_not_found(exc: EngineError, sent: Sequence[IngestEventForm], batch: BatchErrors) -> int:
+    field = next((name for name in ("outbox_id", "effect_id") if name in exc.details), None)
+    wanted = exc.details.get(field) if field is not None else None
+    message = EFFECT_NOT_FOUND.format(id=wanted if isinstance(wanted, str) and wanted else "—")
+    index = event_index(exc.details.get("locator"))
+    if index is None or index >= len(sent):
+        batch.add_error(None, message)
+        return 0
+    sent[index].add_error(field, message)
+    return 1
+
+
+def _details_state(exc: EngineError) -> str | None:
+    state = exc.details.get("state")
+    return state if isinstance(state, str) and state else None
+
+
+def _state_rows(sent: Sequence[IngestEventForm]) -> list[IngestEventForm]:
+    return [row for row in sent if row.cleaned_data.get("kind") == STATE_CHANGE]
+
+
+def _state_refusal(
+    exc: EngineError,
+    sent: Sequence[IngestEventForm],
+    batch: BatchErrors,
+    story_id: str,
+    effective: dict[str, Any] | None,
+) -> int:
+    """A commit-time State refusal: on the one ``state_change`` row naming ``details.state``
+    (exact match on the stripped name, whatever its character), else above the rows."""
+    refusal = world_refusal(exc, story_id, INGEST_VERB, effective)
+    if refusal is None:
+        return 0
+    state = _details_state(exc)
+    matching = [row for row in _state_rows(sent) if row.cleaned_data.get("state") == state]
+    if state is not None and len(matching) == 1:
+        matching[0].add_error("state", refusal.text)
+        return 1
+    batch.add_error(None, refusal.text)
+    return 0
+
+
+def _state_member(exc: EngineError) -> str | None:
+    """The State member a commit-time ``validation_error`` names (no row, no State)."""
+    field = exc.details.get("field")
+    if not isinstance(field, str) or "state" in exc.details:
+        return None
+    member = field.removeprefix("body.")
+    return member if member in STATE_MEMBERS else None
 
 
 def _violations(details: dict[str, Any]) -> list[dict[str, Any]]:
@@ -222,7 +418,19 @@ def _row_with_id(sent: Sequence[IngestEventForm], event_id: str) -> IngestEventF
     return next((row for row in sent if _id_of(row) == event_id), None)
 
 
-def _validation(exc: EngineError, sent: Sequence[IngestEventForm], batch: BatchErrors) -> int:
+def _validation(
+    exc: EngineError,
+    sent: Sequence[IngestEventForm],
+    batch: BatchErrors,
+    story_id: str = "",
+    effective: dict[str, Any] | None = None,
+) -> int:
+    member = _state_member(exc)
+    rows = _state_rows(sent)
+    if member is not None and len(rows) == 1:
+        refusal = world_refusal(exc, story_id, INGEST_VERB, effective)
+        rows[0].add_error(member, refusal.text if refusal is not None else exc.message)
+        return 1
     unknown = exc.details.get("unknown_actor")
     if isinstance(unknown, dict) and unknown:
         placed = 0

@@ -73,6 +73,7 @@ from console.forms.history import PLAYER_VIEW_CHOICES
 from console.forms.ingest import (
     EVENTS_MAX,
     INGEST_PREFIX,
+    STATE_CHANGE,
     BaseIngestFormSet,
     ingest_formset,
     new_row,
@@ -101,6 +102,8 @@ from console.ingest import (
     gate_line,
     place_ingest_error,
     result_rows,
+    states_gate,
+    world_effective,
 )
 from console.inspect import (
     MULTI_CHARACTER,
@@ -186,6 +189,14 @@ INGEST_PLACED = frozenset(
         "unsupported_event_kind",
         "erased_subject_referenced",
         "guardrail_violation",
+        # #260: the state_change and outcome refusals.
+        "effect_not_found",
+        "state_unpermitted",
+        "state_readonly_external",
+        "state_derived",
+        "state_constraint_violation",
+        "not_found",
+        "module_off",
     }
 )
 
@@ -1757,9 +1768,16 @@ def _turn_answer(
 
 
 def _ingest_view(
-    play_story: PlayStory, formset: BaseIngestFormSet, viewpoint: str, **changes: Any
+    play_story: PlayStory,
+    formset: BaseIngestFormSet,
+    viewpoint: str,
+    *,
+    key: str | None = None,
+    **changes: Any,
 ) -> IngestView:
-    """The ingest tab for ``formset``: a fresh key, disabled while the story is archived."""
+    """The ingest tab for ``formset``: a fresh key unless ``key`` (D8: the posted one, kept after
+    local invalid input or a transport error), disabled while the story is archived, with the
+    ``states`` gate (#260) beside each row's Kind."""
     archived: dict[str, Any] = {}
     if play_story.archived:
         archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE}
@@ -1769,11 +1787,25 @@ def _ingest_view(
         play_story.id,
         formset,
         play_story.signed(),
-        new_ulid(),
+        key or new_ulid(),
         viewpoint,
         FormView.timeout_s + EVENTS_MAX,
-        **{**archived, **changes},
+        **{"states_gate": states_gate(play_story), **archived, **changes},
     )
+
+
+def _states_gated(play_story: PlayStory, formset: BaseIngestFormSet) -> bool:
+    """D1 (#260): while States are off, put the reason on each sent ``state_change`` row's Kind;
+    ``True`` when any row was refused (nothing is sent)."""
+    gate = states_gate(play_story)
+    if gate is None:
+        return False
+    refused = False
+    for form in formset.sent_forms():
+        if form.cleaned_data.get("kind") == STATE_CHANGE:
+            form.add_error("kind", gate.reason)
+            refused = True
+    return refused
 
 
 def _ingest_outcome(exc: EngineClientError, key: str, placed: int, batch: BatchErrors) -> Inspector:
@@ -1813,11 +1845,11 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         view = _ingest_view(play_story, edited, viewpoint, show_errors=False, **kept)
         return _ingest_answer(request, play_story, view)
     formset = ingest_formset(play_story.cast, request.POST)
-    if not formset.is_valid():
-        view = _ingest_view(play_story, formset, viewpoint, **kept)
+    key = posted_idempotency_key(request)
+    if not formset.is_valid() or _states_gated(play_story, formset):
+        view = _ingest_view(play_story, formset, viewpoint, key=key, **kept)
         return _ingest_answer(request, play_story, view)
     events = formset.events()
-    key = posted_idempotency_key(request)
     timeout = ingest_timeout(play_story.turn_deadline, len(events))
     try:
         result = engine_client_for(request).ingest(
@@ -1827,15 +1859,24 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         log_engine_error(request, exc)
         batch = BatchErrors()
         placed = (
-            place_ingest_error(exc, formset.sent_forms(), batch)
+            place_ingest_error(
+                exc,
+                formset.sent_forms(),
+                batch,
+                story_id=story_id,
+                effective=world_effective(play_story),
+            )
             if isinstance(exc, EngineError) and exc.code in INGEST_PLACED
             else 0
         )
+        answered = isinstance(exc, EngineError) and exc.code != "bad_response"
         view = _ingest_view(
             play_story,
             formset,
             viewpoint,
+            key=None if answered else key,
             batch_errors=tuple(str(e) for e in batch.non_field_errors()),
+            batch_link=batch.link,
             outcome=_ingest_outcome(exc, key, placed, batch),
             **kept,
         )
@@ -1866,7 +1907,7 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         play_story,
         formset,
         viewpoint,
-        results=result_rows(result, events, play_story.cast),
+        results=result_rows(result, events, play_story.cast, story_id),
         timeline_revision=result.timeline_revision,
         gate=gate_line(result),
         **kept,

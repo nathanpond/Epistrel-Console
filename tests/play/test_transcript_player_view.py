@@ -31,12 +31,13 @@ from tests.play.helpers import (
     error_json,
     history_json,
     operation_json,
+    post_ingest,
     post_turn,
     respond_json,
     snapshot,
     story_json,
 )
-from tests.play.test_ingest import answer_ingest, narration, player, post_ingest
+from tests.play.test_ingest import answer_ingest, narration, player
 from tests.play.test_play_page import queued_row
 
 pytestmark = pytest.mark.django_db

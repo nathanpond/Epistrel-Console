@@ -2,12 +2,13 @@
 turn POST as the page's HTMX form sends it."""
 
 import copy
+import json
 from typing import Any
 
 from django.test import Client
 from django.urls import reverse
 
-from console.engine.models import Story
+from console.engine.models import EffectiveConfig, Story
 from console.views.play import PlayStory
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
@@ -60,10 +61,19 @@ def answer_page(
     engine.respond("GET", "/stories/{story_id}/history", 200, json=history or history_json())
 
 
-def snapshot(*, story: dict[str, Any] | None = None, turn_deadline: float | None = 45.0) -> str:
+def snapshot(
+    *,
+    story: dict[str, Any] | None = None,
+    turn_deadline: float | None = 45.0,
+    effective: dict[str, Any] | None = None,
+) -> str:
+    """The play page's signed snapshot; ``effective`` (an effective-config body, e.g.
+    ``structured_v3()``) fills its gate fields (#260)."""
     parsed = Story.from_json(story or story_json())
     assert parsed is not None
-    return PlayStory.of(parsed, turn_deadline).signed()
+    config = EffectiveConfig.from_json(effective) if effective is not None else None
+    assert effective is None or config is not None
+    return PlayStory.of(parsed, turn_deadline, config=config).signed()
 
 
 def turn_data(**fields: Any) -> dict[str, Any]:
@@ -118,3 +128,43 @@ def calls(fake: FakeEngine, method: str | None = None, path: str | None = None) 
         for r in fake.requests
         if (method is None or r.method == method) and (path is None or r.url.path == path)
     ]
+
+
+# --- the ingest tab (#51; shared with #260's tests) ------------------------------------------
+
+
+def ingest_data(*rows: dict[str, str], **fields: Any) -> dict[str, Any]:
+    """An ingest POST as the tab's form sends it."""
+    data: dict[str, Any] = {
+        "idempotency_key": KEY,
+        "snapshot": snapshot(),
+        "output_viewpoint": "default",
+        "ingest-TOTAL_FORMS": str(len(rows)),
+        "ingest-INITIAL_FORMS": "0",
+        "ingest-MIN_NUM_FORMS": "1",
+        "ingest-MAX_NUM_FORMS": "50",
+    }
+    for index, row in enumerate(rows):
+        for name, value in row.items():
+            data[f"ingest-{index}-{name}"] = value
+    data.update(fields)
+    return data
+
+
+def post_ingest(
+    client: Client, *rows: dict[str, str], htmx: bool = True, story: str = STORY, **fields: Any
+) -> str:
+    response = client.post(
+        reverse("stories:ingest", args=[story]),
+        ingest_data(*rows, **fields),
+        headers=HTMX if htmx else {},
+    )
+    assert response.status_code == 200
+    return response.content.decode()
+
+
+def sent(engine: FakeEngine, story: str = STORY) -> dict[str, Any]:
+    """The one ingest request's JSON body."""
+    (request,) = calls(engine, "POST", f"/stories/{story}/ingest")
+    body: dict[str, Any] = json.loads(request.content)
+    return body
