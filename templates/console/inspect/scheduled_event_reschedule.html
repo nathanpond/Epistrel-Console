@@ -1,0 +1,44 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags %}
+{% comment %}
+Reschedule a scheduled event (#262, console/views/inspect_scheduled_events.py's
+scheduled_event_reschedule), below the Scheduled events section (current inspect:scheduled-events).
+GET: the event's row (#244's partial, no Actions) and console.forms.scheduled_events.RescheduleForm,
+POSTing to inspect:scheduled-event-reschedule with its hidden idempotency key, D8's
+expected_revision, the signed snapshot and the shown-checkboxes marker. not_listed, settled
+(D9's event_settled sentence) and not_found / events_error end the page with no form. The submit
+is greyed with D1's reason (gate, _gated_control.html) while the clock is off. A refusal or #43's
+panel stays above the form, a field's refusal beside it; the result page
+(scheduled_event_written.html) replaces this page on success. Context: back_url, action_url, gate,
+cast_unavailable, event_name, row, form, not_listed, settled, not_found, events_error, refusal,
+refusal_url, refusal_link, write_error.
+{% endcomment %}
+{% block title %}Inspect · Reschedule {% if event_name %}{{ event_name }}{% else %}(unnamed){% endif %} · {{ story_name }}{% endblock %}
+{% block world_content %}
+<p class="events-back"><a href="{{ back_url }}">Back to Scheduled events</a></p>
+<h3 class="event-reschedule-title">Reschedule {% if event_name %}{{ event_name }}{% else %}<span class="muted">(unnamed)</span>{% endif %}</h3>
+{% if not_listed %}<p class="not-found event-not-listed">{{ not_listed }}</p>
+{% elif settled %}<p class="errorlist event-settled" role="alert">{{ settled }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif events_error %}{% include "console/_engine_error.html" with engine_error=events_error %}
+{% else %}
+{% if row %}<table class="scheduled-events">
+  {% include "console/inspect/_scheduled_event_head.html" %}
+  <tbody>
+  {% include "console/inspect/_scheduled_event_row.html" %}
+  </tbody>
+</table>{% endif %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist event-reschedule-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+{% if form %}<form method="post" action="{{ action_url }}" class="event-reschedule-form">
+  {% csrf_token %}
+  {{ form.idempotency_key }}
+  {% if form.expected_revision.value %}{{ form.expected_revision }}{% endif %}
+  {{ form.snapshot }}
+  {% if form.shared_owners_shown.value %}{{ form.shared_owners_shown }}{% endif %}
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  {% for field in form.visible %}<div class="field field-{{ field.name }}">{% if field.name == "shared_owners" %}<fieldset><legend>{{ field.label }}</legend>{{ field }}</fieldset>{% else %}{{ field.label_tag }} {{ field }}{% endif %}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<p class="errorlist">{{ error|code_spans }}</p>{% endfor %}</div>
+  {% endfor %}<p><button type="submit" class="event-reschedule-submit"{{ gate|gate_attrs:"gate-event-reschedule" }}>Reschedule</button>{% include "console/_gated_control.html" with gate=gate gate_id="gate-event-reschedule" %} <a href="{{ back_url }}">Back to Scheduled events</a></p>
+</form>{% endif %}
+{% endif %}
+{% endblock %}

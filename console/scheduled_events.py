@@ -30,6 +30,16 @@ one ``get_clock`` read. The scheduled-events list itself is never gated (D1).
 back for a ``?report=<pk>`` result page: only an ``ok`` row of one of those kinds, of this story,
 whose stored response parses as ``ScheduledEventWritten``.
 
+**Changes (#262).** :func:`row_actions` gives a row its "Reschedule" and "Cancel" links
+(:class:`RowActions`) only for a ``canon`` event that isn't ``cancelled``/``completed``, on an
+omniscient read; every other status (``unknown``, ``possibly_due``, ``missed`` …) gets both and the
+Engine decides. The links carry the omniscient read's ``timeline_revision``; Cancel's query is
+``name``/``expected_revision``/``next`` (display data the confirm page never acts on). Both are
+greyed by D1's clock gate (``gate``). :func:`find_event` finds the URL's event in a list (belief
+rows skipped: a belief isn't an event of the story). :class:`EventSnapshot` is the reschedule page's
+signed ``{story_id, event_id, name, shared_owners}`` (salt :data:`SNAPSHOT_SALT`, no max age).
+:func:`cancel_confirm` builds the cancel confirm page (``console/confirm.py``'s confirmed mode).
+
 The viewpoint line is D4's ``console.world.viewpoint_line`` with this section's two notes
 (:data:`EVENTS_NOTE`, :data:`EVENTS_OMNISCIENT_NOTE`); it is never redefined here (D17).
 """
@@ -37,17 +47,20 @@ The viewpoint line is D4's ``console.world.viewpoint_line`` with this section's 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
+from django.core import signing
 from django.urls import NoReverseMatch, reverse
 
 from console.cast import OMNISCIENT
+from console.confirm import ConfirmPage
 from console.engine.models import ScheduledEvent, ScheduledEventWritten, WorldClock
 from console.engine_errors import EMPTY
-from console.inspect import CLOCK, PARTITIONS, SCHEDULED_STOPS, m5_gate, m6_gate
+from console.inspect import CLOCK, PARTITIONS, SCHEDULED_STOPS, Unavailable, m5_gate, m6_gate
 from console.models import EngineOperation
 from console.states import viewpoint_label
 from console.wording import character_label, humanised
-from console.world import offset_text
+from console.world import EXPECTED_REVISION_FIELD, offset_text
 
 CANON = "canon"
 BELIEF = "belief"
@@ -324,3 +337,148 @@ def written_row(pk: object, story_id: str) -> tuple[EngineOperation, ScheduledEv
     if parsed is None:
         return None
     return row, parsed
+
+
+# --- reschedule and cancel (#262) ----------------------------------------------------------------
+
+SETTLED_STATUSES = frozenset({"cancelled", "completed"})
+SNAPSHOT_SALT = "console.inspect.scheduled_event"
+NOT_LISTED = "This event is no longer listed — reload the list"
+NO_CHANGES = "No changes — nothing was sent."
+CANCEL_TITLE = "Cancel a scheduled event"
+CANCEL_QUESTION = "Cancel the scheduled event {name}?"
+CANCEL_UNNAMED = "this event"
+CANCEL_LINES: tuple[str, ...] = (
+    "It becomes cancelled and never stops the clock.",
+    "A cancelled event can't be rescheduled; rewinding the story to before this slot undoes it.",
+)
+CANCEL_LABEL = "Cancel the event"
+CANCELLED_FLASH = "Cancelled “{name}” — operation {operation}, story revision now {revision}"
+
+
+@dataclass(frozen=True)
+class RowActions:
+    """One changeable row's links, and D1's clock gate (``None``: open) that greys both."""
+
+    reschedule_url: str
+    cancel_url: str
+    gate: Unavailable | None
+
+
+def reschedule_url(story_id: str, event_id: str) -> str:
+    return reverse("inspect:scheduled-event-reschedule", args=[story_id, event_id])
+
+
+def cancel_url(story_id: str, event_id: str) -> str:
+    return reverse("inspect:scheduled-event-cancel", args=[story_id, event_id])
+
+
+def changeable(event: ScheduledEvent) -> bool:
+    """A canon event that isn't settled (``cancelled``/``completed``)."""
+    return event.label == CANON and event.status not in SETTLED_STATUSES
+
+
+def row_actions(
+    event: ScheduledEvent,
+    story_id: str,
+    revision: int,
+    gate: Unavailable | None,
+    omniscient: bool,
+    *,
+    next_url: str,
+) -> RowActions | None:
+    """The row's Reschedule and Cancel links, or ``None`` (a character's view, a belief, a
+    settled event). Cancel carries ``?name=&expected_revision=&next=`` (``next_url``: the
+    section's own URL)."""
+    if not omniscient or not changeable(event):
+        return None
+    query = urlencode(
+        {"name": event.name or "", EXPECTED_REVISION_FIELD: revision, "next": next_url}
+    )
+    return RowActions(
+        reschedule_url=reschedule_url(story_id, event.event_id),
+        cancel_url=f"{cancel_url(story_id, event.event_id)}?{query}",
+        gate=gate,
+    )
+
+
+def find_event(events: Iterable[ScheduledEvent], event_id: str) -> ScheduledEvent | None:
+    """The canon event ``event_id`` in an (omniscient) list; belief rows never match."""
+    for event in events:
+        if event.event_id == event_id and event.label != BELIEF:
+            return event
+    return None
+
+
+@dataclass(frozen=True)
+class EventSnapshot:
+    """What the reschedule form rendered from, signed into the page."""
+
+    story_id: str
+    event_id: str
+    name: str | None
+    shared_owners: tuple[str, ...]
+
+    @classmethod
+    def of(cls, story_id: str, event: ScheduledEvent) -> EventSnapshot:
+        return cls(story_id, event.event_id, event.name or None, tuple(event.shared_owners))
+
+    def signed(self) -> str:
+        raw = {
+            "story_id": self.story_id,
+            "event_id": self.event_id,
+            "name": self.name,
+            "shared_owners": list(self.shared_owners),
+        }
+        return signing.dumps(raw, salt=SNAPSHOT_SALT, compress=True)
+
+    @classmethod
+    def unsigned(cls, value: str | None, story_id: str, event_id: str) -> EventSnapshot | None:
+        """The posted snapshot, or ``None`` when it is missing, tampered with, malformed or of
+        another story or event."""
+        try:
+            raw = signing.loads(value or "", salt=SNAPSHOT_SALT)
+        except signing.BadSignature:
+            return None
+        if not isinstance(raw, dict):
+            return None
+        if raw.get("story_id") != story_id or raw.get("event_id") != event_id:
+            return None
+        name = raw.get("name")
+        owners = raw.get("shared_owners")
+        if name is not None and not isinstance(name, str):
+            return None
+        if not isinstance(owners, list) or not all(isinstance(o, str) for o in owners):
+            return None
+        return cls(story_id, event_id, name or None, tuple(owners))
+
+
+def cancel_confirm(
+    story_id: str, event_id: str, name: str, data: Mapping[str, Any], cancel: str
+) -> ConfirmPage:
+    """The ``inspect:scheduled-event-cancel`` confirm page: ``name`` is display-only
+    (``confirm.shown_name``), ``data`` the GET or POST carrying ``expected_revision``."""
+    hidden = {"name": name}
+    revision = data.get(EXPECTED_REVISION_FIELD)
+    if isinstance(revision, str) and revision:
+        hidden[EXPECTED_REVISION_FIELD] = revision  # carried as given (no local check)
+    return ConfirmPage(
+        title=CANCEL_TITLE,
+        question=CANCEL_QUESTION,
+        emphasis=name or CANCEL_UNNAMED,
+        confirm_label=CANCEL_LABEL,
+        cancel_url=cancel,
+        lines=CANCEL_LINES,
+        facts=(("Event id", event_id), ("Story id", story_id)),
+        hidden=hidden,
+        danger=True,
+    )
+
+
+def cancelled_flash(name: str | None, answer: ScheduledEventWritten) -> str:
+    """The no-#44-row fallback flash after a cancel."""
+    return (
+        CANCELLED_FLASH.replace("{name}", name or UNNAMED)
+        .replace("{operation}", answer.operation_id or EMPTY)
+        .replace("{revision}", str(answer.timeline_revision))
+    )

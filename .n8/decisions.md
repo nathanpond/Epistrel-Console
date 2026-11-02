@@ -2867,3 +2867,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 3) #242's three `test_states.py` assertions that pinned the empty `states_header_actions` hook (`<p class="states-count">4 States</p>`) now expect the count followed by the "Declare a State…" link.
   **Why:** this story fills that hook by design; the count text is still asserted.
   **Issue:** #261
+- **Decision:** The Scheduled events list shows the Actions column on every successful read (an empty cell for a character's view, a belief or a settled event), not only on the omniscient view.
+  **Why:** AC says "A character view shows no actions" and "A belief row's Actions cell is empty"; belief rows appear only in character views, so the column must exist there too; a stable table shape.
+  **Issue:** #262
+- **Decision:** `row_actions(event, story_id, revision, gate, omniscient, *, next_url)` takes the section's `get_full_path()` as a keyword `next_url` beyond the planned signature.
+  **Why:** the Cancel link's `next` is the section's own URL, which only the view knows.
+  **Issue:** #262
+- **Decision:** D9's `event_settled` sentence moved into `console.world.event_settled_text(status)`, which `_validation_refusal` now calls; the reschedule GET (a listed cancelled/completed event) uses the same helper.
+  **Why:** D17: one wording, never redefined; the GET and the refusal must read byte-for-byte the same.
+  **Issue:** #262
+- **Decision:** `RescheduleForm` renders a hidden `shared_owners_shown=1` with its checkboxes; a POST without it never sends `shared_owners`, and a POST with it whose shell story read failed refuses (no PATCH) when the posted set differs from the snapshot's ("Your shared-owner choices couldn't be checked; reload and try again", with `CAST_UNAVAILABLE`).
+  **Why:** checkboxes can't tell "unticked every one" from "not rendered" (a GET whose story read failed); without the marker a Planned-only POST would send `[]`. Discretion pass 2's rec (#253's rule) for the POST-side read failure.
+  **Issue:** #262
+- **Decision:** The reschedule POST checks the gate, then the snapshot (re-reading the omniscient list once when it is missing, bad or foreign), then validates the form; the AC lists form validation before the snapshot step.
+  **Why:** the form's choices need the snapshot's current owners (a kept outside-cast owner is a valid choice only then); the re-read is a read, never a write, so "an invalid form makes no call" (no PATCH) still holds.
+  **Issue:** #262
+- **Decision:** A gate-closed reschedule POST re-renders the bound form (field errors may show) with the posted key and revision, the submit greyed; it makes neither the events read nor the PATCH.
+  **Why:** D8's Gates rule and Discretion pass 2; no read is needed to say the clock is off.
+  **Issue:** #262
+- **Decision:** A cancel refusal D9 doesn't word reads `panel_for(exc).headline` plus " — <message>" when the Engine sent one; a cancel transport failure or `bad_response` shows #43's panel above the confirm page with the posted key.
+  **Why:** AC "anything else → `panel_for(exc).headline` (with code and message when set)"; the headline already names status and code.
+  **Issue:** #262
+- **Decision:** (Rule 3) #244's `test_column_order` now expects the "Actions" header and `actions` cell; its `'class="actions"' not in html` assertion is dropped.
+  **Why:** this story fills the hook #244 left empty, by design.
+  **Issue:** #262
+- **Decision:** Fixtures: "the dinner" is `01JM6EV0000000000000000005` (owner author, Mara and Bob taking part); `scheduled_event_rescheduled.json` pending at 1200 shared with nobody (operation `…QP…42`), `scheduled_event_cancelled.json` cancelled at 1140 with Bob kept (`…QP…43`), both revision 13. The tests add the dinner (pending at 1140, shared with Bob) to `m6/scheduled_events.json` inline.
+  **Why:** Discretion's fixture shapes and D16's id prefixes; `…05` is the next free event id.
+  **Issue:** #262

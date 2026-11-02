@@ -210,6 +210,16 @@ M6_FIXTURES = {
         "/stories/{story_id}/scheduled-events",
         201,
     ),  # #253
+    "scheduled_event_rescheduled": (
+        "PATCH",
+        "/stories/{story_id}/scheduled-events/{event_id}",
+        200,
+    ),  # #262
+    "scheduled_event_cancelled": (
+        "DELETE",
+        "/stories/{story_id}/scheduled-events/{event_id}",
+        200,
+    ),  # #262
     "providers": ("GET", "/admin/external-providers", 200),
     "provider": ("GET", "/admin/external-providers/{name}", 200),
     "provider_mutation": ("POST", "/admin/external-providers", 201),

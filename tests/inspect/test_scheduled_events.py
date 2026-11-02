@@ -266,6 +266,7 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
         "Grace",
         "Stopped the clock",
         "Confidence",
+        "Actions",
         "More",
     ]
     cells = re.findall(r'<td class="([a-z]+)">', row(html, event_id(1)))
@@ -281,9 +282,9 @@ def test_column_order(operator_client: Client, engine: FakeEngine) -> None:
         "grace",
         "stopped",
         "confidence",
+        "actions",
         "more",
     ]
-    assert 'class="actions"' not in html
 
 
 def test_actions_hook_renders_a_column() -> None:

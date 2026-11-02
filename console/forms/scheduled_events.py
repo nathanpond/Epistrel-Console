@@ -24,6 +24,14 @@
 No HTML ``min``/``max``/``maxlength`` (C10). :meth:`ScheduledEventForm.body` is ``{proposition,
 planned}`` plus each optional member only when given (convention 5: never ``null`` or ``[]``),
 character lists in cast order.
+
+:class:`RescheduleForm` (#262) is ``PATCH …/scheduled-events/{event_id}``'s
+``ScheduledEventReschedule``: an optional ``planned`` (blank keeps the time) and the
+``shared_owners`` checkboxes, initially the event's own (``current``); a current owner outside the
+cast stays as one more option, "<short id> (not in the cast)" (C13). The rendered checkboxes are
+marked by the hidden :data:`SHOWN_FIELD`, so a form rendered without them (the story read failed)
+never sends a shared-owner change. :meth:`RescheduleForm.changes` gives the client's keyword
+arguments: only what differs from the signed snapshot, the shared owners compared as a set (C9).
 """
 
 from collections.abc import Sequence
@@ -33,8 +41,10 @@ from django import forms
 
 from console.cast import Character, character_choices
 from console.confirm import KEY_FIELD
+from console.forms.scenario import keep_order
 from console.forms.world import PlannedField
 from console.ids import is_ulid, new_ulid
+from console.inspect import short_id
 from console.wording import UNKNOWN_CHARACTER
 from console.world import EXPECTED_REVISION_FIELD
 
@@ -187,3 +197,95 @@ class ScheduledEventForm(forms.Form):
         if shared:
             body["shared_owners"] = self._in_cast_order(shared)
         return body
+
+
+# --- reschedule (#262) ---------------------------------------------------------------------------
+
+SNAPSHOT_FIELD = "snapshot"
+SHOWN_FIELD = "shared_owners_shown"
+RESCHEDULE_PLANNED_HELP = (
+    "Blank keeps its time. A new time makes it pending again, and it may stop the clock once more"
+)
+NOT_IN_CAST = "{id} (not in the cast)"
+SHARED_UNCHECKED = "Your shared-owner choices couldn't be checked; reload and try again"
+RESCHEDULE_HIDDEN = (KEY_FIELD, EXPECTED_REVISION_FIELD, SNAPSHOT_FIELD, SHOWN_FIELD)
+
+
+class RescheduleForm(forms.Form):
+    """The Reschedule form (module docstring)."""
+
+    planned = PlannedField(label="Planned", required=False, help_text=RESCHEDULE_PLANNED_HELP)
+    shared_owners = _CharactersField(label="Shared with", help_text=SHARED_HELP)
+    idempotency_key = forms.CharField(required=False, widget=forms.HiddenInput)
+    expected_revision = forms.CharField(required=False, widget=forms.HiddenInput)
+    snapshot = forms.CharField(required=False, widget=forms.HiddenInput)
+    shared_owners_shown = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    def __init__(
+        self,
+        data: Any = None,
+        *,
+        cast: Sequence[Character] | None,
+        current: Sequence[str],
+        initial_revision: int | None = None,
+        snapshot: str = "",
+        idempotency_key: str | None = None,
+    ) -> None:
+        initial: dict[str, Any] = {
+            KEY_FIELD: idempotency_key or new_ulid(),  # #43: a fresh key per render
+            EXPECTED_REVISION_FIELD: "" if initial_revision is None else str(initial_revision),
+            SNAPSHOT_FIELD: snapshot,
+            SHOWN_FIELD: "" if cast is None else "1",
+            "shared_owners": list(current),
+        }
+        super().__init__(data, initial=initial)
+        self.cast = cast
+        self.current = tuple(current)
+        if cast is None:
+            del self.fields["shared_owners"]
+            return
+        choices = cast_choices(cast)
+        known = {cid for cid, _ in choices}
+        extras = [cid for cid in dict.fromkeys(current) if cid not in known]
+        choices += [(cid, NOT_IN_CAST.replace("{id}", short_id(cid))) for cid in extras]
+        field = self.fields["shared_owners"]
+        if isinstance(field, forms.MultipleChoiceField):
+            field.choices = choices
+        self.choice_order = [cid for cid, _ in choices]
+
+    def visible(self) -> list[forms.BoundField]:
+        """The visible fields, in page order."""
+        return [self[name] for name in self.fields if name not in RESCHEDULE_HIDDEN]
+
+    def _shown(self) -> bool:
+        """Whether the page this POST came from rendered the shared-owner checkboxes."""
+        return self.data is not None and self.data.get(SHOWN_FIELD) == "1"
+
+    def _posted_owners(self) -> list[str]:
+        getlist = getattr(self.data, "getlist", None)
+        values = getlist("shared_owners") if getlist is not None else []
+        return [v for v in values if isinstance(v, str) and v.strip()]
+
+    def clean(self) -> dict[str, Any]:
+        cleaned: dict[str, Any] = super().clean() or {}
+        if self.cast is None and self._shown() and set(self._posted_owners()) != set(self.current):
+            raise forms.ValidationError(SHARED_UNCHECKED, code="cast_unchecked")
+        return cleaned
+
+    def changes(self, snapshot_owners: Sequence[str]) -> dict[str, Any]:
+        """The ``reschedule_scheduled_event`` keyword arguments (call after ``is_valid()``):
+        ``planned`` when given; ``shared_owners`` only when the ticked set differs from
+        ``snapshot_owners``, in their order with new ones appended in choice order (``[]`` when
+        every one is unticked). ``{}``: nothing to send."""
+        data = self.cleaned_data
+        changes: dict[str, Any] = {}
+        if data.get("planned") is not None:
+            changes["planned"] = data["planned"]
+        if self.cast is None or not self._shown() or "shared_owners" not in data:
+            return changes
+        ticked: list[str] = data.get("shared_owners") or []
+        if set(ticked) != set(snapshot_owners):
+            order = {cid: i for i, cid in enumerate(self.choice_order)}
+            in_order = sorted(ticked, key=lambda cid: order.get(cid, len(order)))
+            changes["shared_owners"] = keep_order(snapshot_owners, in_order)
+        return changes

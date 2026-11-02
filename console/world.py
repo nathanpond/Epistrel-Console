@@ -701,6 +701,14 @@ def settle_reason_text(code: Any) -> str:
     return _code_span(code)
 
 
+def event_settled_text(status: str | None) -> str:
+    """D9's ``event_settled`` sentence: "This event is already cancelled — it can't be changed"
+    ("settled" when the status is unknown); #262's reschedule GET says it for a listed cancelled
+    or completed event too."""
+    shown = humanised(status).lower() if status else "settled"
+    return f"This event is already {shown} — it can't be changed"
+
+
 def state_not_found_text(state: str) -> str:
     """ "This story has no State “silver”"."""
     return STATE_NOT_FOUND.replace("{state}", state)
@@ -879,9 +887,7 @@ def _validation_refusal(
             f"{humanised(placed)} can't change once a State is declared", field=placed
         )
     if reason == "event_settled":
-        status = _string(details, "status")
-        shown = humanised(status).lower() if status is not None else "settled"
-        return WorldRefusal(f"This event is already {shown} — it can't be changed", field=placed)
+        return WorldRefusal(event_settled_text(_string(details, "status")), field=placed)
     if reason == "unknown_character":
         return WorldRefusal(UNKNOWN_CHARACTER, field=placed)
     if reason == "unknown_place":

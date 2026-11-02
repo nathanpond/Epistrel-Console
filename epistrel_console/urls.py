@@ -292,6 +292,17 @@ inspect_patterns = (
             inspect_scheduled_events.scheduled_event_written,
             name="scheduled-event-written",
         ),
+        # #262: reschedule (form) or cancel (confirm page) an existing canon event.
+        path(
+            "world/scheduled-events/<ulid:event_id>/reschedule/",
+            inspect_scheduled_events.scheduled_event_reschedule,
+            name="scheduled-event-reschedule",
+        ),
+        path(
+            "world/scheduled-events/<ulid:event_id>/cancel/",
+            inspect_scheduled_events.scheduled_event_cancel,
+            name="scheduled-event-cancel",
+        ),
         # #248: the External values section (what providers answered, and the facts citing it).
         path(
             "world/external-values/",
