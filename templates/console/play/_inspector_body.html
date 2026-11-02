@@ -31,7 +31,7 @@
   <dt>Timeline revision</dt><dd>{{ inspector.timeline_revision|default_if_none:"—" }}</dd>
   <dt>Config revision</dt><dd>{{ inspector.config_revision|default_if_none:"—" }}</dd>
   <dt>Idempotency key</dt><dd>{% if inspector.idempotency_key %}<code>{{ inspector.idempotency_key }}</code>{% else %}—{% endif %}</dd>
-  {% if inspector.operation_id %}<dt>Engine operation</dt><dd><code>{{ inspector.operation_id }}</code>{% if inspector.log_pk %} — <a href="{% url 'operations:detail' inspector.log_pk %}">operation log</a>{% endif %}</dd>{% endif %}
+  {% if inspector.operation_id %}<dt>Engine operation</dt><dd><code>{{ inspector.operation_id }}</code>{% if inspector.log_pk %} — <a href="{% url 'operations:detail' inspector.log_pk %}">operation log</a>{% endif %}{% if inspector.engine_url %} — <a class="engine-record-link" href="{{ inspector.engine_url }}">Engine record</a>{% endif %}</dd>{% endif %}
   {% if inspector.explain_url or inspector.history_url %}<dt>Retrieval</dt><dd>{% include "console/play/_explain_link.html" %}</dd>{% endif %}
   {% if inspector.perception_url %}<dt>Perception</dt><dd><a class="perception-link" href="{{ inspector.perception_url }}">Perception trace</a></dd>{% endif %}
 </dl>

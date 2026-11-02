@@ -615,7 +615,8 @@ def test_incomplete_turn_is_badged(operator_client: Client, engine: FakeEngine) 
     serve(engine, incomplete=True)
     transcript = transcript_of(operator_client.get(PLAY).content.decode())
     assert transcript.count('class="badge incomplete"') == 1
-    assert re.search(r">T4</a> " + re.escape(BADGE), transcript)
+    # The real urlconf links it to the Engine operation page (#250).
+    assert re.search(r">T4</a> <a href=\"[^\"]+\">" + re.escape(BADGE), transcript)
     # **Complement:** get_history.json (no ``incomplete``) has no badge.
     engine.reset()
     serve(engine)
@@ -632,10 +633,21 @@ def test_incomplete_badge_links_the_engine_operation_once_registered(
     assert transcript.count("badge incomplete") == 1
 
 
+def test_incomplete_badge_links_the_real_engine_operation_page(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#250 registered ``operations:engine``: the real urlconf links the badge."""
+    serve(engine, incomplete=True)
+    transcript = transcript_of(operator_client.get(PLAY).content.decode())
+    assert f'>T4</a> <a href="/operations/engine/{OP}/">{BADGE}</a>' in transcript
+
+
+@override_settings(ROOT_URLCONF="tests.urls_without_engine_operation")
 def test_incomplete_badge_is_plain_text_before_the_operation_page(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """**Complement:** under the real urlconf (before #250) the badge is unlinked (D19)."""
+    """**Complement:** under a urlconf lacking ``operations:engine`` (#250) the badge is
+    unlinked (D19)."""
     serve(engine, incomplete=True)
     transcript = transcript_of(operator_client.get(PLAY).content.decode())
     assert f">T4</a> {BADGE}" in transcript

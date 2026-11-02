@@ -7,10 +7,13 @@ from typing import Any
 import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
+from django.utils.html import escape
 
+from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE
 from console.engine.client import EngineClient
+from console.engine.models import OperationRecord
 from console.engine_access import engine_client_for
-from console.inspect import short_id
+from console.inspect import history_turn_url, short_id
 from console.models import EngineOperation
 from console.views import operations as views
 from tests.fakes.engine import FakeEngine
@@ -20,6 +23,9 @@ STORY_A = "01JA0000000000000000000STA"
 STORY_B = "01JA0000000000000000000STB"
 TURN_OP = "01JA0000000000000000000OP3"
 SCOPE = "Operations performed by this Console. Other Engine clients' operations are not shown."
+STAGED_OP = "01JM6QP0000000000000000001"  # m6/operation_staged.json (#250)
+INCOMPLETE_OP = "01JM6QP0000000000000000002"  # m6/operation_staged_incomplete.json
+M6_STORY = "01JM6ST0000000000000000001"
 
 pytestmark = pytest.mark.django_db
 
@@ -95,7 +101,7 @@ def rows(operator: Any) -> dict[str, EngineOperation]:
 
 
 def test_anonymous_access_redirects_to_login(client: Client) -> None:
-    for path in ("/operations/", "/operations/1/"):
+    for path in ("/operations/", "/operations/1/", f"/operations/engine/{STAGED_OP}/"):
         response = client.get(path)
         assert response.status_code == 302
         assert response["Location"].startswith("/accounts/login/")
@@ -561,3 +567,284 @@ def test_the_detail_shows_entity_and_job(
     # #76 built the principal pages: the principal links to its page.
     principal = '<a href="/principals/alice/"><code>alice</code></a>'
     assert f"<dt>Principal</dt><dd>{principal}</dd>" in html
+
+
+# --- the stages partial and the Engine operation page (#250) --------------------------------------
+
+STAGE_NAMES = ("Intent", "Claim", "Outcome", "Completion", "Response")
+BADGE = f'<span class="badge incomplete" title="{INCOMPLETE_TITLE}">{INCOMPLETE_TEXT}</span>'
+ENGINE_SCOPE = (
+    "The Engine&#x27;s record of one operation. Results aren&#x27;t shown here: open the "
+    "operation-log entry and Fetch from Engine for a turn&#x27;s stored result."
+)
+
+
+def m6_operation(name: str) -> dict[str, Any]:
+    record: dict[str, Any] = engine_fixture(f"m6/{name}")
+    return record
+
+
+def engine_view(html: str) -> str:
+    return html.split("<h2>Engine's view</h2>", 1)[1]
+
+
+def stage_cells(html: str) -> list[list[str]]:
+    table = html.split('<table class="stages">', 1)[1].split("</table>", 1)[0]
+    rows = re.findall(r'<tr class="stage[^"]*">(.*?)</tr>', table, re.S)
+    return [re.findall(r"<td[^>]*>(.*?)</td>", row, re.S) for row in rows]
+
+
+def fetched_html(client: Client, fake: FakeEngine, record: dict[str, Any]) -> str:
+    fake.respond("GET", "/operations/{operation_id}", 200, json=record)
+    row = make_row(engine_operation_id=record["id"])
+    response = client.get(f"/operations/{row.pk}/?fetch=1")
+    assert response.status_code == 200
+    return engine_view(response.content.decode())
+
+
+def test_engine_view_shows_staged_stages(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    section = fetched_html(operator_client, fetch_engine, m6_operation("operation_staged"))
+    assert '<p class="operation-label">Label: <span title="staged_turn">Staged turn</span>' in (
+        section
+    )
+    assert "<dt>Stages</dt><dd>" in section
+    assert section.index("<dt>Config revisions</dt>") < section.index("<dt>Stages</dt>")
+    cells = stage_cells(section)
+    assert [re.sub(r"<[^>]+>", "", c[0]) for c in cells] == list(STAGE_NAMES)
+    assert [c[1] for c in cells] == ["Done"] * 5
+    assert [c[3] for c in cells] == [f"revision {n}" for n in (4, 4, 5, 6, 6)]
+    assert cells[2][3] == "revision 5"  # Outcome
+    assert '<td title="outcome">Outcome</td><td title="done">Done</td>' in section
+    assert '<time datetime="2026-11-01T10:00:02Z"' in cells[2][2]
+    assert "<th>Revision</th>" in section
+    # **Complement:** a finished staged turn carries no Incomplete badge.
+    assert "badge incomplete" not in section
+
+
+def test_engine_view_marks_an_incomplete_staged_turn(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    record = m6_operation("operation_staged_incomplete")
+    section = fetched_html(operator_client, fetch_engine, record)
+    assert f"Staged turn</span> {BADGE}</p>" in section
+    cells = stage_cells(section)
+    assert [c[1] for c in cells] == ["Done", "Done", "Running", "Pending", "Pending"]
+    assert cells[3][2:] == ["—", "—"]  # pending: no time, no revision
+    assert cells[4][2:] == ["—", "—"]
+    assert cells[2][3] == "—"  # running, not yet committed
+    assert cells[1][3] == "revision 4"
+
+
+def test_engine_view_shows_a_rating_checks_stages_without_revision(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    record = engine_fixture("get_operation")
+    record.update(
+        label="rating_check",
+        stages=[
+            {"name": "queued", "status": "done", "at": "2026-10-24T12:00:00Z"},
+            {"name": "checking", "status": "running", "at": "2026-10-24T12:00:01Z"},
+        ],
+    )
+    section = fetched_html(operator_client, fetch_engine, record)
+    assert 'Label: <span title="rating_check">Rating check</span>' in section
+    cells = stage_cells(section)
+    assert [c[1] for c in cells] == ["Done", "Running"]
+    # **Complement:** no Revision column, and no badge (not a staged turn).
+    assert "<th>Revision</th>" not in section
+    assert all(len(c) == 3 for c in cells)
+    assert "badge incomplete" not in section
+
+
+def test_engine_view_without_label_reads_dash(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    section = fetched_html(operator_client, fetch_engine, engine_fixture("get_operation"))
+    assert '<p class="operation-label">Label: —</p>' in section
+    assert '<table class="stages">' not in section
+    assert "<h3>Stages</h3>" not in section
+
+
+@pytest.fixture
+def engine_page(fetch_engine: FakeEngine) -> FakeEngine:
+    fetch_engine.respond(
+        "GET", "/operations/{operation_id}", 200, json=m6_operation("operation_staged")
+    )
+    return fetch_engine
+
+
+def test_engine_page_reads_once_and_records_nothing(
+    operator_client: Client, operator: Any, engine_page: FakeEngine
+) -> None:
+    before = EngineOperation.objects.count()
+    response = operator_client.get(f"/operations/engine/{STAGED_OP}/")
+    assert response.status_code == 200
+    (sent,) = engine_page.requests
+    assert sent.method == "GET"
+    assert sent.url.path == f"/operations/{STAGED_OP}"
+    assert "viewpoint" not in sent.url.params
+    # **Complement:** a read, never recorded.
+    assert EngineOperation.objects.count() == before
+    html = response.content.decode()
+    assert f"<title>Engine operation {STAGED_OP} — Epistrel Console</title>" in html
+    assert f"Engine operation <code>{STAGED_OP}</code>" in html
+    assert ENGINE_SCOPE in html
+    section = engine_view(html)
+    assert '<dt>Status</dt><dd><span title="committed">Committed</span></dd>' in section
+    assert "<dt>Kind</dt><dd><code>play_turn</code></dd>" in section
+    assert f'href="/stories/{M6_STORY}/"><code>{M6_STORY}</code></a>' in section
+    turn_url = history_turn_url(M6_STORY, 12, 1)
+    assert f'<a class="turn-link" href="{escape(turn_url)}">Turn 12 · variant 1</a>' in section
+    assert "<dt>Timeline revision</dt><dd>6</dd>" in section
+    assert '<dt>Origin</dt><dd><span title="generated">Generated</span></dd>' in section
+    assert "<dt>Started</dt><dd><time" in section
+    assert "<dt>Committed</dt><dd><time" in section
+    assert [re.sub(r"<[^>]+>", "", c[0]) for c in stage_cells(section)] == list(STAGE_NAMES)
+    # Only the listed fields: no result on this page.
+    assert "<dt>Result</dt>" not in section
+    assert "<dt>Config revisions</dt>" not in section
+
+
+def test_engine_page_turn_without_variant_or_story(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    record = m6_operation("operation_staged")
+    record.update(turn_variant=None, story_id=None, origin="")
+    fetch_engine.respond("GET", "/operations/{operation_id}", 200, json=record)
+    section = engine_view(operator_client.get(f"/operations/engine/{STAGED_OP}/").content.decode())
+    assert "<dt>Turn</dt><dd>Turn 12 · variant —</dd>" in section  # no story: unlinked
+    assert "<dt>Story</dt><dd>—</dd>" in section
+    assert "<dt>Origin</dt><dd>—</dd>" in section
+
+
+def test_engine_page_lists_this_consoles_rows(
+    operator_client: Client, operator: Any, engine_page: FakeEngine
+) -> None:
+    older = make_row(engine_operation_id=STAGED_OP, kind="respond")
+    newer = make_row(engine_operation_id=STAGED_OP, kind="regenerate")
+    make_row(engine_operation_id=INCOMPLETE_OP)  # another operation's row: not listed
+    html = operator_client.get(f"/operations/engine/{STAGED_OP}/").content.decode()
+    log = html.split("<h2>This Console's log</h2>", 1)[1]
+    links = re.findall(r'<a class="log-link" href="/operations/(\d+)/"><code>(\w+)</code> · ', log)
+    assert links == [(str(newer.pk), "regenerate"), (str(older.pk), "respond")]
+    assert "No entry in this Console" not in log
+    # With none: the "No entry" line.
+    engine_page.respond(
+        "GET", "/operations/{operation_id}", 200, json=m6_operation("operation_staged_incomplete")
+    )
+    html = operator_client.get(f"/operations/engine/{INCOMPLETE_OP[:-1]}3/").content.decode()
+    assert (
+        "No entry in this Console&#x27;s log — another client made it, or it was one of a "
+        "batch&#x27;s later events."
+    ) in html
+    assert 'class="log-link"' not in html
+
+
+def test_engine_page_lowercase_id_is_normalised(
+    operator_client: Client, operator: Any, engine_page: FakeEngine
+) -> None:
+    make_row(engine_operation_id=STAGED_OP)
+    response = operator_client.get(f"/operations/engine/{STAGED_OP.lower()}/")
+    assert response.status_code == 200
+    (sent,) = engine_page.requests
+    assert sent.url.path == f"/operations/{STAGED_OP}"
+    html = response.content.decode()
+    assert f"Engine operation <code>{STAGED_OP}</code>" in html
+    assert 'class="log-link"' in html
+
+
+@pytest.mark.parametrize("bad", ["not-an-id", "01JM6QP000000000000000000O", "01JM6QP00001"])
+def test_engine_page_malformed_id_is_404_with_no_call(
+    operator_client: Client, operator: Any, engine_page: FakeEngine, bad: str
+) -> None:
+    response = operator_client.get(f"/operations/engine/{bad}/")
+    assert response.status_code == 404
+    html = response.content.decode()
+    assert "Not found (that isn&#x27;t an operation id)" in html
+    assert ENGINE_SCOPE in html
+    assert "Engine operation <code>" in html
+    # **Complement:** the fake's call log is empty.
+    assert engine_page.requests == []
+
+
+def test_engine_page_malformed_id_is_escaped(
+    operator_client: Client, operator: Any, engine_page: FakeEngine
+) -> None:
+    response = operator_client.get("/operations/engine/%3Cb%3Ex/")
+    assert response.status_code == 404
+    html = response.content.decode()
+    assert "<code>&lt;b&gt;x</code>" in html
+    assert "<b>x" not in html
+    assert engine_page.requests == []
+
+
+def test_engine_page_404_and_503(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    row = make_row(engine_operation_id=STAGED_OP)
+    url = f"/operations/engine/{STAGED_OP}/"
+
+    def error(status: int, code: str, **headers: str) -> None:
+        body = {"error": {"code": code, "message": "nope", "details": {}}}
+        fetch_engine.reset()
+        fetch_engine.respond(
+            "GET", "/operations/{operation_id}", status, json=body, headers=headers
+        )
+
+    error(404, "not_found")
+    response = operator_client.get(url)
+    assert response.status_code == 404
+    html = response.content.decode()
+    assert f"The Engine has no operation {STAGED_OP}" in html
+    assert ENGINE_SCOPE in html  # the frame keeps rendering
+    assert f'href="/operations/{row.pk}/"' in html
+
+    error(503, "database_unavailable")
+    response = operator_client.get(url)
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert 'class="engine-error"' in html
+    assert "Engine error 503 database_unavailable" in html
+    assert f'href="/operations/{row.pk}/"' in html
+
+    error(503, "erasure_pending", **{"Retry-After": "30"})
+    response = operator_client.get(url)
+    assert response.status_code == 503
+    assert response["Retry-After"] == "30"
+    html = response.content.decode()
+    assert "Held until the erasure ledger is re-applied — retry in 30 s" in html
+    assert f'<a class="retry" href="{url}">Retry</a>' in html
+    assert f"/stories/{STORY_A}/delete/" in html  # the newest log row's story
+    assert f'href="/operations/{row.pk}/"' in html
+    assert 'class="engine-error"' not in html
+
+
+def test_engine_page_held_without_a_known_story(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    body = {"error": {"code": "erasure_pending", "message": "held", "details": {}}}
+    fetch_engine.respond("GET", "/operations/{operation_id}", 503, json=body)
+    response = operator_client.get(f"/operations/engine/{STAGED_OP}/")
+    assert response.status_code == 503
+    assert not response.has_header("Retry-After")
+    html = response.content.decode()
+    assert "Held until the erasure ledger is re-applied</p>" in html
+    assert "Retry</a>" in html
+    assert "Delete" not in html
+    assert "/delete/" not in html
+
+
+def test_unknown_stage_values_are_humanised() -> None:
+    record = engine_fixture("get_operation")
+    record["stages"] = [{"name": "later_stage", "status": "partial", "at": None}]
+    parsed = OperationRecord.from_json(record)
+    assert parsed is not None
+    rows = views.stage_rows(parsed)
+    assert rows[0].name_text == "Later stage"
+    assert rows[0].status_text == "Partial"
+    assert rows[0].revision_text == "—"
+    # A stage status outside the Engine's enum (C15) makes the record fail to parse.
+    record["stages"] = [{"name": "later_stage", "status": "exploded", "at": None}]
+    assert OperationRecord.from_json(record) is None

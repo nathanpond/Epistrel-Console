@@ -69,6 +69,8 @@ operation_patterns = (
         path("", operations.operation_list, name="list"),
         path("<int:pk>/", operations.operation_detail, name="detail"),
         path("evals/", operations.evals, name="evals"),
+        # #250: the Engine's record of any operation id (normalised and checked in the view).
+        path("engine/<str:operation_id>/", operations.engine_operation, name="engine"),
     ],
     "operations",
 )

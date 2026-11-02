@@ -32,6 +32,7 @@ OUTBOX = "01JM6BX0000000000000000001"
 EFFECT_ID = "01JM6BX0000000000000000009"
 OPERATION = "01JM6QP0000000000000000011"
 STUB_URLS = "tests.urls_with_engine_operation"
+WITHOUT_ENGINE_OPERATION = "tests.urls_without_engine_operation"
 
 BASE: dict[str, Any] = {
     "state": "gold",
@@ -165,11 +166,14 @@ def test_outbox_list_notice() -> None:
 
 
 def test_d19_unregistered_links_are_none() -> None:
-    # Before #250 the real urlconf lacks ``operations:engine`` (#240 registered
-    # ``engine:provider``, #249 ``inspect:reconciliation``).
-    with pytest.raises(NoReverseMatch):
-        reverse("operations:engine", args=[OPERATION])
-    assert engine_operation_url(OPERATION) is None
+    # #250 registered ``operations:engine``: a urlconf lacking it pins the unlinked case.
+    with override_settings(ROOT_URLCONF=WITHOUT_ENGINE_OPERATION):
+        with pytest.raises(NoReverseMatch):
+            reverse("operations:engine", args=[OPERATION])
+        assert engine_operation_url(OPERATION) is None
+    # The real urlconf links it (#250), and #240 registered ``engine:provider``, #249
+    # ``inspect:reconciliation``.
+    assert engine_operation_url(OPERATION) == f"/operations/engine/{OPERATION}/"
     reconciliation = f"/stories/{STORY}/inspect/effects/reconciliation/"
     assert outbox_url(STORY, OUTBOX) == f"{reconciliation}#outbox-{OUTBOX}"  # registered by #249
     assert reconciliation_link(STORY, 3) == ("3 effects to reconcile", reconciliation)

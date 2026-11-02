@@ -72,6 +72,7 @@
     <dt>Started</dt><dd>{{ fetched.started_at|engine_time }}</dd>
     <dt>Committed</dt><dd>{{ fetched.committed_at|engine_time }}</dd>
     <dt>Config revisions</dt><dd>{% if fetched.config_revisions %}<pre>{{ fetched.config_revisions|pretty_json }}</pre>{% else %}—{% endif %}</dd>
+    <dt>Stages</dt><dd>{% include "console/_engine_operation_stages.html" with record=fetched stages=fetched_stages %}</dd>
     <dt>Result</dt>
     <dd>
       {% if fetched.result %}

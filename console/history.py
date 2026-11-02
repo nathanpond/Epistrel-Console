@@ -29,6 +29,7 @@ from urllib.parse import urlencode
 from django.urls import reverse
 from django.utils.text import slugify
 
+from console.effects import engine_operation_url
 from console.engine.models import (
     BeatProposition,
     BeatVisibility,
@@ -316,6 +317,9 @@ class Row:
     trace: BeatTrace | None = None  # a structured beat's trace (#147, set by the view)
     fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62)
     reaction: bool = False  # narrated by a primary, not the player (#202, #201's rule)
+    # #250: the Engine operation page for an operation id this Console's log doesn't hold
+    # (D19: ``None`` for a non-ULID id, or while ``operations:engine`` is unregistered).
+    engine_url: str | None = None
 
 
 @dataclass
@@ -381,6 +385,11 @@ def turn_groups(
             same,
             fidelity=fidelity_badge(item.fidelity),
             reaction=is_reaction(item),
+            engine_url=(
+                engine_operation_url(item.operation_id)
+                if links.get(item.operation_id) is None
+                else None
+            ),
         )
         owner = group(item.turn or 0, item.variant)
         if item.kind == REPLY_KIND and not any(r.item.kind == REPLY_KIND for r in owner.rows):

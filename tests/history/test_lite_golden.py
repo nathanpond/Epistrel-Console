@@ -5,7 +5,8 @@ The goldens in ``tests/fixtures/inspect/golden/`` were rendered from the pre-#14
 this module's own extraction, from ``lite_history.json`` (a hand-written, schema-valid history
 body: say + do of one message, a multi-line reply, a quarantined input with ``<script>`` in it,
 a redacted reply, an ingested turn). #203 added the generated turns' "Report" header link to the
-history golden (every generated turn gets one, Lite included); nothing else changed."""
+history golden (every generated turn gets one, Lite included); #250 linked its unlogged
+operation ids to the Engine operation page; nothing else changed."""
 
 import json
 from typing import Any

@@ -1,6 +1,8 @@
 """The operation log (#44): every Engine operation this Console performed, with filters, and
 one operation's full record with the Engine's current view of it on request. Also the eval
-reports page (#149), under Operations."""
+reports page (#149), under Operations, and the Engine operation page (#250): the Engine's record
+of any operation id, whether or not this Console made the call, with its label and stages
+(a staged turn's five, D13)."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -11,8 +13,11 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 from django.views.decorators.http import require_safe
 
+from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, STAGED_LABEL, stage_revision_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import OperationRecord, StorySummary
 from console.engine_access import engine_client_for
@@ -32,6 +37,9 @@ from console.evals import (
     shadow_section,
     yield_section,
 )
+from console.held import held_context, held_text, is_held, retry_seconds
+from console.ids import is_ulid
+from console.inspect import history_turn_url
 from console.models import EngineOperation
 from console.operation_log import (
     SANITIZE_KIND,
@@ -46,6 +54,7 @@ from console.reactivation import OP_NAMES, OP_PARAM
 from console.redaction import redact
 from console.story_pause import check_url
 from console.turn_reports import input_gate_text, stored_turn_report, violation_rows
+from console.wording import humanised
 
 PAGE_SIZE = 50
 EMPTY = "—"
@@ -179,6 +188,67 @@ def trace_url(row: EngineOperation) -> str:
         return ""
 
 
+# --- an operation's label and stages (#250) -------------------------------------------------------
+
+UNFINISHED_STAGES = frozenset({"pending", "running"})
+
+
+@dataclass(frozen=True)
+class StageRow:
+    """One ``StageBody`` as ``_engine_operation_stages.html`` shows it: the raw name and status
+    (each row's ``title``), their humanised text (C3), the raw ``at`` (``engine_time``) and D13's
+    revision text."""
+
+    name: str
+    name_text: str
+    status: str
+    status_text: str
+    at: str | None
+    revision_text: str
+    has_revision: bool = False
+
+
+def stage_rows(record: OperationRecord) -> tuple[StageRow, ...]:
+    """The record's stages in the Engine's order."""
+    return tuple(
+        StageRow(
+            name=stage.name,
+            name_text=humanised(stage.name),
+            status=stage.status,
+            status_text=humanised(stage.status),
+            at=stage.at,
+            revision_text=stage_revision_text(stage.revision),
+            has_revision=stage.revision is not None,
+        )
+        for stage in record.stages
+    )
+
+
+def label_html(record: OperationRecord) -> SafeString | str:
+    """ "Staged turn" (D13) for a staged record, else the humanised label (C3) with the raw one
+    in ``title``; "—" with no label. A staged record with a null label is untitled."""
+    if record.staged:
+        if record.label:
+            return format_html('<span title="{}">{}</span>', record.label, STAGED_LABEL)
+        return STAGED_LABEL
+    if record.label:
+        return format_html('<span title="{}">{}</span>', record.label, humanised(record.label))
+    return EMPTY
+
+
+def stage_flags(record: OperationRecord, rows: tuple[StageRow, ...]) -> dict[str, Any]:
+    """What the partial needs beside ``record`` and ``stages``: the label, whether the Revision
+    column shows (a staged record, or any stage carrying a revision) and whether the record is an
+    incomplete staged turn (a ``pending`` or ``running`` stage), with D13's badge wording."""
+    return {
+        "stages_label": label_html(record),
+        "stages_show_revision": record.staged or any(row.has_revision for row in rows),
+        "stages_incomplete": record.staged and any(row.status in UNFINISHED_STAGES for row in rows),
+        "incomplete_text": INCOMPLETE_TEXT,
+        "incomplete_title": INCOMPLETE_TITLE,
+    }
+
+
 def fetch_offered(row: EngineOperation) -> bool:
     """Whether the detail page offers the ``?fetch=1`` re-read of the Engine's record."""
     return row.kind not in NO_FETCH_KINDS
@@ -211,6 +281,9 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             log_engine_error(request, exc)
             fetch_error = panel_for(exc)
         result_body = redact(fetched.result.body) if fetched and fetched.result else None
+        if fetched is not None:
+            fetched_stages = stage_rows(fetched)
+            context.update(fetched_stages=fetched_stages, **stage_flags(fetched, fetched_stages))
         context.update(
             fetched=fetched,
             fetch_error=fetch_error,
@@ -218,6 +291,96 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             fetched_report=stored_turn_report(result_body),
         )
     return render(request, "console/operation_detail.html", context)
+
+
+# --- the Engine operation page (#250) ------------------------------------------------------------
+
+ENGINE_SCOPE = (
+    "The Engine's record of one operation. Results aren't shown here: open the operation-log "
+    "entry and Fetch from Engine for a turn's stored result."
+)
+NOT_AN_ID = "Not found (that isn't an operation id)"
+NO_LOG_ENTRY = (
+    "No entry in this Console's log — another client made it, or it was one of a batch's later "
+    "events."
+)
+ENGINE_TEMPLATE = "console/operation_engine.html"
+
+
+def _ledger_url() -> str:
+    try:
+        return reverse("erasure:index")
+    except NoReverseMatch:
+        return ""
+
+
+def _held(request: HttpRequest, exc: EngineError, rows: list[EngineOperation]) -> dict[str, str]:
+    """#87's held fragment: naming the story of the newest matching log row (with Delete), else
+    the held text alone with Retry and the ledger link, no story links (D17)."""
+    retry = request.get_full_path()
+    story = next((row.story_id for row in rows if row.story_id), "")
+    if story:
+        return held_context(story, exc.retry_after, retry)
+    return {
+        "held_text": held_text(exc.retry_after),
+        "retry_url": retry,
+        "ledger_url": _ledger_url(),
+    }
+
+
+def _turn_url(record: OperationRecord) -> str:
+    if not record.story_id or record.narrative_turn is None:
+        return ""
+    return history_turn_url(record.story_id, record.narrative_turn, record.turn_variant)
+
+
+@require_safe
+def engine_operation(request: HttpRequest, operation_id: str) -> HttpResponse:
+    """``operations:engine``: the Engine's record of any operation (``GET /operations/{id}``),
+    exactly one read with no viewpoint, never recorded; a malformed id makes no call. Also lists
+    this Console's log rows for the id."""
+    normalised = operation_id.strip().upper()
+    context: dict[str, Any] = {
+        "operation_id": normalised,
+        "scope": ENGINE_SCOPE,
+        "no_log_entry": NO_LOG_ENTRY,
+    }
+    if not is_ulid(normalised):
+        context.update(malformed=True, raw_id=operation_id, not_an_id=NOT_AN_ID)
+        return render(request, ENGINE_TEMPLATE, context, status=404)
+    log_rows = list(
+        EngineOperation.objects.filter(engine_operation_id=normalised).order_by(
+            "-created_at", "-pk"
+        )
+    )
+    context["log_rows"] = log_rows
+    try:
+        # A read (3 s timeout), never recorded; no viewpoint: label and stages need none.
+        record = engine_client_for(request).get_operation(normalised, viewpoint=None)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        if isinstance(exc, EngineError) and exc.http_status == 404:
+            context["not_found"] = True
+            return render(request, ENGINE_TEMPLATE, context, status=404)
+        if is_held(exc):
+            context["held"] = _held(request, exc, log_rows)
+            response = render(request, ENGINE_TEMPLATE, context, status=503)
+            seconds = retry_seconds(exc.retry_after)
+            if seconds is not None:
+                response["Retry-After"] = str(seconds)
+            return response
+        context["engine_error"] = panel_for(exc)
+        return render(request, ENGINE_TEMPLATE, context)
+    rows = stage_rows(record)
+    context.update(
+        record=record,
+        stages=rows,
+        status_text=humanised(record.status) if record.status else EMPTY,
+        origin_text=humanised(record.origin) if record.origin else EMPTY,
+        turn_url=_turn_url(record),
+        **stage_flags(record, rows),
+    )
+    return render(request, ENGINE_TEMPLATE, context)
 
 
 # --- eval reports (#149) -------------------------------------------------------------------------

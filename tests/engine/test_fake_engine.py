@@ -227,6 +227,8 @@ M6_FIXTURES = {
     "memories_page1": ("GET", "/admin/stories/{story_id}/memories", 200),
     "memories_empty": ("GET", "/admin/stories/{story_id}/memories", 200),
     "fact": ("GET", "/admin/stories/{story_id}/facts/{fact_id}", 200),
+    "operation_staged": ("GET", "/operations/{operation_id}", 200),  # #250
+    "operation_staged_incomplete": ("GET", "/operations/{operation_id}", 200),  # #250
 }
 M6_ID_KEYS = frozenset({"id", "compensates", "compensated_by"})
 # An external clock's ``provider_id`` is a provider's name, a slug (D16), not an Engine id (#243).

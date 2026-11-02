@@ -739,6 +739,12 @@ class Inspector:
     world: TurnWorld | None = None
 
     @property
+    def engine_url(self) -> str:
+        """#250: the "Engine record" link on the "Engine operation" line (D19: "" for a non-ULID
+        id, or while ``operations:engine`` is unregistered)."""
+        return engine_operation_url(self.operation_id) or ""
+
+    @property
     def trace_shown(self) -> bool:
         """#139: the block is shown for an offered, generated turn with an operation id and no
         error."""

@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 
 from console.inspect import short_id
 from console.models import EngineOperation
@@ -171,10 +171,40 @@ def test_operation_links_only_when_logged(operator_client: Client, engine: FakeE
     html = page(operator_client)
     link = f'<a class="operation-link" href="/operations/{newest.pk}/"><code>{OP}</code></a>'
     assert link in row_of(html, "Is the ferry late?")
-    # Complement: turn 3's operation was never logged here — plain text, no link.
+    # Complement: turn 3's operation was never logged here — no operation-log link (#250 links
+    # its Engine operation page instead).
     third = row_of(html, "Third?")
-    assert "operation-link" not in third
+    assert 'class="operation-link"' not in third
     assert f"<code>{TURN3_OP}</code>" in third
+
+
+def test_an_unlogged_operation_links_its_engine_page(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    newest = _log(engine_operation_id=OP)
+    answer(engine)
+    html = page(operator_client)
+    third = row_of(html, "Third?")
+    engine_link = (
+        f'<a class="engine-operation-link" href="/operations/engine/{TURN3_OP}/">'
+        f"<code>{TURN3_OP}</code></a>"
+    )
+    assert engine_link in third
+    # **Complement:** an item with a log row still links operations:detail, not the Engine page.
+    logged = row_of(html, "Is the ferry late?")
+    assert f'<a class="operation-link" href="/operations/{newest.pk}/">' in logged
+    assert "engine-operation-link" not in logged
+
+
+@override_settings(ROOT_URLCONF="tests.urls_without_engine_operation")
+def test_an_unlogged_operation_is_plain_text_without_the_engine_page(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """D19: while ``operations:engine`` is unregistered the id is plain ``<code>``."""
+    answer(engine)
+    third = row_of(page(operator_client), "Third?")
+    assert "engine-operation-link" not in third
+    assert f"<td><code>{TURN3_OP}</code></td>" in third
 
 
 def test_an_ingest_row_links_every_operation_in_its_results(

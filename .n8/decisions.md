@@ -2642,3 +2642,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `tests/play/test_world_strip.py` (#245) now expects linked outbox ids and a linked count under the real urlconf. Its unlinked case moved to `tests.inspect.urls_world_no_sections`, which drops `inspect:reconciliation`. That case is renamed `test_live_turn_count_is_plain_text_without_the_reconciliation_list`.
   **Why:** Those tests pinned the pre-#249 rendering ("before #249"). D19 says the links appear once #249 registers the name (Rule 3).
   **Issue:** #249
+- **Decision:** `stage_flags(record, rows)` also returns the partial's label (`stages_label`, a `<span title=raw>` or "Staged turn"/"—") and D13's `INCOMPLETE_TEXT`/`INCOMPLETE_TITLE`, so `_engine_operation_stages.html` never spells a D13 constant itself. `StageRow` gains `has_revision` beside the six planned members, for the Revision-column rule.
+  **Why:** D17: templates import wording from `console/effects.py` and never redefine it. The partial takes only `record` and `stages` plus the flags both views pass.
+  **Issue:** #250
+- **Decision:** On `operations:engine` the "This Console's log" section renders after the Engine's view. A held 503 with no story known uses its own dict (held text, Retry, the ledger link, no Delete); with a known story it uses `held_context`. The malformed-id heading and title show the raw input, escaped. The Engine 404 is matched on `http_status == 404` whatever the code.
+  **Why:** The AC lists the fields first and the log second. The held rules follow the story's pass-2 discretion. `console.held._ledger_url` is private, so the view has a three-line copy.
+  **Issue:** #250
+- **Decision:** Fixtures `m6/operation_staged*.json` have `result: null`, `viewpoint: null`, turn 12 variant 1 and a ULID idempotency key, not `get_operation.json`'s result. The incomplete one has operation `status: in_flight` (Engine `OperationStatus`).
+  **Why:** `get_operation.json`'s result body carries `01JA…OP3`-style ids, which aren't ULIDs, so `test_m6_fixtures_validate`'s id check would fail. A read naming no viewpoint gets a null result anyway.
+  **Issue:** #250
+- **Decision:** The D19 tests that pinned the unlinked `operations:engine` case on the real urlconf now use a new `tests/urls_without_engine_operation.py`. These are `tests/test_effects.py::test_d19_unregistered_links_are_none` and `tests/play/test_world_strip.py::test_incomplete_badge_is_plain_text_before_the_operation_page`. `test_incomplete_turn_is_badged` now expects the linked badge, and a new test pins the real-urlconf link.
+  **Why:** The story's pass-2 discretion: those tests flip once the name is real (Rule 3).
+  **Issue:** #250
+- **Decision:** The golden `tests/fixtures/inspect/golden/lite_history_items.html` was re-rendered. Its seven unlogged operation-id cells now carry the `engine-operation-link` anchor, and nothing else in it changed (diff checked). The module docstring records this, as #203's change did.
+  **Why:** The AC links an item with no log row to `operations:engine`. The golden pinned the pre-#250 markup (Rule 3).
+  **Issue:** #250

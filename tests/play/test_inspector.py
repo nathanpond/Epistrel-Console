@@ -2,11 +2,13 @@
 report (#44's log); any other turn says why there is none."""
 
 import re
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
 import pytest
-from django.test import Client
+from django.template.loader import render_to_string
+from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
@@ -14,7 +16,7 @@ from django.utils.html import escape
 from console.engine.models import RespondResponse
 from console.inspect import short_id
 from console.models import EngineOperation
-from console.views.play import result_inspector, row_inspector
+from console.views.play import Inspector, result_inspector, row_inspector
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.play.helpers import (
@@ -643,3 +645,37 @@ def test_a_turn_with_only_roles_shows_roles_alone(operator_client: Client) -> No
     multi_row(response=multi_json(roles=roles))
     found = composition_of(inspect(operator_client, TURN_OP))
     assert re.findall(r"<h5>(.*?)</h5>", found) == ["Roles"]
+
+
+# --- the "Engine record" link (#250) --------------------------------------------------------------
+
+ENGINE_OP = "01JB2Z8Y5Q3W6K9M1N4P7R0RP1"  # a ULID (TURN_OP's "O" isn't Crockford)
+
+
+def engine_line(inspector: Inspector) -> str:
+    html = render_to_string("console/play/_inspector_body.html", {"inspector": inspector})
+    return html.split("<dt>Engine operation</dt>", 1)[1].split("</dd>", 1)[0]
+
+
+def test_inspector_links_the_engine_record() -> None:
+    row = log_row(engine_operation_id=ENGINE_OP)
+    logged = row_inspector(row, STORY)
+    record = (
+        f'<a class="engine-record-link" href="/operations/engine/{ENGINE_OP}/">Engine record</a>'
+    )
+    assert engine_line(logged) == (
+        f'<dd><code>{ENGINE_OP}</code> — <a href="/operations/{row.pk}/">operation log</a>'
+        f" — {record}"
+    )
+    # Without a log row: only "Engine record".
+    assert engine_line(replace(logged, log_pk=None)) == f"<dd><code>{ENGINE_OP}</code> — {record}"
+
+
+def test_inspector_engine_record_is_absent_while_unregistered() -> None:
+    """D19: a urlconf lacking ``operations:engine`` (or a non-ULID id) shows no link."""
+    row = log_row(engine_operation_id=ENGINE_OP)
+    with override_settings(ROOT_URLCONF="tests.urls_without_engine_operation"):
+        line = engine_line(row_inspector(row, STORY))
+        assert "Engine record" not in line
+        assert "operation log" in line
+    assert "Engine record" not in engine_line(row_inspector(log_row(), STORY))  # TURN_OP
