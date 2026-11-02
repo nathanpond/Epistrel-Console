@@ -1,6 +1,7 @@
-"""Helpers for the Inspect tests (#135): the seeded Lite, "Structured (M4)" and Structured v2
-(#188, every M5 module on) effective configurations (``tests/fixtures/inspect/``), with changes
-laid over ``effective``; and the shared Alice/Bob/Pat cast (``story_cast.json``)."""
+"""Helpers for the Inspect tests (#135): the seeded Lite, "Structured (M4)", Structured v2
+(#188, every M5 module on) and Structured v3 (#239, D16: every M6 module on too) effective
+configurations (``tests/fixtures/inspect/``), with changes laid over ``effective``; Lite as an M6
+Engine serves it (``lite_m6``); and the shared Alice/Bob/Pat cast (``story_cast.json``)."""
 
 import copy
 import json
@@ -62,6 +63,29 @@ def with_settings(body: Mapping[str, Any], settings: Mapping[str, Any]) -> dict[
         else:
             node[leaf] = value
     return copied
+
+
+def structured_v3(**effective: Any) -> dict[str, Any]:
+    """The seeded Structured v3 configuration (D16: v2 plus the clock, both its flags and States
+    ``on``), ``__`` paths as in :func:`config_body`."""
+    return config_body("structured_v3", **effective)
+
+
+# What an M6 Engine merges into a Lite story's configuration: its deployment defaults (D16).
+LITE_M6_SETTINGS: Mapping[str, Any] = {
+    "clock.level": "off",
+    "clock.time_claims": False,
+    "clock.scheduled_stops": False,
+    "states.level": "off",
+}
+
+
+def lite_m6(**paths: Any) -> dict[str, Any]:
+    """Lite as an M6 Engine serves it (D16): :data:`LITE_M6_SETTINGS` laid over :func:`lite` by
+    :func:`with_settings`, then ``paths``: dotted paths passed through a mapping, e.g.
+    ``lite_m6(**{"states.level": "prompt_only"})`` (``None`` removes a key).
+    ``capabilities``/``fingerprint``/``deployment_defaults`` stay Lite's."""
+    return with_settings(with_settings(lite(), LITE_M6_SETTINGS), paths)
 
 
 CAST_STORY = "story_cast.json"

@@ -19,6 +19,9 @@ view side is :func:`console.views.inspect.inspect_page`; this module only decide
   ``module_off`` with ``details.module: "partitions"``.
 - Overview, Predicates: always served (the Engine serves the predicate registry under every
   profile).
+- World, Effects (#239, D3): always served. The Engine serves the clock read and the
+  reconciliation list under every configuration, so the section, not the tab, is the unit of
+  gating (below).
 
 When both the pipeline and episodic memory are off, Memory and Retrieval name ``episodic``.
 
@@ -64,6 +67,58 @@ POST carrying an M5 field for a story whose gate is closed is refused Console-si
 :func:`gate_refusal`, with the reason as that field's error and **no Engine write**: the POST may
 re-read the effective configuration once to check the gate, and that read is its only Engine
 call. Tests assert no POST/PUT/PATCH to the write route, not an empty call log.
+
+**D1 — the M6 gates (#239).** M6 adds two level modules and the clock's two flags
+(:data:`M6_MODULES`, in the Engine's ``schema.MODULES`` order): ``clock`` (``clock.level``),
+``time_claims`` (``clock.time_claims``), ``scheduled_stops`` (``clock.scheduled_stops``) and
+``states`` (``states.level``). A level runs on :data:`WORLD_LEVELS` (``off`` < ``prompt_only``
+< ``on``); Lite serves ``prompt_only`` (FR-LITE-5), ``on`` needs the structured pipeline.
+:func:`m6_gate` (``level`` default :data:`WORLD_DEFAULT_LEVEL`, ignored for the flags) checks, in
+order:
+
+1. ``effective`` is ``None``, or ``pipeline`` or the module's switch is missing (for a flag,
+   ``clock.level`` too) → :data:`UNREAD`;
+2. ``on`` asked on a non-structured pipeline → "Needs `<switch>: on`, which needs the structured
+   pipeline (`pipeline: structured`; this story runs `lite`)"; a flag on a non-structured
+   pipeline at any level → "Needs the `<flag>` module, which needs the structured pipeline (…)"
+   (Engine schema rules 12-13);
+3. a flag with the clock below ``prompt_only`` → the clock's own reason (rules 22-23);
+4. the switch below ``level`` → "Needs `<switch>` at `prompt_only` or above (this story runs
+   `off`)" or "Needs `<switch>: on` (this story runs `prompt_only`)"; a flag that isn't ``True``
+   → "Needs the `<flag>` module (`<switch>` is off under this story's profile)" (M5's boolean
+   wording, never "(this story runs …)"). An unexpected level value counts as below
+   ``prompt_only`` and is named raw (JSON for a non-string).
+
+``time_claims`` checks only the clock, not ``verification`` (rule 22), and rule 24 (``clock``
+needs ``commitment`` under ``structured``) is not gated: the Engine can't store either
+configuration. :func:`unavailable_for` words the M6 modules in the same order, so a 409
+``module_off`` naming ``states`` or ``clock`` reads the same as the gate; without ``effective``,
+without ``pipeline``, with a missing switch, or for a stale 409 it gives the plain wording.
+:func:`states_served`/:func:`clock_served` are the boolean wrappers; :func:`states_level` and
+:func:`clock_level` the plain readers. :func:`module_gate` routes an M5 module to :func:`m5_gate`
+and an M6 one to :func:`m6_gate`, and :func:`gate_refusal` calls it, so convention 22 covers M6
+fields unchanged. Gate exactly what the Engine refuses: ``states`` at ``prompt_only`` for every
+States read and write, proposals, settle-now and compensate; ``states`` at ``on`` for the effects
+trail; ``clock`` at ``prompt_only`` for advance and scheduled-event writes. Never gated: the clock
+read, the clock settings PATCH, the scheduled-events list, external values, the reconciliation
+list, providers and bindings.
+
+**D2 — the Overview's M6 rows.** :data:`MODULE_ROWS` lists ``clock``, ``time_claims``,
+``scheduled_stops`` and ``states`` after ``commitment`` (the Engine's order), each only when its
+switch is in ``effective``. ``off`` reads "off" (muted), ``on`` "on", ``prompt_only`` verbatim,
+anything else RAW; the flags read "on"/"off". :data:`CAPABILITY_LABELS` names them ("World
+clock", "Time-claim verification", "Scheduled-event stops", "States"), so ``clock:prompt_only``
+reads "World clock (prompt_only)".
+
+**D3 — the World and Effects tabs and their sections.** ``Tab.WORLD`` and ``Tab.EFFECTS`` follow
+Knowledge in the bar and are never greyed. Each section is its own URL with its own gate, from
+:data:`WORLD_SECTIONS` / :data:`EFFECTS_SECTIONS` (``(url name, label, module, level)``);
+:func:`sections` lists the registered ones, each greyed through :func:`module_gate`. A greyed
+section's URL renders the inline panel and never calls its read
+(:func:`console.views.inspect.inspect_page`). The tab's entry URL redirects to the first open
+section, else renders the shell. "Current" is an exact URL-name match: every page below a section
+passes its parent section's URL name as ``current``. Per-State pages live under the singular
+``world/state/<name>/…``, beside the fixed ``world/states/new/`` and ``world/states/proposals/``.
 """
 
 import json
@@ -103,6 +158,18 @@ M5_MODULES: tuple[str, ...] = (
     MULTI_CHARACTER,
 )
 
+# The M6 modules (#239, D1), named as the Engine's ``schema.MODULES`` names them: two level modules
+# and the clock's two flags. The Engine's ``details.module`` names only ``clock`` and ``states``.
+CLOCK = "clock"
+TIME_CLAIMS = "time_claims"
+SCHEDULED_STOPS = "scheduled_stops"
+STATES = "states"
+M6_MODULES: tuple[str, ...] = (CLOCK, TIME_CLAIMS, SCHEDULED_STOPS, STATES)
+CLOCK_FLAGS = frozenset({TIME_CLAIMS, SCHEDULED_STOPS})
+WORLD_LEVELS: tuple[str, ...] = ("off", "prompt_only", "on")  # the Engine's ladder
+WORLD_DEFAULT_LEVEL = "prompt_only"  # what an M6 gate asks without ``level`` (Lite serves it)
+WORLD_ON = WORLD_LEVELS[-1]
+
 # A module's switch in ``effective`` (``pipeline`` is a level, not a switch).
 SETTINGS: Mapping[str, str] = {
     PIPELINE: "pipeline",
@@ -115,6 +182,10 @@ SETTINGS: Mapping[str, str] = {
     TESTIMONY: "character_knowledge.testimony",
     PERCEPTION: "perception.level",
     MULTI_CHARACTER: "multi_character.renders",
+    CLOCK: "clock.level",
+    TIME_CLAIMS: "clock.time_claims",
+    SCHEDULED_STOPS: "clock.scheduled_stops",
+    STATES: "states.level",
 }
 
 PERCEPTION_LEVELS: tuple[str, ...] = ("none", "co_location", "full")  # the Engine's ladder
@@ -135,6 +206,8 @@ class Tab(StrEnum):
     RETRIEVAL = "retrieval"
     CANON = "canon"
     KNOWLEDGE = "knowledge"
+    WORLD = "world"
+    EFFECTS = "effects"
     PREDICATES = "predicates"
     LEDGER = "ledger"
     SCENE = "scene"
@@ -229,13 +302,96 @@ def _m5_wording(module: str, value: Any, level: str | None) -> str:
     return f"{needs} (this story runs `{named}`)" if named is not None else needs
 
 
+def _runs(pipeline: Any) -> str:
+    """The pipeline clause's "; this story runs `<level>`", or "" for a non-string or empty one."""
+    return f"; this story runs `{pipeline}`" if isinstance(pipeline, str) and pipeline else ""
+
+
 def _pipeline_clause(module: str, pipeline: Any) -> Unavailable:
-    runs = f"; this story runs `{pipeline}`" if isinstance(pipeline, str) and pipeline else ""
     reason = (
         f"Needs the `{module}` module, which needs the structured pipeline "
-        f"(`pipeline: structured`{runs})"
+        f"(`pipeline: structured`{_runs(pipeline)})"
     )
     return Unavailable(module, SETTINGS[module], reason)
+
+
+# --- the M6 gates (#239, D1) ---------------------------------------------------------------------
+
+
+def _check_world_level(level: str | None) -> None:
+    if level is not None and level not in WORLD_LEVELS[1:]:
+        raise ValueError(f"{level!r} is not an M6 gate level: {list(WORLD_LEVELS[1:])}")
+
+
+def _world_wanted(module: str, level: str | None) -> str | None:
+    """The level an M6 gate asks of ``module``: ``level`` or the default for ``clock`` and
+    ``states``; ``None`` for the two flags (``level`` is ignored for them)."""
+    return None if module in CLOCK_FLAGS else (level or WORLD_DEFAULT_LEVEL)
+
+
+def _world_served(module: str, value: Any, level: str | None) -> bool:
+    """Whether an M6 switch ``value`` serves ``module`` at ``level``: a flag only when it is
+    ``True``; a level when it is on :data:`WORLD_LEVELS` at ``level`` or above (an unexpected
+    value counts as below ``prompt_only``)."""
+    wanted = _world_wanted(module, level)
+    if wanted is None:
+        return value is True
+    return (
+        isinstance(value, str)
+        and value in WORLD_LEVELS
+        and WORLD_LEVELS.index(value) >= WORLD_LEVELS.index(wanted)
+    )
+
+
+def _m6_wording(module: str, value: Any, level: str | None) -> str:
+    """An M6 module's own reason. A flag reads M5's boolean wording (never "(this story runs
+    …)"); a level names ``value`` unless it is unknown or serves the module (a stale 409)."""
+    switch = SETTINGS[module]
+    wanted = _world_wanted(module, level)
+    if wanted is None:
+        return f"Needs the `{module}` module (`{switch}` is off under this story's profile)"
+    if wanted == WORLD_ON:
+        needs = f"Needs `{switch}: {WORLD_ON}`"
+    else:
+        needs = f"Needs `{switch}` at `{wanted}` or above"
+    named = None if _world_served(module, value, level) else _named(value)
+    return f"{needs} (this story runs `{named}`)" if named is not None else needs
+
+
+def _world_pipeline_clause(module: str, level: str | None, pipeline: Any) -> Unavailable | None:
+    """D1 step 2: a flag on a non-structured pipeline (Engine schema rules 12-13), or ``on`` asked
+    of ``clock``/``states`` there (``prompt_only`` serves under Lite, FR-LITE-5); else ``None``."""
+    if pipeline == STRUCTURED:
+        return None
+    if module in CLOCK_FLAGS:
+        return _pipeline_clause(module, pipeline)
+    if _world_wanted(module, level) != WORLD_ON:
+        return None
+    switch = SETTINGS[module]
+    reason = (
+        f"Needs `{switch}: {WORLD_ON}`, which needs the structured pipeline "
+        f"(`pipeline: structured`{_runs(pipeline)})"
+    )
+    return Unavailable(module, switch, reason)
+
+
+def _m6_unavailable(
+    module: str, effective: Mapping[str, Any] | None, level: str | None
+) -> Unavailable:
+    """:func:`unavailable_for` for an M6 module: D1's steps 2-4 when ``effective`` carries the
+    pipeline, else (and for a missing value) the plain wording."""
+    pipeline = setting(effective, SETTINGS[PIPELINE]) if effective is not None else None
+    value = None
+    if effective is not None and pipeline is not None:
+        clause = _world_pipeline_clause(module, level, pipeline)
+        if clause is not None:
+            return clause
+        if module in CLOCK_FLAGS:
+            clock = setting(effective, SETTINGS[CLOCK])
+            if clock is not None and not _world_served(CLOCK, clock, None):
+                return _m6_unavailable(CLOCK, effective, None)
+        value = setting(effective, SETTINGS[module])
+    return Unavailable(module, SETTINGS[module], _m6_wording(module, value, level))
 
 
 def unavailable_for(
@@ -244,7 +400,12 @@ def unavailable_for(
     """The :class:`Unavailable` naming ``module``. ``effective`` supplies the pipeline level the
     story runs (left out of the reason when unknown); for an M5 module it also supplies the
     pipeline clause, the partitions prerequisite and the value "(this story runs …)" names, in
-    :func:`m5_gate`'s order, and ``level`` is the perception level asked for."""
+    :func:`m5_gate`'s order, and ``level`` is the perception level asked for. An M6 module
+    (#239) is worded in :func:`m6_gate`'s order, ``level`` then being a :data:`WORLD_LEVELS` rung
+    (``prompt_only`` or ``on``; ignored for the two clock flags)."""
+    if module in M6_MODULES:
+        _check_world_level(level)
+        return _m6_unavailable(module, effective, level)
     _check_level(level)
     if module == PIPELINE:
         pipeline_level = setting(effective, SETTINGS[PIPELINE]) if effective is not None else None
@@ -303,6 +464,76 @@ def m5_gate(
     return None if _served(module, value, level) else unavailable_for(module, effective, level)
 
 
+def m6_gate(
+    module: str, effective: Mapping[str, Any] | None, level: str | None = None
+) -> Unavailable | None:
+    """Why ``effective`` can't serve the M6 ``module`` (``clock`` or ``states`` at ``level``,
+    default :data:`WORLD_DEFAULT_LEVEL`; ``level`` is validated and ignored for the two flags), or
+    ``None`` when it is served. The order is D1's (the module docstring): :data:`UNREAD`, the
+    pipeline clause, the clock's reason for a flag, the module's own reason. An unknown
+    ``module`` raises ``KeyError``; a ``level`` outside ``WORLD_LEVELS[1:]`` raises
+    ``ValueError``."""
+    if module not in M6_MODULES:
+        raise KeyError(module)
+    _check_world_level(level)
+    if effective is None:
+        return UNREAD
+    pipeline = setting(effective, SETTINGS[PIPELINE])
+    value = setting(effective, SETTINGS[module])
+    flag = module in CLOCK_FLAGS
+    if pipeline is None or value is None or (flag and setting(effective, SETTINGS[CLOCK]) is None):
+        return UNREAD
+    clause = _world_pipeline_clause(module, level, pipeline)
+    if clause is not None:
+        return clause
+    if flag:
+        clock = m6_gate(CLOCK, effective)
+        if clock is not None:
+            return clock
+    if _world_served(module, value, level):
+        return None
+    return unavailable_for(module, effective, level)
+
+
+def states_served(effective: Mapping[str, Any] | None, level: str | None = None) -> bool:
+    """The story serves States at ``level`` (default ``prompt_only``; the ``states`` gate is
+    open)."""
+    return m6_gate(STATES, effective, level) is None
+
+
+def clock_served(effective: Mapping[str, Any] | None, level: str | None = None) -> bool:
+    """The story runs the world clock at ``level`` (default ``prompt_only``; the ``clock`` gate
+    is open)."""
+    return m6_gate(CLOCK, effective, level) is None
+
+
+def _raw_string(effective: Mapping[str, Any] | None, module: str) -> str | None:
+    value = setting(effective, SETTINGS[module]) if effective is not None else None
+    return value if isinstance(value, str) else None
+
+
+def states_level(effective: Mapping[str, Any] | None) -> str | None:
+    """The raw ``states.level`` when it is a string, whatever the pipeline (not a gate)."""
+    return _raw_string(effective, STATES)
+
+
+def clock_level(effective: Mapping[str, Any] | None) -> str | None:
+    """The raw ``clock.level`` when it is a string, whatever the pipeline (not a gate)."""
+    return _raw_string(effective, CLOCK)
+
+
+def module_gate(
+    module: str, effective: Mapping[str, Any] | None, level: str | None = None
+) -> Unavailable | None:
+    """Convention 22's one entry point: an M5 module through :func:`m5_gate`, an M6 module
+    through :func:`m6_gate`. Any other module (``episodic``, ``pipeline``) raises ``KeyError``."""
+    if module in M5_MODULES:
+        return m5_gate(module, effective, level)
+    if module in M6_MODULES:
+        return m6_gate(module, effective, level)
+    raise KeyError(module)
+
+
 def partitions_on(effective: Mapping[str, Any] | None) -> bool:
     """The story keeps per-character partitions (the ``partitions`` gate is open)."""
     return m5_gate(PARTITIONS, effective) is None
@@ -343,15 +574,16 @@ def gate_refusal(
     gated: Mapping[str, tuple[str, str | None]],
 ) -> GateRefusal | None:
     """Convention 22's POST check: the first field of ``gated`` (field name → ``(module,
-    level)``, in its order) that ``data`` carries with any non-blank value (an "off"-looking one
-    included) and whose :func:`m5_gate` is closed; ``None`` when every carried field is served.
+    level)``, any of the M5 and M6 modules, in its order) that ``data`` carries with any non-blank
+    value (an "off"-looking one included) and whose :func:`module_gate` is closed; ``None`` when
+    every carried field is served.
     ``effective`` ``None`` (a failed read) refuses every carried field with
     :data:`GATE_UNREAD`. The view calls it before any Engine write and makes none when it
     refuses."""
     for field, (module, level) in gated.items():
         if not any(str(value).strip() for value in data.getlist(field)):
             continue
-        gate = m5_gate(module, effective, level)
+        gate = module_gate(module, effective, level)
         if gate is not None:
             return GateRefusal(field, gate)
     return None
@@ -374,6 +606,8 @@ def tab_availability(effective: Mapping[str, Any]) -> dict[Tab, Unavailable | No
         Tab.RETRIEVAL: episodic,
         Tab.CANON: structured,
         Tab.KNOWLEDGE: m5_gate(PARTITIONS, effective),
+        Tab.WORLD: None,  # D3: never gated as a whole; its sections grey individually
+        Tab.EFFECTS: None,
         Tab.PREDICATES: None,
         Tab.LEDGER: _ledger(effective),
         Tab.SCENE: structured,
@@ -421,7 +655,7 @@ def module_off_unavailable(
 # What the story runs with, from the shell's one effective-config read: the capabilities the
 # Engine reports (``capability_names()`` in its ``core/profiles/capabilities.py``: a module on by
 # its name, ``<module>:<level>`` at another level, the pipeline by its level, sorted), the module
-# table (one row per module the Engine delivers through M5, in its ``schema.MODULES`` order), and
+# table (one row per module the Engine delivers through M6, in its ``schema.MODULES`` order), and
 # a link to the Engine's capability map. Nothing is derived Console-side: ``floor`` and
 # required-field repair are never in ``capabilities`` and are not shown.
 
@@ -450,6 +684,10 @@ CAPABILITY_LABELS: Mapping[str, str] = {
     "repair": "Repair attempts",
     "contradiction_checking": "Contradiction checking",
     "verification": "Verification",
+    CLOCK: "World clock",
+    TIME_CLAIMS: "Time-claim verification",
+    SCHEDULED_STOPS: "Scheduled-event stops",
+    STATES: "States",
 }
 ALWAYS_ON = frozenset({"budgets", "models"})  # reported under every profile
 
@@ -487,9 +725,9 @@ def capabilities(config: EffectiveConfig) -> list[Capability]:
     return [Capability(value, capability_label(value)) for value in values]
 
 
-# One row per module the Engine delivers (through M5), in its ``schema.MODULES`` order: (module,
-# switch). No rows for ``clock``, ``time_claims``, ``scheduled_stops`` or ``states``: undelivered,
-# so never in ``effective``.
+# One row per module the Engine delivers (through M6), in its ``schema.MODULES`` order: (module,
+# switch). A row shows only when its switch is in ``effective`` (an M4/M5-shaped configuration has
+# no ``clock``/``states`` keys, so no M6 row; D2).
 MODULE_ROWS: tuple[tuple[str, str], ...] = (
     ("pipeline", "pipeline"),
     ("rolling_summary", "memory.rolling_summary.enabled"),
@@ -504,6 +742,10 @@ MODULE_ROWS: tuple[tuple[str, str], ...] = (
     ("verification", "verification.level"),
     ("contradiction_checking", "verification.contradiction_checking"),
     ("commitment", "commitment.enabled"),
+    (CLOCK, SETTINGS[CLOCK]),
+    (TIME_CLAIMS, SETTINGS[TIME_CLAIMS]),
+    (SCHEDULED_STOPS, SETTINGS[SCHEDULED_STOPS]),
+    (STATES, SETTINGS[STATES]),
     (MULTI_CHARACTER, SETTINGS[MULTI_CHARACTER]),
     ("repair", "repair.max_attempts"),
     ("polish", "repair.polish.enabled"),
@@ -590,6 +832,12 @@ class ModuleRow:
 def _state(module: str, value: Any) -> tuple[str, Any]:
     if module in ALWAYS_ON:
         return ALWAYS, None
+    if module in (CLOCK, STATES):  # D2: before the boolean rule, so a boolean level reads RAW
+        if value == WORLD_LEVELS[0]:
+            return OFF, None
+        if value == WORLD_ON:
+            return ON, None
+        return (LEVEL, value) if value == WORLD_DEFAULT_LEVEL else (RAW, value)
     if isinstance(value, bool):
         return (ON if value else OFF), None
     if module == "repair" and isinstance(value, int):
@@ -736,12 +984,15 @@ KNOWLEDGE_SECTIONS: tuple[tuple[str, str], ...] = (
 
 @dataclass(frozen=True)
 class SectionLink:
-    """One Knowledge section in the sub-navigation; ``active`` for the page's own."""
+    """One section in a tab's sub-navigation; ``active`` for the page's own. ``unavailable``
+    (World and Effects only, D3) greys it with the reason. ``name`` is the Knowledge section's
+    short name (``beliefs``), or a World/Effects section's full URL name (``inspect:states``)."""
 
     name: str
     label: str
     url: str
     active: bool
+    unavailable: Unavailable | None = None
 
 
 def knowledge_sections(story_id: str, current: str | None) -> list[SectionLink]:
@@ -754,4 +1005,49 @@ def knowledge_sections(story_id: str, current: str | None) -> list[SectionLink]:
         except NoReverseMatch:
             continue
         links.append(SectionLink(name, label, url, name == current))
+    return links
+
+
+# --- the World and Effects tabs' sections (#239, D3) --------------------------------------------
+#
+# Each section is its own URL with its own gate: (URL name, label, module | None, level | None).
+# A section lands with its owning story (D3's table); until then :func:`sections` leaves it out.
+Section = tuple[str, str, str | None, str | None]
+WORLD_SECTIONS: tuple[Section, ...] = (
+    ("inspect:states", "States", STATES, WORLD_DEFAULT_LEVEL),  # #242
+    ("inspect:state-proposals", "Proposed States", STATES, WORLD_DEFAULT_LEVEL),  # #266
+    ("inspect:clock", "Clock", None, None),  # #243
+    ("inspect:scheduled-events", "Scheduled events", None, None),  # #244
+    ("inspect:external-values", "External values", None, None),  # #248
+)
+EFFECTS_SECTIONS: tuple[Section, ...] = (
+    ("inspect:reconciliation", "Reconciliation", None, None),  # #249
+    ("inspect:effects-trail", "Effects trail", STATES, WORLD_ON),  # #255
+)
+TAB_SECTIONS: Mapping[Tab, tuple[Section, ...]] = {
+    Tab.WORLD: WORLD_SECTIONS,
+    Tab.EFFECTS: EFFECTS_SECTIONS,
+}
+
+
+def section_of(tab: Tab, name: str | None) -> Section | None:
+    """``tab``'s registry entry for the URL name ``name``, or ``None`` (not a section)."""
+    return next((entry for entry in TAB_SECTIONS.get(tab, ()) if entry[0] == name), None)
+
+
+def sections(
+    tab: Tab, story_id: str, current: str | None, effective: Mapping[str, Any] | None
+) -> list[SectionLink]:
+    """``tab``'s registered sections in registry order (#64's nav rule: an unregistered one is
+    left out), ``current`` (a full URL name) marked active, each greyed by
+    ``module_gate(module, effective, level)`` (an ungated section never). A tab other than World
+    or Effects raises ``KeyError``."""
+    links = []
+    for name, label, module, level in TAB_SECTIONS[tab]:
+        try:
+            url = reverse(name, args=[story_id])
+        except NoReverseMatch:
+            continue
+        unavailable = module_gate(module, effective, level) if module is not None else None
+        links.append(SectionLink(name, label, url, name == current, unavailable))
     return links

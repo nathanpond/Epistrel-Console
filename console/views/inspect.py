@@ -33,6 +33,14 @@ no stub pages).
 5. on the Knowledge tab (#189), served and not replaced by a 409, the context gains
    ``knowledge_sections`` (:func:`console.inspect.knowledge_sections`, the current section from
    the request's URL name), the sub-navigation of ``console/inspect/knowledge.html``.
+6. on the World and Effects tabs (#239, D3), after the gate and before ``build``, the context
+   gains ``world_sections`` / ``effects_sections`` (:func:`console.inspect.sections`, each
+   greyed by its own gate) and, on a section's page, ``section_label``. The current section is
+   the keyword-only ``current`` (a page below a section passes its parent's URL name, result
+   pages included), else the request's own URL name. When that section's gate is closed the page
+   renders ``section_unavailable`` (the inline greyed panel) and ``build`` is **not** called, so
+   the section's read never runs. A 409 ``module_off`` escaping a section's ``build`` keeps step
+   4's whole-tab panel, worded at the section's registered level.
 
 Every render answers 200, the held wrapper aside (503). A route that answers empty or
 ``skipped`` where its module is off renders the same reason inline:
@@ -80,6 +88,7 @@ from console.inspect import (
     EPISODIC,
     PIPELINE,
     SETTINGS,
+    TAB_SECTIONS,
     Tab,
     Unavailable,
     capabilities,
@@ -87,12 +96,15 @@ from console.inspect import (
     is_module_off,
     knowledge_sections,
     memory_list_url,
+    module_gate,
     module_off_unavailable,
     module_rows,
     overview_fingerprint,
     position_text,
     profile_flags,
     retrieval_url,
+    section_of,
+    sections,
     setting,
     tab_availability,
     unavailable_for,
@@ -193,11 +205,22 @@ def _story(request: HttpRequest, client: EngineClient, story_id: str) -> Story |
         return exc
 
 
+# The context key of a sectioned tab's sub-navigation (D3).
+SECTIONS_KEYS: Mapping[Tab, str] = {Tab.WORLD: "world_sections", Tab.EFFECTS: "effects_sections"}
+
+
 def inspect_page(
-    request: HttpRequest, story_id: str, tab: Tab, template: str, build: Build
+    request: HttpRequest,
+    story_id: str,
+    tab: Tab,
+    template: str,
+    build: Build,
+    *,
+    current: str | None = None,
 ) -> HttpResponse:
     """Render Inspect tab ``tab`` of story ``story_id`` with ``template`` (see the module
-    docstring for the reads, the gate and the error handling)."""
+    docstring for the reads, the gate and the error handling). ``current`` (World and Effects
+    only) is the section URL name to mark current, defaulting to the request's own."""
     client = engine_client_for(request)
     try:
         config: EffectiveConfig | EngineClientError = client.get_effective_config(story_id)
@@ -230,6 +253,19 @@ def inspect_page(
     if unavailable is not None:
         context["unavailable"] = unavailable
         return render(request, template, context)
+    section = None
+    if tab in TAB_SECTIONS:
+        if current is None and request.resolver_match is not None:
+            current = request.resolver_match.view_name
+        section = section_of(tab, current)
+        context[SECTIONS_KEYS[tab]] = sections(tab, story_id, current, config.effective)
+        if section is not None:
+            _, label, module, level = section
+            context["section_label"] = label
+            closed = module_gate(module, config.effective, level) if module is not None else None
+            if closed is not None:
+                context["section_unavailable"] = closed  # D3: no read for a greyed section
+                return render(request, template, context)
     story_error = read if isinstance(read, EngineClientError) else None
     ctx = InspectContext(request, client, story_id, tab, config, story, story_name, story_error)
     try:
@@ -238,7 +274,10 @@ def inspect_page(
         if not is_module_off(exc):
             raise
         log_engine_error(request, exc)
-        context["unavailable"] = module_off_unavailable(exc, tab, config.effective)
+        # A section's registered level words its own module's 409 (the trail's reads at ``on``).
+        named = exc.details.get("module")
+        level = section[3] if section is not None and named == section[2] else None
+        context["unavailable"] = module_off_unavailable(exc, tab, config.effective, level=level)
         context["config_changed"] = True
         return render(request, template, context)
     if isinstance(built, HttpResponse):
@@ -273,6 +312,37 @@ def overview(request: HttpRequest, story_id: str) -> HttpResponse:
 
 
 KNOWLEDGE_TEMPLATE = "console/inspect/knowledge.html"
+WORLD_TEMPLATE = "console/inspect/world.html"
+EFFECTS_TEMPLATE = "console/inspect/effects.html"
+
+
+def _section_landing(tab: Tab) -> Build:
+    """A sectioned tab's landing (D3): after the shell's reads, a redirect (302, the query string
+    dropped) to the first registered section whose gate is open; with none open, or none
+    registered, the shell with its sub-navigation (greyed entries keep their reasons). It never
+    redirects to a greyed section."""
+
+    def build(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
+        for link in sections(tab, ctx.story_id, None, ctx.effective):
+            if link.unavailable is None:
+                return redirect(link.url)
+        return {}
+
+    return build
+
+
+@require_safe
+def world(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:world``, the World tab's entry URL (#239)."""
+    return inspect_page(request, story_id, Tab.WORLD, WORLD_TEMPLATE, _section_landing(Tab.WORLD))
+
+
+@require_safe
+def effects(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:effects``, the Effects tab's entry URL (#239)."""
+    return inspect_page(
+        request, story_id, Tab.EFFECTS, EFFECTS_TEMPLATE, _section_landing(Tab.EFFECTS)
+    )
 
 
 def _knowledge(ctx: InspectContext) -> dict[str, Any] | HttpResponse:

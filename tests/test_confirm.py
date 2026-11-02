@@ -102,7 +102,8 @@ def test_confirmed_mode_unconfirmed_post_rerenders_with_the_posted_key(
     assert response.status_code == 200
     assert '<input type="hidden" name="idempotency_key" value="first-render-key">' in html
     assert '<input type="hidden" name="confirmed" value="1">' in html
-    assert "incomplete" not in html
+    # The incomplete-confirmation notice, not the bare word (the CSS has `.badge.incomplete`).
+    assert "This confirmation was incomplete" not in html
     assert perform.calls == []  # complement: an unconfirmed POST never performs
 
 

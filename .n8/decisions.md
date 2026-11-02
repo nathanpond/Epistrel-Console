@@ -2419,3 +2419,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The plan's `test_an_invalid_version_is_ignored_with_a_flash` is named `test_an_invalid_list_version_is_ignored_with_a_flash` in `tests/test_profiles_browse.py`.
   **Why:** That file already has a profile-detail test of the planned name; reusing it shadowed the older test (ruff F811 / mypy no-redef).
   **Issue:** #238
+- **Decision:** `tests/fixtures/profile_schema_m6.json` is the Engine's own `ProfileSchemaBody.of(profile_schema(None))` at `b8fd182` (from a `git archive` export run with the Engine's virtualenv), with `purposes` copied from the shared `profile_schema.json`.
+  **Why:** `purposes` comes from the Orchestrator's registry on a running deployment, not from the profile schema module; everything else differs from the shared fixture only by the added `clock`/`states` blocks, tags and `delivered` entries.
+  **Issue:** #239
+- **Decision:** The v3 effective configuration was computed at `b8fd182` as `_merged(profile_defaults(), structured_settings())` and its `capabilities` by `capability_names`; the `clock`/`states` keys are placed after `commitment` in the JSON (key order is not significant).
+  **Why:** The same method as the v2 fixture; the computed `effective` equals v2's plus exactly the two M6 keys.
+  **Issue:** #239
+- **Decision:** `test_m6_modules_render_from_the_schema` asserts the two clock flags as the form's existing boolean control (an unset/Yes/No `Select`), not checkboxes.
+  **Why:** The story's "checkboxes" wording doesn't match the schema form's boolean widget, and the AC forbids changing the form for M6; the guard is that the fields lay out from the schema alone.
+  **Issue:** #239
+- **Decision:** `inspect_page`'s 409 `module_off` path passes the section's registered level only when the 409's `details.module` is that section's own module.
+  **Why:** Passing a world level (`on`) with an M5 module named by the 409 would raise `ValueError` in the perception-level check; another module reads at its default.
+  **Issue:** #239
+- **Decision:** Added `tests/inspect/urls_world_states_only.py` (reusing `urls_world_stub_sections`' patterns) for `test_world_with_no_open_section_renders_the_shell`, and helpers `section_of`/`TAB_SECTIONS`/`CLOCK_FLAGS` in `console/inspect.py`.
+  **Why:** That test needs a urlconf with only the stub States section; the helpers keep the registry lookup in one place for the view.
+  **Issue:** #239
+- **Decision:** `test_knowledge_unchanged` renders `knowledge.html` directly against a golden string written in the test rather than captured by a separate run on main.
+  **Why:** Neither `knowledge.html` nor `knowledge_sections` changes in this story (`SectionLink` only gains a defaulted field), so the current render is main's markup.
+  **Issue:** #239
+- **Decision:** (Rule 3) `tests/test_confirm.py::test_confirmed_mode_unconfirmed_post_rerenders_with_the_posted_key` now asserts the incomplete-confirmation notice text is absent instead of the bare word "incomplete".
+  **Why:** The new `.badge.incomplete` rule in `templates/base.html` (an AC of this story) puts that word in every page's stylesheet; the test's intent is that no "incomplete" notice shows, which the sharper assertion keeps.
+  **Issue:** #239

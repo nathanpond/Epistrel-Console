@@ -5,7 +5,23 @@ fake answers by query string.
 ``effective_config_structured_v2.json`` is the Engine's ``structured_settings()`` laid over
 ``profile_defaults()`` (``core/seeds/profiles.py``), and its ``capabilities`` are
 ``capability_names`` of that configuration, both computed once at Engine ``origin/main``
-7d181b35fa64692f6cdbe31e8260042d57d3c784."""
+7d181b35fa64692f6cdbe31e8260042d57d3c784.
+
+``effective_config_structured_v3.json`` (#239, D16) is v2 plus the seeded Structured v3's M6
+settings (``STRUCTURED_VERSION = 3``: ``clock {level: on, time_claims: true, scheduled_stops:
+true}``, ``states {level: on}``), its ``deployment_defaults`` v2's plus the M6 profile defaults
+(both ``off``, the flags false), fingerprint ``sha256:`` and 64 nines. Its ``effective`` and
+``capabilities`` were computed once at Engine b8fd182 ("M6: The world (#664)") from a
+``git archive b8fd182 src`` export, with the Engine's own virtualenv::
+
+    python -I -c "import sys; sys.path.insert(0, '<export>/src')
+    from epistrel.core.seeds.profiles import structured_settings, profile_defaults, _merged
+    from epistrel.core.profiles.capabilities import capability_names
+    from epistrel.core.profiles.schema import ProfileSettings
+    eff = _merged(profile_defaults(), structured_settings())
+    print(eff, capability_names(ProfileSettings.model_validate(eff)))"
+
+which matched v2's ``effective`` exactly apart from the two new keys."""
 
 import json
 from typing import Any
@@ -22,8 +38,11 @@ from tests.inspect.helpers import (
     PAT,
     STORY,
     STORY_PATH,
+    lite,
+    lite_m6,
     story_cast,
     structured_v2,
+    structured_v3,
     with_settings,
 )
 
@@ -131,3 +150,57 @@ def test_fake_query_matches_any_value_of_a_repeated_parameter_and_validates() ->
     assert answered.status_code == 200
     with pytest.raises(Exception, match="required"):
         fake.respond("GET", BELIEFS, 200, json={"nope": 1}, query={"character": ALICE})
+
+
+def test_v3_effective_config_passes_the_fake() -> None:
+    fake = FakeEngine()
+    body = structured_v3()
+    fake.respond("GET", EFFECTIVE, 200, json=body)
+    answered = client(fake).get(f"/stories/{STORY}/effective-config").json()
+    assert answered == body
+    effective = body["effective"]
+    assert effective["clock"] == {"level": "on", "time_claims": True, "scheduled_stops": True}
+    assert effective["states"] == {"level": "on"}
+    defaults = body["deployment_defaults"]
+    assert defaults["clock"] == {"level": "off", "time_claims": False, "scheduled_stops": False}
+    assert defaults["states"] == {"level": "off"}
+    assert body["profile"] == {
+        "id": "00000000000000000000PRF002",
+        "version": 3,
+        "pinned": False,
+        "deleted": False,
+    }
+    assert body["fingerprint"] == "sha256:" + "9" * 64
+    v2 = structured_v2()
+    assert {k: v for k, v in effective.items() if k not in ("clock", "states")} == v2["effective"]
+    assert sorted(set(body["capabilities"]) - set(v2["capabilities"])) == [
+        "clock",
+        "scheduled_stops",
+        "states",
+        "time_claims",
+    ]
+    assert body["capabilities"] == sorted(body["capabilities"])  # the Engine's sort
+    for key in ("story_id", "overrides", "quality_status"):
+        assert body[key] == v2[key]
+
+
+def test_lite_m6_sets_the_m6_switches_off() -> None:
+    source = lite()
+    before = json.loads(json.dumps(source))
+    body = lite_m6()
+    effective = body["effective"]
+    assert effective["clock"] == {"level": "off", "time_claims": False, "scheduled_stops": False}
+    assert effective["states"] == {"level": "off"}
+    assert effective["pipeline"] == "lite"
+    for key in ("capabilities", "fingerprint", "deployment_defaults"):
+        assert body[key] == source[key]
+    varied = lite_m6(**{"states.level": "prompt_only", "clock.time_claims": None})
+    assert varied["effective"]["states"] == {"level": "prompt_only"}
+    assert "time_claims" not in varied["effective"]["clock"]
+    # Complement: the source lite() body is not mutated (nor is a fresh one changed).
+    assert source == before
+    assert lite() == before
+    assert "clock" not in lite()["effective"]
+    fake = FakeEngine()
+    fake.respond("GET", EFFECTIVE, 200, json=body)
+    assert client(fake).get(f"/stories/{STORY}/effective-config").json() == body

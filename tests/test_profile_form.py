@@ -1,5 +1,6 @@
 """The JSON-Schema → Django form generator for engine profiles (#84)."""
 
+import json
 from collections.abc import Iterator
 from typing import Any, cast
 
@@ -34,12 +35,14 @@ from console.forms.profile_schema_form import (
 from tests.fakes.engine import FakeEngine
 from tests.profile_helpers import (
     ITEM,
+    SCHEMA_FIXTURE,
     fake_engine,
     field,
     fresh_cache,
     null,
     other_profile,
     posted,
+    schema_body,
     schema_model,
 )
 from tests.profile_helpers import (
@@ -544,3 +547,58 @@ def test_the_budget_warning_filter_puts_settings_in_code() -> None:
     other = ProfileValidationWarning("other_code", "a.<b>", 1, 2, {})
     assert budget_warning(other) == "other_code: <code>a.&lt;b&gt;</code>"
     assert budget_warning({"code": "below_safety_minimum"}) == ""
+
+
+# --- K3: the M6 modules come from the schema alone (#239) ---------------------------------------
+
+M6_SCHEMA_FIXTURE = SCHEMA_FIXTURE.parent / "profile_schema_m6.json"
+
+
+def test_m6_modules_render_from_the_schema() -> None:
+    """``profile_schema_m6.json`` is ``GET /engine-profiles/schema`` at Engine ``b8fd182`` (its
+    ``purposes`` copied from ``profile_schema.json``, being the deployment's): the ``clock`` and
+    ``states`` blocks lay out through the existing schema walker, with no Console module list
+    involved (this test imports nothing from ``console/inspect.py``)."""
+    body = json.loads(M6_SCHEMA_FIXTURE.read_text(encoding="utf-8"))
+    schema = schema_model(body)
+    tree = build_tree(schema)
+    groups = {node.dotted: node for node in tree if isinstance(node, Group)}
+    assert [leaf.dotted for leaf in leaves(groups["clock"].children)] == [
+        "clock.level",
+        "clock.time_claims",
+        "clock.scheduled_stops",
+    ]
+    assert [leaf.dotted for leaf in leaves(groups["states"].children)] == ["states.level"]
+    order = [node.dotted for node in tree]
+    assert order.index("commitment") + 1 == order.index("clock")
+    assert order.index("clock") + 1 == order.index("states")
+    built = SchemaSettingsForm(schema=schema)
+    for path in ("clock.level", "states.level"):
+        level = built.fields[field(path)]
+        assert isinstance(level, forms.ChoiceField)
+        assert isinstance(level.widget, forms.Select)
+        values = [value for value, _ in cast(list[tuple[str, str]], level.choices)]
+        assert values == ["", "off", "prompt_only", "on"]
+    for path in ("clock.time_claims", "clock.scheduled_stops"):
+        flag = built.fields[field(path)]
+        assert isinstance(flag, forms.ChoiceField)  # the form's boolean control
+        assert [value for value, _ in cast(list[tuple[str, str]], flag.choices)] == [
+            "",
+            "true",
+            "false",
+        ]
+    filled = SchemaSettingsForm(
+        {
+            field("clock.level"): "prompt_only",
+            field("clock.time_claims"): "true",
+            field("states.level"): "on",
+        },
+        schema=schema,
+    )
+    assert filled.is_valid(), filled.errors
+    assert filled.settings() == {
+        "clock": {"level": "prompt_only", "time_claims": True},
+        "states": {"level": "on"},
+    }
+    # Complement: the shared schema fixture is untouched (no clock/states block).
+    assert "clock" not in schema_body()["schema"]["properties"]

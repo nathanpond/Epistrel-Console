@@ -100,6 +100,18 @@ def test_structured_story_enables_every_tab(operator_client: Client, engine: Fak
         assert f'href="{tab_url(tab)}">{tab.label}</a>' in tabs
     labels = re.findall(r">(\w+)</(?:a|span)>", tabs)
     assert labels == [tab.label for tab in Tab]  # bar order
+    assert labels == [  # the ten tabs (#239: World and Effects after Knowledge)
+        "Overview",
+        "Memory",
+        "Retrieval",
+        "Canon",
+        "Knowledge",
+        "World",
+        "Effects",
+        "Predicates",
+        "Ledger",
+        "Scene",
+    ]
     assert "<title>Inspect · Overview · Harbour</title>" in html
     assert "<h1>Inspect · Harbour</h1>" in html
     assert f'<a href="/stories/{STORY}/">← Story</a>' in html
@@ -132,7 +144,8 @@ def test_a_tab_whose_url_is_not_registered_is_absent(
 ) -> None:
     answer_config(engine, structured_v2())
     # Every tab is registered for real now: Overview (#151), Memory (#140), Retrieval (#141),
-    # Canon (#137), Knowledge (#189), Predicates (#136), Ledger (#148) and Scene (#58).
+    # Canon (#137), Knowledge (#189), World and Effects (#239), Predicates (#136), Ledger (#148)
+    # and Scene (#58).
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         tabs = bar(get(operator_client).content.decode())
     assert tabs.startswith(f'<a class="active" aria-current="page" href="{URL}">Overview</a>')

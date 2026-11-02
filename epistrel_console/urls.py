@@ -214,6 +214,17 @@ inspect_patterns = (
         path("knowledge/divergences/", inspect_divergences.divergences, name="divergences"),
         # #193: what witnesses heard (exposures) and whether each resolved.
         path("knowledge/exposures/", inspect_exposures.exposures, name="exposures"),
+        # #239 (D3): the World and Effects tabs. Each landing redirects to its first open section;
+        # the sections register below with their owners (console.inspect.WORLD_SECTIONS /
+        # EFFECTS_SECTIONS): World's States world/states/ (#242), Proposed States
+        # world/states/proposals/ (#266), Clock world/clock/ (#243), Scheduled events
+        # world/scheduled-events/ (#244), External values world/external-values/ (#248); Effects'
+        # Reconciliation effects/reconciliation/ (#249) and Effects trail effects/trail/ (#255).
+        # Per-State pages live under the singular world/state/<name>/… (#242, #251, #265), so the
+        # fixed world/states/new/ (#261) and world/states/proposals/ never shadow a State named
+        # "new" or "proposals".
+        path("world/", inspect.world, name="world"),
+        path("effects/", inspect.effects, name="effects"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

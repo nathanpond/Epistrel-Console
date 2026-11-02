@@ -1,5 +1,6 @@
 """The Inspect Overview (#151): the header line, the pipeline, the capabilities the Engine reports,
-the module table and the capability-map link, all from the shell's one effective-config read."""
+the module table and the capability-map link, all from the shell's one effective-config read; the
+M6 rows and labels (#239, D2)."""
 
 import re
 from collections.abc import Iterator
@@ -14,6 +15,7 @@ from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
 from console.inspect import (
     CAPABILITY_MAP_URL,
+    M6_MODULES,
     MODULE_ROWS,
     capability_label,
     module_rows,
@@ -27,8 +29,10 @@ from tests.inspect.helpers import (
     STORY,
     STORY_PATH,
     lite,
+    lite_m6,
     structured,
     structured_v2,
+    structured_v3,
     with_settings,
 )
 from tests.play.helpers import story_json
@@ -178,6 +182,10 @@ ENGINE_ORDER = [
     "verification",
     "contradiction_checking",
     "commitment",
+    "clock",
+    "time_claims",
+    "scheduled_stops",
+    "states",
     "multi_character",
     "repair",
     "polish",
@@ -192,17 +200,21 @@ M5_ROWS = {
     "perception",
     "multi_character",
 }
+M6_ROWS = set(M6_MODULES)
+# MODULE_ROWS minus the M6 rows: what an M5-shaped (v2) configuration shows.
+NON_M6_ROWS = [(module, path) for module, path in MODULE_ROWS if module not in M6_ROWS]
 
 
 def test_module_rows_follow_module_rows_order() -> None:
     assert [module for module, _ in MODULE_ROWS] == ENGINE_ORDER
+    assert len(MODULE_ROWS) == 22
 
 
 def test_m5_module_rows_follow_engine_order(operator_client: Client, engine: FakeEngine) -> None:
     rows = module_table(overview(operator_client, engine, structured_v2()))
-    assert list(rows) == ENGINE_ORDER
+    assert list(rows) == [module for module in ENGINE_ORDER if module not in M6_ROWS]
     assert [path for _, _, path in rows.values()] == [
-        f"<code>{path}</code>" for _, path in MODULE_ROWS
+        f"<code>{path}</code>" for _, path in NON_M6_ROWS
     ]
     assert rows["partitions"] == ("", "on", "<code>character_knowledge.partitions</code>")
     assert rows["nested_beliefs"][:2] == ("", "on")
@@ -260,7 +272,7 @@ def test_an_m4_config_shows_no_m5_rows(operator_client: Client, engine: FakeEngi
     rows = module_table(overview(operator_client, engine, structured()))
     assert len(rows) == 12
     assert not M5_ROWS & set(rows)
-    assert list(rows) == [module for module in ENGINE_ORDER if module not in M5_ROWS]
+    assert list(rows) == [module for module in ENGINE_ORDER if module not in M5_ROWS | M6_ROWS]
 
 
 def test_m5_capability_labels(operator_client: Client, engine: FakeEngine) -> None:
@@ -404,9 +416,9 @@ def test_module_table_has_one_row_per_delivered_module_in_order(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     rows = module_table(overview(operator_client, engine, structured_v2()))
-    assert list(rows) == [module for module, _ in MODULE_ROWS]
+    assert list(rows) == [module for module, _ in NON_M6_ROWS]
     assert [path for _, _, path in rows.values()] == [
-        f"<code>{path}</code>" for _, path in MODULE_ROWS
+        f"<code>{path}</code>" for _, path in NON_M6_ROWS
     ]
 
 
@@ -519,3 +531,74 @@ def test_header_line_unprefixed_and_empty_fingerprint(
 )
 def test_overview_fingerprint(value: str, shown: str) -> None:
     assert overview_fingerprint(value) == shown
+
+
+# --- the M6 rows and labels (#239, D2) ------------------------------------------------------------
+
+
+def test_m6_module_rows_follow_engine_order(operator_client: Client, engine: FakeEngine) -> None:
+    rows = module_table(overview(operator_client, engine, structured_v3()))
+    assert list(rows) == ENGINE_ORDER
+    assert len(rows) == 22
+    assert [path for _, _, path in rows.values()] == [
+        f"<code>{path}</code>" for _, path in MODULE_ROWS
+    ]
+    assert rows["clock"] == ("", "on", "<code>clock.level</code>")
+    assert rows["time_claims"] == ("", "on", "<code>clock.time_claims</code>")
+    assert rows["scheduled_stops"] == ("", "on", "<code>clock.scheduled_stops</code>")
+    assert rows["states"] == ("", "on", "<code>states.level</code>")
+    order = list(rows)
+    assert order.index("commitment") + 1 == order.index("clock")
+    assert order.index("states") + 1 == order.index("multi_character")
+
+
+def test_m6_level_states(operator_client: Client, engine: FakeEngine) -> None:
+    body = with_settings(
+        structured_v3(),
+        {"clock.level": "prompt_only", "states.level": "off", "clock.time_claims": False},
+    )
+    html = overview(operator_client, engine, body)
+    rows = module_table(html)
+    assert rows["clock"][:2] == ("", "prompt_only")
+    assert rows["states"][:2] == ("muted", "off")
+    assert rows["time_claims"][:2] == ("muted", "off")
+    assert rows["scheduled_stops"][:2] == ("", "on")
+    # No dial group under the M6 rows.
+    assert all(dial_row(html, module) is None for module in M6_MODULES)
+    # An unexpected value (the fake refuses it, so checked directly) is RAW <code>; so is a
+    # boolean level, and a non-boolean flag.
+    effective = structured_v3(states__level="weird", clock__level=True)["effective"]
+    effective["clock"]["time_claims"] = "yes"
+    found = {row.module: row for row in module_rows(effective)}
+    assert (found["states"].kind, found["states"].value) == ("raw", "weird")
+    assert (found["clock"].kind, found["clock"].value) == ("raw", True)
+    assert (found["time_claims"].kind, found["time_claims"].value) == ("raw", "yes")
+    assert not found["states"].off
+    html = render_to_string("console/inspect/overview.html", {"modules": [found["states"]]})
+    assert module_table(html)["states"] == ("", "<code>weird</code>", "<code>states.level</code>")
+
+
+def test_m6_capability_labels(operator_client: Client, engine: FakeEngine) -> None:
+    items = capability_items(overview(operator_client, engine, structured_v3()))
+    for item in (
+        '<span title="clock">World clock</span>',
+        '<span title="time_claims">Time-claim verification</span>',
+        '<span title="scheduled_stops">Scheduled-event stops</span>',
+        '<span title="states">States</span>',
+    ):
+        assert item in items
+    assert not any(item.startswith("<code>") for item in items)
+    lite_body = with_capabilities(
+        lite_m6(**{"clock.level": "prompt_only", "states.level": "prompt_only"}),
+        ["lite", "clock:prompt_only", "states:prompt_only"],
+    )
+    lite_items = capability_items(overview(operator_client, engine, lite_body))
+    assert '<span title="clock:prompt_only">World clock (prompt_only)</span>' in lite_items
+    assert '<span title="states:prompt_only">States (prompt_only)</span>' in lite_items
+    assert capability_label("clock:prompt_only") == "World clock (prompt_only)"
+
+
+def test_an_m5_config_shows_no_m6_rows(operator_client: Client, engine: FakeEngine) -> None:
+    rows = module_table(overview(operator_client, engine, structured_v2()))
+    assert len(rows) == 18
+    assert not M6_ROWS & set(rows)
