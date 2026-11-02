@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{# A timeline edit's report (#258): shown instead of the redirect when the edit's answer lists external effects it could not undo or re-send. Context: report (console.views.timeline.EditReport). #}
+{% block title %}{{ report.title }} — Epistrel Console{% endblock %}
+{% block heading %}{{ report.title }}{% endblock %}
+{% block content %}
+<p class="notice success">{{ report.success }}</p>
+{% include "console/timeline/_edit_effects.html" with effects=report.effects %}
+<p><a class="button" href="{{ report.continue_url }}">Continue to the story</a></p>
+{% endblock %}

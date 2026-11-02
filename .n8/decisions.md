@@ -2792,3 +2792,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `LABEL_NOTE` renders as `<p class="filter-note">` directly after the Engine label select inside the filter form; no CSS added.
   **Why:** "Under the select" with plain functional UI; no existing `filter-note` style to reuse.
   **Issue:** #257
+- **Decision:** `console/timeline.py` imports `console.effects`, `console.reconciliation` and `console.wording` inside `edit_effects`/`fork_effects` and the `EditEffects` properties, not at module top (model types under `TYPE_CHECKING`).
+  **Why:** `console.wording` imports `console.timeline` (`reload_message`) and `console.effects` imports `console.wording`, so a top-level import is circular; moving `reload_message` would touch unrelated modules.
+  **Issue:** #258
+- **Decision:** `EffectRef` gains a `redacted: bool` member beside the AC's fields, and `EditEffects` exposes `sections` (an `EffectSection(heading, line, rows, pending)` per non-empty list), `count_text` and `notice` properties for the partial.
+  **Why:** the template can't read module constants or call `outbox_list_notice_html()`/`reconciliation_text()` itself; `redacted` lets it apply class `redacted` without comparing against the `REDACTED` text.
+  **Issue:** #258
+- **Decision:** The four views compute the success line once with `_success_text` and either render the report or queue it with `messages.success` (identical to `_flash`'s output); `_flash` stays for `_regenerated`. The fork's `source_link` reverses `inspect:reconciliation` itself (try/except `NoReverseMatch`) since `console.effects._reverse` is private.
+  **Why:** keeps the no-effects path byte for byte as on main (pinned by `test_rewind_without_effects_redirects_as_before` and the unchanged #53 tests) without a second formatting of the text.
+  **Issue:** #258
+- **Decision:** Added `test_undo_rewind_as_a_swap_keeps_its_title` and `test_fork_without_pending_effects_redirects_as_before` beyond the test plan; the reactivation "without effects" complement is parametrised over undo, swap and fork; the unreadable-outcome test uses an outcome whose operation is outside the vocabulary but whose result carries a required row.
+  **Why:** pins the Discretion's "titled Undo rewind even when swapped" and the fork's unchanged redirect; the unreadable case proves a list present in raw JSON still shows no partial.
+  **Issue:** #258

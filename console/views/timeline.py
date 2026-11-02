@@ -18,6 +18,11 @@ timeline revision and the idempotency key (#43). Undo rewind, swap and fork may 
 inspector wording (busy, erased subject, guardrail, model unavailable) or the error panel, plus
 links where the AC asks (``unknown_chain``'s candidates, Variants and Fork after
 ``nothing_to_undo``).
+
+When a rewind's, undo rewind's, swap's or fork's answer lists external effects the edit could
+not undo or re-send (#258), the POST answers 200 with ``timeline/effects_report.html`` instead:
+the flash's success line, the lists (``_edit_effects.html``) and "Continue to the story", with
+no flash queued. With every list empty the redirect and flash are as before.
 """
 
 import logging
@@ -59,7 +64,15 @@ from console.forms.timeline import (
 from console.ids import new_ulid
 from console.reactivation import FORK, OP_PARAM, SWAP, UNTRUNCATE
 from console.story_pause import check_url
-from console.timeline import Basis, Link, chain_label, reload_message
+from console.timeline import (
+    Basis,
+    EditEffects,
+    Link,
+    chain_label,
+    edit_effects,
+    fork_effects,
+    reload_message,
+)
 from console.views.play import (
     FORK_BANNER_KEY,
     SNAPSHOT_FIELD,
@@ -77,6 +90,7 @@ REWIND_FIELDS = "console/timeline/_rewind_fields.html"
 REGENERATE_FIELDS = "console/timeline/_regenerate_fields.html"
 REFUSED_TEMPLATE = "console/timeline/refused.html"
 FORK_TEMPLATE = "console/timeline/fork.html"
+REPORT_TEMPLATE = "console/timeline/effects_report.html"
 RECHECK_LINE = (
     "These turns were checked under older guardrails; the Engine re-checks them first and "
     "pauses the story until it finishes."
@@ -113,9 +127,31 @@ def _facts(story_id: str, form: TimelineForm) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _flash(request: HttpRequest, text: str, *, operation: str | None, rev: int, key: str) -> None:
+def _success_text(text: str, *, operation: str | None, rev: int, key: str) -> str:
     op = f"operation {operation}, " if operation else ""
-    messages.success(request, f"{text} — {op}timeline revision {rev}, idempotency key {key}")
+    return f"{text} — {op}timeline revision {rev}, idempotency key {key}"
+
+
+def _flash(request: HttpRequest, text: str, *, operation: str | None, rev: int, key: str) -> None:
+    messages.success(request, _success_text(text, operation=operation, rev=rev, key=key))
+
+
+@dataclass(frozen=True)
+class EditReport:
+    """What ``effects_report.html`` shows (#258): the edit's title, the success line the flash
+    would have carried, the effects it could not undo and where the redirect would have gone."""
+
+    title: str
+    success: str
+    effects: EditEffects
+    continue_url: str
+
+
+def _report(
+    request: HttpRequest, *, title: str, success: str, effects: EditEffects, continue_url: str
+) -> HttpResponse:
+    report = EditReport(title, success, effects, continue_url)
+    return render(request, REPORT_TEMPLATE, {"report": report})
 
 
 def _held(
@@ -393,15 +429,27 @@ def rewind(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
                 key=key,
                 basis=_basis(story_id, form, back),
             )
-        _flash(
-            request,
+        text = (
             f"Rewound to {slot_turn_text(result.to_turn, k)}: next turn index "
             f"{result.next_turn_index}, "
-            f"{result.discarded_operations} discarded operations",
+            f"{result.discarded_operations} discarded operations"
+        )
+        success = _success_text(
+            text,
             operation=result.operation_id,
             rev=result.timeline_revision,
             key=result.idempotency_key or key,
         )
+        effects = edit_effects(story_id, result)
+        if effects is not None:
+            return _report(
+                request,
+                title="Rewind",
+                success=success,
+                effects=effects,
+                continue_url=_play_url(story_id),
+            )
+        messages.success(request, success)
         return redirect(_play_url(story_id))
 
     return confirm_action(request, page, perform, extra=extra)
@@ -462,13 +510,22 @@ def undo_rewind(request: HttpRequest, story_id: str) -> HttpResponse:
                 f"Rewind undone: restored head turn {result.next_turn_index - 1}, "
                 f"{result.restored_operations} restored operations"
             )
-        _flash(
-            request,
+        success = _success_text(
             text,
             operation=result.operation_id,
             rev=result.timeline_revision,
             key=result.idempotency_key or key,
         )
+        effects = edit_effects(story_id, result)
+        if effects is not None:
+            return _report(
+                request,
+                title="Undo rewind",
+                success=success,
+                effects=effects,
+                continue_url=_play_url(story_id),
+            )
+        messages.success(request, success)
         return redirect(_play_url(story_id))
 
     return confirm_action(request, page, perform, extra=extra)
@@ -540,15 +597,27 @@ def swap(request: HttpRequest, story_id: str) -> HttpResponse:
                 f"(timeline revision {result.timeline_revision}); nothing was changed",
             )
             return redirect(_play_url(story_id))
-        _flash(
-            request,
+        text = (
             f"Swapped: chain {chain_label(*active)} is active ({result.activated_operations} "
             f"operations activated, {result.dormant_operations} dormant), next turn index "
-            f"{result.next_turn_index}",
+            f"{result.next_turn_index}"
+        )
+        success = _success_text(
+            text,
             operation=result.operation_id,
             rev=result.timeline_revision,
             key=result.idempotency_key or key,
         )
+        effects = edit_effects(story_id, result)
+        if effects is not None:
+            return _report(
+                request,
+                title="Swap variant",
+                success=success,
+                effects=effects,
+                continue_url=_play_url(story_id),
+            )
+        messages.success(request, success)
         return redirect(_play_url(story_id))
 
     return confirm_action(request, page, perform, extra=extra)
@@ -634,13 +703,25 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
         "revision": result.forked_from.revision,
         "characters": [[c.name, c.source_id, c.id] for c in result.characters],
     }
-    _flash(
-        request,
+    text = (
         f"Forked {_label(form.shown_name, story_id)} at "
         f"{slot_turn_text(result.forked_from.at_turn, _slot_k(form))} into "
-        f"{result.name or result.story_id}",
+        f"{result.name or result.story_id}"
+    )
+    success = _success_text(
+        text,
         operation=result.operation_id,
         rev=result.timeline_revision,
         key=result.idempotency_key or key,
     )
+    effects = fork_effects(story_id, result)
+    if effects is not None:
+        return _report(
+            request,
+            title="Fork",
+            success=success,
+            effects=effects,
+            continue_url=reverse("stories:detail", args=[result.story_id]),
+        )
+    messages.success(request, success)
     return redirect("stories:detail", story_id=result.story_id)
