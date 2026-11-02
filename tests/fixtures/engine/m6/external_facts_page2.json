@@ -1,0 +1,67 @@
+{
+  "items": [
+    {
+      "event_id": "01JM6RD0000000000000000003",
+      "provider": "bank",
+      "value_name": "balance",
+      "state_id": "01JM6SD0000000000000000004",
+      "scope_key": null,
+      "value": null,
+      "read_at": null,
+      "turn": null,
+      "variant": null,
+      "source": "unknown",
+      "facts": []
+    },
+    {
+      "event_id": "01JM6RD0000000000000000004",
+      "provider": "registry",
+      "value_name": "licensed",
+      "state_id": "01JM6SD0000000000000000005",
+      "scope_key": "01JM6CH0000000000000000099",
+      "value": true,
+      "read_at": "2026-10-31T18:40:00Z",
+      "turn": 5,
+      "variant": 1,
+      "source": "live",
+      "facts": [
+        {
+          "fact_id": "01JM6FA0000000000000000002",
+          "proposition": {
+            "subject_id": "01JM6CH0000000000000000099",
+            "predicate_id": "01JM6FA0000000000000000091",
+            "valid_time": {
+              "kind": "instant",
+              "at": 130.0,
+              "until": 131,
+              "granularity": "minute"
+            }
+          },
+          "scope": "objective",
+          "valid_from": 130,
+          "valid_to": 131,
+          "provenance": "external",
+          "authority": "provider",
+          "tx_from": "2026-10-31T18:40:00Z",
+          "tx_to": "2026-10-31T19:05:00Z"
+        }
+      ]
+    },
+    {
+      "event_id": "01JM6RD0000000000000000005",
+      "provider": "weather",
+      "value_name": "sky",
+      "state_id": "01JM6SD0000000000000000006",
+      "scope_key": "01JM6CH0000000000000000001",
+      "value": "sunny",
+      "read_at": "2026-10-31T18:41:00Z",
+      "turn": 0,
+      "variant": 0,
+      "source": "live",
+      "facts": []
+    }
+  ],
+  "revision": 12,
+  "next_after_id": null,
+  "output_viewpoint": "omniscient"
+}

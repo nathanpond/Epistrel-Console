@@ -1,0 +1,47 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags %}
+{% comment %}
+The World tab's External values section (#248, console/views/inspect_external.py): the
+omniscient note, the header line, the Bindings link (stories:providers, when registered), the GET
+filter (As of; Apply carries no cursor), then one page of GET /stories/{id}/inspect/external-facts
+(viewpoint=omniscient, limit=100): the count line, the rows (_external_read_row.html, Engine order;
+one "couldn't be read" row per unreadable entry, D15) and the paging links. The filter and the
+story name stay above every error (convention 10); an invalid filter makes no call. A read-only
+section: no write form. Context: form, intro, header, bindings_url, bindings_text, cast_unavailable,
+cursor_dropped, filter_url, after_refused, first_query, next_query, paged, external, count, rows,
+rejected, unreadable, empty, omniscient_required, not_found, external_error, predicate_names,
+cast_names.
+{% endcomment %}
+{% block world_content %}
+<p class="section-intro muted">{{ intro }}</p>
+<p class="external-values-header">{{ header }}</p>
+{% if bindings_url %}<p class="external-values-bindings">Bindings: <a href="{{ bindings_url }}">{{ bindings_text }}</a></p>{% endif %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}{% if after_refused %} <a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}</div>{% endif %}
+<form method="get" id="external-values-filters" action="{{ filter_url }}">
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif external_error %}{% include "console/_engine_error.html" with engine_error=external_error %}
+{% elif external %}
+<p class="external-values-count">{{ count }}</p>
+{% if rows or rejected %}
+<table class="external-values">
+  <thead><tr><th>Value read</th><th>Scope</th><th>Value</th><th>Source</th><th>Read at</th><th>Turn</th><th>Cited by</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_external_read_row.html" %}
+  {% endfor %}
+  {% for raw in rejected %}<tr class="external-read-unreadable"><td colspan="7" class="unreadable">{{ unreadable }}</td><td class="more"><details><summary>More</summary><pre class="raw-item">{{ raw }}</pre></details></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="none external-values-none">{{ empty }}</p>{% endif %}
+<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

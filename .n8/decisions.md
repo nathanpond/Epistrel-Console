@@ -2600,3 +2600,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `tests/stories/conftest.py`'s fake-Engine fixture now also patches `console.views.story_providers` and `console.views.story_settings`.
   **Why:** The new page, and the settings-page link test, need the fake behind those views.
   **Issue:** #247
+- **Decision:** On External values, each citing fact's lineage link is its short fact id (`engine_id`) at the start of the line, followed by the proposition and "· current" / "· closed <tx_to>"; the proposition itself isn't the link text.
+  **Why:** `_proposition.html` renders its own entity and predicate links, and an `<a>` can't nest inside another `<a>`.
+  **Issue:** #248
+- **Decision:** The External values tests pin the unlinked rendering with a new `tests/inspect/urls_without_providers.py`, which drops `stories:providers` and `engine:provider`. The linked rendering still uses the shared `tests/urls_with_engine_operation.py`.
+  **Why:** #240 and #247 already registered both names, so the real urlconf links them. D19 says to pin the unlinked case with a urlconf that lacks the names.
+  **Issue:** #248
+- **Decision:** The External values section has no `module_off` test. A 409 on this read would still fall through to #43's panel, as the story says.
+  **Why:** The recorded schema declares no 409 for `GET /stories/{id}/inspect/external-facts`, so the schema-validating fake refuses to serve one.
+  **Issue:** #248
+- **Decision:** The "proposition that doesn't parse" in `m6/external_facts_page2.json` is an Instant whose `at` is `130.0`. The unreadable-entry test uses a read whose `turn` is `4.0`.
+  **Why:** Both are schema-valid (JSON Schema counts 130.0 as an integer), so the fake serves them, but the Console's strict int parsing rejects them.
+  **Issue:** #248
+- **Decision:** `parse_as_of` is extracted into `console/forms/inspect.py` and used by both `ExposuresForm` (unchanged behaviour) and the new `ExternalValuesForm`.
+  **Why:** The story's Claude's Discretion asks for one as-of rule with shared constants.
+  **Issue:** #248
+- **Decision:** Registering `inspect:external-values` meant updating the shared test scaffolding: `external-values` joins `STUBBED` in `tests/inspect/urls_world_stub_sections.py`, and the two new fixtures join `M6_FIXTURES` in `tests/engine/test_fake_engine.py` (with `external_facts_empty` in `M6_ID_LESS`).
+  **Why:** This follows #244's precedent. The #239 shell tests assume only their stubbed sections are registered, and D16's table must list every m6 fixture (Rule 3).
+  **Issue:** #248

@@ -1126,12 +1126,29 @@ ANY_WITNESS = "Any"
 STATE_CHOICES = (("", "Any"), ("unresolved", "Unresolved"), ("resolved", "Resolved"))
 STATE_INVALID = "Choose Any, Unresolved or Resolved"
 EXPOSURES_AS_OF_HELP = "State as the record stood through this turn"
+# The World tab's External values section (#248) parses its As of with :func:`parse_as_of` too.
+EXTERNAL_VALUES_AS_OF_HELP = "Reads by turns up to and including this one"
 # A 422 ``validation_error``'s ``details.field`` → the Exposures filter it lands on.
 EXPOSURES_FIELDS: Mapping[str, str] = {
     "query.character": "character",
     "query.state": "state",
     "query.as_of": "as_of",
 }
+
+
+def parse_as_of(value: Any) -> int | None:
+    """The Exposures (#193) and External values (#248) As of turn: stripped, blank → ``None``
+    (not sent), ASCII digits only (:data:`AS_OF_INVALID`), at most :data:`TURN_MAX`
+    (:data:`TURN_TOO_HIGH`). Raises :class:`django.forms.ValidationError`."""
+    typed = str(value or "").strip()
+    if not typed:
+        return None
+    if not (typed.isascii() and typed.isdigit()):
+        raise forms.ValidationError(AS_OF_INVALID)
+    turn = int(typed)
+    if turn > TURN_MAX:
+        raise forms.ValidationError(TURN_TOO_HIGH)
+    return turn
 
 
 class ExposuresForm(forms.Form):
@@ -1205,15 +1222,7 @@ class ExposuresForm(forms.Form):
         return typed.value
 
     def clean_as_of(self) -> int | None:
-        typed = str(self.cleaned_data.get("as_of") or "").strip()
-        if not typed:
-            return None
-        if not (typed.isascii() and typed.isdigit()):
-            raise forms.ValidationError(AS_OF_INVALID)
-        turn = int(typed)
-        if turn > TURN_MAX:
-            raise forms.ValidationError(TURN_TOO_HIGH)
-        return turn
+        return parse_as_of(self.cleaned_data.get("as_of"))
 
     def query(self) -> dict[str, Any]:
         """``EngineClient.inspect_exposures``' filter arguments (valid form only; no cursor):

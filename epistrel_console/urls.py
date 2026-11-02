@@ -22,6 +22,7 @@ from console.views import (
     inspect_clock,
     inspect_divergences,
     inspect_exposures,
+    inspect_external,
     inspect_ledger,
     inspect_memories,
     inspect_memory,
@@ -250,6 +251,12 @@ inspect_patterns = (
             "world/scheduled-events/",
             inspect_scheduled_events.scheduled_events,
             name="scheduled-events",
+        ),
+        # #248: the External values section (what providers answered, and the facts citing it).
+        path(
+            "world/external-values/",
+            inspect_external.external_values,
+            name="external-values",
         ),
         path("effects/", inspect.effects, name="effects"),
         # #136: the predicate registry, a proposal's decision and its result page again.

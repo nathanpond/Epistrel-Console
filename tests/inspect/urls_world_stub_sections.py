@@ -19,13 +19,14 @@ from epistrel_console import urls as real
 
 MOUNT = "stories/<str:story_id>/inspect/"
 WORLD_TEMPLATE = "console/inspect/world.html"
-STUBBED = {"states", "state", "clock", "scheduled-events"}
+STUBBED = {"states", "state", "clock", "scheduled-events", "external-values"}
 BUILT: list[str] = []  # the URL name of each stub build called, in order
 
 
 def without_stubbed() -> list[Any]:
     """The real Inspect patterns minus any real ``inspect:states`` / ``inspect:state`` /
-    ``inspect:clock`` / ``inspect:scheduled-events`` (#244) route (the real one-State page would
+    ``inspect:clock`` / ``inspect:scheduled-events`` (#244) / ``inspect:external-values`` (#248)
+    route (the real one-State page would
     shadow ``world/state/probe/``)."""
     return [p for p in real.inspect_patterns[0] if getattr(p, "name", None) not in STUBBED]
 

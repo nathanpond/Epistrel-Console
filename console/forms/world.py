@@ -115,7 +115,7 @@ when it knows one (#250's rule).
 import json
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from django import forms
@@ -123,7 +123,14 @@ from django.http import QueryDict
 
 from console.cast import OMNISCIENT, Character
 from console.engine.client import EngineError
-from console.forms.inspect import VIEWPOINT_NOT_IN_CAST, VIEWPOINT_UNRESOLVED, viewpoint_choices
+from console.forms.inspect import (
+    AFTER_ID_FIELD,
+    EXTERNAL_VALUES_AS_OF_HELP,
+    VIEWPOINT_NOT_IN_CAST,
+    VIEWPOINT_UNRESOLVED,
+    parse_as_of,
+    viewpoint_choices,
+)
 
 NUMBER_INVALID = "Enter a number (e.g. 12, -3 or 0.5)"
 DELTA_INVALID = "Enter a signed number, e.g. -500 or 2.5"
@@ -274,3 +281,46 @@ class WorldViewpointForm(forms.Form):
             self.add_error("viewpoint", VIEWPOINT_NOT_IN_CAST)
             return
         self.add_error(None, exc.message)
+
+
+# --- the External values section's filters (#248) -----------------------------------------------
+
+# A 422 ``validation_error``'s ``details.field`` → the External values filter it lands on.
+EXTERNAL_VALUES_FIELDS: Mapping[str, str] = {"query.as_of": "as_of"}
+
+
+class ExternalValuesForm(forms.Form):
+    """The External values section's GET filter (``console/views/inspect_external.py``): **As of
+    turn** (``as_of``, the Engine's query parameter), parsed as Exposures' (``parse_as_of``: ASCII
+    digits only, up to ``TURN_MAX``; blank is now and isn't sent). The cursor ``after_id`` isn't a
+    field: Apply starts over. No viewpoint: the Engine serves external values omniscient only."""
+
+    as_of = forms.CharField(
+        required=False,
+        label="As of turn",
+        help_text=EXTERNAL_VALUES_AS_OF_HELP,
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+
+    def clean_as_of(self) -> int | None:
+        return parse_as_of(self.cleaned_data.get("as_of"))
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.inspect_external_facts``' filter arguments (valid form only; no cursor):
+        ``as_of`` ``None`` when blank, which isn't sent."""
+        return {"as_of": self.cleaned_data["as_of"]}
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether As of is set (valid form only; a cursor isn't a filter)."""
+        return self.cleaned_data.get("as_of") is not None
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: the Engine's message beside As of for ``query.as_of``, else above the filters.
+        ``True`` when it named ``query.after_id`` (the line gets "First page")."""
+        field_name = exc.details.get("field")
+        if isinstance(field_name, str) and field_name in EXTERNAL_VALUES_FIELDS:
+            self.add_error(EXTERNAL_VALUES_FIELDS[field_name], exc.message)
+            return False
+        self.add_error(None, exc.message)
+        return field_name == AFTER_ID_FIELD

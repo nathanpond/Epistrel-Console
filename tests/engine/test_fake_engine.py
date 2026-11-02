@@ -210,6 +210,8 @@ M6_FIXTURES = {
     "bindings_orphan": ("GET", "/stories/{story_id}/providers", 200),  # #247
     "binding_written": ("PUT", "/stories/{story_id}/providers/{name}/binding", 200),
     "external_facts": ("GET", "/stories/{story_id}/inspect/external-facts", 200),
+    "external_facts_page2": ("GET", "/stories/{story_id}/inspect/external-facts", 200),  # #248
+    "external_facts_empty": ("GET", "/stories/{story_id}/inspect/external-facts", 200),
     "reconciliation": ("GET", "/stories/{story_id}/reconciliation", 200),
     "settled_now": ("POST", "/stories/{story_id}/reconciliation/{outbox_id}/settle-now", 200),
     "settled_now_queued": (
@@ -246,6 +248,7 @@ M6_ID_LESS = frozenset(
         "state_view",
         "state_definition_written",
         "memories_empty",
+        "external_facts_empty",  # #248
     }
 )
 
