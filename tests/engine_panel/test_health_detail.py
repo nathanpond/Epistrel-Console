@@ -130,5 +130,6 @@ def test_the_page_links_the_re_embed_run(
 
     assert (
         '<a href="/engine/config-changes/">Config changes</a> · '
+        '<a href="/engine/providers/">Providers</a> · '  # #240
         '<a href="/models/embedding/reembed/">Re-embed run</a></p>' in html
     )

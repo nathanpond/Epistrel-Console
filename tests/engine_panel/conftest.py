@@ -10,6 +10,7 @@ from django.test import override_settings
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
 from console.views import engine_panel as views
+from console.views import providers as provider_views
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
@@ -28,5 +29,6 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
         return client
 
     monkeypatch.setattr(views, "engine_client_for", client_with_fake)
+    monkeypatch.setattr(provider_views, "engine_client_for", client_with_fake)  # #240
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake

@@ -2452,3 +2452,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** En dashes in the new slot wording are written as `\u2013` in Python source, not as literal characters.
   **Why:** ruff's RUF001 flags a literal en dash, and the repo already writes them as escapes (`console/world.py`, `console/effects.py`). The rendered text is unchanged.
   **Issue:** #209
+- **Decision:** Deviation: a `providers` value that isn't a list is not shown as a "couldn't be read" row. The strict `ProviderList` reads it as `bad_response`, and the page shows #43's panel. The test pins the panel instead.
+  **Why:** To get the row, `ProviderList.providers` needs a default. `tests/engine/test_contract.py` requires each model's required fields to match the recorded schema, and the schema requires `providers`, so the model can't change. C15 also says not to add defensive cases for shapes the Engine never returns. The per-entry rule (one row per rejected entry, at its raw position) is built and tested.
+  **Issue:** #240
+- **Decision:** `_held.html` renders Delete only when `delete_url` is given. The provider pages include it with no `delete_url` or `ledger_url`, at status 503.
+  **Why:** D17's storyless-page rule wants #87's fragment "with no story links". The fragment always rendered Delete, which needs a story id. Every story-bearing caller still passes `delete_url`, so their output is unchanged.
+  **Issue:** #240
+- **Decision:** Provider-page tests patch `console.views.providers.engine_client_for` in `tests/engine_panel/conftest.py`'s shared `engine` fixture, next to the `engine_panel` patch.
+  **Why:** The new views live in their own module (the story's artifact list), so they take their own patch. Patching in the shared fixture keeps every panel test on one fake.
+  **Issue:** #240
+- **Decision:** The list's count line shows only when there are rows ("Config revision 4 · 2 providers"). When every entry failed it reads "· 0 providers" over the unread rows, and an empty registry gets no count, only "No providers are registered.". In the detail page, the last two Registration lines are whole-row cells, so their text reads exactly "Last changed at config revision <n>" and "Read at config revision <n>".
+  **Why:** The AC and the pass-1 Discretion line say an empty registry shows no "0 providers", and D15 says to count parsed entries only. Whole-row cells keep the AC wording contiguous inside the table.
+  **Issue:** #240
+- **Decision:** `manifest_values` reads an `http` value without `write` or `read` as "—". The constant `SECRET = "secret"` carries `# noqa: S105`, as the Engine's own pattern does.
+  **Why:** The pass-1 Discretion line says any other shape is "—". Ruff flags the word "secret", but this is a placeholder kind, not a credential.
+  **Issue:** #240

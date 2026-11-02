@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Providers — Epistrel Console{% endblock %}
+{% block heading %}Providers{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:home' %}">← Engine</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a></p>
+<p class="scope">The deployment's registered external-data providers, as the Engine answers them.</p>
+
+{% if held %}
+{% include "console/stories/_held.html" with held_text=held.held_text retry_url=held.retry_url delete_url="" ledger_url="" %}
+{% elif engine_error %}
+{% include "console/_engine_error.html" %}
+{% else %}
+<p class="providers-count">Config revision {{ config_revision }}{% if rows %} · {{ count_text }}{% endif %}</p>
+{% if rows %}
+<table class="providers">
+  <thead><tr><th>Name</th><th>Trust tier</th><th>Transport</th><th>Writes</th><th>When unavailable</th><th>Values</th><th>Updated</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    {% if row.unread is not None %}
+    <tr class="unread">
+      <td colspan="7">{{ unread_text }} <details class="more"><summary>More</summary><pre>{{ row.unread }}</pre></details></td>
+    </tr>
+    {% else %}
+    <tr id="provider-{{ row.name }}">
+      <td class="provider-name">{% if row.url %}<a href="{{ row.url }}"><code>{{ row.name }}</code></a>{% else %}<code>{{ row.name }}</code>{% endif %}</td>
+      <td class="provider-trust"><span title="{{ row.trust_tier.raw }}">{{ row.trust_tier.text }}</span></td>
+      <td class="provider-transport"><span title="{{ row.transport.raw }}">{{ row.transport.text }}</span></td>
+      <td class="provider-writes">{{ row.writes }}{% if row.confirmation %} · <span title="{{ row.confirmation.raw }}">{{ row.confirmation.text }}</span>{% endif %}</td>
+      <td class="provider-unavailable"><span title="{{ row.unavailability.raw }}">{{ row.unavailability.text }}</span>{{ row.freshness }}</td>
+      <td class="provider-values">{{ row.values }}</td>
+      <td class="provider-updated">{{ row.updated_at|engine_time }}</td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ empty_text }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

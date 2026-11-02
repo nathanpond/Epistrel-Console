@@ -40,6 +40,7 @@ from console.views import (
     profile_defaults,
     profile_edit,
     profiles,
+    providers,
     rating_suggestion,
     ratings,
     status,
@@ -325,6 +326,9 @@ engine_patterns = (
         path("rebuild/<str:story_id>/", engine_panel.rebuild, name="rebuild"),
         path("settings/", engine_panel.deployment_settings, name="settings"),
         path("config-changes/", engine_panel.config_changes, name="config-changes"),
+        # #240: the deployment's external-data providers, read-only.
+        path("providers/", providers.provider_list, name="providers"),
+        path("providers/<str:name>/", providers.provider_detail, name="provider"),
         # #84: the deployment's profile defaults, in the schema-generated form.
         path(
             "profile-defaults/edit/",
