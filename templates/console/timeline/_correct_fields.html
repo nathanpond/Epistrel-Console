@@ -1,0 +1,12 @@
+{# The correction's confirm form (#263): the hidden-field and input errors, the line above the fields (the history read failed, with #43's panel, or the turn's input isn't in it), the say/do fields (disabled while archived or paused; left out on a no-form page), the blocked state's links and the turn's notices read-only (#185's cards, no controls). Context: form (CorrectForm), correct (console.views.timeline.CorrectView). #}
+{% if correct.fields %}{% include "console/timeline/_fields.html" %}
+{% if correct.line %}<p class="notice correct-line">{{ correct.line }}</p>
+{% endif %}{% if correct.read.error %}{% include "console/_engine_error.html" with engine_error=correct.read.error %}
+{% endif %}{% for field in form.visible_fields %}<div class="field field-{{ field.name }}">
+  {{ field.label_tag }} {{ field }}
+  {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+  {{ field.errors }}
+</div>
+{% endfor %}{% endif %}{% if correct.links %}<ul class="refusal-links">{% for link in correct.links %}<li><a href="{{ link.url }}">{{ link.label }}</a></li>{% endfor %}</ul>
+{% endif %}{% if correct.read.notices %}{% include "console/_notices.html" with cards=correct.read.notices %}
+{% endif %}

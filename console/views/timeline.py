@@ -19,6 +19,14 @@ inspector wording (busy, erased subject, guardrail, model unavailable) or the er
 links where the AC asks (``unknown_chain``'s candidates, Variants and Fork after
 ``nothing_to_undo``).
 
+Correct (#263, FR-RESP-14): ``correct/<turn>/`` replaces the latest turn's input in one Engine
+operation (``POST /stories/{id}/correct``), the replaced turn kept dormant. Its GET reads the
+story (as the play view does) and, for the head turn, the omniscient history at that turn to
+pre-fill the turn's say/do and show its notices read-only; a setup, later-than-head,
+not-latest or already-corrected turn offers no form, an archived or paused story shows the
+form disabled (``ConfirmPage.blocked``). Its POST re-checks the head with one story read before
+writing. Success redirects to the play view at the corrected turn, as regenerate does.
+
 When a rewind's, undo rewind's, swap's or fork's answer lists external effects the edit could
 not undo or re-send (#258), the POST answers 200 with ``timeline/effects_report.html`` instead:
 the flash's success line, the lists (``_edit_effects.html``) and "Continue to the story", with
@@ -37,6 +45,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
+from console.canon import cast_names
 from console.confirm import (
     ConfirmPage,
     confirm_action,
@@ -45,14 +54,17 @@ from console.confirm import (
     safe_next,
 )
 from console.engine.client import EngineClient, EngineClientError, EngineError, turn_timeout
-from console.engine.models import ReactivationCheck, RegenerateResult
+from console.engine.models import ReactivationCheck, RegenerateResult, Story
 from console.engine_access import engine_client_for
-from console.engine_errors import log_engine_error
+from console.engine_errors import EMPTY, ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.forms.timeline import (
+    CHANNELS,
+    CORRECT_ERRORS,
     FORK_ERRORS,
     REGENERATE_ERRORS,
     REWIND_ERRORS,
+    CorrectForm,
     ForkForm,
     RegenerateForm,
     RewindForm,
@@ -60,10 +72,13 @@ from console.forms.timeline import (
     TimelineForm,
     default_fork_name,
     parse_chain,
+    sign_original,
 )
 from console.ids import new_ulid
+from console.inspect import history_turn_url
+from console.notices import EXTERNAL_EFFECTS_TEXT, NoticeCards, notice_cards
 from console.reactivation import FORK, OP_PARAM, SWAP, UNTRUNCATE
-from console.story_pause import check_url
+from console.story_pause import check_url, is_paused, story_paused_refusal
 from console.timeline import (
     Basis,
     EditEffects,
@@ -81,7 +96,8 @@ from console.views.play import (
     error_inspector,
     read_story,
 )
-from console.world import slot_turn_text
+from console.wording import archived_refusal, character_label
+from console.world import slot_turn_text, world_refusal
 
 log = logging.getLogger(__name__)
 
@@ -229,8 +245,13 @@ def _refused(
     key: str,
     basis: Basis | None,
     candidate_link: Callable[[Basis, int, int], Link] | None = None,
+    nothing_text: str = NOTHING_TO_REGENERATE,
+    turn: int | None = None,
 ) -> HttpResponse:
-    """The page for a refused or failed operation (logged; nothing was changed)."""
+    """The page for a refused or failed operation (logged; nothing was changed). ``turn`` (a
+    correction's, #263) adds the notices and links for ``not_latest_turn``,
+    ``already_corrected`` and ``provider_unbound``; ``nothing_text`` is
+    ``nothing_to_regenerate``'s notice."""
     log_engine_error(request, exc)
     found = replace(error_inspector(exc, key), title="", revisions=False)
     refusal = Refusal(title=title, story_id=story_id, inspector=found)
@@ -242,7 +263,22 @@ def _refused(
                 conflict=reload_message(exc.details.get("current_revision")),
             )
         elif exc.code == "nothing_to_regenerate":
-            refusal = replace(refusal, notice=NOTHING_TO_REGENERATE)
+            refusal = replace(refusal, notice=nothing_text)
+        elif exc.code == "not_latest_turn" and turn is not None:
+            refusal = replace(
+                refusal, notice=not_latest_text(turn), links=_not_latest_links(story_id, turn)
+            )
+        elif exc.code == "already_corrected" and turn is not None:
+            refusal = replace(
+                refusal,
+                notice=already_corrected_text(turn),
+                links=(_variants_link(story_id),),
+            )
+        elif exc.code == "provider_unbound" and turn is not None:
+            unbound = world_refusal(exc, story_id, CORRECT_VERB, None)
+            if unbound is not None:
+                shown = (Link("Providers", unbound.url),) if unbound.url else ()
+                refusal = replace(refusal, notice=unbound.text, links=shown)
         elif exc.code == "nothing_to_undo":
             options = exc.details.get("options") or []
             links: tuple[Link, ...] = ()
@@ -331,6 +367,381 @@ def _regenerated(
         request,
         f"Regenerated turn {result.turn}: variant {result.variant} is active, previous variant "
         f"{result.previous_variant} is kept as a dormant variant{config}",
+        operation=operation,
+        rev=result.timeline_revision,
+        key=result.idempotency_key or key,
+    )
+    url = _play_url(story_id, turn=str(result.turn), viewpoint=result.output_viewpoint)
+    return redirect(f"{url}#turn-{result.turn}")
+
+
+# --- Correct (#263) ------------------------------------------------------------------------------
+
+CORRECT_FIELDS = "console/timeline/_correct_fields.html"
+CORRECT_REFUSED = "Correction refused"
+CORRECT_VERB = "correct a turn"
+CORRECT_HISTORY_LIMIT = 200
+SETUP_TEXT = "Turn 0 is the story's setup — there is nothing to correct"
+
+
+def correct_lines(turn: int) -> tuple[str, str]:
+    return (
+        f"The story is rewound to before turn {turn} and the new input is played as its next "
+        "variant, in one operation.",
+        "The replaced turn is kept as a dormant variant — swap back to it from History \u203a "
+        "Variants.",
+    )
+
+
+def not_latest_text(turn: int) -> str:
+    return (
+        f"Turn {turn} is no longer the story's latest — a later turn has committed, so it can't "
+        "be corrected. Rewind or fork to change it."
+    )
+
+
+def ahead_text(turn: int, head: int) -> str:
+    return f"Turn {turn} doesn't exist yet — the story's latest turn is {head}"
+
+
+def already_corrected_text(turn: int) -> str:
+    return (
+        f"Turn {turn} was written by a correction — it can't be corrected again. The original "
+        "is a dormant variant: swap back from History \u203a Variants."
+    )
+
+
+def nothing_to_correct_text(turn: int) -> str:
+    return (
+        f"Nothing to correct — turn {turn} has no reply yet (it may still be waiting on its "
+        "outcome)"
+    )
+
+
+def unread_input_text(turn: int) -> str:
+    return f"Couldn't read turn {turn}'s input — enter the replacement"
+
+
+def absent_input_text(turn: int) -> str:
+    return f"Turn {turn}'s input isn't in the history — enter the replacement"
+
+
+def reconciliation_clause(count: int) -> str:
+    """ "; 1 external effect stays listed for reconciliation" ("" for none)."""
+    if not count:
+        return ""
+    if count == 1:
+        return "; 1 external effect stays listed for reconciliation"
+    return f"; {count} external effects stay listed for reconciliation"
+
+
+def _variants_link(story_id: str) -> Link:
+    return Link("Variants", reverse("stories:history", args=[story_id]) + "#variants")
+
+
+def _not_latest_links(story_id: str, turn: int) -> tuple[Link, ...]:
+    return (
+        Link(f"History at turn {turn}", history_turn_url(story_id, turn)),
+        _variants_link(story_id),
+    )
+
+
+@dataclass(frozen=True)
+class Blocked:
+    """Why the correction page can't proceed: the text (``ConfirmPage.blocked``), its links, and
+    whether the say/do fields still show (disabled: archived, paused) or are left out."""
+
+    text: str
+    links: tuple[Link, ...] = ()
+    fields: bool = False
+
+
+def _head(story: Story) -> int:
+    return story.next_turn_index - 1
+
+
+def _blocked(story: Story, turn: int) -> Blocked | None:
+    """The no-form or disabled state the story read puts the page in, else ``None``."""
+    head = _head(story)
+    if turn == 0:
+        return Blocked(SETUP_TEXT)
+    if turn > head:
+        return Blocked(ahead_text(turn, head))
+    if turn < head:
+        return Blocked(not_latest_text(turn), _not_latest_links(story.id, turn))
+    if story.status == "archived":
+        return Blocked(archived_refusal(CORRECT_VERB), fields=True)
+    if is_paused(story):
+        paused = story_paused_refusal(story)
+        links = (Link("The check", paused.url),) if paused.url else ()
+        return Blocked(paused.text, links, fields=True)
+    return None
+
+
+@dataclass(frozen=True)
+class TurnInput:
+    """What the history read gave the page: turn N's say/do (``None``: no readable item on that
+    channel), the Actor label, its notices (read-only cards), whether any has external effects
+    or was written by a correction, and the read's panel when it failed."""
+
+    say: str | None = None
+    do: str | None = None
+    actor: str = EMPTY
+    notices: NoticeCards | None = None
+    external: bool = False
+    corrected: bool = False
+    error: ErrorPanel | None = None
+
+    @property
+    def found(self) -> bool:
+        return self.say is not None or self.do is not None
+
+
+def _read_turn(request: HttpRequest, story: Story, turn: int) -> TurnInput:
+    """One omniscient history read as of ``turn``: the turn's ``player_input`` items (a redacted
+    or quarantined item counts as absent; several on one channel joined in beat order) and its
+    active-chain notices."""
+    try:
+        history = engine_client_for(request).get_history(
+            story.id, viewpoint="omniscient", as_of=turn, limit=CORRECT_HISTORY_LIMIT
+        )
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return TurnInput(error=panel_for(exc))
+    names = cast_names(story.cast)
+    inputs = [i for i in history.entries if i.kind == "player_input" and i.turn == turn]
+    inputs.sort(key=lambda item: item.beat if item.beat is not None else 0)
+    texts: dict[str, str | None] = {}
+    for channel in CHANNELS:
+        shown = [
+            i.text for i in inputs if i.channel == channel and not i.redacted and not i.quarantined
+        ]
+        texts[channel] = "\n".join(shown) if shown else None
+    actor = next((i.actor_character_id for i in inputs if i.actor_character_id), None)
+    summary = next((t for t in history.turns if t.turn == turn), None)
+    cards, external, corrected = None, False, False
+    if summary is not None:
+        raw = summary.unparsed.get("notices")
+        cards = notice_cards(
+            raw if raw is not None else summary.notices,
+            story.id,
+            names,
+            overridden=frozenset(),
+            latest=None,
+            controls=False,
+        )
+        external = any(n.external_effects for n in summary.notices)
+        corrected = any(not n.correctable for n in summary.notices)
+    return TurnInput(
+        say=texts["say"],
+        do=texts["do"],
+        actor=character_label(actor, names) if actor else EMPTY,
+        notices=cards or None,
+        external=external,
+        corrected=corrected,
+    )
+
+
+@dataclass(frozen=True)
+class CorrectView:
+    """``_correct_fields.html``'s context beside the form: whether the fields show, the blocked
+    state's links, the history read and the line above the fields."""
+
+    fields: bool
+    links: tuple[Link, ...] = ()
+    read: TurnInput | None = None
+    line: str = ""
+
+
+def _correct_page(
+    story_id: str,
+    turn: int,
+    story: Story,
+    form: CorrectForm,
+    back: str,
+    *,
+    blocked: Blocked | None,
+    read: TurnInput | None,
+    hidden: dict[str, str],
+    engine_error: ErrorPanel | None = None,
+) -> tuple[ConfirmPage, dict[str, Any]]:
+    lines: tuple[str, ...] = correct_lines(turn)
+    if read is not None and read.external:
+        lines = (*lines, EXTERNAL_EFFECTS_TEXT)
+    rev = hidden.get("rev") or EMPTY
+    fields = blocked is None or blocked.fields
+    if blocked is not None and blocked.fields:
+        for name in CHANNELS:
+            form.fields[name].widget.attrs["disabled"] = True
+    line = ""
+    if fields and read is not None:
+        if read.error is not None:
+            line = unread_input_text(turn)
+        elif not read.found and not form.is_bound:
+            line = absent_input_text(turn)
+    page = ConfirmPage(
+        title=f"Correct turn {turn}",
+        question=f"Replace turn {turn}'s input in {{name}}?",
+        emphasis=_label(story.name or "", story_id),
+        lines=lines,
+        confirm_label="Correct turn",
+        cancel_url=back,
+        facts=(
+            ("Story id", story_id),
+            ("Expected timeline revision", rev),
+            ("Turn", str(turn)),
+            ("Actor", read.actor if read is not None else EMPTY),
+        ),
+        hidden=hidden,
+        fields_template=CORRECT_FIELDS,
+        blocked=blocked.text if blocked is not None else "",
+    )
+    view = CorrectView(fields, blocked.links if blocked is not None else (), read, line)
+    extra: dict[str, Any] = {"form": form, "correct": view}
+    if engine_error is not None:
+        extra["engine_error"] = engine_error
+    return page, extra
+
+
+def _initial(
+    story: Story, play_story: PlayStory, turn: int, read: TurnInput | None
+) -> dict[str, Any]:
+    initial: dict[str, Any] = {
+        "rev": story.timeline_revision,
+        "head": _head(story),
+        "name": story.name or "",
+        "snapshot": play_story.signed(),
+    }
+    if read is not None and read.found:
+        initial.update(say=read.say or "", do=read.do or "")
+        initial["original"] = sign_original(story.id, turn, read.say, read.do)
+    return initial
+
+
+def _input_refused(exc: EngineError) -> bool:
+    """A 422 ``validation_error`` about the input only (re-rendered beside Say/Do)."""
+    if exc.code != "validation_error":
+        return False
+    failures = engine_field_errors(exc)
+    return bool(failures) and all(f.path.removeprefix("body.") in CORRECT_ERRORS for f in failures)
+
+
+def _unknown_outcome(exc: EngineClientError) -> bool:
+    """A transport error, timeout or unreadable answer: the write may have happened."""
+    return not isinstance(exc, EngineError) or exc.code == "bad_response"
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def correct(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
+    back = safe_next(request, _play_url(story_id))
+    if request.method == "POST":
+        return _correct_post(request, story_id, turn, back)
+    story, play_story, _ = read_story(request, story_id)
+    blocked = _blocked(story, turn)
+    read = _read_turn(request, story, turn) if blocked is None or blocked.fields else None
+    if blocked is None and read is not None and read.corrected:
+        blocked = Blocked(already_corrected_text(turn), (_variants_link(story_id),))
+    initial = _initial(story, play_story, turn, read)
+    form = CorrectForm(story_id=story_id, turn=turn, initial=initial)
+    page, extra = _correct_page(
+        story_id, turn, story, form, back, blocked=blocked, read=read, hidden=form.hidden()
+    )
+    return confirm_action(
+        request, page, lambda _key: render_confirm(request, page, extra=extra), extra=extra
+    )
+
+
+def _correct_post(request: HttpRequest, story_id: str, turn: int, back: str) -> HttpResponse:
+    """The confirmed correction: re-check the head and status (one story read), then one
+    ``/correct`` with the posted revision and key (D8's re-render rule on the way back)."""
+    key = posted_idempotency_key(request)
+    form = CorrectForm(request.POST, story_id=story_id, turn=turn)
+    snapshot = PlayStory.unsigned(request.POST.get(SNAPSHOT_FIELD), story_id)
+    try:
+        if snapshot is not None:
+            story = engine_client_for(request).get_story(story_id)
+            play_story = snapshot
+        else:
+            story, play_story, _ = read_story(request, story_id)
+    except EngineClientError as exc:
+        return _refused(
+            request, exc, title=CORRECT_REFUSED, story_id=story_id, key=key, basis=None, turn=turn
+        )
+    blocked = _blocked(story, turn)
+
+    def page_for(
+        hidden: dict[str, str], engine_error: ErrorPanel | None = None
+    ) -> tuple[ConfirmPage, dict[str, Any]]:
+        read = _read_turn(request, story, turn) if blocked is None or blocked.fields else None
+        return _correct_page(
+            story_id,
+            turn,
+            story,
+            form,
+            back,
+            blocked=blocked,
+            read=read,
+            hidden=hidden,
+            engine_error=engine_error,
+        )
+
+    if blocked is not None:  # a stale or forged POST: the no-form state again, nothing sent
+        hidden = {**form.hidden(), "rev": str(story.timeline_revision)}
+        page, extra = page_for(hidden)
+        return confirm_action(
+            request, page, lambda _key: render_confirm(request, page, extra=extra), extra=extra
+        )
+
+    def perform(key: str) -> HttpResponse:
+        if not form.is_valid():  # local invalid input: the posted key and revision kept
+            page, extra = page_for(form.hidden())
+            return render_confirm(request, page, extra=extra, idempotency_key=key)
+        try:
+            result = engine_client_for(request).correct(
+                story_id,
+                form.body(),
+                expected_revision=form.cleaned_data["rev"],
+                idempotency_key=key,
+                timeout=turn_timeout(play_story.turn_deadline),
+            )
+        except EngineClientError as exc:
+            if _unknown_outcome(exc):  # replay with the same key and revision
+                log_engine_error(request, exc)
+                page, extra = page_for(form.hidden(), panel_for(exc))
+                return render_confirm(request, page, extra=extra, idempotency_key=key)
+            if isinstance(exc, EngineError) and _input_refused(exc):  # a fresh key and revision
+                log_engine_error(request, exc)
+                apply_engine_errors(exc, form, aliases=CORRECT_ERRORS)
+                page, extra = page_for({**form.hidden(), "rev": str(story.timeline_revision)})
+                return render_confirm(request, page, extra=extra)
+            return _refused(
+                request,
+                exc,
+                title=CORRECT_REFUSED,
+                story_id=story_id,
+                key=key,
+                basis=_basis(story_id, form, back),
+                nothing_text=nothing_to_correct_text(turn),
+                turn=turn,
+            )
+        return _corrected(request, story_id, result, key)
+
+    page, extra = _correct_page(
+        story_id, turn, story, form, back, blocked=None, read=None, hidden=form.hidden()
+    )
+    return confirm_action(request, page, perform, extra=extra)
+
+
+def _corrected(
+    request: HttpRequest, story_id: str, result: RegenerateResult, key: str
+) -> HttpResponse:
+    operation = result.entries[0].operation_id if result.entries else None
+    config = f", config revision {result.config_revision}" if result.config_revision else ""
+    _flash(
+        request,
+        f"Corrected turn {result.turn}: variant {result.variant} is active, the replaced variant "
+        f"{result.previous_variant} is kept as a dormant variant{config}"
+        f"{reconciliation_clause(len(result.reconciliation_required))}",
         operation=operation,
         rev=result.timeline_revision,
         key=result.idempotency_key or key,

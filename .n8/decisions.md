@@ -2894,3 +2894,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Fixtures: "the dinner" is `01JM6EV0000000000000000005` (owner author, Mara and Bob taking part); `scheduled_event_rescheduled.json` pending at 1200 shared with nobody (operation `…QP…42`), `scheduled_event_cancelled.json` cancelled at 1140 with Bob kept (`…QP…43`), both revision 13. The tests add the dinner (pending at 1140, shared with Bob) to `m6/scheduled_events.json` inline.
   **Why:** Discretion's fixture shapes and D16's id prefixes; `…05` is the next free event id.
   **Issue:** #262
+- **Decision:** `correct` is built on `confirm_action` for GET/HEAD and for a blocked POST (which re-renders with the posted key and never performs); an unblocked POST passes a page without the history read, and `perform` builds the full page (with its one history re-read) only when it re-renders, so a valid confirm makes exactly one `get_story` and one `/correct`.
+  **Why:** the AC's "renders through `confirm_action`" with Discretion's "the POST re-reads the story" and no extra read before a write.
+  **Issue:** #263
+- **Decision:** No-form/blocked states, in order: turn 0 → setup text; above the head → "doesn't exist yet"; below the head → not-latest with History-at-turn-N and Variants links; archived → C5 text; paused → a new `story_pause.story_paused_refusal(story)` (progress when both counts are ints, "The check" link when a job is named). Archived/paused keep the say/do textareas, rendered `disabled` through widget attrs (not `Field.disabled`, which would discard the posted text on a re-render). A blocked POST's hidden `rev` is the fresh story read's.
+  **Why:** Discretion pass 1/2; the paused link label "The check" is the Console's choice (no wording given).
+  **Issue:** #263
+- **Decision:** `apply_engine_errors` places an alias to `__all__` as a plain non-field error (no `path:` prefix) — a two-line addition to the shared helper, used by `CORRECT_ERRORS["player_input"]`. A 422 `validation_error` re-renders the form only when every failure's path (stripped of `body.`) is a `CORRECT_ERRORS` key; otherwise it is `refused.html`.
+  **Why:** Discretion fixes `CORRECT_ERRORS = {"player_input": "__all__", …}`, and without the change the message would read "__all__: …". Rule 3.
+  **Issue:** #263
+- **Decision:** A transport error, timeout or `bad_response` from `/correct` re-renders the confirm page with the posted key and `rev`, the answer's panel as `engine_error` above the page, and the history re-read; a field-placed 422 re-renders with a fresh key and `rev` from the POST's own `get_story` (D8 as Discretion pass 2 states).
+  **Why:** D8's re-render rule; `bad_response` counts as an unreadable answer.
+  **Issue:** #263
+- **Decision:** `_refused` gains `nothing_text` and `turn`; the `not_latest_turn`, `already_corrected` and `provider_unbound` notices apply only when `turn` is given (the correction), so regenerate's refusal page is unchanged (its `nothing_to_regenerate` test, `tests/timeline/test_conflicts.py::test_nothing_to_regenerate_shows_its_message`, passes unchanged). `provider_unbound`'s link is labelled "Providers" and left out while `stories:providers` doesn't resolve.
+  **Why:** Discretion's refusal plumbing; keeping regenerate byte-identical.
+  **Issue:** #263
+- **Decision:** The page's external-effects line is the new `console.notices.EXTERNAL_EFFECTS_TEXT` (the card's warning as plain text, no link, since `ConfirmPage.lines` are escaped text); the per-card warning is already dropped by `controls=False`.
+  **Why:** AC "#185's external-effects warning text"; one constant beside the card's wording.
+  **Issue:** #263
+- **Decision:** The say/do textareas carry no `maxlength` attribute (popped from the widget); the 8,000-character bound is the server's message ("at most 8000 characters").
+  **Why:** C10's spirit (server-side validation shown); a browser `maxlength` would silently truncate a pasted input.
+  **Issue:** #263
+- **Decision:** Registering `stories:correct` in the real urlconf made #185's two "no Fix control without the route" complements (`tests/play/test_notices.py::test_no_fix_control_without_the_correct_route`, `tests/history/test_notices.py::test_overridden_in_history`) false under the real urlconf; they now run under a new `tests/urls_without_correct.py` (the real routes minus `stories:correct`), assertions unchanged. The D19 stub urlconf keeps working (it drops a real pattern of the stub's name).
+  **Why:** Rule 3 — the tests assumed the route unregistered "until #263"; the complement is still meaningful under a urlconf without it.
+  **Issue:** #263
+- **Decision:** Test data: the Actor is Mara (`m6/story.json`'s player; the test plan's "Jenni" is the Engine's schema example, not in the M6 cast), so the fact reads "Mara (player)". `m6/history_correct_turn.json` is turn 3 with say "Where did Bob put the key?" (beat 1), do "Mara takes the key from the drawer." (beat 2), the reply, and one correctable notice `01JM6NT…263` with `external_effects: true` (registered in `test_fake_engine.py`'s M6 fixture table). `corrected.json` is moved to turn 3 in the tests.
+  **Why:** #232's cast and D16's id prefixes; the fixture shape is the test plan's.
+  **Issue:** #263

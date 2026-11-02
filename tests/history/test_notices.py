@@ -129,6 +129,7 @@ def test_chain_view_greys_fix(operator_client: Client, engine: FakeEngine) -> No
     assert "/correct/" not in html
 
 
+@override_settings(ROOT_URLCONF="tests.urls_without_correct")
 def test_overridden_in_history(operator_client: Client, engine: FakeEngine) -> None:
     session = operator_client.session
     session[NOTICES_OVERRIDDEN_KEY] = [TURN2]

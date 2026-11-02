@@ -4,7 +4,7 @@ Served by the schema-validating fake Engine under #239's Structured v3 and #232'
 ``m6/story.json`` cast (Mara the player, Alice, Bob). Answers are ``respond_json(notices=[…])``;
 the ``correctable: false`` case is #232's ``m6/corrected.json`` notice (a turn a correction
 wrote). Fix / Clarify links #263's ``stories:correct``, stubbed by D19's shared urlconf until
-#263 lands; under the real urlconf (no ``stories:correct`` yet) there is no Fix control at all.
+#263 lands (#263 registers it); under a urlconf without it there is no Fix control at all.
 """
 
 import copy
@@ -52,6 +52,7 @@ OP = "01JM6QP0000000000000000185"
 NOTICE = "01JM6NT0000000000000000185"
 OTHER = "01JM6NT0000000000000000186"
 STUB_URLS = "tests.urls_with_engine_operation"
+NO_CORRECT_URLS = "tests.urls_without_correct"
 EFFECTIVE = "/stories/{story_id}/effective-config"
 PLAY = f"/stories/{STORY}/"
 TURN_URL = f"/stories/{STORY}/turn/"
@@ -234,9 +235,10 @@ def test_fix_shown_when_correctable_and_registered(
     assert '<button type="submit">Override</button>' in card  # Override on every card
 
 
+@override_settings(ROOT_URLCONF=NO_CORRECT_URLS)
 def test_no_fix_control_without_the_correct_route(operator_client: Client) -> None:
-    """**Complement:** under a urlconf without ``stories:correct`` (the real one, until #263)
-    there is no Fix control at all, not even greyed."""
+    """**Complement:** under a urlconf without ``stories:correct`` (#263 registers it in the
+    real one) there is no Fix control at all, not even greyed."""
     corrected = engine_fixture("m6/corrected")
     log_row(answer(notice(), *corrected["notices"]))
     section = section_of(inspect(operator_client, snapshot=snapshot()))

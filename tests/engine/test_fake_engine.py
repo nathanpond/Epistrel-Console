@@ -249,6 +249,7 @@ M6_FIXTURES = {
     "history_world": ("GET", "/stories/{story_id}/history", 200),  # #254
     "history_world_alice": ("GET", "/stories/{story_id}/history", 200),  # #254
     "history_notices": ("GET", "/stories/{story_id}/history", 200),  # #185
+    "history_correct_turn": ("GET", "/stories/{story_id}/history", 200),  # #263
     "history_trail_page1": ("GET", "/stories/{story_id}/history", 200),  # #255
     "history_trail_page2": ("GET", "/stories/{story_id}/history", 200),  # #255
 }

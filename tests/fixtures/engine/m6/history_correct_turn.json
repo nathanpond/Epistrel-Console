@@ -1,0 +1,97 @@
+{
+  "items": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Where did Bob put the key?",
+      "operation_id": "01JM6QP0000000000000000186",
+      "message_id": "01JM6MM0000000000000000863",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Mara takes the key from the drawer.",
+      "operation_id": "01JM6QP0000000000000000186",
+      "message_id": "01JM6MM0000000000000000861",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JM6CH0000000000000000001"
+      ],
+      "channel": "message",
+      "text": "Alice pockets the key. Bob nods to the stranger.",
+      "operation_id": "01JM6QP0000000000000000186",
+      "message_id": "01JM6MM0000000000000000862",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      }
+    }
+  ],
+  "turns": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000862",
+        "text": "Alice pockets the key. Bob nods to the stranger."
+      },
+      "notices": [
+        {
+          "id": "01JM6NT0000000000000000263",
+          "kind": "implausible_knowledge",
+          "character_id": "01JM6CH0000000000000000002",
+          "claim_text": "the key was in the drawer",
+          "turn": 3,
+          "correctable": true,
+          "external_effects": true
+        }
+      ]
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "player_view": "character",
+  "as_of": 3,
+  "timeline_revision": 12,
+  "next_before_turn": null
+}

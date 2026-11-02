@@ -176,3 +176,16 @@ def paused_refusal(exc: EngineError, story_id: str | None = None) -> PausedRefus
 
 def _count(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def story_paused_refusal(story: Story) -> PausedRefusal:
+    """:func:`paused_refusal`'s line for a story the page read as paused (``Story.pause``),
+    so a page can say it before any write (#263): the progress when the read reports it, linked
+    to the check when it names a job."""
+    pause = story.pause
+    if pause is None:
+        return PausedRefusal(PAUSED_LINE, "")
+    done, total = pause.progress.done, pause.progress.total
+    shown = f" ({progress_text(done, total)})" if _count(done) and _count(total) else ""
+    url = check_url(story.id, pause.job_id) if pause.job_id else ""
+    return PausedRefusal(f"{PAUSED_LINE}{shown}", url)

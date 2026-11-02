@@ -43,7 +43,11 @@ IMPLAUSIBLE_KNOWLEDGE_TEXT = "Implausible knowledge"
 NO_WAY_TO_KNOW = "{label} had no way to know"
 NOW_KNOWS = "The turn committed anyway, and {label} now knows it."
 # The card's other fixed words ("Fix / Clarify", "Override", "Overridden this session" and the
-# external-effects warning) are written once, in ``templates/console/_notices.html``.
+# external-effects warning) are written once, in ``templates/console/_notices.html``; #263's
+# correction page says the warning as one plain line (no link), :data:`EXTERNAL_EFFECTS_TEXT`.
+EXTERNAL_EFFECTS_TEXT = (
+    "This turn has an external effect a correction can't undo — it stays listed for reconciliation"
+)
 
 NOT_CORRECTABLE_REASON = "Written by a correction — its notices are informational"
 NOT_LATEST_REASON = (

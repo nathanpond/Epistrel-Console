@@ -204,6 +204,8 @@ story_patterns = (
         path("<str:story_id>/undo-rewind/", timeline.undo_rewind, name="undo-rewind"),
         path("<str:story_id>/swap/", timeline.swap, name="swap"),
         path("<str:story_id>/fork/<int:turn>/", timeline.fork, name="fork"),
+        # #263: correct the latest turn's input (#185's Fix / Clarify).
+        path("<str:story_id>/correct/<int:turn>/", timeline.correct, name="correct"),
     ],
     "stories",
 )
