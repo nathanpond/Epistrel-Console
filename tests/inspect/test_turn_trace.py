@@ -644,3 +644,13 @@ def test_no_withheld_path_remains() -> None:
     partial = (ROOT / "templates/console/_turn_trace.html").read_text()
     assert 'state == "withheld"' not in partial
     assert "notice withheld" not in partial
+
+
+def test_the_trace_read_labels_the_log_rows(operator_client: Client, engine: FakeEngine) -> None:
+    """#257: an eval-hooks block read records the Engine's label on the operation's rows."""
+    row = log_row()
+    engine.respond("GET", OPERATION, 200, json=structured_body(id=OP, label="staged_turn"))
+    fragment(operator_client)
+    row.refresh_from_db()
+    assert row.engine_label == "staged_turn"
+    assert EngineOperation.objects.count() == 1

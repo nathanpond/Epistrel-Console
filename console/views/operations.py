@@ -43,8 +43,11 @@ from console.inspect import history_turn_url
 from console.models import EngineOperation
 from console.operation_log import (
     SANITIZE_KIND,
+    engine_label_text,
+    engine_label_value,
     input_violations,
     is_turn,
+    note_engine_record,
     output_violations,
     policy_ids,
     queued_job_id,
@@ -58,6 +61,11 @@ from console.wording import humanised
 
 PAGE_SIZE = 50
 EMPTY = "—"
+LABEL_NOTE = (
+    "Known only for operations whose Engine record this Console has read (Fetch from Engine, "
+    "the Engine record page, a queued turn's poll, an opened History page or eval-hooks block). "
+    "The Engine has no list of operations to filter by."
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,7 @@ class Filters:
     principal: str = ""  # #64: the principal the call was made as
     entity_type: str = ""  # #64: with or without entity_id
     entity_id: str = ""
+    label: str = ""  # #257: the Engine's label, as this Console last read it
 
     @classmethod
     def from_request(cls, request: HttpRequest) -> Filters:
@@ -86,6 +95,7 @@ class Filters:
             principal=params.get("principal", ""),
             entity_type=params.get("entity_type", ""),
             entity_id=params.get("entity_id", "").strip(),
+            label=params.get("label", ""),
         )
 
     def apply(self, rows: QuerySet[EngineOperation]) -> QuerySet[EngineOperation]:
@@ -103,6 +113,8 @@ class Filters:
             rows = rows.filter(entity_type=self.entity_type)
         if self.entity_id:
             rows = rows.filter(entity_id=self.entity_id)
+        if self.label:
+            rows = rows.filter(engine_label=self.label)
         if self.guardrail:
             rows = rows.filter(is_guardrail_rejection=True)
         if self.policy:
@@ -141,6 +153,8 @@ def operation_list(request: HttpRequest) -> HttpResponse:
         "entity_types": _distinct("entity_type"),
         "outcomes": EngineOperation.Outcome.values,
         "policies": _seen_policies(),
+        "labels": [(value, engine_label_text(value)) for value in _distinct("engine_label")],
+        "label_note": LABEL_NOTE,
     }
     return render(request, "console/operations.html", context)
 
@@ -282,6 +296,8 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             fetch_error = panel_for(exc)
         result_body = redact(fetched.result.body) if fetched and fetched.result else None
         if fetched is not None:
+            if note_engine_record(fetched) > 0:  # #257: this response shows the label too
+                row.engine_label = engine_label_value(fetched)
             fetched_stages = stage_rows(fetched)
             context.update(fetched_stages=fetched_stages, **stage_flags(fetched, fetched_stages))
         context.update(
@@ -348,22 +364,20 @@ def engine_operation(request: HttpRequest, operation_id: str) -> HttpResponse:
     if not is_ulid(normalised):
         context.update(malformed=True, raw_id=operation_id, not_an_id=NOT_AN_ID)
         return render(request, ENGINE_TEMPLATE, context, status=404)
-    log_rows = list(
-        EngineOperation.objects.filter(engine_operation_id=normalised).order_by(
-            "-created_at", "-pk"
-        )
+    log_rows = EngineOperation.objects.filter(engine_operation_id=normalised).order_by(
+        "-created_at", "-pk"
     )
-    context["log_rows"] = log_rows
     try:
         # A read (3 s timeout), never recorded; no viewpoint: label and stages need none.
         record = engine_client_for(request).get_operation(normalised, viewpoint=None)
     except EngineClientError as exc:
+        context["log_rows"] = list(log_rows)
         log_engine_error(request, exc)
         if isinstance(exc, EngineError) and exc.http_status == 404:
             context["not_found"] = True
             return render(request, ENGINE_TEMPLATE, context, status=404)
         if is_held(exc):
-            context["held"] = _held(request, exc, log_rows)
+            context["held"] = _held(request, exc, context["log_rows"])
             response = render(request, ENGINE_TEMPLATE, context, status=503)
             seconds = retry_seconds(exc.retry_after)
             if seconds is not None:
@@ -371,6 +385,8 @@ def engine_operation(request: HttpRequest, operation_id: str) -> HttpResponse:
             return response
         context["engine_error"] = panel_for(exc)
         return render(request, ENGINE_TEMPLATE, context)
+    note_engine_record(record)  # #257: before the log rows are listed
+    context["log_rows"] = list(log_rows)
     rows = stage_rows(record)
     context.update(
         record=record,

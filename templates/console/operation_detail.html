@@ -18,6 +18,7 @@
   <dt>Outcome</dt><dd>{% if row.outcome == "queued" %}queued (unconfirmed){% else %}{{ row.outcome }}{% endif %}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}{% if row.replayed %} (replayed){% endif %}</dd>
   <dt>HTTP status</dt><dd>{{ row.http_status|default_if_none:"—" }}</dd>
   <dt>Engine operation id</dt><dd>{% if row.engine_operation_id %}<code>{{ row.engine_operation_id }}</code>{% else %}—{% endif %}</dd>
+  <dt>Engine label</dt><dd>{% if row.engine_label %}<span title="{{ row.engine_label }}">{{ row.engine_label|engine_label }}</span>{% else %}—{% endif %}</dd>
   <dt>Timeline revision</dt><dd>{{ row.timeline_revision|default_if_none:"—" }}</dd>
   <dt>Config revision</dt><dd>{{ row.config_revision|default_if_none:"—" }}</dd>
   <dt>Idempotency key</dt><dd>{% if row.idempotency_key %}<code>{{ row.idempotency_key }}</code>{% else %}—{% endif %}</dd>

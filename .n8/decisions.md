@@ -2780,3 +2780,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #249's `test_no_action_links_while_the_routes_are_unregistered` and `test_section_never_gated` now run under a new `tests/inspect/urls_without_reconciliation_actions.py` (the real routes minus `settle-now`/`compensate`).
   **Why:** Both pinned the unlinked rendering under the real urlconf, which now registers `inspect:settle-now`; D19 says unlinked rendering is pinned with a urlconf lacking the name.
   **Issue:** #256
+- **Decision:** `note_engine_record` also runs after a successful `read_turn_trace` in `console/views/inspect.py` (the eval-hooks block) and in `console/views/history.py` `turn_traces` (on the request thread, after the futures resolve); `LABEL_NOTE` names "an opened History page or eval-hooks block" too.
+  **Why:** The planner's pass-2 recommendation shown at the gate (approved as "all recs good"): without it most turns a founder has looked at in History would stay unlabelled.
+  **Issue:** #257
+- **Decision:** `engine_label_text` imports `STAGED_LABEL` (`console.effects`) and `humanised` (`console.wording`) inside the function (`# noqa: PLC0415`), not at module level.
+  **Why:** Both modules reach `console.engine_access`, which imports `console.operation_log`: a module-level import is circular. A local import keeps D13's single constant and C3's helper rather than restating them (D17).
+  **Issue:** #257
+- **Decision:** #250's `engine_operation` builds its log-rows queryset before the read and evaluates it after `note_engine_record` (or in the error branch), so the listed rows carry the label just recorded.
+  **Why:** The discretion line says the recording runs before the log rows are listed.
+  **Issue:** #257
+- **Decision:** `LABEL_NOTE` renders as `<p class="filter-note">` directly after the Engine label select inside the filter form; no CSS added.
+  **Why:** "Under the select" with plain functional UI; no existing `filter-note` style to reuse.
+  **Issue:** #257

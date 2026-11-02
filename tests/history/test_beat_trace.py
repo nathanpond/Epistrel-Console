@@ -38,6 +38,7 @@ from console.history import (
     repair_line,
     segments,
 )
+from console.models import EngineOperation
 from console.turn_trace import TurnTrace, declared_beat
 from console.views import history as history_views
 from tests.fakes.engine import FakeEngine
@@ -961,3 +962,39 @@ def test_the_play_transcript_shows_item_level_traces_only(
     assert f'title="{PR1}"' in transcript  # predicate ids, no registry read
     assert "Same propositions as this input" in transcript
     assert "verified" not in transcript.lower()
+
+
+def test_history_trace_reads_label_the_log_rows(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#257: each trace read labels its operation's log rows, on the request thread."""
+
+    def log_row(op: str) -> EngineOperation:
+        return EngineOperation.objects.create(
+            operator_username="nate",
+            principal="console:nate",
+            kind="respond",
+            http_method="POST",
+            path=f"/stories/{STORY}/respond",
+            outcome="ok",
+            engine_operation_id=op,
+        )
+
+    turn2, turn3 = log_row(op_id(2)), log_row(op_id(3))
+    answer_history(engine, history_body([2, 3]))
+    answer_operations(
+        engine,
+        {op_id(2): lambda _r: httpx.Response(200, json=operation(2, label="staged_turn"))},
+    )
+    page(operator_client, "viewpoint=omniscient&traces=1")
+    turn2.refresh_from_db()
+    turn3.refresh_from_db()
+    assert turn2.engine_label == "staged_turn"
+    assert turn3.engine_label == ""  # read, no label
+    assert EngineOperation.objects.count() == 2
+    # **Complement:** with traces off nothing is read, so nothing is labelled.
+    EngineOperation.objects.update(engine_label=None)
+    engine.reset()
+    answer_history(engine, history_body([2, 3]))
+    page(operator_client)
+    assert set(EngineOperation.objects.values_list("engine_label", flat=True)) == {None}

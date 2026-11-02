@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 import pytest
+from django.db import DatabaseError
+from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.test import RequestFactory, override_settings
 
@@ -23,6 +25,7 @@ from console.engine.client import (
 from console.engine.models import OperationRecord, TurnReport
 from console.engine_access import RecordingEngineClient, complete_queued, engine_client_for
 from console.models import EngineOperation
+from console.operation_log import engine_label_text, engine_label_value, note_engine_record
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 
@@ -606,3 +609,107 @@ def test_the_operations_pages_show_only_lengths_and_offer_no_fetch(
             assert "Re-reading the Engine's record isn't offered for sanitize calls" in html
     assert "span_length" in detail
     assert reads.requests == []
+
+
+# --- the Engine's label for an operation (#257) -------------------------------------------------
+
+LABEL_OP = "01JA0000000000000000000OP7"
+
+
+def label_row(engine_operation_id: str) -> EngineOperation:
+    return EngineOperation.objects.create(
+        operator_username="nate",
+        principal="console:nate",
+        kind="respond",
+        http_method="POST",
+        path=f"/stories/{STORY}/respond",
+        outcome="ok",
+        engine_operation_id=engine_operation_id,
+    )
+
+
+def label_record(**changes: Any) -> OperationRecord:
+    record = OperationRecord.from_json(
+        {**engine_fixture("get_operation"), "id": TURN_OP, **changes}
+    )
+    assert record is not None
+    return record
+
+
+def test_note_engine_record_labels_every_row_of_the_operation() -> None:
+    first, second, other = label_row(TURN_OP), label_row(TURN_OP), label_row(LABEL_OP)
+    assert note_engine_record(label_record(label="staged_turn")) == 2
+    for row in (first, second, other):
+        row.refresh_from_db()
+    assert first.engine_label == second.engine_label == "staged_turn"
+    assert other.engine_label is None
+
+
+def test_note_engine_record_without_label_writes_empty() -> None:
+    row = label_row(TURN_OP)
+    assert note_engine_record(label_record(label=None, staged=False)) == 1
+    row.refresh_from_db()
+    assert row.engine_label == ""
+
+
+def test_staged_flag_without_label_reads_staged_turn() -> None:
+    row = label_row(TURN_OP)
+    note_engine_record(label_record(label=None, staged=True))
+    row.refresh_from_db()
+    assert row.engine_label == "staged_turn"
+
+
+def test_unknown_label_is_kept() -> None:
+    row = label_row(TURN_OP)
+    note_engine_record(label_record(label="later_label"))
+    row.refresh_from_db()
+    assert row.engine_label == "later_label"
+    assert engine_label_value(label_record(label="x" * 40)) == "x" * 32  # #44's ``_fit``
+
+
+def test_the_latest_read_wins() -> None:
+    row = label_row(TURN_OP)
+    note_engine_record(label_record(label=None, staged=False))
+    note_engine_record(label_record(label="rating_check"))
+    row.refresh_from_db()
+    assert row.engine_label == "rating_check"
+
+
+def test_a_blank_id_labels_nothing() -> None:
+    """A row with no Engine operation id ("") is never matched by a record without one."""
+    blank = label_row("")
+    assert note_engine_record(label_record(id="")) == 0
+    blank.refresh_from_db()
+    assert blank.engine_label is None
+
+
+def test_note_engine_record_adds_no_row() -> None:
+    label_row(TURN_OP)
+    note_engine_record(label_record(label="staged_turn"))
+    note_engine_record(label_record(id=LABEL_OP, label="staged_turn"))  # no row: still none
+    assert EngineOperation.objects.count() == 1
+
+
+def test_a_database_error_is_swallowed(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    label_row(TURN_OP)
+
+    def broken(self: Any, **kwargs: Any) -> int:
+        raise DatabaseError("SECRET-BODY-TEXT")
+
+    monkeypatch.setattr(QuerySet, "update", broken)
+    with caplog.at_level(logging.ERROR, logger="console.operations"):
+        assert note_engine_record(label_record(label="staged_turn")) == 0
+    (entry,) = [r for r in caplog.records if r.name == "console.operations"]
+    assert entry.levelno == logging.ERROR
+    assert entry.getMessage() == f"operation label not recorded: id={TURN_OP}"
+    assert "SECRET-BODY-TEXT" not in caplog.text
+    assert entry.exc_info is None
+
+
+def test_engine_label_text() -> None:
+    assert engine_label_text(None) == ""
+    assert engine_label_text("") == ""
+    assert engine_label_text("staged_turn") == "Staged turn"
+    assert engine_label_text("rating_check") == "Rating check"

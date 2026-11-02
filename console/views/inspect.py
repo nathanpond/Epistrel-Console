@@ -109,6 +109,7 @@ from console.inspect import (
     tab_availability,
     unavailable_for,
 )
+from console.operation_log import note_engine_record
 from console.retrieval import (
     KEEP_FIELDS,
     Filters,
@@ -682,6 +683,7 @@ def turn_trace(request: HttpRequest, story_id: str, engine_operation_id: str) ->
         else:
             context.update(state="error", engine_error=panel_for(exc))
         return render(request, TURN_TRACE_TEMPLATE, context)
+    note_engine_record(trace.operation)  # #257: the Engine label of the operation read
     state = _trace_state(story_id, trace)
     context.update(state=state, operation=trace.operation)
     if state in (NOT_FOUND, "not_turn"):

@@ -73,6 +73,7 @@ from console.history import (
 )
 from console.inspect import is_structured_pipeline
 from console.notices import notice_cards, overridden_notices
+from console.operation_log import note_engine_record
 from console.perception import perception_url, turn_links_perception
 from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
@@ -372,7 +373,9 @@ def turn_traces(
         elif exc is not None:
             raise exc
         else:
-            found[op_id] = future.result()
+            trace = future.result()
+            note_engine_record(trace.operation)  # #257: on the request thread, never a worker
+            found[op_id] = trace
     return found
 
 

@@ -496,3 +496,16 @@ def test_the_turn_timeout_is_the_deadline_plus_15_s(
     post_turn(operator_client, deadline_s="20")
     post_turn(operator_client)  # no deadline: the snapshot's turn_deadline (45 s)
     assert seen == [35.0, 60.0]
+
+
+def test_poll_labels_a_staged_turn_while_running(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#257: the poll records the Engine's label at any status, before the terminal check."""
+    queue_turn(operator_client, engine)
+    staged = operation_json("in_flight", staged=True, label="staged_turn")
+    engine.respond("GET", OPERATION, 200, json=staged)
+    assert "Running…" in poll(operator_client)
+    row = EngineOperation.objects.get()
+    assert row.engine_label == "staged_turn"
+    assert row.outcome == "queued"  # complete_queued unchanged

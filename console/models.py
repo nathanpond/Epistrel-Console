@@ -62,6 +62,10 @@ class EngineOperation(models.Model):
     entity_type = models.CharField(max_length=32, null=True, blank=True)  # noqa: DJ001
     entity_id = models.CharField(max_length=64, null=True, blank=True)  # noqa: DJ001
     job_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)  # noqa: DJ001
+    # The Engine's ``OperationBody.label`` for ``engine_operation_id`` (#257), recorded whenever
+    # this Console reads that operation's Engine record: NULL = never read, "" = read with no
+    # label, anything else = the Engine's label as sent (open, cut to 32 characters).
+    engine_label = models.CharField(max_length=32, null=True, blank=True)  # noqa: DJ001
 
     class Meta:
         ordering = ("-created_at", "-id")

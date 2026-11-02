@@ -65,7 +65,7 @@ from console.engine.models import (
     StorySettings,
     TurnReport,
 )
-from console.engine_access import complete_queued, engine_client_for
+from console.engine_access import complete_queued, engine_client_for, note_engine_record
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.feedback import FeedbackWidget, collapsed, first_parts
@@ -2004,6 +2004,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
         return _poll_end(
             request, card, error_inspector(exc, ""), "Polling stopped — see the inspector.", None
         )
+    note_engine_record(op)  # #257: labelled at any status, so a staged turn is while incomplete
     card = replace(card, started_at=op.started_at)
     if op.status not in TERMINAL:
         if op.status == "queued":

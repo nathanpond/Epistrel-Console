@@ -848,3 +848,152 @@ def test_unknown_stage_values_are_humanised() -> None:
     # A stage status outside the Engine's enum (C15) makes the record fail to parse.
     record["stages"] = [{"name": "later_stage", "status": "exploded", "at": None}]
     assert OperationRecord.from_json(record) is None
+
+
+# --- the Engine label (#257) --------------------------------------------------------------------
+
+LABEL_SELECT = re.compile(r'<select name="label">(.*?)</select>', re.S)
+
+
+def label_options(html: str) -> list[str]:
+    match = LABEL_SELECT.search(html)
+    assert match is not None
+    return re.findall(r"<option [^>]*>[^<]*</option>", match.group(1))
+
+
+def test_fetch_labels_the_row(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    record = m6_operation("operation_staged")
+    fetch_engine.respond("GET", "/operations/{operation_id}", 200, json=record)
+    row = make_row(engine_operation_id=record["id"])
+    html = operator_client.get(f"/operations/{row.pk}/?fetch=1").content.decode()
+    row.refresh_from_db()
+    assert row.engine_label == "staged_turn"
+    # The Fetch response itself shows it (set in memory after recording).
+    assert '<dt>Engine label</dt><dd><span title="staged_turn">Staged turn</span></dd>' in html
+    assert EngineOperation.objects.count() == 1  # a read adds no row
+
+
+def test_a_failed_fetch_leaves_the_label_unread(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    fetch_engine.respond(
+        "GET",
+        "/operations/{operation_id}",
+        404,
+        json={"error": {"code": "not_found", "message": "gone", "details": {}}},
+    )
+    row = make_row(engine_operation_id=STAGED_OP)
+    html = operator_client.get(f"/operations/{row.pk}/?fetch=1").content.decode()
+    row.refresh_from_db()
+    assert row.engine_label is None
+    assert "<dt>Engine label</dt><dd>—</dd>" in html
+
+
+def test_the_detail_page_shows_the_label_after_the_operation_id(
+    operator_client: Client, operator: Any
+) -> None:
+    row = make_row(engine_operation_id=STAGED_OP, engine_label="rating_check")
+    html = operator_client.get(f"/operations/{row.pk}/").content.decode()
+    label = '<dt>Engine label</dt><dd><span title="rating_check">Rating check</span></dd>'
+    assert label in html
+    assert html.index("<dt>Engine operation id</dt>") < html.index(label)
+    for unread in (None, ""):
+        other = make_row(engine_label=unread)
+        page = operator_client.get(f"/operations/{other.pk}/").content.decode()
+        assert "<dt>Engine label</dt><dd>—</dd>" in page
+
+
+def test_label_filter_offers_only_recorded_labels(operator_client: Client, operator: Any) -> None:
+    make_row(engine_label=None)
+    make_row(engine_label="")
+    assert label_options(operator_client.get("/operations/").content.decode()) == [
+        '<option value="">all</option>'
+    ]
+    make_row(engine_label="staged_turn")
+    make_row(engine_label="rating_check")
+    assert label_options(operator_client.get("/operations/").content.decode()) == [
+        '<option value="">all</option>',
+        '<option value="rating_check" title="rating_check">Rating check</option>',
+        '<option value="staged_turn" title="staged_turn">Staged turn</option>',
+    ]
+
+
+def test_label_filter_narrows(operator_client: Client, operator: Any) -> None:
+    staged = make_row(engine_label="staged_turn")
+    make_row(engine_label="rating_check")
+    make_row(engine_label=None)  # **Complement:** never read
+    make_row(engine_label="")  # read, no label
+    html = operator_client.get("/operations/?label=staged_turn").content.decode()
+    assert listed_ids(html) == [staged.pk]
+    assert '<option value="staged_turn" title="staged_turn" selected>Staged turn</option>' in html
+    # A label the log doesn't hold is applied as given.
+    assert listed_ids(operator_client.get("/operations/?label=genesis").content.decode()) == []
+    # Clear drops it.
+    assert 'href="/operations/">Clear</a>' in html
+
+
+def test_label_note_is_shown(operator_client: Client, operator: Any) -> None:
+    html = operator_client.get("/operations/").content.decode()
+    note = f'<p class="filter-note">{escape(views.LABEL_NOTE)}</p>'
+    assert note in html
+    assert html.index('<select name="label">') < html.index(note)
+    assert "The Engine has no list of operations to filter by." in views.LABEL_NOTE
+
+
+def test_kind_cell_shows_the_label(operator_client: Client, operator: Any) -> None:
+    make_row(engine_label="staged_turn", replayed=True)
+    make_row(kind="set_story_content_rating", engine_label="rating_check")
+    make_row(kind="truncate", engine_label=None)
+    make_row(kind="fork", engine_label="")
+    html = operator_client.get("/operations/").content.decode()
+    assert (
+        '<td><code>respond</code> · <span title="staged_turn">Staged turn</span> (replayed)</td>'
+        in html
+    )
+    assert (
+        '<td><code>set_story_content_rating</code> · <span title="rating_check">Rating check'
+        "</span></td>" in html
+    )
+    # **Complement:** NULL and "" show the bare kind.
+    assert "<td><code>truncate</code></td>" in html
+    assert "<td><code>fork</code></td>" in html
+
+
+def test_paging_keeps_the_label(operator_client: Client, operator: Any) -> None:
+    for _ in range(51):
+        make_row(engine_label="staged_turn")
+    first = operator_client.get("/operations/?label=staged_turn").content.decode()
+    assert len(listed_ids(first)) == 50
+    assert "?label=staged_turn&amp;page=2" in first
+    second = operator_client.get("/operations/?label=staged_turn&page=2").content.decode()
+    assert len(listed_ids(second)) == 1
+
+
+def test_engine_page_labels_its_rows_before_listing_them(
+    operator_client: Client, operator: Any, engine_page: FakeEngine
+) -> None:
+    row = make_row(engine_operation_id=STAGED_OP)
+    other = make_row(engine_operation_id=INCOMPLETE_OP)
+    operator_client.get(f"/operations/engine/{STAGED_OP}/")
+    row.refresh_from_db()
+    other.refresh_from_db()
+    assert row.engine_label == "staged_turn"
+    assert other.engine_label is None
+    assert EngineOperation.objects.count() == 2
+
+
+def test_a_failed_engine_page_read_labels_nothing(
+    operator_client: Client, operator: Any, fetch_engine: FakeEngine
+) -> None:
+    fetch_engine.respond(
+        "GET",
+        "/operations/{operation_id}",
+        404,
+        json={"error": {"code": "not_found", "message": "gone", "details": {}}},
+    )
+    row = make_row(engine_operation_id=STAGED_OP)
+    assert operator_client.get(f"/operations/engine/{STAGED_OP}/").status_code == 404
+    row.refresh_from_db()
+    assert row.engine_label is None
