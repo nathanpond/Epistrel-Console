@@ -1,0 +1,143 @@
+{
+  "items": [
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Alice walks straight to the cellar where Bob left the lantern.",
+      "operation_id": "01JM6QP0000000000000000185",
+      "message_id": "01JM6MM0000000000000000851",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JM6CH0000000000000000001"
+      ],
+      "channel": "message",
+      "text": "Alice finds the lantern in the cellar.",
+      "operation_id": "01JM6QP0000000000000000185",
+      "message_id": "01JM6MM0000000000000000852",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      }
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Alice takes the key from the drawer and Bob greets the stranger by name.",
+      "operation_id": "01JM6QP0000000000000000186",
+      "message_id": "01JM6MM0000000000000000861",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JM6CH0000000000000000001"
+      ],
+      "channel": "message",
+      "text": "Alice pockets the key. Bob nods to the stranger.",
+      "operation_id": "01JM6QP0000000000000000186",
+      "message_id": "01JM6MM0000000000000000862",
+      "origin": "generated",
+      "true_ages": {
+        "01JM6CH0000000000000000001": 34
+      }
+    }
+  ],
+  "turns": [
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000852",
+        "text": "Alice finds the lantern in the cellar."
+      },
+      "notices": [
+        {
+          "id": "01JM6NT0000000000000000101",
+          "kind": "implausible_knowledge",
+          "character_id": "01JM6CH0000000000000000002",
+          "claim_text": "Bob left the lantern in the cellar",
+          "turn": 2,
+          "correctable": true,
+          "external_effects": false
+        }
+      ]
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000862",
+        "text": "Alice pockets the key. Bob nods to the stranger."
+      },
+      "notices": [
+        {
+          "id": "01JM6NT0000000000000000102",
+          "kind": "implausible_knowledge",
+          "character_id": "01JM6CH0000000000000000002",
+          "claim_text": "the key was in the drawer",
+          "turn": 3,
+          "correctable": true,
+          "external_effects": false
+        },
+        {
+          "id": "01JM6NT0000000000000000103",
+          "kind": "implausible_knowledge",
+          "character_id": "01JM6CH0000000000000000003",
+          "claim_text": "the stranger is called Tamsin",
+          "turn": 3,
+          "correctable": false,
+          "external_effects": false
+        }
+      ]
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "player_view": "character",
+  "as_of": 3,
+  "timeline_revision": 9,
+  "next_before_turn": null
+}

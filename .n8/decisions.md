@@ -2738,3 +2738,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The paging links read "Newest page · Older →" in one `<p class="paging">`, and a refused cursor's 422 shows `CURSOR_REFUSED` with a "Newest page" link keeping no other query parameter (the cursor is the page's only input).
   **Why:** Convention 6/C12's links via `console.paging.paging(..., param="before_turn")`; the Claude's Discretion lines say a 422 on a cursor makes no second read.
   **Issue:** #255
+- **Decision:** `notice_cards` takes a keyword `next_url` (beyond the AC's signature and the Discretion's `chain`/`controls`), carried on each card for the Fix link's `?next=` and the Override form's `next` field; the play inspector's is `stories:detail?operation=<turn's operation>` (bare play page when the id is unknown), History's is `request.get_full_path()`.
+  **Why:** The AC fixes `next` per page (play page with the same `?operation=`, history page's full path) but gives the builder no other way to learn it; `?operation=` reaches the same logged inspector the `?turn=` path selects.
+  **Issue:** #185
+- **Decision:** The first-load inspector (`_latest_inspector`) also takes `overridden` and shows notices, beside the three named paths (result/row/selected).
+  **Why:** It is a `row_inspector` path every play page render can take; without it a first page load would show an overridden notice in full.
+  **Issue:** #185
+- **Decision:** `_notices.html` renders both modes: the `<section>` of cards plus the unread line, and with `fragment=True` the cards alone (the override view passes one overridden card). Card wording that never varies ("Fix / Clarify", "Override", "Overridden this session", the external-effects warning) is written once in the template; the reasons, kind text and the two per-label lines are constants/properties in `console/notices.py`.
+  **Why:** One template is the one notice view (AC); keeping the fixed words in one place avoids two copies drifting.
+  **Issue:** #185
+- **Decision:** Added the notice-card styles (and a `section.notices span.disabled` greyed style) to `templates/base.html`.
+  **Why:** #239's `span.disabled` style is scoped to `nav.tabs`/`nav.subtabs` only, so a greyed Fix control would otherwise look like plain text (Rule 2, missing critical presentation).
+  **Issue:** #185
+- **Decision:** D19's shared stub urlconf (`tests/urls_with_engine_operation.py`) gains a `stories:correct` stub at `stories/<id>/correct/<int:turn>/` for the Fix link's linked case; the real urlconf (no `stories:correct` until #263) pins the no-Fix complement.
+  **Why:** D19: a story testing a link to a later story's route adds its stub name there and never its own urlconf.
+  **Issue:** #185
+- **Decision:** `tests/fixtures/engine/m6/history_notices.json` puts one correctable and one `correctable: false` notice on the same head turn, as the test plan specifies, though the Engine marks a turn's notices uniformly (a correction-written turn's are all informational).
+  **Why:** The test plan names this fixture shape explicitly; it is schema-valid and exercises the per-card reason order. Registered in `M6_FIXTURES` (D16).
+  **Issue:** #185
+- **Decision:** Rule 3 fix: ran `ruff format` on `tests/inspect/test_effects_trail.py` (one over-long line committed in a120741, #255).
+  **Why:** It failed `ruff check` (E501) and `ruff format --check` on the branch head, blocking this story's gate; formatting only, no behaviour change.
+  **Issue:** #185

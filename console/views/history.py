@@ -72,6 +72,7 @@ from console.history import (
     turn_label,
 )
 from console.inspect import is_structured_pipeline
+from console.notices import notice_cards, overridden_notices
 from console.perception import perception_url, turn_links_perception
 from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
@@ -270,6 +271,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         _with_explain(story.id, groups, structured)
     _with_perception(story.id, groups, structured, variant or None)
     _with_report(story.id, groups)
+    _with_notices(request, story, groups, labels, chain=bool(variant))
     traces = _with_traces(client, request, story, groups, load=form.show_traces)
     older = history.next_before_turn
     return Page(
@@ -490,6 +492,33 @@ def _with_perception(
         rows = [row.item for row in group.rows]
         if turn_links_perception(rows, group.turn, story_structured):
             group.perception_url = perception_url(story_id, group.turn, variant)
+
+
+def _with_notices(
+    request: HttpRequest,
+    story: Story,
+    groups: list[TurnGroup],
+    labels: Mapping[str, str],
+    *,
+    chain: bool,
+) -> None:
+    """Give each turn its co-author notice cards (#185), named by the page's labels (C4). Fix
+    / Clarify is offered only on the story's latest turn on the active chain (the story read's
+    head), greyed on a chain view; Fix and Override return to this page. Overrides come from
+    the session."""
+    overridden = overridden_notices(request)
+    latest = story.next_turn_index - 1
+    for group in groups:
+        cards = notice_cards(
+            group.notices_raw,
+            story.id,
+            labels,
+            overridden=overridden,
+            latest=latest,
+            chain=chain,
+            next_url=request.get_full_path(),
+        )
+        group.notices = cards or None
 
 
 def _with_report(story_id: str, groups: list[TurnGroup]) -> None:

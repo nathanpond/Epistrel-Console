@@ -89,6 +89,12 @@ story_patterns = (
         path("<str:story_id>/operations/<str:operation_id>/poll/", play.poll, name="poll"),
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
+        # #185: Override a co-author notice for this session (no Engine call; ``<ulid:…>``).
+        path(
+            "<str:story_id>/notices/<ulid:notice_id>/override/",
+            play.override_notice,
+            name="override-notice",
+        ),
         path("<str:story_id>/history/", history.history, name="history"),
         # #195: one turn's perception trace, reconstructed per character.
         path(

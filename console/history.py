@@ -50,6 +50,7 @@ from console.engine.models import (
 )
 from console.inspect import retrieval_url
 from console.models import EngineOperation
+from console.notices import NoticeCards
 from console.turn_trace import MorePart, TurnTrace, declared_beat, inline_json
 from console.wording import character_label, humanised
 
@@ -370,6 +371,10 @@ class TurnGroup:
     state_changes_unparsed: tuple[Any, ...] = ()
     incomplete: bool = False
     incomplete_url: str | None = None
+    # #185: the turn's co-author notices: the summary's raw ``notices`` (its whole raw list when
+    # an entry didn't parse, else the typed list), turned into cards by the view.
+    notices_raw: Any = None
+    notices: NoticeCards | None = None
 
     @property
     def state_changes_unread(self) -> str:
@@ -434,6 +439,8 @@ def turn_groups(
             raw if raw is not None else summary.state_effects, story_id, labels
         )
         owner.incomplete = summary.incomplete
+        raw_notices = summary.unparsed.get("notices")  # #185: the whole raw list, else typed
+        owner.notices_raw = raw_notices if raw_notices is not None else summary.notices
     previous: HistoryItem | None = None
     for item in items:
         same = (

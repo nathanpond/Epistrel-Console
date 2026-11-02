@@ -75,7 +75,9 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake.respond("GET", EFFECTIVE, 200, json=structured_v3())
     fake.respond("GET", STORY_PATH, 200, json=fixture("story"))
     fake.respond("GET", HISTORY, 200, json=fixture("history_trail_page1"))
-    fake.respond("GET", HISTORY, 200, json=fixture("history_trail_page2"), query={"before_turn": "5"})
+    fake.respond(
+        "GET", HISTORY, 200, json=fixture("history_trail_page2"), query={"before_turn": "5"}
+    )
     with override_settings(ENGINE_URL="http://engine.test", ROOT_URLCONF="epistrel_console.urls"):
         yield fake
 

@@ -5,7 +5,8 @@ its owner lands:
 - ``operations:engine`` at ``operations/engine/<str:operation_id>/`` (#250);
 - ``inspect:reconciliation`` at ``effects/reconciliation/`` under the inspect mount (#249);
 - ``engine:provider`` at ``engine/providers/<str:name>/`` (#240);
-- ``stories:providers`` at ``stories/<str:story_id>/providers/`` (#247).
+- ``stories:providers`` at ``stories/<str:story_id>/providers/`` (#247);
+- ``stories:correct`` at ``stories/<str:story_id>/correct/<int:turn>/`` (#263; #185's Fix link).
 
 Django searches one resolver per namespace, so each namespace's list is rebuilt (a real pattern
 of a stub's name dropped, so this keeps working once the owner registers it; the stub appended)
@@ -45,7 +46,10 @@ MOUNTS = {
     ),
     "stories/": _rebuilt(
         real.story_patterns,
-        [path("<str:story_id>/providers/", stub, name="providers")],
+        [
+            path("<str:story_id>/providers/", stub, name="providers"),
+            path("<str:story_id>/correct/<int:turn>/", stub, name="correct"),  # #263, for #185
+        ],
     ),
     "engine/": _rebuilt(
         real.engine_patterns,

@@ -31,7 +31,7 @@ from urllib.parse import urlencode
 
 from django.core import signing
 from django.http import HttpRequest, HttpResponse, QueryDict
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST, require_safe
@@ -41,7 +41,7 @@ from console.canon import cast_names
 from console.cast import CastMember, character_of, viewpoint_for
 from console.cast_panel import CastPanel, cast_panel
 from console.composition import Composition, composition
-from console.confirm import confirm_query, posted_idempotency_key
+from console.confirm import confirm_query, posted_idempotency_key, safe_next
 from console.creation_report import has_creation_report
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
 from console.engine.client import (
@@ -114,9 +114,17 @@ from console.inspect import (
     is_module_off,
     is_structured_pipeline,
     setting,
+    short_id,
 )
 from console.models import EngineOperation
 from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
+from console.notices import (
+    NoticeCards,
+    notice_cards,
+    overridden_card,
+    overridden_notices,
+    remember_override,
+)
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.perception import perception_url, turn_links_perception
 from console.renders import (
@@ -737,6 +745,8 @@ class Inspector:
     composition: Composition | None = None
     # #245: what the turn did to the world (:func:`_with_world`); ``None``: no strip.
     world: TurnWorld | None = None
+    # #185: the turn's co-author notices (:func:`_with_notices`); ``None``: no section.
+    notices: NoticeCards | None = None
 
     @property
     def engine_url(self) -> str:
@@ -899,6 +909,31 @@ def _with_world(
     return replace(found, world=turn_world(response, found.story_id, labels))
 
 
+def _with_notices(
+    found: Inspector,
+    response: Mapping[str, Any],
+    labels: Mapping[str, str],
+    overridden: frozenset[str],
+) -> Inspector:
+    """#185: the turn's notice cards from the same raw answer mapping as the World strip, named
+    by the inspector's labels (C4). ``latest=None``: Fix shows whenever a notice is correctable
+    (#263's page re-checks the head). Fix and Override return to the play page at this turn's
+    operation (``?operation=``), else the play page."""
+    play = reverse("stories:detail", args=[found.story_id])
+    next_url = (
+        f"{play}?{urlencode({'operation': found.operation_id})}" if found.operation_id else play
+    )
+    cards = notice_cards(
+        response.get("notices"),
+        found.story_id,
+        labels,
+        overridden=overridden,
+        latest=None,
+        next_url=next_url,
+    )
+    return replace(found, notices=cards or None)
+
+
 def _answer_mapping(result: RespondResponse) -> dict[str, Any]:
     """#203: the live answer as a mapping (``dataclasses.asdict``), each field the model's
     lenient parse lost an entry of (``unparsed``) put back raw, so the panel keeps it under
@@ -1018,6 +1053,7 @@ def result_inspector(
     actor: str = "",
     labels: Mapping[str, str] | None = None,
     response: Mapping[str, Any] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector:
     """The inspector for a finished turn: the live answer, or a polled operation's stored
     result. ``actor`` is the turn's (the posted form's, or the logged request's) for the
@@ -1039,6 +1075,7 @@ def result_inspector(
     raw = response if response is not None else _answer_mapping(result)
     found = _with_composition(found, raw, labels or {})
     found = _with_world(found, raw, labels or {})
+    found = _with_notices(found, raw, labels or {}, overridden)
     found = _with_warnings(found, labels or {}, story_id)
     return _with_history_link(story_id, found)
 
@@ -1066,7 +1103,11 @@ def _row_actor(row: EngineOperation) -> str:
 
 
 def row_inspector(
-    row: EngineOperation, story_id: str = "", *, labels: Mapping[str, str] | None = None
+    row: EngineOperation,
+    story_id: str = "",
+    *,
+    labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector:
     """The inspector for a turn the operation log holds (#44), for ``story_id`` (the page's;
     the row's own by default), its characters named by ``labels`` (C4)."""
@@ -1098,18 +1139,24 @@ def row_inspector(
     if isinstance(row.response, dict) and not row.error_code and not violations:
         found = _with_composition(found, row.response, labels or {})
         found = _with_world(found, row.response, labels or {})
+        found = _with_notices(found, row.response, labels or {}, overridden)
     found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 
 
-def _latest_inspector(story_id: str, *, labels: Mapping[str, str] | None = None) -> Inspector:
+def _latest_inspector(
+    story_id: str,
+    *,
+    labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
+) -> Inspector:
     """First load: the newest logged turn of this story with a report, else "select a turn"."""
     rows = EngineOperation.objects.filter(story_id=story_id, response__isnull=False).exclude(
         kind__startswith=INGEST_KIND
     )
     for row in rows[:REPORT_SCAN]:
         if _inspectable(row.response):
-            return row_inspector(row, story_id, labels=labels)
+            return row_inspector(row, story_id, labels=labels, overridden=overridden)
     return NOTHING_SELECTED
 
 
@@ -1119,6 +1166,7 @@ def selected_inspector(
     origin: str = "",
     *,
     labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector:
     """The inspector for a clicked history item of story ``story_id``, by the operation that
     recorded it. #139's trace block is offered unless the turn was ingested."""
@@ -1126,7 +1174,7 @@ def selected_inspector(
     for row in rows:
         # An ingest's answer carries the input gate's model calls, not a turn report.
         if not row.kind.startswith(INGEST_KIND) and _inspectable(row.response):
-            return row_inspector(row, story_id, labels=labels)
+            return row_inspector(row, story_id, labels=labels, overridden=overridden)
     ingested = origin == "ingested" or any(row.kind.startswith(INGEST_KIND) for row in rows)
     return Inspector(
         title=f"Operation {operation_id}",
@@ -1328,6 +1376,7 @@ def _turn_inspector(
     story_structured: bool = False,
     *,
     labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector | None:
     """The inspector for turn ``turn`` of the transcript (``?turn=N``): its reply's operation,
     else any of its items'. Its "Explain retrieval" link (#142) is rebuilt from the transcript's
@@ -1340,7 +1389,11 @@ def _turn_inspector(
     if not chosen:
         return None
     found = selected_inspector(
-        transcript.story_id, chosen[0].operation_id, chosen[0].origin, labels=labels
+        transcript.story_id,
+        chosen[0].operation_id,
+        chosen[0].origin,
+        labels=labels,
+        overridden=overridden,
     )
     query = explain_query(items, turn, chosen[0].variant, lambda: story_structured)
     link = explain_url(transcript.story_id, query) if query is not None else None
@@ -1372,8 +1425,11 @@ def _page(
     built after the story read so it names the characters (#201, C4)."""
     story, play, config = read_story(request, story_id)
     labels = cast_names(play.cast)
+    overridden = overridden_notices(request)  # #185
     if inspector is None and operation:
-        inspector = selected_inspector(story_id, operation, origin, labels=labels)
+        inspector = selected_inspector(
+            story_id, operation, origin, labels=labels, overridden=overridden
+        )
     requested = _player_view(player_view)
     restored = _restored_cards(play, requested) if cards is None else cards
     if form is None:
@@ -1385,13 +1441,17 @@ def _page(
     shown = _transcript(request, play, chosen, story=story, player_view=requested)
     if inspector is None and turn is not None:
         structured = config is not None and is_structured_pipeline(config.effective)
-        inspector = _turn_inspector(shown, turn, structured, labels=labels)
+        inspector = _turn_inspector(shown, turn, structured, labels=labels, overridden=overridden)
     page = PlayPage(
         story,
         play,
         _form_view(play, form, waiting=bool(restored), transcript_player_view=requested),
         shown,
-        inspector if inspector is not None else _latest_inspector(story_id, labels=labels),
+        (
+            inspector
+            if inspector is not None
+            else _latest_inspector(story_id, labels=labels, overridden=overridden)
+        ),
         ingest_view
         or _ingest_view(
             play,
@@ -1517,11 +1577,45 @@ def inspector(request: HttpRequest, story_id: str) -> HttpResponse:
     shown = PlayStory.unsigned(snapshots[0], story_id) if snapshots else None
     labels = cast_names(shown.cast) if shown is not None else {}
     found = (
-        selected_inspector(story_id, operation, origin, labels=labels)
+        selected_inspector(
+            story_id, operation, origin, labels=labels, overridden=overridden_notices(request)
+        )
         if operation
         else NOTHING_SELECTED
     )
     return render(request, "console/play/_inspector_body.html", {"inspector": found})
+
+
+@require_POST
+def override_notice(request: HttpRequest, story_id: str, notice_id: str) -> HttpResponse:
+    """#185: Override a co-author notice for this browser session. The turn is already
+    committed, so this reads nothing from the Engine and writes nothing there; the notice isn't
+    checked against the story either (an unknown id only hides a card that doesn't exist).
+
+    An HTMX request gets the card's overridden line, labelled from the posted signed snapshot,
+    else the posted display-only ``label``, else the character's short id (C4); the posted
+    ``claim_text``/``character_id``/``label`` are never trusted for the action. Otherwise the
+    answer redirects to ``next`` (the story's play page by default)."""
+    remember_override(request, notice_id)
+    if not is_htmx(request):
+        return redirect(safe_next(request, reverse("stories:detail", args=[story_id])))
+    character_id = request.POST.get("character_id", "").strip()
+    snapshots = request.POST.getlist(SNAPSHOT_FIELD)
+    shown = PlayStory.unsigned(snapshots[0], story_id) if snapshots else None
+    names = cast_names(shown.cast) if shown is not None else {}
+    label = (
+        names.get(character_id)
+        or request.POST.get("label", "").strip()
+        or (short_id(character_id) if character_id else "")
+    )
+    card = overridden_card(
+        notice_id,
+        character=label,
+        claim_text=request.POST.get("claim_text", ""),
+        character_id=character_id,
+    )
+    context = {"cards": NoticeCards((card,)), "fragment": True}
+    return render(request, "console/_notices.html", context)
 
 
 def _posted(data: QueryDict) -> dict[str, list[str]]:
@@ -1600,6 +1694,7 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
             operation_id,
             actor=str(form.cleaned_data.get("actor") or ""),
             labels=cast_names(play_story.cast),
+            overridden=overridden_notices(request),
         ),
         viewpoint=result.output_viewpoint,
         config_badge=_badge_after(request, story_id, result),
@@ -1931,6 +2026,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
                 actor=_logged_actor(operation_id),
                 labels=cast_names(pending[0].cast),
                 response=op.result.body if op.result else None,
+                overridden=overridden_notices(request),
             )
             note = f"Turn {result.turn} committed."
             badge = _badge_after(request, story_id, result)

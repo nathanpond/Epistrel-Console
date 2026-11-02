@@ -238,6 +238,7 @@ M6_FIXTURES = {
     "operation_staged_incomplete": ("GET", "/operations/{operation_id}", 200),  # #250
     "history_world": ("GET", "/stories/{story_id}/history", 200),  # #254
     "history_world_alice": ("GET", "/stories/{story_id}/history", 200),  # #254
+    "history_notices": ("GET", "/stories/{story_id}/history", 200),  # #185
     "history_trail_page1": ("GET", "/stories/{story_id}/history", 200),  # #255
     "history_trail_page2": ("GET", "/stories/{story_id}/history", 200),  # #255
 }

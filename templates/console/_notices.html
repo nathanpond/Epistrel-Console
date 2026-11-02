@@ -1,0 +1,13 @@
+{# A turn's co-author notices (#185). Context: cards (console.notices.NoticeCards); fragment=True renders the cards alone (the override view's single overridden line), with no <section> and no unread line. Each card sits apart from the story text: the player's claim verbatim (escaped), Fix / Clarify (#263; greyed with its reason, or left out while unregistered) and Override (no Engine call). An overridden card is one muted line. #}
+{% load console_format %}{% if not fragment %}<section class="notices" aria-label="Notices">
+{% endif %}{% for card in cards.cards %}{% if card.overridden %}<p class="notice-overridden" id="notice-{{ card.id }}">Overridden this session{% if card.character or card.claim_text %} — {{ card.character }}: “{{ card.claim_text }}”{% endif %}</p>
+{% else %}<article class="notice-card" id="notice-{{ card.id }}">
+<p class="notice-line">{% if card.implausible %}{{ card.kind_text }} — {{ card.no_way_to_know }}: “{{ card.claim_text }}”{% else %}{{ card.kind_text }} — {{ card.character }}: “{{ card.claim_text }}”{% endif %}</p>
+{% if card.implausible %}<p>{{ card.now_knows }}</p>
+{% endif %}{% if card.external_effects %}<p class="warning">This turn has an external effect a correction can't undo — it stays {% if card.reconciliation_url %}<a href="{{ card.reconciliation_url }}">listed for reconciliation</a>{% else %}listed for reconciliation{% endif %}</p>
+{% endif %}{% if card.controls %}<div class="notice-actions">{% if card.fix_url %}<a class="button" href="{{ card.fix_url }}">Fix / Clarify</a> {% elif card.fix_disabled_reason %}<span class="disabled" aria-disabled="true" title="{{ card.fix_disabled_reason }}">Fix / Clarify</span> {% endif %}<form method="post" action="{% url 'stories:override-notice' card.story_id card.id %}" hx-post="{% url 'stories:override-notice' card.story_id card.id %}" hx-target="#notice-{{ card.id }}" hx-swap="outerHTML" hx-include="[name=snapshot]">{% csrf_token %}<input type="hidden" name="next" value="{{ card.next_url }}"><input type="hidden" name="claim_text" value="{{ card.claim_text }}"><input type="hidden" name="character_id" value="{{ card.character_id }}"><input type="hidden" name="label" value="{{ card.character }}"><button type="submit">Override</button></form></div>
+{% endif %}</article>
+{% endif %}{% endfor %}{% if not fragment %}{% if cards.unparsed %}<p class="warning">{{ cards.unread }}</p>
+<details class="more"><summary>More</summary>{% for entry in cards.unparsed %}<pre>{{ entry|pretty_json }}</pre>{% endfor %}</details>
+{% endif %}</section>
+{% endif %}
