@@ -1,0 +1,28 @@
+{% load console_format inspect_tags world_tags %}{% comment %}
+One listed outbox row (#249): a console.reconciliation.ListingRow as row, one
+<tr id="outbox-<outbox_id>"> (D11's anchor, the id exactly as sent). Columns: Outbox id (full),
+Provider (linked through D19's provider_url when engine:provider resolves), Provider value, Status
+and Why listed (C3: humanised, raw in title; the reason's explanation in <small>), Since, Effect
+(REDACTED in span.redacted for a redacted row), Latest outcome, Re-verification (settle reasons'
+backtick spans as <code>), Compensated by (linked to its row when on the page), Actions (Settle now
+/ Compensate, only for a settleable reason and while the URL names resolve; greyed spans carry the
+gate's attributes, the reason being shown once above the table) and More (the effect, the raw
+status and reason). Context: row, actions_gate, gate_id.
+{% endcomment %}<tr id="outbox-{{ row.outbox_id }}" class="listing">
+  <td class="outbox">{{ row.outbox_id|outbox_id }}</td>
+  <td class="provider">{% if row.provider_url %}<a class="provider-link" href="{{ row.provider_url }}"><code>{{ row.provider }}</code></a>{% else %}<code>{{ row.provider }}</code>{% endif %}</td>
+  <td class="value">{% if row.value %}<code>{{ row.value }}</code>{% else %}—{% endif %}</td>
+  <td class="status"><span title="{{ row.status }}">{{ row.status_text }}</span></td>
+  <td class="reason"><span title="{{ row.reason }}">{{ row.reason_text }}</span>{% if row.explanation %} <small>{{ row.explanation }}</small>{% endif %}</td>
+  <td class="since">{{ row.since|engine_time }}</td>
+  <td class="effect">{% if row.redacted %}<span class="redacted">{{ row.effect_text }}</span>{% else %}{{ row.effect_text }}{% endif %}</td>
+  <td class="outcome">{% if row.outcome %}<span title="{{ row.outcome.title }}">{{ row.outcome.kind }} · via {{ row.outcome.via }} · {{ row.outcome.received_at|engine_time }}</span>{% else %}—{% endif %}</td>
+  <td class="reverification">{% if row.reverification %}<span title="{{ row.reverification_title }}">{{ row.reverification|code_spans }}</span>{% else %}—{% endif %}</td>
+  <td class="compensated-by">{% if row.compensated_by %}{% if row.compensated_url %}<a href="{{ row.compensated_url }}">{{ row.compensated_by|outbox_id }}</a>{% else %}{{ row.compensated_by|outbox_id }}{% endif %}{% else %}—{% endif %}</td>
+  <td class="actions">{% for action in row.actions %}{% if action.gated %}<span class="disabled action" aria-disabled="true"{{ actions_gate|gate_attrs:gate_id }}>{{ action.label }}</span>{% else %}<a class="action" href="{{ action.url }}">{{ action.label }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</td>
+  <td class="more"><details><summary>More</summary><dl>
+    {% if row.effect_json %}<dt>Effect</dt><dd><pre class="raw-effect">{{ row.effect_json }}</pre></dd>{% endif %}
+    <dt>Status</dt><dd><code>{{ row.status }}</code></dd>
+    <dt>Reason</dt><dd><code>{{ row.reason }}</code></dd>
+  </dl></details></td>
+</tr>

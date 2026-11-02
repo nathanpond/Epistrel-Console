@@ -165,16 +165,14 @@ def test_outbox_list_notice() -> None:
 
 
 def test_d19_unregistered_links_are_none() -> None:
-    # Before #249/#250 the real urlconf lacks these names (#240 registered ``engine:provider``).
-    for name, args in (
-        ("inspect:reconciliation", [STORY]),
-        ("operations:engine", [OPERATION]),
-    ):
-        with pytest.raises(NoReverseMatch):
-            reverse(name, args=args)
-    assert outbox_url(STORY, OUTBOX) is None
-    assert reconciliation_link(STORY, 3) is None
+    # Before #250 the real urlconf lacks ``operations:engine`` (#240 registered
+    # ``engine:provider``, #249 ``inspect:reconciliation``).
+    with pytest.raises(NoReverseMatch):
+        reverse("operations:engine", args=[OPERATION])
     assert engine_operation_url(OPERATION) is None
+    reconciliation = f"/stories/{STORY}/inspect/effects/reconciliation/"
+    assert outbox_url(STORY, OUTBOX) == f"{reconciliation}#outbox-{OUTBOX}"  # registered by #249
+    assert reconciliation_link(STORY, 3) == ("3 effects to reconcile", reconciliation)
     assert provider_url("bank") == "/engine/providers/bank/"  # registered by #240
 
 

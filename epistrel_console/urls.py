@@ -27,6 +27,7 @@ from console.views import (
     inspect_memories,
     inspect_memory,
     inspect_predicates,
+    inspect_reconciliation,
     inspect_scene,
     inspect_scheduled_events,
     inspect_states,
@@ -259,6 +260,12 @@ inspect_patterns = (
             name="external-values",
         ),
         path("effects/", inspect.effects, name="effects"),
+        # #249: the Reconciliation section (every listed outbox row, each at #outbox-<id>).
+        path(
+            "effects/reconciliation/",
+            inspect_reconciliation.reconciliation,
+            name="reconciliation",
+        ),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(

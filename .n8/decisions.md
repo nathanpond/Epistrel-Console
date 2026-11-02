@@ -2618,3 +2618,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Registering `inspect:external-values` meant updating the shared test scaffolding: `external-values` joins `STUBBED` in `tests/inspect/urls_world_stub_sections.py`, and the two new fixtures join `M6_FIXTURES` in `tests/engine/test_fake_engine.py` (with `external_facts_empty` in `M6_ID_LESS`).
   **Why:** This follows #244's precedent. The #239 shell tests assume only their stubbed sections are registered, and D16's table must list every m6 fixture (Rule 3).
   **Issue:** #248
+- **Decision:** `listing_row(listing, story_id, on_page)` and `action_query(listing, story, next_url)` take extra keyword-only arguments: `story=`/`gate=` on `listing_row` (the actions need the shell's story read and D1's gate) and `with_state=` on `action_query` (only Compensate carries `state`). Both still return dicts/rows exactly as the AC names them.
+  **Why:** The AC's signatures have no slot for the gate, the story revision or the per-action difference. Keyword-only extensions keep the named call shape.
+  **Issue:** #249
+- **Decision:** A row counts as redacted when `value` is absent (`is_redacted`). The Effect cell then reads `REDACTED`, and More leaves out the effect JSON.
+  **Why:** The AC defines it that way ("a redacted row (`value` absent)"). Engine #211 omits `value` and everything after it.
+  **Issue:** #249
+- **Decision:** The count line shows only when at least one row parsed. When every entry was rejected, neither the empty line nor a count shows, only the D15 notice. The rejected entries sit in one page-level `<details>`, not in table rows.
+  **Why:** D15 says "when every entry failed there is no empty text, only that notice", and the AC asks for a page-level `<details>` with only the rejected entries.
+  **Issue:** #249
+- **Decision:** `test_provider_unlinked_until_registered` checks the linked case under the real urlconf, not under `tests/urls_with_engine_operation.py`.
+  **Why:** That shared stub urlconf replaces `inspect:reconciliation` itself with a stub, so the section can't render there. #240 has since registered `engine:provider` in the real urlconf, so the real link is now the one to test.
+  **Issue:** #249
+- **Decision:** Registering `inspect:reconciliation` meant updating the shared test scaffolding. `reconciliation` joins `STUBBED` in `tests/inspect/urls_world_stub_sections.py`, so #239's "Effects shell without sections" test still sees no section. `tests/test_effects.py::test_d19_unregistered_links_are_none` now expects `outbox_url`/`reconciliation_link` to resolve to the real section (only `operations:engine` stays unregistered). The two new fixtures join `M6_FIXTURES`, with `reconciliation_empty` in `M6_ID_LESS`.
+  **Why:** Those tests pinned the pre-#249 state. This follows #240/#244/#248's precedent (Rule 3).
+  **Issue:** #249
+- **Decision:** A held 503 on the reconciliation read returns `render_held(...)` from `build`. Every other read error, `module_off` included, is #43's panel inside the section.
+  **Why:** Claude's Discretion asks for `render_held`. D1 says the list is never gated, so a 409 must not grey the tab.
+  **Issue:** #249
+- **Decision:** In `reconciliation_actions.json`, `BX13` (`reconciliation_required`) is the `claimed` "gold −500 — “buy sword”" row. The test plan's "Claimed" and the U+2212 effect assertions live there because #232's `reconciliation.json` uses different values (`bank_balance`, status `unknown`), and that file isn't edited. The redacted settleable row and the linked Compensated-by case use inline copies of #232's body.
+  **Why:** The test plan's cases expect values that #232's fixture doesn't carry.
+  **Issue:** #249
+- **Decision:** `tests/play/test_world_strip.py` (#245) now expects linked outbox ids and a linked count under the real urlconf. Its unlinked case moved to `tests.inspect.urls_world_no_sections`, which drops `inspect:reconciliation`. That case is renamed `test_live_turn_count_is_plain_text_without_the_reconciliation_list`.
+  **Why:** Those tests pinned the pre-#249 rendering ("before #249"). D19 says the links appear once #249 registers the name (Rule 3).
+  **Issue:** #249

@@ -1,0 +1,31 @@
+{% extends "console/inspect/effects.html" %}
+{% comment %}
+The Effects tab's Reconciliation section (#249, console/views/inspect_reconciliation.py): one
+GET /stories/{id}/reconciliation after the shell's reads, never gated (D1). Above the table, in
+order: the scope line, the count line (parsed rows only; none with the empty line), the D15
+unreadable notice and the actions' gate reason (once, only when a greyed action renders). Then the
+rows (_listing_row.html, the Engine's order, oldest first) or the empty line, and a page-level
+<details> holding only the rejected entries. Errors stay in the section (convention 10). Context:
+scope_line, gate_id, reconciliation, rows, count, unreadable, rejected, empty, actions_gate,
+not_found, reconciliation_error, story_id.
+{% endcomment %}
+{% block effects_content %}
+<p class="section-intro muted reconciliation-scope">{{ scope_line }}</p>
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif reconciliation_error %}{% include "console/_engine_error.html" with engine_error=reconciliation_error %}
+{% elif reconciliation %}
+{% if count %}<p class="reconciliation-count">{{ count }}</p>{% endif %}
+{% if unreadable %}<p class="notice reconciliation-unreadable">{{ unreadable }}</p>{% endif %}
+{% if actions_gate %}<p class="reconciliation-actions-gate">{% include "console/_gated_control.html" with gate=actions_gate gate_id=gate_id %}</p>{% endif %}
+{% if rows %}
+<table class="reconciliation">
+  <thead><tr><th>Outbox id</th><th>Provider</th><th>Provider value</th><th>Status</th><th>Why listed</th><th>Since</th><th>Effect</th><th>Latest outcome</th><th>Re-verification</th><th>Compensated by</th><th>Actions</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_listing_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% elif empty %}<p class="none">{{ empty }}</p>{% endif %}
+{% if rejected %}<details class="reconciliation-rejected"><summary>More</summary>{% for raw in rejected %}<pre class="raw-item">{{ raw }}</pre>{% endfor %}</details>{% endif %}
+{% endif %}
+{% endblock %}

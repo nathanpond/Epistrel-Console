@@ -47,6 +47,8 @@ CORRECT_OP = "01JM6QP0000000000000000061"  # corrected.json's beat operation
 OUTBOX = "01JM6BX0000000000000000011"  # the dispatched State change's outbox row
 REQUIRED = ("01JM6BX0000000000000000012", "01JM6BX0000000000000000013")
 STUB_URLS = "tests.urls_with_engine_operation"
+# The real routes minus the World/Effects sections, ``inspect:reconciliation`` (#249) included.
+NO_RECONCILIATION = "tests.inspect.urls_world_no_sections"
 EFFECTIVE = "/stories/{story_id}/effective-config"
 PLAY = f"/stories/{STORY}/"
 TURN_URL = f"/stories/{STORY}/turn/"
@@ -299,10 +301,12 @@ def test_live_turn_shows_the_strip(operator_client: Client, engine: FakeEngine) 
     assert "Viewpoint:" not in strip  # an omniscient answer
 
 
-def test_live_turn_count_is_plain_text_before_the_reconciliation_list(
+@override_settings(ROOT_URLCONF=NO_RECONCILIATION)
+def test_live_turn_count_is_plain_text_without_the_reconciliation_list(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """D19: under the real urlconf (before #249) the count and outbox ids are unlinked."""
+    """D19: under a urlconf without ``inspect:reconciliation`` (the real one registers it since
+    #249) the count and outbox ids are unlinked."""
     engine.respond("POST", RESPOND, 200, json=world_json())
     serve(engine)
     strip = strip_of(post_turn(operator_client))
@@ -393,20 +397,20 @@ def test_polled_turn_shows_the_strip(operator_client: Client, engine: FakeEngine
     serve(engine)
     queue_turn(operator_client, engine)
     html = poll(operator_client, engine, world_json())
-    assert_full_strip(strip_of(html), linked=False)
+    assert_full_strip(strip_of(html), linked=True)
 
 
 def test_logged_turn_selected_shows_the_strip(operator_client: Client, engine: FakeEngine) -> None:
     log_row()
     serve(engine)
-    assert_full_strip(strip_of(page_inspector(operator_client, operation=OP)), linked=False)
+    assert_full_strip(strip_of(page_inspector(operator_client, operation=OP)), linked=True)
     # The HTMX inspector, labelled from the snapshot, with no Engine read.
     engine.reset()
-    assert_full_strip(strip_of(inspect(operator_client, snapshot=snapshot())), linked=False)
+    assert_full_strip(strip_of(inspect(operator_client, snapshot=snapshot())), linked=True)
     assert engine.requests == []
     # **Complement:** without a snapshot the scope column shows short ids.
     strip = strip_of(inspect(operator_client))
-    assert_full_strip(strip, linked=False, names=False)
+    assert_full_strip(strip, linked=True, names=False)
     assert f"<td>{short_id(MARA)}</td>" in strip
     assert f"<td>{short_id(ALICE)}</td>" in strip
     assert "Mara (player)" not in strip
@@ -417,7 +421,7 @@ def test_first_load_shows_the_latest_turns_strip(
 ) -> None:
     log_row()
     serve(engine)
-    assert_full_strip(strip_of(page_inspector(operator_client)), linked=False)
+    assert_full_strip(strip_of(page_inspector(operator_client)), linked=True)
 
 
 def test_one_body_gives_the_same_world_on_every_path() -> None:
@@ -442,9 +446,7 @@ def test_regenerate_result_shows_the_strip(operator_client: Client, engine: Fake
     inspector = page_inspector(operator_client, turn="4")
     assert "<dt>Previous variant</dt>" in inspector
     strip = strip_of(inspector)
-    assert_full_strip(strip, linked=False)
-    for line in NOT_UNDONE:
-        assert line in strip
+    assert_full_strip(strip, linked=True)  # the not-undone lines, linked since #249
 
 
 @override_settings(ROOT_URLCONF=STUB_URLS)

@@ -213,6 +213,8 @@ M6_FIXTURES = {
     "external_facts_page2": ("GET", "/stories/{story_id}/inspect/external-facts", 200),  # #248
     "external_facts_empty": ("GET", "/stories/{story_id}/inspect/external-facts", 200),
     "reconciliation": ("GET", "/stories/{story_id}/reconciliation", 200),
+    "reconciliation_actions": ("GET", "/stories/{story_id}/reconciliation", 200),  # #249
+    "reconciliation_empty": ("GET", "/stories/{story_id}/reconciliation", 200),  # #249
     "settled_now": ("POST", "/stories/{story_id}/reconciliation/{outbox_id}/settle-now", 200),
     "settled_now_queued": (
         "POST",
@@ -249,6 +251,7 @@ M6_ID_LESS = frozenset(
         "state_definition_written",
         "memories_empty",
         "external_facts_empty",  # #248
+        "reconciliation_empty",  # #249
     }
 )
 
