@@ -43,12 +43,14 @@ from console.engine.client import EngineClient, EngineClientError, EngineError, 
 from console.engine.models import ReactivationCheck, RegenerateResult
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error
-from console.engine_form_errors import apply_engine_errors
+from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.forms.timeline import (
     FORK_ERRORS,
     REGENERATE_ERRORS,
+    REWIND_ERRORS,
     ForkForm,
     RegenerateForm,
+    RewindForm,
     SwapForm,
     TimelineForm,
     default_fork_name,
@@ -66,10 +68,12 @@ from console.views.play import (
     error_inspector,
     read_story,
 )
+from console.world import slot_turn_text
 
 log = logging.getLogger(__name__)
 
 FIELDS_TEMPLATE = "console/timeline/_fields.html"
+REWIND_FIELDS = "console/timeline/_rewind_fields.html"
 REGENERATE_FIELDS = "console/timeline/_regenerate_fields.html"
 REFUSED_TEMPLATE = "console/timeline/refused.html"
 FORK_TEMPLATE = "console/timeline/fork.html"
@@ -85,6 +89,7 @@ NOTHING_TO_UNDO = "Nothing to undo — there is no rewind to reverse."
 SWAP_INSTEAD = "New turns were added since the rewind — swap to the old chain instead"
 # Regenerate refusals placed beside the form's fields (the operator's inputs kept).
 REGENERATE_PLACED = frozenset({"validation_error", "viewpoint_unresolved"})
+SLOT_PATHS = frozenset({"body.slot", "slot"})  # a 422 about the slot k (#209)
 
 
 def _play_url(story_id: str, **params: str) -> str:
@@ -301,13 +306,47 @@ def _regenerated(
 # --- Rewind and undo ------------------------------------------------------------------------------
 
 
+def _slot_k(form: TimelineForm) -> int | None:
+    """The form's valid slot k when it is at least 1 (0, blank or invalid: ``None``)."""
+    k = form.value("slot")
+    return k if isinstance(k, int) and k >= 1 else None
+
+
+def _rewind_slot_line(turn: int, k: int | None) -> str:
+    if k is None:
+        return (
+            f"Turn {turn}'s own inter-turn slots become inactive too, unless you keep slots 1..k "
+            "below."
+        )
+    if k == 1:
+        return f"Turn {turn}'s inter-turn slot 1 is kept; later slots become inactive."
+    return f"Turn {turn}'s inter-turn slots 1\u2013{k} are kept; later slots become inactive."
+
+
+def _fork_slots_note(k: int | None) -> str:
+    if k is None:
+        return ""
+    if k == 1:
+        return "(its inter-turn slot 1 included)"
+    return f"(its inter-turn slots 1\u2013{k} included)"
+
+
+def _slot_refused(exc: EngineError) -> bool:
+    """Whether a refusal names the slot field, so it goes beside Inter-turn slot."""
+    return any(failure.path in SLOT_PATHS for failure in engine_field_errors(exc))
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def rewind(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
-    form = TimelineForm(_data(request))
+    form = RewindForm(_data(request), turn=turn)
     valid = form.is_valid()
     head = form.value("head")
+    k = _slot_k(form)
     back = safe_next(request, _play_url(story_id))
-    target = "the start (turn 0)" if turn == 0 else f"turn {turn}"
+    if k is not None:
+        target = slot_turn_text(turn, k)
+    else:
+        target = "the start (turn 0)" if turn == 0 else f"turn {turn}"
     if head is None:
         later = "Every later turn becomes inactive."
     else:
@@ -317,12 +356,16 @@ def rewind(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
         title="Rewind",
         question=f"Rewind {{name}} to {target}?",
         emphasis=_label(form.shown_name, story_id),
-        lines=(later, "Nothing is deleted: Undo rewind brings them back."),
+        lines=(
+            later,
+            _rewind_slot_line(turn, k),
+            "Nothing is deleted: Undo rewind brings them back.",
+        ),
         confirm_label="Rewind",
         cancel_url=back,
         facts=_facts(story_id, form),
         hidden=form.hidden(),
-        fields_template=FIELDS_TEMPLATE,
+        fields_template=REWIND_FIELDS,
     )
     extra = {"form": form}
 
@@ -331,9 +374,17 @@ def rewind(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
             return confirm_page(request, page, extra)
         try:
             result = engine_client_for(request).truncate(
-                story_id, turn, expected_revision=form.cleaned_data["rev"], idempotency_key=key
+                story_id,
+                turn,
+                slot=form.cleaned_data["slot"],
+                expected_revision=form.cleaned_data["rev"],
+                idempotency_key=key,
             )
         except EngineClientError as exc:
+            if isinstance(exc, EngineError) and _slot_refused(exc):
+                log_engine_error(request, exc)
+                apply_engine_errors(exc, form, aliases=REWIND_ERRORS)
+                return confirm_page(request, page, extra)
             return _refused(
                 request,
                 exc,
@@ -344,7 +395,8 @@ def rewind(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
             )
         _flash(
             request,
-            f"Rewound to turn {result.to_turn}: next turn index {result.next_turn_index}, "
+            f"Rewound to {slot_turn_text(result.to_turn, k)}: next turn index "
+            f"{result.next_turn_index}, "
             f"{result.discarded_operations} discarded operations",
             operation=result.operation_id,
             rev=result.timeline_revision,
@@ -505,18 +557,25 @@ def swap(request: HttpRequest, story_id: str) -> HttpResponse:
 # --- Fork -----------------------------------------------------------------------------------------
 
 
-def _fork_link(basis: Basis, turn: int, variant: int) -> Link:
-    link = basis.fork(basis.head, chain=(turn, variant))
-    return Link(f"Fork along {chain_label(turn, variant)}", link.url)
+def _fork_link(basis: Basis, turn: int, variant: int, *, slot: int | None = None) -> Link:
+    """An ``unknown_chain`` candidate: the fork form again along ``T:V``, carrying the valid slot
+    k the operator posted (#209) so the re-opened form shows it."""
+    extra = {"variant_chain": f"{turn}:{variant}"}
+    if slot is not None:
+        extra["slot"] = str(slot)
+    return Link(f"Fork along {chain_label(turn, variant)}", basis.url("fork", basis.head, **extra))
 
 
 def _fork_form_page(
     request: HttpRequest, story_id: str, turn: int, form: ForkForm, back: str
 ) -> HttpResponse:
+    k = _slot_k(form)
     context = {
         "form": form,
         "story_id": story_id,
         "turn": turn,
+        "turn_text": slot_turn_text(turn, k),
+        "slots_note": _fork_slots_note(k),
         "label": _label(form.shown_name, story_id),
         "facts": _facts(story_id, form),
         "idempotency_key": new_ulid(),
@@ -533,10 +592,10 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
         data = request.GET.copy()
         if not data.get("new_name"):
             data["new_name"] = default_fork_name(data.get("name", ""), story_id, turn)
-        form = ForkForm(data)
+        form = ForkForm(data, turn=turn)
         form.is_valid()
         return _fork_form_page(request, story_id, turn, form, back)
-    form = ForkForm(request.POST)
+    form = ForkForm(request.POST, turn=turn)
     if not form.is_valid():
         return _fork_form_page(request, story_id, turn, form, back)
     key = posted_idempotency_key(request)
@@ -547,6 +606,7 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
             at_turn=turn,
             name=form.cleaned_data["new_name"],
             variant_chain=form.cleaned_data["variant_chain"],
+            slot=form.cleaned_data["slot"],
             expected_revision=form.cleaned_data["rev"],
             idempotency_key=key,
             timeout=turn_timeout(None),
@@ -563,7 +623,7 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
             story_id=story_id,
             key=key,
             basis=_basis(story_id, form, back),
-            candidate_link=_fork_link,
+            candidate_link=lambda basis, t, v: _fork_link(basis, t, v, slot=form.value("slot")),
         )
     if isinstance(result, ReactivationCheck):
         return _held(request, story_id, result, op=FORK, key=key, client=client)
@@ -576,7 +636,8 @@ def fork(request: HttpRequest, story_id: str, turn: int) -> HttpResponse:
     }
     _flash(
         request,
-        f"Forked {_label(form.shown_name, story_id)} at turn {result.forked_from.at_turn} into "
+        f"Forked {_label(form.shown_name, story_id)} at "
+        f"{slot_turn_text(result.forked_from.at_turn, _slot_k(form))} into "
         f"{result.name or result.story_id}",
         operation=result.operation_id,
         rev=result.timeline_revision,

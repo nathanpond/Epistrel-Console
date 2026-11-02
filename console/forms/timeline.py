@@ -5,7 +5,9 @@ as ``X-Epistrel-Expected-Revision``), ``head`` and the display-only ``name`` as 
 copied from the link's query string. A missing or non-integer ``rev`` is a form error, and the
 operation is not sent. Bounds copied from the recorded schema: ``RegenerateRequest`` (length,
 temperature, top_p as #48's turn form; up to 64 render characters; viewpoint up to 80
-characters), ``ForkRequest.name`` up to 200 characters, chains ``{turn ≥ 1, variant ≥ 1}``.
+characters), ``ForkRequest.name`` up to 200 characters, chains ``{turn ≥ 1, variant ≥ 1}``,
+``TruncateRequest.slot``/``ForkRequest.slot`` 0 to 32767 (#209: keep or copy turn N's inter-turn
+slots 1..k; blank sends nothing).
 """
 
 import re
@@ -16,6 +18,7 @@ from django import forms
 
 from console.cast import CastMember, character_choices, viewpoint_for
 from console.forms.play import CUSTOM, TurnForm
+from console.world import SLOTS_NOT_LISTED
 
 REVISION_MISSING = "This page carries no timeline revision — reload the story and try again."
 CHAIN_INVALID = "A chain is turn:variant, both at least 1 (e.g. 5:2)."
@@ -34,8 +37,14 @@ REGENERATE_ERRORS = {
     "prompt_params.temperature": "temperature",
     "prompt_params.top_p": "top_p",
 }
-FORK_ERRORS = {"name": "new_name", "variant_chain": "variant_chain"}
+FORK_ERRORS = {"name": "new_name", "variant_chain": "variant_chain", "slot": "slot"}
+REWIND_ERRORS = {"slot": "slot"}
+SLOT_MAX = 32767  # the recorded schema's bound on TruncateRequest.slot / ForkRequest.slot
+SLOT_INVALID = "Enter a whole number of slots (0 or more), or leave it blank"
+SLOT_TOO_HIGH = "At most 32,767."
+SLOT_LABEL = "Inter-turn slot (optional)"
 _CHAIN = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
+_DIGITS = re.compile(r"[0-9]+")
 
 
 def parse_chain(value: str) -> tuple[int, int] | None:
@@ -58,6 +67,36 @@ class ChainField(forms.CharField):
         if found is None:
             raise forms.ValidationError(CHAIN_INVALID)
         return found
+
+
+class SlotField(forms.CharField):
+    """An inter-turn slot k (#209): blank → ``None`` (nothing sent), ASCII digits → ``int`` up to
+    :data:`SLOT_MAX`. No HTML ``min``/``max`` (C10): the Console's own messages say why."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("label", SLOT_LABEL)
+        kwargs.setdefault("widget", forms.TextInput(attrs={"inputmode": "numeric", "size": 6}))
+        super().__init__(**kwargs)
+
+    def to_python(self, value: Any) -> Any:
+        text = super().to_python(value)
+        if not text:
+            return None
+        if _DIGITS.fullmatch(text) is None:
+            raise forms.ValidationError(SLOT_INVALID, code="slot_invalid")
+        # Python refuses ``int()`` on very long strings; anything past five digits is too high.
+        if len(text.lstrip("0")) > 5 or int(text) > SLOT_MAX:
+            raise forms.ValidationError(SLOT_TOO_HIGH, code="slot_too_high")
+        return int(text)
+
+
+def slot_help(verb: str, turn: int) -> str:
+    """The slot field's help: what k keeps (``"Keep"``) or copies (``"Copy"``), then D18."""
+    return (
+        f"{verb} turn {turn}'s inter-turn slots 1..k — State sets, clock advances and "
+        f"settlements recorded after turn {turn}. Blank: none of them. {SLOTS_NOT_LISTED}."
+    )
 
 
 class TimelineForm(forms.Form):
@@ -178,13 +217,29 @@ class RegenerateForm(TimelineForm):
         return body
 
 
+class RewindForm(TimelineForm):
+    """Rewind: the hidden fields plus the optional inter-turn slot k (#209)."""
+
+    slot = SlotField()
+
+    def __init__(self, data: Any = None, *, turn: int, **kwargs: Any) -> None:
+        super().__init__(data, **kwargs)
+        self.fields["slot"].help_text = slot_help("Keep", turn)
+
+
 class ForkForm(TimelineForm):
-    """Fork: the new story's name (pre-filled, required) and, from a Variants row, the chain."""
+    """Fork: the new story's name (pre-filled, required), from a Variants row the chain, and the
+    optional inter-turn slot k (#209)."""
 
     new_name = forms.CharField(label="New story's name", max_length=NAME_MAX)
     variant_chain = ChainField(widget=forms.HiddenInput, required=False)
+    slot = SlotField()
 
     HIDDEN = ("rev", "head", "name", "variant_chain")
+
+    def __init__(self, data: Any = None, *, turn: int, **kwargs: Any) -> None:
+        super().__init__(data, **kwargs)
+        self.fields["slot"].help_text = slot_help("Copy", turn)
 
 
 def default_fork_name(name: str, story_id: str, turn: int) -> str:

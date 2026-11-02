@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{# The fork form (#53): not a confirm page, since forking only creates. Context: form (ForkForm), story_id, turn, label, facts, idempotency_key, next_url. #}
+{# The fork form (#53): not a confirm page, since forking only creates. Context: form (ForkForm), story_id, turn, turn_text ("turn N", or "turn N⁺ᵏ" with a valid slot k ≥ 1, #209), slots_note ("" or "(its inter-turn slots 1–k included)"), label, facts, idempotency_key, next_url. #}
 {% block title %}Fork {{ label }} — Epistrel Console{% endblock %}
 {% block heading %}Fork {{ label }} at turn {{ turn }}{% endblock %}
 {% block content %}
-<p>Copy the story's history through turn {{ turn }}{% if form.variant_chain.value %} along chain {{ form.variant_chain.value }}{% endif %} into a new story. The original is not changed.</p>
+<p>Copy the story's history through {{ turn_text }}{% if slots_note %} {{ slots_note }}{% endif %}{% if form.variant_chain.value %} along chain {{ form.variant_chain.value }}{% endif %} into a new story. The original is not changed.</p>
 <dl>{% for name, value in facts %}<dt>{{ name }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}</dl>
 <form method="post" class="fork-form">
   {% csrf_token %}
@@ -13,6 +13,11 @@
   {% endfor %}
   {% include "console/timeline/_fields.html" %}
   <div class="field field-new_name">{{ form.new_name.label_tag }} {{ form.new_name }} {{ form.new_name.errors }}</div>
+  <div class="field field-slot">
+    {{ form.slot.label_tag }} {{ form.slot }}
+    <small>{{ form.slot.help_text }}</small>
+    {{ form.slot.errors }}
+  </div>
   <button type="submit">Fork</button>
   <a href="{{ next_url }}">Cancel</a>
 </form>

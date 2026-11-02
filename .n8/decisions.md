@@ -2440,3 +2440,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 3) `tests/test_confirm.py::test_confirmed_mode_unconfirmed_post_rerenders_with_the_posted_key` now asserts the incomplete-confirmation notice text is absent instead of the bare word "incomplete".
   **Why:** The new `.badge.incomplete` rule in `templates/base.html` (an AC of this story) puts that word in every page's stylesheet; the test's intent is that no "incomplete" notice shows, which the sharper assertion keeps.
   **Issue:** #239
+- **Decision:** `SlotField` rejects any value with more than five significant digits as `SLOT_TOO_HIGH` before `int()`, and accepts leading zeros ("007" → 7). Rewind and fork both use `console.world.slot_turn_text` for "turn N⁺ᵏ", and the help text imports `SLOTS_NOT_LISTED` (D17/D18).
+  **Why:** These are the pass-1/pass-2 Discretion lines. Python refuses `int()` on more than 4300 digits, and sharing the helpers keeps one source for the wording.
+  **Issue:** #209
+- **Decision:** A rewind 422 goes beside Inter-turn slot only when one of its field failures has the path `body.slot` or `slot` (through `engine_field_errors`). Every other refusal, including other `validation_error`s, keeps `_refused`. On fork, the existing `validation_error` branch places a slot 422 through `FORK_ERRORS["slot"]`.
+  **Why:** This follows the pass-1 422-placement line and the AC. It mirrors regenerate's in-form placement without changing any other rewind refusal.
+  **Issue:** #209
+- **Decision:** After an `unknown_chain` fork refusal, the "Fork along T:V" candidate links carry the valid posted slot (0 included) as `slot=`. `_fork_link` gained a keyword `slot` and builds the URL through `Basis.url`.
+  **Why:** This is the pass-2 gate recommendation, so the re-opened form keeps what the operator typed. The `nothing_to_undo` "Fork from here" link stays slot-less.
+  **Issue:** #209
+- **Decision:** En dashes in the new slot wording are written as `\u2013` in Python source, not as literal characters.
+  **Why:** ruff's RUF001 flags a literal en dash, and the repo already writes them as escapes (`console/world.py`, `console/effects.py`). The rendered text is unchanged.
+  **Issue:** #209
