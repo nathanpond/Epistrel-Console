@@ -1,0 +1,29 @@
+{% load inspect_tags world_tags %}{% comment %}
+One scheduled event (#244): a console.scheduled_events.EventRow as row, one
+<tr id="ev-<event_id>" class="canon|belief|other"> (the class is for styling only: Kind carries
+the meaning). Columns: Event, Kind, Status, Planned, Owner, Shared with, Participants, Place,
+Grace, Stopped the clock, Confidence, [Actions], More. Context: row; story_id; actions (#262's
+hook: a mapping event_id → RowActions, or None: no column) and actions_template (the template
+#262 renders with row_actions). Enums are humanised with the raw value in title (C3); offsets are
+D6's offset_text with the minutes in title. A belief always reads "Never — a belief doesn't stop
+the clock" (EventRow.stopped_text decides on the label).
+{% endcomment %}<tr id="ev-{{ row.event_id }}" class="{{ row.row_class }}">
+  <td class="event">{% if row.name %}{{ row.name }}{% else %}<span class="muted">(unnamed)</span>{% endif %}</td>
+  <td class="kind"><span title="{{ row.kind.1 }}">{{ row.kind.0 }}</span></td>
+  <td class="status">{% if row.status.1 %}<span title="{{ row.status.1 }}">{{ row.status.0 }}</span>{% else %}{{ row.status.0 }}{% endif %}</td>
+  <td class="planned">{% if row.planned.minutes is not None %}<span title="offset {{ row.planned.minutes }} min">{{ row.planned.text }}</span>{% else %}{{ row.planned.text }}{% endif %}</td>
+  <td class="owner">{% if row.owner.code %}<code>{{ row.owner.text }}</code>{% else %}{{ row.owner.text }}{% endif %}</td>
+  <td class="shared">{{ row.shared_text }}</td>
+  <td class="participants">{{ row.participants_text }}</td>
+  <td class="place">{% if row.place_url %}<a href="{{ row.place_url }}">{{ row.place_id|engine_id }}</a>{% else %}{{ row.place_id|engine_id }}{% endif %}</td>
+  <td class="grace">{{ row.grace_text }}</td>
+  <td class="stopped">{% if row.stopped %}<span title="offset {{ row.stopped.minutes }} min">{{ row.stopped_text }}</span>{% else %}{{ row.stopped_text }}{% endif %}</td>
+  <td class="confidence">{% if row.confidence.1 %}<span title="{{ row.confidence.1 }}">{{ row.confidence.0 }}</span>{% else %}{{ row.confidence.0 }}{% endif %}</td>
+  {% if actions is not None %}<td class="actions">{% with row_actions=actions|get_item:row.event_id %}{% if row_actions and actions_template %}{% include actions_template %}{% endif %}{% endwith %}</td>{% endif %}
+  <td class="more"><details><summary>More</summary><dl>
+    <dt>Event id</dt><dd><code>{{ row.event_id }}</code></dd>
+    <dt>Owner</dt><dd>{% if row.owner.raw %}<code>{{ row.owner.raw }}</code>{% else %}—{% endif %}</dd>
+    <dt>Participants</dt><dd>{% if row.more_participants != "—" %}<code>{{ row.more_participants }}</code>{% else %}—{% endif %}</dd>
+    <dt>Shared with</dt><dd>{% if row.more_shared != "—" %}<code>{{ row.more_shared }}</code>{% else %}—{% endif %}</dd>
+  </dl></details></td>
+</tr>

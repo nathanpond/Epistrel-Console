@@ -27,6 +27,7 @@ from console.views import (
     inspect_memory,
     inspect_predicates,
     inspect_scene,
+    inspect_scheduled_events,
     inspect_states,
     media,
     media_picker,
@@ -236,6 +237,12 @@ inspect_patterns = (
         # #243: the Clock section and its settings page.
         path("world/clock/", inspect_clock.clock, name="clock"),
         path("world/clock/settings/", inspect_clock.clock_settings, name="clock-settings"),
+        # #244: the Scheduled events section.
+        path(
+            "world/scheduled-events/",
+            inspect_scheduled_events.scheduled_events,
+            name="scheduled-events",
+        ),
         path("effects/", inspect.effects, name="effects"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),

@@ -2527,3 +2527,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The off notice sits at the top of the Clock section, above the Now line and the tables. The anchor's More always lists `revision`, `reference` and `segments`, and a malformed anchor's raw JSON is shown in an open `<details>`.
   **Why:** The AC says the notice goes "above the table" without naming which. The top of the section keeps it visible.
   **Issue:** #243
+- **Decision:** (Rule 1) Corrected #232's `m6/scheduled_events_alice.json` belief entry to the Engine's shape: `owner: null`, `participants: []` and `confidence: "believed"` (it had Alice as owner and participant, and `likely`, which is no `BeliefConfidenceLevel`).
+  **Why:** Engine `core/world_clock/scheduled.py` `list_events` at origin/main builds every belief view with `owner=None`, empty `participants` and a `suspected`/`believed`/`known` level; C15 says fixtures follow the Engine, and the story's belief test expects Owner "—". No other test pinned those values.
+  **Issue:** #244
+- **Decision:** The Scheduled events view treats a missing *or empty* `viewpoint` param as `omniscient` before binding D4's `WorldViewpointForm` (the shared form itself, which States also uses, is unchanged and still refuses a blank value).
+  **Why:** The story's Discretion (pass 2) says an empty param is the initial omniscient; changing the shared form would change #242's States behaviour outside this story.
+  **Issue:** #244
+- **Decision:** The row partial's actions hook is two context values: `actions` (`Mapping[event_id, RowActions] | None`; `None` hides the column) and `actions_template` (the template #262 renders per row with `row_actions`). The lookup is a new `get_item` filter in `console/templatetags/world_tags.py`, since no such filter existed.
+  **Why:** The Discretion fixes the mapping shape but not how a `RowActions` renders; a template name beside it keeps #262 free to define both without editing this partial.
+  **Issue:** #244
+- **Decision:** Test-plan variants are written with `config_body`'s `__` paths (`structured_v3(clock__scheduled_stops=False)`, `structured_v3(character_knowledge__partitions=False)`), not the plan's dotted `**{"clock.scheduled_stops": False}`.
+  **Why:** `structured_v3` splits keys on `__`, so a dotted key would set a literal `"clock.scheduled_stops"` key and change nothing.
+  **Issue:** #244
+- **Decision:** The world-shell test urlconfs (`tests/inspect/urls_world_stub_sections.py`, `urls_world_no_sections.py`) also drop the real `inspect:scheduled-events` route, as they already did for `inspect:clock` (#243).
+  **Why:** With the section registered, the "no open section" shell tests would otherwise redirect to it; the shell's behaviour is still tested against its stubs.
+  **Issue:** #244
+- **Decision:** The viewpoint line has the class `viewpoint-line`, and the picker form's id is `events-viewpoint`. Belief rows show `participants` "—" in the cell and More.
+  **Why:** These are cosmetic choices. The Engine always sends a belief's participants empty.
+  **Issue:** #244

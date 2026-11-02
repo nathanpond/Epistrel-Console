@@ -201,6 +201,7 @@ M6_FIXTURES = {
     "clock_advanced": ("POST", "/stories/{story_id}/clock/advance", 200),
     "scheduled_events": ("GET", "/stories/{story_id}/scheduled-events", 200),
     "scheduled_events_alice": ("GET", "/stories/{story_id}/scheduled-events", 200),
+    "scheduled_events_statuses": ("GET", "/stories/{story_id}/scheduled-events", 200),  # #244
     "scheduled_event_written": ("POST", "/stories/{story_id}/scheduled-events", 201),
     "providers": ("GET", "/admin/external-providers", 200),
     "provider": ("GET", "/admin/external-providers/{name}", 200),

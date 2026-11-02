@@ -7,6 +7,8 @@
 - ``{{ value|state_value:state }}`` → D5's ``state_value_text`` with the ``StoryState``'s type
   and unit (``None``: the type inferred, no unit), ``undefined`` wrapped in
   ``<span class="undefined">``.
+- ``{{ mapping|get_item:key }}`` → ``mapping.get(key)`` (``None`` for a non-mapping): a row-keyed
+  action hook such as the scheduled-event rows' ``actions`` (#244, #262).
 
 D17: these filters, like the helpers behind them in ``console/world.py`` and
 ``console/effects.py``, are the one rendering of each value; page templates use them and never
@@ -50,3 +52,11 @@ def state_value(value: Any, state: Any = None) -> SafeString | str:
     if value is None:
         return format_html('<span class="undefined">{}</span>', UNDEFINED)
     return text
+
+
+@register.filter
+def get_item(mapping: Any, key: Any) -> Any:
+    """``{{ mapping|get_item:key }}``: ``mapping[key]``, or ``None`` when ``mapping`` isn't a
+    mapping or lacks ``key`` (a row-keyed action hook, e.g. #244/#262's ``actions``)."""
+    getter = getattr(mapping, "get", None)
+    return getter(key) if callable(getter) else None

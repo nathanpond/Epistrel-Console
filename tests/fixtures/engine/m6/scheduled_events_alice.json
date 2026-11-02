@@ -24,15 +24,13 @@
       "label": "belief",
       "status": null,
       "planned": 300,
-      "owner": "01JM6CH0000000000000000002",
+      "owner": null,
       "shared_owners": [],
-      "participants": [
-        "01JM6CH0000000000000000002"
-      ],
+      "participants": [],
       "place_id": null,
       "grace_minutes": null,
       "stopped_clock_at": null,
-      "confidence": "likely"
+      "confidence": "believed"
     }
   ],
   "timeline_revision": 12
