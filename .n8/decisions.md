@@ -2804,3 +2804,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Added `test_undo_rewind_as_a_swap_keeps_its_title` and `test_fork_without_pending_effects_redirects_as_before` beyond the test plan; the reactivation "without effects" complement is parametrised over undo, swap and fork; the unreadable-outcome test uses an outcome whose operation is outside the vocabulary but whose result carries a required row.
   **Why:** pins the Discretion's "titled Undo rewind even when swapped" and the fork's unchanged redirect; the unreadable case proves a list present in raw JSON still shows no partial.
   **Issue:** #258
+- **Decision:** Added `guild` to `m6/providers.json` between `bank` and `shop` (the Engine lists by name; its read URL holds `{binding.player}` then `{binding.realm}`), and changed two #247 tests in `tests/stories/test_providers.py` that pinned `shop` at index 1 and the row order to look `shop` up by name and derive the order from the fixture (Rule 3).
+  **Why:** D16 says add, never copy, and tests don't pin the fixture's providers; those two tests pinned positions, which the added entry broke.
+  **Issue:** #259
+- **Decision:** The test plan's blank-form case says "`bank`'s two inputs"; `bank` has one key (`account_id`), so the two-key assertions use `guild`, as the plan's fixture note says.
+  **Why:** the plan contradicts itself, and its fixture note (two-key cases use `guild`) is the specific instruction.
+  **Issue:** #259
+- **Decision:** The shared fake-Engine fixtures (`tests/stories/conftest.py`'s and `tests/test_story_from_scenario.py`'s `engine`) now answer `GET /admin/external-providers` with `m6/providers.json` by default, and `tests/stories/test_create.py`'s `form_data` carries the signed `provider_choices`, as the page renders it.
+  **Why:** both forms now read the registry. The fake refuses an unanswered call, so without this every earlier creation test would fail. With the signed field, the earlier "no Engine call" complements still hold.
+  **Issue:** #259
+- **Decision:** `read_provider_choices` words a failed read as `"<code> — <message>"` for an Engine error, and as `error_text(exc)` ("unreachable (<reason>)") when no answer came. The failure test uses a 503, not the Discretion's 403, because `GET /admin/external-providers` declares no 403 and the fake refuses it. Any client error is still handled.
+  **Why:** an unreachable Engine has no code or message. The fake only answers statuses the schema declares.
+  **Issue:** #259
+- **Decision:** Added `FakeEngine.respond_undeclared(method, path, status, json)` (cleared by a later `respond`), as the Discretion asks, for D18's undeclared `POST /stories` 404. It refuses a status the operation declares.
+  **Why:** `respond()` and `side_effect` both refuse undeclared statuses by design, and the helper's narrow name keeps it from becoming a general escape hatch.
+  **Issue:** #259
+- **Decision:** `BindingsForm` rows put row-level errors on the checkbox with `add_error`. A needed row the registry lacks has no checkbox, so its errors (e.g. `provider_unregistered`'s "Not registered…") go in a per-row `row_errors` list shown beside the row. The unregistered note links the whole line to `engine:providers` (D19: plain text when unresolved). `StoryFromScenarioForm.is_valid()` is overridden to run both forms, so every error shows.
+  **Why:** the Discretion places row errors "on the checkbox", but an unregistered row has none. The other two were the smallest way to meet the AC.
+  **Issue:** #259
+- **Decision:** On a failed registry read on the from-scenario form, the note reads "<unread text>. This scenario needs: <names>", joined with ". ".
+  **Why:** the Discretion gives the added sentence but not how it joins the note.
+  **Issue:** #259
+- **Decision:** The from-scenario fixture is `tests/fixtures/engine/catalog_scenarios_providers.json` (beside `catalog_scenarios_detail.json`), not the plan's `m6/scenario_providers.json`. It is the `scenario()` test body with `required_providers: ["bank"]` and an external State `stock_level` naming `shop`.
+  **Why:** `test_fake_engine`'s M6 table requires every `*_id` in an `m6/` file to be a ULID. The from-scenario tests' role and entity ids (`traveller`, `farmhouse`, …) aren't, and the existing tests' role-keyed helpers depend on them.
+  **Issue:** #259

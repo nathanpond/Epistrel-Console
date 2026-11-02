@@ -82,7 +82,9 @@ def bank_provider(manifest: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def shop_provider() -> dict[str, Any]:
-    shop = copy.deepcopy(engine_fixture("m6/providers")["providers"][1])
+    (shop,) = [
+        copy.deepcopy(p) for p in engine_fixture("m6/providers")["providers"] if p["name"] == "shop"
+    ]
     shop["config_revision"] = 4
     return dict(shop)
 
@@ -168,7 +170,8 @@ def test_rows_for_registered_and_orphan_bindings(
     page = operator_client.get(PAGE).content.decode()
 
     order = re.findall(r'<tr id="binding-([^"]+)">', page)
-    assert order == ["bank", "shop", "ledger"]  # registry order, then the orphan
+    registered = [p["name"] for p in engine_fixture("m6/providers")["providers"]]
+    assert order == [*registered, "ledger"]  # registry order, then the orphan
 
     bank = row(page, "bank")
     assert '<a href="/engine/providers/bank/"><code>bank</code></a>' in bank

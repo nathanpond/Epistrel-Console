@@ -60,6 +60,7 @@ from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.entities import label
+from console.forms.bindings import binding_not_found, bound_names_text, read_provider_choices
 from console.forms.principal import clean_principal, remember_principals
 from console.forms.story_from_scenario import (
     DEFAULT,
@@ -207,7 +208,11 @@ def _role_names(client: EngineClient, scenario: Scenario) -> dict[str, RoleName]
 
 
 def _lookups(
-    client: EngineClient, scenario: Scenario, data: Mapping[str, Any] | None, acting: str
+    client: EngineClient,
+    scenario: Scenario,
+    data: Mapping[str, Any] | None,
+    acting: str,
+    log: Callable[[EngineClientError], None],
 ) -> Lookups:
     current = [
         str(data.get(f"{slot_prefix(role.id)}catalog_id") or "")
@@ -231,6 +236,7 @@ def _lookups(
         characters=published_character_choices(client, current=current),
         personas=personas,
         role_names=_role_names(client, scenario),
+        providers=read_provider_choices(client, log),  # #259: once per render
     )
 
 
@@ -239,10 +245,15 @@ def _form(
     client: EngineClient,
     scenario: Scenario,
     data: Mapping[str, Any] | None,
+    *,
+    checking: bool = False,
 ) -> StoryFromScenarioForm:
+    """``checking``: the Create press (the bindings' local checks run only then)."""
     acting = acting_principal(request)
-    lookups = _lookups(client, scenario, data, acting)
-    return StoryFromScenarioForm(data, scenario=scenario, lookups=lookups, acting=acting)
+    lookups = _lookups(client, scenario, data, acting, lambda exc: log_engine_error(request, exc))
+    return StoryFromScenarioForm(
+        data, scenario=scenario, lookups=lookups, acting=acting, checking=checking
+    )
 
 
 # --- step 2 ---------------------------------------------------------------------------------------
@@ -326,7 +337,7 @@ def _send(
     except EngineError as exc:
         log_engine_error(request, exc)
         form = form_for_errors()
-        if exc.http_status == 422:
+        if exc.http_status == 422 or binding_not_found(exc, body):
             report = form.place_refusal(exc)
             return _render_step2(request, scenario, form, show_errors=True, refusal=report)
         return _render_step2(request, scenario, form, show_errors=True, engine_error=panel_for(exc))
@@ -339,7 +350,7 @@ def _send(
             request,
             f"Created {body.get('name') or label(scenario.public_card.name, scenario.id)} from "
             f"the scenario — story {created.story_id}, idempotency key "
-            f"{created.idempotency_key or key}",
+            f"{created.idempotency_key or key}{bound_names_text(body)}",
         )
         return redirect("stories:creation-report", story_id=created.story_id)
     sent = {k: v for k, v in body.items() if k != "ignore_warnings"}
@@ -405,7 +416,7 @@ def from_scenario(request: HttpRequest) -> HttpResponse:
         scenario = client.get_scenario(scenario_id, version=version)
     except EngineClientError as exc:
         return _retry(request, exc)
-    form = _form(request, client, scenario, request.POST)
+    form = _form(request, client, scenario, request.POST, checking=op == OP_CREATE)
     if op != OP_CREATE:  # Load personas: the same input, the principal's personas listed
         return _render_step2(request, scenario, form)
     if not form.is_valid():

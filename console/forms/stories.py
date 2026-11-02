@@ -246,9 +246,14 @@ CharacterFormSet = cast(
 CHARACTERS_PREFIX = "characters"
 
 
-def story_spec(story: StoryForm, characters: BaseCharacterFormSet) -> dict[str, Any]:
+def story_spec(
+    story: StoryForm,
+    characters: BaseCharacterFormSet,
+    bindings: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """The ``POST /stories`` body: blank name omitted, the rating always sent, ``settings`` only
-    when one is chosen (the viewpoint, or a creation setting off its Engine default)."""
+    when one is chosen (the viewpoint, or a creation setting off its Engine default), and
+    ``provider_bindings`` (#259) only when a provider row is ticked."""
     data = story.cleaned_data
     spec: dict[str, Any] = {}
     if data["name"]:
@@ -258,6 +263,8 @@ def story_spec(story: StoryForm, characters: BaseCharacterFormSet) -> dict[str, 
     settings = story.settings()
     if settings:
         spec["settings"] = settings
+    if bindings:
+        spec["provider_bindings"] = dict(bindings)
     return spec
 
 

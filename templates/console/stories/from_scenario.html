@@ -60,6 +60,8 @@
   {% if bounds %}<details class="bounds"><summary>Creation bounds (not checked here)</summary><pre>{{ bounds|pretty_json }}</pre></details>{% endif %}
   {% for row, f in overrides %}{% include "console/stories/_field.html" with f=f %}{% empty %}<p>The scenario allows no overrides.</p>{% endfor %}
 
+  {% include "console/stories/_bindings.html" with bindings=form.bindings %}
+
   <h2>Story</h2>
   {% if form.fields.content_rating_id %}{% include "console/stories/_field.html" with f=form.content_rating_id %}{% else %}<p class="lookup-failed">{{ ratings_note }}</p>{% endif %}
   {% include "console/stories/_field.html" with f=form.engine_profile_id %}

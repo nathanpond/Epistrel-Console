@@ -28,7 +28,7 @@ from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import StorySummary
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
-from console.engine_form_errors import apply_engine_errors
+from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.entities import entity_url
 from console.forms import (
     CAST_MAX,
@@ -38,6 +38,16 @@ from console.forms import (
     StoryFilterForm,
     StoryForm,
     story_spec,
+)
+from console.forms.bindings import (
+    BINDING_INCOMPLETE,
+    NOT_FOUND,
+    VALIDATION_ERROR,
+    BindingsForm,
+    ProviderChoices,
+    binding_not_found,
+    bound_names_text,
+    read_provider_choices,
 )
 from console.forms.stories import CREATION_ERROR_PATHS
 from console.formset_rows import edit_rows, wants_edit
@@ -50,6 +60,8 @@ EMPTY = "—"
 PAUSED_NOTE = "Paused while the check runs"  # #80's wording
 RATINGS_FIELD = "rating_choices"  # the select's options, signed, carried across re-renders
 RATINGS_SALT = "console.stories.rating_choices"
+PROVIDERS_FIELD = "provider_choices"  # the bindings rows (#259), signed like the ratings
+PROVIDERS_SALT = "console.stories.provider_choices"
 
 
 def story_label(name: str | None, story_id: str) -> str:
@@ -248,6 +260,35 @@ def _posted_ratings(request: HttpRequest) -> Choices | None:
     return [(str(rating_id), str(name)) for rating_id, name in pairs]
 
 
+def _provider_choices(request: HttpRequest) -> ProviderChoices:
+    """The registry's rows for the bindings fieldset (#259): one read, never raising."""
+    return read_provider_choices(
+        engine_client_for(request), lambda exc: log_engine_error(request, exc)
+    )
+
+
+def _signed_providers(providers: ProviderChoices) -> str:
+    return signing.dumps(providers.payload(), salt=PROVIDERS_SALT, compress=True)
+
+
+def _posted_provider_choices(request: HttpRequest) -> ProviderChoices | None:
+    """The bindings rows as the page carried them, or ``None`` when absent or tampered."""
+    try:
+        payload = signing.loads(request.POST.get(PROVIDERS_FIELD, ""), salt=PROVIDERS_SALT)
+    except signing.BadSignature:
+        return None
+    return ProviderChoices.from_payload(payload)
+
+
+def _binding_refusal(exc: EngineError, spec: dict[str, Any]) -> bool:
+    """A refusal the bindings rows place (#259): a 422 ``binding_incomplete`` or
+    ``validation_error`` (whose failures may be elsewhere too), or the undeclared 404
+    ``not_found`` naming a provider the body bound."""
+    if exc.http_status == 422:
+        return exc.code in (BINDING_INCOMPLETE, VALIDATION_ERROR)
+    return binding_not_found(exc, spec)
+
+
 def _cast_names(characters: BaseCharacterFormSet) -> list[str]:
     names = []
     for form in characters.forms:
@@ -262,6 +303,7 @@ def _render_new(
     story: StoryForm,
     characters: BaseCharacterFormSet,
     ratings: Choices,
+    bindings: BindingsForm,
     *,
     show_errors: bool,
     engine_error: ErrorPanel | None = None,
@@ -276,6 +318,8 @@ def _render_new(
         "engine_error": engine_error,
         "idempotency_key": new_ulid(),  # minted at each render (#43)
         "rating_choices": _signed_ratings(ratings),
+        "bindings": bindings,
+        "provider_choices": _signed_providers(bindings.choices),
     }
     return render(request, "console/stories/new.html", context)
 
@@ -287,55 +331,93 @@ def story_new(request: HttpRequest) -> HttpResponse:
     validate, then ``POST /stories`` and redirect to the new story's page."""
     if request.method != "POST":
         ratings, default = _rating_choices(request)
+        providers = _provider_choices(request)  # after the ratings and the settings (#259)
         story = StoryForm(ratings=ratings, initial={"content_rating_id": default})
         characters = CharacterFormSet(prefix=CHARACTERS_PREFIX)
-        return _render_new(request, story, characters, ratings, show_errors=False)
+        bindings = BindingsForm(providers=providers)
+        return _render_new(request, story, characters, ratings, bindings, show_errors=False)
 
     posted = _posted_ratings(request)
     ratings = posted if posted is not None else _rating_choices(request)[0]
+    signed = _posted_provider_choices(request)
+    providers = signed if signed is not None else _provider_choices(request)
     if wants_edit(request.POST):
         data = edit_rows(request.POST, CHARACTERS_PREFIX, max_rows=CAST_MAX)
         story = StoryForm(data, ratings=ratings)
         characters = CharacterFormSet(data, prefix=CHARACTERS_PREFIX)
-        return _render_new(request, story, characters, ratings, show_errors=False)
+        bindings = BindingsForm(data, providers=providers)  # quiet: no check off Create
+        return _render_new(request, story, characters, ratings, bindings, show_errors=False)
 
     story = StoryForm(request.POST, ratings=ratings)
     characters = CharacterFormSet(request.POST, prefix=CHARACTERS_PREFIX)
+    bindings = BindingsForm(request.POST, providers=providers, checking=True)
     story_ok = story.is_valid()
-    if not (characters.is_valid() and story_ok):
-        return _render_new(request, story, characters, ratings, show_errors=True)
+    bindings_ok = bindings.is_valid()
+    if not (characters.is_valid() and story_ok and bindings_ok):
+        return _render_new(request, story, characters, ratings, bindings, show_errors=True)
 
     key = posted_idempotency_key(request)
+    spec = story_spec(story, characters, bindings.bindings())
     try:
-        created = engine_client_for(request).create_story(
-            story_spec(story, characters), idempotency_key=key
-        )
+        created = engine_client_for(request).create_story(spec, idempotency_key=key)
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        if (
-            isinstance(exc, EngineError)
-            and exc.http_status == 422
-            and exc.code != "guardrail_violation"
+        if isinstance(exc, EngineError) and (
+            _binding_refusal(exc, spec)
+            or (exc.http_status == 422 and exc.code != "guardrail_violation")
         ):
-            apply_engine_errors(
-                exc,
-                story,
-                formsets={CHARACTERS_PREFIX: characters.sent_forms()},
-                aliases=CREATION_ERROR_PATHS,
-            )
+            _place_creation_refusal(exc, story, characters, bindings)
             story.add_error(None, f"The Engine rejected the story: {exc.message}")
-            return _render_new(request, story, characters, ratings, show_errors=True)
+            return _render_new(request, story, characters, ratings, bindings, show_errors=True)
         return _render_new(
-            request, story, characters, ratings, show_errors=True, engine_error=panel_for(exc)
+            request,
+            story,
+            characters,
+            ratings,
+            bindings,
+            show_errors=True,
+            engine_error=panel_for(exc),
         )
     assert created.story_id is not None  # noqa: S101 - create_story refuses a missing id
     label = story_label(story.cleaned_data["name"], created.story_id)
     messages.success(
         request,
         f"Created {label} — revision {created.timeline_revision}, idempotency key "
-        f"{created.idempotency_key or key}",
+        f"{created.idempotency_key or key}{bound_names_text(spec)}",
     )
     return redirect("stories:detail", story_id=created.story_id)
+
+
+def _place_creation_refusal(
+    exc: EngineError,
+    story: StoryForm,
+    characters: BaseCharacterFormSet,
+    bindings: BindingsForm,
+) -> None:
+    """The bindings rows place what is theirs first (#259); the rest goes where #43/#198 put
+    it. A binding row's top-level line joins the form's non-field errors."""
+    leftover = bindings.place(exc)
+    rest: EngineError | None = exc
+    if exc.code in (BINDING_INCOMPLETE, NOT_FOUND):
+        rest = None
+    elif exc.code == VALIDATION_ERROR and len(leftover) < len(engine_field_errors(exc)):
+        rest = None
+        if leftover:
+            rest = EngineError(
+                exc.code,
+                exc.message,
+                {"errors": [{"field": f.path, "message": f.message} for f in leftover]},
+                exc.http_status,
+            )
+    if rest is not None:
+        apply_engine_errors(
+            rest,
+            story,
+            formsets={CHARACTERS_PREFIX: characters.sent_forms()},
+            aliases=CREATION_ERROR_PATHS,
+        )
+    for line in bindings.top_errors:
+        story.add_error(None, line)
 
 
 # --- Archive, unarchive, delete (confirm pages) -----------------------------------------------

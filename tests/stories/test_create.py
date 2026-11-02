@@ -7,6 +7,8 @@ from typing import Any
 import pytest
 from django.test import Client
 
+from console.engine.models import ProviderList
+from console.forms.bindings import ProviderChoices
 from console.models import EngineOperation
 from console.views import stories as views
 from tests.fakes.engine import FakeEngine
@@ -31,6 +33,12 @@ MARA = character(name="Mara", definition="A harbour pilot.", true_age="34", is_p
 TOBIN = character(name="Tobin", definition="Her brother.", true_age="41")
 
 
+def registry_rows() -> ProviderChoices:
+    listed = ProviderList.from_json(engine_fixture("m6/providers"))
+    assert listed is not None
+    return ProviderChoices.of(listed.providers)
+
+
 def form_data(*rows: dict[str, Any], **story: Any) -> dict[str, Any]:
     """A posted new-story form, as the page renders it (signed rating options included)."""
     data: dict[str, Any] = {
@@ -39,6 +47,8 @@ def form_data(*rows: dict[str, Any], **story: Any) -> dict[str, Any]:
         "viewpoint": "",
         "idempotency_key": KEY,
         "rating_choices": views._signed_ratings(RATINGS),
+        # #259: the bindings rows as the page carries them (no registry read on POST).
+        "provider_choices": views._signed_providers(registry_rows()),
         "characters-TOTAL_FORMS": str(len(rows)),
         "characters-INITIAL_FORMS": "0",
         "characters-MIN_NUM_FORMS": "1",

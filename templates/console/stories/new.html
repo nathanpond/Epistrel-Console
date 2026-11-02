@@ -8,6 +8,7 @@
   {% csrf_token %}
   <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
   <input type="hidden" name="rating_choices" value="{{ rating_choices }}">
+  <input type="hidden" name="provider_choices" value="{{ provider_choices }}">
   {# The first submit button is what Enter presses: make it Create, not Remove. #}
   <button type="submit" name="create" value="1" class="default-submit" tabindex="-1" aria-hidden="true">Create story</button>
   {% if show_errors %}{{ form.non_field_errors }}{% endif %}
@@ -40,6 +41,8 @@
   </fieldset>
   {% endfor %}
   {% if can_add %}<p><button type="submit" name="add" value="1" formnovalidate>Add character</button></p>{% endif %}
+
+  {% include "console/stories/_bindings.html" with bindings=bindings %}
 
   <p><button type="submit" name="create" value="1">Create story</button></p>
 </form>
