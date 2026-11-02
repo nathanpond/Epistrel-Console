@@ -2921,3 +2921,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Test data: the Actor is Mara (`m6/story.json`'s player; the test plan's "Jenni" is the Engine's schema example, not in the M6 cast), so the fact reads "Mara (player)". `m6/history_correct_turn.json` is turn 3 with say "Where did Bob put the key?" (beat 1), do "Mara takes the key from the drawer." (beat 2), the reply, and one correctable notice `01JM6NT…263` with `external_effects: true` (registered in `test_fake_engine.py`'s M6 fixture table). `corrected.json` is moved to turn 3 in the tests.
   **Why:** #232's cast and D16's id prefixes; the fixture shape is the test plan's.
   **Issue:** #263
+- **Decision:** On the compensate form and its confirm page the link's `value` (the provider value, #249's `action_query` key) is carried as the hidden field `provider_value`; `provider`, `listed_reason` and `expected_revision` keep their names. The GET reads `value` from the link query as before.
+  **Why:** The form's own `value` field is the Engine's `effect.value` member (the AC requires field names to match the Engine's), so the two can't share a POST name; #249's link query is unchanged.
+  **Issue:** #264
+- **Decision:** The confirmed POST runs through `confirm_action(require_confirmed=True)` inside the `inspect_page` build: `perform` stores the result (or the refused form's context) and the build returns it, so the result page and refusals render inside the Effects shell with the shell's reads, with no second effective-config read.
+  **Why:** The AC routes every method through `inspect_page` and the confirm page through `confirm_action`; `perform` must return a response, the build a context.
+  **Issue:** #264
+- **Decision:** Character select: the posted id is trimmed and upper-cased (C13) before it meets the choices; an id outside the cast is kept as "<id> (not in the cast)" (`console.forms.scheduled_events.NOT_IN_CAST`, reused) and sent when it is at most 64 characters (longer is a field error, no call). An Edit re-render hides field errors; the `<title>` of `reconciliation_result.html` is now `result_title` (default "Settle now"), "Compensate" for this story's result.
+  **Why:** C13's kept-option rule and the AC's 1-64 bound; the hard-coded "Settle now" title was flagged on #256.
+  **Issue:** #264
+- **Decision:** A refused `no_listing` places D9's text above the form with a "Reconciliation" link; an answered refusal with no D9 wording (`idempotency_conflict`, unknown codes) shows #43's panel with a fresh key, a transport error or `bad_response` the panel with the posted key and revision.
+  **Why:** The AC's refusal rows and D8's re-render rule, mirroring #256's settle-now.
+  **Issue:** #264

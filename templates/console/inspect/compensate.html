@@ -1,0 +1,40 @@
+{% extends "console/inspect/effects.html" %}{% load inspect_tags world_tags %}
+{% comment %}
+Compensate a listed effect (#264, console/views/inspect_reconciliation.py's compensate), below the
+Reconciliation section (current inspect:reconciliation): the row's display-only facts (D11's full
+outbox id, the Provider linked through D19's provider_url, Provider value, Listed as), then
+console.forms.reconciliation.CompensateForm POSTing to inspect:compensate with the page's
+idempotency key, D8's expected_revision and the display fields. "Review" renders the confirm page;
+only its "Send compensation" calls the Engine. With the States gate closed the fields render inside
+<fieldset disabled> and the reason follows the button (convention 22). A refusal or #43's panel
+stays above the form, a field's refusal beside it; the result page (reconciliation_result.html)
+replaces this page on success. Context: outbox_id, facts (console.reconciliation.CompensateFacts),
+form, gate, cast_unread, action_url, cancel_url, idempotency_key, expected_revision, hide_errors
+(an Edit re-render), refusal, refusal_url, refusal_link, write_error.
+{% endcomment %}
+{% block title %}Inspect · Compensate an effect · {{ story_name }}{% endblock %}
+{% block effects_content %}
+<h3 class="compensate-title">Compensate an effect</h3>
+<dl class="compensate-facts">
+  <dt>Outbox id</dt><dd>{{ outbox_id|outbox_id }}</dd>
+  <dt>Provider</dt><dd>{% if facts.provider and facts.provider_url %}<a href="{{ facts.provider_url }}">{{ facts.provider }}</a>{% else %}{{ facts.provider|default:"—" }}{% endif %}</dd>
+  <dt>Provider value</dt><dd>{{ facts.provider_value|default:"—" }}</dd>
+  <dt>Listed as</dt><dd>{% if facts.listed_reason %}<span title="{{ facts.listed_reason }}">{{ facts.listed_text }}</span>{% else %}—{% endif %}</dd>
+</dl>
+{% if cast_unread %}<p class="notice cast-unread">{{ cast_unread }}</p>{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist compensate-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="compensate-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {% if expected_revision %}<input type="hidden" name="expected_revision" value="{{ expected_revision }}">{% endif %}
+  {% for name, value in facts.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
+  {% endfor %}
+  <fieldset class="compensate-fields"{% if gate %} disabled{% endif %}>
+  {% if form.non_field_errors and not hide_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error|code_spans }}</p>{% endfor %}</div>{% endif %}
+  {% for field in form %}<div class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{% if not hide_errors %}{% for error in field.errors %}<p class="errorlist">{{ error|code_spans }}</p>{% endfor %}{% endif %}</div>
+  {% endfor %}
+  </fieldset>
+  <p><button type="submit" class="compensate-submit"{{ gate|gate_attrs:"gate-compensate" }}>Review</button>{% include "console/_gated_control.html" with gate=gate gate_id="gate-compensate" %} <a href="{{ cancel_url }}">Cancel</a></p>
+</form>
+{% endblock %}

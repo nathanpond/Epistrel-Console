@@ -29,6 +29,14 @@ words the ``SettledNow`` answer for ``templates/console/inspect/reconciliation_r
 through D9's ``settle_reason_text``, More), which #264's compensate result reuses;
 :func:`settled_row` finds the #44 row a ``?report=<pk>`` permalink names (an ``ok``
 :data:`SETTLE_KIND` of this story whose stored response parses).
+
+**Compensate** (#264; D5, D8, D11, D19). :func:`compensate_facts` reads the row's display fields
+(the link's ``value`` is carried on a POST as :data:`PROVIDER_VALUE_FIELD`, since the form's own
+``value`` is the Engine's ``effect.value``); :func:`compensate_confirm` builds the confirm page,
+restating the effect through :func:`effect_summary` ("gold · Alice · +500 — “refund”");
+:func:`compensated_view` words the ``Compensated`` answer for the shared result template
+(``kind`` :data:`COMPENSATE_KIND`: "Compensation sent: <new id> (<status>) compensates <id>", both
+linked through ``outbox_url``) and :func:`compensated_row` finds a ``?report=<pk>`` row.
 """
 
 import json
@@ -41,7 +49,13 @@ from django.utils.http import urlencode
 
 from console.confirm import ConfirmPage
 from console.effects import outbox_url, provider_url
-from console.engine.models import ListingOutcome, ReconciliationListing, SettledNow, Story
+from console.engine.models import (
+    Compensated,
+    ListingOutcome,
+    ReconciliationListing,
+    SettledNow,
+    Story,
+)
 from console.engine_errors import EMPTY
 from console.inspect import Unavailable
 from console.models import EngineOperation
@@ -424,6 +438,12 @@ class SettledView:
     back_url: str
     back_label: str
     report_url: str | None
+    # #264: which action's result this is (the template tells the headings apart by it), and the
+    # compensate heading's status and compensated row.
+    kind: str = SETTLE_KIND
+    status_text: str = ""
+    compensates_id: str | None = None
+    compensates_url: str | None = None
 
 
 def settled_url(story_id: str, pk: int) -> str:
@@ -507,6 +527,182 @@ def settled_row(pk: object, story_id: str) -> tuple[EngineOperation, SettledNow]
         return None
     try:
         answer = SettledNow.from_json(row.response)
+    except Exception:
+        return None
+    return None if answer is None else (row, answer)
+
+
+# --- compensate (#264) ---------------------------------------------------------------------------
+
+COMPENSATE_KIND = "compensate"  # the #44 row's kind (the client method)
+COMPENSATED = "inspect:compensated"
+COMPENSATE_TITLE = "Compensate an effect"
+COMPENSATE_QUESTION = "Send a compensating effect for {name}?"
+COMPENSATE_CONFIRM_LABEL = "Send compensation"
+COMPENSATE_LINE = (
+    "It becomes a new outbox row, dispatched to the provider like any other. The listed effect "
+    "shows Compensated until that row is confirmed."
+)
+COMPENSATE_RESULT_TITLE = "Compensate"
+STORY_STATE = "story State"
+# The link's ``value`` (the provider value) is carried on a POST as ``provider_value``: the form's
+# own ``value`` is the Engine's ``effect.value`` member.
+PROVIDER_VALUE_FIELD = "provider_value"
+COMPENSATE_DISPLAY_FIELDS: tuple[str, ...] = ("provider", PROVIDER_VALUE_FIELD, "listed_reason")
+
+
+@dataclass(frozen=True)
+class CompensateFacts:
+    """What the compensate form and its confirm page show of the listed row (display-only, from
+    #249's link query on GET and the hidden fields on POST; never trusted for the action)."""
+
+    provider: str | None
+    provider_url: str | None
+    provider_value: str | None
+    listed_reason: str | None
+    hidden: Mapping[str, str]
+
+    @property
+    def listed_text(self) -> str:
+        return humanised(self.listed_reason.strip()) if self.listed_reason else EMPTY
+
+
+def compensate_facts(data: Mapping[str, Any], *, posted: bool) -> CompensateFacts:
+    """The display fields from the GET query (``provider``, ``value``, ``listed_reason``) or the
+    POST's hidden fields (``provider``, ``provider_value``, ``listed_reason``)."""
+    provider = _shown(data, "provider")
+    provider_value = _shown(data, PROVIDER_VALUE_FIELD if posted else "value")
+    listed = _shown(data, "listed_reason")
+    hidden: dict[str, str] = {}
+    for key, shown in zip(
+        COMPENSATE_DISPLAY_FIELDS, (provider, provider_value, listed), strict=True
+    ):
+        if shown is not None:
+            hidden[key] = shown
+    return CompensateFacts(
+        provider=provider,
+        provider_url=provider_url(provider) if provider is not None else None,
+        provider_value=provider_value,
+        listed_reason=listed,
+        hidden=hidden,
+    )
+
+
+def compensate_url(story_id: str, outbox_id: str) -> str:
+    return reverse(COMPENSATE, args=[story_id, outbox_id])
+
+
+def row_url(story_id: str, outbox_id: str) -> str:
+    """The listed row's anchor on the Reconciliation list."""
+    return f"{section_url(story_id)}#outbox-{outbox_id}"
+
+
+def effect_summary(effect: Mapping[str, Any], names: Mapping[str, str]) -> str:
+    """ "gold · Alice · +500 — “refund”": the State; the character's C4 label, else its raw id
+    (cast unread, or a kept option), else "story State"; D5's signed delta or the value as
+    compact JSON (text quoted); the reason."""
+    scope = effect.get("scope_key")
+    character = (names.get(scope) or scope) if isinstance(scope, str) and scope else STORY_STATE
+    if effect.get("delta") is not None:
+        change = signed_delta_text(effect["delta"])
+    else:
+        change = json.dumps(effect.get("value"), ensure_ascii=False, separators=(",", ":"))
+    return f"{effect.get('state')} · {character} · {change} — “{effect.get('reason')}”"
+
+
+def compensate_confirm(
+    story_id: str,
+    outbox_id: str,
+    effect: Mapping[str, Any],
+    names: Mapping[str, str],
+    facts: CompensateFacts,
+    typed: Mapping[str, str],
+) -> ConfirmPage:
+    """The compensate confirm page: the effect restated, the row's facts and, as hidden fields,
+    the values **as typed** (``typed``; D8: a cleaned ``True`` or ``"12"`` doesn't round-trip),
+    the display fields and ``expected_revision``. Its Edit button posts them back with
+    ``edit=1``."""
+    link = facts.provider_url
+    return ConfirmPage(
+        title=COMPENSATE_TITLE,
+        question=COMPENSATE_QUESTION,
+        emphasis=outbox_id,
+        confirm_label=COMPENSATE_CONFIRM_LABEL,
+        cancel_url=row_url(story_id, outbox_id),
+        lines=(effect_summary(effect, names), COMPENSATE_LINE),
+        facts=(
+            ("Story id", story_id),
+            ("Outbox id", outbox_id),
+            (PROVIDER_FACT, facts.provider or EMPTY),
+            ("Provider value", facts.provider_value or EMPTY),
+        ),
+        fact_urls={PROVIDER_FACT: link} if link is not None else {},
+        hidden={**typed, **facts.hidden},
+        buttons_template="console/inspect/_compensate_edit.html",
+    )
+
+
+def compensated_url(story_id: str, pk: int) -> str:
+    """``inspect:compensated?report=<pk>``."""
+    return f"{reverse(COMPENSATED, args=[story_id])}?{urlencode({'report': pk})}"
+
+
+def compensated_view(
+    answer: Compensated,
+    row: EngineOperation | None,
+    story_id: str,
+    sent_key: str = "",
+) -> SettledView:
+    """The compensate result: "Compensation sent: <new id> (<status>) compensates <id>", each id
+    linked to its Reconciliation anchor, D8's Slot, Operation and revision lines, and More (the
+    Engine's ``position``, the #44 row's kept ``Idempotency-Key``, else ``sent_key``)."""
+    back = section_url(story_id)
+    slot = slot_result(story_id, answer, row, back)
+    pk = _row_pk(row)
+    lines = [ResultLine(f"Slot: {slot.slot_text or EMPTY}", slot.slot_url, "slot")]
+    if slot.operation_id is not None:
+        url = reverse("operations:detail", args=[slot.operation_pk]) if slot.operation_pk else None
+        lines.append(ResultLine(f"Operation: `{slot.operation_id}`", url, "operation"))
+    lines.append(ResultLine(slot.revision_text, None, "revision"))
+    key = (row.idempotency_key if row is not None else "") or answer.idempotency_key or sent_key
+    return SettledView(
+        heading="Compensation sent: ",
+        heading_after="",
+        heading_outbox_id=answer.outbox_id,
+        heading_outbox_url=outbox_url(story_id, answer.outbox_id),
+        notes=(),
+        lines=tuple(lines),
+        reasons=(),
+        more=(
+            ("Engine position", slot.engine_position or EMPTY),
+            ("Idempotency key", key or EMPTY),
+        ),
+        replayed=row is not None and row.replayed,
+        back_url=back,
+        back_label=BACK_LABEL,
+        report_url=compensated_url(story_id, pk) if pk is not None else None,
+        kind=COMPENSATE_KIND,
+        status_text=humanised(answer.status) if answer.status else EMPTY,
+        compensates_id=answer.compensates or None,
+        compensates_url=outbox_url(story_id, answer.compensates),
+    )
+
+
+def compensated_row(pk: object, story_id: str) -> tuple[EngineOperation, Compensated] | None:
+    """The #44 row ``pk`` and its answer when it is an ``ok`` :data:`COMPENSATE_KIND` of this
+    story whose stored response parses as ``Compensated``; else ``None``."""
+    try:
+        row = EngineOperation.objects.get(pk=int(str(pk)))
+    except EngineOperation.DoesNotExist, ValueError, TypeError:
+        return None
+    if (
+        row.kind != COMPENSATE_KIND
+        or row.story_id != story_id
+        or row.outcome != EngineOperation.Outcome.OK
+    ):
+        return None
+    try:
+        answer = Compensated.from_json(row.response)
     except Exception:
         return None
     return None if answer is None else (row, answer)

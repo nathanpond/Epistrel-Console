@@ -4,14 +4,17 @@ A reconciliation action's result (#256 settle now; #264's compensate reuses it),
 Reconciliation section (current inspect:reconciliation): rendered on the confirmed POST and again
 at ?report=<pk> from the #44 row. Context: result (console.reconciliation.SettledView: the heading
 around the D11 outbox id, notes, lines with backtick spans and optional links, reasons, More items,
-replayed, back and report links); result_unavailable and section_url for a ?report= that isn't one.
+replayed, back and report links; kind "compensate" (#264) heads "Compensation sent: <new id>
+(<status>) compensates <id>" instead); result_unavailable and section_url for a ?report= that
+isn't one; result_title (the <title>'s action, default "Settle now").
 {% endcomment %}
-{% block title %}Inspect · Settle now · {{ story_name }}{% endblock %}
+{% block title %}Inspect · {{ result_title|default:"Settle now" }} · {{ story_name }}{% endblock %}
 {% block effects_content %}
 {% if result_unavailable %}
 <p class="not-found reconciliation-result-unavailable">{{ result_unavailable }} — <a href="{{ section_url }}">Reconciliation</a></p>
 {% elif result %}
-<h3 class="reconciliation-result-heading">{{ result.heading }}{% if result.heading_outbox_id %}{% if result.heading_outbox_url %}<a href="{{ result.heading_outbox_url }}">{{ result.heading_outbox_id|outbox_id }}</a>{% else %}{{ result.heading_outbox_id|outbox_id }}{% endif %}{% endif %}{{ result.heading_after }}</h3>
+{% if result.kind == "compensate" %}<h3 class="reconciliation-result-heading compensated">{{ result.heading }}{% if result.heading_outbox_url %}<a href="{{ result.heading_outbox_url }}">{{ result.heading_outbox_id|outbox_id }}</a>{% else %}{{ result.heading_outbox_id|outbox_id }}{% endif %} ({{ result.status_text }}) compensates {% if result.compensates_url %}<a href="{{ result.compensates_url }}">{{ result.compensates_id|outbox_id }}</a>{% else %}{{ result.compensates_id|outbox_id }}{% endif %}</h3>
+{% else %}<h3 class="reconciliation-result-heading">{{ result.heading }}{% if result.heading_outbox_id %}{% if result.heading_outbox_url %}<a href="{{ result.heading_outbox_url }}">{{ result.heading_outbox_id|outbox_id }}</a>{% else %}{{ result.heading_outbox_id|outbox_id }}{% endif %}{% endif %}{{ result.heading_after }}</h3>{% endif %}
 {% for note in result.notes %}<p class="notice reconciliation-result-note">{{ note }}</p>
 {% endfor %}{% if result.replayed %}<p class="notice replayed">Replayed (repeated submit)</p>{% endif %}
 <ul class="reconciliation-result-lines">

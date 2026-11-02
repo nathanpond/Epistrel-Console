@@ -325,6 +325,23 @@ def test_settle_now_link_once_registered(operator_client: Client, engine: FakeEn
     assert "Settle now" not in links(row(html, BX[1]))
 
 
+def test_compensate_link_once_registered(operator_client: Client, engine: FakeEngine) -> None:
+    """#264: under the real urlconf the ``settlement_conflict`` row links ``inspect:compensate``
+    with #249's query, ``state`` included; the ``failed`` row doesn't."""
+    answer(engine, 200, fixture("reconciliation_actions"))
+    html = page(operator_client)
+    n = REASON_ROWS["settlement_conflict"]
+    compensate = reverse("inspect:compensate", args=[STORY, BX[n]])
+    found = links(row(html, BX[n]))
+    assert found["Compensate"].startswith(compensate + "?")
+    query = parse_qs(urlsplit(found["Compensate"]).query)
+    assert query["state"] == ["gold"]
+    assert query["listed_reason"] == ["settlement_conflict"]
+    assert query["expected_revision"] == ["12"]
+    # **Complement:** the failed row carries no Compensate.
+    assert "Compensate" not in links(row(html, BX[REASON_ROWS["failed"]]))
+
+
 def test_actions_greyed_when_states_off(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", EFFECTIVE, 200, json=lite_m6())
     answer(engine, 200, fixture("reconciliation_actions"))
