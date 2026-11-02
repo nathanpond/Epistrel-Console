@@ -55,9 +55,11 @@ def answer(
     *,
     history: dict[str, Any] | None = None,
     settings: dict[str, Any] | None = None,
+    story: dict[str, Any] | None = None,
 ) -> None:
-    """The page's reads: the story (head 3), its variants, history and settings."""
-    engine.respond("GET", STORY_PATH, 200, json=story_json(next_turn_index=4))
+    """The page's reads: the story (head 3, unless ``story`` is given), its variants, history
+    and settings."""
+    engine.respond("GET", STORY_PATH, 200, json=story or story_json(next_turn_index=4))
     engine.respond("GET", VARIANTS, 200, json=variants_json())
     engine.respond("GET", HISTORY, 200, json=history or history_json())
     engine.respond(
@@ -81,8 +83,9 @@ def calls_to(engine: FakeEngine, suffix: str) -> int:
     return sum(1 for request in engine.requests if request.url.path.endswith(suffix))
 
 
-def page(client: Client, query: str = "", **headers: str) -> str:
-    response = client.get(f"{URL}?{query}" if query else URL, headers=headers)
+def page(client: Client, query: str = "", *, story_id: str = STORY, **headers: str) -> str:
+    url = f"/stories/{story_id}/history/"
+    response = client.get(f"{url}?{query}" if query else url, headers=headers)
     assert response.status_code == 200
     return response.content.decode()
 

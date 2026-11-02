@@ -15,6 +15,10 @@
   filter a character read applied, how the viewpoint perceived each beat and who narrated it
   (#62; the play transcript reuses them, #196). One wording and style (convention 20).
 
+M6 (#254): each group carries the State changes its turn committed (#245's shared rows, D10,
+at every viewpoint) and whether it is an unfinished staged turn (D13's Incomplete badge, never
+"no reply"); on an omniscient read each beat carries the changes it committed (K6).
+
 #53 builds its timeline controls onto these groups.
 """
 
@@ -29,7 +33,7 @@ from urllib.parse import urlencode
 from django.urls import reverse
 from django.utils.text import slugify
 
-from console.effects import engine_operation_url
+from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
 from console.engine.models import (
     BeatProposition,
     BeatVisibility,
@@ -51,6 +55,7 @@ from console.wording import character_label, humanised
 
 if TYPE_CHECKING:
     from console.feedback import FeedbackWidget
+    from console.turn_world import StateChangeRow
 
 INGEST_KIND = "ingest"  # the operation-log kind of an ingest batch (the client method's name)
 REJECTED_KIND = "guardrail_output_rejected"
@@ -320,6 +325,31 @@ class Row:
     # #250: the Engine operation page for an operation id this Console's log doesn't hold
     # (D19: ``None`` for a non-ULID id, or while ``operations:engine`` is unregistered).
     engine_url: str | None = None
+    # #254 (K6): the State changes this beat committed, omniscient reads only (#245's rows), and
+    # the raw entries that didn't parse.
+    beat_changes: tuple[StateChangeRow, ...] = ()
+    beat_changes_unparsed: tuple[Any, ...] = ()
+
+    @property
+    def beat_effects_summary(self) -> str:
+        """ "1 State change at this beat" / "N State changes at this beat"; a beat whose every
+        entry failed adds " · N couldn't be read"."""
+        count = len(self.beat_changes)
+        text = f"{count} State change{'' if count == 1 else 's'} at this beat"
+        if not count and self.beat_changes_unparsed:
+            text += f" · {len(self.beat_changes_unparsed)} couldn't be read"
+        return text
+
+    @property
+    def beat_effects_unread(self) -> str:
+        return unread_line(len(self.beat_changes_unparsed))
+
+
+def unread_line(count: int) -> str:
+    """#245's "couldn't be read" line for a State-change list ("" for none)."""
+    if not count:
+        return ""
+    return f"{count} State change{'' if count == 1 else 's'} couldn't be read"
 
 
 @dataclass
@@ -333,6 +363,25 @@ class TurnGroup:
     perception_url: str | None = None  # "Perception" (#195, set by the view)
     render_order: str = ""  # "Renders: A → B" for a multi-render turn (#202)
     report_url: str | None = None  # "Report" (#203, set by the view): the play inspector
+    # #254: the turn's State changes (#245's rows) and the raw entries that didn't parse, from
+    # its TurnSummary; an unfinished staged turn (D13), its badge linking the turn's Engine
+    # operation page (D19: ``None`` while unregistered or no row carries an id).
+    state_changes: tuple[StateChangeRow, ...] = ()
+    state_changes_unparsed: tuple[Any, ...] = ()
+    incomplete: bool = False
+    incomplete_url: str | None = None
+
+    @property
+    def state_changes_unread(self) -> str:
+        return unread_line(len(self.state_changes_unparsed))
+
+    @property
+    def incomplete_text(self) -> str:
+        return INCOMPLETE_TEXT
+
+    @property
+    def incomplete_title(self) -> str:
+        return INCOMPLETE_TITLE
 
 
 def _label(character_id: str, labels: Mapping[str, str]) -> str:
@@ -351,13 +400,20 @@ def turn_groups(
     labels: Mapping[str, str],
     links: Mapping[str, int],
     actor_filtered: bool,
+    omniscient: bool = False,
+    story_id: str = "",
 ) -> list[TurnGroup]:
     """The page's turns in ascending order. Audit records render under their turn only for
     turns on this page (an erasure marker with no turn under turn 0, which only the oldest page
     holds). A turn ≥ 1 with no reply item says "no reply" (not while an actor filter is
-    set). #202: a reaction row is marked, and a group's render order comes from its first
-    ``message_rendered`` row on this page."""
+    set, nor for an incomplete turn, #254). #202: a reaction row is marked, and a group's
+    render order comes from its first ``message_rendered`` row on this page.
+
+    #254: each group gets its ``TurnSummary``'s State changes (the first summary of a
+    ``(turn, variant)`` wins) and ``incomplete``; with ``omniscient``, each row its beat's
+    changes. ``labels`` name the scopes (C4); ``story_id`` builds the outbox links (D11)."""
     from console.renders import is_reaction, render_order_line  # console.renders imports us
+    from console.turn_world import state_change_rows  # console.turn_world → console.world
 
     groups: dict[tuple[int, int | None], TurnGroup] = {}
 
@@ -367,8 +423,17 @@ def turn_groups(
             groups[key] = TurnGroup(turn, variant)
         return groups[key]
 
+    summarised: set[tuple[int, int | None]] = set()
     for summary in history.turns:
-        group(summary.turn, summary.variant)
+        owner = group(summary.turn, summary.variant)
+        if (summary.turn, summary.variant) in summarised:
+            continue  # a duplicate summary: the first wins
+        summarised.add((summary.turn, summary.variant))
+        raw = summary.unparsed.get("state_effects")
+        owner.state_changes, owner.state_changes_unparsed = state_change_rows(
+            raw if raw is not None else summary.state_effects, story_id, labels
+        )
+        owner.incomplete = summary.incomplete
     previous: HistoryItem | None = None
     for item in items:
         same = (
@@ -377,6 +442,11 @@ def turn_groups(
             and previous.turn == item.turn
         )
         render = tuple(_label(c, labels) for c in item.render_character_ids or ())
+        beat_changes: tuple[StateChangeRow, ...] = ()
+        beat_unparsed: tuple[Any, ...] = ()
+        if omniscient:
+            beat_changes = state_change_rows(item.effect_entries, story_id, labels)[0]
+            beat_unparsed = tuple(item.effects_unparsed)
         row = Row(
             item,
             narrated_label(item, labels),
@@ -390,6 +460,8 @@ def turn_groups(
                 if links.get(item.operation_id) is None
                 else None
             ),
+            beat_changes=beat_changes,
+            beat_changes_unparsed=beat_unparsed,
         )
         owner = group(item.turn or 0, item.variant)
         if item.kind == REPLY_KIND and not any(r.item.kind == REPLY_KIND for r in owner.rows):
@@ -409,8 +481,14 @@ def turn_groups(
     ordered = sorted(groups.values(), key=lambda g: (g.turn, g.variant or 0))
     for g in ordered:
         g.no_reply = (
-            not actor_filtered and g.turn >= 1 and not any(is_reply(r.item) for r in g.rows)
+            not actor_filtered
+            and not g.incomplete
+            and g.turn >= 1
+            and not any(is_reply(r.item) for r in g.rows)
         )
+        if g.incomplete:
+            operation = next((r.item.operation_id for r in g.rows if r.item.operation_id), None)
+            g.incomplete_url = engine_operation_url(operation)
     return ordered
 
 

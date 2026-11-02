@@ -2708,3 +2708,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The result page's More holds only the pretty-printed raw answer; a create's `?report=` with no `report`, a blank or a non-integer value reads "Not found …" with only the shell's reads.
   **Why:** `ScheduledEventWritten` carries no change id or N⁺k position for further More rows; the blank/missing case follows Discretion pass 2.
   **Issue:** #253
+- **Decision:** `m6/history_world_alice.json` leaves `effects` out of every item instead of the story's `effects: []`.
+  **Why:** C15: the Engine's `_structured` (core/history.py at `b8fd182`) sets `effects` only on omniscient reads and `HistoryItemModel` drops `None`, so a character read's items carry no `effects` key. The Console gates per-beat lists on `output_viewpoint == "omniscient"` either way.
+  **Issue:** #254
+- **Decision:** The golden `tests/history/golden/m5_items.html` was captured from the milestone branch's pre-#254 state (not `main`), from the history-header line through `</table>`.
+  **Why:** #250 already changed History's operation links on this branch legitimately; the golden pins what #254 must not change. The call-log and golden tests were also run against the pre-change code (both passed there; the other 10 new tests failed as expected).
+  **Issue:** #254
+- **Decision:** A beat's summary adds " · N couldn't be read" only when none of its entries parsed; otherwise it counts parsed changes and the unparsed ones sit inside the same details under the "couldn't be read" line. Turn-level and beat-level "couldn't be read" wording is one helper, `console.history.unread_line`.
+  **Why:** Discretion pass 1's literal wording; keeps one phrasing with #245's.
+  **Issue:** #254
+- **Decision:** Duplicate `(turn, variant)` summaries are tracked by key (first wins), and `TurnGroup` exposes `incomplete_text`/`incomplete_title` properties so the template uses D13's constants without filling them itself.
+  **Why:** Mirrors #245's play `Entry`; a "first wins" check on the group's fields would let a second summary override a first with no changes.
+  **Issue:** #254
+- **Decision:** (Rule 3) Registered `history_world`/`history_world_alice` in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` table (validated against `GET /stories/{story_id}/history`, ids checked as ULIDs); message ids use the `01JM6MM` prefix since D16 lists none for transcript messages.
+  **Why:** `test_every_m6_fixture_is_in_the_table` requires every `m6/` fixture be listed and schema-validated.
+  **Issue:** #254

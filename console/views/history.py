@@ -22,6 +22,9 @@ every view is a shareable URL. Reads, each degrading its own section:
   structured turn on the page, the first 20, on a local pool with a shared deadline
   (:func:`turn_traces`); a failure marks that turn's beats unavailable and lists it.
 
+No read is added for M6 (#254): each turn's State changes, its beats' (omniscient) and the
+Incomplete badge come from the history read itself, worded without units (D5, D10).
+
 An HTMX request (the viewpoint select's ``change``) gets the controls fragment alone, so the
 audit box enables and disables live; without JavaScript the form refuses audit server-side.
 """
@@ -34,10 +37,12 @@ from urllib.parse import urlencode
 from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils.safestring import SafeString
 from django.views.decorators.http import require_safe
 
 from console import cast as cast_helpers
 from console.canon import cast_names
+from console.effects import outbox_list_notice_html
 from console.engine.client import EngineClient, EngineClientError, EngineError, EngineUnreachable
 from console.engine.models import History, HistoryItem, Story, SummarySegment, VariantChain
 from console.engine_access import engine_client_for
@@ -72,6 +77,7 @@ from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
 from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
 from console.turn_trace import TurnTrace, read_turn_trace
+from console.world import viewpoint_line
 
 CONTROLS_TEMPLATE = "console/history/_controls.html"
 PAGE_TEMPLATE = "console/history/history.html"
@@ -126,6 +132,10 @@ class Page:
     trace_failures: str = ""  # "Turn trace unavailable: T3 (timeout), …"
     # A character read's (label, raw) audience filter; ``None`` for an omniscient echo (#62).
     audience_filter: tuple[str, str] | None = None
+    # #254: D4's line on a character read showing a State-changes row, and D11's notice when a
+    # shown change carries an outbox id.
+    world_viewpoint: str = ""
+    outbox_notice: SafeString | str = ""
 
 
 def _url(story_id: str, params: QueryDict) -> str:
@@ -249,6 +259,8 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         labels=labels,
         links=links,
         actor_filtered=bool(query["actor_character_id"]),
+        omniscient=history.output_viewpoint == cast_helpers.OMNISCIENT,
+        story_id=story.id,
     )
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     variant = query["variant"] or ""
@@ -281,7 +293,31 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
             if history.output_viewpoint == cast_helpers.OMNISCIENT
             else audience_filter_label(history.audience_filter)
         ),
+        world_viewpoint=_world_viewpoint(history, groups, labels),
+        outbox_notice=outbox_list_notice_html() if _dispatched(groups) else "",
     )
+
+
+def _world_viewpoint(
+    history: History, groups: Sequence[TurnGroup], labels: Mapping[str, str]
+) -> str:
+    """D4's "Viewpoint: Alice — hidden States are left out" on a character read whose page shows
+    a State-changes row (#254); "" otherwise, or when ``output_viewpoint`` isn't a string."""
+    viewpoint: object = history.output_viewpoint
+    if not isinstance(viewpoint, str) or not viewpoint or viewpoint == cast_helpers.OMNISCIENT:
+        return ""
+    if not any(g.state_changes or g.state_changes_unparsed for g in groups):
+        return ""
+    return viewpoint_line(viewpoint, labels)
+
+
+def _dispatched(groups: Sequence[TurnGroup]) -> bool:
+    """Whether a parsed turn- or beat-level change on the page carries an outbox id (D11)."""
+    rows = [
+        *(c for g in groups for c in g.state_changes),
+        *(c for g in groups for r in g.rows for c in r.beat_changes),
+    ]
+    return any(c.outbox_id for c in rows)
 
 
 # --- Beat traces (#147) -------------------------------------------------------------------------
