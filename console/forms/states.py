@@ -6,7 +6,7 @@ Set form (#251), :class:`StateSetForm`; and the State definition fields with the
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from django import forms
 from django.core import signing
@@ -596,6 +596,101 @@ class StateDeclarationForm(StateDefinitionFields):
     def definition(self) -> dict[str, Any]:
         """The ``StateDeclaration`` body (valid form only)."""
         return definition_body(self.cleaned_data)
+
+
+# --- approve a proposed State (#266) --------------------------------------------------------------
+#
+# #261's form without Owner and Provider (the Engine's ``StateDefinitionOverrides`` has neither),
+# starting from the proposal's suggestion. ``overrides()`` diffs the five suggested members
+# against the suggestion and adds every other member given (#261's body rules); untouched it is
+# ``None`` and the approval sends ``{}`` (C9). A blank Unit or Entity keeps the suggestion: there
+# is no control that clears one, and ``null`` is never sent (an explicit ``null`` override would
+# clear it at the Engine).
+
+KEEPS_SUGGESTION_HELP = "Blank keeps the suggestion"
+SCOPE_SUGGESTION_HELP = "Engine default keeps the suggestion"
+ENTITY_SUGGESTED_HELP = "Blank keeps the suggestion. Suggested: {label}"
+SUGGESTED_MEMBERS = ("name", "type", "scope", "unit", "entity_id")
+OVERRIDES_DROPPED = ("owner", "provider_id")
+
+
+def _kept_choice(choices: Sequence[tuple[str, str]], value: Any) -> list[tuple[str, str]]:
+    """C7's ``_kept`` pattern: a suggested value outside the choices is one more choice."""
+    kept = list(choices)
+    if isinstance(value, str) and value and value not in {v for v, _ in kept}:
+        kept.append((value, humanised(value)))
+    return kept
+
+
+class StateOverridesForm(StateDeclarationForm):
+    """Approve a proposed State (#266): :class:`StateDeclarationForm` without ``owner`` and
+    ``provider_id``, its Name, Type, Scope, Unit and Entity starting from ``suggestion``."""
+
+    def __init__(
+        self,
+        data: Any = None,
+        *,
+        suggestion: Any,
+        initial_revision: int | None,
+        idempotency_key: str | None = None,
+        initial: Mapping[str, Any] | None = None,
+        names: Mapping[str, str] | None = None,
+    ) -> None:
+        self.suggestion = suggestion
+        started: dict[str, Any] = {
+            "name": suggestion.name,
+            "type": suggestion.suggested_type,
+            "scope": suggestion.suggested_scope,
+            "unit": suggestion.suggested_unit or "",
+            "entity_id": suggestion.suggested_entity_id or "",
+        }
+        started.update(initial or {})
+        super().__init__(
+            data,
+            initial_revision=initial_revision,
+            idempotency_key=idempotency_key,
+            initial=started,
+        )
+        for name in OVERRIDES_DROPPED:
+            self.fields.pop(name, None)
+        type_field = cast("forms.ChoiceField", self.fields["type"])
+        scope_field = cast("forms.ChoiceField", self.fields["scope"])
+        type_field.choices = _kept_choice(TYPE_CHOICES, suggestion.suggested_type)
+        scope_field.choices = _kept_choice(SCOPE_CHOICES, suggestion.suggested_scope)
+        scope_field.help_text = SCOPE_SUGGESTION_HELP
+        self.fields["unit"].help_text = KEEPS_SUGGESTION_HELP
+        entity = suggestion.suggested_entity_id
+        if entity:
+            label = (names or {}).get(entity) or short_id(entity)
+            self.fields["entity_id"].help_text = ENTITY_SUGGESTED_HELP.replace("{label}", label)
+        else:
+            self.fields["entity_id"].help_text = f"{KEEPS_SUGGESTION_HELP}. {ENTITY_HELP}"
+
+    def _suggested(self, member: str) -> Any:
+        s = self.suggestion
+        return {
+            "name": s.name,
+            "type": s.suggested_type,
+            "scope": s.suggested_scope,
+            "unit": s.suggested_unit,
+            "entity_id": s.suggested_entity_id,
+        }[member]
+
+    def overrides(self) -> dict[str, Any] | None:
+        """The ``StateDefinitionOverrides`` (valid form only): each suggested member that
+        differs from the suggestion (a blank Scope, Unit or Entity counts as unchanged), plus
+        every other member given; ``None`` when nothing is."""
+        cleaned = self.cleaned_data
+        body = {k: v for k, v in definition_body(cleaned).items() if k not in SUGGESTED_MEMBERS}
+        changed: dict[str, Any] = {}
+        for member in SUGGESTED_MEMBERS:
+            value = cleaned.get(member)
+            if value is None or value == "":
+                continue  # Name and Type are required; a blank optional one keeps the suggestion
+            if value != self._suggested(member):
+                changed[member] = value
+        merged = {**changed, **body}
+        return merged or None
 
 
 # --- change a State's definition (#265) -----------------------------------------------------------

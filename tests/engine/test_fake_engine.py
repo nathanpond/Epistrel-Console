@@ -183,6 +183,7 @@ M6_FIXTURES = {
     "state_declared": ("POST", "/stories/{story_id}/states", 201),
     "state_definition_written": ("PATCH", "/stories/{story_id}/states/{name}/definition", 200),
     "state_proposals": ("GET", "/stories/{story_id}/state-proposals", 200),
+    "state_proposals_mixed": ("GET", "/stories/{story_id}/state-proposals", 200),  # #266
     "analysis_queued": ("POST", "/stories/{story_id}/state-proposals/analyze", 202),
     "proposal_approved": (
         "POST",

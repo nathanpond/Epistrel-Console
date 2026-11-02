@@ -9,13 +9,15 @@ Engine's N⁺k position string shows only in More (D7). "Set its value" shows on
 story-owned State. A replayed answer (Idempotent-Replay) renders the same page, no notice. Context from console/views/inspect_state_declare.py's declared_context:
 state_name, heading, proposal_lines, declared (StateDeclared), definition, definition_rows, slot,
 state_url, set_url, again_url, back_url, report_url, raw_answer; missing (convention
-10's text) for a ?report= that isn't one.
+10's text) for a ?report= that isn't one. #266 adds, all optional: links (a list of (label, url)
+in place of the default "See / Set its value / Declare another / Back to States" line),
+missing_title and back_label (the not-found page's title and back link).
 {% endcomment %}
-{% block title %}Inspect · {% if missing %}Declared a State{% else %}Declared {{ state_name }}{% endif %} · {{ story_name }}{% endblock %}
+{% block title %}Inspect · {% if missing %}{{ missing_title|default:"Declared a State" }}{% else %}{{ heading }}{% endif %} · {{ story_name }}{% endblock %}
 {% block world_content %}
 {% if missing %}
 <div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
-<p class="states-back"><a href="{{ back_url }}">Back to States</a></p>
+<p class="states-back"><a href="{{ back_url }}">{{ back_label|default:"Back to States" }}</a></p>
 {% else %}
 <h3 class="state-declared-title">{{ heading }}</h3>
 {% if proposal_lines %}<ul class="proposal-lines">{% for line in proposal_lines %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
@@ -29,6 +31,7 @@ state_url, set_url, again_url, back_url, report_url, raw_answer; missing (conven
   {% if slot.engine_position %}<dt>Engine position</dt><dd class="engine-position">{{ slot.engine_position }}</dd>{% endif %}
   <dt>Raw answer</dt><dd><pre class="raw-response">{{ raw_answer|pretty_json }}</pre></dd>
 </dl></details>
-<p class="declared-links">{% if state_url %}<a class="see-state" href="{{ state_url }}">See {{ state_name }}</a> · {% endif %}{% if set_url %}<a class="set-value" href="{{ set_url }}">Set its value</a> · {% endif %}<a class="declare-another" href="{{ again_url }}">Declare another</a> · <a class="states-back" href="{{ slot.back_url }}">Back to States</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% if links %}<p class="declared-links">{% for label, url in links %}{% if not forloop.first %} · {% endif %}<a href="{{ url }}">{{ label }}</a>{% endfor %}{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% else %}<p class="declared-links">{% if state_url %}<a class="see-state" href="{{ state_url }}">See {{ state_name }}</a> · {% endif %}{% if set_url %}<a class="set-value" href="{{ set_url }}">Set its value</a> · {% endif %}<a class="declare-another" href="{{ again_url }}">Declare another</a> · <a class="states-back" href="{{ slot.back_url }}">Back to States</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>{% endif %}
 {% endif %}
 {% endblock %}

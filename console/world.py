@@ -378,6 +378,8 @@ CLOCK_EXTERNAL_TEXT = (
 )
 PLACE_UNKNOWN = "That isn't a place in this story"
 STATE_NOT_FOUND = "This story has no State “{state}”"
+# D9's ``no_pending_proposal`` sentence (exported: #266's approve page shows it with no call).
+NO_PENDING_PROPOSAL_TEXT = "This proposal is no longer pending — reload the list"
 COMPENSATE_VERB = "compensate an effect"
 DEFINITION_VERB = "change a State's definition"
 
@@ -852,9 +854,7 @@ def world_refusal(
                 field=placed,
             )
         if listed == "no_pending_proposal":
-            return WorldRefusal(
-                "This proposal is no longer pending — reload the list", field=placed
-            )
+            return WorldRefusal(NO_PENDING_PROPOSAL_TEXT, field=placed)
         state = _string(details, "state")
         if listed is None and state is not None:
             return WorldRefusal(state_not_found_text(state), field=member("state"))

@@ -33,7 +33,7 @@ from django.views.decorators.http import require_http_methods, require_safe
 
 from console.confirm import KEY_FIELD, posted_idempotency_key
 from console.engine.client import EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import StateDeclared
+from console.engine.models import ProposalApproved, StateDeclared
 from console.engine_errors import EMPTY, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.forms.states import (
@@ -240,14 +240,14 @@ def definition_rows(definition: Mapping[str, Any]) -> list[DefinitionRow]:
 
 def declared_context(
     ctx: InspectContext,
-    answer: StateDeclared,
+    answer: StateDeclared | ProposalApproved,
     row: EngineOperation | None,
     *,
     posted_name: str | None,
     raw: Any,
 ) -> dict[str, Any]:
-    """The result page's context (on the POST response, and for ``?report=``). #266 adds
-    ``heading`` and ``proposal_lines``."""
+    """The result page's context (on the POST response, and for ``?report=``). #266's approval
+    passes its ``ProposalApproved`` and replaces ``heading``, ``proposal_lines`` and ``links``."""
     story_id = ctx.story_id
     definition = answer.definition
     stored = definition.get("name")

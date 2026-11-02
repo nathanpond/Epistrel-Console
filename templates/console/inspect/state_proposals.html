@@ -1,0 +1,35 @@
+{% extends "console/inspect/world.html" %}{% load console_format %}
+{% comment %}
+The World tab's Proposed States section (#266, console/views/inspect_state_proposals.py): the
+analysis notice, the Run an analysis form (POST to inspect:state-proposals-analyze with a fresh
+idempotency key; #43's panel under it when an analysis's outcome is unknown), then one
+GET /stories/{id}/state-proposals read: the C11 count line, the unparsed notice (D15) and the rows
+(_state_proposal_row.html, Engine order). Errors stay inside the section (convention 10).
+Context: notice, analyze_url, idempotency_key, analyze_error, count, rows, rejected,
+unparsed_text, empty, not_found, proposals_error.
+{% endcomment %}
+{% block world_content %}
+<p class="notice proposals-notice">{{ notice }}</p>
+<form method="post" action="{{ analyze_url }}" class="proposals-analyze">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <button type="submit">Run an analysis</button>
+</form>
+{% if analyze_error %}{% include "console/_engine_error.html" with engine_error=analyze_error %}{% endif %}
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif proposals_error %}{% include "console/_engine_error.html" with engine_error=proposals_error %}
+{% else %}
+{% if count %}<p class="proposals-count">{{ count }}</p>{% endif %}
+{% if empty %}<p class="none proposals-none">{{ empty }}</p>{% endif %}
+{% if unparsed_text %}<div class="notice proposals-unparsed"><p>{{ unparsed_text }}</p><details><summary>More</summary>{% for entry in rejected %}<pre class="raw-item">{{ entry|pretty_json }}</pre>{% endfor %}</details></div>{% endif %}
+{% if rows %}
+<table class="state-proposals">
+  <thead><tr><th>Name</th><th>Suggests</th><th>Evidence</th><th>Status</th><th>Proposed</th><th>Decided</th><th>Actions</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_state_proposal_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}

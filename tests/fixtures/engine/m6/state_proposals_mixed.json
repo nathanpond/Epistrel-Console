@@ -1,0 +1,103 @@
+{
+  "proposals": [
+    {
+      "id": "01JM6PP0000000000000000011",
+      "name": "coins",
+      "status": "approved",
+      "suggested_type": "number",
+      "suggested_scope": "story",
+      "suggested_unit": "coins",
+      "suggested_entity_id": null,
+      "definition_id": "01JM6SD0000000000000000012",
+      "evidence": [
+        {
+          "event_id": "01JM6EV0000000000000000101",
+          "turn": 1,
+          "text": "Three coins clink on the table.",
+          "span": [
+            0,
+            11
+          ]
+        },
+        {
+          "event_id": "01JM6EV0000000000000000102",
+          "turn": 2,
+          "text": "Mara pockets the coins.",
+          "span": null
+        },
+        {
+          "event_id": "01JM6EV0000000000000000103",
+          "turn": 4,
+          "text": "Only two coins left.",
+          "span": [
+            9,
+            14
+          ]
+        }
+      ],
+      "created_by_operation_id": "01JM6QP0000000000000000034",
+      "created_at": "2026-10-31T19:01:00.000000Z",
+      "decided_at": "2026-10-31T19:05:00.000000Z"
+    },
+    {
+      "id": "01JM6PP0000000000000000012",
+      "name": "lamp",
+      "status": "proposed",
+      "suggested_type": "text",
+      "suggested_scope": "story",
+      "suggested_unit": null,
+      "suggested_entity_id": "01JM6CH0000000000000000002",
+      "definition_id": null,
+      "evidence": [
+        {
+          "event_id": "01JM6EV0000000000000000104",
+          "turn": 2,
+          "text": "Alice holds the lamp.",
+          "span": null
+        },
+        {
+          "event_id": "01JM6EV0000000000000000105",
+          "turn": 3,
+          "text": "Alice still holds the lamp.",
+          "span": [
+            6,
+            18
+          ]
+        },
+        {
+          "event_id": "01JM6EV0000000000000000106",
+          "turn": 5,
+          "text": "The lamp is Alice's.",
+          "span": null
+        }
+      ],
+      "created_by_operation_id": "01JM6QP0000000000000000034",
+      "created_at": "2026-10-31T19:01:00.000000Z",
+      "decided_at": null
+    },
+    {
+      "id": "01JM6PP0000000000000000013",
+      "name": "arrows",
+      "status": "superseded",
+      "suggested_type": "number",
+      "suggested_scope": "story",
+      "suggested_unit": "arrows",
+      "suggested_entity_id": null,
+      "definition_id": null,
+      "evidence": [
+        {
+          "event_id": "01JM6EV0000000000000000107",
+          "turn": 1,
+          "text": "A quiver of arrows.",
+          "span": [
+            0,
+            17
+          ]
+        }
+      ],
+      "created_by_operation_id": "01JM6QP0000000000000000034",
+      "created_at": "2026-10-31T19:01:00.000000Z",
+      "decided_at": "2026-10-31T19:06:00.000000Z"
+    }
+  ]
+}

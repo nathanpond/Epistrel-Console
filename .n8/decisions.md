@@ -2951,3 +2951,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Moved #251's `state_view` test helper to `tests/inspect/helpers.py` (both stories use it) and extended #251's `test_rows_link_to_set` to expect "Change definition…" beside Set/— on every row.
   **Why:** The test plan's instruction; the shared `_state_actions.html` now renders both links.
   **Issue:** #265
+- **Decision:** Exported D9's `no_pending_proposal` sentence as `console.world.NO_PENDING_PROPOSAL_TEXT` (used by `world_refusal` itself), so the approve page's local not-pending check and the dismiss warning flash show the same sentence with no Engine call.
+  **Why:** D17 forbids redefining a wording constant in a page story, and the sentence was an inline literal in `world_refusal`. No text changed.
+  **Issue:** #266
+- **Decision:** #261's `state_declared.html` gained optional `links`, `missing_title` and `back_label` context, and its `<title>` now reads `{{ heading }}` (identical for #261: its heading is "Declared <name>"); `declared_context` accepts a `ProposalApproved` as well as a `StateDeclared`.
+  **Why:** The Discretion's "optional `links` context … defaulting to #261's own list"; the title and not-found back link would otherwise say "Declared"/"Back to States" on the approval pages. #261's tests pass unchanged.
+  **Issue:** #266
+- **Decision:** Suggests renders scope through the States section's `SCOPE_LABELS` ("Story", "Per character") with C3's `humanised` for any other value, and the entity cell through `_entity.html` (C4 label, else the short id).
+  **Why:** The AC says "humanised (C3)"; reusing the States section's scope label keeps "character" reading the same on both World sections.
+  **Issue:** #266
+- **Decision:** Implemented the gate-shown "at least" wording: with 10 (`EVIDENCE_MAX`) or more evidence entries the cell reads "Recurs in at least N turns (the Engine keeps the earliest 10 quotes)".
+  **Why:** The planner's recommendation shown at the gate and accepted ("go"); the Engine caps evidence at 10.
+  **Issue:** #266
+- **Decision:** `StateOverridesForm.overrides()` treats a blank Scope (C7 "Engine default"), Unit or Entity as unchanged and never sends `null`; a posted `owner`/`provider_id` is ignored (the fields are dropped from the form).
+  **Why:** The founder's no-clear ruling (an explicit `null` override would clear the suggestion at origin/main), and the Engine's `StateDefinitionOverrides` has no owner or provider.
+  **Issue:** #266
+- **Decision:** On the dismiss confirm POST, a 404 other than `no_pending_proposal` re-renders the confirm page with convention 10's not-found text as its `error` (fresh key), not a flash and redirect.
+  **Why:** The AC lists "another 404 → convention 10's text" without placing it; #262's cancel puts it on the confirm page, so this follows that precedent.
+  **Issue:** #266
+- **Decision:** The analyze view's "anything else" (transport error, `bad_response`, an unworded refusal) renders the section page (including its proposals read) with #43's panel under the button, as a 200 with no redirect.
+  **Why:** The Discretion's pass-1 rule; the section's own read keeps the page whole so the operator sees the list beside the panel.
+  **Issue:** #266
+- **Decision:** Added `state_proposals_mixed.json` to `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` table.
+  **Why:** Its completeness test requires every schema-valid `m6/` fixture to be listed (Rule 3: the new fixture would otherwise fail it).
+  **Issue:** #266
+- **Decision:** Added `state-proposals` to `tests/inspect/urls_world_stub_sections.py`'s `STUBBED` set, so #239's stubbed World urlconfs keep exactly their stub sections now that the real Proposed States route is registered.
+  **Why:** Rule 3: four `test_world_shell.py` nav tests pin the stubbed sub-navigation; that file already drops each later section's real route the same way.
+  **Issue:** #266

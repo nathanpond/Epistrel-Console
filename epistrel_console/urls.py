@@ -33,6 +33,7 @@ from console.views import (
     inspect_scheduled_events,
     inspect_state_declare,
     inspect_state_definition,
+    inspect_state_proposals,
     inspect_state_set,
     inspect_states,
     media,
@@ -263,6 +264,33 @@ inspect_patterns = (
             "world/states/new/declared/",
             inspect_state_declare.state_declared,
             name="state-declared",
+        ),
+        # #266: the Proposed States section, a 202 analysis, approve (a form page, and its result
+        # again from the #44 row) and dismiss (a confirmed-mode confirm page).
+        path(
+            "world/states/proposals/",
+            inspect_state_proposals.state_proposals,
+            name="state-proposals",
+        ),
+        path(
+            "world/states/proposals/analyze/",
+            inspect_state_proposals.state_proposals_analyze,
+            name="state-proposals-analyze",
+        ),
+        path(
+            "world/states/proposals/approved/",
+            inspect_state_proposals.state_proposal_approved,
+            name="state-proposal-approved",
+        ),
+        path(
+            "world/states/proposals/<ulid:proposal_id>/approve/",
+            inspect_state_proposals.state_proposal_approve,
+            name="state-proposal-approve",
+        ),
+        path(
+            "world/states/proposals/<ulid:proposal_id>/dismiss/",
+            inspect_state_proposals.state_proposal_dismiss,
+            name="state-proposal-dismiss",
         ),
         path("world/state/<state_name:name>/", inspect_states.state, name="state"),
         # #251: set a State between turns, and its result again from the #44 row.
