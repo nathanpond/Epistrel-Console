@@ -2467,3 +2467,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `manifest_values` reads an `http` value without `write` or `read` as "—". The constant `SECRET = "secret"` carries `# noqa: S105`, as the Engine's own pattern does.
   **Why:** The pass-1 Discretion line says any other shape is "—". Ruff flags the word "secret", but this is a placeholder kind, not a credential.
   **Issue:** #240
+- **Decision:** This story removed the `M6_NOT_YET_EDITABLE = {"provider_allowed_hosts"}` exemption from `tests/engine_panel/test_admin_settings.py`, along with its two uses. The constant #233 removed was a different one with the same name, in `tests/settings/test_story_settings.py` (`co_author_knowledge`). The deployment-settings one was still on the branch at 4c673b4.
+  **Why:** The orchestrator said the constant was already gone. On the branch, only the story-settings copy had been deleted, so this story's AC still applied as written.
+  **Issue:** #241
+- **Decision:** `LinesField` gains `lowercase`, `item_max_length` and `set_semantics`. With `lowercase`, `to_python` lowercases each entry and drops duplicates, keeping the first, so the 100-item cap counts the list that would be sent. The "Not …" error lists the entries as they were typed. `patch()` compares a `set_semantics` field with `_set_change`: it lowercases and deduplicates the original (a missing or null original counts as `[]`), keeps the stored order and appends new entries. `_lines` gains only `max_items`. `provider_allowed_hosts` has no `DEFAULTS` entry because the schema states no default.
+  **Why:** This follows the Discretion lines (pass 1, pass 2). The help text is the AC's sentence verbatim, with no "Default:" suffix.
+  **Issue:** #241
+- **Decision:** `_place_settings_error(exc, form, sent)` places `body.provider_allowed_hosts[i]` refusals, from `errors[]` or `details.field`, as "Line i+1 (`entry`): msg". With no index, or an index past the sent list, the field shows the message alone. A filtered copy of the `EngineError` goes to the unchanged `apply_engine_errors`, and the call is skipped when no field failure is left.
+  **Why:** This follows the Discretion lines (pass 1, pass 2), so other settings keep their placement.
+  **Issue:** #241
+- **Decision:** The settings save now applies D8. If the answer's `config_revision` equals the signed page's, it flashes `ENGINE_NOTHING_CHANGED` (info) instead of "Saved". A re-render keeps the posted idempotency key after local invalid input or an unknown outcome (`EngineUnreachable`, `bad_response`), and mints a fresh key after an answered refusal. `_render_settings` takes `idempotency_key`.
+  **Why:** The reconcile-2 Discretion line cites D8 for this page and names `test_engine_accepts_with_no_change`. Before this change the page minted a fresh key on every render.
+  **Issue:** #241
+- **Decision:** `test_a_missing_original_reads_as_empty` builds `DeploymentSettingsForm` directly, with the key absent or null in `original`. It does not go through the page.
+  **Why:** The fake Engine validates answers against the recorded schema, and `SettingsBody.provider_allowed_hosts` is a non-nullable array, so a page-level null answer can't be staged.
+  **Issue:** #241
