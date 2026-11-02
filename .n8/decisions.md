@@ -2759,3 +2759,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Rule 3 fix: ran `ruff format` on `tests/inspect/test_effects_trail.py` (one over-long line committed in a120741, #255).
   **Why:** It failed `ruff check` (E501) and `ruff format --check` on the branch head, blocking this story's gate; formatting only, no behaviour change.
   **Issue:** #185
+- **Decision:** `templates/console/_confirm.html` renders `page.error` through `inspect_tags.code_spans` (escaped first, then backtick spans become `<code>`).
+  **Why:** D1 gate reasons and D9 refusal texts carry backtick spans ("`states.level`", "the `max` bound"); the shared confirm page printed them raw. Only #235's `test_error_link_after_the_error` sample error carried a backtick; its expectation now reads `<code>states</code>` (plus an escaping complement), and other pages render unchanged (Rule 2: in-scope correctness of the shared confirm page this story is the first to put a D1/D9 text on).
+  **Issue:** #256
+- **Decision:** Settle-now's confirm page carries `next` only as the confirm template's own hidden `next` (its `cancel_url`), not again in `ConfirmPage.hidden`; `provider`, `value`, `listed_reason` and `expected_revision` go in `hidden` (absent or blank ones left out).
+  **Why:** `_confirm.html` already posts `next` = the safe Cancel target; a second `next` input would duplicate it. The Discretion line's goal (a re-render keeps its facts and Cancel target) holds.
+  **Issue:** #256
+- **Decision:** Settle-now refusal links: `module_off` → "Config", `not_found` (`no_listing`) → "Reconciliation" (the view adds the `inspect:reconciliation` URL, since `world_refusal` gives that code no url), `story_paused` → "See the check" (the paused-check URL). A 5xx or an unknown 4xx shows #43's panel above the confirm page; an answered 4xx mints a fresh key, a transport failure, `bad_response` or 5xx keeps the posted key (D8).
+  **Why:** D8/D9 name the links and the key rule; a 5xx's outcome is unknown, so replay is the safe resubmit.
+  **Issue:** #256
+- **Decision:** The result template's "not available" context key is `result_unavailable`, not `unavailable`.
+  **Why:** `inspect_page` already uses `unavailable` for the tab-level greyed panel; reusing it rendered the whole tab as "Not available".
+  **Issue:** #256
+- **Decision:** Queued result shows the recommended extra line "It stays on the Reconciliation list until it is applied — don't settle it again" after `QUEUED_TEXT`; no Console-side blocking of the link.
+  **Why:** The Discretion line's recommendation (shown at the gate).
+  **Issue:** #256
+- **Decision:** The result page's `<title>` is "Inspect · Settle now · <story name>" and the heading's outbox id links D11's `outbox_url`; a `?report=` row whose stored response fails to parse (including a `TypeError`/`ValueError` from the parser) is "unavailable".
+  **Why:** Per the Discretion lines (D3 title rule, D11 link, `settled_row` try/except).
+  **Issue:** #256
+- **Decision:** #249's `test_no_action_links_while_the_routes_are_unregistered` and `test_section_never_gated` now run under a new `tests/inspect/urls_without_reconciliation_actions.py` (the real routes minus `settle-now`/`compensate`).
+  **Why:** Both pinned the unlinked rendering under the real urlconf, which now registers `inspect:settle-now`; D19 says unlinked rendering is pinned with a urlconf lacking the name.
+  **Issue:** #256

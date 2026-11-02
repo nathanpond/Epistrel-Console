@@ -18,22 +18,41 @@ carries (:func:`action_query`) is display-only data the action never trusts (#45
 
 A redacted row (Engine #211: ``value`` and everything after it omitted) shows its ids, status,
 reason and since only; the value-bearing cells read "—" or :data:`REDACTED`.
+
+**Settle now** (#256; D8, D9, D11, D19). :func:`settle_confirm` builds the ``inspect:settle-now``
+confirm page (``console/confirm.py``'s confirmed mode) from the link's display-only query: the
+facts (Story id, the full Outbox id, Provider linked through D19's ``provider_url``, Provider
+value, "Listed as" = C3's humanise of the raw ``listed_reason``; "—" when absent) and the hidden
+``expected_revision`` (D8) and display fields, so a re-render keeps them. :func:`settled_view`
+words the ``SettledNow`` answer for ``templates/console/inspect/reconciliation_result.html``
+(heading, D8's lines through ``console.world.slot_result``, the re-verification and reasons
+through D9's ``settle_reason_text``, More), which #264's compensate result reuses;
+:func:`settled_row` finds the #44 row a ``?report=<pk>`` permalink names (an ``ok``
+:data:`SETTLE_KIND` of this story whose stored response parses).
 """
 
 import json
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from django.urls import NoReverseMatch, reverse
 from django.utils.http import urlencode
 
-from console.effects import provider_url
-from console.engine.models import ListingOutcome, ReconciliationListing, Story
+from console.confirm import ConfirmPage
+from console.effects import outbox_url, provider_url
+from console.engine.models import ListingOutcome, ReconciliationListing, SettledNow, Story
 from console.engine_errors import EMPTY
 from console.inspect import Unavailable
+from console.models import EngineOperation
 from console.wording import humanised
-from console.world import settle_reason_text, signed_delta_text
+from console.world import (
+    EXPECTED_REVISION_FIELD,
+    OperationRow,
+    settle_reason_text,
+    signed_delta_text,
+    slot_result,
+)
 
 SECTION = "inspect:reconciliation"
 SETTLE_NOW = "inspect:settle-now"  # #256
@@ -307,3 +326,187 @@ def listing_row(
             else json.dumps(listing.effect, indent=2, ensure_ascii=False, default=str)
         ),
     )
+
+
+# --- settle now (#256) ---------------------------------------------------------------------------
+
+SETTLE_KIND = "settle_now"  # the #44 row's kind (the client method)
+SETTLED_NOW = "inspect:settled-now"
+SETTLE_TITLE = "Settle now"
+SETTLE_QUESTION = "Settle effect {name} now?"
+SETTLE_LINES: tuple[str, ...] = (
+    "The Engine re-checks it against the story as it stands now (the item still the seller's, "
+    "no other hold or owner, the State's bounds). If a check fails, nothing changes.",
+    "If every check passes, it is applied at the next inter-turn slot and leaves the "
+    "reconciliation list.",
+)
+PROVIDER_FACT = "Provider"
+# The display fields a settle-now link carries (#249's ``action_query``), kept on a re-render.
+DISPLAY_FIELDS: tuple[str, ...] = ("provider", "value", "listed_reason")
+SETTLED = "settled"
+QUEUED = "queued"
+QUEUED_TEXT = (
+    "Queued: a staged turn is still waiting on its outcome, so the effect is applied at the slot "
+    "after that turn"
+)
+QUEUED_STAYS = "It stays on the Reconciliation list until it is applied — don't settle it again"
+MALFORMED_OUTBOX_ID = "Not found (that isn't an outbox id)"
+RESULT_UNAVAILABLE = "That result isn't available — see Reconciliation"
+BACK_LABEL = "Back to Reconciliation"
+SECTION_LABEL = "Reconciliation"
+REVERIFIED_PASSED = "Re-verified: passed"
+
+
+def _shown(data: Mapping[str, Any], key: str) -> str | None:
+    value = data.get(key)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
+
+
+def settle_confirm(
+    story_id: str, outbox_id: str, data: Mapping[str, Any], cancel_url: str
+) -> ConfirmPage:
+    """The ``inspect:settle-now`` confirm page for ``outbox_id`` from the GET or POST ``data``
+    (display-only: ``provider``, ``value``, ``listed_reason``, ``expected_revision``);
+    ``cancel_url`` is the request's safe ``next`` or the row's anchor."""
+    provider = _shown(data, "provider")
+    value = _shown(data, "value")
+    listed = _shown(data, "listed_reason")
+    hidden = {key: data[key] for key in DISPLAY_FIELDS if _shown(data, key) is not None}
+    revision = data.get(EXPECTED_REVISION_FIELD)
+    if isinstance(revision, str) and revision.strip():
+        hidden[EXPECTED_REVISION_FIELD] = revision
+    link = provider_url(provider) if provider is not None else None
+    return ConfirmPage(
+        title=SETTLE_TITLE,
+        question=SETTLE_QUESTION,
+        emphasis=outbox_id,
+        confirm_label=SETTLE_NOW_LABEL,
+        cancel_url=cancel_url,
+        lines=SETTLE_LINES,
+        facts=(
+            ("Story id", story_id),
+            ("Outbox id", outbox_id),
+            (PROVIDER_FACT, provider or EMPTY),
+            ("Provider value", value or EMPTY),
+            ("Listed as", humanised(listed.strip()) if listed is not None else EMPTY),
+        ),
+        fact_urls={PROVIDER_FACT: link} if link is not None else {},
+        hidden=hidden,
+    )
+
+
+@dataclass(frozen=True)
+class ResultLine:
+    """One result line: ``text`` (backtick spans become ``<code>``), linked when ``url``."""
+
+    text: str
+    url: str | None = None
+    cls: str = ""
+
+
+@dataclass(frozen=True)
+class SettledView:
+    """``reconciliation_result.html``'s context: the heading (``heading`` before and after the
+    outbox id, which is ``None`` for a heading that names none), the lines, the reasons, the
+    More items and the links."""
+
+    heading: str
+    heading_after: str
+    heading_outbox_id: str | None
+    heading_outbox_url: str | None
+    notes: tuple[str, ...]
+    lines: tuple[ResultLine, ...]
+    reasons: tuple[str, ...]
+    more: tuple[tuple[str, str], ...]
+    replayed: bool
+    back_url: str
+    back_label: str
+    report_url: str | None
+
+
+def settled_url(story_id: str, pk: int) -> str:
+    """``inspect:settled-now?report=<pk>``."""
+    return f"{reverse(SETTLED_NOW, args=[story_id])}?{urlencode({'report': pk})}"
+
+
+def _row_pk(row: OperationRow | None) -> int | None:
+    pk = row.pk if row is not None else None
+    return pk if isinstance(pk, int) and not isinstance(pk, bool) else None
+
+
+def settled_view(
+    answer: SettledNow,
+    row: EngineOperation | None,
+    story_id: str,
+    sent_key: str = "",
+) -> SettledView:
+    """The settle-now result (on the POST response and for ``?report=``): "Settled: effect <id>
+    is applied" with D8's Slot, Operation and revision lines; :data:`QUEUED_TEXT` with "Slot: —"
+    and no operation line; any other ``result`` "Result: <humanised>" with the slot line. Then the
+    re-verification, the reasons and More (``outcome_id``, the Engine's ``position``, the
+    answer's ``idempotency_key``, else ``sent_key``)."""
+    back = section_url(story_id)
+    slot = slot_result(story_id, answer, row, back)
+    pk = _row_pk(row)
+    lines: list[ResultLine] = []
+    notes: tuple[str, ...] = ()
+    outbox: str | None = None
+    after = ""
+    if answer.result == SETTLED:
+        heading, outbox, after = "Settled: effect ", answer.outbox_id, " is applied"
+    elif answer.result == QUEUED:
+        heading, notes = QUEUED_TEXT, (QUEUED_STAYS,)
+    else:
+        heading = f"Result: {humanised(answer.result) if answer.result else EMPTY}"
+    lines.append(ResultLine(f"Slot: {slot.slot_text or EMPTY}", slot.slot_url, "slot"))
+    if answer.result != QUEUED and slot.operation_id is not None:
+        url = reverse("operations:detail", args=[slot.operation_pk]) if slot.operation_pk else None
+        lines.append(ResultLine(f"Operation: `{slot.operation_id}`", url, "operation"))
+    lines.append(ResultLine(slot.revision_text, None, "revision"))
+    if answer.reverification == PASSED:
+        lines.append(ResultLine(REVERIFIED_PASSED, None, "reverification"))
+    else:
+        shown = humanised(answer.reverification) if answer.reverification else EMPTY
+        lines.append(ResultLine(f"Re-verified: {shown}", None, "reverification"))
+    key = answer.idempotency_key or sent_key
+    more = (
+        ("Outcome id", answer.outcome_id or EMPTY),
+        ("Engine position", slot.engine_position or EMPTY),
+        ("Idempotency key", key or EMPTY),
+    )
+    return SettledView(
+        heading=heading,
+        heading_after=after,
+        heading_outbox_id=outbox,
+        heading_outbox_url=outbox_url(story_id, outbox) if outbox is not None else None,
+        notes=notes,
+        lines=tuple(lines),
+        reasons=tuple(settle_reason_text(r) for r in answer.reasons),
+        more=more,
+        replayed=row is not None and row.replayed,
+        back_url=back,
+        back_label=BACK_LABEL,
+        report_url=settled_url(story_id, pk) if pk is not None else None,
+    )
+
+
+def settled_row(pk: object, story_id: str) -> tuple[EngineOperation, SettledNow] | None:
+    """The #44 row ``pk`` and its answer when it is an ``ok`` :data:`SETTLE_KIND` of this story
+    whose stored response parses as ``SettledNow``; else ``None``."""
+    try:
+        row = EngineOperation.objects.get(pk=int(str(pk)))
+    except EngineOperation.DoesNotExist, ValueError, TypeError:
+        return None
+    if (
+        row.kind != SETTLE_KIND
+        or row.story_id != story_id
+        or row.outcome != EngineOperation.Outcome.OK
+    ):
+        return None
+    try:
+        answer = SettledNow.from_json(row.response)
+    except Exception:
+        return None
+    return None if answer is None else (row, answer)

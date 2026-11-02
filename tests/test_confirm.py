@@ -300,9 +300,12 @@ def test_error_link_after_the_error() -> None:
                        error_link="Config")  # fmt: skip
     html = _render(page)
     assert (
-        '<p class="errorlist confirm-error">Needs `states` \u2014 '
+        '<p class="errorlist confirm-error">Needs <code>states</code> \u2014 '
         '<a href="/stories/S/config/">Config</a></p>'
     ) in html
+    # #256: backtick spans become <code>; any other markup in the error stays escaped.
+    escaped = _render(dataclasses.replace(page, error="<b>x</b> `y`"))
+    assert "&lt;b&gt;x&lt;/b&gt; <code>y</code>" in escaped
     # Complement: without an error, or without a label, main's markup.
     assert "Config</a>" not in _render(dataclasses.replace(page, error=""))
     assert '<a href="/stories/S/config/">' not in _render(dataclasses.replace(page, error_link=""))

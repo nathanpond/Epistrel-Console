@@ -297,6 +297,17 @@ inspect_patterns = (
             inspect_reconciliation.reconciliation,
             name="reconciliation",
         ),
+        # #256: settle a listed effect now (confirm page, then the call) and its result again.
+        path(
+            "effects/reconciliation/settled/",
+            inspect_reconciliation.settled_now,
+            name="settled-now",
+        ),
+        path(
+            "effects/reconciliation/<str:outbox_id>/settle-now/",
+            inspect_reconciliation.settle_now,
+            name="settle-now",
+        ),
         # #255: the Effects trail section (every State change the story's turns committed).
         path("effects/trail/", inspect_effects_trail.effects_trail, name="effects-trail"),
         # #136: the predicate registry, a proposal's decision and its result page again.

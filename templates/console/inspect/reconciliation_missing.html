@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% comment %}#256: convention 10's not-found text for a settle-now URL whose outbox id isn't one (status 404, no Engine call), with the way back.{% endcomment %}
+{% block title %}Settle now — Epistrel Console{% endblock %}
+{% block heading %}Settle now{% endblock %}
+{% block content %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ text }}</strong></p></div>
+<p><a href="{{ back_url }}">← Reconciliation</a></p>
+{% endblock %}

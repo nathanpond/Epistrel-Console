@@ -53,6 +53,7 @@ RECONCILIATION_PATH = f"/stories/{STORY}/reconciliation"
 BX = {n: f"01JM6BX{n:019d}" for n in (*range(1, 6), *range(11, 20))}
 ACTIONS = "tests.inspect.urls_reconciliation_actions"
 UNLINKED = "tests.inspect.urls_without_providers"
+NO_ACTIONS = "tests.inspect.urls_without_reconciliation_actions"
 NOT_FOUND = "Not found (the story may have been deleted)"
 REASON_ROWS = {
     "failed": 11,
@@ -298,10 +299,30 @@ def test_no_action_links_while_the_routes_are_unregistered(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     answer(engine, 200, fixture("reconciliation_actions"))
-    html = page(operator_client)
+    with override_settings(ROOT_URLCONF=NO_ACTIONS):
+        html = page(operator_client)
     for n in REASON_ROWS.values():
         assert cell(row(html, BX[n]), "actions") == ""
     assert "Settle now" not in html
+
+
+def test_settle_now_link_once_registered(operator_client: Client, engine: FakeEngine) -> None:
+    """#256: under the real urlconf the late-success row links ``inspect:settle-now`` with
+    #249's query; the unconfirmed row doesn't."""
+    html = page(operator_client)
+    settle = reverse("inspect:settle-now", args=[STORY, BX[2]])
+    found = links(row(html, BX[2]))
+    assert found["Settle now"].startswith(settle + "?")
+    query = parse_qs(urlsplit(found["Settle now"]).query)
+    assert query == {
+        "expected_revision": ["12"],
+        "provider": ["bank"],
+        "value": ["balance"],
+        "listed_reason": ["late_success_after_expiry"],
+        "next": [f"{URL}#outbox-{BX[2]}"],
+    }
+    # **Complement:** the unconfirmed row carries no Settle now.
+    assert "Settle now" not in links(row(html, BX[1]))
 
 
 def test_actions_greyed_when_states_off(operator_client: Client, engine: FakeEngine) -> None:
@@ -329,7 +350,8 @@ def test_actions_greyed_when_states_off(operator_client: Client, engine: FakeEng
 
 def test_section_never_gated(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", EFFECTIVE, 200, json=lite_m6())
-    html = page(operator_client)
+    with override_settings(ROOT_URLCONF=NO_ACTIONS):
+        html = page(operator_client)
     assert len(reads(engine)) == 1
     assert row_ids(html) == [BX[1], BX[2], BX[3], BX[5]]
     assert '<div class="panel unavailable">' not in html
