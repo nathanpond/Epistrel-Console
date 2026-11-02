@@ -1,13 +1,16 @@
 """Helpers for the Inspect tests (#135): the seeded Lite, "Structured (M4)", Structured v2
 (#188, every M5 module on) and Structured v3 (#239, D16: every M6 module on too) effective
 configurations (``tests/fixtures/inspect/``), with changes laid over ``effective``; Lite as an M6
-Engine serves it (``lite_m6``); and the shared Alice/Bob/Pat cast (``story_cast.json``)."""
+Engine serves it (``lite_m6``); the shared Alice/Bob/Pat cast (``story_cast.json``); and an
+``m6/states.json`` State as a ``StateView`` body (``state_view``, #251 and #265)."""
 
 import copy
 import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+from tests.fixtures import engine_fixture
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "inspect"
 STORY = "01JB2Z8Y5Q3W6K9M1N4P7R0T2V"
@@ -99,3 +102,17 @@ def story_cast() -> dict[str, Any]:
     (the player), for #190, #192 and #193."""
     loaded: dict[str, Any] = json.loads((FIXTURES / CAST_STORY).read_text())
     return loaded
+
+
+def state_view(source: str, /, **changes: Any) -> dict[str, Any]:
+    """A ``m6/states.json`` State as a ``StateView`` body (``changes`` laid over the State;
+    revision 12, ``as_of: null``, omniscient)."""
+    states = copy.deepcopy(engine_fixture("m6/states"))["states"]
+    state: dict[str, Any] = next(s for s in states if s["name"] == source)
+    state.update(changes)
+    return {
+        "state": state,
+        "as_of": None,
+        "timeline_revision": 12,
+        "output_viewpoint": "omniscient",
+    }

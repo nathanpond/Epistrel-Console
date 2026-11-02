@@ -1,13 +1,15 @@
 """The one-State page's GET form (#242): D4's viewpoint picker plus D7's "As of" boundary; the
 Set form (#251), :class:`StateSetForm`; and the State definition fields with the Declare form
 (#261), :class:`StateDefinitionFields`, :func:`definition_body` and
-:class:`StateDeclarationForm` (#266 and #267 import them)."""
+:class:`StateDeclarationForm` (#266 and #267 import them); and the definition change (#265),
+:class:`StateDefinitionForm`."""
 
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from django import forms
+from django.core import signing
 from django.http import QueryDict
 
 from console.canon import cast_names
@@ -20,6 +22,7 @@ from console.forms.inspect import SUBJECT_INVALID
 from console.forms.world import NUMBER_INVALID, BoundaryField, WorldViewpointForm, parse_number
 from console.ids import is_ulid, new_ulid
 from console.inspect import short_id
+from console.merge_patch import diff
 from console.paging import CHARACTER_INVALID
 from console.states import CHARACTER_SCOPE, STATE_NAME_PATTERN, STORY_SCOPE
 from console.wording import character_label, humanised
@@ -593,3 +596,238 @@ class StateDeclarationForm(StateDefinitionFields):
     def definition(self) -> dict[str, Any]:
         """The ``StateDeclaration`` body (valid form only)."""
         return definition_body(self.cleaned_data)
+
+
+# --- change a State's definition (#265) -----------------------------------------------------------
+#
+# The Engine serves no read of a definition (D18): ``GET …/states/{name}`` answers only
+# ``visibility`` and ``unit`` of the nine mutable members. Those two start from the read and are
+# diffed against the signed snapshot (M3 convention 5); every other member is "leave as is"
+# unless filled or reset, and an object member's box *is* that member's merge patch (D14). No
+# HTML ``min``/``max``/``maxlength`` (C10).
+
+# The members ``PATCH …/definition`` may change, in the form's (and the flash's) order: #261's
+# fieldsets Shown as | Constraints | Effect rules.
+MUTABLE_MEMBERS = (
+    "visibility",
+    "unit",
+    "aliases",
+    "silent",
+    "constraints",
+    "rules",
+    "authorization",
+    "transfer",
+    "reservation_expiry_minutes",
+)
+DEFINITION_BOXES = ("constraints", "rules", "authorization", "transfer")
+RESET_SUFFIX = "_reset"
+DEFINITION_SNAPSHOT_SALT = "console.states.definition.snapshot"
+SNAPSHOT_FIELD = "snapshot"
+
+NOTHING_CHANGED = "Nothing changed — nothing was sent"
+RESET_OR_EDIT = "Either reset it or edit it"
+RULES_KIND = "A State can't become, or stop being, derived — declare a new State instead"
+SNAPSHOT_INVALID = "This form was incomplete — reload it and edit again"
+INTERPRETIVE_NOTE = (
+    "Constraints, Rules, Authorization, Transfer and Visibility are interpretive: turns checked "
+    "under the old ones are re-checked"
+)
+PATCH_BOX_HELP = (
+    "A merge patch of {member}: keys you give change, `null` removes one; blank keeps it as is"
+)
+CONSTRAINTS_EXAMPLE = '`{"max": 500}` changes Max only; `{"max": null}` removes it'
+PATCH_ALIASES_HELP = "One per line; replaces the whole list; blank keeps them"
+PATCH_MINUTES_HELP = "Blank keeps it as is"
+
+DEFINITION_VISIBILITY_CHOICES = [("player_visible", "Player visible"), ("hidden", "Hidden")]
+SILENT_CHOICES = [("", "Leave as is"), ("true", "Yes"), ("false", "No")]
+
+
+def _box_help(member: str) -> str:
+    text = PATCH_BOX_HELP.replace("{member}", member)
+    return f"{text}. {CONSTRAINTS_EXAMPLE}" if member == "constraints" else text
+
+
+def sign_definition_snapshot(name: str, visibility: Any, unit: Any) -> str:
+    """The signed ``{"name", "visibility", "unit"}`` the page rendered from (a blank or missing
+    unit stored as ``None``)."""
+    return signing.dumps(
+        {
+            "name": name,
+            "visibility": visibility if isinstance(visibility, str) else None,
+            "unit": unit if isinstance(unit, str) and unit else None,
+        },
+        salt=DEFINITION_SNAPSHOT_SALT,
+    )
+
+
+def read_definition_snapshot(value: Any, name: str) -> dict[str, Any] | None:
+    """The snapshot ``value`` signs, or ``None`` when it doesn't verify, isn't the expected
+    shape or names another State."""
+    try:
+        raw = signing.loads(value if isinstance(value, str) else "", salt=DEFINITION_SNAPSHOT_SALT)
+    except signing.BadSignature:
+        return None
+    if not isinstance(raw, dict) or raw.get("name") != name:
+        return None
+    if set(raw) != {"name", "visibility", "unit"}:
+        return None
+    if not all(raw[k] is None or isinstance(raw[k], str) for k in ("visibility", "unit")):
+        return None
+    return raw
+
+
+class StateDefinitionForm(forms.Form):
+    """The Change definition form (#265): one field per mutable member, named after it, plus the
+    reset controls (``<member>_reset``), the hidden ``snapshot`` and ``idempotency_key``.
+    :attr:`patch` is the merge patch (valid form only); its keys are always a subset of
+    :data:`MUTABLE_MEMBERS`."""
+
+    visibility = forms.ChoiceField(label="Visibility", choices=DEFINITION_VISIBILITY_CHOICES)
+    unit = forms.CharField(label="Unit", required=False, strip=True, help_text="Blank: no unit")
+    aliases = forms.CharField(
+        label="Aliases",
+        required=False,
+        help_text=PATCH_ALIASES_HELP,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    aliases_reset = forms.BooleanField(label="Remove all aliases", required=False)
+    silent = forms.ChoiceField(label="Silent", required=False, choices=SILENT_CHOICES)
+    constraints = JsonBoxField(
+        dict, empty=None, required=False, label="Constraints", help_text=_box_help("constraints")
+    )
+    constraints_reset = forms.BooleanField(label="Reset to default", required=False)
+    rules = JsonBoxField(
+        dict, empty=None, required=False, label="Rules", help_text=_box_help("rules")
+    )
+    rules_reset = forms.BooleanField(label="Reset to default", required=False)
+    authorization = JsonBoxField(
+        dict,
+        empty=None,
+        required=False,
+        label="Authorization",
+        help_text=_box_help("authorization"),
+    )
+    authorization_reset = forms.BooleanField(label="Reset to default", required=False)
+    transfer = JsonBoxField(
+        dict, empty=None, required=False, label="Transfer", help_text=_box_help("transfer")
+    )
+    transfer_reset = forms.BooleanField(label="Reset to default", required=False)
+    reservation_expiry_minutes = forms.CharField(
+        label="Reservation expiry (minutes)",
+        required=False,
+        strip=True,
+        help_text=PATCH_MINUTES_HELP,
+    )
+    reservation_expiry_minutes_reset = forms.BooleanField(label="Clear", required=False)
+    snapshot = forms.CharField(required=False, widget=forms.HiddenInput)
+    idempotency_key = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("Shown as", ("visibility", "unit", "aliases", "aliases_reset", "silent")),
+        ("Constraints", ("constraints", "constraints_reset")),
+        (
+            "Effect rules",
+            (
+                "rules",
+                "rules_reset",
+                "authorization",
+                "authorization_reset",
+                "transfer",
+                "transfer_reset",
+                "reservation_expiry_minutes",
+                "reservation_expiry_minutes_reset",
+            ),
+        ),
+    )
+
+    def __init__(
+        self,
+        data: Any = None,
+        *,
+        snapshot: Mapping[str, Any] | None,
+        signed_snapshot: str,
+        idempotency_key: str | None = None,
+        initial: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.snapshot_values = dict(snapshot or {})
+        kept = dict(initial or {})
+        if initial is None:
+            visibility = self.snapshot_values.get("visibility")
+            if visibility is not None:
+                kept["visibility"] = visibility
+            kept["unit"] = self.snapshot_values.get("unit") or ""
+        kept[SNAPSHOT_FIELD] = signed_snapshot
+        kept[KEY_FIELD] = idempotency_key or new_ulid()
+        super().__init__(data, initial=kept)
+        # A read visibility outside the two choices stays selectable (humanised), so an
+        # untouched form is still an empty patch.
+        visibility = self.snapshot_values.get("visibility")
+        known = {value for value, _ in DEFINITION_VISIBILITY_CHOICES}
+        if isinstance(visibility, str) and visibility and visibility not in known:
+            field = self.fields["visibility"]
+            if isinstance(field, forms.ChoiceField):
+                field.choices = [
+                    *DEFINITION_VISIBILITY_CHOICES,
+                    (visibility, humanised(visibility)),
+                ]
+
+    def groups(self) -> list[tuple[str, list[forms.BoundField]]]:
+        """``(legend, bound fields)`` per fieldset, in page order."""
+        return [(legend, [self[name] for name in names]) for legend, names in self.GROUPS]
+
+    def clean_aliases(self) -> list[str]:
+        return _lines(self.cleaned_data.get("aliases"))
+
+    def clean_silent(self) -> bool | None:
+        return _choice_bool(self.cleaned_data.get("silent"))
+
+    def clean_reservation_expiry_minutes(self) -> int | None:
+        text = str(self.cleaned_data.get("reservation_expiry_minutes") or "")
+        if not text:
+            return None
+        if not (text.isascii() and text.isdigit()):
+            raise forms.ValidationError(MINUTES_INVALID, code="invalid")
+        return int(text)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        for member in DEFINITION_BOXES:
+            if cleaned.get(member + RESET_SUFFIX) and cleaned.get(member):
+                self.add_error(member, RESET_OR_EDIT)
+        if cleaned.get("aliases_reset") and cleaned.get("aliases"):
+            self.add_error("aliases", RESET_OR_EDIT)
+        if (
+            cleaned.get("reservation_expiry_minutes_reset")
+            and cleaned.get("reservation_expiry_minutes") is not None
+        ):
+            self.add_error("reservation_expiry_minutes", RESET_OR_EDIT)
+        return cleaned
+
+    @property
+    def patch(self) -> dict[str, Any]:
+        """The merge patch: Visibility and Unit through ``console.merge_patch.diff`` against the
+        snapshot, then each other member filled (sent as given; a box holding ``{}`` is blank)
+        or reset (``null``), in :data:`MUTABLE_MEMBERS` order."""
+        cleaned = self.cleaned_data
+        snap = self.snapshot_values
+        changes: dict[str, Any] = diff(
+            {"visibility": snap.get("visibility"), "unit": snap.get("unit")},
+            {"visibility": cleaned["visibility"], "unit": cleaned.get("unit") or None},
+        )
+        if cleaned.get("aliases_reset"):
+            changes["aliases"] = None
+        elif cleaned.get("aliases"):
+            changes["aliases"] = list(cleaned["aliases"])
+        if cleaned.get("silent") is not None:
+            changes["silent"] = cleaned["silent"]
+        for member in DEFINITION_BOXES:
+            if cleaned.get(member + RESET_SUFFIX):
+                changes[member] = None
+            elif cleaned.get(member):
+                changes[member] = cleaned[member]
+        if cleaned.get("reservation_expiry_minutes_reset"):
+            changes["reservation_expiry_minutes"] = None
+        elif cleaned.get("reservation_expiry_minutes") is not None:
+            changes["reservation_expiry_minutes"] = cleaned["reservation_expiry_minutes"]
+        return {member: changes[member] for member in MUTABLE_MEMBERS if member in changes}

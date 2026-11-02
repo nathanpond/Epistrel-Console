@@ -39,7 +39,7 @@ from console.wording import UNKNOWN_CHARACTER
 from console.world import READONLY_EXTERNAL_TEXT
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
-from tests.inspect.helpers import EFFECTIVE, STORY_PATH, lite_m6, structured_v3
+from tests.inspect.helpers import EFFECTIVE, STORY_PATH, lite_m6, state_view, structured_v3
 from tests.play.helpers import error_json
 
 pytestmark = pytest.mark.django_db
@@ -59,18 +59,6 @@ WRITES = ("PUT", "POST", "PATCH", "DELETE")
 def fixture(name: str) -> dict[str, Any]:
     body: dict[str, Any] = copy.deepcopy(engine_fixture(f"m6/{name}"))
     return body
-
-
-def state_view(source: str, /, **changes: Any) -> dict[str, Any]:
-    """A ``states.json`` State as a ``StateView`` body (``changes`` laid over the State)."""
-    state = next(s for s in fixture("states")["states"] if s["name"] == source)
-    state.update(changes)
-    return {
-        "state": state,
-        "as_of": None,
-        "timeline_revision": 12,
-        "output_viewpoint": "omniscient",
-    }
 
 
 def set_url(name: str = "gold") -> str:
@@ -742,13 +730,23 @@ def actions(html: str, name: str) -> str:
     return found.group(1).strip()
 
 
+def definition_link(name: str) -> str:
+    """#265's "Change definition…" beside Set (every row)."""
+    href = f"/stories/{STORY}/inspect/world/state/{name}/definition/"
+    return f'<a class="state-definition" href="{href}">Change definition…</a>'
+
+
 def test_rows_link_to_set(operator_client: Client, engine: FakeEngine) -> None:
     html = get(operator_client, STATES_URL)
-    assert actions(html, "gold") == f'<a class="state-set" href="{set_url()}">Set…</a>'
-    assert actions(html, "trust") == f'<a class="state-set" href="{set_url("trust")}">Set…</a>'
-    assert (
-        actions(html, "bank_balance")
-        == '<span class="no-set" title="Owned by its provider">—</span>'
+    assert actions(html, "gold") == (
+        f'<a class="state-set" href="{set_url()}">Set…</a> {definition_link("gold")}'
+    )
+    assert actions(html, "trust") == (
+        f'<a class="state-set" href="{set_url("trust")}">Set…</a> {definition_link("trust")}'
+    )
+    assert actions(html, "bank_balance") == (
+        '<span class="no-set" title="Owned by its provider">—</span> '
+        f"{definition_link('bank_balance')}"
     )
     html = get(operator_client, f"/stories/{STORY}/inspect/world/state/gold/?as_of=3%2B1")
     assert f'<a class="state-set" href="{set_url()}">Set…</a>' in html

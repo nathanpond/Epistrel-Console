@@ -21,21 +21,40 @@ viewpoint is carried as ``viewpoint=character:<id>``, the omniscient one not at 
 
 Per-State URLs use the ``state_name`` path converter (:class:`StateNameConverter`, the Engine's
 ``StateName`` pattern), so a name the Engine would refuse never leaves the Console.
+
+#265's definition page (D18's "No State definition read"): :func:`definition_url`,
+:data:`DEFINITION_UNREADABLE` rendered only by :func:`definition_unreadable_html` (linking
+:data:`STATE_DEFINITION_REQUEST`, which #235 already exports from ``console.world``; re-exported
+here, never redefined), and :func:`last_recorded_definition`, the local #44 query behind "Last
+recorded definition" (no Engine call).
 """
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
 from django.urls import NoReverseMatch, reverse
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 
 from console.cast import OMNISCIENT, character_of
 from console.engine.models import StoryState
 from console.engine_errors import EMPTY
+from console.models import EngineOperation
 from console.positions import knowledge_position_text, knowledge_position_url, position_step
 from console.wording import character_label, humanised
-from console.world import UNDEFINED, boundary_text, five_part, state_value_text, state_values
+from console.world import (
+    STATE_DEFINITION_REQUEST as STATE_DEFINITION_REQUEST,  # re-exported (D17, D18; #265)
+)
+from console.world import (
+    UNDEFINED,
+    boundary_text,
+    five_part,
+    state_value_text,
+    state_values,
+)
 
 STATE_NAME_PATTERN = "[A-Za-z][A-Za-z0-9_]{0,79}"
 CHARACTER_SCOPE = "character"
@@ -276,3 +295,71 @@ def state_rows(
     """The rows in the Engine's order. ``cast_order`` is empty when the story read failed (the
     per-character rows then keep the Engine's key order, labelled per C4)."""
     return [state_row(state, names, cast_order, story_id, viewpoint) for state in states]
+
+
+# --- #265: a State's definition -------------------------------------------------------------
+
+STATE_DEFINITION_REQUEST_LABEL = "Engine request (State definition read, nathanpond/Epistrel#680)"
+DEFINITION_UNREADABLE = (
+    "The Engine serves no read of a State's definition, so only Visibility and Unit start from "
+    "the State as it stands; leave the others blank to keep them ({link})"
+)
+NO_RECORDED_DEFINITION = "This Console has recorded no definition of {name}"
+RECORDED_HEADING = "Last definition this Console recorded ({when}, {kind}) — it may be out of date"
+# The #44 kinds whose stored answer carries a State's ``definition`` (#261, #266, #265).
+DEFINITION_KINDS = ("declare_state", "approve_state_proposal", "update_state_definition")
+
+
+def definition_url(story_id: str, name: str) -> str:
+    """``inspect:state-definition`` (#265) for ``name``."""
+    return reverse("inspect:state-definition", args=[story_id, name])
+
+
+def definition_unreadable_html() -> SafeString:
+    """:data:`DEFINITION_UNREADABLE`, linking :data:`STATE_DEFINITION_REQUEST` in the same tab;
+    its one renderer."""
+    link = format_html(
+        '<a href="{}">{}</a>', STATE_DEFINITION_REQUEST, STATE_DEFINITION_REQUEST_LABEL
+    )
+    before, _, after = DEFINITION_UNREADABLE.partition("{link}")
+    return format_html("{}{}{}", before, link, after)
+
+
+def no_recorded_definition_text(name: str) -> str:
+    return NO_RECORDED_DEFINITION.replace("{name}", name)
+
+
+@dataclass(frozen=True)
+class RecordedDefinition:
+    """The newest definition of a State this Console recorded: the stored (redacted)
+    ``definition``, the #44 row's ``kind`` and when it was made."""
+
+    definition: dict[str, Any]
+    kind: str
+    created_at: datetime
+
+    @property
+    def heading(self) -> str:
+        """ "Last definition this Console recorded (2026-11-01 14:03 UTC, Declare state) — it
+        may be out of date" (convention 4's datetime, the kind humanised)."""
+        when = self.created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        return RECORDED_HEADING.replace("{when}", when).replace("{kind}", humanised(self.kind))
+
+
+def last_recorded_definition(story_id: str, name: str) -> RecordedDefinition | None:
+    """The ``definition`` from the newest ``ok`` #44 row of this story of a
+    :data:`DEFINITION_KINDS` kind whose stored answer's ``definition.name`` is ``name``; a row
+    whose stored answer has no ``definition`` object is skipped for the next older one. A local
+    query: no Engine call."""
+    rows = EngineOperation.objects.filter(
+        story_id=story_id,
+        outcome=EngineOperation.Outcome.OK,
+        kind__in=DEFINITION_KINDS,
+        response__definition__name=name,
+    ).order_by("-created_at", "-id")
+    for row in rows:
+        response = row.response if isinstance(row.response, dict) else {}
+        definition = response.get("definition")
+        if isinstance(definition, dict) and definition.get("name") == name:
+            return RecordedDefinition(definition, row.kind, row.created_at)
+    return None

@@ -2933,3 +2933,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** A refused `no_listing` places D9's text above the form with a "Reconciliation" link; an answered refusal with no D9 wording (`idempotency_conflict`, unknown codes) shows #43's panel with a fresh key, a transport error or `bad_response` the panel with the posted key and revision.
   **Why:** The AC's refusal rows and D8's re-render rule, mirroring #256's settle-now.
   **Issue:** #264
+- **Decision:** `STATE_DEFINITION_REQUEST` stays defined once in `console.world` (where #235 already put it, already the real nathanpond/Epistrel#680 URL), and `console/states.py` re-exports it (`import … as …`) beside this story's `DEFINITION_UNREADABLE`, `definition_unreadable_html()` and `last_recorded_definition()`. No placeholder URL substitution was needed.
+  **Why:** The story places the constant in `console/states.py`, but D17 forbids redefining a shared wording constant; a re-export satisfies both.
+  **Issue:** #265
+- **Decision:** D8's "nothing to change" base for the definition PATCH is #243's `console.views.inspect_clock.base_revision(ctx)` (imported, not redefined). At the recorded schema the shell's `EffectiveConfig` carries no `config_revision`, so the base is unknown and the "<Member>: saved" + "Configuration revision now <n>" flashes always show; `test_engine_found_nothing_to_change` monkeypatches `base_revision` to stand one in. Same gap as #270, not re-filed.
+  **Why:** Orchestrator note and #243's precedent; the one comparison stays `console.world.nothing_changed`.
+  **Issue:** #265
+- **Decision:** With the States gate closed, a POST re-renders the posted inputs (posted key and snapshot kept) with D1's reason and the Config link above them, rather than the greyed panel; a GET shows the inline panel. No State read, no PATCH either way.
+  **Why:** The AC's "a POST re-renders it with the reason" is ambiguous; this follows #261's sibling page and D8's local-invalid rule (keep posted inputs and key).
+  **Issue:** #265
+- **Decision:** A bad snapshot re-renders the posted inputs with a fresh snapshot signed from that POST's own State read (and the posted key), showing `SNAPSHOT_INVALID` alone. A snapshot must hold exactly `name`/`visibility`/`unit` with string-or-null values, and its `name` must match the URL.
+  **Why:** There is no verified snapshot to keep; signing the current read lets a resubmit diff against what the operator now sees, and nothing was sent (D8's local-invalid half).
+  **Issue:** #265
+- **Decision:** Refusal routing: `rules_kind` → Rules and `unknown` → above the form ("<field> isn't a State definition member", raw field name) first; then `apply_engine_errors` with explicit aliases (`constraints.allowed_values|min|max|non_negative|tolerance` and `initial_value` → Constraints, `authorization.sources` → Authorization) for any other `validation_error` but `immutable_field`/`reserved_state`; then `world_refusal` with the same map; then #43's panel. A 5xx (other than held) and `bad_response` keep the posted key (unknown outcome); a 2xx `bad_response` flashes only "Saved — the Engine's answer couldn't be read" and redirects.
+  **Why:** The story's Discretion ordering. The Engine (origin/main `core/states/model.py`, `rules.py`, `expressions.py`) sends no `rules.<sub>` path, so no `rules.*` alias is needed; `authorization.sources` comes on `state_unpermitted`, which `world_refusal` places through the same map.
+  **Issue:** #265
+- **Decision:** Moved #251's `state_view` test helper to `tests/inspect/helpers.py` (both stories use it) and extended #251's `test_rows_link_to_set` to expect "Change definition…" beside Set/— on every row.
+  **Why:** The test plan's instruction; the shared `_state_actions.html` now renders both links.
+  **Issue:** #265

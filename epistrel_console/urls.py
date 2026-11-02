@@ -32,6 +32,7 @@ from console.views import (
     inspect_scene,
     inspect_scheduled_events,
     inspect_state_declare,
+    inspect_state_definition,
     inspect_state_set,
     inspect_states,
     media,
@@ -270,6 +271,12 @@ inspect_patterns = (
             "world/state/<state_name:name>/set/written/",
             inspect_state_set.state_written,
             name="state-written",
+        ),
+        # #265: change a State's definition (a configuration write).
+        path(
+            "world/state/<state_name:name>/definition/",
+            inspect_state_definition.state_definition,
+            name="state-definition",
         ),
         # #243: the Clock section and its settings page.
         path("world/clock/", inspect_clock.clock, name="clock"),
