@@ -2482,3 +2482,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `test_a_missing_original_reads_as_empty` builds `DeploymentSettingsForm` directly, with the key absent or null in `original`. It does not go through the page.
   **Why:** The fake Engine validates answers against the recorded schema, and `SettingsBody.provider_allowed_hosts` is a non-nullable array, so a page-level null answer can't be staged.
   **Issue:** #241
+- **Decision:** The gate-closed one-State page is rendered by #239's shell short-circuit (`inspect_page(..., current="inspect:states")` checks the States section's gate before `build`), not by `build`'s own `gate_unavailable`. `world.html` gains a `{% block section_unavailable %}` around its inline panel, and `state.html` fills it with the State's name (from the URL) and "Back to States". `build` still checks `module_gate(STATES, …)` first and renders `gate_unavailable` the same way, so the page stays gated if the section registry ever changes.
+  **Why:** The pass-2 Discretion lines ask both for `current="inspect:states"` and for `build` to own the closed-gate render, but with `current` set the shell short-circuits before `build` runs. A template block keeps both behaviours (name, Back link, inline panel, zero `GET …/states/{name}`) without changing `inspect_page`.
+  **Issue:** #242
+- **Decision:** `tests/inspect/urls_world_stub_sections.py` now also drops the real `inspect:state` route (`STUBBED` gains `"state"`).
+  **Why:** The real `world/state/<state_name:name>/` is listed before the stub `world/state/probe/`, so it would serve "probe" as a State name and break #239's current-section tests.
+  **Issue:** #242
+- **Decision:** Per-character values are `ValueLine(label, text, undefined)` records, not the bare `(label, text)` pairs the Discretion line names.
+  **Why:** The template has to know which values are undefined (`span.undefined`) without matching on the text "undefined", which a `text` State can legitimately hold.
+  **Issue:** #242
+- **Decision:** The clock-link test uses two new urlconfs, `tests/inspect/urls_states_no_clock.py` (real routes, any `inspect:clock` dropped) and `urls_states_with_clock.py` (real routes plus #239's stub `inspect:clock`). It does not reuse `urls_world_stub_sections.py`.
+  **Why:** That urlconf stubs the States section itself. These variants keep the real States page and pin both renderings whether or not #243 has landed.
+  **Issue:** #242
+- **Decision:** On the one-State page, an As of value that fails validation leaves the heading as the bare name. A valid boundary reads "<name> · <boundary_text>" whether the read succeeded, 404'd or 422'd.
+  **Why:** There is no cleaned boundary to word. "as the story stands" would misstate what the operator asked for.
+  **Issue:** #242
+- **Decision:** Tests with a malformed States entry (`states_bad_item.json`) serve it unvalidated through `FakeEngine.side_effect`, as #240's provider tests do.
+  **Why:** The fake validates canned answers against the schema, and the bad entry is invalid by construction.
+  **Issue:** #242
+- **Decision:** (Rule 1) #239's `test_world_shell_without_sections` now runs on a new urlconf with no World section (`tests/inspect/urls_world_no_sections.py`), not the real one.
+  **Why:** Now that `inspect:states` is registered, the real World landing redirects to States. The test is about the empty shell, so it needs routes where no section is registered.
+  **Issue:** #242

@@ -176,6 +176,8 @@ M6_FIXTURES = {
     "states": ("GET", "/stories/{story_id}/states", 200),
     "states_alice": ("GET", "/stories/{story_id}/states", 200),
     "state_view": ("GET", "/stories/{story_id}/states/{name}", 200),
+    "states_empty": ("GET", "/stories/{story_id}/states", 200),  # #242
+    "state_view_trust": ("GET", "/stories/{story_id}/states/{name}", 200),  # #242
     "state_written": ("PUT", "/stories/{story_id}/states/{name}", 200),
     "state_declared": ("POST", "/stories/{story_id}/states", 201),
     "state_definition_written": ("PATCH", "/stories/{story_id}/states/{name}/definition", 200),
@@ -231,6 +233,7 @@ M6_ID_LESS = frozenset(
         "bindings",
         "binding_written",
         "states_alice",
+        "states_empty",
         "state_view",
         "state_definition_written",
         "memories_empty",

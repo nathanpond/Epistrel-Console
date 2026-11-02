@@ -176,8 +176,8 @@ def test_world_with_no_open_section_renders_the_shell(
 
 def test_world_shell_without_sections(operator_client: Client, engine: FakeEngine) -> None:
     answer_config(engine, structured_v3())
-    with override_settings(ROOT_URLCONF="epistrel_console.urls"):
-        html = page(operator_client, WORLD)  # no section registered yet: no redirect
+    with override_settings(ROOT_URLCONF="tests.inspect.urls_world_no_sections"):
+        html = page(operator_client, WORLD)  # no section registered: no redirect
     assert subnav(html) is None
     assert WORLD_EMPTY in html
     assert paths(engine) == SHELL_READS

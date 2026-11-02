@@ -6,6 +6,7 @@ from django.urls import URLPattern, include, path, register_converter
 
 from console.auth import OperatorAuthenticationForm
 from console.ids import UlidConverter
+from console.states import StateNameConverter
 from console.views import (
     acting,
     catalog_characters,
@@ -25,6 +26,7 @@ from console.views import (
     inspect_memory,
     inspect_predicates,
     inspect_scene,
+    inspect_states,
     media,
     media_picker,
     media_proxy,
@@ -54,6 +56,8 @@ from console.views import (
 )
 
 register_converter(UlidConverter, "ulid")
+# #242: a State name as the Engine's ``StateName`` pattern allows (any other is a Django 404).
+register_converter(StateNameConverter, "state_name")
 
 operation_patterns = (
     [
@@ -225,6 +229,9 @@ inspect_patterns = (
         # fixed world/states/new/ (#261) and world/states/proposals/ never shadow a State named
         # "new" or "proposals".
         path("world/", inspect.world, name="world"),
+        # #242: the States section and one State as of a boundary.
+        path("world/states/", inspect_states.states, name="states"),
+        path("world/state/<state_name:name>/", inspect_states.state, name="state"),
         path("effects/", inspect.effects, name="effects"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),

@@ -1,0 +1,19 @@
+{% load inspect_tags console_format %}{% comment %}
+One State (#242): a console.states.StateRow as row, one <tr id="state-<name>">. Columns: Name,
+Value, Scope, Visibility, Owner, Since, [Actions], More. Context: row; story_id; actions
+(convention 14: a template name rendered with row and story_id, or None: no column); link_name
+(default True: the Name links inspect:state; the one-State page passes False). Enums are humanised
+with the raw value in title (C3); a value is D5's text, undefined in span.undefined.
+{% endcomment %}<tr id="state-{{ row.name }}" class="state-row">
+  <td class="name">{% if link_name is False %}{{ row.name }}{% else %}<a href="{{ row.url }}">{{ row.name }}</a>{% endif %}</td>
+  <td class="value">{% if row.per_character is not None %}<dl class="state-values">{% for line in row.per_character %}<dt>{{ line.label }}</dt><dd>{% if line.undefined %}<span class="undefined">{{ line.text }}</span>{% else %}{{ line.text }}{% endif %}</dd>{% endfor %}</dl>{% elif row.value_is_undefined %}<span class="undefined">{{ row.value_text }}</span>{% else %}{{ row.value_text }}{% endif %}</td>
+  <td class="scope"><span title="{{ row.scope.1 }}">{{ row.scope.0 }}</span></td>
+  <td class="visibility"><span title="{{ row.visibility.1 }}">{{ row.visibility.0 }}</span></td>
+  <td class="owner"><span title="{{ row.owner.1 }}">{{ row.owner.0 }}</span></td>
+  <td class="since">{% if row.since_url %}<a href="{{ row.since_url }}">{{ row.since_text }}</a>{% else %}{{ row.since_text }}{% endif %}</td>
+  {% if actions %}<td class="actions">{% include actions %}</td>{% endif %}
+  <td class="more"><details><summary>More</summary><dl>
+    <dt>Type</dt><dd><code>{{ row.type }}</code></dd>
+    {% for term, text in row.more %}<dt>{{ term }}</dt><dd>{{ text }}</dd>
+    {% endfor %}</dl></details></td>
+</tr>
