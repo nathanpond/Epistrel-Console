@@ -1,0 +1,21 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "operation_id": "01JM6QP0000000000000000042",
+  "event": {
+    "event_id": "01JM6EV0000000000000000002",
+    "name": "the breakfast",
+    "label": "canon",
+    "status": "pending",
+    "planned": 1890,
+    "owner": "world",
+    "shared_owners": [],
+    "participants": [
+      "01JM6CH0000000000000000002"
+    ],
+    "place_id": "01JM6EN0000000000000000001",
+    "grace_minutes": null,
+    "stopped_clock_at": null,
+    "confidence": null
+  }
+}

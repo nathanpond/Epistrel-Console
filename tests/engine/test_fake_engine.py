@@ -205,6 +205,11 @@ M6_FIXTURES = {
     "scheduled_events_alice": ("GET", "/stories/{story_id}/scheduled-events", 200),
     "scheduled_events_statuses": ("GET", "/stories/{story_id}/scheduled-events", 200),  # #244
     "scheduled_event_written": ("POST", "/stories/{story_id}/scheduled-events", 201),
+    "scheduled_event_created_at_time": (
+        "POST",
+        "/stories/{story_id}/scheduled-events",
+        201,
+    ),  # #253
     "providers": ("GET", "/admin/external-providers", 200),
     "provider": ("GET", "/admin/external-providers/{name}", 200),
     "provider_mutation": ("POST", "/admin/external-providers", 201),

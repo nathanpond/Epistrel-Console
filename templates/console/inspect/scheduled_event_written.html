@@ -1,0 +1,39 @@
+{% extends "console/inspect/world.html" %}{% load console_format %}
+{% comment %}
+A scheduled-event write's result (#253 create; #262 reschedule and cancel share it), below the
+Scheduled events section (current inspect:scheduled-events): rendered on the POST response and
+again at inspect:scheduled-event-written?report=<pk> from the #44 row
+(console.scheduled_events.written_row). "<verb>: <name>" (the kind's WRITE_KINDS verb), the event
+in a one-row table through #244's _scheduled_event_head.html / _scheduled_event_row.html (no
+Actions), then D8's lines from console.world.slot_result (ScheduledEventWritten carries no slot:
+no "Slot:" line). Context from console/views/inspect_scheduled_events.py's _written: verb, row,
+actions (None), cast_unavailable, slot, replayed, again_url, back_url (the section's
+#ev-<event_id>), report_url, raw_answer; missing (convention 10's text) for a ?report= that isn't
+one.
+{% endcomment %}
+{% block title %}Inspect · {% if missing %}Scheduled event{% else %}{{ verb }}: {% if row.name %}{{ row.name }}{% else %}(unnamed){% endif %}{% endif %} · {{ story_name }}{% endblock %}
+{% block world_content %}
+{% if missing %}
+<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
+<p class="events-back"><a href="{{ back_url }}">Back to Scheduled events</a></p>
+{% else %}
+<h3 class="event-written-title">{{ verb }}: {% if row.name %}{{ row.name }}{% else %}<span class="muted">(unnamed)</span>{% endif %}</h3>
+{% if replayed %}<p class="notice replayed">Already written — this is the Engine's recorded answer</p>{% endif %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+<table class="scheduled-events">
+  {% include "console/inspect/_scheduled_event_head.html" %}
+  <tbody>
+  {% include "console/inspect/_scheduled_event_row.html" %}
+  </tbody>
+</table>
+<ul class="event-written-lines">
+  {% if slot.slot_text is not None %}<li class="slot">Slot: {% if slot.slot_url %}<a href="{{ slot.slot_url }}">{{ slot.slot_text }}</a>{% else %}{{ slot.slot_text }}{% endif %}</li>{% endif %}
+  <li class="operation">Operation: {% if slot.operation_pk %}<a class="operation-link" href="{% url 'operations:detail' slot.operation_pk %}"><code>{{ slot.operation_id }}</code></a>{% else %}<code>{{ slot.operation_id|default:"—" }}</code>{% endif %}</li>
+  <li class="revision">{{ slot.revision_text }}</li>
+</ul>
+<details class="event-written-more"><summary>More</summary><dl>
+  <dt>Raw answer</dt><dd><pre class="raw-response">{{ raw_answer|pretty_json }}</pre></dd>
+</dl></details>
+<p class="written-links"><a class="events-back" href="{{ back_url }}">Back to Scheduled events</a> · <a class="schedule-another" href="{{ again_url }}">Schedule another</a>{% if report_url %} · <a href="{{ report_url }}">Link to this result</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

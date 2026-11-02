@@ -25,6 +25,11 @@ Header lines (:func:`off_line`, :func:`stops_line`, :func:`count_text`, :func:`e
 :func:`partitions_note`) come from the effective configuration (D1's gates) and the section's
 one ``get_clock`` read. The scheduled-events list itself is never gated (D1).
 
+**Writes (#253).** :data:`WRITE_KINDS` names the #44 kinds of the three event writes (create
+#253; reschedule and cancel #262) with their result-page verb; :func:`written_row` reads one
+back for a ``?report=<pk>`` result page: only an ``ok`` row of one of those kinds, of this story,
+whose stored response parses as ``ScheduledEventWritten``.
+
 The viewpoint line is D4's ``console.world.viewpoint_line`` with this section's two notes
 (:data:`EVENTS_NOTE`, :data:`EVENTS_OMNISCIENT_NOTE`); it is never redefined here (D17).
 """
@@ -36,9 +41,10 @@ from typing import Any
 from django.urls import NoReverseMatch, reverse
 
 from console.cast import OMNISCIENT
-from console.engine.models import ScheduledEvent, WorldClock
+from console.engine.models import ScheduledEvent, ScheduledEventWritten, WorldClock
 from console.engine_errors import EMPTY
 from console.inspect import CLOCK, PARTITIONS, SCHEDULED_STOPS, m5_gate, m6_gate
+from console.models import EngineOperation
 from console.states import viewpoint_label
 from console.wording import character_label, humanised
 from console.world import offset_text
@@ -66,6 +72,13 @@ CLOCK_OFF = (
 )
 CLOCK_UNREAD = "Couldn't read the clock"
 PARTITIONS_NOTE = "Belief-only schedules aren't listed: {reason}"
+
+# #253: the #44 kinds of the event writes, and each one's result-page verb.
+WRITE_KINDS: Mapping[str, str] = {
+    "create_scheduled_event": "Scheduled",
+    "reschedule_scheduled_event": "Rescheduled",
+    "cancel_scheduled_event": "Cancelled",
+}
 
 EVENTS_EMPTY = "No scheduled events"
 EVENTS_EMPTY_FOR = "{label} takes part in no scheduled event and holds no belief-only schedule"
@@ -291,3 +304,23 @@ def event_rows(
 ) -> list[EventRow]:
     """The rows, in the Engine's order (by planned time, canon first)."""
     return [event_row(event, names, story_id) for event in events]
+
+
+def written_row(pk: object, story_id: str) -> tuple[EngineOperation, ScheduledEventWritten] | None:
+    """The #44 row ``pk`` and its parsed answer when it is an ``ok`` row of one of
+    :data:`WRITE_KINDS`, of ``story_id``, whose stored response parses; else ``None`` (a missing,
+    blank or non-integer ``pk`` included)."""
+    try:
+        row = EngineOperation.objects.get(pk=int(str(pk)))
+    except EngineOperation.DoesNotExist, ValueError:
+        return None
+    if (
+        row.kind not in WRITE_KINDS
+        or row.story_id != story_id
+        or row.outcome != EngineOperation.Outcome.OK
+    ):
+        return None
+    parsed = ScheduledEventWritten.from_json(row.response)
+    if parsed is None:
+        return None
+    return row, parsed

@@ -5,10 +5,12 @@ viewpoint form (D4), then one GET /stories/{id}/scheduled-events read: the viewp
 partitions note), the clock's "Now" and stops lines (or "Couldn't read the clock"), the clock-off
 line, the count line, the unparsed notice and the rows (_scheduled_event_row.html, Engine order).
 The form stays above every error (convention 10). Context: form, cast_unavailable, actions,
-actions_template (#262), events, viewpoint_line, partitions_note, clock, clock_unread, stops,
+actions_template (#262), new_url and new_gate (#253's New link, greyed by D1's clock
+gate), events, viewpoint_line, partitions_note, clock, clock_unread, stops,
 off_line, count, rows, rejected, unparsed_text, empty, not_found, events_error.
 {% endcomment %}
 {% block world_content %}
+<p class="events-new">{% if new_gate %}<span class="disabled events-new-link" aria-disabled="true"{{ new_gate|gate_attrs:"gate-event-new" }}>New scheduled event</span> {% include "console/_gated_control.html" with gate=new_gate gate_id="gate-event-new" %}{% else %}<a class="events-new-link" href="{{ new_url }}">New scheduled event</a>{% endif %}</p>
 {% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
 {% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
 <form method="get" id="events-viewpoint">
@@ -31,7 +33,7 @@ off_line, count, rows, rejected, unparsed_text, empty, not_found, events_error.
 {% if unparsed_text %}<div class="notice events-unparsed"><p>{{ unparsed_text }}</p><details><summary>More</summary>{% for entry in rejected %}<pre class="raw-item">{{ entry|pretty_json }}</pre>{% endfor %}</details></div>{% endif %}
 {% if rows %}
 <table class="scheduled-events">
-  <thead><tr><th>Event</th><th>Kind</th><th>Status</th><th>Planned</th><th>Owner</th><th>Shared with</th><th>Participants</th><th>Place</th><th>Grace</th><th>Stopped the clock</th><th>Confidence</th>{% if actions is not None %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  {% include "console/inspect/_scheduled_event_head.html" %}
   <tbody>
   {% for row in rows %}{% include "console/inspect/_scheduled_event_row.html" %}
   {% endfor %}

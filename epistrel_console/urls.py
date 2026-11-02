@@ -266,6 +266,17 @@ inspect_patterns = (
             inspect_scheduled_events.scheduled_events,
             name="scheduled-events",
         ),
+        # #253: create a scheduled event, and the event writes' result page from the #44 row.
+        path(
+            "world/scheduled-events/new/",
+            inspect_scheduled_events.scheduled_event_new,
+            name="scheduled-event-new",
+        ),
+        path(
+            "world/scheduled-events/written/",
+            inspect_scheduled_events.scheduled_event_written,
+            name="scheduled-event-written",
+        ),
         # #248: the External values section (what providers answered, and the facts citing it).
         path(
             "world/external-values/",

@@ -2693,3 +2693,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Result-page expectations follow #232's `m6/clock_advanced.json` (130 → 190, "Advanced by +01h 00m", "Slot: turn 3⁺² · start"), not the story's illustrative "+00h 30m"/"turn 2⁺¹"; the new `m6/clock_advanced_to_time.json` (130 → 1080, turn 2⁺², ids `…0252`) is listed in the fake-engine fixture table.
   **Why:** The Discretion says the fake doesn't compute and the fixture stays as is; the fixture table's complement test requires every `m6/` file to be listed (Rule 3).
   **Issue:** #252
+- **Decision:** `ScheduledEventForm` carries the idempotency key and `expected_revision` as hidden form fields (not template-level inputs as #252 does), and an answered refusal rebinds a fresh form to a copy of the POST with both overwritten.
+  **Why:** The story's Discretion prescribes that re-render mechanic (pass 2) and the `initial_revision` constructor argument; it keeps every input, checkboxes included, on re-render.
+  **Issue:** #253
+- **Decision:** A POST carrying participant or shared-owner values while the shell's story read failed is refused with the non-field error "Your participant and shared-owner choices couldn't be checked; reload and try again" beside the page's `CAST_UNAVAILABLE` notice (the notice is shown once, not repeated in the error).
+  **Why:** The Discretion says "CAST_UNAVAILABLE plus …"; the notice already renders whenever the story read failed, so the error carries only the second half.
+  **Issue:** #253
+- **Decision:** #244's column header was extracted to `_scheduled_event_head.html` (shared by the section and the result page), and the Demo's highlight is one `table.scheduled-events tr:target` rule in base.html's style block.
+  **Why:** Discretion pass 2 (#244 inlined the `<thead>`; it added no `:target` rule).
+  **Issue:** #253
+- **Decision:** Request-validation paths with list indexes (`participants[3]`, `shared_owners[0]`) are placed on the list field through an `apply_engine_errors` alias map covering indexes 0–19 (the Engine's 20-item cap).
+  **Why:** `apply_engine_errors` matches aliases by exact path; 20 is the most either list can carry.
+  **Issue:** #253
+- **Decision:** The result page's More holds only the pretty-printed raw answer; a create's `?report=` with no `report`, a blank or a non-integer value reads "Not found …" with only the shell's reads.
+  **Why:** `ScheduledEventWritten` carries no change id or N⁺k position for further More rows; the blank/missing case follows Discretion pass 2.
+  **Issue:** #253
