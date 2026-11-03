@@ -2,6 +2,7 @@
 its versions."""
 
 import re
+from typing import Any
 
 import pytest
 from django.test import Client
@@ -193,8 +194,10 @@ def test_the_detail_shows_every_section(operator_client: Client, engine: FakeEng
     assert "Lite default" in page  # the profile's name
     assert 'href="/guardrails/ratings/00000000000000000000RAT002/">Teen</a>' in html
     assert "Only when a minor is involved or present" in page
-    assert "Stored by Lite but not used until a later Engine milestone" in page
-    assert '<details class="deferred">' in html
+    # #268: "Deferred" is "Rules and declarations", its three values shown as they are.
+    assert "Stored by Lite but not used until a later Engine milestone" not in page
+    assert "<h2>Rules and declarations</h2>" in html
+    assert '<dl class="deferred">' in html
     # The latest view reads the draft too (identical here: no note).
     reads = [dict(r.url.params) for r in calls(engine, "GET", ITEM_PATH)]
     assert reads == [{"projection": "full"}, {"projection": "full", "draft": "true"}]
@@ -202,10 +205,29 @@ def test_the_detail_shows_every_section(operator_client: Client, engine: FakeEng
     assert 'href="/catalog/scenarios/01JC000000000000000000SCN2/edit/"' in html
 
 
+def test_detail_lists_co_author_knowledge(operator_client: Client, engine: FakeEngine) -> None:
+    """#233: "Co-author knowledge" with ``setting_label``, right after Player authority; ``None``
+    reads "—"."""
+    body = detail()
+    body["story_settings_defaults"]["co_author_knowledge"] = "free"
+    engine.respond("GET", S_ITEM, 200, json=body)
+    html = detail_page(operator_client, engine)
+    section = html[html.index('<section id="story-settings-defaults">') :]
+    section = section[: section.index("</dl>")]
+    rows = re.findall(r"<dt>([^<]*)</dt><dd>([^<]*)</dd>", section)
+    labels = [label for label, _ in rows]
+    start = labels.index("Player authority")
+    assert rows[start + 1] == ("Co-author knowledge", "Free (accept, no notice)")
+    engine.reset()
+    body["story_settings_defaults"]["co_author_knowledge"] = None
+    engine.respond("GET", S_ITEM, 200, json=body)
+    assert "Co-author knowledge —" in text(detail_page(operator_client, engine))
+
+
 def test_detail_lists_the_new_story_setting_defaults(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """#198: four rows after Player authority, before Turn concurrency."""
+    """#198 and #233: five rows after Player authority, before Turn concurrency."""
     body = detail()
     body["story_settings_defaults"].update(
         player_view="story", simultaneous_tie_break="state:initiative", reactive_interjections=True
@@ -217,7 +239,8 @@ def test_detail_lists_the_new_story_setting_defaults(
     rows = re.findall(r"<dt>([^<]*)</dt><dd>([^<]*)</dd>", section)
     labels = [label for label, _ in rows]
     start = labels.index("Player authority")
-    assert rows[start + 1 : start + 6] == [
+    assert rows[start + 1 : start + 7] == [
+        ("Co-author knowledge", "—"),
         ("Player view (where perception is on)", "Story (every beat in full)"),
         ("Sequence order (sequential turns)", "—"),
         ("Tie-break (simultaneous turns)", "state:initiative (M6: request order applies)"),
@@ -522,3 +545,228 @@ def test_a_scenario_without_channels_shows_a_dash(
     engine.respond("GET", S_ITEM, 200, json=body)
     html = detail_page(operator_client, engine)
     assert '<dt>Remote channels</dt><dd class="channels">—</dd>' in html
+
+
+# --- #267: the starting States and the roles' initial values --------------------------------------
+
+
+def states_detail(**changes: Any) -> dict[str, Any]:
+    body = fixture("draft_states", **changes)
+    body["starting_state"]["states"][0]["entity_id"] = "alice"
+    body["starting_state"]["states"][1]["entity_id"] = "ghost"
+    return body
+
+
+def state_cells(html: str, name: str) -> list[str]:
+    section = html[html.index('<section id="states">') :]
+    section = section[: section.index("</section>")]
+    start = section.index(f"<td><code>{name}</code></td>")
+    row = section[start : section.index("</tr>", start)]
+    return [c.strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.S)]
+
+
+def test_the_detail_page_shows_states_and_initial_values(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", S_ITEM, 200, json=states_detail())
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    html = detail_page(operator_client, engine)
+    gold = state_cells(html, "gold")
+    assert gold[1:8] == [
+        "Number",
+        "Per character",
+        "Player visible (default)",
+        "Story (default)",
+        "gold",
+        "100 gold",
+        "min 0",
+    ]
+    assert gold[9] == "<code>alice</code> (role)"
+    assert '<td title="character">Per character</td>' in html
+    assert "<td>Player visible (default)</td>" in html  # an unset one has no title
+    door = state_cells(html, "door_open")
+    assert door[3] == "Hidden"
+    assert door[6] == "false"
+    assert door[9] == "<code>ghost</code> (undeclared)"
+    assert "<dt>Silent</dt><dd>Yes</dd>" in html
+    bank = state_cells(html, "bank_balance")
+    assert text(bank[4]) == "External · bank · balance"
+    assert bank[6] == '<span class="undefined">undefined</span>'
+    assert bank[8] == "coins"
+    assert "<dt>Reservation expiry</dt><dd>30 min</dd>" in html
+    # The roles' initial values, by D5 with the State's type and unit.
+    lines = re.findall(r'<dd class="initial-values">(.*?)</dd>', html, flags=re.S)
+    assert lines == ["gold: 250 gold", "mood: &quot;tense&quot; (undeclared State)"]
+    # "Deferred" no longer lists the States.
+    deferred = html[html.index('<section id="deferred">') :]
+    assert "<dt>States</dt>" not in deferred
+    # Complement: the public card shows none of it.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=card_of(states_detail()))
+    html = detail_page(operator_client, engine, "?projection=card")
+    assert 'id="states"' not in html
+    assert "Initial State values" not in html
+
+
+def test_the_state_table_lines() -> None:
+    from django.template.loader import render_to_string
+
+    from console.catalog.cast_table import initial_value_lines, state_rows
+    from console.engine.models import Scenario, ScenarioRole
+
+    body = states_detail()
+    # Deliberately off-schema: an entry missing ``type`` (shown raw), one with every bound.
+    body["starting_state"]["states"].append({"name": "broken"})
+    body["starting_state"]["states"][0]["constraints"] = {
+        "min": 0,
+        "max": 100,
+        "non_negative": True,
+        "tolerance": 2,
+    }
+    scenario = Scenario.from_json(
+        {**body, "starting_state": {**body["starting_state"], "states": []}}
+    )
+    assert scenario is not None
+    rows = state_rows(body["starting_state"]["states"], scenario.cast, scenario)
+    assert rows[0].constraints == "min 0 · max 100 · non-negative · tolerance 2"
+    enum = state_rows(
+        [{"name": "w", "type": "enum", "constraints": {"allowed_values": ["rain", "sun"]}}],
+        scenario.cast,
+        scenario,
+    )
+    assert enum[0].constraints == "one of rain, sun"
+    html = render_to_string("console/catalog/scenarios/_state_table.html", {"states": rows})
+    assert (
+        '<tr class="state-raw"><td colspan="11"><pre>{&quot;name&quot;: &quot;broken&quot;}</pre>'
+        in html
+    )
+    bob = ScenarioRole.from_json(
+        {
+            "id": "bob",
+            "public_label": "Bob",
+            "setup_description": "x",
+            "kind": "npc",
+            "state_initial_values": {"door_open": True, "gold": 1200},
+        }
+    )
+    assert bob is not None
+    assert initial_value_lines(bob, body["starting_state"]["states"]) == [
+        "door_open: true (not a per-character State)",
+        "gold: 1,200 gold",
+    ]
+
+
+# --- #268: the starting clock and the scheduled events -------------------------------------------
+
+
+def clock_detail(**changes: Any) -> dict[str, Any]:
+    body = fixture("draft_clock", **changes)
+    body["starting_state"]["scheduled_events"][0]["participants"].append("ghost")
+    return body
+
+
+def section_of(html: str, section_id: str) -> str:
+    section = html[html.index(f'<section id="{section_id}">') :]
+    return section[: section.index("</section>")]
+
+
+def test_the_detail_page_shows_the_clock_and_events(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", S_ITEM, 200, json=clock_detail())
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    html = detail_page(operator_client, engine)
+    clock = section_of(html, "clock")
+    page = text(clock)
+    assert "Anchor year 2026 · month 3 · day 14 · Saturday · 06:00 · band morning" in page
+    assert '<dd class="mode" title="manual">Manual</dd>' in clock
+    assert '<dd class="time-awareness" title="approximate">Approximate</dd>' in clock
+    assert '<dd class="skip">90 min</dd>' in clock
+    assert '<dd class="stop">No</dd>' in clock
+    assert "<tr><td>50</td><td>no end</td><td>15</td></tr>" in clock
+    assert "<tr><td>night</td><td>00:00</td><td>06:00</td></tr>" in clock
+    assert "<summary>Custom calendar</summary>" in clock
+    assert "Moonday" in clock
+    events = section_of(html, "scheduled-events")
+    rows = re.findall(r'<tr class="event-row">(.*?)</tr>', events, flags=re.S)
+    assert [text(r) for r in rows] == [
+        "the dinner at 18:00 — world bob , alice , ghost (undeclared) "
+        "The farmhouse ( farmhouse ) — —",
+        "the letter arrives +02h 10m — alice — — alice, family (group) —",
+        "the heist at 02:10 bob — — — — Secret",
+    ]
+    assert '<td class="planned" title="130 min">+02h 10m</td>' in events
+    assert '<td class="planned">at 18:00</td>' in events
+    assert '<td class="disclosure" title="secret">Secret</td>' in events
+    # Order: after the States, before "Rules and declarations", which lists only the three.
+    assert html.index('<section id="states">') < html.index('<section id="clock">')
+    assert html.index('<section id="scheduled-events">') < html.index('<section id="deferred">')
+    deferred = section_of(html, "deferred")
+    assert re.findall(r"<dt>(.*?)</dt>", deferred) == ["Predicates", "Closed sets", "Rules"]
+    # Complement: the public card shows none of it.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=card_of(clock_detail()))
+    html = detail_page(operator_client, engine, "?projection=card")
+    for marker in ('id="clock"', 'id="scheduled-events"', "Rules and declarations"):
+        assert marker not in html
+
+
+@pytest.mark.parametrize(
+    ("clock", "anchor", "mode"),
+    [
+        (None, None, None),
+        ({}, None, None),
+        ({"mode": "paced"}, "Unanchored (default)", '<dd class="mode" title="paced">Paced</dd>'),
+        ({"anchor": {}}, "Unanchored (default)", '<dd class="mode">Paced (default)</dd>'),
+    ],
+)
+def test_the_detail_page_reads_an_unset_clock(
+    operator_client: Client,
+    engine: FakeEngine,
+    clock: dict[str, Any] | None,
+    anchor: str | None,
+    mode: str | None,
+) -> None:
+    body = fixture("draft_clock")
+    body["starting_state"]["clock"] = clock
+    body["starting_state"]["scheduled_events"] = []
+    engine.respond("GET", S_ITEM, 200, json=body)
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    html = detail_page(operator_client, engine)
+    section = section_of(html, "clock")
+    if anchor is None:
+        assert "<p>—</p>" in section
+    else:
+        assert f'<dd class="anchor">{anchor}</dd>' in section
+        assert mode is not None
+        assert mode in section
+        assert '<dd class="skip">1,440 min (default)</dd>' in section
+        assert '<dd class="stop">Yes (default)</dd>' in section
+        assert '<dd class="time-awareness">Exact (default)</dd>' in section
+        assert '<dd class="calendar">Gregorian (default)</dd>' in section
+        assert text(section).count("Engine default") == 2
+    assert "<p>—</p>" in section_of(html, "scheduled-events")
+
+
+def test_the_clock_and_event_rows() -> None:
+    from console.catalog.cast_table import clock_view, event_rows
+    from console.engine.models import Scenario
+
+    body = fixture("draft_clock")
+    scenario = Scenario.from_json(body)
+    assert scenario is not None
+    view = clock_view({"max_unprompted_skip_minutes": 2000})
+    assert view is not None
+    assert view.skip == "2,000 min"
+    # Deliberately off-schema: a clock with an extra key and an event missing ``planned`` are
+    # shown raw.
+    raw = clock_view({"mode": "paced", "colour": "red"})
+    assert raw is not None
+    assert raw.clock is None
+    assert '"colour": "red"' in raw.raw
+    (broken,) = event_rows([{"proposition": "x"}], scenario)
+    assert broken.event is None
+    assert broken.raw == '{"proposition": "x"}'
+    (place,) = event_rows([{"proposition": "x", "planned": 0, "place": "cellar"}], scenario)
+    assert place.place is not None
+    assert place.place.name is None  # "cellar (undeclared)"

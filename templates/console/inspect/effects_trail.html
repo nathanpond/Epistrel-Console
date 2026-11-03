@@ -1,0 +1,36 @@
+{% extends "console/inspect/effects.html" %}
+{% comment %}
+The Effects tab's Effects trail section (#255, console/views/inspect_effects_trail.py): one omniscient
+GET /stories/{id}/history (limit 200, the before_turn cursor) after the shell's reads, gated on
+states at on (D3; the greyed panel makes no read). Above the blocks, in order: the dropped-cursor
+notice, the scope note (always, whenever this body renders), D11's outbox notice (a parsed row
+carries an outbox id), the C11 count line and the cast notice. Then one section per turn with a
+State change (heading linked to History, D13's plain badge, #245's table, the unreadable entries
+raw under More), or the empty line, and the paging links (C12). Errors stay in the section
+(convention 10). Context: scope_note, cursor_dropped, trail, blocks, count, outbox_notice,
+cast_unavailable, empty, first_query, next_query, paged, cursor_refused, omniscient_required,
+not_found, trail_error, incomplete_text, incomplete_title, caption, story_id.
+{% endcomment %}
+{% block effects_content %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+<p class="section-intro muted trail-scope">{{ scope_note }}</p>
+{% if cursor_refused %}<p class="warning trail-refused">{{ cursor_refused }}</p>
+<p class="paging"><a class="first-page" href="{% url 'inspect:effects-trail' story_id %}{% if first_query %}?{{ first_query }}{% endif %}">Newest page</a></p>
+{% elif omniscient_required %}<p class="warning omniscient-required">{{ omniscient_required }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif trail_error %}{% include "console/_engine_error.html" with engine_error=trail_error %}
+{% elif trail %}
+{% if outbox_notice %}<p class="notice outbox-notice">{{ outbox_notice }}</p>{% endif %}
+{% if count %}<p class="trail-count">{{ count }}</p>{% endif %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% for block in blocks %}
+<section class="trail-turn" id="{{ block.anchor }}">
+<h3><a href="{{ block.url }}">{{ block.heading }}</a>{% if block.incomplete %} <span class="badge incomplete" title="{{ incomplete_title }}">{{ incomplete_text }}</span>{% endif %}</h3>
+{% if block.rows %}{% include "console/_state_changes.html" with rows=block.rows caption=caption %}{% endif %}
+{% if block.unparsed %}<p class="warning">{{ block.unread }}</p><details class="more"><summary>More</summary>{% for raw in block.unparsed %}<pre>{{ raw }}</pre>{% endfor %}</details>{% endif %}
+</section>
+{% empty %}<p class="none">{{ empty }}</p>
+{% endfor %}
+{% if next_query or paged %}<p class="paging">{% if paged %}<a class="first-page" href="{% url 'inspect:effects-trail' story_id %}{% if first_query %}?{{ first_query }}{% endif %}">Newest page</a>{% endif %}{% if paged and next_query %} · {% endif %}{% if next_query %}<a class="next-page" href="{% url 'inspect:effects-trail' story_id %}?{{ next_query }}">Older →</a>{% endif %}</p>{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags console_format world_tags %}
+{% comment %}
+The World tab's Clock section (#243, console/views/inspect_clock.py's clock): one
+GET /stories/{id}/clock read. Now (the Engine's display verbatim, D6), the level and the profile's
+two clock flags (D2's labels), the clock-off notice (D1), the mode (and an external clock's
+provider and value), the anchor as established (console.clock.anchor_view: the components at the
+anchoring offset, D18) and the settings table (console.clock.settings_rows). Errors stay in the
+section (convention 10). Context: clock, offset, level, flags, off_notice, mode, external,
+provider_id, external_value_name, anchor, settings_rows, settings_url, advance_url (greyed with
+D1's reason while advance_gate, m6_gate(CLOCK), is closed: #252), advance_gate, not_found,
+clock_error.
+{% endcomment %}
+{% block world_content %}
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif clock_error %}{% include "console/_engine_error.html" with engine_error=clock_error %}
+{% elif clock %}
+{% if off_notice %}<p class="notice clock-off">{{ off_notice|code_spans }}</p>{% endif %}
+<p class="clock-now">Clock: {{ clock|clock_value }}</p>
+<p class="clock-offset">Offset: {{ offset }} min from the story's start</p>
+<p class="clock-level">Level: <span title="{{ clock.level }}">{{ level }}</span></p>
+{% if flags %}<p class="clock-flags">{{ flags|join:" · " }}</p>{% endif %}
+<p class="clock-mode">Mode: <span title="{{ clock.mode }}">{{ mode }}</span>{% if external %} · Reads <code>{{ provider_id }}</code> · <code>{{ external_value_name }}</code>{% endif %}</p>
+<p class="clock-actions"><a href="{{ settings_url }}">Change clock settings</a>{% if advance_url %} · {% if advance_gate %}<span class="disabled clock-advance" aria-disabled="true"{{ advance_gate|gate_attrs:"gate-advance" }}>Advance the clock</span> {% include "console/_gated_control.html" with gate=advance_gate gate_id="gate-advance" %}{% else %}<a class="clock-advance" href="{{ advance_url }}">Advance the clock</a>{% endif %}{% endif %}</p>
+
+<h3>As established</h3>
+{% if anchor is None %}<p class="none clock-unanchored">Unanchored — the story hasn't established a date or time of day yet</p>
+{% elif not anchor.readable %}<div class="notice anchor-unreadable"><p>This anchor couldn't be read</p><details open><summary>More</summary><pre class="raw-item">{{ anchor.raw|pretty_json }}</pre></details></div>
+{% else %}
+<table class="clock-anchor">
+  <thead><tr>{% for cell in anchor.components %}<th>{{ cell.label }}</th>{% endfor %}</tr></thead>
+  <tbody><tr>{% for cell in anchor.components %}<td class="anchor-{{ cell.key }}">{% if cell.kind == "unknown" %}<span class="muted">{{ cell.text }}</span>{% elif cell.kind == "json" %}<code>{{ cell.text }}</code>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}</tr></tbody>
+</table>
+<p class="anchor-display">As established: {{ anchor.display }} · at offset {{ anchor.offset }}</p>
+<p class="anchor-established">{% if anchor.established_url %}<a href="{{ anchor.established_url }}">{{ anchor.established }}</a>{% else %}{{ anchor.established }}{% endif %}</p>
+<details class="anchor-more"><summary>More</summary>{% for name, value in anchor.more %}<p>{{ name }}</p><pre class="raw-item">{{ value|pretty_json }}</pre>{% endfor %}</details>
+{% endif %}
+
+<h3>Settings</h3>
+<table class="clock-settings">
+  <tbody>
+  {% for row in settings_rows %}<tr id="setting-{{ row.key }}"><th>{{ row.label }}</th><td>{% if row.code %}<code>{{ row.text }}</code>{% elif row.title %}<span title="{{ row.title }}">{{ row.text }}</span>{% else %}{{ row.text }}{% endif %}{% if row.read_only %} <small class="muted">{{ row.note }}</small>{% elif row.note %}<p class="notice setting-note">{{ row.note|code_spans }}</p>{% endif %}
+    {% for line in row.lines %}<p class="calendar-line">{{ line }}</p>{% endfor %}
+    {% if row.headers %}<table class="nested setting-{{ row.key }}"><thead><tr>{% for header in row.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for cells in row.rows %}<tr>{% for cell in cells %}<td{% if cells|length == 1 %} colspan="{{ row.headers|length }}"{% endif %}>{% if cell.code %}<code>{{ cell.text }}</code>{% elif cell.muted %}<span class="muted">{{ cell.text }}</span>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table>{% endif %}
+    {% if row.has_more %}<details><summary>More</summary><pre class="raw-item">{{ row.more|pretty_json }}</pre></details>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

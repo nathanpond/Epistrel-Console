@@ -1,0 +1,95 @@
+{
+  "timeline_revision": 14,
+  "idempotency_key": null,
+  "message": {
+    "message_id": "01JM6MM0000000000000000081",
+    "text": "Alice shrugs. \"I couldn't say.\""
+  },
+  "beats": [
+    {
+      "turn": 4,
+      "variant": 2,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Where did Bob hide the ledger?",
+      "operation_id": "01JM6QP0000000000000000061",
+      "message_id": "01JM6MM0000000000000000080",
+      "origin": "generated"
+    }
+  ],
+  "turn": 4,
+  "variant": 2,
+  "output_viewpoint": "character:01JM6CH0000000000000000001",
+  "audience_filter": "none",
+  "model_calls": [
+    {
+      "purpose": "generation",
+      "model": "stub",
+      "attempt": 1,
+      "outcome": "ok",
+      "latency_ms": 1,
+      "tokens_in": 171,
+      "tokens_out": 11,
+      "cost": 0.0,
+      "request_id": "stub-correct",
+      "finish_reason": "stop",
+      "stage": "render"
+    }
+  ],
+  "elapsed_ms": 42,
+  "degradation": [],
+  "degradation_details": [],
+  "guardrail": {
+    "violations": [],
+    "fallback_used": false
+  },
+  "call_counts": {
+    "generation": 1
+  },
+  "budget": {
+    "max_calls": 9,
+    "reserved": {
+      "guardrail_input": 0,
+      "guardrail_output": 0
+    },
+    "used": 1
+  },
+  "queued_ms": null,
+  "first_call_offset_ms": 25,
+  "fingerprint": null,
+  "capabilities": [
+    "states",
+    "world_clock"
+  ],
+  "quality_status": {
+    "status": "uncertified"
+  },
+  "profile": {
+    "id": "00000000000000000000PRF001",
+    "version": 3
+  },
+  "config_revision": 6,
+  "notices": [
+    {
+      "id": "01JM6NT0000000000000000001",
+      "kind": "implausible_knowledge",
+      "character_id": "01JM6CH0000000000000000002",
+      "claim_text": "Alice knows the ledger is under the floorboards.",
+      "turn": 4,
+      "correctable": false,
+      "external_effects": true
+    }
+  ],
+  "reconciliation_required": [
+    {
+      "outbox_id": "01JM6BX0000000000000000001",
+      "provider": "bank",
+      "status": "unknown",
+      "value": "balance"
+    }
+  ],
+  "previous_variant": 1
+}

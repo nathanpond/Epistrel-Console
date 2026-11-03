@@ -13,8 +13,9 @@
   <input type="hidden" name="snapshot" value="{{ snapshot }}">
   {{ form.non_field_errors }}
   {% for title, rows in form.sections %}
-  <fieldset class="settings-section">
+  <fieldset class="settings-section" id="settings-{{ title|slugify }}">
     <legend>{{ title }}</legend>
+    {% if title == "External providers" %}{% url 'engine:providers' as providers_url %}{% if providers_url %}<p class="muted">Registered providers: <a href="{{ providers_url }}">Providers</a></p>{% endif %}{% endif %}
     {% for row in rows %}
     <div class="field field-{{ row.name }}">
       <label for="{{ row.field.id_for_label }}"><code>{{ row.name }}</code></label>

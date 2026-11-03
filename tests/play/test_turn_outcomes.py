@@ -101,6 +101,20 @@ def test_a_finished_turn_shows_the_reply_and_report(
     assert row.outcome == "ok"
 
 
+def test_the_inspector_model_calls_show_the_stage(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#234: the inspector's turn report (the same partial) has the Stage column."""
+    body = respond_json()
+    (call,) = body["model_calls"]
+    body["model_calls"] = [{**call, "stage": "render"}]
+    engine.respond("POST", RESPOND, 200, json=body)
+    answer_page(engine)
+    main = post_turn(operator_client).split('<div id="turn-status"')[0]
+    assert "<th>Purpose</th><th>Stage</th><th>Model</th>" in main
+    assert '<td>generation</td><td class="call-stage"><code>render</code></td>' in main
+
+
 ROOK = "01JB2Z8Y5Q3W6K9M1N4P7R0T3D"  # not in the cast: its short id
 MEMORY = "01JB2Z8Y5Q3W6K9M1N4P7MEM01"
 
@@ -482,3 +496,16 @@ def test_the_turn_timeout_is_the_deadline_plus_15_s(
     post_turn(operator_client, deadline_s="20")
     post_turn(operator_client)  # no deadline: the snapshot's turn_deadline (45 s)
     assert seen == [35.0, 60.0]
+
+
+def test_poll_labels_a_staged_turn_while_running(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#257: the poll records the Engine's label at any status, before the terminal check."""
+    queue_turn(operator_client, engine)
+    staged = operation_json("in_flight", staged=True, label="staged_turn")
+    engine.respond("GET", OPERATION, 200, json=staged)
+    assert "Running…" in poll(operator_client)
+    row = EngineOperation.objects.get()
+    assert row.engine_label == "staged_turn"
+    assert row.outcome == "queued"  # complete_queued unchanged

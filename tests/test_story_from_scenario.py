@@ -29,6 +29,7 @@ from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
 from tests.fixtures import engine_fixture
 from tests.play.helpers import answer_page, story_json
+from tests.profile_helpers import low_cap_warning
 from tests.ratings.helpers import TEEN, answer_ratings, calls, error, text
 
 pytestmark = pytest.mark.django_db
@@ -296,6 +297,8 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake = FakeEngine()
     answer_relations(fake)  # #79: every owned entity's page reads its relations
     answer_effective_config(fake)  # #85: the play header's fingerprint
+    # #259: step 2's bindings rows read the registry.
+    fake.respond("GET", "/admin/external-providers", 200, json=engine_fixture("m6/providers"))
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)
@@ -565,6 +568,31 @@ def test_overrides_send_only_changed_allowed_paths(client: Client, engine: FakeE
     }
 
 
+def test_co_author_knowledge_override_is_a_select(client: Client, engine: FakeEngine) -> None:
+    """#233: the override row is a select of the two values, not a JSON box."""
+    body = scenario()
+    path = "story_settings_defaults.co_author_knowledge"
+    body["creation_rules"]["overridable"] = [path, *OVERRIDABLE]
+    response = step2(client, engine, body)
+    html = response.content.decode()
+    select = re.search(r'<select name="ovr-0"[^>]*>(.*?)</select>', html, re.S)
+    assert select is not None
+    values = re.findall(r'<option value="([^"]*)"', select.group(1))
+    assert values == ["", "confirm", "free"]
+    assert '<textarea name="ovr-0"' not in html
+
+    engine.respond("POST", STORIES, 201, json=created())
+    client.post(URL, filled(response, ovr__0="free"))
+    assert sent(posts(engine)[0])["overrides"] == {path: "free"}
+
+    # Complement: untouched, the path is absent from the body.
+    engine.reset()
+    response = step2(client, engine, body)
+    engine.respond("POST", STORIES, 201, json=created())
+    client.post(URL, filled(response))
+    assert path not in sent(posts(engine)[0]).get("overrides", {})
+
+
 def test_unchanged_overrides_send_nothing_and_default_sends_null(
     client: Client, engine: FakeEngine
 ) -> None:
@@ -719,6 +747,34 @@ def test_applied_false_renders_the_confirm_and_create_anyway_resends_with_a_fres
     assert held_row.story_id == ""
     assert (held_row.entity_type, held_row.entity_id) == ("scenario", SCN)
     assert creation_row(STORY) == created_row
+
+
+def test_not_created_shows_budget_warnings(client: Client, engine: FakeEngine) -> None:
+    """#234: the held creation's impact report shows its own budget warnings."""
+    body = held()
+    body["impact"]["budget_warnings"] = [low_cap_warning()]
+    html = create(client, engine, answer=(200, body)).content.decode()
+    assert views.NOT_CREATED in html
+    assert "Budget warnings (do not hold the change)" in html
+    assert html.count('<ul class="budget-warnings">') == 1
+    assert "Below safety minimum: <code>model_calls</code> 1; a turn needs at least 3" in html
+
+
+def test_the_creation_report_shows_its_budget_warnings(client: Client, engine: FakeEngine) -> None:
+    body = created(impact=impact(budget_warnings=[low_cap_warning()]))
+    response = create(client, engine, answer=(201, body))
+    assert response.status_code == 302
+    html = client.get(REPORT_URL).content.decode()
+    assert "Budget warnings (do not hold the change)" in html
+    assert "Below safety minimum: <code>model_calls</code> 1" in html
+
+
+def test_a_held_creation_without_budget_warnings_shows_no_section(
+    client: Client, engine: FakeEngine
+) -> None:
+    html = create(client, engine, answer=(200, held())).content.decode()
+    assert views.NOT_CREATED in html
+    assert "Budget warnings" not in html
 
 
 def test_a_second_applied_false_renders_the_page_again_with_a_new_payload(
@@ -1177,3 +1233,230 @@ def test_profile_version_other_422_shows_the_engine_message(
     assert form.errors[VERSION_FIELD] == ["Input should be less than or equal to 2147483647"]
     assert "engine_profile_id" not in form.errors  # Complement
     assert form.top_errors[0].startswith("The Engine refused the story: validation_error — ")
+
+
+# --- provider bindings (#259) -------------------------------------------------------------------
+
+REGISTRY = "/admin/external-providers"
+
+
+def providers_scenario(**defaults: Any) -> dict[str, Any]:
+    """``catalog_scenarios_providers.json`` (:func:`scenario` with providers):
+    ``required_providers`` is ``["bank"]`` and the external State ``stock_level`` names
+    ``shop``; ``defaults`` change its settings defaults."""
+    body: dict[str, Any] = copy.deepcopy(engine_fixture("catalog_scenarios_providers"))
+    body["story_settings_defaults"].update(defaults)
+    return body
+
+
+def binding_row(html: str, name: str) -> str:
+    start = html.index(f'id="binding-{name}"')
+    return html[start : html.index("</div>", start)]
+
+
+def with_bindings(response: Any, **changes: str) -> dict[str, Any]:
+    """:func:`filled` plus the bindings rows as rendered (``__`` for ``-``)."""
+    data = filled(response)
+    bindings = response.context["form"].bindings
+    for name in bindings.fields:
+        value = bindings[name].value()
+        if name.startswith("bind-") and value:
+            data[name] = "on"
+        elif name.startswith("bindid-"):
+            data[name] = value or ""
+    data.update({k.replace("__", "-"): v for k, v in changes.items()})
+    return data
+
+
+def no_story_provider_calls(engine: FakeEngine) -> None:
+    assert not [r for r in engine.requests if "/providers" in r.url.path.removeprefix(REGISTRY)]
+
+
+def test_needed_providers_come_first_and_are_ticked(client: Client, engine: FakeEngine) -> None:
+    html = step2(client, engine, providers_scenario()).content.decode()
+    order = re.findall(r'id="binding-([^"]+)"', html)
+    rest = [p["name"] for p in engine_fixture("m6/providers")["providers"]]
+    assert order == ["bank", "shop", *[n for n in rest if n not in ("bank", "shop")]]
+    bank, shop, guild = (binding_row(html, n) for n in ("bank", "shop", "guild"))
+    assert 'name="bind-bank" id="id_bind-bank" checked' in bank
+    assert "Needed by this scenario: required_providers" in bank
+    assert 'name="bindid-bank-account_id"' in bank
+    assert "checked" in shop
+    assert "Needed by this scenario: the State “stock_level”" in shop
+    assert "checked" not in guild
+    assert "Needed by" not in guild
+    # Between the overrides and the story's rating and profile.
+    assert html.index("<h2>Overrides</h2>") < html.index('id="provider-bindings"')
+    assert html.index('id="provider-bindings"') < html.index("<h2>Story</h2>")
+    assert len(calls(engine, "GET", REGISTRY)) == 1
+
+
+def test_an_unregistered_needed_provider_has_no_inputs(client: Client, engine: FakeEngine) -> None:
+    html = step2(client, engine, providers_scenario(required_providers=["ghost"])).content.decode()
+    ghost = binding_row(html, "ghost")
+    assert "<input" not in ghost
+    assert (
+        "ghost — not registered: the Engine refuses to create the story "
+        "(<code>provider_unregistered</code>)"
+    ) in ghost
+    assert '<a href="/engine/providers/">' in ghost
+    # A name only an external State gives: created, but its turns fail.
+    body = providers_scenario(required_providers=[])
+    body["starting_state"]["states"][1]["provider_id"] = "vault"
+    html = step2(client, engine, body).content.decode()
+    assert "vault — not registered: the story is created, but its turns fail" in binding_row(
+        html, "vault"
+    )
+    # Nothing is sent for it.
+    response = step2(client, engine, providers_scenario(required_providers=["ghost"]))
+    engine.respond("POST", STORIES, 201, json=created())
+    client.post(URL, with_bindings(response, bind__bank="on", bindid__bank__account_id="a-1"))
+    assert "ghost" not in sent(posts(engine)[-1]).get("provider_bindings", {})
+
+
+def test_from_scenario_sends_bindings_in_the_body(client: Client, engine: FakeEngine) -> None:
+    response = step2(client, engine, providers_scenario())
+    # A ticked needed row with its id blank is refused before any call.
+    page = client.post(URL, with_bindings(response))
+    assert "Enter this id: the manifest substitutes {binding.account_id}" in page.content.decode()
+    assert posts(engine) == []
+
+    engine.respond("POST", STORIES, 201, json=created())
+    done = client.post(URL, with_bindings(response, bindid__bank__account_id="acct-7731"))
+    assert done.status_code == 302
+    assert done["Location"] == REPORT_URL
+    assert sent(posts(engine)[0])["provider_bindings"] == {
+        "bank": {"external_ids": {"account_id": "acct-7731"}},
+        "shop": {"external_ids": {}},
+    }
+    flash = [str(m) for m in get_messages(done.wsgi_request)]
+    assert flash[-1].endswith(" · bound to bank, shop")
+    no_story_provider_calls(engine)
+
+
+def test_unticking_a_needed_row_sends_nothing_for_it(client: Client, engine: FakeEngine) -> None:
+    response = step2(client, engine, providers_scenario())
+    data = with_bindings(response)
+    del data["bind-bank"], data["bind-shop"]
+    engine.respond("POST", STORIES, 201, json=created())
+    client.post(URL, data)
+    assert "provider_bindings" not in sent(posts(engine)[0])
+
+
+def test_create_anyway_resends_the_signed_bindings(client: Client, engine: FakeEngine) -> None:
+    response = step2(client, engine, providers_scenario())
+    engine.respond("POST", STORIES, 200, json=held())
+    held_page = client.post(URL, with_bindings(response, bindid__bank__account_id="acct-1"))
+    token = held_page.context["token"]
+    (first,) = posts(engine)
+    assert (
+        twostage.unsign(views.KIND, token).body["provider_bindings"]
+        == sent(first)["provider_bindings"]
+    )
+    engine.reset()
+    engine.respond("POST", STORIES, 201, json=created())
+    confirmed = client.post(
+        URL, {"op": "confirm", twostage.CONFIRM_FIELD: token, "idempotency_key": KEY}
+    )
+    assert confirmed.status_code == 302
+    (second,) = posts(engine)
+    assert sent(second)["provider_bindings"] == sent(first)["provider_bindings"]
+    flash = [str(m) for m in get_messages(confirmed.wsgi_request)]
+    assert flash[-1].endswith(" · bound to bank, shop")
+    no_story_provider_calls(engine)
+
+
+def test_back_rebuilds_the_binding_inputs(client: Client, engine: FakeEngine) -> None:
+    response = step2(client, engine, providers_scenario())
+    engine.respond("POST", STORIES, 200, json=held())
+    data = with_bindings(response, bindid__bank__account_id="acct-1", bind__guild="on")
+    data.update({"bindid-guild-player": "p-1", "bindid-guild-realm": "eu"})
+    del data["bind-shop"]
+    token = client.post(URL, data).context["token"]
+    engine.reset()
+    back = client.post(URL, {"op": "back", twostage.CONFIRM_FIELD: token, "idempotency_key": KEY})
+    assert posts(engine) == []
+    form = back.context["form"]
+    bindings = form.bindings
+    assert bindings["bind-bank"].value() is True
+    assert bindings["bindid-bank-account_id"].value() == "acct-1"
+    assert bindings["bind-shop"].value() is False  # a needed row left unticked stays so
+    assert bindings["bindid-guild-realm"].value() == "eu"
+    assert form.is_valid()
+    assert form.body() == twostage.unsign(views.KIND, token).body
+
+
+def test_provider_unregistered_marks_the_rows(client: Client, engine: FakeEngine) -> None:
+    body = providers_scenario(required_providers=["bank", "ghost"])
+    response = step2(client, engine, body)
+    engine.respond(
+        "POST",
+        STORIES,
+        422,
+        json=error(
+            "provider_unregistered",
+            "the scenario requires unregistered providers: ghost",
+            providers=["ghost", "bank"],
+            report=report(story_id=None),
+        ),
+    )
+    page = client.post(URL, with_bindings(response, bindid__bank__account_id="a-1"))
+    html = page.content.decode()
+    assert "Not registered: the Engine refuses to create the story" in binding_row(html, "ghost")
+    assert "Not registered: the Engine refuses to create the story" in binding_row(html, "bank")
+    assert "Not registered" not in binding_row(html, "shop")
+    assert page.context["refusal"] is not None  # details.report still shown
+    assert (
+        page.context["form"]
+        .top_errors[0]
+        .startswith("The Engine refused the story: provider_unregistered — ")
+    )
+
+
+def test_binding_refusals_from_a_scenario_land_on_the_rows(
+    client: Client, engine: FakeEngine
+) -> None:
+    response = step2(client, engine, providers_scenario())
+    data = with_bindings(response, bindid__bank__account_id="a-1")
+    engine.respond(
+        "POST",
+        STORIES,
+        422,
+        json=error("binding_incomplete", "lacks", provider="bank", missing=["account_id"]),
+    )
+    form = client.post(URL, data).context["form"]
+    assert form.bindings.errors["bindid-bank-account_id"] == [
+        "The provider's manifest needs this id"
+    ]
+    engine.respond(
+        "POST",
+        STORIES,
+        422,
+        json=error("validation_error", "no NUL", field="body.external_ids.account_id"),
+    )
+    form = client.post(URL, data).context["form"]
+    assert form.bindings.errors["bindid-bank-account_id"] == ["no NUL"]
+    assert not any(e.startswith("external_ids") for e in form.top_errors)
+    # D18's undeclared 404: through place_refusal's headline, on the row.
+    engine.respond_undeclared(
+        "POST", STORIES, 404, json=error("not_found", "no provider 'bank'", provider="bank")
+    )
+    page = client.post(URL, data)
+    form = page.context["form"]
+    assert form.bindings.errors["bind-bank"] == [
+        "bank isn't registered (anymore) — untick it or register it"
+    ]
+    assert form.top_errors[0] == "The Engine refused the story: not_found — no provider 'bank'"
+    assert page.context["engine_error"] is None
+
+
+def test_load_personas_reports_no_binding_error(client: Client, engine: FakeEngine) -> None:
+    response = step2(client, engine, providers_scenario())
+    data = with_bindings(response, op="load_personas", bindid__guild__player="p-1")
+    page = client.post(URL, data)
+    html = page.content.decode()
+    assert "Enter this id" not in html
+    assert "Tick “Bind" not in html
+    assert posts(engine) == []
+    assert page.context["form"].bindings["bind-bank"].value() is True  # posted, still ticked
+    no_story_provider_calls(engine)

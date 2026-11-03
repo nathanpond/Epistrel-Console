@@ -51,16 +51,26 @@ TRUE_AGE_MIN, TRUE_AGE_MAX = 0, 150
 CAST_MIN, CAST_MAX = 1, 20
 VIEWPOINT_MAX = 80  # a cast member's name
 
-# Engine M5's creation settings (#198), in form order: each one's C7 "Engine default (<text>)".
+# M5's and M6's creation settings (#198, #233), in form order: each one's C7
+# "Engine default (<text>)".
 CREATION_SETTINGS: dict[str, str] = {
     "player_authority": "own character",
+    "co_author_knowledge": "confirm",
     "player_view": "character",
     "interaction_mode": "sequential",
     "sequence_order": "request order",
     "simultaneous_tie_break": "request order",
     "reactive_interjections": "off",
 }
-CREATION_HELP = {"player_authority": "Lite stories get this as a prompt instruction only."}
+CREATION_HELP = {
+    "player_authority": "Lite stories get this as a prompt instruction only.",
+    # Copied from ``console.story_settings.CO_AUTHOR_KNOWLEDGE_HELP`` (not imported at load:
+    # see the note on imports above); a test pins the two equal.
+    "co_author_knowledge": (
+        "Only under Co-author player authority with per-character partitions on; "
+        "no effect under Lite."
+    ),
+}
 
 
 def _creation_field(name: str) -> forms.ChoiceField:
@@ -236,9 +246,14 @@ CharacterFormSet = cast(
 CHARACTERS_PREFIX = "characters"
 
 
-def story_spec(story: StoryForm, characters: BaseCharacterFormSet) -> dict[str, Any]:
+def story_spec(
+    story: StoryForm,
+    characters: BaseCharacterFormSet,
+    bindings: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """The ``POST /stories`` body: blank name omitted, the rating always sent, ``settings`` only
-    when one is chosen (the viewpoint, or a creation setting off its Engine default)."""
+    when one is chosen (the viewpoint, or a creation setting off its Engine default), and
+    ``provider_bindings`` (#259) only when a provider row is ticked."""
     data = story.cleaned_data
     spec: dict[str, Any] = {}
     if data["name"]:
@@ -248,6 +263,8 @@ def story_spec(story: StoryForm, characters: BaseCharacterFormSet) -> dict[str, 
     settings = story.settings()
     if settings:
         spec["settings"] = settings
+    if bindings:
+        spec["provider_bindings"] = dict(bindings)
     return spec
 
 

@@ -1,0 +1,7 @@
+{# Rewind's confirm form (#53, #209): the hidden-field errors, then the optional inter-turn slot k (keep turn N's slots 1..k). Context: form (RewindForm). #}
+{% include "console/timeline/_fields.html" %}
+<div class="field field-slot">
+  {{ form.slot.label_tag }} {{ form.slot }}
+  <small>{{ form.slot.help_text }}</small>
+  {{ form.slot.errors }}
+</div>

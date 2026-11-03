@@ -4,7 +4,8 @@ Type mapping: ``str``/``int``/``float``/``bool`` ↔ ``string``/``integer``/``nu
 ``Literal`` ↔ ``enum`` (as a set, plus its ``type``; a ``const`` is a one-member enum);
 ``dict[str, X]`` ↔ object with ``additionalProperties`` (or with exactly one
 ``patternProperties`` entry and no ``properties``, #183); ``list[X]`` ↔ array with ``items``;
-``X | None`` ↔ ``anyOf`` with null (or ``nullable``); a nested dataclass ↔ a ``$ref`` to the
+``X | None`` ↔ ``anyOf`` with null (or ``nullable``), and ``X | Y | None`` ↔ one option per member
+plus null (#267); a nested dataclass ↔ a ``$ref`` to the
 component of the same shape; ``Any`` (raw JSON) ↔ any schema, and ``dict[str, Any]`` ↔ an object
 with ``additionalProperties: true`` (#44); a field flagged ``OPEN_ENUM`` (``str``, #65) ↔ a
 string enum (or ``const``), compared as its ``Literal``; a response whose schema is an ``anyOf``
@@ -49,6 +50,16 @@ def compare_type(doc: dict[str, Any], tp: Any, node: dict[str, Any], where: str)
         non_null = [a for a in args if a is not type(None)]
         if len(non_null) == len(args):
             return _compare_union(doc, args, node, where)
+        if len(non_null) > 1:
+            # ``int | float | None`` (#267's State views) ↔ an ``anyOf`` of one option per
+            # member plus ``null``.
+            options = node.get("anyOf") or node.get("oneOf")
+            if not isinstance(options, list):
+                return [f"{where}: model is optional but the schema is not nullable"]
+            rest = [o for o in options if resolve(doc, o).get("type") != "null"]
+            if len(rest) != len(options) - 1:
+                return [f"{where}: model is optional but the schema is not `… | null`"]
+            return _compare_union(doc, tuple(non_null), {"anyOf": rest}, where)
         if len(non_null) != 1 or len(args) != 2:
             return [f"{where}: only `X | None` unions are supported, got {tp}"]
         if node.get("nullable") is True:

@@ -1,0 +1,55 @@
+{
+  "output_viewpoint": "omniscient",
+  "events": [
+    {
+      "event_id": "01JM6EV0000000000000000002",
+      "name": "The morning tide",
+      "label": "canon",
+      "status": "missed",
+      "planned": 60,
+      "owner": "world",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000001"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": 60,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000001",
+      "name": "The harbourmaster's meeting",
+      "label": "canon",
+      "status": "pending",
+      "planned": 240,
+      "owner": "author",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000001",
+        "01JM6CH0000000000000000002"
+      ],
+      "place_id": "01JM6EN0000000000000000001",
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000003",
+      "name": "Bob's card game",
+      "label": "canon",
+      "status": "cancelled",
+      "planned": 600,
+      "owner": "author",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000003"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    }
+  ],
+  "timeline_revision": 12
+}

@@ -28,6 +28,11 @@ right after ``engine_profile_id``, only when filled: it pins the new story to th
 :func:`data_from_body` rebuilds the form's data from a sent body ("Back", and a 422 after
 "Create anyway"). :meth:`StoryFromScenarioForm.place_refusal` puts a 422 at the role row,
 field or top of the form it names.
+
+#259 composes the "Provider bindings" rows (``self.bindings``, a
+:class:`console.forms.bindings.BindingsForm`): the providers :func:`needed_providers` names
+lead, ticked at first and marked "Needed by this scenario"; ``body()`` adds
+``provider_bindings`` when a row is ticked, and the binding refusals land on the rows.
 """
 
 import json
@@ -42,6 +47,14 @@ from console.engine.choices import CharacterChoices, ProfileChoices, RatingChoic
 from console.engine.client import EngineError
 from console.engine.models import CreationReport, RoleEligibility, Scenario, ScenarioRole
 from console.engine_form_errors import engine_field_errors
+from console.forms.bindings import (
+    BINDING_CODES,
+    REQUIRED_PROVIDERS,
+    BindingsForm,
+    ProviderChoices,
+    bind_field,
+    bindid_field,
+)
 from console.forms.principal import PrincipalField
 from console.ids import is_ulid
 
@@ -172,6 +185,7 @@ OVERRIDE_TYPES: dict[str, OverrideType] = {
     f"{SETTINGS}backfill_conflict_policy": OverrideType(
         "enum", ("last_mention", "first_mention", "ask")
     ),
+    f"{SETTINGS}co_author_knowledge": OverrideType("enum", ("confirm", "free")),
     f"{SETTINGS}default_output_viewpoint": OverrideType("text"),
     f"{SETTINGS}interaction_mode": OverrideType("enum", ("sequential", "simultaneous")),
     f"{SETTINGS}player_authority": OverrideType("enum", ("own_character", "co_author")),
@@ -218,6 +232,7 @@ class Lookups:
     characters: CharacterChoices
     personas: Mapping[str, PersonaOptions]  # by player role id
     role_names: Mapping[str, RoleName]  # by role id (locked and default roles)
+    providers: ProviderChoices  # the bindings rows (#259)
 
 
 @dataclass(frozen=True)
@@ -299,6 +314,31 @@ def scenario_value(scenario: Scenario, path: str) -> Any:
     return node
 
 
+def needed_providers(scenario: Scenario) -> list[tuple[str, list[str]]]:
+    """The providers the scenario needs bound, each with why (#259): its
+    ``story_settings_defaults.required_providers``, then each ``starting_state.states`` entry's
+    ``provider_id`` whose ``owner`` is ``external`` ("the State “<name>”", else its ``id``),
+    de-duplicated in that order with every reason kept. A non-list reads as empty; a non-dict
+    entry, or one without a string ``provider_id``, is skipped."""
+    found: dict[str, list[str]] = {}
+    required = scenario.story_settings_defaults.required_providers
+    for name in required if isinstance(required, list) else []:
+        if isinstance(name, str) and name:
+            reasons = found.setdefault(name, [])
+            if REQUIRED_PROVIDERS not in reasons:
+                reasons.append(REQUIRED_PROVIDERS)
+    states = scenario.starting_state.states
+    for state in states if isinstance(states, list) else []:
+        if not isinstance(state, dict) or state.get("owner") != "external":
+            continue
+        provider = state.get("provider_id")
+        if not isinstance(provider, str) or not provider:
+            continue
+        state_name = state.get("name") if isinstance(state.get("name"), str) else state.get("id")
+        found.setdefault(provider, []).append(f"the State \u201c{state_name}\u201d")
+    return list(found.items())
+
+
 def override_rows(scenario: Scenario) -> list[OverrideRow]:
     """The override fields: one per ``creation_rules.overridable`` path but the cast limit (the
     "Cast limit" field covers it), named by the path's index."""
@@ -356,10 +396,20 @@ class StoryFromScenarioForm(forms.Form):
         scenario: Scenario,
         lookups: Lookups,
         acting: str,
+        checking: bool = False,
     ) -> None:
+        """``checking``: the Create press, the only one that runs the bindings' local checks."""
         super().__init__(data)
         self.scenario = scenario
         self.lookups = lookups
+        needed = needed_providers(scenario)
+        self.bindings = BindingsForm(
+            data,
+            providers=lookups.providers,
+            needed=[name for name, _ in needed],
+            reasons=dict(needed),
+            checking=checking,
+        )
         self.overrides = override_rows(scenario)
         self.role_errors: dict[str, list[str]] = {}
         self.top_errors: list[str] = []
@@ -582,6 +632,11 @@ class StoryFromScenarioForm(forms.Form):
         if (value is None or value == "") and name not in self.errors:
             self.add_error(name, message)
 
+    def is_valid(self) -> bool:
+        """The form and its bindings rows (both checked, so every error shows)."""
+        own = super().is_valid()
+        return self.bindings.is_valid() and own
+
     def clean(self) -> dict[str, Any] | None:
         cleaned = super().clean()
         for role in self.scenario.cast.roles:
@@ -747,6 +802,9 @@ class StoryFromScenarioForm(forms.Form):
             body["max_characters_at_start"] = limit
         body["owner"] = self._value("owner")
         body["strict"] = bool(self._value("strict"))
+        bindings = self.bindings.bindings()
+        if bindings:
+            body["provider_bindings"] = bindings
         return body
 
     # --- rendering ------------------------------------------------------------------------------
@@ -846,8 +904,14 @@ class StoryFromScenarioForm(forms.Form):
         self.top_errors.append(headline)
         code = exc.code
         errors = [e for e in (report.errors or []) if e.code] if report is not None else []
+        if code in BINDING_CODES:  # #259: on the provider rows
+            self.bindings.place(exc)
+            self.top_errors.extend(self.bindings.top_errors)
+            return report
         if code == VALIDATION_ERROR:
-            failures = engine_field_errors(exc)
+            every = engine_field_errors(exc)
+            failures = self.bindings.place(exc)  # #259: the binding failures first
+            self.top_errors.extend(self.bindings.top_errors)
             sent_version = self._value(PROFILE_VERSION)
             for failure in failures:
                 message = failure.message or exc.message
@@ -858,7 +922,7 @@ class StoryFromScenarioForm(forms.Form):
                 ):
                     message = unknown_version_text(sent_version)
                 self._place_at(failure.path, message)
-            if not failures:
+            if not every:
                 self.top_errors.append(exc.message)
             return report
         if code == OVERRIDE_NOT_ALLOWED:
@@ -963,4 +1027,10 @@ def data_from_body(body: Mapping[str, Any], scenario: Scenario) -> dict[str, str
     data["max_characters_at_start"] = _text(limit)
     if body.get("strict"):
         data["strict"] = "on"
+    bindings = body.get("provider_bindings")
+    for name, binding in (bindings if isinstance(bindings, dict) else {}).items():
+        data[bind_field(str(name))] = "on"
+        ids = binding.get("external_ids") if isinstance(binding, dict) else None
+        for key, value in (ids if isinstance(ids, dict) else {}).items():
+            data[bindid_field(str(name), str(key))] = _text(value)
     return data

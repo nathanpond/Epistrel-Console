@@ -7,6 +7,8 @@ from typing import Any
 import pytest
 from django.test import Client
 
+from console.engine.models import ProviderList
+from console.forms.bindings import ProviderChoices
 from console.models import EngineOperation
 from console.views import stories as views
 from tests.fakes.engine import FakeEngine
@@ -31,6 +33,12 @@ MARA = character(name="Mara", definition="A harbour pilot.", true_age="34", is_p
 TOBIN = character(name="Tobin", definition="Her brother.", true_age="41")
 
 
+def registry_rows() -> ProviderChoices:
+    listed = ProviderList.from_json(engine_fixture("m6/providers"))
+    assert listed is not None
+    return ProviderChoices.of(listed.providers)
+
+
 def form_data(*rows: dict[str, Any], **story: Any) -> dict[str, Any]:
     """A posted new-story form, as the page renders it (signed rating options included)."""
     data: dict[str, Any] = {
@@ -39,6 +47,8 @@ def form_data(*rows: dict[str, Any], **story: Any) -> dict[str, Any]:
         "viewpoint": "",
         "idempotency_key": KEY,
         "rating_choices": views._signed_ratings(RATINGS),
+        # #259: the bindings rows as the page carries them (no registry read on POST).
+        "provider_choices": views._signed_providers(registry_rows()),
         "characters-TOTAL_FORMS": str(len(rows)),
         "characters-INITIAL_FORMS": "0",
         "characters-MIN_NUM_FORMS": "1",
@@ -357,8 +367,9 @@ def test_rating_list_failure_shows_the_panel_in_place_of_the_form(
 
 # --- #198: creation settings and participation roles -----------------------------------------
 
-SIX = (
+SEVEN = (
     "player_authority",
+    "co_author_knowledge",
     "player_view",
     "interaction_mode",
     "sequence_order",
@@ -367,6 +378,7 @@ SIX = (
 )
 ENGINE_DEFAULTS = {
     "player_authority": "Engine default (own character)",
+    "co_author_knowledge": "Engine default (confirm)",
     "player_view": "Engine default (character)",
     "interaction_mode": "Engine default (sequential)",
     "sequence_order": "Engine default (request order)",
@@ -379,11 +391,11 @@ def created(engine: FakeEngine) -> None:
     engine.respond("POST", "/stories", 201, json=engine_fixture("create_story"))
 
 
-def test_the_form_offers_the_six_settings_after_the_viewpoint(
+def test_the_form_offers_the_seven_settings_after_the_viewpoint(
     operator_client: Client, ratings: FakeEngine
 ) -> None:
     html = operator_client.get(URL).content.decode()
-    positions = [html.index('id="id_viewpoint"')] + [html.index(f'id="id_{n}"') for n in SIX]
+    positions = [html.index('id="id_viewpoint"')] + [html.index(f'id="id_{n}"') for n in SEVEN]
     assert positions == sorted(positions)
     for name, first in ENGINE_DEFAULTS.items():
         block = field_block(html, name)
@@ -426,12 +438,38 @@ def test_new_story_sends_chosen_settings_only(operator_client: Client, engine: F
     # Complement: untouched selects add no keys; an all-default form sends only the viewpoint.
     engine.reset()
     created(engine)
-    operator_client.post(URL, form_data(MARA, viewpoint="Mara", **dict.fromkeys(SIX, "")))
+    operator_client.post(URL, form_data(MARA, viewpoint="Mara", **dict.fromkeys(SEVEN, "")))
     assert sent_body(engine)["settings"] == {"default_output_viewpoint": "Mara"}
     engine.reset()
     created(engine)
-    operator_client.post(URL, form_data(MARA, **dict.fromkeys(SIX, "")))
+    operator_client.post(URL, form_data(MARA, **dict.fromkeys(SEVEN, "")))
     assert "settings" not in sent_body(engine)
+
+
+def test_new_story_sends_co_author_knowledge_only_when_chosen(
+    operator_client: Client, ratings: FakeEngine
+) -> None:
+    """#233 (C7): the Engine default sends no key; ``free`` and an explicit ``confirm`` are sent."""
+    from console.story_settings import CO_AUTHOR_KNOWLEDGE_HELP
+
+    html = operator_client.get(URL).content.decode()
+    block = field_block(html, "co_author_knowledge")
+    options = re.findall(r"<option value=\"([^\"]*)\"[^>]*>([^<]*)</option>", block)
+    assert options == [
+        ("", "Engine default (confirm)"),
+        ("confirm", "Confirm (accept, with a notice)"),
+        ("free", "Free (accept, no notice)"),
+    ]
+    assert CO_AUTHOR_KNOWLEDGE_HELP in block
+    engine = ratings
+    created(engine)
+    operator_client.post(URL, form_data(MARA, co_author_knowledge=""))
+    assert "settings" not in sent_body(engine)
+    for value in ("free", "confirm"):
+        engine.reset()
+        created(engine)
+        operator_client.post(URL, form_data(MARA, co_author_knowledge=value))
+        assert sent_body(engine)["settings"] == {"co_author_knowledge": value}
 
 
 def test_explicit_default_setting_is_sent(operator_client: Client, engine: FakeEngine) -> None:
@@ -517,7 +555,7 @@ def test_fixed_without_role_is_a_local_error(operator_client: Client, engine: Fa
     assert calls(engine, "POST", "/stories") == []
 
 
-@pytest.mark.parametrize("name", SIX)
+@pytest.mark.parametrize("name", SEVEN)
 def test_settings_422_lands_beside_the_field(
     operator_client: Client, engine: FakeEngine, name: str
 ) -> None:
@@ -578,11 +616,11 @@ def test_creation_error_paths_enumerate_the_fixed_keys() -> None:
     from console.forms.stories import CREATION_ERROR_PATHS
 
     assert set(CREATION_ERROR_PATHS) == {
-        *(f"settings.{name}" for name in SIX),
+        *(f"settings.{name}" for name in SEVEN),
         "settings.default_output_viewpoint",
         "viewpoint_unresolved",
     }
-    assert len(CREATION_ERROR_PATHS) == 8
+    assert len(CREATION_ERROR_PATHS) == 9
     assert CREATION_ERROR_PATHS["characters[3]"] == "characters[3].participation_role"
     assert "settings" not in CREATION_ERROR_PATHS
     assert "characters[3].true_age" not in CREATION_ERROR_PATHS

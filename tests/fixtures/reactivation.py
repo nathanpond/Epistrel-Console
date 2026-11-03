@@ -14,10 +14,13 @@ def _result(name: str) -> dict[str, Any]:
     return body
 
 
-def outcome(op: str, fixture: str | None = None) -> dict[str, Any]:
+def outcome(op: str, fixture: str | None = None, **changes: Any) -> dict[str, Any]:
     """The outcome of ``op`` (``untruncate``, ``swap`` or ``fork``), its result from #53's
-    ``fixture`` (default: the op's own)."""
-    return {"operation": op, "result": _result(fixture or op)}
+    ``fixture`` (default: the op's own), with ``changes`` set on the result (#258's effect
+    lists)."""
+    result = _result(fixture or op)
+    result.update(changes)
+    return {"operation": op, "result": result}
 
 
 UNTRUNCATED = outcome("untruncate")  # active_chain null: a plain reactivation

@@ -35,7 +35,14 @@ from django.views.decorators.http import require_safe
 
 from console.acting import acting_principal
 from console.engine.client import RESERVED_PRINCIPAL, EngineClientError, EngineError, principal_for
-from console.engine.models import LOOKUP_TYPES, OwnedItem, OwnedPage, PrincipalLinks, RelatedPage
+from console.engine.models import (
+    LOOKUP_TYPES,
+    OwnedItem,
+    OwnedPage,
+    PrincipalLinks,
+    RelatedItem,
+    RelatedPage,
+)
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.entities import entity_link, entity_url, label
@@ -199,7 +206,9 @@ class OwnedRow:
 
 @dataclass(frozen=True)
 class RelatedRow:
-    id: SafeString
+    item: RelatedItem
+    name: SafeString
+    cells: list[str]
     relations: str
 
 
@@ -226,7 +235,7 @@ class Group:
     tables: list[Table]
 
 
-def _cell(item: OwnedItem, column: str) -> str:
+def _cell(item: OwnedItem | RelatedItem, column: str) -> str:
     value = getattr(item, column)
     return "—" if value is None or value == "" else str(value)
 
@@ -238,13 +247,29 @@ def _owned_row(kind: str, item: OwnedItem) -> OwnedRow:
     if item.name is None:
         name = format_html("{} <code>{}</code>", HELD, item.id)
         return OwnedRow(item, name, cells, companion, held=True)
-    shown = label(item.name, item.id)
-    url = entity_url(ENGINE_LOOKUP_KEYS[kind], item.id)
+    return OwnedRow(item, _named(kind, item.id, item.name), cells, companion, held=False)
+
+
+def _named(kind: str, item_id: str, name: str) -> SafeString:
+    """A named item: its name linked to its page, or the name and ``<code>id</code>`` unlinked
+    when its type has no page."""
+    shown = label(name, item_id)
+    url = entity_url(ENGINE_LOOKUP_KEYS[kind], item_id)
     if url is None:
-        name = format_html("{} <code>{}</code>", shown, item.id)
+        return format_html("{} <code>{}</code>", shown, item_id)
+    return format_html('<a href="{}">{}</a>', url, shown)
+
+
+def _related_row(kind: str, item: RelatedItem) -> RelatedRow:
+    """Shown like an owned item (#238). A ``None`` name keeps the id link, with no reason
+    claimed: the Engine sends ``None`` for a held story, a pending catalog erasure and a private
+    media candidate alike."""
+    cells = [_cell(item, c) for c in OWNED_COLUMNS[kind]]
+    if item.name is None:
+        name = entity_link(ENGINE_LOOKUP_KEYS[kind], item.id)
     else:
-        name = format_html('<a href="{}">{}</a>', url, shown)
-    return OwnedRow(item, name, cells, companion, held=False)
+        name = _named(kind, item.id, item.name)
+    return RelatedRow(item, name, cells, ", ".join(item.relations))
 
 
 def _table(
@@ -256,10 +281,7 @@ def _table(
     if isinstance(page, OwnedPage):
         owned_rows = [_owned_row(kind, item) for item in page.items]
     elif isinstance(page, RelatedPage):
-        related_rows = [
-            RelatedRow(entity_link(ENGINE_LOOKUP_KEYS[kind], item.id), ", ".join(item.relations))
-            for item in page.items
-        ]
+        related_rows = [_related_row(kind, item) for item in page.items]
     next_cursor = page.next_cursor if page is not None else None
     return Table(
         key=key,
@@ -268,7 +290,7 @@ def _table(
         anchor=table_anchor(key),
         returned=page is not None,
         count=page.count if page is not None else 0,
-        columns=[COLUMN_TITLES[c] for c in OWNED_COLUMNS[kind]] if side == OWNED else [],
+        columns=[COLUMN_TITLES[c] for c in OWNED_COLUMNS[kind]],
         owned_rows=owned_rows,
         related_rows=related_rows,
         next_query=cursor_query(cursors, key, next_cursor) if next_cursor else None,

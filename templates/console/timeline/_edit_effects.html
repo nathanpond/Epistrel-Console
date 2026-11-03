@@ -1,0 +1,24 @@
+{% comment %}
+The external effects a timeline edit could not undo or re-send (#258). Context: effects (console.timeline.EditEffects).
+Each non-empty list (heading, line, table; full outbox ids linked to the reconciliation list, D11), then D12's count
+link (or its words unlinked, D19) or a fork's link to the source story's Reconciliation, then D11's notice.
+{% endcomment %}{% load world_tags %}<section class="edit-effects">
+{% for section in effects.sections %}<h3>{{ section.heading }}</h3>
+<p>{{ section.line }}</p>
+<table class="edit-effects-list">
+  <thead><tr><th>Outbox id</th>{% if section.pending %}<th>Status</th><th>Effect</th>{% else %}<th>Provider</th><th>Provider value</th><th>Status</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for ref in section.rows %}<tr>
+    <td>{% if ref.url %}<a href="{{ ref.url }}">{{ ref.outbox_id|outbox_id }}</a>{% else %}{{ ref.outbox_id|outbox_id }}{% endif %}</td>
+    {% if section.pending %}<td title="{{ ref.status_raw }}">{{ ref.status }}</td>
+    <td>{{ ref.effect_text }}</td>{% else %}<td><code>{{ ref.provider }}</code></td>
+    <td>{% if ref.redacted %}<span class="redacted">{{ ref.value }}</span>{% else %}<code>{{ ref.value }}</code>{% endif %}</td>
+    <td title="{{ ref.status_raw }}">{{ ref.status }}</td>{% endif %}
+  </tr>
+  {% endfor %}</tbody>
+</table>
+{% endfor %}{% if effects.source_link %}<p class="source-reconciliation"><a href="{{ effects.source_link.url }}">{{ effects.source_link.label }}</a></p>
+{% elif effects.link %}<p class="reconcile"><a href="{{ effects.link.1 }}">{{ effects.link.0 }}</a></p>
+{% elif effects.count_text %}<p class="reconcile">{{ effects.count_text }}</p>
+{% endif %}<p class="notice">{{ effects.notice }}</p>
+</section>

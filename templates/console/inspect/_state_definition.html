@@ -1,0 +1,9 @@
+{% load console_format %}{% comment %}
+A stored State definition (#261; #266's approval result reuses it): a <dl> of
+console.views.inspect_state_declare.definition_rows(definition) — name, type, scope, visibility,
+owner, provider_id, external_value_name, unit, aliases, entity_id, constraints, initial_value,
+silent, reservation_expiry_minutes, rules, authorization, transfer, created_by, then any other
+member in the answer's order. Context: definition_rows.
+{% endcomment %}<dl class="state-definition">
+{% for row in definition_rows %}  <dt>{{ row.label }}</dt><dd class="member-{{ row.member }}">{% if row.kind == "json" %}<pre>{{ row.value|pretty_json }}</pre>{% elif row.kind == "code" %}<code>{{ row.text }}</code>{% elif row.kind == "undefined" %}<span class="undefined">{{ row.text }}</span>{% else %}{{ row.text }}{% endif %}</dd>
+{% endfor %}</dl>

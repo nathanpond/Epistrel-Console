@@ -6,6 +6,7 @@ from django.urls import URLPattern, include, path, register_converter
 
 from console.auth import OperatorAuthenticationForm
 from console.ids import UlidConverter
+from console.states import StateNameConverter
 from console.views import (
     acting,
     catalog_characters,
@@ -18,12 +19,23 @@ from console.views import (
     inspect,
     inspect_beliefs,
     inspect_canon,
+    inspect_clock,
     inspect_divergences,
+    inspect_effects_trail,
     inspect_exposures,
+    inspect_external,
     inspect_ledger,
+    inspect_memories,
     inspect_memory,
     inspect_predicates,
+    inspect_reconciliation,
     inspect_scene,
+    inspect_scheduled_events,
+    inspect_state_declare,
+    inspect_state_definition,
+    inspect_state_proposals,
+    inspect_state_set,
+    inspect_states,
     media,
     media_picker,
     media_proxy,
@@ -39,6 +51,7 @@ from console.views import (
     profile_defaults,
     profile_edit,
     profiles,
+    providers,
     rating_suggestion,
     ratings,
     status,
@@ -46,18 +59,23 @@ from console.views import (
     story_characters,
     story_config,
     story_from_scenario,
+    story_providers,
     story_rating,
     story_settings,
     timeline,
 )
 
 register_converter(UlidConverter, "ulid")
+# #242: a State name as the Engine's ``StateName`` pattern allows (any other is a Django 404).
+register_converter(StateNameConverter, "state_name")
 
 operation_patterns = (
     [
         path("", operations.operation_list, name="list"),
         path("<int:pk>/", operations.operation_detail, name="detail"),
         path("evals/", operations.evals, name="evals"),
+        # #250: the Engine's record of any operation id (normalised and checked in the view).
+        path("engine/<str:operation_id>/", operations.engine_operation, name="engine"),
     ],
     "operations",
 )
@@ -74,6 +92,12 @@ story_patterns = (
         path("<str:story_id>/operations/<str:operation_id>/poll/", play.poll, name="poll"),
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
+        # #185: Override a co-author notice for this session (no Engine call; ``<ulid:…>``).
+        path(
+            "<str:story_id>/notices/<ulid:notice_id>/override/",
+            play.override_notice,
+            name="override-notice",
+        ),
         path("<str:story_id>/history/", history.history, name="history"),
         # #195: one turn's perception trace, reconstructed per character.
         path(
@@ -138,6 +162,13 @@ story_patterns = (
             story_config.version_change,
             name="config-version",
         ),
+        # #247: the story's provider bindings and the bind form for one provider.
+        path("<str:story_id>/providers/", story_providers.providers, name="providers"),
+        path(
+            "<str:story_id>/providers/<str:name>/bind/",
+            story_providers.provider_bind,
+            name="provider-bind",
+        ),
         path(
             "<str:story_id>/characters/new/",
             story_characters.character_new,
@@ -175,6 +206,8 @@ story_patterns = (
         path("<str:story_id>/undo-rewind/", timeline.undo_rewind, name="undo-rewind"),
         path("<str:story_id>/swap/", timeline.swap, name="swap"),
         path("<str:story_id>/fork/<int:turn>/", timeline.fork, name="fork"),
+        # #263: correct the latest turn's input (#185's Fix / Clarify).
+        path("<str:story_id>/correct/<int:turn>/", timeline.correct, name="correct"),
     ],
     "stories",
 )
@@ -188,6 +221,8 @@ inspect_patterns = (
         path("memory/", inspect.memory, name="memory"),
         # #145: request consolidation of a turn window (form, confirm, call).
         path("memory/consolidate/", inspect_memory.consolidate, name="consolidate"),
+        # #236: every memory of the story, filtered and paged (Engine #531).
+        path("memory/list/", inspect_memories.memory_list, name="memory-list"),
         path("retrieval/", inspect.retrieval, name="retrieval"),
         # #137: the story's canon facts on both time axes.
         path("canon/", inspect_canon.canon, name="canon"),
@@ -211,6 +246,137 @@ inspect_patterns = (
         path("knowledge/divergences/", inspect_divergences.divergences, name="divergences"),
         # #193: what witnesses heard (exposures) and whether each resolved.
         path("knowledge/exposures/", inspect_exposures.exposures, name="exposures"),
+        # #239 (D3): the World and Effects tabs. Each landing redirects to its first open section;
+        # the sections register below with their owners (console.inspect.WORLD_SECTIONS /
+        # EFFECTS_SECTIONS): World's States world/states/ (#242), Proposed States
+        # world/states/proposals/ (#266), Clock world/clock/ (#243), Scheduled events
+        # world/scheduled-events/ (#244), External values world/external-values/ (#248); Effects'
+        # Reconciliation effects/reconciliation/ (#249) and Effects trail effects/trail/ (#255).
+        # Per-State pages live under the singular world/state/<name>/… (#242, #251, #265), so the
+        # fixed world/states/new/ (#261) and world/states/proposals/ never shadow a State named
+        # "new" or "proposals".
+        path("world/", inspect.world, name="world"),
+        # #242: the States section and one State as of a boundary.
+        path("world/states/", inspect_states.states, name="states"),
+        # #261: declare a State between turns, and its result again from the #44 row.
+        path("world/states/new/", inspect_state_declare.state_new, name="state-new"),
+        path(
+            "world/states/new/declared/",
+            inspect_state_declare.state_declared,
+            name="state-declared",
+        ),
+        # #266: the Proposed States section, a 202 analysis, approve (a form page, and its result
+        # again from the #44 row) and dismiss (a confirmed-mode confirm page).
+        path(
+            "world/states/proposals/",
+            inspect_state_proposals.state_proposals,
+            name="state-proposals",
+        ),
+        path(
+            "world/states/proposals/analyze/",
+            inspect_state_proposals.state_proposals_analyze,
+            name="state-proposals-analyze",
+        ),
+        path(
+            "world/states/proposals/approved/",
+            inspect_state_proposals.state_proposal_approved,
+            name="state-proposal-approved",
+        ),
+        path(
+            "world/states/proposals/<ulid:proposal_id>/approve/",
+            inspect_state_proposals.state_proposal_approve,
+            name="state-proposal-approve",
+        ),
+        path(
+            "world/states/proposals/<ulid:proposal_id>/dismiss/",
+            inspect_state_proposals.state_proposal_dismiss,
+            name="state-proposal-dismiss",
+        ),
+        path("world/state/<state_name:name>/", inspect_states.state, name="state"),
+        # #251: set a State between turns, and its result again from the #44 row.
+        path("world/state/<state_name:name>/set/", inspect_state_set.state_set, name="state-set"),
+        path(
+            "world/state/<state_name:name>/set/written/",
+            inspect_state_set.state_written,
+            name="state-written",
+        ),
+        # #265: change a State's definition (a configuration write).
+        path(
+            "world/state/<state_name:name>/definition/",
+            inspect_state_definition.state_definition,
+            name="state-definition",
+        ),
+        # #243: the Clock section and its settings page.
+        path("world/clock/", inspect_clock.clock, name="clock"),
+        path("world/clock/settings/", inspect_clock.clock_settings, name="clock-settings"),
+        # #252: advance the clock between turns, and its result again from the #44 row.
+        path("world/clock/advance/", inspect_clock.clock_advance, name="clock-advance"),
+        path("world/clock/advanced/", inspect_clock.clock_advanced, name="clock-advanced"),
+        # #244: the Scheduled events section.
+        path(
+            "world/scheduled-events/",
+            inspect_scheduled_events.scheduled_events,
+            name="scheduled-events",
+        ),
+        # #253: create a scheduled event, and the event writes' result page from the #44 row.
+        path(
+            "world/scheduled-events/new/",
+            inspect_scheduled_events.scheduled_event_new,
+            name="scheduled-event-new",
+        ),
+        path(
+            "world/scheduled-events/written/",
+            inspect_scheduled_events.scheduled_event_written,
+            name="scheduled-event-written",
+        ),
+        # #262: reschedule (form) or cancel (confirm page) an existing canon event.
+        path(
+            "world/scheduled-events/<ulid:event_id>/reschedule/",
+            inspect_scheduled_events.scheduled_event_reschedule,
+            name="scheduled-event-reschedule",
+        ),
+        path(
+            "world/scheduled-events/<ulid:event_id>/cancel/",
+            inspect_scheduled_events.scheduled_event_cancel,
+            name="scheduled-event-cancel",
+        ),
+        # #248: the External values section (what providers answered, and the facts citing it).
+        path(
+            "world/external-values/",
+            inspect_external.external_values,
+            name="external-values",
+        ),
+        path("effects/", inspect.effects, name="effects"),
+        # #249: the Reconciliation section (every listed outbox row, each at #outbox-<id>).
+        path(
+            "effects/reconciliation/",
+            inspect_reconciliation.reconciliation,
+            name="reconciliation",
+        ),
+        # #256: settle a listed effect now (confirm page, then the call) and its result again.
+        path(
+            "effects/reconciliation/settled/",
+            inspect_reconciliation.settled_now,
+            name="settled-now",
+        ),
+        path(
+            "effects/reconciliation/<str:outbox_id>/settle-now/",
+            inspect_reconciliation.settle_now,
+            name="settle-now",
+        ),
+        # #264: compensate a listed effect (form, confirm page, the call) and its result again.
+        path(
+            "effects/reconciliation/compensated/",
+            inspect_reconciliation.compensated,
+            name="compensated",
+        ),
+        path(
+            "effects/reconciliation/<str:outbox_id>/compensate/",
+            inspect_reconciliation.compensate,
+            name="compensate",
+        ),
+        # #255: the Effects trail section (every State change the story's turns committed).
+        path("effects/trail/", inspect_effects_trail.effects_trail, name="effects-trail"),
         # #136: the predicate registry, a proposal's decision and its result page again.
         path("predicates/", inspect_predicates.predicates, name="predicates"),
         path(
@@ -311,6 +477,14 @@ engine_patterns = (
         path("rebuild/<str:story_id>/", engine_panel.rebuild, name="rebuild"),
         path("settings/", engine_panel.deployment_settings, name="settings"),
         path("config-changes/", engine_panel.config_changes, name="config-changes"),
+        # #240: the deployment's external-data providers, read-only.
+        path("providers/", providers.provider_list, name="providers"),
+        path("providers/<str:name>/", providers.provider_detail, name="provider"),
+        # #246: register (outside providers/<name>/: "new" is a valid provider name), replace,
+        # delete.
+        path("provider-registration/", providers.provider_new, name="provider-new"),
+        path("providers/<str:name>/replace/", providers.provider_edit, name="provider-edit"),
+        path("providers/<str:name>/delete/", providers.provider_delete, name="provider-delete"),
         # #84: the deployment's profile defaults, in the schema-generated form.
         path(
             "profile-defaults/edit/",

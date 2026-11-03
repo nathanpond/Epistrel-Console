@@ -1,0 +1,25 @@
+{% load console_format inspect_tags %}{% comment %}
+One external read (#248): a console.views.inspect_external.ExternalReadRow as row, one
+<tr id="read-<event_id>">. Columns: Value read (provider linked through D19's provider_url when
+engine:provider resolves), Scope, Value (D5's external-value exception: null reads "unknown" in
+span.undefined), Source (C3: humanised, raw in title), Read at, Turn (linked to the history),
+Cited by (one line per citing fact: its short id linked to Canon lineage, the proposition, then
+"current" or "closed <tx_to>"), More (ids in full, the raw value, each fact's details). Context:
+row; story_id, predicate_names, cast_names (for _proposition.html).
+{% endcomment %}<tr id="read-{{ row.event_id }}" class="external-read">
+  <td class="value-read">{% if row.provider %}{% if row.provider_url %}<a class="provider-link" href="{{ row.provider_url }}"><code>{{ row.provider }}</code></a>{% else %}<code>{{ row.provider }}</code>{% endif %}{% else %}—{% endif %} · {% if row.value_name %}<code>{{ row.value_name }}</code>{% else %}—{% endif %}</td>
+  <td class="scope">{% if row.scope.code_title %}<code title="{{ row.scope.code_title }}">{{ row.scope.text }}</code>{% else %}{{ row.scope.text }}{% endif %}</td>
+  <td class="value">{% if row.unknown %}<span class="undefined">{{ row.value_text }}</span>{% else %}{{ row.value_text }}{% endif %}</td>
+  <td class="source">{% if row.source %}<span title="{{ row.source }}">{{ row.source_text }}</span>{% else %}{{ row.source_text }}{% endif %}</td>
+  <td class="read-at">{{ row.read_at|engine_time }}</td>
+  <td class="turn">{% if row.turn_url %}<a href="{{ row.turn_url }}">{{ row.turn_text }}</a>{% else %}{{ row.turn_text }}{% endif %}</td>
+  <td class="cited-by">{% if row.facts %}<ul class="cited-facts">{% for fact in row.facts %}<li class="cited-fact"><a class="lineage-link" href="{{ fact.url }}">{{ fact.fact_id|engine_id }}</a> {% if fact.proposition %}{% include "console/inspect/_proposition.html" with proposition=fact.proposition %}{% else %}<span class="muted">(proposition in More)</span>{% endif %} · {% if fact.closed_at %}closed {{ fact.closed_at|engine_time }}{% else %}current{% endif %}</li>{% endfor %}</ul>{% else %}—{% endif %}</td>
+  <td class="more"><details><summary>More</summary><dl>
+    <dt>Event id</dt><dd><code>{{ row.event_id }}</code></dd>
+    <dt>State id</dt><dd>{% if row.state_id %}<code>{{ row.state_id }}</code>{% else %}—{% endif %}</dd>
+    <dt>Raw value</dt><dd><pre class="raw-value">{{ row.raw_value }}</pre></dd>
+    {% for fact in row.facts %}{% for m in fact.more %}<dt>{{ m.term }}</dt><dd>{% if m.kind == "code" %}<code>{{ m.text }}</code>{% elif m.kind == "time" %}{{ m.text|engine_time }}{% elif m.title %}<span title="{{ m.title }}">{{ m.text }}</span>{% else %}{{ m.text }}{% endif %}</dd>
+    {% endfor %}{% if fact.raw_proposition %}<dt>Proposition (as sent)</dt><dd><pre class="raw-proposition">{{ fact.raw_proposition }}</pre></dd>
+    {% endif %}{% endfor %}
+  </dl></details></td>
+</tr>

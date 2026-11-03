@@ -1,0 +1,6 @@
+{% load inspect_tags %}{% comment %}
+One changeable row's Actions cell (#262), included by _scheduled_event_row.html with row_actions (a
+console.scheduled_events.RowActions): "Reschedule" (inspect:scheduled-event-reschedule) and "Cancel"
+(inspect:scheduled-event-cancel?name=&expected_revision=&next=). While D1's clock gate is closed
+both are greyed spans and the reason follows once (_gated_control.html).
+{% endcomment %}{% with gate_id="gate-ev-"|add:row.event_id %}{% if row_actions.gate %}<span class="disabled event-reschedule" aria-disabled="true"{{ row_actions.gate|gate_attrs:gate_id }}>Reschedule</span> <span class="disabled event-cancel" aria-disabled="true"{{ row_actions.gate|gate_attrs:gate_id }}>Cancel</span> {% include "console/_gated_control.html" with gate=row_actions.gate gate_id=gate_id %}{% else %}<a class="event-reschedule" href="{{ row_actions.reschedule_url }}">Reschedule</a> <a class="event-cancel" href="{{ row_actions.cancel_url }}">Cancel</a>{% endif %}{% endwith %}

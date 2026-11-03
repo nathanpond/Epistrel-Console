@@ -13,8 +13,9 @@ The Engine names a failing field with a dotted path, list indexes in brackets:
   prefixed with the path so the operator can tell what it refers to.
 
 ``aliases`` redirects a path the form does not mirror (``settings.default_output_viewpoint`` →
-``viewpoint``). Its keys may also be a ``details`` key (``unknown_actor``) or an error ``code``:
-those place the error's ``message`` on the aliased path when present.
+``viewpoint``); an alias to ``__all__`` places the message among the non-field errors
+as-is (#263's ``player_input``). Its keys may also be a ``details`` key (``unknown_actor``)
+or an error ``code``: those place the error's ``message`` on the aliased path when present.
 
 Messages are the Engine's, as-is. Call it after ``is_valid()`` (``add_error`` needs the forms
 cleaned).
@@ -26,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django import forms
+from django.core.exceptions import NON_FIELD_ERRORS
 from django.forms.formsets import BaseFormSet
 
 from console.engine.client import EngineError
@@ -100,6 +102,9 @@ def _alias_keys(error: EngineError, aliases: Mapping[str, str]) -> Iterable[str]
 
 
 def _place(path: str, message: str, form: forms.BaseForm, formsets: Mapping[str, Rows]) -> None:
+    if path == NON_FIELD_ERRORS:
+        form.add_error(None, message)
+        return
     if path in form.fields:
         form.add_error(path, message)
         return

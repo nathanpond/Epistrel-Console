@@ -70,7 +70,7 @@ and "More". explain_banner is #142's reconstruction banner slot, between the for
   {% if not episodic_off %}
   {% with c=candidates %}
   {% if c.hidden %}<p class="candidates-shown">Showing {{ c.shown|count }} of {{ c.total|count }} candidates</p>{% endif %}
-  <p class="candidates-note">Memories this question retrieves — not a full list (nathanpond/Epistrel#531)</p>
+  <p class="candidates-note">Memories this question retrieves — every memory is {% if memory_list_url %}<a href="{{ memory_list_url }}">listed on the Memory tab</a>{% else %}listed on the Memory tab{% endif %}</p>
   {% if c.memory_note %}<p class="memory-note">{{ c.memory_note }}</p>{% endif %}
   {% if not c.total %}<p class="candidates-none">This question retrieved no memories.</p>
   {% else %}

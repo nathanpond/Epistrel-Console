@@ -1,7 +1,8 @@
 """#54 against the live Engine: the issue's demo on a fresh story. Queue with size 3 (marked
 "story", its config change by ``console:nate``), reset it, pin a memory, save instructions, and
 a story policy that would relax a rule refused with ``cannot_relax``. #197: player authority and
-interaction mode set, read back as "story", and reset."""
+interaction mode set, read back as "story", and reset. #233: co-author knowledge default → free
+→ "story" → reset → "default"."""
 
 import re
 from typing import Any
@@ -140,5 +141,31 @@ def test_player_authority_and_interaction_mode_live(operator_client: Client) -> 
             html = operator_client.get(page).content.decode()
             assert _marker(html, "player_authority") == "default"
             assert _marker(html, "interaction_mode").startswith("default (")
+    finally:
+        client.delete_story(story_id, idempotency_key=new_ulid())
+
+
+def test_co_author_knowledge_live(operator_client: Client) -> None:
+    url, key = live_url(), live_key()
+    client = EngineClient(url, key, principal="console:smoke")
+    story_id = _create_story(client)
+    page = f"/stories/{story_id}/settings/"
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            html = operator_client.get(page).content.decode()
+            assert _marker(html, "co_author_knowledge") == "default"
+            data = form_data(html, page)
+            data["co_author_knowledge"] = "free"
+            assert operator_client.post(page, data).status_code == 302
+
+            html = operator_client.get(page).content.decode()
+            assert "Co-author knowledge: Free (accept, no notice)" in html
+            assert _marker(html, "co_author_knowledge") == "story"
+
+            data = form_data(html, page)
+            data["reset_co_author_knowledge"] = "on"
+            assert operator_client.post(page, data).status_code == 302
+            html = operator_client.get(page).content.decode()
+            assert _marker(html, "co_author_knowledge") == "default"
     finally:
         client.delete_story(story_id, idempotency_key=new_ulid())

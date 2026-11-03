@@ -99,7 +99,11 @@
           "relations": [
             "player",
             "co_author"
-          ]
+          ],
+          "name": "The Harbour Watch",
+          "status": "active",
+          "version": null,
+          "listing_status": null
         }
       ],
       "next_cursor": null
@@ -116,7 +120,11 @@
           "id": "01JP0000000000000000SCEN02",
           "relations": [
             "editor"
-          ]
+          ],
+          "name": "Night Market",
+          "status": "published",
+          "version": 3,
+          "listing_status": "listed"
         }
       ],
       "next_cursor": null
@@ -133,7 +141,11 @@
           "id": "01JP0000000000000000MEDIA2",
           "relations": [
             "viewer"
-          ]
+          ],
+          "name": "Pier at night",
+          "status": "live",
+          "version": null,
+          "listing_status": null
         }
       ],
       "next_cursor": "c-rmedia-2"

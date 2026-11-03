@@ -65,6 +65,10 @@
     .degraded { background: #fff3cd; font-weight: 700; }
     .muted { color: #57606a; }
     tr.row-muted td { color: #57606a; }
+    section.notices article.notice-card { border-left: 4px solid #8250df; padding: 0.3rem 0.8rem; margin: 0.4rem 0; background: #fbefff; }
+    section.notices .notice-actions form { display: inline; }
+    section.notices span.disabled { padding: 0.1rem 0.5rem; color: #8c959f; cursor: default; }
+    .notice-overridden { color: #57606a; }
     .caveats { border-left: 3px solid #d0d7de; padding-left: 0.75em; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     tr.revision th { background: #f6f8fa; }
@@ -139,6 +143,7 @@
     table.effective-config td.effective { background: #fff8c5; font-weight: 600; }
     table.effective-config td pre { margin: 0; }
     tr.quarantined td { background: #ffebe9; }
+    table.scheduled-events tr:target td { background: #fff8c5; }
     .badge.quarantined { font-size: 0.8em; padding: 0 0.3rem; color: #a40e26; border-color: #cf222e; background: #ffebe9; }
     .badge.layer-core, .badge.layer-author, .badge.layer-auto, .badge.layer-other { font-size: 0.8em; padding: 0 0.3rem; }
     .badge.layer-core { color: #57606a; border-color: #8c959f; background: #f6f8fa; }
@@ -150,6 +155,13 @@
     .badge.state-resolved { color: #116329; border-color: #1a7f37; background: #dafbe1; }
     .badge.state-expired { color: #57606a; border-color: #8c959f; background: #f6f8fa; }
     .badge.negated { font-size: 0.8em; padding: 0 0.3rem; color: #a40e26; border-color: #cf222e; }
+    /* M6 (#239): an unset State value, an incomplete staged turn's badge (it always carries its
+       text label, convention 20), a full outbox id, a world-clock value. */
+    span.undefined { color: #57606a; font-style: italic; }
+    .badge.incomplete { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; }
+    code.outbox-id { user-select: all; }
+    code.bound-id { white-space: pre-wrap; }
+    span.clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
     tr.ledger-entries > td { background: #f6f8fa; padding-left: 2rem; }
     table.ledger td.proposition span.line { display: block; }
     tr.fact-superseded td { color: #8c959f; }

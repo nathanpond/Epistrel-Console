@@ -38,9 +38,10 @@ STRANGER = "01JB2Z8Y5Q3W6K9M1N4P7R0T9Z"  # in counters, not in the cast
 STORED_ONLY = "01JB2Z8Y5Q3W6K9M1N4P7R0T8Y"  # in stored_counters only
 RETRIEVAL_URLS = "epistrel_console.urls"  # Retrieval registered for real (#141)
 STORED_NOTE = "The Engine hasn't stored counts yet; its next commit recounts."
+LIST_URL = f"/stories/{STORY}/inspect/memory/list/"
 BROWSE_TEXT = (
-    "The Engine can't list a story's memories yet (nathanpond/Epistrel#531). "
-    "Retrieval shows the memories a question retrieves, filtered by kind and tier."
+    "Every memory of the story, filtered by kind, tier, holder, turns, quarantine and pin: "
+    f'<a class="memory-list-link" href="{LIST_URL}">List every memory</a>'
 )
 SETTINGS = "/admin/settings"
 OMNISCIENT = {"viewpoint": "omniscient"}
@@ -467,21 +468,26 @@ def test_retirement_links_omit_actor_when_the_story_read_failed(
 
 def browse_links(html: str) -> list[tuple[str, dict[str, list[str]]]]:
     grid = table(html, "browse-memories")
-    return [
-        (label, query(href.replace("&amp;", "&")))
-        for href, label in re.findall(r'<a href="([^"]+)">([^<]+)</a>', grid)
-    ]
+    found = re.findall(r'<a href="([^"]+)">([^<]+)</a>', grid)
+    assert all(urlsplit(href).path == LIST_URL for href, _ in found)
+    return [(label, query(href.replace("&amp;", "&"))) for href, label in found]
 
 
-def test_the_browse_grid_links_kind_by_tier(operator_client: Client, engine: FakeEngine) -> None:
-    with override_settings(ROOT_URLCONF=RETRIEVAL_URLS):
-        html = page(operator_client, engine, fixture("full"))
+def test_the_browse_grid_links_the_memory_list(operator_client: Client, engine: FakeEngine) -> None:
+    html = page(operator_client, engine, fixture("full"))
     assert BROWSE_TEXT in html
     assert browse_links(html) == [
-        (f"{kind.capitalize()} · {tier}", {"kind": [kind], "tier": [tier]})
+        (f"{kind.capitalize()} · {tier}", {"kind": [kind], "retrieval_tier": [tier]})
         for kind in ("episodic", "semantic", "reflection")
         for tier in ("hot", "retired")
     ]
+    # The links make no read: the tab still reads the hot set once, and never the list.
+    assert hot_set_calls(engine) == 1
+    assert not [r for r in engine.requests if r.url.path.endswith("/memories")]
+    # Complement: no page says the Engine can't list memories.
+    assert "nathanpond/Epistrel#531" not in html
+    assert "can't list" not in html
+    assert "can&#x27;t list" not in html
 
 
 def test_links_render_with_the_real_urlconf(operator_client: Client, engine: FakeEngine) -> None:
@@ -494,13 +500,13 @@ def test_links_render_with_the_real_urlconf(operator_client: Client, engine: Fak
     )
 
 
-def test_links_are_omitted_without_the_retrieval_tab(
+def test_the_grid_shows_without_the_retrieval_tab(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     with override_settings(ROOT_URLCONF="tests.inspect.urls_without_retrieval"):
         html = page(operator_client, engine, fixture("full"))
     assert BROWSE_TEXT in html
-    assert 'class="browse-memories"' not in html
+    assert len(browse_links(html)) == 6  # the grid no longer depends on Retrieval
     assert 'class="memory-link"' not in html
     assert f"…{'01JB2Z8Y5Q3W6K9M1N4P7R0M01'[-8:]}" in html  # the id still renders
 

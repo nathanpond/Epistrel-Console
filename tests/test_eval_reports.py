@@ -71,6 +71,7 @@ def summary(sid: str, name: str | None, status: str = "active") -> dict[str, Any
         "content_rating": {"id": P + "R01", "version_id": P + "R02", "name": "General"},
         "created_at": "2026-10-20T08:15:30Z",
         "archived_at": "2026-10-21T08:00:00Z" if status == "archived" else None,
+        "engine_profile": {"id": "00000000000000000000PRF001", "version": 1, "pinned": False},
     }
 
 

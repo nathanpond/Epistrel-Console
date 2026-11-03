@@ -1,0 +1,44 @@
+{
+  "listings": [
+    {
+      "outbox_id": "01JM6BX0000000000000000001",
+      "provider": "bank",
+      "value": "balance",
+      "status": "unknown",
+      "reason": "unconfirmed",
+      "since": "2026-10-31T18:05:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -50,
+        "reason": "Mara pays the harbour fee"
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000002",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "late_success_after_expiry",
+      "since": "2026-10-31T18:07:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -120,
+        "reason": "Mara buys the lantern"
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-10-31T18:20:00Z",
+        "received_via": "ingest"
+      },
+      "reverification": {
+        "reverification": "failed",
+        "reasons": [
+          "precondition:ownership"
+        ]
+      },
+      "compensated_by": null
+    }
+  ]
+}

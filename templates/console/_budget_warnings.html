@@ -1,0 +1,7 @@
+{% comment %}
+The profile validator's budget warnings (#234). Context:
+- warnings: a list of console.engine.models.ProfileValidationWarning (empty or absent: nothing renders);
+- heading (optional, default "Budget warnings").
+Each warning reads through the `budget_warning` filter (#84's `warning_text`, setting paths in <code>).
+{% endcomment %}{% load impact %}{% if warnings %}<h4>{{ heading|default:"Budget warnings" }}</h4>
+<ul class="budget-warnings">{% for w in warnings %}<li class="warning">{{ w|budget_warning }}</li>{% endfor %}</ul>{% endif %}

@@ -1,0 +1,113 @@
+{
+  "config_revision": 4,
+  "providers": [
+    {
+      "name": "bank",
+      "trust_tier": "authoritative",
+      "transport": "http",
+      "manifest": {
+        "values": {
+          "balance": {
+            "type": "number",
+            "read": {
+              "method": "GET",
+              "url": "https://bank.example.test/accounts/{binding.account_id}/balance",
+              "headers": {
+                "Authorization": "Bearer {secret.BANK_TOKEN}"
+              },
+              "value_path": "$.balance",
+              "timeout_seconds": 5
+            },
+            "write": {
+              "method": "POST",
+              "url": "https://bank.example.test/accounts/{binding.account_id}/transfers",
+              "headers": {
+                "Authorization": "Bearer {secret.BANK_TOKEN}"
+              },
+              "body": {
+                "amount": "{effect.delta}",
+                "memo": "{effect.reason}"
+              },
+              "idempotency_header": "Idempotency-Key",
+              "outcome_path": "$.status",
+              "outcome_map": {
+                "confirmed": [
+                  "settled"
+                ],
+                "failed": [
+                  "rejected"
+                ]
+              },
+              "resulting_values_path": "$.balance",
+              "timeout_seconds": 5
+            }
+          }
+        }
+      },
+      "write_capable": true,
+      "confirmation": "synchronous",
+      "dedupes_dispatch": true,
+      "returns_resulting_values": true,
+      "unavailability": "last_known",
+      "freshness_minutes": 10,
+      "confirm_wait_max_seconds": 10,
+      "changed_at_revision": 3,
+      "created_at": "2026-10-30T08:00:00Z",
+      "updated_at": "2026-10-30T09:30:00Z"
+    },
+    {
+      "name": "guild",
+      "trust_tier": "advisory",
+      "transport": "http",
+      "manifest": {
+        "values": {
+          "rank": {
+            "type": "string",
+            "read": {
+              "method": "GET",
+              "url": "https://guild.example.test/players/{binding.player}/realms/{binding.realm}/rank",
+              "headers": {
+                "Authorization": "Bearer {secret.GUILD_TOKEN}"
+              },
+              "value_path": "$.rank",
+              "timeout_seconds": 5
+            }
+          }
+        }
+      },
+      "write_capable": false,
+      "confirmation": null,
+      "dedupes_dispatch": null,
+      "returns_resulting_values": null,
+      "unavailability": "last_known",
+      "freshness_minutes": 30,
+      "confirm_wait_max_seconds": 10,
+      "changed_at_revision": 4,
+      "created_at": "2026-10-30T10:00:00Z",
+      "updated_at": "2026-10-30T10:00:00Z"
+    },
+    {
+      "name": "shop",
+      "trust_tier": "advisory",
+      "transport": "in_process",
+      "manifest": {
+        "values": {
+          "stock": {
+            "type": "number",
+            "writable": false
+          }
+        }
+      },
+      "write_capable": false,
+      "confirmation": null,
+      "dedupes_dispatch": null,
+      "returns_resulting_values": null,
+      "unavailability": "unknown",
+      "freshness_minutes": null,
+      "confirm_wait_max_seconds": 10,
+      "changed_at_revision": 2,
+      "created_at": "2026-10-30T07:45:00Z",
+      "updated_at": "2026-10-30T07:45:00Z"
+    }
+  ]
+}

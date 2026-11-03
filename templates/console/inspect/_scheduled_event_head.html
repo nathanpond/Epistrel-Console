@@ -1,0 +1,4 @@
+{% comment %}
+The scheduled-events table's column header (#244), shared with the event writes' result page
+(#253): the columns of _scheduled_event_row.html. Context: actions (None: no Actions column).
+{% endcomment %}<thead><tr><th>Event</th><th>Kind</th><th>Status</th><th>Planned</th><th>Owner</th><th>Shared with</th><th>Participants</th><th>Place</th><th>Grace</th><th>Stopped the clock</th><th>Confidence</th>{% if actions is not None %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>

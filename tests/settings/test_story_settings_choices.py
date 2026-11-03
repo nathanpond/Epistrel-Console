@@ -25,8 +25,8 @@ def test_engine_default_choice_names_the_default_and_sends_nothing() -> None:
     )
 
 
-def test_setting_choices_cover_the_six_and_hold_no_engine_default() -> None:
-    assert list(SETTING_CHOICES) == list(SETTABLE[-6:])
+def test_setting_choices_cover_the_seven_and_hold_no_engine_default() -> None:
+    assert list(SETTING_CHOICES) == list(SETTABLE[-7:])
     assert SETTING_CHOICES["reactive_interjections"] == BOOLEAN_SELECT
     for name, choices in SETTING_CHOICES.items():
         assert ENGINE_DEFAULT not in {value for value, _ in choices}, name

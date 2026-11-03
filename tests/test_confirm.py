@@ -1,5 +1,6 @@
 """The shared confirm-page helpers (#43's convention, built in #45)."""
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -101,7 +102,8 @@ def test_confirmed_mode_unconfirmed_post_rerenders_with_the_posted_key(
     assert response.status_code == 200
     assert '<input type="hidden" name="idempotency_key" value="first-render-key">' in html
     assert '<input type="hidden" name="confirmed" value="1">' in html
-    assert "incomplete" not in html
+    # The incomplete-confirmation notice, not the bare word (the CSS has `.badge.incomplete`).
+    assert "This confirmation was incomplete" not in html
     assert perform.calls == []  # complement: an unconfirmed POST never performs
 
 
@@ -193,3 +195,117 @@ def test_a_default_mode_page_renders_byte_for_byte_as_before_134(page: ConfirmPa
     }
     before = engines["django"].from_string(PRE_134_CONFIRM).render(context)
     assert get_template("console/_confirm.html").render(context) == before
+
+
+# ``_confirm.html`` as it stood before #235's D8 extensions: a page that sets none of them renders
+# it byte for byte.
+PRE_235_CONFIRM = """<div class="confirm">
+  <p class="question">{% if has_emphasis %}{{ question_before }}<em>{{ page.emphasis }}</em>{{ question_after }}{% else %}{{ page.question }}{% endif %}</p>
+  {% for line in page.lines %}<p>{{ line }}</p>{% endfor %}
+  {% if page.facts %}
+  <dl>
+    {% for label, value in page.facts %}<dt>{{ label }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}
+  </dl>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    {% for name, value in page.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    {% if page.fields_template %}{% include page.fields_template %}{% endif %}{% if page.error %}
+    <p class="errorlist confirm-error">{{ page.error }}</p>{% endif %}
+    <button type="submit"{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>{% if page.buttons_template %}
+    {% include page.buttons_template %}{% endif %}
+    <a href="{{ next_url }}">Cancel</a>
+  </form>
+</div>
+"""  # noqa: E501
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        PAGE,
+        ConfirmPage(title="T", question="Drop it?", confirm_label="Drop", cancel_url="/b/",
+                    lines=("One",), facts=(("Id", "x1"), ("Name", "<b>")), hidden={"a": "1"},
+                    danger=True, error="Refused", buttons_template="console/_confirm.html"),
+    ],
+)  # fmt: skip
+def test_a_page_without_the_extensions_renders_as_before_235(page: ConfirmPage) -> None:
+    """#235's complement: the defaults of ``blocked``, ``fact_urls`` and ``error_url``/
+    ``error_link`` leave main's markup unchanged."""
+    if page.buttons_template:
+        page = dataclasses.replace(page, buttons_template="")
+    context = {
+        "page": page,
+        "has_emphasis": False,
+        "idempotency_key": "k1",
+        "next_url": "/back/",
+        "csrf_token": "fixed-token",
+    }
+    before = engines["django"].from_string(PRE_235_CONFIRM).render(context)
+    assert get_template("console/_confirm.html").render(context) == before
+
+
+def _render(page: ConfirmPage) -> str:
+    context = {"page": page, "has_emphasis": False, "idempotency_key": "k1", "next_url": "/b/",
+               "csrf_token": "t"}  # fmt: skip
+    return get_template("console/_confirm.html").render(context)
+
+
+def test_blocked_renders_a_warning_and_a_disabled_submit() -> None:
+    page = ConfirmPage(title="T", question="Fix?", confirm_label="Fix", cancel_url="/b/",
+                       danger=True, error="Refused", blocked="Only the latest turn can be fixed",
+                       hidden={"a": "1"})  # fmt: skip
+    html = _render(page)
+    assert '<p class="warning">Only the latest turn can be fixed</p>' in html
+    assert '<button type="submit" disabled class="danger">Fix</button>' in html
+    assert '<button type="submit" class="danger">' not in html  # no live submit
+    assert html.index("confirm-error") < html.index('class="warning"') < html.index("<button")
+    assert '<input type="hidden" name="a" value="1">' in html
+    assert '<a href="/b/">Cancel</a>' in html
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_a_blocked_page_never_performs(
+    rf: RequestFactory, admin_user: Any, confirmed: bool
+) -> None:
+    perform = Recorder()
+    page = dataclasses.replace(PAGE, blocked="Archived")
+    data = {"idempotency_key": "k9", "confirmed": "1"}
+    response = confirm_action(
+        _req(rf, admin_user, "POST", data), page, perform, require_confirmed=confirmed
+    )
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert perform.calls == []
+    assert '<p class="warning">Archived</p>' in html
+    assert 'name="idempotency_key" value="k9"' in html
+
+
+def test_fact_urls_link_the_named_fact_only() -> None:
+    page = ConfirmPage(title="T", question="Q?", confirm_label="Go", cancel_url="/b/",
+                       facts=(("Provider", "bank"), ("Outbox id", "01JM6BX")),
+                       fact_urls={"Provider": "/engine/providers/bank/"})  # fmt: skip
+    html = _render(page)
+    assert '<dd><a href="/engine/providers/bank/"><code>bank</code></a></dd>' in html
+    assert "<dd><code>01JM6BX</code></dd>" in html
+
+
+def test_error_link_after_the_error() -> None:
+    page = ConfirmPage(title="T", question="Q?", confirm_label="Go", cancel_url="/b/",
+                       error="Needs `states`", error_url="/stories/S/config/",
+                       error_link="Config")  # fmt: skip
+    html = _render(page)
+    assert (
+        '<p class="errorlist confirm-error">Needs <code>states</code> \u2014 '
+        '<a href="/stories/S/config/">Config</a></p>'
+    ) in html
+    # #256: backtick spans become <code>; any other markup in the error stays escaped.
+    escaped = _render(dataclasses.replace(page, error="<b>x</b> `y`"))
+    assert "&lt;b&gt;x&lt;/b&gt; <code>y</code>" in escaped
+    # Complement: without an error, or without a label, main's markup.
+    assert "Config</a>" not in _render(dataclasses.replace(page, error=""))
+    assert '<a href="/stories/S/config/">' not in _render(dataclasses.replace(page, error_link=""))

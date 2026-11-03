@@ -1,0 +1,43 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags %}
+{% comment %}
+One State as of a boundary (#242, console/views/inspect_states.py's state), below the States
+section (current inspect:states): "<name> · <boundary>", the GET form (viewpoint, As of), then
+one GET /stories/{id}/states/{name} read: the viewpoint/revision line and the State's row
+(_state_row.html, Name unlinked, the same actions hook as the list), and "Back to States" (the
+viewpoint kept, never as_of). With the States gate closed (the shell's section_unavailable, or the
+page's own gate_unavailable) only the name, "Back to States" and the inline panel render. Context:
+state_name, form, cast_unavailable, boundary, back_url, header, view, row, actions, not_readable,
+not_found, states_error, gate_unavailable.
+{% endcomment %}
+{% block title %}Inspect · {% firstof state_name request.resolver_match.kwargs.name %} · {{ story_name }}{% endblock %}
+{% block section_unavailable %}<h3 class="state-name">{% firstof state_name request.resolver_match.kwargs.name %}</h3>
+<p class="states-back"><a href="{% url 'inspect:states' story_id %}">Back to States</a></p>
+{{ block.super }}{% endblock %}
+{% block world_content %}
+{% if gate_unavailable %}<h3 class="state-name">{{ state_name }}</h3>
+<p class="states-back"><a href="{{ back_url }}">Back to States</a></p>
+{% include "console/inspect/_unavailable.html" with unavailable=gate_unavailable inline=True %}
+{% else %}
+<h3 class="state-name">{{ state_name }}{% if boundary %} · {{ boundary }}{% endif %}</h3>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" id="state-as-of">
+  <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{{ form.viewpoint.errors }}</div>
+  <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+{% if not_readable %}<p class="not-found not-readable">{{ not_readable }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif states_error %}{% include "console/_engine_error.html" with engine_error=states_error %}
+{% elif view %}
+<p class="states-header">{{ header }}</p>
+<table class="states">
+  <thead><tr><th>Name</th><th>Value</th><th>Scope</th><th>Visibility</th><th>Owner</th><th>Since</th>{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <tbody>
+  {% include "console/inspect/_state_row.html" with link_name=False %}
+  </tbody>
+</table>
+{% endif %}
+<p class="states-back"><a href="{{ back_url }}">Back to States</a></p>
+{% endif %}
+{% endblock %}

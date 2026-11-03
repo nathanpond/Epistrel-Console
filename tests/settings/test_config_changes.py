@@ -124,12 +124,28 @@ def test_the_groups_cover_the_recorded_enum() -> None:
     historical = {value.split(".", 1)[0] for value, _ in groups["Historical"]}
     assert historical == set(SUPERSEDED)
     assert "engine_profile_version_pin" in {value for value, _ in groups["Rating and profile"]}
-    # Every recorded name has a group of its own: the M5 settings fall under "Settings" (#197).
+    # M6's creation-time ``required_providers`` (no PATCH sets it) has a group of its own.
+    assert {value for value, _ in groups["Providers"]} == {"required_providers"}
+    # Every other recorded name has a group: the M5 settings and M6's co-author knowledge fall
+    # under "Settings" (#197, #233), so no "Other" group renders.
+    assert "co_author_knowledge" in {value for value, _ in groups["Settings"]}
     assert "Other" not in groups
     # ``participation:<id>`` is a prefixed key (the recorded pattern), not an enum value.
     assert not any(value.startswith("participation:") for value in grouped)
     accepted = setting_filter(RECORDED, "/stories/{story_id}/config-changes")
     assert accepted.accepts_prefixed("participation:01JB2Z8Y5Q3W6K9M1N4P7R0T3A")
+
+
+def test_the_deployment_filter_lists_the_m6_settings() -> None:
+    """The deployment filter reads the recording, so M6's settings need no code: the prefixed
+    ``external_provider:<id>`` key and the new names are accepted as recorded."""
+    accepted = setting_filter(RECORDED, "/admin/config-changes")
+    assert accepted.accepts_prefixed("external_provider:bank")
+    assert {
+        "provider_allowed_hosts",
+        "profile_defaults.clock.level",
+        "profile_defaults.states.level",
+    } <= set(accepted.names)
 
 
 # --- participation:<id> (#197) --------------------------------------------------------------------

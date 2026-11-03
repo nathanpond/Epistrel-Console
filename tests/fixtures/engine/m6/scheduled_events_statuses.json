@@ -1,0 +1,138 @@
+{
+  "output_viewpoint": "omniscient",
+  "events": [
+    {
+      "event_id": "01JM6EV0000000000000000011",
+      "name": "The dawn bell",
+      "label": "canon",
+      "status": "pending",
+      "planned": 360,
+      "owner": "author",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000002"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000012",
+      "name": "The market opens",
+      "label": "canon",
+      "status": "possibly_due",
+      "planned": 480,
+      "owner": "world",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000001",
+        "01JM6CH0000000000000000003"
+      ],
+      "place_id": null,
+      "grace_minutes": 0,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000013",
+      "name": "The delivery",
+      "label": "canon",
+      "status": "due",
+      "planned": 600,
+      "owner": "01JM6CH0000000000000000002",
+      "shared_owners": [
+        "01JM6CH0000000000000000003"
+      ],
+      "participants": [
+        "01JM6CH0000000000000000002",
+        "01JM6CH0000000000000000003"
+      ],
+      "place_id": "01JM6EN0000000000000000002",
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000014",
+      "name": "The dinner",
+      "label": "canon",
+      "status": "surfaced",
+      "planned": 1140,
+      "owner": "world",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000002"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": 1140,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000015",
+      "name": null,
+      "label": "canon",
+      "status": "completed",
+      "planned": 1200,
+      "owner": "author",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000001"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000016",
+      "name": "The tide turns",
+      "label": "canon",
+      "status": "missed",
+      "planned": 1260,
+      "owner": "world",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000003"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000017",
+      "name": "The card game",
+      "label": "canon",
+      "status": "cancelled",
+      "planned": 1320,
+      "owner": "author",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000003"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000018",
+      "name": "The parade",
+      "label": "canon",
+      "status": "postponed",
+      "planned": 1400,
+      "owner": "world",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000002"
+      ],
+      "place_id": null,
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    }
+  ],
+  "timeline_revision": 14
+}

@@ -1,0 +1,63 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "definition": {
+    "name": "lantern_oil",
+    "type": "number",
+    "scope": "story",
+    "constraints": {},
+    "initial_value": null,
+    "aliases": [],
+    "unit": "flasks",
+    "entity_id": null,
+    "visibility": "player_visible",
+    "owner": "story",
+    "provider_id": null,
+    "external_value_name": null,
+    "silent": false,
+    "rules": {},
+    "authorization": {},
+    "transfer": {},
+    "reservation_expiry_minutes": null,
+    "created_by": "engine"
+  },
+  "proposal": {
+    "id": "01JM6PP0000000000000000001",
+    "name": "lantern_oil",
+    "status": "approved",
+    "suggested_type": "number",
+    "suggested_scope": "story",
+    "suggested_unit": "flasks",
+    "suggested_entity_id": null,
+    "definition_id": "01JM6SD0000000000000000011",
+    "evidence": [
+      {
+        "event_id": "01JM6EV0000000000000000091",
+        "turn": 1,
+        "text": "Mara tips the last of the lantern oil into the lamp.",
+        "span": [
+          16,
+          32
+        ]
+      },
+      {
+        "event_id": "01JM6EV0000000000000000092",
+        "turn": 3,
+        "text": "Two flasks of lantern oil, Bob says.",
+        "span": null
+      }
+    ],
+    "created_by_operation_id": "01JM6QP0000000000000000031",
+    "created_at": "2026-10-31T18:01:00.000000Z",
+    "decided_at": "2026-10-31T18:05:00.000000Z"
+  },
+  "position": "3⁺2",
+  "slot": {
+    "turn": 3,
+    "variant": 0,
+    "slot_k": 2,
+    "beat": 0,
+    "step": 0
+  },
+  "operation_id": "01JM6QP0000000000000000033"
+}

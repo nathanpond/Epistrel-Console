@@ -1,0 +1,60 @@
+{% extends "console/inspect/base.html" %}
+{% load console_format inspect_tags %}
+{% comment %}
+The Memory tab's memory list (#236): the GET filters (names = the Engine's query params; Apply
+carries no cursor), then one page of GET /admin/stories/{id}/memories (viewpoint=omniscient,
+limit=100): the heading, the rows (Engine order, #143's row actions coming back here), the
+couldn't-be-read notice (D15) and the paging links. The filters stay above every error
+(convention 10); an invalid filter makes no call. Context from console/views/inspect_memories.py.
+{% endcomment %}
+{% block tab_content %}
+<h2>All memories</h2>
+<p class="back"><a href="{{ memory_url }}">← Memory tab</a></p>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}{% if cursor_refused %} <a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}</div>{% endif %}
+<form method="get" id="memory-list-filters" action="{{ filter_url }}">
+  <div class="field field-kind">{{ form.kind.label_tag }} {{ form.kind }}{{ form.kind.errors }}</div>
+  <div class="field field-retrieval_tier">{{ form.retrieval_tier.label_tag }} {{ form.retrieval_tier }}{{ form.retrieval_tier.errors }}</div>
+  <div class="field field-holder_character_id">{{ form.holder_character_id.label_tag }} {{ form.holder_character_id }}{% if form.holder_character_id.help_text %} <small class="muted">{{ form.holder_character_id.help_text }}</small>{% endif %}{{ form.holder_character_id.errors }}</div>
+  <div class="field field-from_turn">{{ form.from_turn.label_tag }} {{ form.from_turn }}{{ form.from_turn.errors }}</div>
+  <div class="field field-to_turn">{{ form.to_turn.label_tag }} {{ form.to_turn }} <small class="muted">{{ form.to_turn.help_text }}</small>{{ form.to_turn.errors }}</div>
+  <div class="field field-quarantined">{{ form.quarantined.label_tag }} {{ form.quarantined }}{{ form.quarantined.errors }}</div>
+  <div class="field field-pinned">{{ form.pinned.label_tag }} {{ form.pinned }}{{ form.pinned.errors }}</div>
+  <button type="submit">Apply</button>{% if filters_set %} <a class="clear-filters" href="{{ filter_url }}">Clear filters</a>{% endif %}
+</form>
+
+{% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif list_error %}{% include "console/_engine_error.html" with engine_error=list_error %}
+{% elif memories %}
+<h3 class="memory-count">{{ heading }} <small class="revision">Story revision {{ memories.timeline_revision }}</small></h3>
+{% if unread_text %}<p class="notice memories-unread">{{ unread_text }}</p>{% endif %}
+{% if rows %}
+<table class="memory-list">
+  <thead><tr><th>Id</th><th>Kind</th><th>Tier</th><th>Holder</th><th>Position</th><th>State</th><th>Consolidation</th><th>Text</th><th>Actions</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% with m=row.memory %}
+    <tr id="memory-{{ m.id }}" class="memory-list-row{% if m.quarantined %} quarantined{% endif %}">
+      <td class="memory-id">{% if row.id_url %}<a href="{{ row.id_url }}">{{ m.id|engine_id }}</a>{% else %}{{ m.id|engine_id }}{% endif %}</td>
+      <td class="memory-kind">{% if row.kind_label %}<span title="{{ m.kind }}">{{ row.kind_label }}</span>{% else %}<code>{{ m.kind }}</code>{% endif %}</td>
+      <td class="memory-tier">{% if row.tier_label %}<span title="{{ m.retrieval_tier }}">{{ row.tier_label }}</span>{% else %}<code>{{ m.retrieval_tier }}</code>{% endif %}{% if row.retired_reason %} ({{ row.retired_reason }}){% endif %}</td>
+      <td class="memory-holder">{% if row.holder %}{% include "console/inspect/_character.html" with label=row.holder.label character_id=row.holder.id is_player=row.holder.is_player %}{% else %}story-level{% endif %}</td>
+      <td class="memory-position">{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position }}</a>{% else %}—{% endif %}</td>
+      <td class="memory-state">{% if row.pinned_text or m.quarantined %}{% if row.pinned_text %}{{ row.pinned_text }}{% endif %}{% if row.pinned_text and m.quarantined %} · {% endif %}{% if m.quarantined %}<span class="badge quarantined" title="{{ m.quarantine_reason|default:'' }}">quarantined</span>{% if row.quarantine_reason %} {{ row.quarantine_reason }}{% endif %}{% endif %}{% else %}—{% endif %}</td>
+      <td class="memory-consolidation">{% with c=row.consolidation %}{% if c %}<span class="consolidation" title="operation {{ c.operation_id }}">{% for p in c.parts %}{{ p.prefix }}{% if p.code %}<code>{{ p.text }}</code>{% else %}{{ p.text }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</span>{% if c.sources %}{% if c.parts %} · {% endif %}<details class="sources"><summary>{{ c.sources_text }}</summary>{% for s in c.sources %}{% if s.url %}<a href="{{ s.url }}">{{ s.memory_id|engine_id }}</a>{% else %}{{ s.memory_id|engine_id }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</details>{% endif %}{% else %}—{% endif %}{% endwith %}</td>
+      <td class="memory-text">{{ m.text }}</td>
+      <td class="actions">{% include "console/inspect/_memory_actions.html" %}</td>
+      <td class="more"><details class="more"><summary>More</summary><pre>{{ row.more }}</pre></details></td>
+    </tr>
+  {% endwith %}{% endfor %}
+  </tbody>
+</table>
+{% elif empty %}<p class="none memories-none">{{ empty }}</p>{% endif %}
+{% if unread_json %}<details class="memories-unread-more"><summary>More</summary><p>The entries the Console couldn't read, as the Engine sent them:</p><pre>{{ unread_json }}</pre></details>{% endif %}
+<p class="paging">
+  {% if paged %}<a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}
+  {% if next_query %}<a class="next-page" href="?{{ next_query }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

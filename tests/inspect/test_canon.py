@@ -18,6 +18,7 @@ import json
 import re
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,13 +34,11 @@ from console.canon import (
     bar_spans,
     bound_text,
     fact_states,
-    find_fact,
     lineage_component,
     literal_view,
     proposition_time_text,
     qualifier_items,
     question_text,
-    ulid_predecessor,
 )
 from console.engine.client import EngineClient
 from console.engine.models import FactBody, FactListBody, Instant, Interval, TypedLiteral
@@ -55,6 +54,7 @@ pytestmark = pytest.mark.django_db
 TAB = f"/stories/{STORY}/inspect/canon/"
 FACTS = "/admin/stories/{story_id}/facts"
 FACTS_PATH = f"/admin/stories/{STORY}/facts"
+FACT = "/admin/stories/{story_id}/facts/{fact_id}"
 PREDICATES = "/stories/{story_id}/predicates"
 P = "01JB2Z8Y5Q3W6K9M1N4P7R0"
 FA1, FB1, FC1, FD1, FX1 = (P + s for s in ("FA1", "FB1", "FC1", "FD1", "FX1"))
@@ -122,6 +122,16 @@ def tab(client: Client, query: str = "") -> str:
 
 
 def reads(engine: FakeEngine) -> list[httpx.Request]:
+    """The facts list reads and single-fact reads (``…/facts/<id>``), in request order."""
+    return [
+        r
+        for r in engine.requests
+        if r.url.path == FACTS_PATH
+        or re.fullmatch(rf"{re.escape(FACTS_PATH)}/[^/]+", r.url.path) is not None
+    ]
+
+
+def list_reads(engine: FakeEngine) -> list[httpx.Request]:
     return [r for r in engine.requests if r.url.path == FACTS_PATH]
 
 
@@ -824,6 +834,15 @@ def version(fid: str, **over: Any) -> dict[str, Any]:
     return found
 
 
+def fetched(engine: FakeEngine, fid: str, membership: str = "active") -> None:
+    """``get_fact`` answers ``facts_lineage.json``'s version ``fid`` with ``membership``."""
+    engine.respond("GET", FACT, 200, json=version(fid, membership=membership))
+
+
+def is_get_fact(request: httpx.Request, fid: str) -> bool:
+    return request.url.path == f"{FACTS_PATH}/{fid}"
+
+
 def lineage_path(fid: str) -> str:
     return f"{TAB}{fid}/lineage/"
 
@@ -945,20 +964,20 @@ def test_the_complement_makes_no_current_set_read(
     assert [sent(r).get("include_superseded") for r in reads(engine)] == ["true"]
 
 
-def test_a_fact_id_only_link_resolves_through_one_limit_1_read(
+def test_an_id_only_lineage_reads_the_fact_then_its_lineage(
     operator_client: Client, engine: FakeEngine, now: datetime
 ) -> None:
-    answer(engine, lineage_page(KV3), lineage_page())
+    fetched(engine, KV3)
+    answer(engine, lineage_page())
     html = open_lineage(operator_client, KV3)
     find, read = reads(engine)
-    assert sent(find) == {
-        "viewpoint": "omniscient",
-        "limit": "1",
-        "include_superseded": "true",
-        "cursor": P + "KV2",  # the predecessor: "after this id" is KV3 itself
-    }
+    assert is_get_fact(find, KV3)
+    assert sent(find) == {"viewpoint": "omniscient"}
+    assert read.url.path == FACTS_PATH
     assert (sent(read)["subject"], sent(read)["predicate"]) == (TOBIN, LOC)
     assert lineage_rows(html) == [KV7, KV3, KV5, KV6]
+    # Complement: no facts list read carries ``limit=1`` (#535's workaround is gone).
+    assert all(sent(r).get("limit") != "1" for r in list_reads(engine))
 
 
 @pytest.mark.parametrize(
@@ -967,42 +986,74 @@ def test_a_fact_id_only_link_resolves_through_one_limit_1_read(
 def test_missing_or_malformed_params_resolve_by_id(
     operator_client: Client, engine: FakeEngine, now: datetime, query: str
 ) -> None:
-    answer(engine, lineage_page(KV3), lineage_page())
+    fetched(engine, KV3)
+    answer(engine, lineage_page())
     open_lineage(operator_client, KV3, query)
-    assert sent(reads(engine)[0])["limit"] == "1"
+    assert is_get_fact(reads(engine)[0], KV3)
+    assert len(list_reads(engine)) == 1
 
 
-@pytest.mark.parametrize("found", [lineage_page(KV5), page_of_none()])
-def test_a_fact_the_resolve_doesnt_return_is_not_in_the_timeline(
-    operator_client: Client, engine: FakeEngine, found: dict[str, Any]
+@pytest.mark.parametrize("membership", ["discarded", "dormant", "superseded", "fact_not_found"])
+def test_an_inactive_version_is_not_in_the_timeline(
+    operator_client: Client, engine: FakeEngine, membership: str
 ) -> None:
-    answer(engine, found, lineage_page())
+    if membership == "fact_not_found":
+        engine.respond("GET", FACT, 404, json=error_json("fact_not_found", "no such version"))
+    else:
+        fetched(engine, KV3, membership)
+    answer(engine, lineage_page())
     html = open_lineage(operator_client, KV3)
-    assert len(reads(engine)) == 1  # no further facts read
     assert NOT_IN_TIMELINE in html
     assert lineage_rows(html) == []
     assert f'<a href="{TAB}">Back to Canon</a>' in html
-    # Convention 2's name reads still run.
+    # Complement: zero lineage reads; convention 2's name reads still run.
+    assert [is_get_fact(r, KV3) for r in reads(engine)] == [True]
+    assert list_reads(engine) == []
     assert any(r.url.path == f"/stories/{STORY}/predicates" for r in engine.requests)
 
 
 def test_stale_params_find_the_fact_then_read_its_lineage(
     operator_client: Client, engine: FakeEngine, now: datetime
 ) -> None:
-    answer(engine, page(fact(FC1)), lineage_page(KV3), lineage_page())
+    answer(engine, page(fact(FC1)), lineage_page())
+    fetched(engine, KV3)
     html = open_lineage(operator_client, KV3, f"?subject={MARA}&predicate={HOLDS}")
     stale, find, read = reads(engine)
     assert (sent(stale)["subject"], sent(stale)["predicate"]) == (MARA, HOLDS)
-    assert sent(find)["limit"] == "1"
+    assert is_get_fact(find, KV3)
     assert (sent(read)["subject"], sent(read)["predicate"]) == (TOBIN, LOC)
     assert lineage_rows(html) == [KV7, KV3, KV5, KV6]
 
 
 def test_stale_params_and_a_fact_not_found(operator_client: Client, engine: FakeEngine) -> None:
-    answer(engine, page(fact(FC1)), page_of_none())
+    answer(engine, page(fact(FC1)))
+    engine.respond("GET", FACT, 404, json=error_json("fact_not_found", "no such version"))
     html = open_lineage(operator_client, KV3, f"?subject={MARA}&predicate={HOLDS}")
     assert len(reads(engine)) == 2
     assert NOT_IN_TIMELINE in html
+
+
+def test_a_story_404_on_get_fact_is_the_not_found_text(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", FACT, 404, json=error_json("not_found", "no such story"))
+    html = open_lineage(operator_client, KV3)
+    assert NOT_FOUND in html
+    assert NOT_IN_TIMELINE not in html
+    assert lineage_rows(html) == []
+    assert list_reads(engine) == []
+    assert any(r.url.path == f"/stories/{STORY}/predicates" for r in engine.requests)
+
+
+def test_module_off_on_get_fact_is_the_greyed_panel(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", FACT, 409, json=error_json("module_off", "lite", module="pipeline"))
+    html = open_lineage(operator_client, KV3)
+    assert '<div class="panel unavailable">' in html
+    assert "Needs the structured pipeline" in html
+    assert "Lineage of" in html
+    assert list_reads(engine) == []
 
 
 def test_a_non_ulid_fact_id_is_a_404_with_no_engine_call(
@@ -1037,9 +1088,11 @@ def test_a_fact_beyond_the_first_2000_versions(operator_client: Client, engine: 
     capped = [
         page(fact(FB1, id=P + f"KW{i}", supersedes=[]), next_cursor=P + f"KW{i}") for i in range(4)
     ]
-    answer(engine, *capped, lineage_page(KV5))
+    answer(engine, *capped)
+    fetched(engine, KV5)
     html = open_lineage(operator_client, KV5, KEY)
-    assert len(reads(engine)) == 5  # the capped lineage read, then one find_fact
+    assert len(reads(engine)) == 5  # the capped lineage read, then one get_fact
+    assert is_get_fact(reads(engine)[-1], KV5)
     assert BEYOND in html
     assert NOT_IN_TIMELINE not in html
     assert INCOMPLETE not in html
@@ -1051,9 +1104,11 @@ def test_an_id_only_link_beyond_the_first_2000_versions(
     capped = [
         page(fact(FB1, id=P + f"KW{i}", supersedes=[]), next_cursor=P + f"KW{i}") for i in range(4)
     ]
-    answer(engine, lineage_page(KV5), *capped)
+    fetched(engine, KV5)
+    answer(engine, *capped)
     html = open_lineage(operator_client, KV5)
     assert len(reads(engine)) == 5
+    assert is_get_fact(reads(engine)[0], KV5)
     assert BEYOND in html
 
 
@@ -1143,24 +1198,20 @@ def test_the_canon_tab_links_fact_ids_to_the_lineage(
 # --- the lineage helpers -------------------------------------------------------------------------
 
 
-def test_ulid_predecessor_decrements_with_borrow() -> None:
-    assert ulid_predecessor(P + "KV3") == P + "KV2"
-    assert ulid_predecessor(P + "KV0") == P + "KTZ"  # borrow (no U in Crockford)
-    assert ulid_predecessor(P + "K00") == P + "JZZ"  # no I or L either
-    assert ulid_predecessor("1" + "0" * 25) == "0" + "Z" * 25
-    assert ulid_predecessor("0" * 26) is None  # no predecessor: sent without a cursor
-    assert ulid_predecessor("not an id") is None
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_the_all_zero_id_resolves_without_a_cursor() -> None:
-    zero = "0" * 26
-    fake = FakeEngine()
-    fake.respond("GET", FACTS, 200, json=page(fact(FB1, id=zero)))
-    client = EngineClient("http://engine.test", "key", transport=fake.transport)
-    found = find_fact(client, STORY, zero)
-    assert found is not None
-    assert found.id == zero
-    assert "cursor" not in sent(reads(fake)[0])
+def test_no_find_fact_workaround_remains() -> None:
+    """#237: the single-fact read replaced #535's workaround; none of it is left."""
+    found = [
+        f"{path.relative_to(ROOT)}: {word}"
+        for folder in ("console", "templates")
+        for path in (ROOT / folder).rglob("*")
+        if path.suffix in (".py", ".html")
+        for word in ("find_fact", "locate_fact", "ulid_predecessor", "Epistrel#535")
+        if word in path.read_text()
+    ]
+    assert found == []
 
 
 def facts_of(*bodies: dict[str, Any]) -> list[FactBody]:

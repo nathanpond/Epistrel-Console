@@ -7,5 +7,7 @@
   "restored_operations": 2,
   "swapped": false,
   "active_chain": null,
-  "dormant_operations": 0
+  "dormant_operations": 0,
+  "reconciliation_required": [],
+  "cancelled_on_reactivation": []
 }

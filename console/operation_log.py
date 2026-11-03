@@ -465,6 +465,52 @@ def record(observed: Observed, operator: Any) -> EngineOperation | None:
         return None
 
 
+# --- the Engine's label for an operation (#257) -------------------------------------------------
+
+LABEL_SIZE = 32
+STAGED_TURN = "staged_turn"
+
+
+def engine_label_value(record: OperationRecord) -> str:
+    """What ``EngineOperation.engine_label`` stores for ``record``: its ``label``; else
+    ``"staged_turn"`` when ``staged`` (the flag stays authoritative); else ``""``. Cut to 32."""
+    if record.label is not None:
+        value = record.label
+    elif record.staged:
+        value = STAGED_TURN
+    else:
+        value = ""
+    return _fit(value, LABEL_SIZE)
+
+
+def engine_label_text(value: str | None) -> str:
+    """A stored label as shown: "" for ``None`` (never read) and ``""`` (no label); D13's "Staged
+    turn" for ``staged_turn``; any other label humanised (C3)."""
+    # Imported here: both modules reach ``console.engine_access``, which imports this one.
+    from console.effects import STAGED_LABEL
+    from console.wording import humanised
+
+    if not value:
+        return ""
+    return STAGED_LABEL if value == STAGED_TURN else humanised(value)
+
+
+def note_engine_record(record: OperationRecord) -> int:
+    """Label every log row for ``record.id`` with the Engine's label (one ``.update()``, the
+    latest read wins) and return how many. Writes no row (#44: reads are never recorded). A
+    blank id matches nothing; a database error is logged at ERROR (id only) and swallowed."""
+    if not record.id:
+        return 0
+    try:
+        with transaction.atomic(durable=False):
+            return EngineOperation.objects.filter(engine_operation_id=record.id).update(
+                engine_label=engine_label_value(record)
+            )
+    except Exception:
+        log.error("operation label not recorded: id=%s", record.id)
+        return 0
+
+
 TERMINAL_FAILURES = frozenset({"failed", "abandoned"})
 # What ``complete_job``'s ``overrides`` may set besides the outcome (#64 convention 9).
 JOB_OVERRIDES = frozenset({"engine_operation_id", "timeline_revision", "story_id"})

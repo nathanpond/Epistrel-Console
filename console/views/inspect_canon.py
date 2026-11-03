@@ -27,8 +27,9 @@ selected) draws one version's history: every version connected to it through sup
 (:func:`console.canon.lineage_component`; an automatic supersede starts a new ``lineage_id``, so
 the links, not ``lineage_id``, decide), on valid-time and tx-time bars. Reads per render:
 #135's effective config and story, then the facts reads of :func:`_locate` (the lineage read of
-the link's ``subject`` and ``predicate``, or :func:`console.canon.find_fact` first for an
-id-only link or stale params), then the registry read (always, also when the fact isn't found
+the link's ``subject`` and ``predicate``, or :func:`console.canon.active_fact` (``get_fact``,
+Engine #535) first for an id-only link or stale params; a version not on the active timeline
+makes no lineage read), then the registry read (always, also when the fact isn't found
 or a read failed). States follow :func:`console.canon.lineage_states`: no current-set read.
 
 **Author canon writes** (#146; :mod:`console.forms.canon` builds the bodies):
@@ -37,10 +38,11 @@ or a read failed). States follow :func:`console.canon.lineage_states`: no curren
   select of the registry, ``?predicate=<id>``), then the gated :class:`FactForm`; its POST calls
   ``POST /admin/stories/{id}/facts`` and renders the result page on the response.
 - ``inspect:canon-supersede`` (``canon/<fid>/supersede/``): the version from
-  :func:`console.canon.locate_fact` (its state from :func:`console.canon.fact_states` when it
-  carries a closure), the pre-filled :class:`SupersedeForm` and its signed snapshot; the POST
-  checks the snapshot before anything else (a bad one: the message alone, no Engine call), then
-  ``POST …/facts/{fid}/supersede`` and the result page.
+  :func:`console.canon.active_fact` (one ``get_fact``, Engine #535; its state from
+  :func:`console.canon.fact_states` when it carries a closure, checked against the shell's
+  story read's ``timeline_revision``), the pre-filled :class:`SupersedeForm` and its signed
+  snapshot; the POST checks the snapshot before anything else (a bad one: the message alone,
+  no Engine call), then ``POST …/facts/{fid}/supersede`` and the result page.
 - ``inspect:canon-written?report=<pk>``: the result page again from the #44 row (convention 8).
 - ``inspect:canon-lock`` / ``-unlock``: plain POSTs from the rows' actions (current and
   closure-undone rows, never under "as recorded at"), ``POST|DELETE …/facts/{fid}/lock``, then
@@ -72,21 +74,22 @@ from console import twostage
 from console.canon import (
     CURRENT,
     CURRENT_STATE,
+    FACT_NOT_FOUND,
     PERMANENT_NOTE,
+    RACE,
     UNDONE,
     CurrentSet,
     EntityRef,
     FactState,
     Span,
+    active_fact,
     bar_spans,
     cast_names,
     entity_ref,
     fact_states,
-    find_fact,
     lineage_component,
     lineage_states,
     lineage_url,
-    locate_fact,
     question_text,
     read_current_set,
     read_lineage,
@@ -242,7 +245,7 @@ VIEWPOINT_UNRESOLVED = "viewpoint_unresolved"
 @dataclass(frozen=True)
 class Lineage:
     """Where :func:`_locate` landed: the fact's subject and predicate once confirmed (the
-    lineage read holds the fact, or :func:`console.canon.find_fact` returned it), the
+    lineage read holds the fact, or :func:`console.canon.active_fact` returned it), the
     connected versions, whether the read was complete, and ``missing`` (the not-in-timeline or
     "beyond the first 2,000" text) when there is nothing to draw."""
 
@@ -266,21 +269,22 @@ def _key(fact: FactBody) -> tuple[str, str]:
 
 def _locate(ctx: InspectContext, fact_id: str) -> Lineage:
     """The lineage of ``fact_id`` (the story's AC): with the link's subject and predicate, one
-    lineage read, then (fact not in it: stale params) one ``find_fact`` and, under another
-    subject or predicate, that lineage; without them, ``find_fact`` then the lineage read.
-    Raises :class:`EngineClientError` on any failed read (no partial lineage)."""
+    lineage read, then (fact not in it: stale params) one ``get_fact`` (:func:`active_fact`,
+    Engine #535) and, under another subject or predicate, that lineage; without them,
+    ``get_fact`` then (an active version only) the lineage read. Raises
+    :class:`EngineClientError` on any failed read (no partial lineage)."""
     client, story_id = ctx.client, ctx.story_id
     key = _given(ctx.request.GET)
     resolved = False
     if key is None:
-        found = find_fact(client, story_id, fact_id)
+        found = active_fact(client, story_id, fact_id)
         if found is None:
             return Lineage(missing=NOT_IN_TIMELINE)
         key, resolved = _key(found), True
     versions, complete = read_lineage(client, story_id, *key)
     component = lineage_component(versions, fact_id)
     if not component and not resolved:
-        found = find_fact(client, story_id, fact_id)
+        found = active_fact(client, story_id, fact_id)
         if found is None:
             return Lineage(missing=NOT_IN_TIMELINE)
         if _key(found) != key:
@@ -392,7 +396,6 @@ LOCK, UNLOCK = "lock", "unlock"
 ACTION_STATES = (CURRENT, UNDONE)  # the Engine treats both as current (``_load``'s ``_closed_by``)
 
 NOT_FOUND = "Not found (it may have been deleted or truncated)"
-FACT_NOT_FOUND = "fact_not_found"
 FACT_SUPERSEDED = "fact_superseded"
 FACT_INACTIVE = "fact_inactive"
 KEY_MISMATCH = "key_mismatch"
@@ -681,12 +684,15 @@ def _supersede_context(
 
 
 def _supersede_form(ctx: InspectContext, fact_id: str) -> dict[str, Any] | HttpResponse:
-    """The supersede page's GET: the version (one id-only read), its state when it carries a
-    closure, then the registry read and the pre-filled form with its signed snapshot."""
+    """The supersede page's GET: the version (one ``get_fact``, :func:`active_fact`, Engine
+    #535), its state when it carries a closure (the current-set read checked against the shell's
+    story read's ``timeline_revision``, read before the fact; without that read no current-set
+    read and ``closed · not confirmed``), then the registry read and the pre-filled form with its
+    signed snapshot."""
     request, story_id = ctx.request, ctx.story_id
     back = safe_next(request, canon_url(story_id))
     try:
-        fact, revision = locate_fact(ctx.client, story_id, fact_id)
+        fact = active_fact(ctx.client, story_id, fact_id)
     except EngineClientError as exc:
         if is_held(exc) or is_module_off(exc):
             raise
@@ -701,15 +707,18 @@ def _supersede_form(ctx: InspectContext, fact_id: str) -> dict[str, Any] | HttpR
     state = CURRENT_STATE
     if fact.tx_to is not None:
         subject, predicate_id = _key(fact)
+        story = ctx.story
 
         def current() -> CurrentSet:
+            if story is None:
+                return CurrentSet(problem=RACE)
             return read_current_set(
                 request,
                 ctx.client,
                 story_id,
                 subject=subject,
                 predicate=predicate_id,
-                revision=revision,
+                revision=story.timeline_revision,
             )
 
         state = fact_states([fact], include_superseded=True, current=current).by_id[fact.id]

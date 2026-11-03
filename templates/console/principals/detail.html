@@ -44,10 +44,10 @@
   </table>
   {% elif table.related_rows %}
   <table class="lookup {{ table.anchor }}">
-    <thead><tr><th>Id</th><th>Relations</th></tr></thead>
+    <thead><tr><th>Name</th>{% for column in table.columns %}<th>{{ column }}</th>{% endfor %}<th>Relations</th></tr></thead>
     <tbody>
       {% for row in table.related_rows %}
-      <tr><td>{{ row.id }}</td><td>{{ row.relations }}</td></tr>
+      <tr><td>{{ row.name }}</td>{% for cell in row.cells %}<td>{{ cell }}</td>{% endfor %}<td>{{ row.relations }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

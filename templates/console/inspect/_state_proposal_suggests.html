@@ -1,0 +1,5 @@
+{% comment %}
+A proposal's Suggests cell (#266; the row and the approve page include it): the suggested type
+and scope humanised, "unit <unit>" when set, then the suggested entity (console.canon.EntityRef
+through _entity.html), joined by " · ". Context: row (console.state_proposals.ProposalRow).
+{% endcomment %}<span class="suggests-text">{{ row.suggests_text }}</span>{% if row.entity_ref %} · {% include "console/inspect/_entity.html" with ref=row.entity_ref %}{% endif %}

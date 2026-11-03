@@ -1,0 +1,18 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "outbox_id": "01JM6BX0000000000000000002",
+  "outcome_id": "01JM60C0000000000000000001",
+  "result": "settled",
+  "reverification": "passed",
+  "reasons": [],
+  "operation_id": "01JM6QP0000000000000000051",
+  "position": "3⁺2",
+  "slot": {
+    "turn": 3,
+    "variant": 0,
+    "slot_k": 2,
+    "beat": 0,
+    "step": 0
+  }
+}

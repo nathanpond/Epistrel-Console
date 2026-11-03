@@ -1,13 +1,14 @@
 """A story's settings page forms (#54): settings, one story policy, pinned memories and custom
 instructions. Each section has its own form and its own write.
 
-- :class:`StorySettingsForm` edits the thirteen settable ``StorySettingsPatch`` fields as a
+- :class:`StorySettingsForm` edits the fourteen settable ``StorySettingsPatch`` fields as a
   merge patch (#43): the original values travel in the page's signed snapshot,
   :meth:`~StorySettingsForm.patch` holds only the fields whose value changed, and each field's
   "reset to default" checkbox (``reset_<name>``) sends ``null``. Bounds are the recorded
   schema's ranges; everything else is the Engine's 422. Engine M5's six (#197) are selects
   built with C7 (:mod:`console.story_settings`): the three nullable ones offer
   "Engine default (…)" first, and a stored value outside the choices is kept as one more.
+  Engine M6's co-author knowledge (#233) is a required select like player authority.
 - :class:`StoryPolicyForm` is #47's :class:`~console.forms.policy.PolicyContentForm` with the
   story's rule types (``entity_list`` included), a scope (the story or one character) and an
   ``effect`` (``deny``, or ``allow`` so the Engine's ``cannot_relax`` is reachable); its
@@ -37,6 +38,7 @@ from console.forms.policy import (
 )
 from console.story_settings import (
     BOOLEAN_SELECT,
+    CO_AUTHOR_KNOWLEDGE_HELP,
     LABELS,
     MULTI_CHARACTER,
     NULLABLE,
@@ -80,7 +82,7 @@ class SettingRow:
 
 
 class StorySettingsForm(forms.Form):
-    """The thirteen settable story settings. ``original`` is ``settings`` as read; ``cast`` the
+    """The fourteen settable story settings. ``original`` is ``settings`` as read; ``cast`` the
     viewpoint options; ``deployment`` ``GET /admin/settings`` (``None``: unread) for markers."""
 
     turn_concurrency = forms.ChoiceField(
@@ -107,10 +109,12 @@ class StorySettingsForm(forms.Form):
         required=False,
         help_text="Whether a director pass or a render may introduce new arrivals.",
     )
-    # Engine M5 (#197): never null in the read, so required selects with no Engine default.
+    # Engine M5 (#197) and M6 (#233): never null in the read, so required selects with no
+    # Engine default.
     player_authority = forms.ChoiceField(
         help_text="Lite stories get this as a prompt instruction only."
     )
+    co_author_knowledge = forms.ChoiceField(help_text=CO_AUTHOR_KNOWLEDGE_HELP)
     player_view = forms.ChoiceField()
     interaction_mode = forms.ChoiceField(required=False)
     sequence_order = forms.ChoiceField(required=False)
@@ -152,8 +156,8 @@ class StorySettingsForm(forms.Form):
         self._m5_choices()
 
     def _m5_choices(self) -> None:
-        """C7: each M5 select's choices, a stored value they lack kept as one more."""
-        for name in ("player_authority", "player_view", *MULTI_CHARACTER):
+        """C7: each M5 and M6 select's choices, a stored value they lack kept as one more."""
+        for name in ("player_authority", "co_author_knowledge", "player_view", *MULTI_CHARACTER):
             field = self.fields[name]
             assert isinstance(field, forms.ChoiceField)  # noqa: S101 - declared above
             label = tie_break_label if name == "simultaneous_tie_break" else humanised

@@ -85,6 +85,11 @@ def test_rewind_confirm_names_the_turn_and_counts_later_turns(
     page = html(operator_client, url("rewind", 3))
     assert "to turn 3?" in page
     assert f"{HEAD - 3} later turns become inactive." in page
+    # #209: the one new always-shown line on a slot-less rewind.
+    assert (
+        "Turn 3&#x27;s own inter-turn slots become inactive too, unless you keep slots 1..k below."
+        in page
+    )
     start = html(operator_client, url("rewind", 0))
     assert "to the start (turn 0)?" in start
     assert f"{HEAD} later turns become inactive." in start

@@ -38,6 +38,7 @@ from console.history import (
     repair_line,
     segments,
 )
+from console.models import EngineOperation
 from console.turn_trace import TurnTrace, declared_beat
 from console.views import history as history_views
 from tests.fakes.engine import FakeEngine
@@ -146,11 +147,10 @@ def operation(turn: int, eval_hooks: Any = DROP, **over: Any) -> dict[str, Any]:
     return body
 
 
-def trace_of(eval_hooks: Any = DROP, withheld_for: str | None = None) -> TurnTrace:
+def trace_of(eval_hooks: Any = DROP) -> TurnTrace:
     record = OperationRecord.from_json(operation(2, eval_hooks))
     assert record is not None
-    parsed = EvalHooks.parse(record.eval_hooks) if withheld_for is None else None
-    return TurnTrace(record, parsed, ReadSet.parse(record.read_set), withheld_for)
+    return TurnTrace(record, EvalHooks.parse(record.eval_hooks), ReadSet.parse(record.read_set))
 
 
 def trace(body: dict[str, Any], turn_trace: TurnTrace | None = None, **kw: Any) -> BeatTrace:
@@ -292,7 +292,6 @@ def test_states() -> None:
     assert trace(beat(), None, state=UNAVAILABLE).state == UNAVAILABLE
     assert trace(beat(), trace_of()).state == LOADED
     assert trace(beat(), trace_of(None)).state == NO_HOOKS
-    assert trace(beat(), trace_of(withheld_for="character:x")).state == UNAVAILABLE
     assert trace(beat(origin="ingested"), trace_of()).state == NO_TRACE
 
 
@@ -873,7 +872,7 @@ def test_a_lite_page_makes_no_trace_or_registry_read(
     assert predicate_reads(engine) == 0
 
 
-def test_failed_withheld_and_late_reads_mark_their_turns_unavailable(
+def test_failed_and_late_reads_mark_their_turns_unavailable(
     operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(history_views, "TRACE_DEADLINE_S", 0.1)
@@ -881,23 +880,21 @@ def test_failed_withheld_and_late_reads_mark_their_turns_unavailable(
     def failing(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json=error_json("database_unavailable"))
 
-    def withheld(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("viewpoint"):
-            return httpx.Response(409, json=fixture("idempotency_conflict"))
-        return httpx.Response(200, json=operation(4, viewpoint=f"character:{TOBIN}"))
+    def conflict(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json=fixture("idempotency_conflict"))
 
     def late(request: httpx.Request) -> httpx.Response:
         time.sleep(0.5)
         return httpx.Response(200, json=operation(5))
 
     answer_history(engine, history_body([2, 3, 4, 5]))
-    answer_operations(engine, {op_id(3): failing, op_id(4): withheld, op_id(5): late})
+    answer_operations(engine, {op_id(3): failing, op_id(4): conflict, op_id(5): late})
     response = operator_client.get(f"{URL}?viewpoint=omniscient&traces=1")
     assert response.status_code == 200
     html = response.content.decode()
     assert (
         '<p class="warning trace-notice">Turn trace unavailable: T3 (HTTP 503 '
-        "database_unavailable), T4 (withheld: produced for another viewpoint), T5 (timeout)</p>"
+        "database_unavailable), T4 (HTTP 409 idempotency_conflict), T5 (timeout)</p>"
     ) in html
     assert "engine-error" not in html.split('<section class="items">')[1]
     for turn in (3, 4, 5):
@@ -965,3 +962,39 @@ def test_the_play_transcript_shows_item_level_traces_only(
     assert f'title="{PR1}"' in transcript  # predicate ids, no registry read
     assert "Same propositions as this input" in transcript
     assert "verified" not in transcript.lower()
+
+
+def test_history_trace_reads_label_the_log_rows(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#257: each trace read labels its operation's log rows, on the request thread."""
+
+    def log_row(op: str) -> EngineOperation:
+        return EngineOperation.objects.create(
+            operator_username="nate",
+            principal="console:nate",
+            kind="respond",
+            http_method="POST",
+            path=f"/stories/{STORY}/respond",
+            outcome="ok",
+            engine_operation_id=op,
+        )
+
+    turn2, turn3 = log_row(op_id(2)), log_row(op_id(3))
+    answer_history(engine, history_body([2, 3]))
+    answer_operations(
+        engine,
+        {op_id(2): lambda _r: httpx.Response(200, json=operation(2, label="staged_turn"))},
+    )
+    page(operator_client, "viewpoint=omniscient&traces=1")
+    turn2.refresh_from_db()
+    turn3.refresh_from_db()
+    assert turn2.engine_label == "staged_turn"
+    assert turn3.engine_label == ""  # read, no label
+    assert EngineOperation.objects.count() == 2
+    # **Complement:** with traces off nothing is read, so nothing is labelled.
+    EngineOperation.objects.update(engine_label=None)
+    engine.reset()
+    answer_history(engine, history_body([2, 3]))
+    page(operator_client)
+    assert set(EngineOperation.objects.values_list("engine_label", flat=True)) == {None}

@@ -15,6 +15,7 @@ from console.engine.models import (
     Adjudication,
     AffectedStory,
     AgeCondition,
+    AnalysisQueued,
     AuthoredBelief,
     AuthorPosition,
     Backfill,
@@ -48,13 +49,19 @@ from console.engine.models import (
     CheckTarget,
     CheckViolation,
     ClassCapabilityCounts,
+    ClockAdvanced,
+    ClockSettings,
+    ClockSettingsWritten,
+    ClockValue,
     CompanionDraft,
     CompanionPublished,
     CompanionRef,
+    Compensated,
     Concern,
     ConfigChange,
     ConfigChanges,
     ConfigSources,
+    ConsolidationProvenance,
     ContentRating,
     ContentRatingList,
     ContentRatingMutation,
@@ -96,6 +103,9 @@ from console.engine.models import (
     EvaluatedRating,
     ExposureItem,
     Exposures,
+    ExternalFact,
+    ExternalFacts,
+    ExternalRead,
     ExtractionShadow,
     FactBody,
     FactListBody,
@@ -131,6 +141,8 @@ from console.engine.models import (
     LedgerEntry,
     LedgerItem,
     LikesDislikes,
+    ListedMemory,
+    ListingOutcome,
     ListingStatus,
     Location,
     LocationAdjacency,
@@ -139,6 +151,7 @@ from console.engine.models import (
     MediaPage,
     MediaUploaded,
     MemberCastCard,
+    MemoryList,
     MemoryView,
     MemoryWritten,
     MentionBody,
@@ -153,6 +166,7 @@ from console.engine.models import (
     ModelIdentity,
     NarrativePosition,
     NestedSeed,
+    Notice,
     OffboardingActions,
     OffboardingError,
     OffboardingJob,
@@ -162,6 +176,7 @@ from console.engine.models import (
     OffboardingWarning,
     OmniscientStoryCharacter,
     Opening,
+    OperationLabel,
     OperationRecord,
     OperationStage,
     OutcomeCounts,
@@ -171,6 +186,7 @@ from console.engine.models import (
     OwnerTransfer,
     Participation,
     ParticipationSet,
+    PendingEffect,
     Persona,
     PersonaPage,
     PersonaWritten,
@@ -201,7 +217,17 @@ from console.engine.models import (
     ProfileWritten,
     Promotion,
     Proposal,
+    ProposalApproved,
+    ProposalDismissed,
+    ProposalEvidence,
     Proposition,
+    Provider,
+    ProviderBinding,
+    ProviderBindings,
+    ProviderBindingWritten,
+    ProviderDetail,
+    ProviderList,
+    ProviderMutation,
     QualityStatus,
     QueuedTurn,
     RatingApplied,
@@ -215,6 +241,9 @@ from console.engine.models import (
     RebuildResult,
     Recommendation,
     Reconcile,
+    Reconciliation,
+    ReconciliationCount,
+    ReconciliationListing,
     ReembedRetry,
     ReembedStatus,
     ReferenceImage,
@@ -228,6 +257,7 @@ from console.engine.models import (
     Relations,
     RelationshipBody,
     ReplyMessage,
+    RequiredEffect,
     RequiredModule,
     RequiredSetting,
     ResolutionBody,
@@ -235,16 +265,19 @@ from console.engine.models import (
     RetirementBody,
     RetrievalBody,
     RetrievedMemoryBody,
+    Reverification,
     RoleCharacter,
     RoleEligibility,
     RoleRelationship,
     Scenario,
+    ScenarioAnchor,
     ScenarioCard,
     ScenarioCardMedia,
     ScenarioCardMediaSet,
     ScenarioCardRole,
     ScenarioCast,
     ScenarioChannel,
+    ScenarioClock,
     ScenarioDraft,
     ScenarioListItem,
     ScenarioMediaSet,
@@ -254,13 +287,27 @@ from console.engine.models import (
     ScenarioPolicy,
     ScenarioPublicCard,
     ScenarioRole,
+    ScenarioScheduledEvent,
+    ScenarioState,
     ScenarioStatus,
     ScenarioVideo,
     SceneBody,
+    ScheduledEvent,
+    ScheduledEvents,
+    ScheduledEventWritten,
     Seed,
     SettingTags,
+    SettledNow,
     ShadowSample,
     StartingState,
+    StateConstraints,
+    StateDeclared,
+    StateDefinitionWritten,
+    StateEffect,
+    StateProposal,
+    StateProposals,
+    StateView,
+    StateWritten,
     StoredResult,
     Story,
     StoryCharacter,
@@ -269,12 +316,15 @@ from console.engine.models import (
     StoryList,
     StoryPause,
     StoryPauseProgress,
+    StoryProfileRef,
     StoryProfileWrite,
     StoryRating,
     StoryReembed,
     StorySettings,
     StorySettingsDefaults,
     StorySettingsWrite,
+    StoryState,
+    StoryStates,
     StoryStatusChange,
     StorySummary,
     SubjectRef,
@@ -284,6 +334,7 @@ from console.engine.models import (
     Thunk,
     TruncateResult,
     TurnBudget,
+    TurnClock,
     TurnGuardrail,
     TurnMessage,
     TurnReport,
@@ -302,6 +353,7 @@ from console.engine.models import (
     VisualStyle,
     WorkersCheck,
     World,
+    WorldClock,
     YieldCluster,
 )
 from tests.engine.contract import check_operation, compare_model, compare_type
@@ -723,11 +775,111 @@ def test_the_widening_only_adds_media_id() -> None:
         (AuthorPosition, "epistrel__api__routes__admin__beliefs__PositionBody"),
         (CharacterWeighted, "CharacterWeightedBody"),
         (ParticipationSet, "ParticipationSetBody"),
+        # #231: the nested components M6's changed components reference.
+        (StateEffect, "StateEffectModel"),
+        (Notice, "NoticeBody"),
+        (TurnClock, "TurnClockBody"),
+        (ClockValue, "ClockValueBody"),
+        (RequiredEffect, "RequiredEffectBody"),
+        (PendingEffect, "PendingEffectBody"),
+        (ReconciliationCount, "ReconciliationCountBody"),
+        (StoryProfileRef, "StoryProfileRef"),
+        # #232: the M6 operations' answers.
+        (StoryStates, "StatesBody"),
+        (StoryState, "StateBody"),
+        (StateView, "StateViewBody"),
+        (StateWritten, "StateWrittenBody"),
+        (StateDeclared, "StateDeclaredBody"),
+        (StateDefinitionWritten, "StateDefinitionWriteBody"),
+        (StateProposals, "StateProposalsBody"),
+        (StateProposal, "StateProposalBody"),
+        (ProposalEvidence, "EvidenceBody"),
+        (AnalysisQueued, "AnalysisQueuedBody"),
+        (ProposalApproved, "ProposalApprovedBody"),
+        (ProposalDismissed, "ProposalDismissedBody"),
+        (WorldClock, "ClockBody"),
+        (ClockSettings, "ClockSettingsBody"),
+        (ClockSettingsWritten, "ClockSettingsWriteBody"),
+        (ClockAdvanced, "ClockAdvancedBody"),
+        (ScheduledEvents, "ScheduledEventsBody"),
+        (ScheduledEvent, "ScheduledEventBody"),
+        (ScheduledEventWritten, "ScheduledEventWrittenBody"),
+        (ProviderList, "ProviderList"),
+        (Provider, "ProviderBody"),
+        (ProviderDetail, "ProviderItem"),
+        (ProviderMutation, "ProviderMutation"),
+        (ProviderBindings, "BindingList"),
+        (ProviderBinding, "BindingBody"),
+        (ProviderBindingWritten, "BindingMutation"),
+        (ExternalFacts, "ExternalFactsBody"),
+        (ExternalRead, "ExternalReadItemBody"),
+        (ExternalFact, "ExternalFactBody"),
+        (Reconciliation, "Reconciliation"),
+        (ReconciliationListing, "Listing"),
+        (ListingOutcome, "OutcomeView"),
+        (Reverification, "Reverification"),
+        (SettledNow, "SettledNowBody"),
+        (Compensated, "CompensatedBody"),
+        (MemoryList, "MemoryListBody"),
+        (ListedMemory, "ListedMemory"),
+        (ConsolidationProvenance, "ConsolidationProvenance"),
+        # #267: the scenario editor's and detail page's read-only views.
+        (ScenarioState, "ScenarioState"),
+        (StateConstraints, "StateConstraints"),
+        # #268: the detail page's read-only clock and event views.
+        (ScenarioClock, "ScenarioClock"),
+        (ScenarioAnchor, "ScenarioAnchor"),
+        (ScenarioScheduledEvent, "ScenarioScheduledEvent"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
     ref = {"$ref": f"#/components/schemas/{component}"}
     assert compare_model(WIDENED, model, ref, component) == []
+
+
+def test_scenario_state_views_are_strict() -> None:
+    """#267: the fixture's three States parse (``gold`` with its ``StateConstraints``); an
+    extra key, or ``constraints.min`` as a string, fails to parse (``extra="forbid"``)."""
+    from tests.fixtures import engine_fixture
+
+    stored = engine_fixture("catalog_scenarios_draft_states")["starting_state"]["states"]
+    parsed = [ScenarioState.from_json(entry) for entry in stored]
+    assert [s.name for s in parsed if s is not None] == ["gold", "door_open", "bank_balance"]
+    gold = parsed[0]
+    assert gold is not None
+    assert gold.constraints == StateConstraints(min=0)
+    assert ScenarioState.from_json({**stored[0], "colour": "gold"}) is None
+    assert ScenarioState.from_json({**stored[0], "constraints": {"min": "0"}}) is None
+    assert StateConstraints.from_json({"min": 0, "step": 1}) is None
+
+
+def test_scenario_clock_views_are_strict() -> None:
+    """#268: the fixture's clock (with its anchor) and its events (an int and an ``HH:MM``
+    ``planned``) parse; a clock with an extra key, and an event with ``planned: 1.5``, fail to
+    parse (``extra="forbid"``, ``StrictInt``)."""
+    from tests.fixtures import engine_fixture
+
+    start = engine_fixture("catalog_scenarios_draft_clock")["starting_state"]
+    clock = ScenarioClock.from_json(start["clock"])
+    assert clock is not None
+    assert clock.anchor == ScenarioAnchor(2026, 3, 14, "Saturday", "06:00", "morning")
+    assert clock.pacing_table == [[0, 50, 5], [50, None, 15]]
+    events = [ScenarioScheduledEvent.from_json(e) for e in start["scheduled_events"]]
+    assert [e.planned for e in events if e is not None] == ["18:00", 130, "02:10"]
+    assert ScenarioClock.from_json({**start["clock"], "cells": 3}) is None
+    assert ScenarioAnchor.from_json({"time": "06:00", "hour": 6}) is None
+    assert (
+        ScenarioScheduledEvent.from_json({**start["scheduled_events"][1], "planned": 1.5}) is None
+    )
+    assert ScenarioScheduledEvent.from_json({"proposition": "x"}) is None  # planned required
+
+
+def test_operation_labels_match_the_schema() -> None:
+    """``OperationLabel`` lists the recorded enum (#257's filter reads it); the record's
+    ``label`` itself is an open enum (C2)."""
+    recorded = DOC["components"]["schemas"]["OperationLabel"]["enum"]
+    assert list(typing.get_args(OperationLabel)) == recorded
+    assert len(recorded) == 6
 
 
 def test_companion_draft_reads_fields_of_scenario_full() -> None:
@@ -812,6 +964,37 @@ def test_scenario_form_enums_match_the_schema() -> None:
     settings = schemas["StorySettingsDefaults"]["properties"]
     for name, values in SETTING_ENUMS.items():
         assert enum(settings[name]) == list(values), name
+
+
+def test_co_author_knowledge_enums_match_the_schema() -> None:
+    """#233: every surface's co-author knowledge values are the recorded enum, and the creation
+    default is the Engine's."""
+    from console.forms.scenario import C7_DEFAULTS, C7_SETTINGS
+    from console.forms.stories import CREATION_SETTINGS
+    from console.forms.story_from_scenario import OVERRIDE_TYPES
+    from console.story_settings import CONSTANT_DEFAULTS, SETTING_CHOICES
+
+    schemas = DOC["components"]["schemas"]
+
+    def enum(node: dict[str, typing.Any]) -> list[str]:
+        options = node.get("anyOf") or [node]
+        (values,) = [o["enum"] for o in options if "enum" in o]
+        return list(values)
+
+    defaults = schemas["StorySettingsDefaults"]["properties"]["co_author_knowledge"]
+    override = OVERRIDE_TYPES["story_settings_defaults.co_author_knowledge"]
+    assert override.kind == "enum"
+    assert list(override.options) == enum(defaults)
+    assert "co_author_knowledge" in C7_SETTINGS
+    choices = [value for value, _ in SETTING_CHOICES["co_author_knowledge"]]
+    assert choices == enum(schemas["StorySettingsPatch"]["properties"]["co_author_knowledge"])
+    creation = schemas["CreationSettings"]["properties"]["co_author_knowledge"]
+    assert "anyOf" not in creation  # a plain enum: never null at creation
+    assert choices == enum(creation)
+    default = creation["default"]
+    assert CONSTANT_DEFAULTS["co_author_knowledge"] == default
+    assert CREATION_SETTINGS["co_author_knowledge"] == default
+    assert C7_DEFAULTS["co_author_knowledge"] == default
 
 
 def test_tie_break_choices_match_the_schema_pattern() -> None:
@@ -1124,3 +1307,248 @@ def test_open_enum_reads_a_const() -> None:
 
     problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/BeliefItemBody"}, "P")
     assert problems == ["P.kind: an open enum's schema is not a string enum"]
+
+
+# #232: ``OPERATIONS``' keys on main before M6's operations (generated once from origin/main;
+# a frozen literal, not a git call at test time).
+MAIN_OPERATIONS = frozenset(
+    {
+        "DELETE /admin/content-ratings/{rating_id}",
+        "DELETE /admin/model-config/{purpose}",
+        "DELETE /admin/model-config/{purpose}/api-key",
+        "DELETE /admin/policies/{policy_id}",
+        "DELETE /admin/stories/{story_id}/facts/{fact_id}/lock",
+        "DELETE /admin/stories/{story_id}/memories/{memory_id}/quarantine",
+        "DELETE /catalog/characters/{character_id}",
+        "DELETE /catalog/characters/{character_id}/relations/{relation}/{principal}",
+        "DELETE /catalog/scenarios/{scenario_id}",
+        "DELETE /catalog/scenarios/{scenario_id}/relations/{relation}/{principal}",
+        "DELETE /engine-profiles/{profile_id}",
+        "DELETE /engine-profiles/{profile_id}/relations/{relation}/{principal}",
+        "DELETE /media/{media_id}",
+        "DELETE /media/{media_id}/relations/{relation}/{principal}",
+        "DELETE /personas/{persona_id}",
+        "DELETE /personas/{persona_id}/relations/{relation}/{principal}",
+        "DELETE /stories/{story_id}",
+        "DELETE /stories/{story_id}/memories/{memory_id}/pin",
+        "DELETE /stories/{story_id}/messages/{message_id}/feedback",
+        "DELETE /stories/{story_id}/relations/{relation}/{principal}",
+        "GET /admin/config-changes",
+        "GET /admin/content-ratings",
+        "GET /admin/content-ratings/{rating_id}",
+        "GET /admin/content-ratings/{rating_id}/versions",
+        "GET /admin/erasure/boundary",
+        "GET /admin/erasure/status",
+        "GET /admin/evals/escalation-yield",
+        "GET /admin/evals/extraction-shadow",
+        "GET /admin/model-config",
+        "GET /admin/model-config/{purpose}",
+        "GET /admin/offboarding/{job_id}",
+        "GET /admin/policies",
+        "GET /admin/policies/{policy_id}",
+        "GET /admin/reembed/status",
+        "GET /admin/settings",
+        "GET /admin/stories/{story_id}/facts",
+        "GET /admin/stories/{story_id}/hot-set",
+        "GET /catalog/characters",
+        "GET /catalog/characters/{character_id}",
+        "GET /catalog/characters/{character_id}/companion",
+        "GET /catalog/characters/{character_id}/relations",
+        "GET /catalog/characters/{character_id}/versions",
+        "GET /catalog/scenarios",
+        "GET /catalog/scenarios/{scenario_id}",
+        "GET /catalog/scenarios/{scenario_id}/relations",
+        "GET /catalog/scenarios/{scenario_id}/versions",
+        "GET /engine-profiles",
+        "GET /engine-profiles/schema",
+        "GET /engine-profiles/{profile_id}",
+        "GET /engine-profiles/{profile_id}/guarantees",
+        "GET /engine-profiles/{profile_id}/relations",
+        "GET /engine-profiles/{profile_id}/versions",
+        "GET /health",
+        "GET /media",
+        "GET /media/{media_id}",
+        "GET /media/{media_id}/content",
+        "GET /media/{media_id}/relations",
+        "GET /openapi.json",
+        "GET /operations/{operation_id}",
+        "GET /personas",
+        "GET /personas/{persona_id}",
+        "GET /personas/{persona_id}/relations",
+        "GET /principals/{principal_id}",
+        "GET /stories",
+        "GET /stories/{story_id}",
+        "GET /stories/{story_id}/config-changes",
+        "GET /stories/{story_id}/content-rating/checks/{job_id}",
+        "GET /stories/{story_id}/custom-instructions",
+        "GET /stories/{story_id}/effective-config",
+        "GET /stories/{story_id}/entities/{entity_id}/profile",
+        "GET /stories/{story_id}/guarantees",
+        "GET /stories/{story_id}/history",
+        "GET /stories/{story_id}/inspect/beliefs",
+        "GET /stories/{story_id}/inspect/divergences",
+        "GET /stories/{story_id}/inspect/exposures",
+        "GET /stories/{story_id}/inspect/ledger",
+        "GET /stories/{story_id}/messages/{message_id}/feedback",
+        "GET /stories/{story_id}/pinned-memories",
+        "GET /stories/{story_id}/predicates",
+        "GET /stories/{story_id}/relations",
+        "GET /stories/{story_id}/retrieve",
+        "GET /stories/{story_id}/scene",
+        "GET /stories/{story_id}/settings",
+        "GET /stories/{story_id}/variants",
+        "PATCH /catalog/characters/{character_id}",
+        "PATCH /catalog/scenarios/{scenario_id}",
+        "PATCH /personas/{persona_id}",
+        "PATCH /stories/{story_id}/characters/{character_id}/participation",
+        "PATCH /stories/{story_id}/profile-overrides",
+        "PATCH /stories/{story_id}/settings",
+        "POST /admin/content-ratings",
+        "POST /admin/erasure",
+        "POST /admin/erasure/reconcile",
+        "POST /admin/offboarding",
+        "POST /admin/policies",
+        "POST /admin/reembed/retry",
+        "POST /admin/stories/{story_id}/beliefs",
+        "POST /admin/stories/{story_id}/consolidate",
+        "POST /admin/stories/{story_id}/facts",
+        "POST /admin/stories/{story_id}/facts/{fact_id}/lock",
+        "POST /admin/stories/{story_id}/facts/{fact_id}/supersede",
+        "POST /admin/stories/{story_id}/memories/{memory_id}/quarantine",
+        "POST /admin/stories/{story_id}/memories/{memory_id}/sanitize",
+        "POST /admin/stories/{story_id}/rebuild",
+        "POST /catalog/characters",
+        "POST /catalog/characters/{character_id}/archive",
+        "POST /catalog/characters/{character_id}/publish",
+        "POST /catalog/characters/{character_id}/rating-suggestion",
+        "POST /catalog/characters/{character_id}/relations",
+        "POST /catalog/characters/{character_id}/unarchive",
+        "POST /catalog/scenarios",
+        "POST /catalog/scenarios/{scenario_id}/archive",
+        "POST /catalog/scenarios/{scenario_id}/publish",
+        "POST /catalog/scenarios/{scenario_id}/rating-suggestion",
+        "POST /catalog/scenarios/{scenario_id}/relations",
+        "POST /catalog/scenarios/{scenario_id}/unarchive",
+        "POST /catalog/scenarios/{scenario_id}/validate",
+        "POST /engine-profiles",
+        "POST /engine-profiles/{profile_id}/copy",
+        "POST /engine-profiles/{profile_id}/relations",
+        "POST /engine-profiles/{profile_id}/validate",
+        "POST /media",
+        "POST /media/{media_id}/relations",
+        "POST /personas",
+        "POST /personas/{persona_id}/relations",
+        "POST /stories",
+        "POST /stories/{story_id}/archive",
+        "POST /stories/{story_id}/characters",
+        "POST /stories/{story_id}/characters/{character_id}/promote",
+        "POST /stories/{story_id}/characters/{character_id}/weight",
+        "POST /stories/{story_id}/entities/{entity_id}/model",
+        "POST /stories/{story_id}/fork",
+        "POST /stories/{story_id}/impact-preview",
+        "POST /stories/{story_id}/ingest",
+        "POST /stories/{story_id}/memories/{memory_id}/pin",
+        "POST /stories/{story_id}/predicates/{predicate_id}/approve",
+        "POST /stories/{story_id}/predicates/{predicate_id}/reject",
+        "POST /stories/{story_id}/regenerate",
+        "POST /stories/{story_id}/relations",
+        "POST /stories/{story_id}/respond",
+        "POST /stories/{story_id}/swap",
+        "POST /stories/{story_id}/truncate",
+        "POST /stories/{story_id}/unarchive",
+        "POST /stories/{story_id}/untruncate",
+        "PUT /admin/content-ratings/{rating_id}",
+        "PUT /admin/model-config/{purpose}",
+        "PUT /admin/model-config/{purpose}/api-key",
+        "PUT /admin/policies/{policy_id}",
+        "PUT /admin/settings",
+        "PUT /catalog/characters/{character_id}/listing-status",
+        "PUT /catalog/characters/{character_id}/owner",
+        "PUT /catalog/scenarios/{scenario_id}/listing-status",
+        "PUT /catalog/scenarios/{scenario_id}/owner",
+        "PUT /engine-profiles/{profile_id}",
+        "PUT /engine-profiles/{profile_id}/owner",
+        "PUT /media/{media_id}/owner",
+        "PUT /personas/{persona_id}/owner",
+        "PUT /stories/{story_id}/content-rating",
+        "PUT /stories/{story_id}/custom-instructions",
+        "PUT /stories/{story_id}/engine-profile",
+        "PUT /stories/{story_id}/messages/{message_id}/feedback",
+        "PUT /stories/{story_id}/owner",
+        "PUT /stories/{story_id}/pinned-memories",
+    }
+)
+
+M6_OPERATIONS = (
+    "GET /stories/{story_id}/states",
+    "GET /stories/{story_id}/states/{name}",
+    "PUT /stories/{story_id}/states/{name}",
+    "POST /stories/{story_id}/states",
+    "PATCH /stories/{story_id}/states/{name}/definition",
+    "GET /stories/{story_id}/state-proposals",
+    "POST /stories/{story_id}/state-proposals/analyze",
+    "POST /stories/{story_id}/state-proposals/{proposal_id}/approve",
+    "POST /stories/{story_id}/state-proposals/{proposal_id}/dismiss",
+    "GET /stories/{story_id}/clock",
+    "PATCH /stories/{story_id}/clock",
+    "POST /stories/{story_id}/clock/advance",
+    "GET /stories/{story_id}/scheduled-events",
+    "POST /stories/{story_id}/scheduled-events",
+    "PATCH /stories/{story_id}/scheduled-events/{event_id}",
+    "DELETE /stories/{story_id}/scheduled-events/{event_id}",
+    "GET /admin/external-providers",
+    "GET /admin/external-providers/{name}",
+    "POST /admin/external-providers",
+    "PUT /admin/external-providers/{name}",
+    "DELETE /admin/external-providers/{name}",
+    "GET /stories/{story_id}/providers",
+    "PUT /stories/{story_id}/providers/{name}/binding",
+    "GET /stories/{story_id}/inspect/external-facts",
+    "GET /stories/{story_id}/reconciliation",
+    "POST /stories/{story_id}/reconciliation/{outbox_id}/settle-now",
+    "POST /stories/{story_id}/reconciliation/{outbox_id}/compensate",
+    "POST /stories/{story_id}/correct",
+    "GET /admin/stories/{story_id}/memories",
+    "GET /admin/stories/{story_id}/facts/{fact_id}",
+)
+
+
+@pytest.mark.parametrize("name", M6_OPERATIONS)
+def test_the_m6_operations_are_registered(name: str) -> None:
+    """#232: the 30 M6 operations are registered, each with a response model but the 204
+    provider delete, so ``test_registered_operations_match_the_recorded_schema`` checks each."""
+    assert name in OPERATIONS
+    if name != "DELETE /admin/external-providers/{name}":
+        assert OPERATIONS[name].response_model is not None
+
+
+def test_every_registered_route_is_new_or_main() -> None:
+    """**Complement:** against main's set, exactly the 30 M6 operations are added and none is
+    removed (``list_stories``' registration is unchanged)."""
+    assert len(MAIN_OPERATIONS) == 163
+    assert set(OPERATIONS) - MAIN_OPERATIONS == set(M6_OPERATIONS)
+    assert MAIN_OPERATIONS - set(OPERATIONS) == set()
+    assert len(M6_OPERATIONS) == 30
+    assert "GET /stories/{story_id}/providers/{name}/binding" not in OPERATIONS
+    stories = OPERATIONS["GET /stories"]
+    assert (stories.method, stories.path, stories.response_model) == ("GET", "/stories", StoryList)
+
+
+VIEWPOINT_READS = (
+    "/stories/{story_id}/states",
+    "/stories/{story_id}/states/{name}",
+    "/stories/{story_id}/scheduled-events",
+)
+
+
+@pytest.mark.parametrize("path", VIEWPOINT_READS)
+def test_the_three_viewpoint_reads_are_undeclared(path: str) -> None:
+    """Engine bug nathanpond/Epistrel#682 (D18): the recorded schema omits ``?viewpoint=`` on
+    the three reads the client sends it on. When the Engine declares it this fails: update the
+    ``get_states``/``get_state``/``list_scheduled_events`` docstrings and D18's code comment in
+    ``console/engine/client.py``. **Complement:** a read that declares it
+    (``inspect/external-facts``) is seen."""
+    query = [p["name"] for p in DOC["paths"][path]["get"].get("parameters", [])]
+    assert "viewpoint" not in query
+    declared = DOC["paths"]["/stories/{story_id}/inspect/external-facts"]["get"]["parameters"]
+    assert "viewpoint" in [p["name"] for p in declared]

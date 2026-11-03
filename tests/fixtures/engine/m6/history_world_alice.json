@@ -1,0 +1,134 @@
+{
+  "items": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I'll take the lantern, and a room for the night.",
+      "operation_id": "01JM6QP0000000000000000003",
+      "message_id": "01JM6MM0000000000000000301",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_do",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Mara counts out five coins and signs the inn's book.",
+      "operation_id": "01JM6QP0000000000000000003",
+      "message_id": "01JM6MM0000000000000000302",
+      "origin": "generated",
+      "propositions": [],
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": 3,
+      "kind": "beat_do",
+      "actor_character_id": "01JM6CH0000000000000000002",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Alice frowns at the ledger.",
+      "operation_id": "01JM6QP0000000000000000003",
+      "message_id": "01JM6MM0000000000000000303",
+      "origin": "generated",
+      "propositions": [],
+      "fidelity": "content"
+    },
+    {
+      "turn": 3,
+      "variant": 1,
+      "beat": null,
+      "kind": "message_rendered",
+      "actor_character_id": null,
+      "render_character_ids": [
+        "01JM6CH0000000000000000001"
+      ],
+      "channel": "message",
+      "text": "Mara pays for the lantern and books a room. Alice frowns at the ledger.",
+      "operation_id": "01JM6QP0000000000000000003",
+      "message_id": "01JM6MM0000000000000000304",
+      "origin": "generated"
+    },
+    {
+      "turn": 4,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM6CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I wire the bank for the ferry fare.",
+      "operation_id": "01JM6QP0000000000000000004",
+      "message_id": "01JM6MM0000000000000000401",
+      "origin": "generated",
+      "propositions": [],
+      "labels": {
+        "intent": "sincere",
+        "belief_relation": "unknown",
+        "objective_relation": "true"
+      },
+      "fidelity": "content"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 3,
+      "variant": 1,
+      "message": {
+        "message_id": "01JM6MM0000000000000000304",
+        "text": "Mara pays for the lantern and books a room. Alice frowns at the ledger."
+      },
+      "state_effects": [
+        {
+          "state": "gold",
+          "scope_key": null,
+          "old_value": 120,
+          "new_value": 115,
+          "reason": "paid for the lantern",
+          "source": "turn",
+          "contingency": "unconditional",
+          "status": "committed",
+          "delta": -5
+        },
+        {
+          "state": "room_booked",
+          "scope_key": null,
+          "old_value": false,
+          "new_value": true,
+          "reason": "booked a room at the inn",
+          "source": "turn",
+          "contingency": "reservation",
+          "status": "held"
+        }
+      ]
+    },
+    {
+      "turn": 4,
+      "variant": 1,
+      "message": null,
+      "incomplete": true
+    }
+  ],
+  "output_viewpoint": "character:01JM6CH0000000000000000002",
+  "audience_filter": "none",
+  "player_view": "character",
+  "as_of": 4,
+  "timeline_revision": 12,
+  "next_before_turn": 3
+}

@@ -33,6 +33,14 @@ no stub pages).
 5. on the Knowledge tab (#189), served and not replaced by a 409, the context gains
    ``knowledge_sections`` (:func:`console.inspect.knowledge_sections`, the current section from
    the request's URL name), the sub-navigation of ``console/inspect/knowledge.html``.
+6. on the World and Effects tabs (#239, D3), after the gate and before ``build``, the context
+   gains ``world_sections`` / ``effects_sections`` (:func:`console.inspect.sections`, each
+   greyed by its own gate) and, on a section's page, ``section_label``. The current section is
+   the keyword-only ``current`` (a page below a section passes its parent's URL name, result
+   pages included), else the request's own URL name. When that section's gate is closed the page
+   renders ``section_unavailable`` (the inline greyed panel) and ``build`` is **not** called, so
+   the section's read never runs. A 409 ``module_off`` escaping a section's ``build`` keeps step
+   4's whole-tab panel, worded at the section's registered level.
 
 Every render answers 200, the held wrapper aside (503). A route that answers empty or
 ``skipped`` where its module is off renders the same reason inline:
@@ -51,7 +59,6 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import NoReverseMatch, reverse
-from django.utils import timezone
 from django.views.decorators.http import require_safe
 
 from console.cast import OMNISCIENT
@@ -81,22 +88,28 @@ from console.inspect import (
     EPISODIC,
     PIPELINE,
     SETTINGS,
+    TAB_SECTIONS,
     Tab,
     Unavailable,
     capabilities,
     history_turn_url,
     is_module_off,
     knowledge_sections,
+    memory_list_url,
+    module_gate,
     module_off_unavailable,
     module_rows,
     overview_fingerprint,
     position_text,
     profile_flags,
     retrieval_url,
+    section_of,
+    sections,
     setting,
     tab_availability,
     unavailable_for,
 )
+from console.operation_log import note_engine_record
 from console.retrieval import (
     KEEP_FIELDS,
     Filters,
@@ -115,7 +128,6 @@ from console.turn_trace import (
     TurnTrace,
     read_turn_trace,
     trace_view,
-    withheld,
 )
 from console.wording import minor_ids
 
@@ -194,11 +206,25 @@ def _story(request: HttpRequest, client: EngineClient, story_id: str) -> Story |
         return exc
 
 
+# The context key of a sectioned tab's sub-navigation (D3).
+SECTIONS_KEYS: Mapping[Tab, str] = {Tab.WORLD: "world_sections", Tab.EFFECTS: "effects_sections"}
+
+
 def inspect_page(
-    request: HttpRequest, story_id: str, tab: Tab, template: str, build: Build
+    request: HttpRequest,
+    story_id: str,
+    tab: Tab,
+    template: str,
+    build: Build,
+    *,
+    current: str | None = None,
+    gate_section: bool = True,
 ) -> HttpResponse:
     """Render Inspect tab ``tab`` of story ``story_id`` with ``template`` (see the module
-    docstring for the reads, the gate and the error handling)."""
+    docstring for the reads, the gate and the error handling). ``current`` (World and Effects
+    only) is the section URL name to mark current, defaulting to the request's own;
+    ``gate_section=False`` marks it without applying its gate (a write's ``?report=`` page,
+    which reads only the local #44 row: #251's ``inspect:state-written``)."""
     client = engine_client_for(request)
     try:
         config: EffectiveConfig | EngineClientError = client.get_effective_config(story_id)
@@ -231,6 +257,23 @@ def inspect_page(
     if unavailable is not None:
         context["unavailable"] = unavailable
         return render(request, template, context)
+    section = None
+    if tab in TAB_SECTIONS:
+        if current is None and request.resolver_match is not None:
+            current = request.resolver_match.view_name
+        section = section_of(tab, current)
+        context[SECTIONS_KEYS[tab]] = sections(tab, story_id, current, config.effective)
+        if section is not None:
+            _, label, module, level = section
+            context["section_label"] = label
+            closed = (
+                module_gate(module, config.effective, level)
+                if module is not None and gate_section
+                else None
+            )
+            if closed is not None:
+                context["section_unavailable"] = closed  # D3: no read for a greyed section
+                return render(request, template, context)
     story_error = read if isinstance(read, EngineClientError) else None
     ctx = InspectContext(request, client, story_id, tab, config, story, story_name, story_error)
     try:
@@ -239,7 +282,10 @@ def inspect_page(
         if not is_module_off(exc):
             raise
         log_engine_error(request, exc)
-        context["unavailable"] = module_off_unavailable(exc, tab, config.effective)
+        # A section's registered level words its own module's 409 (the trail's reads at ``on``).
+        named = exc.details.get("module")
+        level = section[3] if section is not None and named == section[2] else None
+        context["unavailable"] = module_off_unavailable(exc, tab, config.effective, level=level)
         context["config_changed"] = True
         return render(request, template, context)
     if isinstance(built, HttpResponse):
@@ -274,6 +320,37 @@ def overview(request: HttpRequest, story_id: str) -> HttpResponse:
 
 
 KNOWLEDGE_TEMPLATE = "console/inspect/knowledge.html"
+WORLD_TEMPLATE = "console/inspect/world.html"
+EFFECTS_TEMPLATE = "console/inspect/effects.html"
+
+
+def _section_landing(tab: Tab) -> Build:
+    """A sectioned tab's landing (D3): after the shell's reads, a redirect (302, the query string
+    dropped) to the first registered section whose gate is open; with none open, or none
+    registered, the shell with its sub-navigation (greyed entries keep their reasons). It never
+    redirects to a greyed section."""
+
+    def build(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
+        for link in sections(tab, ctx.story_id, None, ctx.effective):
+            if link.unavailable is None:
+                return redirect(link.url)
+        return {}
+
+    return build
+
+
+@require_safe
+def world(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:world``, the World tab's entry URL (#239)."""
+    return inspect_page(request, story_id, Tab.WORLD, WORLD_TEMPLATE, _section_landing(Tab.WORLD))
+
+
+@require_safe
+def effects(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:effects``, the Effects tab's entry URL (#239)."""
+    return inspect_page(
+        request, story_id, Tab.EFFECTS, EFFECTS_TEMPLATE, _section_landing(Tab.EFFECTS)
+    )
 
 
 def _knowledge(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
@@ -299,16 +376,16 @@ def _memory(ctx: InspectContext) -> dict[str, Any]:
     A failed read replaces the "As of" line and the sections: 404 ``not_found`` with convention
     10's line, any other error with #43's panel; ``erasure_pending`` (and a 409 ``module_off``,
     which the route doesn't declare) escape to #87's held wrapper (and the shell's panel). The
-    Browse grid renders either way. ``episodic: false`` shows #135's reason inline above the
-    sections, which still render (convention 7).
+    Browse section (the memory-list link and its kind x tier grid, #236) renders either
+    way. ``episodic: false`` shows #135's reason inline above the sections, which still render
+    (convention 7).
 
     After a successful hot-set read (#168) it reads the omniscient story (the minors' weights)
     then the deployment settings (``minor_hot_budget_fraction``); each failure is logged and
     degrades to a note in ``minor_notes`` (:func:`_minor_budgets`), never failing the tab."""
-    browse = browse_rows(ctx.story_id)
     context: dict[str, Any] = {
-        "browse": browse,
-        "browse_links": all(link.url for row in browse for link in row.links),
+        "browse": browse_rows(ctx.story_id),
+        "memory_list_url": memory_list_url(ctx.story_id),
     }
     try:
         body = ctx.client.get_hot_set(ctx.story_id)
@@ -390,16 +467,15 @@ class ConsolidateSection:
     """The Memory tab's "Consolidate a window" section (#145). ``unavailable`` (the
     ``consolidation`` capability is off: #135's greyed note) wins over ``no_turns`` (head 0);
     otherwise the GET ``form`` to ``url`` with the key minted at this render. The two
-    Retrieval links (convention 11: pre-filled, no read; ``None`` while that tab isn't
-    registered) show in every state."""
+    memory-list links (#236; convention 11: pre-filled, no read) show in every state."""
 
     unavailable: Unavailable | None
     no_turns: bool
     form: ConsolidateForm | None
     url: str
     idempotency_key: str
-    semantic_url: str | None
-    reflection_url: str | None
+    semantic_url: str
+    reflection_url: str
 
 
 def consolidate_section(ctx: InspectContext, head: int | None) -> ConsolidateSection:
@@ -420,8 +496,8 @@ def consolidate_section(ctx: InspectContext, head: int | None) -> ConsolidateSec
         form=form,
         url=reverse("inspect:consolidate", args=[ctx.story_id]),
         idempotency_key=new_ulid(),
-        semantic_url=retrieval_url(ctx.story_id, {"kind": "semantic"}),
-        reflection_url=retrieval_url(ctx.story_id, {"kind": "reflection"}),
+        semantic_url=memory_list_url(ctx.story_id, {"kind": "semantic"}),
+        reflection_url=memory_list_url(ctx.story_id, {"kind": "reflection"}),
     )
 
 
@@ -476,6 +552,15 @@ def explain_banner(
     )
 
 
+def _memory_list_link(story_id: str) -> str | None:
+    """The Candidates note's link to the memory list (#236); ``None`` (the words unlinked)
+    while ``inspect:memory-list`` isn't registered."""
+    try:
+        return memory_list_url(story_id)
+    except NoReverseMatch:
+        return None
+
+
 def _retrieval(ctx: InspectContext) -> dict[str, Any]:
     """The Retrieval tab (#141) and, for a past turn's re-run, #142's reconstruction banner
     (:func:`explain_banner`) above whatever the read answered."""
@@ -488,6 +573,7 @@ def _retrieval(ctx: InspectContext) -> dict[str, Any]:
         "clear_url": retrieval_url(ctx.story_id, {}),
         "head": head,
         "legend": legend(ctx.effective),
+        "memory_list_url": _memory_list_link(ctx.story_id),
     }
     if "q" not in ctx.request.GET:
         form.filters_only()
@@ -566,27 +652,15 @@ NOT_FOUND = "not_found"
 
 def _trace_state(story_id: str, trace: TurnTrace) -> str:
     """The partial's state, in #139's check order after the read: story mismatch, not a turn,
-    withheld, not committed, no hooks recorded, else ``hooks``."""
+    not committed, no hooks recorded, else ``hooks``."""
     record = trace.operation
     if record.story_id != story_id:
         return NOT_FOUND
     if record.kind != TURN_KIND:
         return "not_turn"
-    if trace.withheld_for is not None:
-        return "withheld"
     if record.status != COMMITTED:
         return "not_committed"
     return "no_hooks" if trace.eval_hooks is None else "hooks"
-
-
-def _settings_window(request: HttpRequest, client: EngineClient) -> int | None:
-    """The deployment's ``idempotency_result_window`` (one settings read, on the withheld path
-    only); ``None`` when the read fails (the note then assumes the default 24 h)."""
-    try:
-        return client.get_deployment_settings().idempotency_result_window
-    except EngineClientError as exc:
-        log_engine_error(request, exc)
-        return None
 
 
 @require_safe
@@ -609,12 +683,10 @@ def turn_trace(request: HttpRequest, story_id: str, engine_operation_id: str) ->
         else:
             context.update(state="error", engine_error=panel_for(exc))
         return render(request, TURN_TRACE_TEMPLATE, context)
+    note_engine_record(trace.operation)  # #257: the Engine label of the operation read
     state = _trace_state(story_id, trace)
     context.update(state=state, operation=trace.operation)
     if state in (NOT_FOUND, "not_turn"):
         return render(request, TURN_TRACE_TEMPLATE, context)
-    if state == "withheld":
-        hours = _settings_window(request, client)
-        context["withheld"] = withheld(trace, hours, timezone.now())
     context["trace"] = trace_view(story_id, trace)
     return render(request, TURN_TRACE_TEMPLATE, context)

@@ -1269,6 +1269,12 @@ def warning_text(warning: ProfileValidationWarning) -> str:
     )
 
 
+def warning_flash_text(warning: ProfileValidationWarning) -> str:
+    """The text every flash uses for one warning (#234; #247's bind flash imports it):
+    ``warning_text`` with its raw backticks kept (flashes are never marked safe)."""
+    return warning_text(warning)
+
+
 def validation_banner(result: ProfileValidation, problems: int) -> str:
     """ "Valid", "Valid, with N warnings" or "Not valid — N problems"."""
     if not result.valid:

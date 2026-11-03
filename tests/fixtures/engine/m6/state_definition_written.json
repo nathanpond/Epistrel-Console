@@ -1,0 +1,28 @@
+{
+  "timeline_revision": 12,
+  "idempotency_key": null,
+  "config_revision": 6,
+  "definition": {
+    "name": "gold",
+    "type": "number",
+    "scope": "story",
+    "constraints": {
+      "non_negative": true,
+      "max": 500
+    },
+    "initial_value": 100,
+    "aliases": [],
+    "unit": "gold",
+    "entity_id": null,
+    "visibility": "player_visible",
+    "owner": "story",
+    "provider_id": null,
+    "external_value_name": null,
+    "silent": false,
+    "rules": {},
+    "authorization": {},
+    "transfer": {},
+    "reservation_expiry_minutes": null,
+    "created_by": "consumer"
+  }
+}

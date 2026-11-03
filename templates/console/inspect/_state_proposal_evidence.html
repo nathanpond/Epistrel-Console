@@ -1,0 +1,6 @@
+{% comment %}
+A proposal's Evidence cell (#266; the row and the approve page include it): "Recurs in N turns",
+then one item per evidence entry in the Engine's order, "Turn T: “<text>”" linked to that turn in
+History (console.inspect.history_turn_url). Context: row (console.state_proposals.ProposalRow).
+{% endcomment %}<p class="recurs">{{ row.recurs_text }}</p>
+<ul class="proposal-evidence">{% for item in row.evidence %}<li><a href="{{ item.url }}">{{ item.line }}</a></li>{% endfor %}</ul>

@@ -13,18 +13,23 @@ as #66), plus one formset per list of objects or multi-line items:
 - ``pol``: ``story_settings_defaults.policies``,
   :class:`~console.forms.policy.ScenarioPolicyForm`;
 - ``hook``, ``obj``, ``mile``, ``end``: ``drivers.plot_hooks``, ``objectives``, ``milestones``
-  and ``endings``, :class:`DriverItemForm` (one textarea each, so an item may span lines).
+  and ``endings``, :class:`DriverItemForm` (one textarea each, so an item may span lines);
+- ``state``: ``starting_state.states``,
+  :class:`~console.forms.scenario_states.ScenarioStateForm` (#267);
+- ``pacing``, ``bands`` and ``evt``: the starting clock's pacing table and bands and
+  ``starting_state.scheduled_events`` (#268, :mod:`console.forms.scenario_clock`), the clock's
+  other members being main-form fields.
 
 :class:`ScenarioEditor` holds the form and the formsets, always bound: to the POST, or (on a GET)
 to :func:`editor_data` of the draft, so a first render, a re-render after a row button and a
 refused save all read the same state. A row is added or removed by an ``op`` button
 (``console.formset_rows``) with no Engine call; a fully blank row is dropped.
 
-The sections Lite stores but does not use yet (``starting_state``'s states, clock, scheduled
-events, predicates, closed sets and rules) and ``drivers.planned_reveals`` are JSON boxes
-(:class:`~console.forms.fields.JsonBoxField`), parsed and type-checked before any call;
-``creation_rules.bounds`` too. ``public_card.media`` is #71's Media section
-(``console.forms.media_picker``), which the views set into the patch whole. The cast (#73) is
+``starting_state``'s predicates, closed sets and rules ("Rules and declarations"),
+``drivers.planned_reveals``, ``creation_rules.bounds`` and the starting clock's calendar are JSON
+boxes (:class:`~console.forms.fields.JsonBoxField`), parsed and type-checked before any call.
+``public_card.media`` is #71's Media section (``console.forms.media_picker``), which the views
+set into the patch whole. The cast (#73) is
 sent whole when its normalised form changed; the world seeds travel inside ``starting_state``
 (a list, so the merge patch replaces it whole). The role selects (viewpoint, roles present) and
 the cast's holder and audience choices offer the role rows' ids in the current form state.
@@ -69,6 +74,7 @@ from console.forms.catalog_character import (
     norm_text,
     prune,
 )
+from console.forms.clock import BANDS_PREFIX, PACING_PREFIX, TABLE_HELP
 from console.forms.fields import JsonBoxField
 from console.forms.policy import (
     DEFAULT_RULE_TYPE,
@@ -85,16 +91,62 @@ from console.forms.scenario_cast import (
     cast_to_write,
     new_row,
     normalize_cast,
+    offered_groups,
     pin_companion_slots,
+    posted_group_names,
     posted_role_ids,
     prepared,
     row_caps,
     seed_to_write,
+    stored_groups,
+)
+from console.forms.scenario_clock import (
+    ANCHOR,
+    ANCHOR_PATH,
+    CALENDAR_FIELD,
+    CLOCK,
+    CLOCK_HELP,
+    CLOCK_PATH,
+    EVENTS,
+    EVENTS_HELP,
+    EVENTS_MAX,
+    EVENTS_PATH,
+    PACING_HELP,
+    STOP_FIELD,
+    TABLE_PREFIXES,
+    TABLES,
+    BandRows,
+    EventForm,
+    EventFormSet,
+    PacingRows,
+    clock_fields,
+    clock_groups,
+    clock_to_write,
+    event_editor_row,
+    event_offered,
+    event_to_write,
+    keep_clock_choices,
+    kept_rows,
+    table_rows,
+)
+from console.forms.scenario_clock import ROW_CAPS as CLOCK_ROW_CAPS
+from console.forms.scenario_states import (
+    NEW_STATE_ROW,
+    SNAPSHOT_FIELDS,
+    STATE,
+    STATES_HELP,
+    STATES_MAX,
+    STATES_PATH,
+    ScenarioStateForm,
+    StateFormSet,
+    state_editor_row,
+    state_to_write,
 )
 from console.formset_rows import OP_ADD, Op, apply_op
 from console.reports import field_anchor
 from console.story_settings import (
     BOOLEAN_SELECT,
+    CO_AUTHOR_KNOWLEDGE_HELP,
     LABELS,
     NULL_DEFAULT_TEXT,
     SETTING_CHOICES,
@@ -122,7 +174,6 @@ MISSING_SUFFIX = " (missing)"
 UNKNOWN_SUFFIX = " (unknown)"
 NO_ROLES = "Add roles (Cast) first"
 NO_LOCATIONS = "Add locations (World) first"
-DEFERRED_NOTE = "Stored by Lite but not used until a later Engine milestone"
 DRAFT_TOO_LARGE = "Draft exceeds the Engine's 1 MiB limit"
 CAST_LIMIT_EXCEEDED = "cast_limit_exceeded"
 COMPANION_SLOTS_FIXED = "companion_slots_fixed"
@@ -157,11 +208,14 @@ SETTING_ENUMS: dict[str, tuple[str, ...]] = {
     "turn_concurrency": ("reject", "queue"),
     "player_view": ("character", "story"),
     "sequence_order": ("request", "director"),
+    "co_author_knowledge": ("confirm", "free"),
 }
-# Engine M5's defaults (#198): C7 choices (#197) instead of "(deployment default)" and " (unknown)".
-C7_SETTINGS = frozenset({"player_view", "sequence_order"})
+# M5's and M6's defaults (#198, #233): C7 choices (#197) instead of "(deployment default)" and
+# " (unknown)".
+C7_SETTINGS = frozenset({"player_view", "sequence_order", "co_author_knowledge"})
 # Each C7 field's "Engine default (<text>)" (the tie-break and interjections included).
 C7_DEFAULTS = {
+    "co_author_knowledge": "confirm",
     "player_view": "character",
     "sequence_order": NULL_DEFAULT_TEXT["sequence_order"],
     "simultaneous_tie_break": NULL_DEFAULT_TEXT["simultaneous_tie_break"],
@@ -172,14 +226,13 @@ BOOLEAN_SETTINGS = (
     "story_settings_defaults__allow_new_arrivals",
     "story_settings_defaults__reactive_interjections",
 )
+BOOLEAN_FIELDS = (*BOOLEAN_SETTINGS, STOP_FIELD)  # #268: the clock's stop at due events too
 TIE_BREAK_FIELD = "story_settings_defaults__simultaneous_tie_break"
 BOOLEAN_CHOICES = [(NOT_SET, DEFAULT_LABEL), ("true", "Yes"), ("false", "No")]
 
-# The deferred JSON boxes: field name → (top type, empty value).
+# "Rules and declarations"' JSON boxes (#268: the clock and the scheduled events are fields and
+# row sets now): field name → (top type, empty value).
 DEFERRED_BOXES: dict[str, tuple[type, Any]] = {
-    "starting_state__states": (list, []),
-    "starting_state__clock": (dict, None),
-    "starting_state__scheduled_events": (list, []),
     "starting_state__predicates": (list, []),
     "starting_state__closed_sets": (list, []),
     "starting_state__rules": (list, []),
@@ -187,6 +240,7 @@ DEFERRED_BOXES: dict[str, tuple[type, Any]] = {
 OTHER_BOXES: dict[str, tuple[type, Any]] = {
     "drivers__planned_reveals": (list, []),
     "creation_rules__bounds": (dict, None),
+    CALENDAR_FIELD: (dict, None),  # #268 (D14): rendered in the Clock section
 }
 BOXES = {**DEFERRED_BOXES, **OTHER_BOXES}
 
@@ -214,6 +268,7 @@ ROW_PATHS = {
     ENTITIES: "world.entities",
     POLICIES: "story_settings_defaults.policies",
     **DRIVER_LISTS,
+    STATE: STATES_PATH,
 }
 ROW_CAPS = {
     LOCATIONS: ROWS_MAX,
@@ -221,16 +276,21 @@ ROW_CAPS = {
     POLICIES: POLICIES_MAX,
     ADJACENCY: ADJACENCY_ROWS_MAX,
     CHANNELS: CHANNELS_MAX,
+    STATE: STATES_MAX,
+    **CLOCK_ROW_CAPS,  # #268: pacing, bands, evt (positional: no ROW_PATHS entry)
 }
 ROW_CAPS.update(dict.fromkeys(DRIVER_LISTS, ROWS_MAX))
 NEW_ROWS: dict[str, dict[str, list[str]]] = {
     POLICIES: {"rule_type": [DEFAULT_RULE_TYPE], "rule": [rule_template_text(DEFAULT_RULE_TYPE)]},
+    STATE: NEW_STATE_ROW,  # #267: all blank, so an added untouched row is dropped
 }
 _INDEXED = re.compile(r"^(?P<base>[^\[\]]+)\[(?P<index>\d+)\](?:\.(?P<rest>.+))?$")
 _ADJACENCY_PATH = re.compile(
     r"^world\.locations\[(?P<location>\d+)\]\.adjacent_to\[(?P<entry>\d+)\](?:\.(?P<rest>.+))?$"
 )
 _PARTICIPANT = re.compile(r"^participants\[(?P<index>\d+)\]$")
+_LINE = re.compile(r"^\[(?P<index>\d+)\]$")
+STATE_LINE_FIELDS = ("aliases", "constraints_allowed_values")
 
 # #205's wording.
 LIES_IN_HELP = "Seeded as canon by a structured story; Lite stores it but doesn't use it."
@@ -358,9 +418,9 @@ def draft_to_write(draft: Scenario) -> dict[str, Any]:
                 "starting_location": opening.starting_location,
                 "roles_present": list(dict.fromkeys(opening.roles_present)),
             },
-            "states": state.states,
-            "clock": state.clock,
-            "scheduled_events": state.scheduled_events,
+            "states": [state_to_write(s) for s in state.states],
+            "clock": clock_to_write(state.clock),
+            "scheduled_events": [event_to_write(e) for e in state.scheduled_events],
             "predicates": state.predicates,
             "closed_sets": state.closed_sets,
             "rules": state.rules,
@@ -449,7 +509,7 @@ def editor_data(doc: Mapping[str, Any]) -> QueryDict:
             put(name, "\n".join(value or []))
         elif name == "metadata__labels":
             put(name, ", ".join(value or []))
-        elif name in BOOLEAN_SETTINGS:
+        elif name in BOOLEAN_FIELDS:
             put(name, None if value is None else ("true" if value else "false"))
         else:
             put(name, value)
@@ -483,6 +543,20 @@ def editor_data(doc: Mapping[str, Any]) -> QueryDict:
     }
     for prefix, path in DRIVER_LISTS.items():
         rows[prefix] = [{"text": item} for item in _get(doc, path) or []]
+    rows[STATE] = [state_editor_row(s) for s in _get(doc, STATES_PATH) or []]
+    # #268: the starting clock's tables and the scheduled events.
+    clock = _get(doc, CLOCK_PATH)
+    clock = clock if isinstance(clock, Mapping) else {}
+    for member, names in TABLES.items():
+        rows[TABLE_PREFIXES[member]] = table_rows(clock.get(member), names)
+    cast_ = _get(doc, "cast")
+    role_ids = [
+        r["id"]
+        for r in (cast_.get("roles") or [] if isinstance(cast_, Mapping) else [])
+        if isinstance(r, Mapping) and isinstance(r.get("id"), str)
+    ]
+    offered = event_offered(role_ids, offered_groups(stored_groups(doc), role_ids))
+    rows[EVENTS] = [event_editor_row(e, offered) for e in _get(doc, EVENTS_PATH) or []]
     for prefix, items in rows.items():
         for index, row in enumerate(items):
             for key, value in row.items():
@@ -784,6 +858,11 @@ FORMSETS: dict[str, type[BaseFormSet[Any]]] = {
     ENTITIES: _formset(EntityForm, ROWS_MAX),
     POLICIES: _formset(ScenarioPolicyForm, POLICIES_MAX),
     **{prefix: _formset(DriverItemForm, ROWS_MAX) for prefix in DRIVER_LISTS},
+    STATE: _formset(ScenarioStateForm, STATES_MAX, StateFormSet),
+    # #268: #243's row tables (Console caps; never refusing a longer stored table) and events.
+    PACING_PREFIX: PacingRows,
+    BANDS_PREFIX: BandRows,
+    EVENTS: _formset(EventForm, EVENTS_MAX, EventFormSet),
 }
 
 
@@ -813,17 +892,16 @@ def _lines(label: str, max_items: int, item_max: int, extra: str = "") -> LinesF
     )
 
 
-def _box(name: str, label: str, *, deferred: bool) -> JsonBoxField:
+def _box(name: str, label: str) -> JsonBoxField:
     top, empty = BOXES[name]
     shape = "a JSON object" if top is dict else "a JSON array"
     blank = "blank: none" if top is dict else "blank: []"
-    hint = f"{shape} ({blank})"
     return JsonBoxField(
         top,
         empty=empty,
         required=False,
         label=label,
-        help_text=f"{DEFERRED_NOTE}. {hint}" if deferred else hint,
+        help_text=f"{shape} ({blank})",
         widget=forms.Textarea(
             attrs={"rows": 6, "cols": 80, "spellcheck": "false", "class": "monospace"}
         ),
@@ -838,12 +916,14 @@ def _enum(label: str, values: tuple[str, ...]) -> forms.ChoiceField:
     return forms.ChoiceField(label=label, required=False, choices=_enum_choices(values))
 
 
-def _c7(name: str, choices: list[tuple[str, str]]) -> forms.ChoiceField:
-    """An M5 default (#198): C7's "Engine default (<text>)" first, then #197's choices."""
+def _c7(name: str, choices: list[tuple[str, str]], *, help_text: str = "") -> forms.ChoiceField:
+    """An M5 or M6 default (#198, #233): C7's "Engine default (<text>)" first, then #197's
+    choices."""
     return forms.ChoiceField(
         label=LABELS[name],
         required=False,
         choices=[engine_default_choice(C7_DEFAULTS[name]), *choices],
+        help_text=help_text,
     )
 
 
@@ -879,6 +959,11 @@ def _fields() -> dict[str, forms.Field]:
         f"{settings}__player_authority": _enum(
             "Player authority", SETTING_ENUMS["player_authority"]
         ),
+        f"{settings}__co_author_knowledge": _c7(
+            "co_author_knowledge",
+            SETTING_CHOICES["co_author_knowledge"],
+            help_text=CO_AUTHOR_KNOWLEDGE_HELP,
+        ),
         f"{settings}__player_view": _c7("player_view", SETTING_CHOICES["player_view"]),
         f"{settings}__sequence_order": _c7("sequence_order", SETTING_CHOICES["sequence_order"]),
         TIE_BREAK_FIELD: _c7("simultaneous_tie_break", SETTING_CHOICES["simultaneous_tie_break"]),
@@ -911,23 +996,13 @@ def _fields() -> dict[str, forms.Field]:
         "creation_rules__overridable": _lines(
             "Overridable paths", OVERRIDABLE_ITEMS, OVERRIDABLE_MAX, "dotted paths"
         ),
-        "creation_rules__bounds": _box("creation_rules__bounds", "Bounds", deferred=False),
+        "creation_rules__bounds": _box("creation_rules__bounds", "Bounds"),
         "drivers__director_guidance": _text("Director guidance", TEXT_MAX, rows=4),
-        "drivers__planned_reveals": _box(
-            "drivers__planned_reveals", "Planned reveals", deferred=False
-        ),
-        "starting_state__states": _box("starting_state__states", "States", deferred=True),
-        "starting_state__clock": _box("starting_state__clock", "Clock", deferred=True),
-        "starting_state__scheduled_events": _box(
-            "starting_state__scheduled_events", "Scheduled events", deferred=True
-        ),
-        "starting_state__predicates": _box(
-            "starting_state__predicates", "Predicates", deferred=True
-        ),
-        "starting_state__closed_sets": _box(
-            "starting_state__closed_sets", "Closed sets", deferred=True
-        ),
-        "starting_state__rules": _box("starting_state__rules", "Rules", deferred=True),
+        "drivers__planned_reveals": _box("drivers__planned_reveals", "Planned reveals"),
+        **clock_fields(),  # #268: the starting clock (calendar included)
+        "starting_state__predicates": _box("starting_state__predicates", "Predicates"),
+        "starting_state__closed_sets": _box("starting_state__closed_sets", "Closed sets"),
+        "starting_state__rules": _box("starting_state__rules", "Rules"),
     }
     return fields
 
@@ -955,7 +1030,8 @@ SECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("Visual style", "visual_style", ("visual_style__prompt", "visual_style__negative_prompt")),
     ("Creation rules", "creation_rules", ("creation_rules__overridable", "creation_rules__bounds")),
     ("Drivers", "drivers", ("drivers__director_guidance", "drivers__planned_reveals")),
-    ("Deferred", "starting_state", tuple(DEFERRED_BOXES)),
+    ("Clock", CLOCK_PATH, tuple(f for f in main_field_names() if f.startswith(f"{CLOCK}__"))),
+    ("Rules and declarations", "starting_state", tuple(DEFERRED_BOXES)),
 )
 
 
@@ -1047,6 +1123,7 @@ class ScenarioForm(forms.Form):
                     tie_break_label,
                 ),
             ]
+        keep_clock_choices(self, data)  # #268
         for name, field in self.fields.items():
             if name != OWNER:
                 field.widget.attrs["id"] = field_anchor(field_path(name))
@@ -1121,12 +1198,18 @@ class ScenarioEditor:
         # The cast's management forms filled and its audiences re-homed (#73): every part of
         # the editor, and the page it renders, reads the same state.
         data = prepared(data)
-        for prefix in (ADJACENCY, CHANNELS):  # #205's row sets: a missing count, no rows
+        # #205's, #267's, #268's: a missing count, no rows.
+        for prefix in (ADJACENCY, CHANNELS, STATE, PACING_PREFIX, BANDS_PREFIX, EVENTS):
             if f"{prefix}-TOTAL_FORMS" not in data:
                 data.update(_management(prefix, 0))
         self.data = data
         self.create = create
         self.original: Mapping[str, Any] = original or {}
+        # #268: errors no Django field owns (a bare clock or anchor path), by Engine path.
+        self.section_errors: dict[str, ErrorList] = {
+            CLOCK_PATH: ErrorList(),
+            ANCHOR_PATH: ErrorList(),
+        }
         locations = posted_ids(data, LOCATIONS)
         roles = posted_role_ids(data)
         self.form = ScenarioForm(
@@ -1142,6 +1225,18 @@ class ScenarioEditor:
             LOCATIONS: {"locations": locations},
             ADJACENCY: {"locations": locations},
             CHANNELS: {"roles": roles},
+            STATE: {
+                "roles": roles,
+                "locations": locations,
+                "entities": posted_ids(data, ENTITIES),
+                "stored": list(_get(self.original, STATES_PATH) or []),
+            },
+            EVENTS: {
+                "roles": roles,
+                "locations": locations,
+                "groups": offered_groups(posted_group_names(data), roles),
+                "events": list(_get(self.original, EVENTS_PATH) or []),
+            },
         }
         self.formsets: dict[str, BaseFormSet[Any]] = {
             prefix: formset(data, prefix=prefix, form_kwargs=form_kwargs.get(prefix))
@@ -1169,6 +1264,8 @@ class ScenarioEditor:
         # Django validates lazily on ``errors``: setting them empty renders the state as is.
         quieted: Any = self.form
         quieted._errors = ErrorDict()
+        for errors in self.section_errors.values():
+            errors.clear()
         for formset in self.formsets.values():
             quieted = formset
             quieted._errors = []
@@ -1187,7 +1284,12 @@ class ScenarioEditor:
 
     def sent(self, prefix: str) -> list[forms.Form]:
         """The rows of ``prefix`` that are sent, in order (blank rows dropped): the Engine's list
-        index is the index here."""
+        index is the index here. A ``state`` row is sent whenever it isn't blank (#267: an
+        untouched row whose own checks failed is the draft's entry, sent as stored)."""
+        if prefix == STATE:
+            return [f for f in self.formsets[STATE].forms if not getattr(f, "blank", False)]
+        if prefix in (PACING_PREFIX, BANDS_PREFIX):  # #243's rows: every filled row
+            return list(self.formsets[prefix].filled())  # type: ignore[attr-defined]
         return [
             form
             for form in self.formsets[prefix].forms
@@ -1232,7 +1334,7 @@ class ScenarioEditor:
             if name == RATING_FIELD:
                 doc.setdefault("metadata", {})["content_rating_id"] = value or None
                 continue
-            if name in BOOLEAN_SETTINGS:
+            if name in BOOLEAN_FIELDS:
                 value = select_bool(value)
             elif name == "world__event_types":
                 value = value or None
@@ -1273,6 +1375,23 @@ class ScenarioEditor:
         doc["starting_state"]["channels"] = [
             f.channel(stored)  # type: ignore[attr-defined]
             for f in self.sent(CHANNELS)
+        ]
+        doc["starting_state"]["states"] = [
+            f.state()  # type: ignore[attr-defined]
+            for f in self.sent(STATE)
+        ]
+        # #268: the clock's members (the anchor's parts, the two tables) normalised as
+        # draft_to_write's; a table with no rows is None (the default, or null over a stored one).
+        clock = dict(doc["starting_state"].get("clock") or {})
+        stored_clock = _get(self.original, CLOCK_PATH)
+        stored_clock = stored_clock if isinstance(stored_clock, Mapping) else {}
+        for member, prefix in TABLE_PREFIXES.items():
+            table: list[list[Any]] = [f.row() for f in self.sent(prefix)]  # type: ignore[attr-defined]
+            clock[member] = kept_rows(table, stored_clock.get(member), member) or None
+        doc["starting_state"]["clock"] = clock_to_write(clock)
+        doc["starting_state"]["scheduled_events"] = [
+            f.event()  # type: ignore[attr-defined]
+            for f in self.sent(EVENTS)
         ]
         return doc
 
@@ -1388,9 +1507,21 @@ class ScenarioEditor:
         if path == CHANNELS_PATH:
             self.formsets[CHANNELS].non_form_errors().append(message)
             return True
+        if path == STATES_PATH:
+            self.formsets[STATE].non_form_errors().append(message)
+            return True
+        if path == CLOCK_PATH or path.startswith((f"{CLOCK_PATH}.", f"{CLOCK_PATH}[")):
+            return self._place_clock(path, message)
+        if path == EVENTS_PATH:
+            self.formsets[EVENTS].non_form_errors().append(f"{path}: {message}")
+            return True
         match = _INDEXED.match(path)
         if match and match["base"] == CHANNELS_PATH:
             return self._place_channel(int(match["index"]), match["rest"], path, message)
+        if match and match["base"] == STATES_PATH:
+            return self._place_state(int(match["index"]), match["rest"], path, message)
+        if match and match["base"] == EVENTS_PATH:
+            return self._place_event(int(match["index"]), match["rest"], path, message)
         if match:
             base, index, rest = match["base"], int(match["index"]), match["rest"]
             for prefix, row_path in ROW_PATHS.items():
@@ -1455,6 +1586,113 @@ class ScenarioEditor:
             row.add_error(None, f"{path}: {message}")
         return True
 
+    def _place_state(self, index: int, rest: str | None, path: str, message: str) -> bool:
+        """``starting_state.states[i]…`` on the sent ``state`` row ``i`` (#267): a member on
+        its field, ``constraints.<x>`` on ``constraints_<x>``, an alias or an allowed value
+        ``[k]`` as "Line k+1: …", anything deeper (the JSON boxes' insides included) prefixed
+        with the path."""
+        sent = self.sent(STATE)
+        if index >= len(sent):
+            return False
+        row = sent[index]
+        if rest is None:
+            row.add_error(None, message)
+            return True
+        name = re.split(r"[.\[]", rest, maxsplit=1)[0]
+        tail = rest[len(name) :]
+        if name == "constraints" and tail.startswith("."):
+            member = re.split(r"[.\[]", tail[1:], maxsplit=1)[0]
+            name, tail = f"constraints_{member}", tail[1 + len(member) :]
+        line = _LINE.match(tail)
+        if name not in row.fields or name in SNAPSHOT_FIELDS:
+            row.add_error(None, f"{path}: {message}")
+        elif not tail:
+            row.add_error(name, message)
+        elif line and name in STATE_LINE_FIELDS:
+            row.add_error(name, f"Line {int(line['index']) + 1}: {message}")
+        else:
+            row.add_error(name, f"{path}: {message}")
+        return True
+
+    def _place_clock(self, path: str, message: str) -> bool:
+        """``starting_state.clock…`` (#268): an anchor part or a member on its field, the bare
+        anchor or clock on the section's own errors, a table's row and cell on the sent row and
+        its column's field, the calendar's insides on the box (prefixed)."""
+        form = self.form
+        if path == CLOCK_PATH:
+            self.section_errors[CLOCK_PATH].append(f"{path}: {message}")
+            return True
+        rest = path[len(CLOCK_PATH) + 1 :]
+        member = re.split(r"[.\[]", rest, maxsplit=1)[0]
+        tail = rest[len(member) :]
+        if member == "anchor":
+            part = re.split(r"[.\[]", tail[1:], maxsplit=1)[0] if tail.startswith(".") else ""
+            name = f"{ANCHOR}__{part}"
+            if not tail:
+                self.section_errors[ANCHOR_PATH].append(message)
+            elif part and name in form.fields:
+                exact = tail == f".{part}"
+                form.add_error(name, message if exact else f"{path}: {message}")
+            else:
+                self.section_errors[ANCHOR_PATH].append(f"{path}: {message}")
+            return True
+        if member in TABLE_PREFIXES:
+            return self._place_table(TABLE_PREFIXES[member], member, tail, path, message)
+        name = f"{CLOCK}__{member}"
+        if name in form.fields:
+            form.add_error(name, message if not tail else f"{path}: {message}")
+        else:
+            self.section_errors[CLOCK_PATH].append(f"{path}: {message}")
+        return True
+
+    def _place_table(self, prefix: str, member: str, tail: str, path: str, message: str) -> bool:
+        """``….pacing_table[i][j]`` / ``….bands[i][j]`` on sent row ``i`` (column ``j``'s
+        field); the bare array on the row set's non-form errors."""
+        formset = self.formsets[prefix]
+        if not tail:
+            formset.non_form_errors().append(message)
+            return True
+        indexed = re.match(r"^\[(\d+)\](.*)$", tail)
+        sent = self.sent(prefix)
+        if indexed is None or int(indexed[1]) >= len(sent):
+            return False
+        row, deeper = sent[int(indexed[1])], indexed[2]
+        cell = re.match(r"^\[(\d+)\]$", deeper)
+        names = TABLES[member]
+        if not deeper:
+            row.add_error(None, message)
+        elif cell and int(cell[1]) < len(names):
+            row.add_error(names[int(cell[1])], message)
+        else:
+            row.add_error(None, f"{path}: {message}")
+        return True
+
+    def _place_event(self, index: int, rest: str | None, path: str, message: str) -> bool:
+        """``starting_state.scheduled_events[i]…`` on the sent ``evt`` row ``i`` (#268): a
+        member on its field (a union suffix such as ``planned.int`` prefixed with the path), a
+        participant's or audience token's error prefixed with its id."""
+        sent = self.sent(EVENTS)
+        if index >= len(sent):
+            return False
+        row = sent[index]
+        if rest is None:
+            row.add_error(None, message)
+            return True
+        name = re.split(r"[.\[]", rest, maxsplit=1)[0]
+        tail = rest[len(name) :]
+        item = _LINE.match(tail)
+        if name not in row.fields or name == "audience_other":
+            row.add_error(None, f"{path}: {message}")
+        elif not tail:
+            row.add_error(name, message)
+        elif item and name in ("participants", "audience"):
+            ids = row.event().get(name) or []  # type: ignore[attr-defined]
+            p = int(item["index"])
+            row.add_error(name, f"{ids[p]}: {message}" if p < len(ids) else f"{path}: {message}")
+        else:
+            row.add_error(name, f"{path}: {message}")
+        return True
+
     def _place_row(
         self, prefix: str, index: int, rest: str | None, path: str, message: str
     ) -> bool:
@@ -1496,9 +1734,26 @@ class ScenarioEditor:
             "end": "Endings",
             ADJACENCY: "Adjacent places",
             CHANNELS: "Remote channels",
+            STATE: "States",
+            PACING_PREFIX: "Pacing",
+            BANDS_PREFIX: "Time-of-day bands",
+            EVENTS: "Scheduled events",
         }
-        anchors = {ADJACENCY: ADJACENCY_ANCHOR, CHANNELS: field_anchor(CHANNELS_PATH)}
-        helps = {ADJACENCY: ADJACENCY_HELP, CHANNELS: CHANNELS_HELP}
+        anchors = {
+            ADJACENCY: ADJACENCY_ANCHOR,
+            CHANNELS: field_anchor(CHANNELS_PATH),
+            PACING_PREFIX: field_anchor(f"{CLOCK_PATH}.pacing_table"),
+            BANDS_PREFIX: field_anchor(f"{CLOCK_PATH}.bands"),
+            EVENTS: field_anchor(EVENTS_PATH),
+        }
+        helps = {
+            ADJACENCY: ADJACENCY_HELP,
+            CHANNELS: CHANNELS_HELP,
+            STATE: STATES_HELP,
+            PACING_PREFIX: PACING_HELP,
+            BANDS_PREFIX: TABLE_HELP,
+            EVENTS: EVENTS_HELP,
+        }
         return {
             prefix: Rows(
                 titles[prefix],
@@ -1509,6 +1764,17 @@ class ScenarioEditor:
                 helps.get(prefix, ""),
             )
             for prefix, formset in self.formsets.items()
+        }
+
+    def clock(self) -> dict[str, Any]:
+        """The Clock section as ``_clock.html`` renders it (#268): its help, the errors no field
+        owns (the clock's, the anchor's), the field groups around the two tables."""
+        return {
+            "help": CLOCK_HELP,
+            "anchor_id": field_anchor(ANCHOR_PATH),
+            "errors": self.section_errors[CLOCK_PATH],
+            "anchor_errors": self.section_errors[ANCHOR_PATH],
+            **clock_groups(self.form),
         }
 
 

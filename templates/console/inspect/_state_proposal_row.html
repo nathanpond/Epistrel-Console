@@ -1,0 +1,17 @@
+{% load console_format %}{% comment %}
+One proposed State (#266): a console.state_proposals.ProposalRow as row, one
+<tr id="proposal-<id>">. Columns: Name, Suggests, Evidence, Status (humanised, raw in title),
+Proposed, Decided, Actions (Approve… and Dismiss… for a proposed one only, else "—"), More.
+Context: row.
+{% endcomment %}<tr id="proposal-{{ row.id }}" class="proposal-row">
+  <td class="name">{{ row.name }}</td>
+  <td class="suggests">{% include "console/inspect/_state_proposal_suggests.html" %}</td>
+  <td class="evidence">{% include "console/inspect/_state_proposal_evidence.html" %}</td>
+  <td class="status"><span title="{{ row.status_raw }}">{{ row.status_text }}</span></td>
+  <td class="proposed">{{ row.created_at|engine_time }}</td>
+  <td class="decided">{% if row.decided_at %}{{ row.decided_at|engine_time }}{% else %}—{% endif %}</td>
+  <td class="actions">{% if row.actionable %}<a class="proposal-approve" href="{{ row.approve_url }}">Approve…</a> · <a class="proposal-dismiss" href="{{ row.dismiss_url }}">Dismiss…</a>{% else %}—{% endif %}</td>
+  <td class="more"><details><summary>More</summary><dl>
+    {% for line in row.more %}<dt>{{ line.term }}</dt><dd>{% if line.url %}<a href="{{ line.url }}"><code>{{ line.value }}</code></a>{% elif line.code %}{% if line.detail %}event {% endif %}<code>{{ line.value }}</code>{% else %}{{ line.value }}{% endif %}{% if line.detail %} · span {{ line.detail }}{% endif %}</dd>
+    {% endfor %}</dl></details></td>
+</tr>

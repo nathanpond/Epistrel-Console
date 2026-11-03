@@ -1,0 +1,28 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags %}
+{% comment %}
+New scheduled event (#253, console/views/inspect_scheduled_events.py's scheduled_event_new),
+below the Scheduled events section (current inspect:scheduled-events): the shell's two reads
+only. console.forms.scheduled_events.ScheduledEventForm POSTs to inspect:scheduled-event-new with
+its hidden idempotency key and D8's expected_revision (absent when the story read failed, as are
+the two character lists: C12's CAST_UNAVAILABLE notice). The submit is greyed with D1's reason
+(gate, _gated_control.html) while the clock is off; inputs stay editable. A refusal or #43's
+panel stays above the form, a field's refusal beside it; the result page
+(scheduled_event_written.html) replaces this page on success. Context: back_url, action_url,
+gate, cast_unavailable, form, refusal, refusal_url, refusal_link, write_error.
+{% endcomment %}
+{% block title %}Inspect · New scheduled event · {{ story_name }}{% endblock %}
+{% block world_content %}
+<p class="events-back"><a href="{{ back_url }}">Back to Scheduled events</a></p>
+<h3 class="event-new-title">New scheduled event</h3>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist event-new-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="event-new-form">
+  {% csrf_token %}
+  {{ form.idempotency_key }}
+  {% if form.expected_revision.value %}{{ form.expected_revision }}{% endif %}
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  {% for field in form.visible %}<div class="field field-{{ field.name }}">{% if field.name == "participants" or field.name == "shared_owners" %}<fieldset><legend>{{ field.label }}</legend>{{ field }}</fieldset>{% else %}{{ field.label_tag }} {{ field }}{% endif %}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>
+  {% endfor %}<p><button type="submit" class="event-new-submit"{{ gate|gate_attrs:"gate-event-new" }}>Schedule</button>{% include "console/_gated_control.html" with gate=gate gate_id="gate-event-new" %} <a href="{{ back_url }}">Cancel</a></p>
+</form>
+{% endblock %}

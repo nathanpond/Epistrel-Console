@@ -14,12 +14,14 @@ import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
 
+from console.effects import outbox_list_notice_html
 from console.engine.client import EngineClient
 from console.engine.models import Story
 from console.engine_access import engine_client_for
 from console.models import EngineOperation
 from console.reactivation import heading, parse_outcome, shown_op
 from console.story_pause import pause_banner
+from console.timeline import CANCELLED_HEADING, PENDING_HEADING, REQUIRED_HEADING
 from console.views import history as history_views
 from console.views import play as play_views
 from console.views import stories as story_views
@@ -284,6 +286,88 @@ def test_a_reactivated_fork_links_the_new_story_with_its_banner(
     answer_page(engine, story=story_json(id=NEW, name="Harbour (fork at turn 2)"))
     new_page = page(operator_client, f"/stories/{NEW}/")
     assert "Forked from <em>" in new_page
+
+
+BOX1 = "01JM6BX0000000000000000001"
+BOX2 = "01JM6BX0000000000000000002"
+BOX4 = "01JM6BX0000000000000000004"
+RECONCILIATION = f"/stories/{STORY}/inspect/effects/reconciliation/"
+
+
+def _effect(outbox_id: str, status: str) -> dict[str, Any]:
+    return {"outbox_id": outbox_id, "provider": "bank", "status": status, "value": "balance"}
+
+
+def test_reactivated_swap_lists_its_effects(operator_client: Client, engine: FakeEngine) -> None:
+    """#258: the applied swap's lists follow the result rows, before More."""
+    outcome = outcomes.outcome(
+        "swap",
+        reconciliation_required=[_effect(BOX1, "confirmed")],
+        cancelled_on_reactivation=[_effect(BOX2, "cancelled")],
+    )
+    hold(operator_client, engine, "swap")
+    answer_check(engine, check_json("reactivated", outcome=outcome))
+
+    html = page(operator_client, f"{CHECK_PAGE}?op=swap")
+
+    assert f"<h3>{REQUIRED_HEADING}</h3>" in html
+    assert f"<h3>{CANCELLED_HEADING}</h3>" in html
+    assert html.index('<dl class="reactivated-result">') < html.index(REQUIRED_HEADING)
+    assert html.index(REQUIRED_HEADING) < html.index(CANCELLED_HEADING)
+    assert f'<a href="{RECONCILIATION}#outbox-{BOX1}">' in html
+    assert f'<a href="{RECONCILIATION}#outbox-{BOX2}">' in html
+    assert f'<a href="{RECONCILIATION}">2 effects to reconcile</a>' in html
+    assert str(outbox_list_notice_html()) in html
+
+
+def test_reactivated_fork_points_at_the_source(operator_client: Client, engine: FakeEngine) -> None:
+    outcome = outcomes.outcome(
+        "fork",
+        effects_pending_in_source=[
+            {"outbox_id": BOX4, "status": "claimed", "effect": {"state": "gold", "delta": -5}}
+        ],
+    )
+    hold(operator_client, engine, "fork")
+    answer_check(engine, check_json("reactivated", outcome=outcome))
+
+    html = page(operator_client, f"{CHECK_PAGE}?op=fork")
+
+    assert f"<h3>{PENDING_HEADING}</h3>" in html
+    assert f'<a href="{RECONCILIATION}#outbox-{BOX4}">' in html  # the source story's list
+    assert f"/stories/{NEW}/inspect/effects/reconciliation/" not in html
+    assert f'<a href="{RECONCILIATION}">Source story&#x27;s Reconciliation</a>' in html
+    assert html.index(PENDING_HEADING) < html.index('<details class="fork-more">')
+
+
+@pytest.mark.parametrize("op", ["untruncate", "swap", "fork"])
+def test_reactivated_without_effects_unchanged(
+    operator_client: Client, engine: FakeEngine, op: str
+) -> None:
+    """Complement: an outcome with empty lists shows no partial."""
+    shown = {"untruncate": outcomes.UNTRUNCATED, "swap": outcomes.SWAPPED, "fork": outcomes.FORKED}
+    hold(operator_client, engine, op)
+    answer_check(engine, check_json("reactivated", outcome=shown[op]))
+
+    html = page(operator_client, f"{CHECK_PAGE}?op={op}")
+
+    assert f"{OPS[op]} applied after re-check" in html
+    assert 'class="edit-effects"' not in html
+    assert "<h3>" not in html
+
+
+def test_unreadable_outcome_shows_no_list(operator_client: Client, engine: FakeEngine) -> None:
+    """An outcome that doesn't parse shows its raw JSON (already in More), never the lists."""
+    swapped = outcomes.outcome("swap", reconciliation_required=[_effect(BOX1, "confirmed")])
+    outcome = {"operation": "rebuild", "result": swapped["result"]}
+    hold(operator_client, engine, "swap")
+    answer_check(engine, check_json("reactivated", outcome=outcome))
+
+    html = page(operator_client, f"{CHECK_PAGE}?op=swap")
+
+    assert '<details class="raw-outcome"><summary>More</summary>' in html
+    assert BOX1 in html  # in the raw JSON
+    assert 'class="edit-effects"' not in html
+    assert REQUIRED_HEADING not in html
 
 
 def test_the_poll_partial_reads_only_the_check_and_renders_the_ending(

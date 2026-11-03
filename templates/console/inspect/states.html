@@ -1,0 +1,36 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags console_format world_tags %}
+{% comment %}
+The World tab's States section (#242, console/views/inspect_states.py): the viewpoint form (D4),
+then one GET /stories/{id}/states read: the header (viewpoint line and revision), the world clock,
+the count line (with {% block states_header_actions %}: #261's "Declare a State…" link), the unparsed notice
+and the rows (_state_row.html, Engine order). The form stays above every error (convention 10).
+Context: form, cast_unavailable, actions, states, header, clock_url, count, rows, rejected,
+unparsed_text, empty, not_found, states_error.
+{% endcomment %}
+{% block world_content %}
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" id="states-viewpoint">
+  <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{{ form.viewpoint.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif states_error %}{% include "console/_engine_error.html" with engine_error=states_error %}
+{% elif states %}
+<p class="states-header">{{ header }}</p>
+<p class="world-clock">World clock: {{ states.clock|clock_value }}{% if clock_url %} · <a href="{{ clock_url }}">Clock</a>{% endif %}</p>
+{% if empty %}<p class="none states-none">{{ empty }}</p>{% endif %}
+<p class="states-count">{% if rows %}{{ count }}{% endif %}{% block states_header_actions %}{% if rows %} · {% endif %}<a class="state-declare-link" href="{% url 'inspect:state-new' story_id %}">Declare a State…</a>{% endblock %}</p>
+{% if unparsed_text %}<div class="notice states-unparsed"><p>{{ unparsed_text }}</p><details><summary>More</summary>{% for entry in rejected %}<pre class="raw-item">{{ entry|pretty_json }}</pre>{% endfor %}</details></div>{% endif %}
+{% if rows %}
+<table class="states">
+  <thead><tr><th>Name</th><th>Value</th><th>Scope</th><th>Visibility</th><th>Owner</th><th>Since</th>{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_state_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}

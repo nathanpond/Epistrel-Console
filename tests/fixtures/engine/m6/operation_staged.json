@@ -1,0 +1,57 @@
+{
+  "id": "01JM6QP0000000000000000001",
+  "story_id": "01JM6ST0000000000000000001",
+  "kind": "play_turn",
+  "status": "committed",
+  "narrative_turn": 12,
+  "turn_variant": 1,
+  "timeline_revision": 6,
+  "principal": "console:nate",
+  "started_at": "2026-11-01T10:00:00Z",
+  "committed_at": "2026-11-01T10:00:04Z",
+  "viewpoint": null,
+  "origin": "generated",
+  "batch_operation_ids": null,
+  "attempts": [],
+  "config_revisions": {
+    "story": 4
+  },
+  "idempotency_key": "01JM6QP00000000000000000KY",
+  "queued_ms": null,
+  "first_call_offset_ms": 12,
+  "label": "staged_turn",
+  "stages": [
+    {
+      "name": "intent",
+      "status": "done",
+      "at": "2026-11-01T10:00:00Z",
+      "revision": 4
+    },
+    {
+      "name": "claim",
+      "status": "done",
+      "at": "2026-11-01T10:00:01Z",
+      "revision": 4
+    },
+    {
+      "name": "outcome",
+      "status": "done",
+      "at": "2026-11-01T10:00:02Z",
+      "revision": 5
+    },
+    {
+      "name": "completion",
+      "status": "done",
+      "at": "2026-11-01T10:00:03Z",
+      "revision": 6
+    },
+    {
+      "name": "response",
+      "status": "done",
+      "at": "2026-11-01T10:00:04Z",
+      "revision": 6
+    }
+  ],
+  "result": null,
+  "staged": true
+}

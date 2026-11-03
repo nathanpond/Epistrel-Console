@@ -76,7 +76,8 @@ def linked_principals(html: str) -> list[str]:
 def section(html: str, anchor: str) -> str:
     """The HTML from the table heading ``anchor`` to the next heading."""
     start = html.index(f'id="{anchor}"')
-    end = min(i for i in (html.find("<h3", start), html.find("<h2", start)) if i != -1)
+    ends = (html.find("<h3", start), html.find("<h2", start), html.find("</section>", start))
+    end = min(i for i in ends if i != -1)
     return html[start:end]
 
 
@@ -293,16 +294,26 @@ def test_links_per_type(operator_client: Client, engine: FakeEngine) -> None:
     profiles = section(html, "owned-engine_profiles")
     assert f'<a href="/profiles/{ulid("PROF01")}/">Fast local</a>' in profiles
     related = {
-        "related-stories": f'<a href="/stories/{ulid("STRY05")}/"><code>{ulid("STRY05")}</code>',
-        "related-scenarios": (
-            f'<a href="/catalog/scenarios/{ulid("SCEN02")}/"><code>{ulid("SCEN02")}</code>'
-        ),
-        "related-media": f'<a href="/media/{ulid("MEDIA2")}/"><code>{ulid("MEDIA2")}</code>',
+        "related-stories": f'<a href="/stories/{ulid("STRY05")}/">The Harbour Watch</a>',
+        "related-scenarios": f'<a href="/catalog/scenarios/{ulid("SCEN02")}/">Night Market</a>',
+        "related-media": f'<a href="/media/{ulid("MEDIA2")}/">Pier at night</a>',
     }
     for anchor, link in related.items():
         assert link in section(html, anchor), anchor
     assert "player, co_author" in section(html, "related-stories")
     assert "editor" in section(html, "related-scenarios")
+
+
+def _related_item(suffix: str, **fields: Any) -> dict[str, Any]:
+    return {
+        "id": ulid(suffix),
+        "relations": ["viewer"],
+        "name": f"Item {suffix}",
+        "status": None,
+        "version": None,
+        "listing_status": None,
+        **fields,
+    }
 
 
 def test_columns_per_type(operator_client: Client, engine: FakeEngine) -> None:
@@ -318,11 +329,75 @@ def test_columns_per_type(operator_client: Client, engine: FakeEngine) -> None:
     assert headers("owned-personas") == ["Name"]
     assert headers("owned-media") == ["Name", "Status"]
     assert headers("owned-engine_profiles") == ["Name", "Status"]
-    assert headers("related-media") == ["Id", "Relations"]
+    assert headers("related-media") == ["Name", "Status", "Relations"]
     characters = text(section(html, "owned-characters"))
     assert "Mara Voss published 2 listed" in characters
     assert "Harbour Night draft — unlisted" in text(section(html, "owned-scenarios"))
     assert "blocked_by_erasure" in section(html, "owned-stories")  # raw status text
+
+    # principals_lookup.json relates only stories, scenarios and media: one of every type.
+    body = lookup("principals_lookup_empty")
+    items = {
+        "stories": _related_item("STRY07", status="active"),
+        "characters": _related_item("CHAR07", status="published", version=1, listing_status="x"),
+        "scenarios": _related_item("SCEN07", status="draft", version=2, listing_status="y"),
+        "personas": _related_item("PERSA7"),
+        "media": _related_item("MEDIA7", status="live"),
+        "engine_profiles": _related_item("PROF07", status="active"),
+    }
+    for kind, item in items.items():
+        body["related"][kind] = {"count": 1, "items": [item], "next_cursor": None}
+    engine.respond("GET", LOOKUP, 200, json=body)
+    html = operator_client.get(ALICE).content.decode()
+    assert headers("related-stories") == ["Name", "Status", "Relations"]
+    full = ["Name", "Status", "Version", "Listing status", "Relations"]
+    assert headers("related-characters") == full
+    assert headers("related-scenarios") == full
+    assert headers("related-personas") == ["Name", "Relations"]
+    assert headers("related-media") == ["Name", "Status", "Relations"]
+    assert headers("related-engine_profiles") == ["Name", "Status", "Relations"]
+    assert "Item PERSA7 viewer" in text(section(html, "related-personas"))
+    assert 'id="item-' not in html  # related rows carry no item anchor
+
+
+def test_related_rows_show_name_and_columns(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", LOOKUP, 200, json=lookup())
+    html = operator_client.get(ALICE).content.decode()
+    stories = section(html, "related-stories")
+    assert (
+        f'<tr><td><a href="/stories/{ulid("STRY05")}/">The Harbour Watch</a></td>'
+        "<td>active</td><td>player, co_author</td></tr>"
+    ) in stories
+    scenarios = section(html, "related-scenarios")
+    assert (
+        f'<tr><td><a href="/catalog/scenarios/{ulid("SCEN02")}/">Night Market</a></td>'
+        "<td>published</td><td>3</td><td>listed</td><td>editor</td></tr>"
+    ) in scenarios
+
+
+def test_a_related_null_reads_a_dash(operator_client: Client, engine: FakeEngine) -> None:
+    body = lookup()
+    body["related"]["scenarios"]["items"][0].update(version=None, listing_status=None)
+    engine.respond("GET", LOOKUP, 200, json=body)
+    html = operator_client.get(ALICE).content.decode()
+    assert "Night Market published — — editor" in text(section(html, "related-scenarios"))
+
+
+def test_a_related_item_without_a_name_shows_its_id(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = lookup()
+    body["related"]["media"]["items"][0].update(name=None, status="candidate")
+    engine.respond("GET", LOOKUP, 200, json=body)
+    html = operator_client.get(ALICE).content.decode()
+    media = section(html, "related-media")
+    item = ulid("MEDIA2")
+    assert (
+        f'<tr><td><a href="/media/{item}/"><code>{item}</code></a></td>'
+        "<td>candidate</td><td>viewer</td></tr>"
+    ) in media
+    assert "held" not in media
+    assert "erasure" not in media
 
 
 def test_a_character_s_companion_is_nested_under_it(

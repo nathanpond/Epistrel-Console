@@ -2278,3 +2278,754 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Console M6 can be executed now but not verified: Engine M6 is open, with 14 verification bugs (2026-11-01).
   **Why:** CLAUDE.md: each Console milestone mirrors Engine M<n> and can't be verified before it.
   **Issue:** M6
+
+## /n8-exec M6 — 2026-11-01
+
+- **Decision:** Recorded `console/engine/openapi.json` from the pulled `ghcr.io/nathanpond/epistrel:edge` (revision label `b8fd182b284a26b5ca7245770cf331db7c712267`, digest `sha256:832af4bedc391468a69ecda381a96dd07a794b3abee7060df29ecccd33f8f852`; 211 operations, 566 components) with the repo's smoke compose, but under a separate project name (`n8-231-smoke`) and an extra override publishing the engine on `127.0.0.1:8011` instead of 8000. `engine_schema --check` against it exits 0.
+  **Why:** Port 8000 on this host is held by the Engine repo's own dev stack (`epistrel-engine-1`, image `epistrel:dev`), which isn't ours to stop. Only the published port differs; the image, env and DB are the smoke compose's.
+  **Issue:** #231
+- **Decision:** The recorded edge shows no drift beyond the fields #231 lists (component-by-component diff against the M5 recording), so nothing extra was typed and no follow-up was filed.
+  **Why:** The image is exactly `b8fd182`, the revision the plan was measured against.
+  **Issue:** #231
+- **Decision:** `StorySummary.engine_profile` is annotated `StoryProfileRef` although the class is defined later (beside `ProfileVersionRef`, as planned); Python 3.14's deferred annotations and `get_type_hints` resolve it.
+  **Why:** Keeps the planned placement without moving `ProfileVersionRef`'s block.
+  **Issue:** #231
+- **Decision:** `test_operation_labels_match_the_schema` lives in `tests/engine/test_contract.py` (as the test plan names it); extra M6 tests beyond the plan were added to `tests/engine/test_client.py`: `test_respond_without_the_m6_turn_fields_reads_defaults`, `test_respond_keeps_malformed_m6_entries_raw` (the plan's complement cases split out), `test_regenerate_inherits_the_lenient_m6_lists`, `test_history_keeps_a_turns_malformed_notice_raw`, `test_a_non_bool_incomplete_fails_the_history_page`, `test_timeline_answers_parse_their_effect_entries`.
+  **Why:** Each pins a rule the story states (inheritance, strict write answers, strict `incomplete`) that the named tests only touched in passing.
+  **Issue:** #231
+- **Decision:** `tests/engine_panel/test_admin_settings.py::test_help_texts_show_the_schema_defaults` subtracts `M6_NOT_YET_EDITABLE` too, although `provider_allowed_hosts` has no schema default (so it passes either way).
+  **Why:** The AC names the set as used by both tests; subtracting it keeps #241's removal a one-line change in one place.
+  **Issue:** #231
+- **Decision:** `RelatedItem` display fields in the principal-lookup fixtures follow the Engine's `core/principals.py` `OWNED` table at origin/main (related items read the owned item's display fields): story name+status, null version/listing_status; scenario all four; media caption+state, null version/listing_status.
+  **Why:** C15 (fixtures follow the Engine).
+  **Issue:** #231
+- **Decision:** `tests/test_engine_api_check.py::test_recorded_schema_matches` now expects `engine_version` `m6` (the recorded `info.version`).
+  **Why:** The test asserts the recording's own version; the M5 recording still said `m3`.
+  **Issue:** #231
+- **Decision:** Several fixtures the issue expected to need repair (`tests/test_reactivation_check.py`, `tests/test_offboarding.py`, `tests/models/test_reembed.py` partly) needed none or were found by the suite instead; the repair set is what the suite reported, plus inline story-list bodies in `tests/models/test_reembed.py`, `tests/test_eval_reports.py` and `tests/test_profiles_browse.py`.
+  **Why:** Those tests' bodies don't hit the changed components (or aren't served through the validating fake).
+  **Issue:** #231
+- **Decision:** Outcome ids in `tests/fixtures/engine/m6/` use the prefix `01JM60C` (digit zero), not D16's `01JM6OC`.
+  **Why:** `O` is outside the Crockford alphabet, so `01JM6OC…` fails `console.ids.is_ulid` (and the Engine's ULID pattern); `0C` is the nearest valid spelling. D16's prefix table in the M6 milestone description still reads `01JM6OC` and wants the same correction.
+  **Issue:** #232
+- **Decision:** `analyze_state_proposals` is registered with `response_model=AnalysisQueued` (not `status_models={202: …}` as `consolidate_story` is), and refuses a non-202 2xx as `bad_response` in the method.
+  **Why:** The AC asks every new operation to carry a response model; the schema declares only the 202, so the contract checks the same component either way, and the operation log's 202 branch (`queued`) runs before any model check.
+  **Issue:** #232
+- **Decision:** `ProviderBindingWritten` is a standalone model, not a subclass of `ProviderBinding`.
+  **Why:** The AC names only `ProviderDetail`/`ProviderMutation` (of `Provider`) and `ListedMemory` (of `MemoryView`) as subclasses; `BindingMutation` adds a required `timeline_revision` beside defaulted fields, which a standalone dataclass states most plainly.
+  **Issue:** #232
+- **Decision:** `register_provider`'s `record_about` reads the `registration` argument's `name` and answers `RecordedAbout("external_provider", None, None)` when it is missing or not a string; `replace_provider`/`delete_provider` read the `name` argument.
+  **Why:** The AC and pass-1 discretion line; the operation log keeps its rule that a row takes the hook's entity only with an id (so a nameless registration's row stays untyped, no operation-log change here).
+  **Issue:** #232
+- **Decision:** `test_m6_fixtures_validate`'s id rule also reads the keys of a `values` map (a per-character State's cast ids) and skips a model call's `request_id`; files with no Engine id at all (the clock, the provider registry, bindings, `states_alice`, `state_view`, `state_definition_written`, `memories_empty`) are listed in `M6_ID_LESS`, and every other file must yield at least one id.
+  **Why:** `request_id` is the model provider's id (`stub-…`), not an Engine ULID; the cast ids of `trust.values` are the fixtures' most important ids and are keys, not values. The id-less list keeps the "at least one id" check meaningful for the rest.
+  **Issue:** #232
+- **Decision:** Beyond the plan's tests, `tests/engine/test_client_m6.py` adds a table-driven round trip for all 30 operations, strict-write-answer and nested-strictness checks, the bodyless-write and never-an-expected-revision complements as their own tests, and a `record_about` unit test; the live smoke's complement asserts `details.module`.
+  **Why:** Each pins a rule the AC states (D15's strictness, D8's header split, the recording hook) that the named tests reach only in passing.
+  **Issue:** #232
+- **Decision:** The anchor in `m6/clock.json` is anchored at offset 130 (turn 3, beat 2), so its components and `display` are "now"'s, matching the AC's fixed `display`; components follow `Anchor.document()` at origin/main (`hour` a `[5, 11]` range, `segments` `[[0, 300, 720]]`), and the calendar is `{"kind": "gregorian"}`.
+  **Why:** D18 says the anchor's components are the anchoring offset's; anchoring at the clock's own offset keeps the fixture consistent with the required "+02h 10m (Saturday, between 05:00 and 12:00 (morning))".
+  **Issue:** #232
+- **Decision:** `CREATION_HELP["co_author_knowledge"]` in `console/forms/stories.py` repeats `CO_AUTHOR_KNOWLEDGE_HELP`'s text instead of importing it; `test_new_story_sends_co_author_knowledge_only_when_chosen` pins the rendered help to the constant.
+  **Why:** `console.forms.stories` must not import `console.story_settings` at load time: the module's own import note records a cycle through `console.engine_access` and `console.wording`. The pin test means the copy can't drift.
+  **Issue:** #233
+- **Decision:** `test_detail_lists_co_author_knowledge` is in `tests/catalog/test_scenarios_browse.py`, beside the #198 detail test (whose expected rows now include "Co-author knowledge" first), not in `test_scenarios_edit.py`.
+  **Why:** The scenario detail page's helpers (`detail`, `detail_page`) and its existing settings-row test live in the browse file. Only the file differs from the test plan.
+  **Issue:** #233
+- **Decision:** `test_co_author_knowledge_round_trips` asserts that `draft_to_write` carries the draft's `free`, that the editor reads it back selected, that an unrelated save leaves it out of the merge patch, that choosing `free` or an explicit `confirm` sends it, and that Engine default over a stored value sends `null`. Run against the pre-fix source, it failed (`KeyError: 'co_author_knowledge'`).
+  **Why:** The editor saves a key-level merge patch, so "dropping" meant the round trip left the key out of the write shape and the form. The test pins the write shape and both directions of the select.
+  **Issue:** #233
+- **Decision:** `tests/settings/helpers.py`'s `M5_READ_DEFAULTS` gains `"co_author_knowledge": "confirm"`. `test_create.py`'s `SIX` becomes `SEVEN` with it second, so the parametrised 422-placement case covers it too, and `CREATION_ERROR_PATHS` counts 9. One `engine_live` case (`test_co_author_knowledge_live`: default → free → story → reset → default) is added.
+  **Why:** This is the test upkeep the story's Claude's Discretion lines prescribe. The recorded fixtures predate M6 and lack the key, so an untouched form would otherwise send `confirm`.
+  **Issue:** #233
+- **Decision:** The `budget_warning` filter renders a non-`below_safety_minimum` warning as "<code>: `<setting>`" through `code_spans` (so the setting path is in `<code>`), and a `below_safety_minimum` one as `warning_text` through `code_spans`; anything that isn't a `ProfileValidationWarning` renders "".
+  **Why:** The story's Claude's Discretion (pass 1/2) prescribes this; `warning_text` itself is unchanged so flashes keep #84's raw backticks via `warning_flash_text`.
+  **Issue:** #234
+- **Decision:** `_put` gains `warn_in_flash` (default True) and loses `validation`; with it False ("Apply anyway") `_put` adds the "Warnings: …" info flash itself after the success flash. `_validation_texts` and the impact page's `validation_warnings` context are removed; the signed APPLY payload no longer writes `warnings`, and an old payload carrying one is applied with the key ignored.
+  **Why:** Each warning appears once per response, sourced from the write's own answer (the Engine validated what it wrote). Tolerating old payloads keeps open confirm pages working across the deploy.
+  **Issue:** #234
+- **Decision:** The Stage cell carries `class="call-stage"`, and beyond the named test plan I added tests for the creation report's budget warnings, an applied edit without warnings (no suffix), a held creation without warnings (no section), and the `budget_warning` filter's non-minimum/escaping/non-model cases.
+  **Why:** The AC lists the creation report among the pages that show the section, and the filter's other branches had no coverage; the class gives tests and styling a stable hook without changing the column text.
+  **Issue:** #234
+- **Decision:** `effect_line`'s `notes` carries `DISPATCHED_NOTE` ("dispatched · outbox", exported from `console/effects.py`) at D10's position for a dispatched change, with the full id only in `EffectLine.outbox_id`; templates render the id (through the `outbox_id` filter and `outbox_url`) right after that note.
+  **Why:** D10 fixes the notes' order with the outbox note before "+N min requested", while the Claude's Discretion lines keep the id out of the plain-text notes. A placeholder note keeps both: the order is in `notes` and the id is never part of the text.
+  **Issue:** #235
+- **Decision:** `SlotResult.operation_id` falls back to `row.engine_operation_id` (the `EngineOperation` column) where the plan says `row.engine_id`; `slot_result` takes any object with `pk` and `engine_operation_id` (an `OperationRow` protocol).
+  **Why:** The #44 model has no `engine_id` field; `engine_operation_id` is the column holding the Engine's operation id.
+  **Issue:** #235
+- **Decision:** `world_refusal`'s `event_settled` text lowercases the humanised status ("This event is already cancelled — it can't be changed"), and `clock_change_text`'s "(unchanged)" form shows the after side's `display`.
+  **Why:** D9's "<humanised status>" sits mid-sentence and its degraded text reads "already settled" in lowercase; C3's capitalised form would read "already Cancelled". For "(unchanged)" the after display is the clock as it now stands.
+  **Issue:** #235
+- **Decision:** `state_values` puts ids outside the cast in the `values` map's own (JSON) order; `viewpoint_line` reads a `None` or blank viewpoint as omniscient; `ConfirmPage` gains a `fact_rows` property (label, value, link) so `_confirm.html` looks up `fact_urls` without a template tag.
+  **Why:** "Key order" in the plan is the map's order (the Engine's), not a sort. A missing viewpoint is the Engine's default read. Django templates can't index a mapping by a loop variable, and a property keeps every existing `render_confirm` caller unchanged; the pre-#235 byte-for-byte test pins that.
+  **Issue:** #235
+- **Decision:** `STATE_DEFINITION_REQUEST` (nathanpond/Epistrel#680) lives in `console/world.py` beside D18, and `STATE_NOT_FOUND` is the template "This story has no State “{state}”" filled by `state_not_found_text(name)` (`str.replace`, as `{label}` is).
+  **Why:** D18 cites the constant and #265 imports it; it has no other D19/D11 home. `STATE_NOT_FOUND` needs a name inside the sentence, and the exported constant stays the one source of its wording.
+  **Issue:** #235
+- **Decision:** No PR is opened for #235 (per-story run on the milestone branch); the milestone PR body must carry D1–D19 in full, copied from the M6 milestone description, and the completion comment says so.
+  **Why:** The run's rules forbid opening a PR per story; the AC's "the PR body carries D1–D19" is met when the milestone PR is written.
+  **Issue:** #235
+- **Decision:** The memory list's Holder select lists every cast member (the player included, marked " (player)"); a kept out-of-cast id is "<short id> (not in the cast)". The holder cell uses `_character.html` with the cast name (no player suffix in the label) and `is_player`, so the player reads "Mara (player)" once.
+  **Why:** The AC says "every cast member … the player marked"; a memory can be held by the player's character, unlike an exposure witness. `cast_names` already carries the suffix for the options, while `_character.html` adds it itself.
+  **Issue:** #236
+- **Decision:** Any 422 from the list read other than `viewpoint_unresolved` goes through `MemoryListForm.apply_engine_error` (beside `query.<filter>`, else above the filters, "First page" for `query.cursor`), not only `validation_error`.
+  **Why:** ExposuresForm's precedent; the route declares only `validation_error` and `viewpoint_unresolved` as 422s, so this changes nothing for declared answers and keeps an undeclared 422 beside the filters rather than in a panel.
+  **Issue:** #236
+- **Decision:** "Clear filters" shows when any filter parameter in the URL is non-blank (valid or not); "· filtered" counts only filters actually sent (the valid form's query).
+  **Why:** An invalid filter is still something to clear; the heading only exists after a read, so it reflects what was sent (Discretion pass 1).
+  **Issue:** #236
+- **Decision:** The sanitize page's memory-list branch reads with its own `MEMORY_LIST_LIMIT = 100` constant in `inspect_memory.py` instead of importing the list view's `PAGE_LIMIT`.
+  **Why:** `inspect_memories` imports `inspect_memory` (`shown_reason`); importing back would be circular. Both are C11's page size, so the sanitize read sees the same page the list showed.
+  **Issue:** #236
+- **Decision:** A consolidation output with no window, scope or level but with sources shows only the sources `<details>`; with nothing set at all the cell is empty apart from the operation `title` (no defensive placeholder).
+  **Why:** C15: the Engine always records a window for its consolidation operations; no defensive case for an impossible shape.
+  **Issue:** #236
+- **Decision:** `console/operation_log.py`'s `queued_job_text` ("its outputs appear in Retrieval …", the #44 detail page) is left unchanged; only the Memory tab's `QUEUED_TEXT`/`CONSOLIDATE_UNREADABLE` now say "in the memory list".
+  **Why:** The Discretion names only those two texts; the #44 wording is still true (outputs are retrievable) and belongs to another page's tests.
+  **Issue:** #236
+- **Decision:** Malformed-entry and unknown-enum tests serve the page through `FakeEngine.side_effect` (unvalidated), since `respond` validates against the recorded schema, which refuses a missing `kind` or an unlisted enum value.
+  **Why:** D16: refusal/odd bodies are inline; the fake has no unvalidated `respond`, and `side_effect` is its documented escape for answers the schema can't express.
+  **Issue:** #236
+- **Decision:** `console.canon.active_fact` wraps `EngineClient.get_fact`: a 404 `fact_not_found` (unlogged) or any membership other than `active` is `None`; everything else re-raises, so `_locate`/`_supersede_form` keep their existing error mapping (story `not_found`, `module_off`, held). `FACT_NOT_FOUND` now lives once in `console/canon.py`.
+  **Why:** The story's Discretion (pass 1 and 2); `membership == "active"` is the Engine's own word, and the old list read returned active versions only.
+  **Issue:** #237
+- **Decision:** The supersede page's closed-version check compares the current-set read with the shell's story read's `timeline_revision`; without that read `current()` answers `CurrentSet(problem=RACE)` with no Engine call, so the version reads `closed · not confirmed`.
+  **Why:** `FactBody` carries no revision; the story read precedes the fact read, so equal revisions still prove nothing moved (Discretion).
+  **Issue:** #237
+- **Decision:** The withheld path is removed whole: `TurnTrace` is `(operation, eval_hooks, read_set)`, `read_turn_trace` is one omniscient read, and a 409 `idempotency_conflict` is an ordinary error (#43's panel in the inspector, "HTTP 409 idempotency_conflict" in History). The no-viewpoint fixture `operation_turn_no_viewpoint.json` is deleted (no other reader); `idempotency_conflict.json` stays (History's test uses it).
+  **Why:** Engine #534 shipped (`core/operation_view.read_operation` gives omniscient reads the hooks); the story's AC and test plan.
+  **Issue:** #237
+- **Decision:** Test `get_fact` answers set `membership="active"` explicitly instead of editing the shared fixtures, whose versions carry the pre-M6 values `canon`/`latent`.
+  **Why:** `FactBody.membership` is a plain string in the schema, so the fixtures validate; changing them would touch every Canon test for no behaviour change. The lineage and supersede tests state the membership they depend on.
+  **Issue:** #237
+- **Decision:** `views/history.py`'s `turn_traces` docstring lists "HTTP 409 …" in place of "withheld: …" among the notice reasons; the play page's "outside the 24 h window or another viewpoint" notice is left as is.
+  **Why:** That notice is about the stored `result`, which #534 doesn't change (Discretion pass 2).
+  **Issue:** #237
+- **Decision:** A present but blank `?version=` under `?profile=` counts as invalid (flash `INVALID_VERSION`, nothing sent), as the profile detail page treats it; the status form only carries `version` when it parsed.
+  **Why:** "anything else is ignored with the flash"; matches `profiles.profile_detail`'s `raw is not None` rule.
+  **Issue:** #238
+- **Decision:** Strict version parsing lives in `console/views/stories.py` as `parse_version` (ASCII digits, 1–2147483647) with `VERSION_MAX`; `stories.py` imports `INVALID_VERSION` and `detail_url` from `console/views/profiles.py` (no import cycle: profiles does not import stories).
+  **Why:** Discretion pass 1/2; `profiles._positive` left unchanged.
+  **Issue:** #238
+- **Decision:** The invalid-id header renders "Showing stories using `<code>ID</code>` That isn't an engine profile id · Clear" (message in `span.invalid-profile`); the client is created only after validation.
+  **Why:** AC "beside the 'Showing stories using …' line"; zero Engine calls is asserted on `engine.requests`.
+  **Issue:** #238
+- **Decision:** `_owned_row` and the new `_related_row` share `_named(kind, id, name)`; `test_columns_per_type` makes a second request with an inline one-related-item-per-type body. `tests/test_principals.py` `section()` also stops at `</section>` so the last table (related engine profiles) can be read.
+  **Why:** Discretion pass 1/2; the old helper raised on the page's final heading, which no test had read before.
+  **Issue:** #238
+- **Decision:** `test_links_per_type`'s related expectations change from id links to name links (the story's AC replaces them); added `test_a_related_null_reads_a_dash`, `test_a_version_filter_with_no_match_says_so`, `test_a_version_without_a_profile_is_ignored_silently` and a `stories_url` unit test beyond the plan.
+  **Why:** They pin Discretion lines (null cells, empty-state text with a version, silent ignore) the planned tests did not cover.
+  **Issue:** #238
+- **Decision:** The plan's `test_an_invalid_version_is_ignored_with_a_flash` is named `test_an_invalid_list_version_is_ignored_with_a_flash` in `tests/test_profiles_browse.py`.
+  **Why:** That file already has a profile-detail test of the planned name; reusing it shadowed the older test (ruff F811 / mypy no-redef).
+  **Issue:** #238
+- **Decision:** `tests/fixtures/profile_schema_m6.json` is the Engine's own `ProfileSchemaBody.of(profile_schema(None))` at `b8fd182` (from a `git archive` export run with the Engine's virtualenv), with `purposes` copied from the shared `profile_schema.json`.
+  **Why:** `purposes` comes from the Orchestrator's registry on a running deployment, not from the profile schema module; everything else differs from the shared fixture only by the added `clock`/`states` blocks, tags and `delivered` entries.
+  **Issue:** #239
+- **Decision:** The v3 effective configuration was computed at `b8fd182` as `_merged(profile_defaults(), structured_settings())` and its `capabilities` by `capability_names`; the `clock`/`states` keys are placed after `commitment` in the JSON (key order is not significant).
+  **Why:** The same method as the v2 fixture; the computed `effective` equals v2's plus exactly the two M6 keys.
+  **Issue:** #239
+- **Decision:** `test_m6_modules_render_from_the_schema` asserts the two clock flags as the form's existing boolean control (an unset/Yes/No `Select`), not checkboxes.
+  **Why:** The story's "checkboxes" wording doesn't match the schema form's boolean widget, and the AC forbids changing the form for M6; the guard is that the fields lay out from the schema alone.
+  **Issue:** #239
+- **Decision:** `inspect_page`'s 409 `module_off` path passes the section's registered level only when the 409's `details.module` is that section's own module.
+  **Why:** Passing a world level (`on`) with an M5 module named by the 409 would raise `ValueError` in the perception-level check; another module reads at its default.
+  **Issue:** #239
+- **Decision:** Added `tests/inspect/urls_world_states_only.py` (reusing `urls_world_stub_sections`' patterns) for `test_world_with_no_open_section_renders_the_shell`, and helpers `section_of`/`TAB_SECTIONS`/`CLOCK_FLAGS` in `console/inspect.py`.
+  **Why:** That test needs a urlconf with only the stub States section; the helpers keep the registry lookup in one place for the view.
+  **Issue:** #239
+- **Decision:** `test_knowledge_unchanged` renders `knowledge.html` directly against a golden string written in the test rather than captured by a separate run on main.
+  **Why:** Neither `knowledge.html` nor `knowledge_sections` changes in this story (`SectionLink` only gains a defaulted field), so the current render is main's markup.
+  **Issue:** #239
+- **Decision:** (Rule 3) `tests/test_confirm.py::test_confirmed_mode_unconfirmed_post_rerenders_with_the_posted_key` now asserts the incomplete-confirmation notice text is absent instead of the bare word "incomplete".
+  **Why:** The new `.badge.incomplete` rule in `templates/base.html` (an AC of this story) puts that word in every page's stylesheet; the test's intent is that no "incomplete" notice shows, which the sharper assertion keeps.
+  **Issue:** #239
+- **Decision:** `SlotField` rejects any value with more than five significant digits as `SLOT_TOO_HIGH` before `int()`, and accepts leading zeros ("007" → 7). Rewind and fork both use `console.world.slot_turn_text` for "turn N⁺ᵏ", and the help text imports `SLOTS_NOT_LISTED` (D17/D18).
+  **Why:** These are the pass-1/pass-2 Discretion lines. Python refuses `int()` on more than 4300 digits, and sharing the helpers keeps one source for the wording.
+  **Issue:** #209
+- **Decision:** A rewind 422 goes beside Inter-turn slot only when one of its field failures has the path `body.slot` or `slot` (through `engine_field_errors`). Every other refusal, including other `validation_error`s, keeps `_refused`. On fork, the existing `validation_error` branch places a slot 422 through `FORK_ERRORS["slot"]`.
+  **Why:** This follows the pass-1 422-placement line and the AC. It mirrors regenerate's in-form placement without changing any other rewind refusal.
+  **Issue:** #209
+- **Decision:** After an `unknown_chain` fork refusal, the "Fork along T:V" candidate links carry the valid posted slot (0 included) as `slot=`. `_fork_link` gained a keyword `slot` and builds the URL through `Basis.url`.
+  **Why:** This is the pass-2 gate recommendation, so the re-opened form keeps what the operator typed. The `nothing_to_undo` "Fork from here" link stays slot-less.
+  **Issue:** #209
+- **Decision:** En dashes in the new slot wording are written as `\u2013` in Python source, not as literal characters.
+  **Why:** ruff's RUF001 flags a literal en dash, and the repo already writes them as escapes (`console/world.py`, `console/effects.py`). The rendered text is unchanged.
+  **Issue:** #209
+- **Decision:** Deviation: a `providers` value that isn't a list is not shown as a "couldn't be read" row. The strict `ProviderList` reads it as `bad_response`, and the page shows #43's panel. The test pins the panel instead.
+  **Why:** To get the row, `ProviderList.providers` needs a default. `tests/engine/test_contract.py` requires each model's required fields to match the recorded schema, and the schema requires `providers`, so the model can't change. C15 also says not to add defensive cases for shapes the Engine never returns. The per-entry rule (one row per rejected entry, at its raw position) is built and tested.
+  **Issue:** #240
+- **Decision:** `_held.html` renders Delete only when `delete_url` is given. The provider pages include it with no `delete_url` or `ledger_url`, at status 503.
+  **Why:** D17's storyless-page rule wants #87's fragment "with no story links". The fragment always rendered Delete, which needs a story id. Every story-bearing caller still passes `delete_url`, so their output is unchanged.
+  **Issue:** #240
+- **Decision:** Provider-page tests patch `console.views.providers.engine_client_for` in `tests/engine_panel/conftest.py`'s shared `engine` fixture, next to the `engine_panel` patch.
+  **Why:** The new views live in their own module (the story's artifact list), so they take their own patch. Patching in the shared fixture keeps every panel test on one fake.
+  **Issue:** #240
+- **Decision:** The list's count line shows only when there are rows ("Config revision 4 · 2 providers"). When every entry failed it reads "· 0 providers" over the unread rows, and an empty registry gets no count, only "No providers are registered.". In the detail page, the last two Registration lines are whole-row cells, so their text reads exactly "Last changed at config revision <n>" and "Read at config revision <n>".
+  **Why:** The AC and the pass-1 Discretion line say an empty registry shows no "0 providers", and D15 says to count parsed entries only. Whole-row cells keep the AC wording contiguous inside the table.
+  **Issue:** #240
+- **Decision:** `manifest_values` reads an `http` value without `write` or `read` as "—". The constant `SECRET = "secret"` carries `# noqa: S105`, as the Engine's own pattern does.
+  **Why:** The pass-1 Discretion line says any other shape is "—". Ruff flags the word "secret", but this is a placeholder kind, not a credential.
+  **Issue:** #240
+- **Decision:** This story removed the `M6_NOT_YET_EDITABLE = {"provider_allowed_hosts"}` exemption from `tests/engine_panel/test_admin_settings.py`, along with its two uses. The constant #233 removed was a different one with the same name, in `tests/settings/test_story_settings.py` (`co_author_knowledge`). The deployment-settings one was still on the branch at 4c673b4.
+  **Why:** The orchestrator said the constant was already gone. On the branch, only the story-settings copy had been deleted, so this story's AC still applied as written.
+  **Issue:** #241
+- **Decision:** `LinesField` gains `lowercase`, `item_max_length` and `set_semantics`. With `lowercase`, `to_python` lowercases each entry and drops duplicates, keeping the first, so the 100-item cap counts the list that would be sent. The "Not …" error lists the entries as they were typed. `patch()` compares a `set_semantics` field with `_set_change`: it lowercases and deduplicates the original (a missing or null original counts as `[]`), keeps the stored order and appends new entries. `_lines` gains only `max_items`. `provider_allowed_hosts` has no `DEFAULTS` entry because the schema states no default.
+  **Why:** This follows the Discretion lines (pass 1, pass 2). The help text is the AC's sentence verbatim, with no "Default:" suffix.
+  **Issue:** #241
+- **Decision:** `_place_settings_error(exc, form, sent)` places `body.provider_allowed_hosts[i]` refusals, from `errors[]` or `details.field`, as "Line i+1 (`entry`): msg". With no index, or an index past the sent list, the field shows the message alone. A filtered copy of the `EngineError` goes to the unchanged `apply_engine_errors`, and the call is skipped when no field failure is left.
+  **Why:** This follows the Discretion lines (pass 1, pass 2), so other settings keep their placement.
+  **Issue:** #241
+- **Decision:** The settings save now applies D8. If the answer's `config_revision` equals the signed page's, it flashes `ENGINE_NOTHING_CHANGED` (info) instead of "Saved". A re-render keeps the posted idempotency key after local invalid input or an unknown outcome (`EngineUnreachable`, `bad_response`), and mints a fresh key after an answered refusal. `_render_settings` takes `idempotency_key`.
+  **Why:** The reconcile-2 Discretion line cites D8 for this page and names `test_engine_accepts_with_no_change`. Before this change the page minted a fresh key on every render.
+  **Issue:** #241
+- **Decision:** `test_a_missing_original_reads_as_empty` builds `DeploymentSettingsForm` directly, with the key absent or null in `original`. It does not go through the page.
+  **Why:** The fake Engine validates answers against the recorded schema, and `SettingsBody.provider_allowed_hosts` is a non-nullable array, so a page-level null answer can't be staged.
+  **Issue:** #241
+- **Decision:** The gate-closed one-State page is rendered by #239's shell short-circuit (`inspect_page(..., current="inspect:states")` checks the States section's gate before `build`), not by `build`'s own `gate_unavailable`. `world.html` gains a `{% block section_unavailable %}` around its inline panel, and `state.html` fills it with the State's name (from the URL) and "Back to States". `build` still checks `module_gate(STATES, …)` first and renders `gate_unavailable` the same way, so the page stays gated if the section registry ever changes.
+  **Why:** The pass-2 Discretion lines ask both for `current="inspect:states"` and for `build` to own the closed-gate render, but with `current` set the shell short-circuits before `build` runs. A template block keeps both behaviours (name, Back link, inline panel, zero `GET …/states/{name}`) without changing `inspect_page`.
+  **Issue:** #242
+- **Decision:** `tests/inspect/urls_world_stub_sections.py` now also drops the real `inspect:state` route (`STUBBED` gains `"state"`).
+  **Why:** The real `world/state/<state_name:name>/` is listed before the stub `world/state/probe/`, so it would serve "probe" as a State name and break #239's current-section tests.
+  **Issue:** #242
+- **Decision:** Per-character values are `ValueLine(label, text, undefined)` records, not the bare `(label, text)` pairs the Discretion line names.
+  **Why:** The template has to know which values are undefined (`span.undefined`) without matching on the text "undefined", which a `text` State can legitimately hold.
+  **Issue:** #242
+- **Decision:** The clock-link test uses two new urlconfs, `tests/inspect/urls_states_no_clock.py` (real routes, any `inspect:clock` dropped) and `urls_states_with_clock.py` (real routes plus #239's stub `inspect:clock`). It does not reuse `urls_world_stub_sections.py`.
+  **Why:** That urlconf stubs the States section itself. These variants keep the real States page and pin both renderings whether or not #243 has landed.
+  **Issue:** #242
+- **Decision:** On the one-State page, an As of value that fails validation leaves the heading as the bare name. A valid boundary reads "<name> · <boundary_text>" whether the read succeeded, 404'd or 422'd.
+  **Why:** There is no cleaned boundary to word. "as the story stands" would misstate what the operator asked for.
+  **Issue:** #242
+- **Decision:** Tests with a malformed States entry (`states_bad_item.json`) serve it unvalidated through `FakeEngine.side_effect`, as #240's provider tests do.
+  **Why:** The fake validates canned answers against the schema, and the bad entry is invalid by construction.
+  **Issue:** #242
+- **Decision:** (Rule 1) #239's `test_world_shell_without_sections` now runs on a new urlconf with no World section (`tests/inspect/urls_world_no_sections.py`), not the real one.
+  **Why:** Now that `inspect:states` is registered, the real World landing redirects to States. The test is about the empty shell, so it needs routes where no section is registered.
+  **Issue:** #242
+- **Decision:** D8's "nothing to change" base for the clock PATCH is `console.views.inspect_clock.base_revision(ctx)` = `getattr(ctx.config, "config_revision", None)`. At the recorded schema it is always `None`, so the usual "<members>: saved — Configuration revision now <n>" flash shows. `test_engine_found_nothing_to_change` monkeypatches `base_revision` to stand one in. The gap is filed as #270.
+  **Why:** Neither the Engine's `EffectiveConfig` nor its `StoryBody` carries a story `config_revision`, and the pass-2 Discretion line already says "base revision unknown → usual flash". Reading it through `getattr` makes the rule start working if the Engine adds the field.
+  **Issue:** #243
+- **Decision:** `ClockSettingsForm` owns both row formsets (`self.pacing`, `self.bands`), and its `is_valid()` validates all three. Each bound row is an extra row (`RowFormSet.initial_form_count` is 0 when bound), so a wholly blank row is skipped and dropped, and a partly filled one is validated as required.
+  **Why:** The AC names one form with `patch(original)`. The formsets' `empty_permitted` gives the Discretion's "blank row dropped, partial row required" rule with no extra code.
+  **Issue:** #243
+- **Decision:** The band row fields are named `name`, `from` and `to`, as the AC and the Engine's columns name them. `from` and `to` are added to `BandRowForm.base_fields` after the class is built, because `from` is a Python keyword.
+  **Why:** This keeps the posted names (`bands-0-from`) the same as the AC's and the test plan's wording.
+  **Issue:** #243
+- **Decision:** A refusal that carries a link (D9's `provider_unbound` → "Story bindings", `module_off` → "Config", a paused story's check) is shown above the form even when it names a field. A linkless D9 refusal naming a form field goes beside that field (e.g. `calendar`, `mode`, `provider_value`).
+  **Why:** The link must survive. A field error can't carry the link.
+  **Issue:** #243
+- **Decision:** A kept extra choice for `mode` or `time_awareness` (a value outside the known choices) is labelled with its humanised value, with no "(missing)" suffix.
+  **Why:** C3 says enum values are shown humanised, with no "unknown" suffix. Submitting the value unchanged makes no diff.
+  **Issue:** #243
+- **Decision:** A missing or bad snapshot on a row-button POST also triggers the one fallback `get_clock`.
+  **Why:** The row caps and the kept choices come from the snapshot. The AC's rule that "a missing or bad snapshot is replaced by one fresh `get_clock`" covers every POST, and the "no Engine call" tests post a valid snapshot.
+  **Issue:** #243
+- **Decision:** `tests/engine/test_fake_engine.py`'s M6 id rule now skips `provider_id`, and the two new clock fixtures are in its table (id-less).
+  **Why:** An external clock's `provider_id` is a provider's name (a slug, D16), not an Engine ULID, so the rule's "every `*_id` is a ULID" check would refuse `m6/clock_external.json`.
+  **Issue:** #243
+- **Decision:** The off notice sits at the top of the Clock section, above the Now line and the tables. The anchor's More always lists `revision`, `reference` and `segments`, and a malformed anchor's raw JSON is shown in an open `<details>`.
+  **Why:** The AC says the notice goes "above the table" without naming which. The top of the section keeps it visible.
+  **Issue:** #243
+- **Decision:** (Rule 1) Corrected #232's `m6/scheduled_events_alice.json` belief entry to the Engine's shape: `owner: null`, `participants: []` and `confidence: "believed"` (it had Alice as owner and participant, and `likely`, which is no `BeliefConfidenceLevel`).
+  **Why:** Engine `core/world_clock/scheduled.py` `list_events` at origin/main builds every belief view with `owner=None`, empty `participants` and a `suspected`/`believed`/`known` level; C15 says fixtures follow the Engine, and the story's belief test expects Owner "—". No other test pinned those values.
+  **Issue:** #244
+- **Decision:** The Scheduled events view treats a missing *or empty* `viewpoint` param as `omniscient` before binding D4's `WorldViewpointForm` (the shared form itself, which States also uses, is unchanged and still refuses a blank value).
+  **Why:** The story's Discretion (pass 2) says an empty param is the initial omniscient; changing the shared form would change #242's States behaviour outside this story.
+  **Issue:** #244
+- **Decision:** The row partial's actions hook is two context values: `actions` (`Mapping[event_id, RowActions] | None`; `None` hides the column) and `actions_template` (the template #262 renders per row with `row_actions`). The lookup is a new `get_item` filter in `console/templatetags/world_tags.py`, since no such filter existed.
+  **Why:** The Discretion fixes the mapping shape but not how a `RowActions` renders; a template name beside it keeps #262 free to define both without editing this partial.
+  **Issue:** #244
+- **Decision:** Test-plan variants are written with `config_body`'s `__` paths (`structured_v3(clock__scheduled_stops=False)`, `structured_v3(character_knowledge__partitions=False)`), not the plan's dotted `**{"clock.scheduled_stops": False}`.
+  **Why:** `structured_v3` splits keys on `__`, so a dotted key would set a literal `"clock.scheduled_stops"` key and change nothing.
+  **Issue:** #244
+- **Decision:** The world-shell test urlconfs (`tests/inspect/urls_world_stub_sections.py`, `urls_world_no_sections.py`) also drop the real `inspect:scheduled-events` route, as they already did for `inspect:clock` (#243).
+  **Why:** With the section registered, the "no open section" shell tests would otherwise redirect to it; the shell's behaviour is still tested against its stubs.
+  **Issue:** #244
+- **Decision:** The viewpoint line has the class `viewpoint-line`, and the picker form's id is `events-viewpoint`. Belief rows show `participants` "—" in the cell and More.
+  **Why:** These are cosmetic choices. The Engine always sends a belief's participants empty.
+  **Issue:** #244
+- **Decision:** `StateChangeRow` carries two extra members beyond the planned `(line, notes, outbox_id, outbox_url, more)`: `status_title` and `contingency_title` (the raw values for the cells' `title`, `""` for an empty contingency).
+  **Why:** #235's `EffectLine` holds only the humanised words, and the AC puts the raw status and contingency in `title`; carrying them on the row keeps `_state_changes.html` free of any `StateEffect` access, so #254/#255 can reuse it with `state_change_rows` alone.
+  **Issue:** #245
+- **Decision:** The dispatched note comes from #235's `EffectLine.notes` itself: `effect_line` already puts `DISPATCHED_NOTE` at D10's position, so `state_change_rows` turns that entry into `Note("dispatched · outbox", outbox_id, outbox_url)` in place rather than inserting one (the pass-2 discretion assumed `notes` left it out).
+  **Why:** That's the shape #235 shipped. Inserting a second note would duplicate it.
+  **Issue:** #245
+- **Decision:** The strip's "couldn't be read" lines (`<p class="warning">`, one per list) sit together after the settled table and before the Not-undone block, not beside each list's own table.
+  **Why:** `TurnWorld.unread` is one tuple in the planned shape. A list whose every entry failed has no table to sit beside, and keeping the lines together means the strip's order stays fixed.
+  **Issue:** #245
+- **Decision:** The Incomplete badge text and title reach `_transcript.html` through two `Entry` properties (`incomplete_text`, `incomplete_title`) that return #235's `INCOMPLETE_TEXT`/`INCOMPLETE_TITLE`.
+  **Why:** Templates can't import constants. This keeps the wording in `console/effects.py` (D17) without a template tag.
+  **Issue:** #245
+- **Decision:** The test fixture `m6/respond_world.json` is story-scoped `gold` plus a per-character `bank_balance` and Alice's capped `transfer_out`. It is registered in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` (POST respond, 200), whose completeness test requires every `m6/` file to be listed. The play page tests serve the M6 story with Structured v3 through a `side_effect` on effective-config, and they post the turn at the story's default viewpoint.
+  **Why:** The schema and id rules apply to every M6 fixture (D16). With the Structured v3 configuration the form refuses an explicit `omniscient` viewpoint, which this story doesn't test.
+  **Issue:** #245
+- **Decision:** Adding `states` to the play snapshot breaks the signature of any open play page's snapshot once: the next POST re-reads the story, and the HTMX inspector shows short ids until the page is reloaded.
+  **Why:** This was accepted at planning (pass 1). It is noted here for the PR.
+  **Issue:** #245
+- **Decision:** `SPEC_FIELDS` and the register page's initial values are read from the recorded `ProviderSpec` (property order, `default`s), and the enum choices from its `enum`s, so the guard test and the form can't drift from the schema.
+  **Why:** The story's "schema order" and guard-test lines; one source for the ten members `spec()` always sends.
+  **Issue:** #246
+- **Decision:** The Name input carries `maxlength=64` as a widget attribute only, not Django's `max_length` validator, so a 65-character name reads `NAME_INVALID` like every other bad name.
+  **Why:** Discretion says `max_length=64` and the AC says a failing name reads `NAME_INVALID`; the validator would have shown Django's own length message instead.
+  **Issue:** #246
+- **Decision:** The no-op check compares the manifest as canonical JSON and the other nine members by type and value (`True` never equals `1`).
+  **Why:** Discretion (pass 2) says to use plain equality for the other members. Python's `==` treats `True == 1`, so the type check stops a changed value from passing as unchanged.
+  **Issue:** #246
+- **Decision:** The Saved flash ends "…keeps what it resolved." and, when `config_revision` > snapshot + 1, appends " The deployment's configuration also changed elsewhere since you loaded this page; see Config changes" as a second sentence.
+  **Why:** The AC's literal ". The…" after a sentence that already ends with a period would read "resolved.. The"; the settings page's note has no final period either.
+  **Issue:** #246
+- **Decision:** Manifest-line members strip `body.manifest.` (`values.balance.read.url`); `body` and `body.manifest` read "manifest". A non-manifest path in an `invalid_manifest`/`validation_error` 422 goes through `apply_engine_errors`. A 422 with nothing placeable shows the panel. Manifest lines also add one plain error on Manifest ("The Engine refused this manifest") so `aria-invalid` applies.
+  **Why:** This follows the AC and the demo's member text. Pass 1's "minus `body.`" wording would have shown `manifest.values…`, which contradicts the demo.
+  **Issue:** #246
+- **Decision:** A 503 `erasure_pending` on a register/replace re-renders the form (503) with #87's held fragment. On a delete it renders `provider.html`'s held state (503). A replace whose snapshot re-read fails keeps the posted key (nothing was written).
+  **Why:** D17's storyless-page rule, and D8's "nothing sent keeps the key".
+  **Issue:** #246
+- **Decision:** The bind form's signed snapshot carries one extra member beyond the planned `{story_id, story_name, story_status, provider, keys, existing}`: `unread` (an unreadable existing binding entry names this provider).
+  **Why:** The "The existing binding couldn't be read — saving replaces it" notice then survives a re-render with no read. It is a pure display flag; the no-op check still treats the binding as absent.
+  **Issue:** #247
+- **Decision:** "Story not found" (404) is rendered by the Providers page and bind form themselves (no shared helper exists); an `EngineError` 404 on `get_story` or `list_provider_bindings` gives it, any other failure #43's panel. A bind-form PUT 404 without `details.provider` shows "Story not found" above the form with status 404.
+  **Why:** The AC fixes the wording. No Console module had a story-not-found page to reuse.
+  **Issue:** #247
+- **Decision:** A binding with an empty id map shows "no ids" in the Ids column, and the page's count line reads "1 binding" / "N bindings" (parsed entries only, D15).
+  **Why:** The AC names a count but not its words, and is silent on an empty map. "no ids" matches the Manifest-needs wording.
+  **Issue:** #247
+- **Decision:** Labels use `<code>` for unused kept keys too ("`<code>old</code>` (not used by the manifest — blank drops it)"). `id__<key>` fields use `use_required_attribute = False`, so a blank submit reaches the server's message, as the demo shows.
+  **Why:** This matches the per-key labels (C10's server-side errors).
+  **Issue:** #247
+- **Decision:** `test_provider_codes`'s unlinked `provider_unbound` complement now runs under a new urlconf, `tests/stories/urls_without_providers.py` (story routes minus `providers`/`provider-bind`). `test_provider_unbound_links_the_bindings_page` now asserts the real urlconf's link, and the D19 stub urlconf still links it.
+  `tests/inspect/test_clock_settings.py::test_provider_unbound_names_the_binding_page` uses the same urlconf for its unlinked case. `m6/bindings_orphan` joins `tests/engine/test_fake_engine.py`'s M6 fixture table (schema-validated, id-less).
+  **Why:** Registering `stories:providers` made the old complement's "" unreachable under the real routes. D19 pins the unlinked case with a urlconf that lacks the name.
+  **Issue:** #247
+- **Decision:** `tests/stories/conftest.py`'s fake-Engine fixture now also patches `console.views.story_providers` and `console.views.story_settings`.
+  **Why:** The new page, and the settings-page link test, need the fake behind those views.
+  **Issue:** #247
+- **Decision:** On External values, each citing fact's lineage link is its short fact id (`engine_id`) at the start of the line, followed by the proposition and "· current" / "· closed <tx_to>"; the proposition itself isn't the link text.
+  **Why:** `_proposition.html` renders its own entity and predicate links, and an `<a>` can't nest inside another `<a>`.
+  **Issue:** #248
+- **Decision:** The External values tests pin the unlinked rendering with a new `tests/inspect/urls_without_providers.py`, which drops `stories:providers` and `engine:provider`. The linked rendering still uses the shared `tests/urls_with_engine_operation.py`.
+  **Why:** #240 and #247 already registered both names, so the real urlconf links them. D19 says to pin the unlinked case with a urlconf that lacks the names.
+  **Issue:** #248
+- **Decision:** The External values section has no `module_off` test. A 409 on this read would still fall through to #43's panel, as the story says.
+  **Why:** The recorded schema declares no 409 for `GET /stories/{id}/inspect/external-facts`, so the schema-validating fake refuses to serve one.
+  **Issue:** #248
+- **Decision:** The "proposition that doesn't parse" in `m6/external_facts_page2.json` is an Instant whose `at` is `130.0`. The unreadable-entry test uses a read whose `turn` is `4.0`.
+  **Why:** Both are schema-valid (JSON Schema counts 130.0 as an integer), so the fake serves them, but the Console's strict int parsing rejects them.
+  **Issue:** #248
+- **Decision:** `parse_as_of` is extracted into `console/forms/inspect.py` and used by both `ExposuresForm` (unchanged behaviour) and the new `ExternalValuesForm`.
+  **Why:** The story's Claude's Discretion asks for one as-of rule with shared constants.
+  **Issue:** #248
+- **Decision:** Registering `inspect:external-values` meant updating the shared test scaffolding: `external-values` joins `STUBBED` in `tests/inspect/urls_world_stub_sections.py`, and the two new fixtures join `M6_FIXTURES` in `tests/engine/test_fake_engine.py` (with `external_facts_empty` in `M6_ID_LESS`).
+  **Why:** This follows #244's precedent. The #239 shell tests assume only their stubbed sections are registered, and D16's table must list every m6 fixture (Rule 3).
+  **Issue:** #248
+- **Decision:** `listing_row(listing, story_id, on_page)` and `action_query(listing, story, next_url)` take extra keyword-only arguments: `story=`/`gate=` on `listing_row` (the actions need the shell's story read and D1's gate) and `with_state=` on `action_query` (only Compensate carries `state`). Both still return dicts/rows exactly as the AC names them.
+  **Why:** The AC's signatures have no slot for the gate, the story revision or the per-action difference. Keyword-only extensions keep the named call shape.
+  **Issue:** #249
+- **Decision:** A row counts as redacted when `value` is absent (`is_redacted`). The Effect cell then reads `REDACTED`, and More leaves out the effect JSON.
+  **Why:** The AC defines it that way ("a redacted row (`value` absent)"). Engine #211 omits `value` and everything after it.
+  **Issue:** #249
+- **Decision:** The count line shows only when at least one row parsed. When every entry was rejected, neither the empty line nor a count shows, only the D15 notice. The rejected entries sit in one page-level `<details>`, not in table rows.
+  **Why:** D15 says "when every entry failed there is no empty text, only that notice", and the AC asks for a page-level `<details>` with only the rejected entries.
+  **Issue:** #249
+- **Decision:** `test_provider_unlinked_until_registered` checks the linked case under the real urlconf, not under `tests/urls_with_engine_operation.py`.
+  **Why:** That shared stub urlconf replaces `inspect:reconciliation` itself with a stub, so the section can't render there. #240 has since registered `engine:provider` in the real urlconf, so the real link is now the one to test.
+  **Issue:** #249
+- **Decision:** Registering `inspect:reconciliation` meant updating the shared test scaffolding. `reconciliation` joins `STUBBED` in `tests/inspect/urls_world_stub_sections.py`, so #239's "Effects shell without sections" test still sees no section. `tests/test_effects.py::test_d19_unregistered_links_are_none` now expects `outbox_url`/`reconciliation_link` to resolve to the real section (only `operations:engine` stays unregistered). The two new fixtures join `M6_FIXTURES`, with `reconciliation_empty` in `M6_ID_LESS`.
+  **Why:** Those tests pinned the pre-#249 state. This follows #240/#244/#248's precedent (Rule 3).
+  **Issue:** #249
+- **Decision:** A held 503 on the reconciliation read returns `render_held(...)` from `build`. Every other read error, `module_off` included, is #43's panel inside the section.
+  **Why:** Claude's Discretion asks for `render_held`. D1 says the list is never gated, so a 409 must not grey the tab.
+  **Issue:** #249
+- **Decision:** In `reconciliation_actions.json`, `BX13` (`reconciliation_required`) is the `claimed` "gold −500 — “buy sword”" row. The test plan's "Claimed" and the U+2212 effect assertions live there because #232's `reconciliation.json` uses different values (`bank_balance`, status `unknown`), and that file isn't edited. The redacted settleable row and the linked Compensated-by case use inline copies of #232's body.
+  **Why:** The test plan's cases expect values that #232's fixture doesn't carry.
+  **Issue:** #249
+- **Decision:** `tests/play/test_world_strip.py` (#245) now expects linked outbox ids and a linked count under the real urlconf. Its unlinked case moved to `tests.inspect.urls_world_no_sections`, which drops `inspect:reconciliation`. That case is renamed `test_live_turn_count_is_plain_text_without_the_reconciliation_list`.
+  **Why:** Those tests pinned the pre-#249 rendering ("before #249"). D19 says the links appear once #249 registers the name (Rule 3).
+  **Issue:** #249
+- **Decision:** `stage_flags(record, rows)` also returns the partial's label (`stages_label`, a `<span title=raw>` or "Staged turn"/"—") and D13's `INCOMPLETE_TEXT`/`INCOMPLETE_TITLE`, so `_engine_operation_stages.html` never spells a D13 constant itself. `StageRow` gains `has_revision` beside the six planned members, for the Revision-column rule.
+  **Why:** D17: templates import wording from `console/effects.py` and never redefine it. The partial takes only `record` and `stages` plus the flags both views pass.
+  **Issue:** #250
+- **Decision:** On `operations:engine` the "This Console's log" section renders after the Engine's view. A held 503 with no story known uses its own dict (held text, Retry, the ledger link, no Delete); with a known story it uses `held_context`. The malformed-id heading and title show the raw input, escaped. The Engine 404 is matched on `http_status == 404` whatever the code.
+  **Why:** The AC lists the fields first and the log second. The held rules follow the story's pass-2 discretion. `console.held._ledger_url` is private, so the view has a three-line copy.
+  **Issue:** #250
+- **Decision:** Fixtures `m6/operation_staged*.json` have `result: null`, `viewpoint: null`, turn 12 variant 1 and a ULID idempotency key, not `get_operation.json`'s result. The incomplete one has operation `status: in_flight` (Engine `OperationStatus`).
+  **Why:** `get_operation.json`'s result body carries `01JA…OP3`-style ids, which aren't ULIDs, so `test_m6_fixtures_validate`'s id check would fail. A read naming no viewpoint gets a null result anyway.
+  **Issue:** #250
+- **Decision:** The D19 tests that pinned the unlinked `operations:engine` case on the real urlconf now use a new `tests/urls_without_engine_operation.py`. These are `tests/test_effects.py::test_d19_unregistered_links_are_none` and `tests/play/test_world_strip.py::test_incomplete_badge_is_plain_text_before_the_operation_page`. `test_incomplete_turn_is_badged` now expects the linked badge, and a new test pins the real-urlconf link.
+  **Why:** The story's pass-2 discretion: those tests flip once the name is real (Rule 3).
+  **Issue:** #250
+- **Decision:** The golden `tests/fixtures/inspect/golden/lite_history_items.html` was re-rendered. Its seven unlogged operation-id cells now carry the `engine-operation-link` anchor, and nothing else in it changed (diff checked). The module docstring records this, as #203's change did.
+  **Why:** The AC links an item with no log row to `operations:engine`. The golden pinned the pre-#250 markup (Rule 3).
+  **Issue:** #250
+- **Decision:** The Set page checks the name `world_clock` before any State read and shows D9's `reserved_state` sentence (linking `inspect:clock`) with no read and no PUT; a read State of `type: clock` gets the same.
+  **Why:** The Engine's `GET …/states/{name}` answers 404 for `world_clock` (Engine `read_state` at origin/main), so a `type: clock` check alone would never fire; the pass-2 discretion asks for the reserved sentence on the Set page (C15: follow what the Engine returns).
+  **Issue:** #251
+- **Decision:** D9's `reserved_state` sentence is exported as `console.world.RESERVED_STATE_TEXT` (used by `world_refusal` and by #251's pre-check) rather than written a second time.
+  **Why:** D17 forbids a page story redefining a wording constant; exporting the existing literal from its owner module keeps one source (Rule 3, no wording change).
+  **Issue:** #251
+- **Decision:** `inspect_page` gained `gate_section: bool = True`; `inspect:state-written` passes `False`, so it marks States current (D3) without applying the States gate.
+  **Why:** The pass-2 discretion says the report page isn't gated by the States module (it reads only the #44 row), but D3 has every page below a section pass that section as `current`, which made the shell grey it. The keyword defaults to the old behaviour for every other page (Rule 3).
+  **Issue:** #251
+- **Decision:** A "Change by" result replaces the Value line with "Changed by +5 gold (120 gold → 125 gold)" (no "Value:" prefix); a set reads "Value: 120 gold → 125 gold".
+  **Why:** The AC gives both texts and the demo shows the Changed-by line verbatim; one line per result keeps them from repeating the change.
+  **Issue:** #251
+- **Decision:** The Character select is a `CharField` with a `Select` widget, not a `ChoiceField`; `clean_scope_key` normalises (C13) and checks `is_ulid`, and a posted id not in the cast is kept as the "(not in the cast)" option.
+  **Why:** A `ChoiceField` would answer Django's "Select a valid choice" for a kept or lower-case id, where C13 and the discretion ask for the id to be sent when it passes `is_ulid` and `CHARACTER_INVALID` otherwise. The free-text fallback (story read failed) uses the same clean, blank being `CHOOSE_CHARACTER`.
+  **Issue:** #251
+- **Decision:** `CAST_UNAVAILABLE` shows above the form only for a per-character State (the only form that uses the cast); a request-validation 422 carrying `details.errors` is placed with `apply_engine_errors` before falling back to #43's panel; `GIVE_REASON` ("Give a reason.") and `ENTER_VALUE` live in `console/forms/states.py` with the story's other constants.
+  **Why:** Small placement calls the story leaves open; they follow #243's refusal ladder and the story's artifact list.
+  **Issue:** #251
+- **Decision:** #242's `test_column_order` now expects the Actions column, and `state_written_trust` joined the M6 fixture table in `tests/engine/test_fake_engine.py` (validated against the schema like every other M6 fixture).
+  **Why:** #242's test pinned the empty actions hook that this story fills; the fixture table's complement test requires every `m6/` file to be listed (Rule 3).
+  **Issue:** #251
+- **Decision:** D9's `clock_external` sentence is now the exported `console.world.CLOCK_EXTERNAL_TEXT`, used by `world_refusal` and by #252's advance page for an external clock on GET.
+  **Why:** The AC asks the GET to show "D9's `clock_external` sentence" with no call; exporting it (as `READONLY_EXTERNAL_TEXT` is) keeps one copy of the wording (D17) instead of redefining it in the view.
+  **Issue:** #252
+- **Decision:** `ClockAdvanceForm.minutes` reuses #243's `WholeNumberField`/`_digits` (ASCII digits, `INT_MAX` 2147483647, `SKIP_INVALID` "Enter a whole number of minutes, 0 or more.", `INT_TOO_BIG`); `reason` is a plain `CharField` with its 1–200 bound checked in `clean_reason` so no `maxlength` renders (C10).
+  **Why:** The AC's messages and bound are exactly #243's; reusing them avoids a second digit parser in the same module.
+  **Issue:** #252
+- **Decision:** `test_gate_unread_post_makes_no_write` covers two cases: an effective config whose `clock` key is missing (D1's `UNREAD`, so `gate_refusal` shows `GATE_UNREAD` above the form) and a 503 on the effective-config route (the Inspect shell's panel; `build` never runs). Both make zero advance requests.
+  **Why:** A failed effective-config read stops `inspect_page` before the page's build, so `GATE_UNREAD` can only show through a read that succeeded but lacks the switch; the 503 case still pins "no write".
+  **Issue:** #252
+- **Decision:** The advance page omits the hidden `expected_revision` input entirely when the shell's story read failed (rather than rendering it empty); a 422 request-validation error at bare `body` lands as `apply_engine_errors`'s non-field "body: <message>".
+  **Why:** The AC says the field is "absent when that read failed"; the bare-`body` placement is the shared helper's existing behaviour, which the Discretion ("a non-field error above the form") accepts.
+  **Issue:** #252
+- **Decision:** Result-page expectations follow #232's `m6/clock_advanced.json` (130 → 190, "Advanced by +01h 00m", "Slot: turn 3⁺² · start"), not the story's illustrative "+00h 30m"/"turn 2⁺¹"; the new `m6/clock_advanced_to_time.json` (130 → 1080, turn 2⁺², ids `…0252`) is listed in the fake-engine fixture table.
+  **Why:** The Discretion says the fake doesn't compute and the fixture stays as is; the fixture table's complement test requires every `m6/` file to be listed (Rule 3).
+  **Issue:** #252
+- **Decision:** `ScheduledEventForm` carries the idempotency key and `expected_revision` as hidden form fields (not template-level inputs as #252 does), and an answered refusal rebinds a fresh form to a copy of the POST with both overwritten.
+  **Why:** The story's Discretion prescribes that re-render mechanic (pass 2) and the `initial_revision` constructor argument; it keeps every input, checkboxes included, on re-render.
+  **Issue:** #253
+- **Decision:** A POST carrying participant or shared-owner values while the shell's story read failed is refused with the non-field error "Your participant and shared-owner choices couldn't be checked; reload and try again" beside the page's `CAST_UNAVAILABLE` notice (the notice is shown once, not repeated in the error).
+  **Why:** The Discretion says "CAST_UNAVAILABLE plus …"; the notice already renders whenever the story read failed, so the error carries only the second half.
+  **Issue:** #253
+- **Decision:** #244's column header was extracted to `_scheduled_event_head.html` (shared by the section and the result page), and the Demo's highlight is one `table.scheduled-events tr:target` rule in base.html's style block.
+  **Why:** Discretion pass 2 (#244 inlined the `<thead>`; it added no `:target` rule).
+  **Issue:** #253
+- **Decision:** Request-validation paths with list indexes (`participants[3]`, `shared_owners[0]`) are placed on the list field through an `apply_engine_errors` alias map covering indexes 0–19 (the Engine's 20-item cap).
+  **Why:** `apply_engine_errors` matches aliases by exact path; 20 is the most either list can carry.
+  **Issue:** #253
+- **Decision:** The result page's More holds only the pretty-printed raw answer; a create's `?report=` with no `report`, a blank or a non-integer value reads "Not found …" with only the shell's reads.
+  **Why:** `ScheduledEventWritten` carries no change id or N⁺k position for further More rows; the blank/missing case follows Discretion pass 2.
+  **Issue:** #253
+- **Decision:** `m6/history_world_alice.json` leaves `effects` out of every item instead of the story's `effects: []`.
+  **Why:** C15: the Engine's `_structured` (core/history.py at `b8fd182`) sets `effects` only on omniscient reads and `HistoryItemModel` drops `None`, so a character read's items carry no `effects` key. The Console gates per-beat lists on `output_viewpoint == "omniscient"` either way.
+  **Issue:** #254
+- **Decision:** The golden `tests/history/golden/m5_items.html` was captured from the milestone branch's pre-#254 state (not `main`), from the history-header line through `</table>`.
+  **Why:** #250 already changed History's operation links on this branch legitimately; the golden pins what #254 must not change. The call-log and golden tests were also run against the pre-change code (both passed there; the other 10 new tests failed as expected).
+  **Issue:** #254
+- **Decision:** A beat's summary adds " · N couldn't be read" only when none of its entries parsed; otherwise it counts parsed changes and the unparsed ones sit inside the same details under the "couldn't be read" line. Turn-level and beat-level "couldn't be read" wording is one helper, `console.history.unread_line`.
+  **Why:** Discretion pass 1's literal wording; keeps one phrasing with #245's.
+  **Issue:** #254
+- **Decision:** Duplicate `(turn, variant)` summaries are tracked by key (first wins), and `TurnGroup` exposes `incomplete_text`/`incomplete_title` properties so the template uses D13's constants without filling them itself.
+  **Why:** Mirrors #245's play `Entry`; a "first wins" check on the group's fields would let a second summary override a first with no changes.
+  **Issue:** #254
+- **Decision:** (Rule 3) Registered `history_world`/`history_world_alice` in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` table (validated against `GET /stories/{story_id}/history`, ids checked as ULIDs); message ids use the `01JM6MM` prefix since D16 lists none for transcript messages.
+  **Why:** `test_every_m6_fixture_is_in_the_table` requires every `m6/` fixture be listed and schema-validated.
+  **Issue:** #254
+- **Decision:** The Effects trail names scopes with `console.cast.character_labels(story.cast)` (`{}` when the shell's story read failed, giving short ids and `CAST_UNAVAILABLE` above the blocks, shown only when a block renders).
+  **Why:** The story says "the same helper #245/#254 use"; #254's History passes `character_labels` to `state_change_rows`.
+  **Issue:** #255
+- **Decision:** An empty `?before_turn=` is treated as no cursor (first page, no `CURSOR_DROPPED`); only a non-empty value that isn't ASCII digits is dropped with the notice.
+  **Why:** An empty value is a blank field, not a malformed link; the AC lists non-digit values only.
+  **Issue:** #255
+- **Decision:** `test_errors_stay_in_section`'s "a 500 panel" case uses an unreachable Engine (`httpx.ConnectError`) and adds a 503 `database_unavailable` and a cursorless 422; the cast-unavailable case fails the story read the same way.
+  **Why:** The schema-validating fake refuses a 500 on `GET /stories/{id}/history` and `GET /stories/{id}` (neither declares one; C15), and the other cases exercise the same `panel_for` branch.
+  **Issue:** #255
+- **Decision:** (Rule 3) Added `effects-trail` to `tests/inspect/urls_world_stub_sections.py`'s `STUBBED`, and registered `history_trail_page1`/`history_trail_page2` in `tests/engine/test_fake_engine.py`'s `M6_FIXTURES`.
+  **Why:** Routing the real section made the Effects landing redirect in `test_effects_shell_without_sections` (as #249 did for `reconciliation`); every `m6/` fixture must be in the table.
+  **Issue:** #255
+- **Decision:** The paging links read "Newest page · Older →" in one `<p class="paging">`, and a refused cursor's 422 shows `CURSOR_REFUSED` with a "Newest page" link keeping no other query parameter (the cursor is the page's only input).
+  **Why:** Convention 6/C12's links via `console.paging.paging(..., param="before_turn")`; the Claude's Discretion lines say a 422 on a cursor makes no second read.
+  **Issue:** #255
+- **Decision:** `notice_cards` takes a keyword `next_url` (beyond the AC's signature and the Discretion's `chain`/`controls`), carried on each card for the Fix link's `?next=` and the Override form's `next` field; the play inspector's is `stories:detail?operation=<turn's operation>` (bare play page when the id is unknown), History's is `request.get_full_path()`.
+  **Why:** The AC fixes `next` per page (play page with the same `?operation=`, history page's full path) but gives the builder no other way to learn it; `?operation=` reaches the same logged inspector the `?turn=` path selects.
+  **Issue:** #185
+- **Decision:** The first-load inspector (`_latest_inspector`) also takes `overridden` and shows notices, beside the three named paths (result/row/selected).
+  **Why:** It is a `row_inspector` path every play page render can take; without it a first page load would show an overridden notice in full.
+  **Issue:** #185
+- **Decision:** `_notices.html` renders both modes: the `<section>` of cards plus the unread line, and with `fragment=True` the cards alone (the override view passes one overridden card). Card wording that never varies ("Fix / Clarify", "Override", "Overridden this session", the external-effects warning) is written once in the template; the reasons, kind text and the two per-label lines are constants/properties in `console/notices.py`.
+  **Why:** One template is the one notice view (AC); keeping the fixed words in one place avoids two copies drifting.
+  **Issue:** #185
+- **Decision:** Added the notice-card styles (and a `section.notices span.disabled` greyed style) to `templates/base.html`.
+  **Why:** #239's `span.disabled` style is scoped to `nav.tabs`/`nav.subtabs` only, so a greyed Fix control would otherwise look like plain text (Rule 2, missing critical presentation).
+  **Issue:** #185
+- **Decision:** D19's shared stub urlconf (`tests/urls_with_engine_operation.py`) gains a `stories:correct` stub at `stories/<id>/correct/<int:turn>/` for the Fix link's linked case; the real urlconf (no `stories:correct` until #263) pins the no-Fix complement.
+  **Why:** D19: a story testing a link to a later story's route adds its stub name there and never its own urlconf.
+  **Issue:** #185
+- **Decision:** `tests/fixtures/engine/m6/history_notices.json` puts one correctable and one `correctable: false` notice on the same head turn, as the test plan specifies, though the Engine marks a turn's notices uniformly (a correction-written turn's are all informational).
+  **Why:** The test plan names this fixture shape explicitly; it is schema-valid and exercises the per-card reason order. Registered in `M6_FIXTURES` (D16).
+  **Issue:** #185
+- **Decision:** Rule 3 fix: ran `ruff format` on `tests/inspect/test_effects_trail.py` (one over-long line committed in a120741, #255).
+  **Why:** It failed `ruff check` (E501) and `ruff format --check` on the branch head, blocking this story's gate; formatting only, no behaviour change.
+  **Issue:** #185
+- **Decision:** `templates/console/_confirm.html` renders `page.error` through `inspect_tags.code_spans` (escaped first, then backtick spans become `<code>`).
+  **Why:** D1 gate reasons and D9 refusal texts carry backtick spans ("`states.level`", "the `max` bound"); the shared confirm page printed them raw. Only #235's `test_error_link_after_the_error` sample error carried a backtick; its expectation now reads `<code>states</code>` (plus an escaping complement), and other pages render unchanged (Rule 2: in-scope correctness of the shared confirm page this story is the first to put a D1/D9 text on).
+  **Issue:** #256
+- **Decision:** Settle-now's confirm page carries `next` only as the confirm template's own hidden `next` (its `cancel_url`), not again in `ConfirmPage.hidden`; `provider`, `value`, `listed_reason` and `expected_revision` go in `hidden` (absent or blank ones left out).
+  **Why:** `_confirm.html` already posts `next` = the safe Cancel target; a second `next` input would duplicate it. The Discretion line's goal (a re-render keeps its facts and Cancel target) holds.
+  **Issue:** #256
+- **Decision:** Settle-now refusal links: `module_off` → "Config", `not_found` (`no_listing`) → "Reconciliation" (the view adds the `inspect:reconciliation` URL, since `world_refusal` gives that code no url), `story_paused` → "See the check" (the paused-check URL). A 5xx or an unknown 4xx shows #43's panel above the confirm page; an answered 4xx mints a fresh key, a transport failure, `bad_response` or 5xx keeps the posted key (D8).
+  **Why:** D8/D9 name the links and the key rule; a 5xx's outcome is unknown, so replay is the safe resubmit.
+  **Issue:** #256
+- **Decision:** The result template's "not available" context key is `result_unavailable`, not `unavailable`.
+  **Why:** `inspect_page` already uses `unavailable` for the tab-level greyed panel; reusing it rendered the whole tab as "Not available".
+  **Issue:** #256
+- **Decision:** Queued result shows the recommended extra line "It stays on the Reconciliation list until it is applied — don't settle it again" after `QUEUED_TEXT`; no Console-side blocking of the link.
+  **Why:** The Discretion line's recommendation (shown at the gate).
+  **Issue:** #256
+- **Decision:** The result page's `<title>` is "Inspect · Settle now · <story name>" and the heading's outbox id links D11's `outbox_url`; a `?report=` row whose stored response fails to parse (including a `TypeError`/`ValueError` from the parser) is "unavailable".
+  **Why:** Per the Discretion lines (D3 title rule, D11 link, `settled_row` try/except).
+  **Issue:** #256
+- **Decision:** #249's `test_no_action_links_while_the_routes_are_unregistered` and `test_section_never_gated` now run under a new `tests/inspect/urls_without_reconciliation_actions.py` (the real routes minus `settle-now`/`compensate`).
+  **Why:** Both pinned the unlinked rendering under the real urlconf, which now registers `inspect:settle-now`; D19 says unlinked rendering is pinned with a urlconf lacking the name.
+  **Issue:** #256
+- **Decision:** `note_engine_record` also runs after a successful `read_turn_trace` in `console/views/inspect.py` (the eval-hooks block) and in `console/views/history.py` `turn_traces` (on the request thread, after the futures resolve); `LABEL_NOTE` names "an opened History page or eval-hooks block" too.
+  **Why:** The planner's pass-2 recommendation shown at the gate (approved as "all recs good"): without it most turns a founder has looked at in History would stay unlabelled.
+  **Issue:** #257
+- **Decision:** `engine_label_text` imports `STAGED_LABEL` (`console.effects`) and `humanised` (`console.wording`) inside the function (`# noqa: PLC0415`), not at module level.
+  **Why:** Both modules reach `console.engine_access`, which imports `console.operation_log`: a module-level import is circular. A local import keeps D13's single constant and C3's helper rather than restating them (D17).
+  **Issue:** #257
+- **Decision:** #250's `engine_operation` builds its log-rows queryset before the read and evaluates it after `note_engine_record` (or in the error branch), so the listed rows carry the label just recorded.
+  **Why:** The discretion line says the recording runs before the log rows are listed.
+  **Issue:** #257
+- **Decision:** `LABEL_NOTE` renders as `<p class="filter-note">` directly after the Engine label select inside the filter form; no CSS added.
+  **Why:** "Under the select" with plain functional UI; no existing `filter-note` style to reuse.
+  **Issue:** #257
+- **Decision:** `console/timeline.py` imports `console.effects`, `console.reconciliation` and `console.wording` inside `edit_effects`/`fork_effects` and the `EditEffects` properties, not at module top (model types under `TYPE_CHECKING`).
+  **Why:** `console.wording` imports `console.timeline` (`reload_message`) and `console.effects` imports `console.wording`, so a top-level import is circular; moving `reload_message` would touch unrelated modules.
+  **Issue:** #258
+- **Decision:** `EffectRef` gains a `redacted: bool` member beside the AC's fields, and `EditEffects` exposes `sections` (an `EffectSection(heading, line, rows, pending)` per non-empty list), `count_text` and `notice` properties for the partial.
+  **Why:** the template can't read module constants or call `outbox_list_notice_html()`/`reconciliation_text()` itself; `redacted` lets it apply class `redacted` without comparing against the `REDACTED` text.
+  **Issue:** #258
+- **Decision:** The four views compute the success line once with `_success_text` and either render the report or queue it with `messages.success` (identical to `_flash`'s output); `_flash` stays for `_regenerated`. The fork's `source_link` reverses `inspect:reconciliation` itself (try/except `NoReverseMatch`) since `console.effects._reverse` is private.
+  **Why:** keeps the no-effects path byte for byte as on main (pinned by `test_rewind_without_effects_redirects_as_before` and the unchanged #53 tests) without a second formatting of the text.
+  **Issue:** #258
+- **Decision:** Added `test_undo_rewind_as_a_swap_keeps_its_title` and `test_fork_without_pending_effects_redirects_as_before` beyond the test plan; the reactivation "without effects" complement is parametrised over undo, swap and fork; the unreadable-outcome test uses an outcome whose operation is outside the vocabulary but whose result carries a required row.
+  **Why:** pins the Discretion's "titled Undo rewind even when swapped" and the fork's unchanged redirect; the unreadable case proves a list present in raw JSON still shows no partial.
+  **Issue:** #258
+- **Decision:** Added `guild` to `m6/providers.json` between `bank` and `shop` (the Engine lists by name; its read URL holds `{binding.player}` then `{binding.realm}`), and changed two #247 tests in `tests/stories/test_providers.py` that pinned `shop` at index 1 and the row order to look `shop` up by name and derive the order from the fixture (Rule 3).
+  **Why:** D16 says add, never copy, and tests don't pin the fixture's providers; those two tests pinned positions, which the added entry broke.
+  **Issue:** #259
+- **Decision:** The test plan's blank-form case says "`bank`'s two inputs"; `bank` has one key (`account_id`), so the two-key assertions use `guild`, as the plan's fixture note says.
+  **Why:** the plan contradicts itself, and its fixture note (two-key cases use `guild`) is the specific instruction.
+  **Issue:** #259
+- **Decision:** The shared fake-Engine fixtures (`tests/stories/conftest.py`'s and `tests/test_story_from_scenario.py`'s `engine`) now answer `GET /admin/external-providers` with `m6/providers.json` by default, and `tests/stories/test_create.py`'s `form_data` carries the signed `provider_choices`, as the page renders it.
+  **Why:** both forms now read the registry. The fake refuses an unanswered call, so without this every earlier creation test would fail. With the signed field, the earlier "no Engine call" complements still hold.
+  **Issue:** #259
+- **Decision:** `read_provider_choices` words a failed read as `"<code> — <message>"` for an Engine error, and as `error_text(exc)` ("unreachable (<reason>)") when no answer came. The failure test uses a 503, not the Discretion's 403, because `GET /admin/external-providers` declares no 403 and the fake refuses it. Any client error is still handled.
+  **Why:** an unreachable Engine has no code or message. The fake only answers statuses the schema declares.
+  **Issue:** #259
+- **Decision:** Added `FakeEngine.respond_undeclared(method, path, status, json)` (cleared by a later `respond`), as the Discretion asks, for D18's undeclared `POST /stories` 404. It refuses a status the operation declares.
+  **Why:** `respond()` and `side_effect` both refuse undeclared statuses by design, and the helper's narrow name keeps it from becoming a general escape hatch.
+  **Issue:** #259
+- **Decision:** `BindingsForm` rows put row-level errors on the checkbox with `add_error`. A needed row the registry lacks has no checkbox, so its errors (e.g. `provider_unregistered`'s "Not registered…") go in a per-row `row_errors` list shown beside the row. The unregistered note links the whole line to `engine:providers` (D19: plain text when unresolved). `StoryFromScenarioForm.is_valid()` is overridden to run both forms, so every error shows.
+  **Why:** the Discretion places row errors "on the checkbox", but an unregistered row has none. The other two were the smallest way to meet the AC.
+  **Issue:** #259
+- **Decision:** On a failed registry read on the from-scenario form, the note reads "<unread text>. This scenario needs: <names>", joined with ". ".
+  **Why:** the Discretion gives the added sentence but not how it joins the note.
+  **Issue:** #259
+- **Decision:** The from-scenario fixture is `tests/fixtures/engine/catalog_scenarios_providers.json` (beside `catalog_scenarios_detail.json`), not the plan's `m6/scenario_providers.json`. It is the `scenario()` test body with `required_providers: ["bank"]` and an external State `stock_level` naming `shop`.
+  **Why:** `test_fake_engine`'s M6 table requires every `*_id` in an `m6/` file to be a ULID. The from-scenario tests' role and entity ids (`traveller`, `farmhouse`, …) aren't, and the existing tests' role-keyed helpers depend on them.
+  **Issue:** #259
+- **Decision:** The ingest tab now follows D8's re-render key rule: local invalid input (the form's own checks, the States gate) and a transport/`bad_response` error keep the posted idempotency key; an answered Engine refusal and every success render a fresh one (#51 rendered a fresh key on every re-render).
+  **Why:** the story's Discretion (reconcile 2) cites D8's rule for the ingest form; a resend after an unknown outcome must replay, not write twice.
+  **Issue:** #260
+- **Decision:** `tests/play/test_ingest.py`'s results assertion gains the new What cell (`<td class="what">—</td>`) for its player-turn and narration rows, beyond the test plan's "intro line and kind options" allowance.
+  **Why:** the What column the AC adds sits between Actor and Operation id, so the existing exact-row assertion can't pass unchanged; only the cell was added.
+  **Issue:** #260
+- **Decision:** `ResultRow` gains, besides `what`, `what_url` and `turn_shown`, an `outcome` (the humanised outcome) and `from_outbox` member; for an outcome `what` holds the id so the template renders it through the `outbox_id` filter (linked when `outbox_url` resolves), then " → <Outcome>". `from_outbox` triggers D11's notice (an `effect_id` alone doesn't).
+  **Why:** the id must go through the filter while the state-change text is plain; two small members keep the template free of formatting logic.
+  **Issue:** #260
+- **Decision:** Every ingest error string (row, field, non-form and batch) now renders through `code_spans`, with the errorlist classes kept (`errorlist`, `errorlist nonfield`, `errorlist nonform`, `errorlist nonform batch`); the `module_off`/`states` Config link is a `<p class="batch-link">` after the batch errors (`IngestView.batch_link`, filled from a new `BatchErrors.link`).
+  **Why:** Discretion pass 1 (errors through `code_spans`, link as a separate line); D1/D9 reasons carry backtick spans.
+  **Issue:** #260
+- **Decision:** `resulting_values` also refuses a non-finite number that JSON parsing produces from an overflowing literal (`1e999` → `inf`), not only the `NaN`/`Infinity` constants `JsonBoxField` already refuses; key length is checked 1–80 and values bool/number/text ≤ 200 (`VALUE_INVALID` for null, objects, lists).
+  **Why:** the AC refuses non-finite numbers; `json.loads` turns `1e999` into `inf` without calling `parse_constant`.
+  **Issue:** #260
+- **Decision:** The shared ingest helpers `ingest_data`, `post_ingest` (gaining `story=`) and `sent` moved to `tests/play/helpers.py`; `snapshot()` gains `effective=`. `test_transcript_player_view.py` now imports `post_ingest` from helpers (mypy's explicit-export rule).
+  **Why:** the test plan's helper-move rule; only the helpers both files need moved.
+  **Issue:** #260
+- **Decision:** The States gate reason shows beside every row's Kind whenever the gate is closed, including `GATE_UNREAD` on a snapshot without `states.level` (M4/M5-shaped configurations).
+  **Why:** AC: "`None` values (a failed read) give `GATE_UNREAD` (C6)" and the reason is shown beside each row's Kind; outcomes and turn kinds are still sent.
+  **Issue:** #260
+- **Decision:** `inspect:state-new` and `inspect:state-declared` render with `inspect_page(..., current="inspect:states", gate_section=False)`; the Declare page's `build` checks `module_gate(STATES, …)` itself: a gated GET shows the inline panel, a gated POST re-renders the posted inputs unbound (no field errors, posted key and revision kept) with the reason and the Config link above the form.
+  **Why:** AC asks for a POST re-render with the reason above the form, which the shell's section gate (panel only) can't give; Discretion: "A gated POST checks the gate before `is_valid()`: the kept inputs render without field errors".
+  **Issue:** #261
+- **Decision:** `declaration_refusal` places this story's three wordings, then the D9-worded `validation_error` reasons via `world_refusal`, then other `validation_error` shape errors (box sub-paths on the box with the sub-path prefixed, the rest through `apply_engine_errors` with the `definition.`/`constraints.` alias map), then the rest of `world_refusal` (with the same alias map as `field_map`), then #43's panel. A D8 refresh mutates the bound form's data (fresh key, POST's story revision) so placed errors survive. It never returns an `HttpResponse` today (a 404 falls to the panel); the union stays as the AC's contract for #266.
+  **Why:** Discretion's order and D8's re-render rule; rebinding a fresh form (the #253 pattern) would drop the errors placed on it.
+  **Issue:** #261
+- **Decision:** A 5xx other than held `erasure_pending` is treated as an unknown outcome (panel, posted key and revision kept); not covered by a view test because the schema-validating fake refuses undeclared 5xx answers for `POST …/states`.
+  **Why:** Discretion (pass 2); the fake only serves statuses the recorded OpenAPI declares.
+  **Issue:** #261
+- **Decision:** `definition_rows` (the `_state_definition.html` rows) lives in `console/views/inspect_state_declare.py` beside `declaration_refusal`, so #266 imports both from one place; field errors on the Declare form render through `code_spans` (D9's `reserved_state` sentence carries a code span).
+  **Why:** D17: this story defines no shared helper in the D-modules; the partial needs its rows built in Python (member order, C3, D5).
+  **Issue:** #261
+- **Decision:** The D19 unlinked rendering of the Provider help (no `engine:providers`) is pinned by patching the view module's `reverse`, not by a new urlconf.
+  **Why:** the existing `urls_without_providers.py` drops `engine:provider`/`stories:providers` but not `engine:providers`; a one-test patch avoids another urlconf file.
+  **Issue:** #261
+- **Decision:** (Rule 3) #242's three `test_states.py` assertions that pinned the empty `states_header_actions` hook (`<p class="states-count">4 States</p>`) now expect the count followed by the "Declare a State…" link.
+  **Why:** this story fills that hook by design; the count text is still asserted.
+  **Issue:** #261
+- **Decision:** The Scheduled events list shows the Actions column on every successful read (an empty cell for a character's view, a belief or a settled event), not only on the omniscient view.
+  **Why:** AC says "A character view shows no actions" and "A belief row's Actions cell is empty"; belief rows appear only in character views, so the column must exist there too; a stable table shape.
+  **Issue:** #262
+- **Decision:** `row_actions(event, story_id, revision, gate, omniscient, *, next_url)` takes the section's `get_full_path()` as a keyword `next_url` beyond the planned signature.
+  **Why:** the Cancel link's `next` is the section's own URL, which only the view knows.
+  **Issue:** #262
+- **Decision:** D9's `event_settled` sentence moved into `console.world.event_settled_text(status)`, which `_validation_refusal` now calls; the reschedule GET (a listed cancelled/completed event) uses the same helper.
+  **Why:** D17: one wording, never redefined; the GET and the refusal must read byte-for-byte the same.
+  **Issue:** #262
+- **Decision:** `RescheduleForm` renders a hidden `shared_owners_shown=1` with its checkboxes; a POST without it never sends `shared_owners`, and a POST with it whose shell story read failed refuses (no PATCH) when the posted set differs from the snapshot's ("Your shared-owner choices couldn't be checked; reload and try again", with `CAST_UNAVAILABLE`).
+  **Why:** checkboxes can't tell "unticked every one" from "not rendered" (a GET whose story read failed); without the marker a Planned-only POST would send `[]`. Discretion pass 2's rec (#253's rule) for the POST-side read failure.
+  **Issue:** #262
+- **Decision:** The reschedule POST checks the gate, then the snapshot (re-reading the omniscient list once when it is missing, bad or foreign), then validates the form; the AC lists form validation before the snapshot step.
+  **Why:** the form's choices need the snapshot's current owners (a kept outside-cast owner is a valid choice only then); the re-read is a read, never a write, so "an invalid form makes no call" (no PATCH) still holds.
+  **Issue:** #262
+- **Decision:** A gate-closed reschedule POST re-renders the bound form (field errors may show) with the posted key and revision, the submit greyed; it makes neither the events read nor the PATCH.
+  **Why:** D8's Gates rule and Discretion pass 2; no read is needed to say the clock is off.
+  **Issue:** #262
+- **Decision:** A cancel refusal D9 doesn't word reads `panel_for(exc).headline` plus " — <message>" when the Engine sent one; a cancel transport failure or `bad_response` shows #43's panel above the confirm page with the posted key.
+  **Why:** AC "anything else → `panel_for(exc).headline` (with code and message when set)"; the headline already names status and code.
+  **Issue:** #262
+- **Decision:** (Rule 3) #244's `test_column_order` now expects the "Actions" header and `actions` cell; its `'class="actions"' not in html` assertion is dropped.
+  **Why:** this story fills the hook #244 left empty, by design.
+  **Issue:** #262
+- **Decision:** Fixtures: "the dinner" is `01JM6EV0000000000000000005` (owner author, Mara and Bob taking part); `scheduled_event_rescheduled.json` pending at 1200 shared with nobody (operation `…QP…42`), `scheduled_event_cancelled.json` cancelled at 1140 with Bob kept (`…QP…43`), both revision 13. The tests add the dinner (pending at 1140, shared with Bob) to `m6/scheduled_events.json` inline.
+  **Why:** Discretion's fixture shapes and D16's id prefixes; `…05` is the next free event id.
+  **Issue:** #262
+- **Decision:** `correct` is built on `confirm_action` for GET/HEAD and for a blocked POST (which re-renders with the posted key and never performs); an unblocked POST passes a page without the history read, and `perform` builds the full page (with its one history re-read) only when it re-renders, so a valid confirm makes exactly one `get_story` and one `/correct`.
+  **Why:** the AC's "renders through `confirm_action`" with Discretion's "the POST re-reads the story" and no extra read before a write.
+  **Issue:** #263
+- **Decision:** No-form/blocked states, in order: turn 0 → setup text; above the head → "doesn't exist yet"; below the head → not-latest with History-at-turn-N and Variants links; archived → C5 text; paused → a new `story_pause.story_paused_refusal(story)` (progress when both counts are ints, "The check" link when a job is named). Archived/paused keep the say/do textareas, rendered `disabled` through widget attrs (not `Field.disabled`, which would discard the posted text on a re-render). A blocked POST's hidden `rev` is the fresh story read's.
+  **Why:** Discretion pass 1/2; the paused link label "The check" is the Console's choice (no wording given).
+  **Issue:** #263
+- **Decision:** `apply_engine_errors` places an alias to `__all__` as a plain non-field error (no `path:` prefix) — a two-line addition to the shared helper, used by `CORRECT_ERRORS["player_input"]`. A 422 `validation_error` re-renders the form only when every failure's path (stripped of `body.`) is a `CORRECT_ERRORS` key; otherwise it is `refused.html`.
+  **Why:** Discretion fixes `CORRECT_ERRORS = {"player_input": "__all__", …}`, and without the change the message would read "__all__: …". Rule 3.
+  **Issue:** #263
+- **Decision:** A transport error, timeout or `bad_response` from `/correct` re-renders the confirm page with the posted key and `rev`, the answer's panel as `engine_error` above the page, and the history re-read; a field-placed 422 re-renders with a fresh key and `rev` from the POST's own `get_story` (D8 as Discretion pass 2 states).
+  **Why:** D8's re-render rule; `bad_response` counts as an unreadable answer.
+  **Issue:** #263
+- **Decision:** `_refused` gains `nothing_text` and `turn`; the `not_latest_turn`, `already_corrected` and `provider_unbound` notices apply only when `turn` is given (the correction), so regenerate's refusal page is unchanged (its `nothing_to_regenerate` test, `tests/timeline/test_conflicts.py::test_nothing_to_regenerate_shows_its_message`, passes unchanged). `provider_unbound`'s link is labelled "Providers" and left out while `stories:providers` doesn't resolve.
+  **Why:** Discretion's refusal plumbing; keeping regenerate byte-identical.
+  **Issue:** #263
+- **Decision:** The page's external-effects line is the new `console.notices.EXTERNAL_EFFECTS_TEXT` (the card's warning as plain text, no link, since `ConfirmPage.lines` are escaped text); the per-card warning is already dropped by `controls=False`.
+  **Why:** AC "#185's external-effects warning text"; one constant beside the card's wording.
+  **Issue:** #263
+- **Decision:** The say/do textareas carry no `maxlength` attribute (popped from the widget); the 8,000-character bound is the server's message ("at most 8000 characters").
+  **Why:** C10's spirit (server-side validation shown); a browser `maxlength` would silently truncate a pasted input.
+  **Issue:** #263
+- **Decision:** Registering `stories:correct` in the real urlconf made #185's two "no Fix control without the route" complements (`tests/play/test_notices.py::test_no_fix_control_without_the_correct_route`, `tests/history/test_notices.py::test_overridden_in_history`) false under the real urlconf; they now run under a new `tests/urls_without_correct.py` (the real routes minus `stories:correct`), assertions unchanged. The D19 stub urlconf keeps working (it drops a real pattern of the stub's name).
+  **Why:** Rule 3 — the tests assumed the route unregistered "until #263"; the complement is still meaningful under a urlconf without it.
+  **Issue:** #263
+- **Decision:** Test data: the Actor is Mara (`m6/story.json`'s player; the test plan's "Jenni" is the Engine's schema example, not in the M6 cast), so the fact reads "Mara (player)". `m6/history_correct_turn.json` is turn 3 with say "Where did Bob put the key?" (beat 1), do "Mara takes the key from the drawer." (beat 2), the reply, and one correctable notice `01JM6NT…263` with `external_effects: true` (registered in `test_fake_engine.py`'s M6 fixture table). `corrected.json` is moved to turn 3 in the tests.
+  **Why:** #232's cast and D16's id prefixes; the fixture shape is the test plan's.
+  **Issue:** #263
+- **Decision:** On the compensate form and its confirm page the link's `value` (the provider value, #249's `action_query` key) is carried as the hidden field `provider_value`; `provider`, `listed_reason` and `expected_revision` keep their names. The GET reads `value` from the link query as before.
+  **Why:** The form's own `value` field is the Engine's `effect.value` member (the AC requires field names to match the Engine's), so the two can't share a POST name; #249's link query is unchanged.
+  **Issue:** #264
+- **Decision:** The confirmed POST runs through `confirm_action(require_confirmed=True)` inside the `inspect_page` build: `perform` stores the result (or the refused form's context) and the build returns it, so the result page and refusals render inside the Effects shell with the shell's reads, with no second effective-config read.
+  **Why:** The AC routes every method through `inspect_page` and the confirm page through `confirm_action`; `perform` must return a response, the build a context.
+  **Issue:** #264
+- **Decision:** Character select: the posted id is trimmed and upper-cased (C13) before it meets the choices; an id outside the cast is kept as "<id> (not in the cast)" (`console.forms.scheduled_events.NOT_IN_CAST`, reused) and sent when it is at most 64 characters (longer is a field error, no call). An Edit re-render hides field errors; the `<title>` of `reconciliation_result.html` is now `result_title` (default "Settle now"), "Compensate" for this story's result.
+  **Why:** C13's kept-option rule and the AC's 1-64 bound; the hard-coded "Settle now" title was flagged on #256.
+  **Issue:** #264
+- **Decision:** A refused `no_listing` places D9's text above the form with a "Reconciliation" link; an answered refusal with no D9 wording (`idempotency_conflict`, unknown codes) shows #43's panel with a fresh key, a transport error or `bad_response` the panel with the posted key and revision.
+  **Why:** The AC's refusal rows and D8's re-render rule, mirroring #256's settle-now.
+  **Issue:** #264
+- **Decision:** `STATE_DEFINITION_REQUEST` stays defined once in `console.world` (where #235 already put it, already the real nathanpond/Epistrel#680 URL), and `console/states.py` re-exports it (`import … as …`) beside this story's `DEFINITION_UNREADABLE`, `definition_unreadable_html()` and `last_recorded_definition()`. No placeholder URL substitution was needed.
+  **Why:** The story places the constant in `console/states.py`, but D17 forbids redefining a shared wording constant; a re-export satisfies both.
+  **Issue:** #265
+- **Decision:** D8's "nothing to change" base for the definition PATCH is #243's `console.views.inspect_clock.base_revision(ctx)` (imported, not redefined). At the recorded schema the shell's `EffectiveConfig` carries no `config_revision`, so the base is unknown and the "<Member>: saved" + "Configuration revision now <n>" flashes always show; `test_engine_found_nothing_to_change` monkeypatches `base_revision` to stand one in. Same gap as #270, not re-filed.
+  **Why:** Orchestrator note and #243's precedent; the one comparison stays `console.world.nothing_changed`.
+  **Issue:** #265
+- **Decision:** With the States gate closed, a POST re-renders the posted inputs (posted key and snapshot kept) with D1's reason and the Config link above them, rather than the greyed panel; a GET shows the inline panel. No State read, no PATCH either way.
+  **Why:** The AC's "a POST re-renders it with the reason" is ambiguous; this follows #261's sibling page and D8's local-invalid rule (keep posted inputs and key).
+  **Issue:** #265
+- **Decision:** A bad snapshot re-renders the posted inputs with a fresh snapshot signed from that POST's own State read (and the posted key), showing `SNAPSHOT_INVALID` alone. A snapshot must hold exactly `name`/`visibility`/`unit` with string-or-null values, and its `name` must match the URL.
+  **Why:** There is no verified snapshot to keep; signing the current read lets a resubmit diff against what the operator now sees, and nothing was sent (D8's local-invalid half).
+  **Issue:** #265
+- **Decision:** Refusal routing: `rules_kind` → Rules and `unknown` → above the form ("<field> isn't a State definition member", raw field name) first; then `apply_engine_errors` with explicit aliases (`constraints.allowed_values|min|max|non_negative|tolerance` and `initial_value` → Constraints, `authorization.sources` → Authorization) for any other `validation_error` but `immutable_field`/`reserved_state`; then `world_refusal` with the same map; then #43's panel. A 5xx (other than held) and `bad_response` keep the posted key (unknown outcome); a 2xx `bad_response` flashes only "Saved — the Engine's answer couldn't be read" and redirects.
+  **Why:** The story's Discretion ordering. The Engine (origin/main `core/states/model.py`, `rules.py`, `expressions.py`) sends no `rules.<sub>` path, so no `rules.*` alias is needed; `authorization.sources` comes on `state_unpermitted`, which `world_refusal` places through the same map.
+  **Issue:** #265
+- **Decision:** Moved #251's `state_view` test helper to `tests/inspect/helpers.py` (both stories use it) and extended #251's `test_rows_link_to_set` to expect "Change definition…" beside Set/— on every row.
+  **Why:** The test plan's instruction; the shared `_state_actions.html` now renders both links.
+  **Issue:** #265
+- **Decision:** Exported D9's `no_pending_proposal` sentence as `console.world.NO_PENDING_PROPOSAL_TEXT` (used by `world_refusal` itself), so the approve page's local not-pending check and the dismiss warning flash show the same sentence with no Engine call.
+  **Why:** D17 forbids redefining a wording constant in a page story, and the sentence was an inline literal in `world_refusal`. No text changed.
+  **Issue:** #266
+- **Decision:** #261's `state_declared.html` gained optional `links`, `missing_title` and `back_label` context, and its `<title>` now reads `{{ heading }}` (identical for #261: its heading is "Declared <name>"); `declared_context` accepts a `ProposalApproved` as well as a `StateDeclared`.
+  **Why:** The Discretion's "optional `links` context … defaulting to #261's own list"; the title and not-found back link would otherwise say "Declared"/"Back to States" on the approval pages. #261's tests pass unchanged.
+  **Issue:** #266
+- **Decision:** Suggests renders scope through the States section's `SCOPE_LABELS` ("Story", "Per character") with C3's `humanised` for any other value, and the entity cell through `_entity.html` (C4 label, else the short id).
+  **Why:** The AC says "humanised (C3)"; reusing the States section's scope label keeps "character" reading the same on both World sections.
+  **Issue:** #266
+- **Decision:** Implemented the gate-shown "at least" wording: with 10 (`EVIDENCE_MAX`) or more evidence entries the cell reads "Recurs in at least N turns (the Engine keeps the earliest 10 quotes)".
+  **Why:** The planner's recommendation shown at the gate and accepted ("go"); the Engine caps evidence at 10.
+  **Issue:** #266
+- **Decision:** `StateOverridesForm.overrides()` treats a blank Scope (C7 "Engine default"), Unit or Entity as unchanged and never sends `null`; a posted `owner`/`provider_id` is ignored (the fields are dropped from the form).
+  **Why:** The founder's no-clear ruling (an explicit `null` override would clear the suggestion at origin/main), and the Engine's `StateDefinitionOverrides` has no owner or provider.
+  **Issue:** #266
+- **Decision:** On the dismiss confirm POST, a 404 other than `no_pending_proposal` re-renders the confirm page with convention 10's not-found text as its `error` (fresh key), not a flash and redirect.
+  **Why:** The AC lists "another 404 → convention 10's text" without placing it; #262's cancel puts it on the confirm page, so this follows that precedent.
+  **Issue:** #266
+- **Decision:** The analyze view's "anything else" (transport error, `bad_response`, an unworded refusal) renders the section page (including its proposals read) with #43's panel under the button, as a 200 with no redirect.
+  **Why:** The Discretion's pass-1 rule; the section's own read keeps the page whole so the operator sees the list beside the panel.
+  **Issue:** #266
+- **Decision:** Added `state_proposals_mixed.json` to `tests/engine/test_fake_engine.py`'s `M6_FIXTURES` table.
+  **Why:** Its completeness test requires every schema-valid `m6/` fixture to be listed (Rule 3: the new fixture would otherwise fail it).
+  **Issue:** #266
+- **Decision:** Added `state-proposals` to `tests/inspect/urls_world_stub_sections.py`'s `STUBBED` set, so #239's stubbed World urlconfs keep exactly their stub sections now that the real Proposed States route is registered.
+  **Why:** Rule 3: four `test_world_shell.py` nav tests pin the stubbed sub-navigation; that file already drops each later section's real route the same way.
+  **Issue:** #266
+- **Decision:** "Untouched" States rows are found by comparing each row's posted rendering (every field stripped, JSON boxes compared as parsed objects) with each draft entry's own rendering, a consuming multiset match; a matched row is sent as the draft entry itself and its local errors are cleared.
+  **Why:** The plan's match is on normalised `state_to_write` values, but a stored entry that fails a local check (a stored `world_clock` name, a mismatched value) has no cleaned value to normalise. Comparing renderings works for every stored entry and never re-parses it, so an untouched editor can't send a PATCH.
+  **Issue:** #267
+- **Decision:** In the detail page's States table, scope `character` reads "Per character" (the editor's choice label, which the demo uses). Other enum values are humanised (C3), with the raw value in `title`.
+  **Why:** The AC says the values are humanised, but the demo expects "Per character". C3 allows a specific label where the story gives one, so I used it.
+  **Issue:** #267
+- **Decision:** `console.formset_rows` gains `op=up:<prefix>-<n>` / `op=down:<prefix>-<n>` (parse_op/apply_op; `Op.edits_rows` covers them), so the States rows can reorder in the multi-formset editor.
+  **Why:** The planner's pass-1 decision gives the States rows up/down buttons, but the editor's single `op` button only carried add/remove/refresh. edit_rows already moved rows, so only the op plumbing was missing.
+  **Issue:** #267
+- **Decision:** `Model.STRICT` (a ClassVar, default False) makes `from_json` refuse unknown keys. `ScenarioState` and `StateConstraints` set it, with numbers typed `int | float | None`. `tests/engine/contract.py` now compares `X | Y | None` against an `anyOf` with one option per member plus `null`.
+  **Why:** The AC requires strict views that pass their contract rows. The lenient model base ignored extra keys, and the comparer supported only `X | None`. `float` alone would have turned a stored `0` into `0.0` on the page. Rule 3.
+  **Issue:** #267
+- **Decision:** A kept unknown type (a stored `clock`): when its initial value is edited, the text must parse as a strict JSON scalar. Otherwise the field shows the new text `SCALAR_INVALID` ("Enter a JSON value: a number, true/false or text in double quotes").
+  **Why:** The planner's round-trip decision names the parse rule but no wording. #261 has no text for a type outside its four.
+  **Issue:** #267
+- **Decision:** The editor's `state_initial_values` check skips a box that equals the draft role's box with the same id (JSON equality that tells `true` from `1`). The draft boxes reach the role rows through a new `stored_values` form kwarg (`stored_initial_values(original)`).
+  **Why:** The AC limits local checks to new or changed role boxes, and RoleForm had no view of the draft.
+  **Issue:** #267
+- **Decision:** I moved the three `test_scenarios_edit.py` cases that typed into `starting_state__states` to the row set. `test_each_section_round_trips_into_the_patch` now sets `state-0-initial_value`. The JSON-box parametrisation uses `starting_state__scheduled_events` for its "Enter a JSON array" case. The reformatting case now pads the name and allowed values.
+  **Why:** The test plan asks for this; the box no longer exists.
+  **Issue:** #267
+- **Decision:** The States section of the scenario detail page is its own partial, `_state_table.html`, included between Opening and Story-setting defaults. The plan named `detail.html`.
+  **Why:** It keeps `detail.html` short and lets a unit test render the table with an off-schema entry, which the schema-validating fake Engine won't serve. It's a template split only; no behaviour changes.
+  **Issue:** #267
+- **Decision:** A stored pacing or band row that isn't 3 cells wide is shown positionally with the note "This row has N cells; the Engine expects 3" (a hidden `cells` field on subclasses of #243's row forms, rendered above the row by `_rows.html`). The row is sent exactly as stored while it reads back unchanged (`kept_rows`); once edited it is sent 3 cells wide. The note is informational, not a validation error, so it never blocks a save. A short band row still needs its missing cells filled before a save, because #243's fields are required.
+  **Why:** The plan's "normalised positionally to 3 on both sides" would lose the stored width before the GET-bound editor could show the note: the signed snapshot holds only the normalised draft. Keeping the stored row gives both "no spurious PATCH" and the note, and drops nothing silently.
+  **Issue:** #268
+- **Decision:** `_rows.html` renders a row's hidden fields bare and its `note()` (when it has one) above the fields. Previously it gave every field a label.
+  **Why:** The pacing and band rows carry the hidden `cells` field. No other row form in the editor has hidden fields, so nothing else renders differently.
+  **Issue:** #268
+- **Decision:** The bare `starting_state.clock` and `starting_state.scheduled_events` paths land prefixed with the path, on the Clock section's errors and the `evt` row set's non-form errors. The bare `starting_state.clock.anchor` lands unprefixed under the Anchor legend. An anchor path naming no part (`anchor.hour`) also goes under the Anchor legend, prefixed.
+  **Why:** This follows the pass-1 and pass-2 discretion lines. The AC says only "on the anchor group's errors" for the bare anchor.
+  **Issue:** #268
+- **Decision:** The events' "Other audience" split moved into `console.forms.scenario_cast.split_audience`. `SeedForm.clean_audience_other` and `EventForm` both call it.
+  **Why:** The plan says to import SeedForm's split helper, but it was inline in a method. A shared function avoids a copy, and `scenario_clock` can import it without a cycle.
+  **Issue:** #268
+- **Decision:** `EventForm` takes the draft's event at its row index through `EventFormSet.get_form_kwargs` (`events` form kwarg). It computes the event it would send during `clean()` (`sent_event`), so error placement uses the ids actually sent even after an earlier error removed a field from `cleaned_data`.
+  **Why:** Without this, two participant errors on the same row would prefix the second one with the wrong id.
+  **Issue:** #268
+- **Decision:** On the detail page, an unset subject, owner or disclosure reads "—". An audience token that is not a role, group, level or `world` is marked "(undeclared)". The owner `world` reads as `world`.
+  **Why:** The AC says "'—' (default)" for the unset cells, and #205's undeclared-marking rule covers the rest.
+  **Issue:** #268
+- **Decision:** The Rules and declarations section on the detail page is now a plain `<dl class="deferred">`. The `<details>` wrapper, whose summary was the "not used until a later Engine milestone" line, is gone. The editor's three remaining boxes lose that note from their help too.
+  **Why:** The AC drops the line from the editor section. Keeping it on the detail page or in the box help would contradict that.
+  **Issue:** #268
+- **Decision:** The `test_scenarios_edit.py` cases that used the clock and events boxes now use the calendar box and `starting_state__predicates`. The header test checks the new legends. `test_clearing_the_clock_sends_null` clears the base fixture's only clock member (the anchor's time). The Opening-before-Deferred order check now includes `f-starting_state-clock`. The detail-page test that checked "Deferred" now checks "Rules and declarations".
+  **Why:** The test plan names these updates.
+  **Issue:** #268
+- **Decision:** (Rule 3) Raised the CI `test` job's `timeout-minutes` from 25 to 45.
+  **Why:** On milestone PR #275 the job was cancelled by its own 25-minute timeout at 81% (00:12:36 → 00:37:56). M6 grew the suite from about 5,640 to 7,572 tests, so a full run on a hosted runner now takes about 30 minutes. A re-run would have hit the same limit. M5 set the earlier 15 → 25 precedent.
+  **Issue:** M6 milestone PR #275

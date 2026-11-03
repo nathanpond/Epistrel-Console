@@ -6,7 +6,8 @@ schema default as help text. A guard test compares the fields with the recorded 
 
 It is a merge-patch form (#43): the page carries the original settings, signed, and
 :meth:`DeploymentSettingsForm.patch` returns only the settings whose value changed. Lists are
-one entry per line and sent whole when changed. Only the three nullable settings
+one entry per line and sent whole when changed (``provider_allowed_hosts`` is compared as a set
+of lowercased entries, #241). Only the three nullable settings
 (:data:`NULLABLE`) have a "Clear" checkbox (``clear_<name>``), which sends ``null`` to unset them;
 no other setting can send ``null`` and there is no reset-to-default.
 """
@@ -35,6 +36,19 @@ FEEDBACK_TAG = re.compile(r"^[a-z0-9_]{1,40}$")
 MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]{0,62}/[a-z0-9][a-z0-9!#$&^_.+-]{0,62}$")
 LISTING_STATUS = re.compile(
     r"^[\t ]*[^\x00-\x1f\x7f-\x9f\t ]([^\x00-\x1f\x7f-\x9f]{0,38}[^\x00-\x1f\x7f-\x9f\t ])?[\t ]*$"
+)
+# ``provider_allowed_hosts`` (#241): a host, an IPv4 or bracketed IPv6 address, optional ``:port``.
+PROVIDER_HOST = re.compile(
+    r"^(?:[A-Za-z0-9.-]{1,253}|\[[0-9A-Fa-f:.]{2,45}\]|[0-9A-Fa-f:]{2,45})(?::[0-9]{1,5})?$"
+)
+PROVIDER_HOST_MAX = 260
+PROVIDER_HOSTS_MAX = 100
+PROVIDER_HOST_RULE = "a host, IPv4/IPv6 address or host:port"
+PROVIDER_HOSTS_HELP = (
+    "One per line: a host, an IPv4 address or a bracketed IPv6 address, optionally with :port "
+    "(a bare entry matches any port). An http provider's URLs must match an entry. Empty refuses "
+    "every http provider; removing a host makes providers that call it fail at call time. "
+    "Checked when a provider registers and on each call."
 )
 
 # The schema default of each setting that states one, shown as help text ("Default: …").
@@ -109,9 +123,14 @@ def _text(name: str, max_length: int, default: str | None, *, required: bool) ->
 
 class LinesField(forms.Field):
     """A list setting as a textarea, one entry per line (blank lines and surrounding spaces
-    dropped). Each entry must match ``item``; the count is bounded as the schema states."""
+    dropped). Each entry must match ``item``; the count is bounded as the schema states.
+
+    ``lowercase`` lowercases each entry and drops duplicates (the first kept) before the checks;
+    the "Not …" error still lists the entries as typed. ``item_max_length`` bounds each entry.
+    ``set_semantics`` makes :meth:`DeploymentSettingsForm.patch` compare the list as a set."""
 
     widget = forms.Textarea(attrs={"rows": 5})
+    set_semantics: bool = False
 
     def __init__(
         self,
@@ -120,6 +139,9 @@ class LinesField(forms.Field):
         item_rule: str,
         min_items: int,
         max_items: int,
+        lowercase: bool = False,
+        item_max_length: int | None = None,
+        set_semantics: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(required=False, **kwargs)
@@ -127,35 +149,58 @@ class LinesField(forms.Field):
         self.item_rule = item_rule
         self.min_items = min_items
         self.max_items = max_items
+        self.lowercase = lowercase
+        self.item_max_length = item_max_length
+        self.set_semantics = set_semantics
+        self._typed: dict[str, str] = {}
 
     def prepare_value(self, value: Any) -> Any:
         return "\n".join(map(str, value)) if isinstance(value, list) else value
 
     def to_python(self, value: Any) -> list[str]:
         if isinstance(value, list):
-            return [str(v) for v in value]
-        text = str(value or "")
-        return [line.strip() for line in text.splitlines() if line.strip()]
+            lines = [str(v) for v in value]
+        else:
+            text = str(value or "")
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not self.lowercase:
+            return lines
+        self._typed = {}
+        for line in lines:
+            self._typed.setdefault(line.lower(), line)
+        return list(self._typed)
 
     def validate(self, value: Any) -> None:
         entries: list[str] = value
-        bad = [entry for entry in entries if not self.item.match(entry)]
+        bad = [entry for entry in entries if not self._fits(entry)]
         if bad:
-            raise forms.ValidationError(f"Not {self.item_rule}: {', '.join(bad)}")
+            shown = [self._typed.get(entry, entry) for entry in bad]
+            raise forms.ValidationError(f"Not {self.item_rule}: {', '.join(shown)}")
         if len(entries) < self.min_items:
             raise forms.ValidationError(f"List at least {self.min_items} entry.")
         if len(entries) > self.max_items:
             raise forms.ValidationError(f"List at most {self.max_items} entries.")
 
+    def _fits(self, entry: str) -> bool:
+        if self.item_max_length is not None and len(entry) > self.item_max_length:
+            return False
+        return bool(self.item.match(entry))
+
 
 def _lines(
-    name: str, item: re.Pattern[str], item_rule: str, *, min_items: int, extra: str
+    name: str,
+    item: re.Pattern[str],
+    item_rule: str,
+    *,
+    min_items: int,
+    extra: str,
+    max_items: int = LIST_MAX,
 ) -> LinesField:
     return LinesField(
         item=item,
         item_rule=item_rule,
         min_items=min_items,
-        max_items=LIST_MAX,
+        max_items=max_items,
         help_text=f"One per line; the whole list is sent when it changes. {extra}".strip(),
     )
 
@@ -270,6 +315,7 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     ("Catalog", ("listing_status_values", "require_primary_image", "validation_model_calls")),
+    ("External providers", ("provider_allowed_hosts",)),
     (
         "Memory and retrieval",
         (
@@ -400,6 +446,17 @@ class DeploymentSettingsForm(forms.Form):
     )
     require_primary_image = _bool("require_primary_image", False)
     validation_model_calls = _int("validation_model_calls", 0, 1000, 0, "calls")
+    # External providers (#241): order means nothing to the Engine, so it is compared as a set.
+    provider_allowed_hosts = LinesField(
+        item=PROVIDER_HOST,
+        item_rule=PROVIDER_HOST_RULE,
+        min_items=0,
+        max_items=PROVIDER_HOSTS_MAX,
+        lowercase=True,
+        item_max_length=PROVIDER_HOST_MAX,
+        set_semantics=True,
+        help_text=PROVIDER_HOSTS_HELP,
+    )
     # Memory and retrieval
     memory_importance_half_life_turns = _int(
         "memory_importance_half_life_turns", 1, 1000000, 200, "turns"
@@ -518,9 +575,24 @@ class DeploymentSettingsForm(forms.Form):
             if field.disabled or name not in self.cleaned_data:
                 continue
             value = self.cleaned_data[name]
-            if not _same(value, self.original.get(name)):
+            if isinstance(field, LinesField) and field.set_semantics:
+                changed = _set_change(value, self.original.get(name))
+                if changed is not None:
+                    body[name] = changed
+            elif not _same(value, self.original.get(name)):
                 body[name] = value
         return body
+
+
+def _set_change(new: list[str], old: Any) -> list[str] | None:
+    """C9's set rule (#241): ``None`` when ``new`` holds the same entries as ``old`` (lowercased,
+    deduplicated; a missing or null original is ``[]``), else the list to send: the original's
+    stored order with removed entries dropped and new ones appended in the order typed."""
+    stored = list(dict.fromkeys(str(e).lower() for e in old)) if isinstance(old, list) else []
+    if set(new) == set(stored):
+        return None
+    kept = [entry for entry in stored if entry in new]
+    return kept + [entry for entry in new if entry not in stored]
 
 
 def _same(new: Any, old: Any) -> bool:

@@ -1,0 +1,75 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags %}
+{% comment %}
+Change clock settings (#243, console/views/inspect_clock.py's clock_settings), below the Clock
+section (current inspect:clock): console.forms.clock.ClockSettingsForm POSTing to
+inspect:clock-settings with the page's idempotency key and signed snapshot. The pacing table and
+the bands are row tables edited by op= buttons (console.formset_rows: op=add:<prefix>,
+op=remove:<prefix>-<n>; no JavaScript), Save is op=save. A refusal stays above the form (or beside
+its field, or above its table); a failed read shows inside the section with no form. The
+read-only settings are text under the form. Context: form, snapshot, idempotency_key, action_url,
+back_url, read_only, refusal, refusal_url, refusal_link, write_error, not_found, clock_error.
+{% endcomment %}
+{% block title %}Inspect · Change clock settings · {{ story_name }}{% endblock %}
+{% block world_content %}
+<p class="clock-back"><a href="{% url 'inspect:clock' story_id %}">Back to Clock</a></p>
+<h3 class="clock-settings-title">Change clock settings</h3>
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif clock_error %}{% include "console/_engine_error.html" with engine_error=clock_error %}
+{% elif form %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist clock-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+<form method="post" action="{{ action_url }}" class="clock-settings-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <input type="hidden" name="snapshot" value="{{ snapshot }}">
+  {% if form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  <div class="field field-mode">{{ form.mode.label_tag }} {{ form.mode }}{{ form.mode.errors }}</div>
+  <div class="field field-provider_value">{{ form.provider_value.label_tag }} {{ form.provider_value }} <small class="muted">{{ form.provider_value.help_text }}</small>{{ form.provider_value.errors }}</div>
+
+  <fieldset class="pacing-table"><legend>Pacing table</legend>
+    {{ form.pacing.management_form }}
+    {% if form.pacing.non_form_errors %}<div class="errors table-errors" role="alert">{% for error in form.pacing.non_form_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+    <table class="rows pacing-rows">
+      <thead><tr><th>From words</th><th>To words (exclusive)</th><th>Minutes</th><th></th></tr></thead>
+      <tbody>
+      {% for row in form.pacing %}<tr class="pacing-row">
+        <td>{{ row.from_words }}{{ row.from_words.errors }}</td>
+        <td>{{ row.to_words }}{{ row.to_words.errors }}</td>
+        <td>{{ row.minutes }}{{ row.minutes.errors }}{% if row.non_field_errors %}{{ row.non_field_errors }}{% endif %}</td>
+        <td><button type="submit" name="op" value="remove:pacing-{{ forloop.counter0 }}">Remove</button></td>
+      </tr>{% endfor %}
+      </tbody>
+    </table>
+    <p><button type="submit" name="op" value="add:pacing"{% if not form.can_add_pacing %} disabled{% endif %}>Add row</button> <small class="muted">To words blank: no end. No rows: the Engine's default</small></p>
+  </fieldset>
+
+  <div class="field field-max_unprompted_skip_minutes">{{ form.max_unprompted_skip_minutes.label_tag }} {{ form.max_unprompted_skip_minutes }}{{ form.max_unprompted_skip_minutes.errors }}</div>
+  <div class="field field-stop_at_due_events">{{ form.stop_at_due_events.label_tag }} {{ form.stop_at_due_events }}{{ form.stop_at_due_events.errors }}</div>
+  <div class="field field-time_awareness">{{ form.time_awareness.label_tag }} {{ form.time_awareness }}{{ form.time_awareness.errors }}</div>
+
+  <fieldset class="bands-table"><legend>Bands</legend>
+    {{ form.bands.management_form }}
+    {% if form.bands.non_form_errors %}<div class="errors table-errors" role="alert">{% for error in form.bands.non_form_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+    <table class="rows band-rows">
+      <thead><tr><th>Name</th><th>From</th><th>To</th><th></th></tr></thead>
+      <tbody>
+      {% for row in form.bands %}<tr class="band-row">
+        <td>{{ row.name }}{{ row.name.errors }}</td>
+        <td>{{ row.from }}{{ row.from.errors }}</td>
+        <td>{{ row.to }}{{ row.to.errors }}{% if row.non_field_errors %}{{ row.non_field_errors }}{% endif %}</td>
+        <td><button type="submit" name="op" value="remove:bands-{{ forloop.counter0 }}">Remove</button></td>
+      </tr>{% endfor %}
+      </tbody>
+    </table>
+    <p><button type="submit" name="op" value="add:bands"{% if not form.can_add_bands %} disabled{% endif %}>Add row</button> <small class="muted">No rows: the Engine's default</small></p>
+  </fieldset>
+
+  <div class="field field-calendar">{{ form.calendar.label_tag }} {{ form.calendar }} <small class="muted">{{ form.calendar.help_text }}</small>{{ form.calendar.errors }}</div>
+  <p><button type="submit" name="op" value="save" class="clock-save">Save settings</button> <a href="{{ back_url }}">Cancel</a></p>
+</form>
+<div class="clock-read-only">
+  <p>Set at creation — this page can't change them</p>
+  <ul>{% for line in read_only %}<li>{{ line.label }}: {{ line.text }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endblock %}

@@ -102,6 +102,7 @@ class FakeEngine:
         self._served: dict[tuple[str, str], _Canned] = {}
         self._failures: dict[tuple[str, str], Exception] = {}
         self._effects: dict[tuple[str, str], Callable[[httpx.Request], httpx.Response]] = {}
+        self._undeclared: dict[tuple[str, str], Callable[[httpx.Request], httpx.Response]] = {}
         registry: Registry[Any] = Registry().with_resource(
             DOC_URI, Resource.from_contents(self.schema, default_specification=DRAFT202012)
         )
@@ -160,6 +161,7 @@ class FakeEngine:
             return
         self._sequences.pop((method, path), None)
         self._effects.pop((method, path), None)  # a canned answer replaces a side effect
+        self._undeclared.pop((method, path), None)
         self._canned[(method, path)] = self._validated(method, path, status, json, headers, delay)
 
     def respond_sequence(self, method: str, path: str, answers: list[dict[str, Any]]) -> None:
@@ -231,6 +233,25 @@ class FakeEngine:
         self._declared(method, path)
         self._effects[(method, path)] = handler
 
+    def respond_undeclared(
+        self, method: str, path: str, status: int, json: object | None = None
+    ) -> None:
+        """Answer ``method path`` (a declared operation) with a status its schema does **not**
+        declare, unvalidated: only for an Engine gap D18 records (``POST /stories``' 404
+        ``not_found`` for an unregistered provider in ``provider_bindings``, #259). Refused for
+        a declared status, which :meth:`respond` answers."""
+        method = method.upper()
+        responses = self._declared(method, path).get("responses", {})
+        if self._response_key(responses, status) is not None:
+            raise ValueError(f"{method} {path} declares {status}: use respond()")
+
+        def answer(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status, json=json)
+
+        self._sequences.pop((method, path), None)
+        self._canned.pop((method, path), None)
+        self._undeclared[(method, path)] = answer
+
     def fail(self, method: str, path: str, exc: Exception) -> None:
         """Raise ``exc`` (an httpx transport error) for ``method path``."""
         self._failures[(method.upper(), path)] = exc
@@ -267,6 +288,9 @@ class FakeEngine:
         key = (method, path) if served else (method, template or path)
         if key in self._failures:
             raise self._failures[key]
+        undeclared = self._undeclared.get(key)
+        if undeclared is not None:
+            return undeclared(request)
         effect = self._effects.get(key)
         if effect is not None:
             answer = effect(request)

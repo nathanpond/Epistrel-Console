@@ -12,6 +12,8 @@
 """
 
 import logging
+import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -33,7 +35,7 @@ from console.confirm import (
     shown_name,
 )
 from console.context_processors import badge_probe
-from console.engine.client import EngineClientError, EngineError
+from console.engine.client import EngineClientError, EngineError, EngineUnreachable
 from console.engine.models import (
     ContentRatingSummary,
     DeploymentSettings,
@@ -44,13 +46,14 @@ from console.engine.models import (
 from console.engine_access import engine_client_for
 from console.engine_api_check import RECORDED
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
-from console.engine_form_errors import apply_engine_errors
+from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.engine_probe import HEARTBEAT_LATE_S, OVERDUE_ALERT_S, ProbeResult
 from console.forms.config_changes import ConfigChangeFilterForm
 from console.forms.deployment import DeploymentSettingsForm, profile_default_rows
 from console.ids import new_ulid
 from console.models import EngineOperation
 from console.operation_log import REBUILD_KIND, queued_job_id, queued_job_text
+from console.world import ENGINE_NOTHING_CHANGED, nothing_changed
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +73,10 @@ SETTINGS_ALIASES = {
     "rating_retired": "default_content_rating_id",
     "profile_deleted": "default_engine_profile_id",
 }
+HOSTS = "provider_allowed_hosts"
+# A refusal of one ``provider_allowed_hosts`` entry (or of the list) (#241).
+_HOST_PATH = re.compile(r"^(?:body\.)?provider_allowed_hosts(?:\[(\d+)\])?$")
+BAD_RESPONSE = "bad_response"
 
 
 # --- /engine/ -----------------------------------------------------------------------------------
@@ -358,14 +365,17 @@ def _render_settings(
     *,
     form: DeploymentSettingsForm | None = None,
     engine_error: ErrorPanel | None = None,
+    idempotency_key: str | None = None,
 ) -> HttpResponse:
+    """``idempotency_key`` is the posted key a re-render keeps (D8: local invalid input, or an
+    unknown outcome); otherwise a fresh one is minted (#43)."""
     if page is not None and form is None:
         form = DeploymentSettingsForm(original=page.settings, ratings=page.ratings)
     context: dict[str, Any] = {
         "page": page,
         "form": form,
         "engine_error": engine_error,
-        "idempotency_key": new_ulid(),  # minted at each render (#43)
+        "idempotency_key": idempotency_key or new_ulid(),
         "snapshot": page.signed() if page is not None else "",
         "profile_defaults": profile_default_rows(page.settings.get("profile_defaults"))
         if page is not None
@@ -375,14 +385,19 @@ def _render_settings(
     return render(request, "console/engine/settings.html", context)
 
 
-def _place_settings_error(exc: EngineError, form: DeploymentSettingsForm) -> bool:
-    """Put a 422/409 on the form's fields; ``False`` when it is not a form error."""
+def _place_settings_error(
+    exc: EngineError, form: DeploymentSettingsForm, sent: Mapping[str, Any]
+) -> bool:
+    """Put a 422/409 on the form's fields; ``False`` when it is not a form error. ``sent`` is
+    the patch the refused request carried (it names a refused host entry by its index)."""
     details = exc.details
     if exc.http_status == 422 and details.get("reason") == SUPERSEDED:
         form.add_error(None, f"Moved to profile defaults: {details.get('replacement', EMPTY)}")
         return True
     if exc.http_status == 422:
-        apply_engine_errors(exc, form, aliases=SETTINGS_ALIASES)
+        rest = _place_host_errors(exc, form, sent)
+        if rest is not None:
+            apply_engine_errors(rest, form, aliases=SETTINGS_ALIASES)
         return True
     if exc.code == "listing_status_in_use":
         count = details.get("count")
@@ -396,6 +411,46 @@ def _place_settings_error(exc: EngineError, form: DeploymentSettingsForm) -> boo
         form.add_error("feedback_tags", f"{_tags_in_use(details.get('in_use'))}: {exc.message}")
         return True
     return False
+
+
+def _place_host_errors(
+    exc: EngineError, form: DeploymentSettingsForm, sent: Mapping[str, Any]
+) -> EngineError | None:
+    """Place the refusals of ``provider_allowed_hosts`` entries on that field (#241): "Line <i+1>
+    (`<sent entry>`): <message>", or the message alone without an index (or one past the sent
+    list). Returns ``exc`` without them for :func:`apply_engine_errors`, the same ``exc`` when
+    there were none, or ``None`` when nothing is left to place."""
+    failures = engine_field_errors(exc)
+    if not any(_HOST_PATH.match(f.path) for f in failures):
+        return exc
+    hosts = sent.get(HOSTS)
+    entries = hosts if isinstance(hosts, list) else []
+    for failure in failures:
+        match = _HOST_PATH.match(failure.path)
+        if match is None:
+            continue
+        message = failure.message or exc.message
+        index = int(match[1]) if match[1] is not None else None
+        if index is not None and index < len(entries):
+            message = f"Line {index + 1} (`{entries[index]}`): {message}"
+        form.add_error(HOSTS, message)
+    details = dict(exc.details)
+    listed = details.get("errors")
+    if isinstance(listed, list):
+        details["errors"] = [
+            item
+            for item in listed
+            if not (
+                isinstance(item, dict)
+                and isinstance(item.get("field"), str)
+                and _HOST_PATH.match(item["field"])
+            )
+        ]
+    field = details.get("field")
+    if isinstance(field, str) and _HOST_PATH.match(field):
+        del details["field"]
+    rest = EngineError(exc.code, exc.message, details, exc.http_status, retry_after=exc.retry_after)
+    return rest if engine_field_errors(rest) else None
 
 
 def _tags_in_use(in_use: object) -> str:
@@ -427,20 +482,33 @@ def deployment_settings(request: HttpRequest) -> HttpResponse:
 
     page = SettingsPage.unsigned(request.POST.get(SNAPSHOT_FIELD, "")) or _read_settings(request)
     form = DeploymentSettingsForm(request.POST, original=page.settings, ratings=page.ratings)
+    key = posted_idempotency_key(request)
     if not form.is_valid():
-        return _render_settings(request, page, form=form)
+        return _render_settings(request, page, form=form, idempotency_key=key)  # D8: nothing sent
     patch = form.patch()
     if not patch:
         messages.info(request, "No changes — nothing was sent.")
         return redirect(reverse("engine:settings"))
-    key = posted_idempotency_key(request)
     try:
         saved = engine_client_for(request).update_admin_settings(patch, idempotency_key=key)
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        if isinstance(exc, EngineError) and _place_settings_error(exc, form):
+        if isinstance(exc, EngineError) and _place_settings_error(exc, form, patch):
             return _render_settings(request, page, form=form)
-        return _render_settings(request, page, form=form, engine_error=panel_for(exc))
+        # D8: an answered refusal gets a fresh key; an unknown outcome keeps the posted one.
+        unknown = isinstance(exc, EngineUnreachable) or (
+            isinstance(exc, EngineError) and exc.code == BAD_RESPONSE
+        )
+        return _render_settings(
+            request,
+            page,
+            form=form,
+            engine_error=panel_for(exc),
+            idempotency_key=key if unknown else None,
+        )
+    if nothing_changed(saved.config_revision, page.revision):
+        messages.info(request, ENGINE_NOTHING_CHANGED)  # D8
+        return redirect(reverse("engine:settings"))
     text = (
         f"Saved — config revision {saved.config_revision} "
         f"({', '.join(patch)}), idempotency key {saved.idempotency_key or key}"

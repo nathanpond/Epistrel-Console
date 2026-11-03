@@ -42,8 +42,11 @@ from console.catalog.cast_table import (
     cast_table,
     channel_lines,
     character_ids,
+    clock_view,
+    event_rows,
     location_topology,
     rating_ids,
+    state_rows,
 )
 from console.catalog.character_labels import CharacterLabel, character_labels
 from console.catalog.scenario_report import (
@@ -132,8 +135,14 @@ FACTS_FIELD = "facts"
 FACTS_SALT = "console.scenario_facts"
 VERSION = "version"
 DESCRIPTION_SHORT = 200
-# Engine M5's story-setting defaults (#198), listed after Player authority in this order.
-M5_DEFAULTS = ("player_view", "sequence_order", "simultaneous_tie_break", "reactive_interjections")
+# M5's and M6's story-setting defaults (#198, #233), listed after Player authority in this order.
+M5_DEFAULTS = (
+    "co_author_knowledge",
+    "player_view",
+    "sequence_order",
+    "simultaneous_tie_break",
+    "reactive_interjections",
+)
 # The content groups "Draft differs from published" compares (#65's rule; not the envelope).
 COMPARED_GROUPS = (
     "public_card",
@@ -591,6 +600,11 @@ def _detail_page(
         # #205: the locations' topology and the opening's remote channels.
         context["topology"] = location_topology(entry)
         context["channels"] = channel_lines(entry.cast, entry.starting_state.channels)
+        # #267: the starting States.
+        context["states"] = state_rows(entry.starting_state.states, entry.cast, entry)
+        # #268: the starting clock and the scheduled events.
+        context["clock"] = clock_view(entry.starting_state.clock)
+        context["events"] = event_rows(entry.starting_state.scheduled_events, entry)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""

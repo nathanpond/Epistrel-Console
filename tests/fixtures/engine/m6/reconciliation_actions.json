@@ -1,0 +1,173 @@
+{
+  "listings": [
+    {
+      "outbox_id": "01JM6BX0000000000000000011",
+      "provider": "bank",
+      "value": "balance",
+      "status": "failed",
+      "reason": "failed",
+      "since": "2026-10-31T19:00:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Pay the ferryman",
+        "delta": -20
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000012",
+      "provider": "bank",
+      "value": "balance",
+      "status": "unknown",
+      "reason": "unknown",
+      "since": "2026-10-31T19:02:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Tip the innkeeper",
+        "delta": -35
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000013",
+      "provider": "bank",
+      "value": "balance",
+      "status": "claimed",
+      "reason": "reconciliation_required",
+      "since": "2026-10-31T19:04:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "buy sword",
+        "delta": -500
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000014",
+      "provider": "bank",
+      "value": "balance",
+      "status": "intended",
+      "reason": "cancelled_on_reactivation",
+      "since": "2026-10-31T19:06:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Rent a room",
+        "delta": -15
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000015",
+      "provider": "bank",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "confirmed_unsettled",
+      "since": "2026-10-31T19:08:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Buy a map",
+        "delta": -40
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-10-31T19:05:00Z",
+        "received_via": "dispatch"
+      },
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000016",
+      "provider": "bank",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "confirmed_discarded_origin",
+      "since": "2026-10-31T19:10:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Buy rope",
+        "delta": -60
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-10-31T19:07:00Z",
+        "received_via": "ingest"
+      },
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000017",
+      "provider": "bank",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "settlement_conflict",
+      "since": "2026-10-31T19:12:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Trade for the sword",
+        "value": "sword"
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-10-31T19:09:00Z",
+        "received_via": "dispatch"
+      },
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000018",
+      "provider": "bank",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "outcome_conflict",
+      "since": "2026-10-31T19:14:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Buy a lantern",
+        "delta": -75
+      },
+      "outcome": {
+        "kind": "failed",
+        "received_at": "2026-10-31T19:11:00Z",
+        "received_via": "ingest"
+      },
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM6BX0000000000000000019",
+      "provider": "bank",
+      "value": "balance",
+      "status": "claimed",
+      "reason": "reservation_expired",
+      "since": "2026-10-31T19:16:00Z",
+      "effect": {
+        "kind": "change",
+        "state": "gold",
+        "reason": "Hire a guide",
+        "delta": -90
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    }
+  ]
+}

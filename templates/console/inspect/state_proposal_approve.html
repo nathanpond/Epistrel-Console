@@ -1,0 +1,46 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags console_format %}
+{% comment %}
+Approve a proposed State (#266, console/views/inspect_state_proposals.py's
+state_proposal_approve), below the Proposed States section (current inspect:state-proposals):
+the shell's two reads, then one GET /stories/{id}/state-proposals. The proposal's Suggests and
+Evidence (the row's partials), then console.forms.states.StateOverridesForm (#261's fields without
+Owner and Provider, starting from the suggestion) POSTing to this page with its hidden
+idempotency key and D8's expected_revision. A proposal that isn't pending shows D9's sentence and
+no form; a refusal stays above the form (no_pending_proposal hides it); the result page is #261's
+state_declared.html. With the States gate closed: the inline greyed panel (gate_unavailable).
+Context: heading, row, form, form_hidden, not_pending, rejected, unchanged_note, back_url,
+back_label, action_url, proposal_id, gate_unavailable, not_found, proposals_error, refusal,
+refusal_url, refusal_link, write_error.
+{% endcomment %}
+{% block title %}Inspect · {{ heading|default:"Approve a proposed State" }} · {{ story_name }}{% endblock %}
+{% block world_content %}
+<h3 class="proposal-approve-title">{{ heading|default:"Approve a proposed State" }}</h3>
+{% if gate_unavailable %}{% include "console/inspect/_unavailable.html" with unavailable=gate_unavailable inline=True %}
+{% elif not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif proposals_error %}{% include "console/_engine_error.html" with engine_error=proposals_error %}
+{% elif not_pending %}<p class="warning proposal-not-pending">{{ not_pending }}</p>
+{% if rejected %}<details class="proposal-unparsed"><summary>The Engine's entry</summary>{% for entry in rejected %}<pre class="raw-item">{{ entry|pretty_json }}</pre>{% endfor %}</details>{% endif %}
+{% else %}
+<dl class="proposal-summary">
+  <dt>Suggests</dt><dd class="suggests">{% include "console/inspect/_state_proposal_suggests.html" %}</dd>
+  <dt>Evidence</dt><dd class="evidence">{% include "console/inspect/_state_proposal_evidence.html" %}</dd>
+</dl>
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if refusal %}<p class="errorlist proposal-approve-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+{% if form and not form_hidden %}
+<p class="muted proposal-unchanged">{{ unchanged_note }}</p>
+<form method="post" action="{{ action_url }}" class="proposal-approve-form">
+  {% csrf_token %}
+  {{ form.idempotency_key }}
+  {% if form.expected_revision.value %}{{ form.expected_revision }}{% endif %}
+  {% if form.is_bound and form.non_field_errors %}<div class="errors" role="alert">{% for error in form.non_field_errors %}<p class="errorlist">{{ error }}</p>{% endfor %}</div>{% endif %}
+  {% for legend, fields in form.groups %}<fieldset class="group">
+    <legend>{{ legend }}</legend>
+    {% for field in fields %}<div class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{% if form.is_bound and field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error|code_spans }}</li>{% endfor %}</ul>{% endif %}</div>
+    {% endfor %}</fieldset>
+  {% endfor %}<p><button type="submit" class="proposal-approve-submit">Approve</button> <a href="{{ back_url }}">Cancel</a></p>
+</form>
+{% endif %}
+{% endif %}
+<p class="proposals-back"><a href="{{ back_url }}">{{ back_label }}</a></p>
+{% endblock %}

@@ -1,0 +1,18 @@
+{
+  "bindings": [
+    {
+      "provider": "bank",
+      "external_ids": {
+        "account_id": "acct-7731"
+      },
+      "bound_at": "2026-10-31T17:50:00Z"
+    },
+    {
+      "provider": "ledger",
+      "external_ids": {
+        "ledger_id": "l-1"
+      },
+      "bound_at": "2026-10-31T18:05:00Z"
+    }
+  ]
+}

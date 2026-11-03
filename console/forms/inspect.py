@@ -677,6 +677,25 @@ def turn_too_high(head: int) -> str:
     return f"Turn must be 0\u2013{head}"
 
 
+def viewpoint_choices(cast: Sequence[Character] | None, requested: str) -> list[tuple[str, str]]:
+    """A viewpoint select's choices (#58; D4's World picker shares them): "Omniscient" first, then
+    each cast member as ``character:<id>`` in the Engine's cast order, the player marked. Without
+    the story read (``cast`` ``None``), "Omniscient" and the requested value shown raw."""
+    choices = [(OMNISCIENT, OMNISCIENT_LABEL)]
+    if cast is None:
+        if requested and requested != OMNISCIENT:
+            choices.append((requested, requested))
+        return choices
+    players = {c.id for c in cast if c.is_player}
+    return [
+        *choices,
+        *(
+            (viewpoint_for(cid), f"{label}{PLAYER_SUFFIX}" if cid in players else label)
+            for cid, label in character_choices(cast)
+        ),
+    ]
+
+
 class SceneForm(forms.Form):
     """The Scene tab's and the entity page's GET form (#58): **Turn** (``as_of``; blank = the
     head, not sent) and **Viewpoint** (always sent: "Omniscient" first, then each cast member as
@@ -730,19 +749,7 @@ class SceneForm(forms.Form):
 
     @staticmethod
     def _choices(cast: Sequence[Character] | None, requested: str) -> list[tuple[str, str]]:
-        choices = [(OMNISCIENT, OMNISCIENT_LABEL)]
-        if cast is None:
-            if requested and requested != OMNISCIENT:
-                choices.append((requested, requested))
-            return choices
-        players = {c.id for c in cast if c.is_player}
-        return [
-            *choices,
-            *(
-                (viewpoint_for(cid), f"{label}{PLAYER_SUFFIX}" if cid in players else label)
-                for cid, label in character_choices(cast)
-            ),
-        ]
+        return viewpoint_choices(cast, requested)
 
     def clean_as_of(self) -> int | None:
         as_of: int | None = self.cleaned_data.get("as_of")
@@ -1119,12 +1126,29 @@ ANY_WITNESS = "Any"
 STATE_CHOICES = (("", "Any"), ("unresolved", "Unresolved"), ("resolved", "Resolved"))
 STATE_INVALID = "Choose Any, Unresolved or Resolved"
 EXPOSURES_AS_OF_HELP = "State as the record stood through this turn"
+# The World tab's External values section (#248) parses its As of with :func:`parse_as_of` too.
+EXTERNAL_VALUES_AS_OF_HELP = "Reads by turns up to and including this one"
 # A 422 ``validation_error``'s ``details.field`` → the Exposures filter it lands on.
 EXPOSURES_FIELDS: Mapping[str, str] = {
     "query.character": "character",
     "query.state": "state",
     "query.as_of": "as_of",
 }
+
+
+def parse_as_of(value: Any) -> int | None:
+    """The Exposures (#193) and External values (#248) As of turn: stripped, blank → ``None``
+    (not sent), ASCII digits only (:data:`AS_OF_INVALID`), at most :data:`TURN_MAX`
+    (:data:`TURN_TOO_HIGH`). Raises :class:`django.forms.ValidationError`."""
+    typed = str(value or "").strip()
+    if not typed:
+        return None
+    if not (typed.isascii() and typed.isdigit()):
+        raise forms.ValidationError(AS_OF_INVALID)
+    turn = int(typed)
+    if turn > TURN_MAX:
+        raise forms.ValidationError(TURN_TOO_HIGH)
+    return turn
 
 
 class ExposuresForm(forms.Form):
@@ -1198,15 +1222,7 @@ class ExposuresForm(forms.Form):
         return typed.value
 
     def clean_as_of(self) -> int | None:
-        typed = str(self.cleaned_data.get("as_of") or "").strip()
-        if not typed:
-            return None
-        if not (typed.isascii() and typed.isdigit()):
-            raise forms.ValidationError(AS_OF_INVALID)
-        turn = int(typed)
-        if turn > TURN_MAX:
-            raise forms.ValidationError(TURN_TOO_HIGH)
-        return turn
+        return parse_as_of(self.cleaned_data.get("as_of"))
 
     def query(self) -> dict[str, Any]:
         """``EngineClient.inspect_exposures``' filter arguments (valid form only; no cursor):
@@ -1241,3 +1257,186 @@ class ExposuresForm(forms.Form):
             return False
         self.add_error(None, exc.message)
         return field_name == AFTER_ID_FIELD
+
+
+# --- the Memory tab's memory list (#236) ---------------------------------------------------------
+
+ANY_KIND = "Any kind"
+ANY_TIER = "Any tier"
+ANY_HOLDER = "Any holder"
+EITHER = "Either"
+MEMORY_KIND_CHOICES = (
+    ("", ANY_KIND),
+    ("episodic", "Episodic"),
+    ("semantic", "Semantic"),
+    ("reflection", "Reflection"),
+)
+MEMORY_TIER_CHOICES = (("", ANY_TIER), ("hot", "Hot"), ("retired", "Retired"))
+FLAG_CHOICES = (("", EITHER), ("true", "Yes"), ("false", "No"))
+KIND_NOT_LISTED = "Choose a kind from the list"
+TIER_NOT_LISTED = "Choose a tier from the list"
+FLAG_NOT_LISTED = "Choose Either, Yes or No"
+TO_BEFORE_FROM = "To turn is before From turn"
+TURN_RANGE_HELP = "Inclusive; memories without a position (such as author facts) are in no range"
+HOLDER_ID_HELP = "A character id"
+CURSOR_FIELD = "query.cursor"
+MEMORY_LIST_FIELDS = (
+    "kind",
+    "retrieval_tier",
+    "holder_character_id",
+    "from_turn",
+    "to_turn",
+    "quarantined",
+    "pinned",
+)
+
+
+def _flag_field(label: str) -> forms.ChoiceField:
+    return forms.ChoiceField(
+        required=False,
+        label=label,
+        choices=FLAG_CHOICES,
+        error_messages={"invalid_choice": FLAG_NOT_LISTED},
+    )
+
+
+def _list_turn(typed: object) -> int | None:
+    """A From/To turn: stripped; blank → ``None``; ASCII digits only (leading zeros accepted),
+    up to :data:`TURN_MAX`."""
+    text = str(typed or "").strip()
+    if not text:
+        return None
+    if not (text.isascii() and text.isdigit()):
+        raise forms.ValidationError(AS_OF_INVALID)
+    turn = int(text)
+    if turn > TURN_MAX:
+        raise forms.ValidationError(TURN_TOO_HIGH)
+    return turn
+
+
+class MemoryListForm(forms.Form):
+    """The memory list's GET filters (``console/views/inspect_memories.py``, #236); each name is
+    the Engine's ``GET /admin/stories/{id}/memories`` query parameter. The cursor isn't a field:
+    Apply starts over.
+
+    **Kind**, **Tier** (``retrieval_tier``), **Quarantined** and **Pinned** match their choices
+    exactly (no trimming or case folding); any other URL value is a field error and no call.
+    **Holder** (``holder_character_id``): with the story read (``cast`` given), a select of
+    "Any holder" then every cast member in cast order, labelled by ``labels`` (C4's, the player
+    marked); a URL id is read by C13's :func:`console.paging.cast_id`: a valid id outside the
+    cast is kept as "<short id> (not in the cast)" and sent, an invalid one is
+    :data:`console.paging.CHARACTER_INVALID`. Without the story read (``cast`` ``None``), a
+    free-text id field read the same way. **From turn** / **To turn**: blank isn't sent; ASCII
+    digits only (:data:`AS_OF_INVALID`), at most :data:`TURN_MAX` (:data:`TURN_TOO_HIGH`), no HTML
+    ``min``/``max`` (C10); To before From is :data:`TO_BEFORE_FROM` above the filters."""
+
+    kind = forms.ChoiceField(
+        required=False,
+        label="Kind",
+        choices=MEMORY_KIND_CHOICES,
+        error_messages={"invalid_choice": KIND_NOT_LISTED},
+    )
+    retrieval_tier = forms.ChoiceField(
+        required=False,
+        label="Tier",
+        choices=MEMORY_TIER_CHOICES,
+        error_messages={"invalid_choice": TIER_NOT_LISTED},
+    )
+    holder_character_id = forms.CharField(required=False, label="Holder")
+    from_turn = forms.CharField(
+        required=False, label="From turn", widget=forms.NumberInput(attrs={"step": 1})
+    )
+    to_turn = forms.CharField(
+        required=False,
+        label="To turn",
+        help_text=TURN_RANGE_HELP,
+        widget=forms.NumberInput(attrs={"step": 1}),
+    )
+    quarantined = _flag_field("Quarantined")
+    pinned = _flag_field("Pinned")
+
+    def __init__(
+        self,
+        data: QueryDict | dict[str, Any],
+        *,
+        cast: Sequence[Character] | None,
+        labels: Mapping[str, str] | None = None,
+    ) -> None:
+        bound = data.copy()
+        value = bound.get("holder_character_id")
+        if isinstance(value, str):
+            bound["holder_character_id"] = value.strip().upper()
+        self.cast = cast
+        self.option_ids: tuple[str, ...] = ()
+        options: list[tuple[str, str]] = [("", ANY_HOLDER)]
+        if cast is not None:
+            names = labels or {}
+            options += [(c.id, names.get(c.id) or short_id(c.id)) for c in cast]
+            self.option_ids = tuple(c.id for c in cast)
+            requested = str(bound.get("holder_character_id") or "")
+            if cast_id(requested, self.option_ids).kept:
+                options.append((requested, f"{short_id(requested)}{NOT_IN_CAST_SUFFIX}"))
+        super().__init__(bound)
+        holder = self.fields["holder_character_id"]
+        if cast is not None:
+            holder.widget = forms.Select(choices=options)
+        else:
+            holder.widget = forms.TextInput(attrs={"size": 30})
+            holder.help_text = HOLDER_ID_HELP
+
+    def clean_holder_character_id(self) -> str:
+        typed = cast_id(str(self.cleaned_data.get("holder_character_id") or ""), self.option_ids)
+        if typed.error:
+            raise forms.ValidationError(typed.error)
+        return typed.value
+
+    def clean_from_turn(self) -> int | None:
+        return _list_turn(self.cleaned_data.get("from_turn"))
+
+    def clean_to_turn(self) -> int | None:
+        return _list_turn(self.cleaned_data.get("to_turn"))
+
+    def clean(self) -> dict[str, Any]:
+        data = super().clean() or {}
+        start, end = data.get("from_turn"), data.get("to_turn")
+        if isinstance(start, int) and isinstance(end, int) and end < start:
+            raise forms.ValidationError(TO_BEFORE_FROM)
+        return data
+
+    def query(self) -> dict[str, Any]:
+        """``EngineClient.list_story_memories``' filter arguments (valid form only; no cursor):
+        only the filters that are set."""
+        data = self.cleaned_data
+        query: dict[str, Any] = {}
+        for name in ("kind", "retrieval_tier", "holder_character_id"):
+            if data.get(name):
+                query[name] = data[name]
+        for name in ("from_turn", "to_turn"):
+            if data.get(name) is not None:
+                query[name] = data[name]
+        for name in ("quarantined", "pinned"):
+            if data.get(name):
+                query[name] = data[name] == "true"
+        return query
+
+    @property
+    def any_filter(self) -> bool:
+        """Whether any filter is sent (valid form only; a cursor isn't a filter)."""
+        return bool(self.query())
+
+    def apply_engine_error(self, exc: EngineError) -> bool:
+        """A 422: ``viewpoint_unresolved`` → :data:`OMNISCIENT_TEXT` above the filters; a
+        ``details.field`` of ``query.<name>`` beside the same-named filter with the Engine's
+        message (``from_turn``/``to_turn`` included); any other above the filters. ``True`` when
+        it named ``query.cursor`` (the line gets "First page")."""
+        if exc.code == VIEWPOINT_UNRESOLVED:
+            self.add_error(None, OMNISCIENT_TEXT)
+            return False
+        field_name = exc.details.get("field")
+        if isinstance(field_name, str) and field_name.startswith("query."):
+            name = field_name[len("query.") :]
+            if name in MEMORY_LIST_FIELDS:
+                self.add_error(name, exc.message)
+                return False
+        self.add_error(None, exc.message)
+        return field_name == CURSOR_FIELD

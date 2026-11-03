@@ -5,17 +5,22 @@ as ``X-Epistrel-Expected-Revision``), ``head`` and the display-only ``name`` as 
 copied from the link's query string. A missing or non-integer ``rev`` is a form error, and the
 operation is not sent. Bounds copied from the recorded schema: ``RegenerateRequest`` (length,
 temperature, top_p as #48's turn form; up to 64 render characters; viewpoint up to 80
-characters), ``ForkRequest.name`` up to 200 characters, chains ``{turn ≥ 1, variant ≥ 1}``.
+characters), ``ForkRequest.name`` up to 200 characters, chains ``{turn ≥ 1, variant ≥ 1}``,
+``TruncateRequest.slot``/``ForkRequest.slot`` 0 to 32767 (#209: keep or copy turn N's inter-turn
+slots 1..k; blank sends nothing).
 """
 
 import re
-from collections.abc import Sequence
+import unicodedata
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from django import forms
+from django.core import signing
 
 from console.cast import CastMember, character_choices, viewpoint_for
 from console.forms.play import CUSTOM, TurnForm
+from console.world import SLOTS_NOT_LISTED
 
 REVISION_MISSING = "This page carries no timeline revision — reload the story and try again."
 CHAIN_INVALID = "A chain is turn:variant, both at least 1 (e.g. 5:2)."
@@ -34,8 +39,20 @@ REGENERATE_ERRORS = {
     "prompt_params.temperature": "temperature",
     "prompt_params.top_p": "top_p",
 }
-FORK_ERRORS = {"name": "new_name", "variant_chain": "variant_chain"}
+# Where an Engine 422 about a correction's input goes (#263); any other field is a refusal.
+CORRECT_ERRORS = {
+    "player_input": "__all__",
+    "player_input.say": "say",
+    "player_input.do": "do",
+}
+FORK_ERRORS = {"name": "new_name", "variant_chain": "variant_chain", "slot": "slot"}
+REWIND_ERRORS = {"slot": "slot"}
+SLOT_MAX = 32767  # the recorded schema's bound on TruncateRequest.slot / ForkRequest.slot
+SLOT_INVALID = "Enter a whole number of slots (0 or more), or leave it blank"
+SLOT_TOO_HIGH = "At most 32,767."
+SLOT_LABEL = "Inter-turn slot (optional)"
 _CHAIN = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
+_DIGITS = re.compile(r"[0-9]+")
 
 
 def parse_chain(value: str) -> tuple[int, int] | None:
@@ -58,6 +75,36 @@ class ChainField(forms.CharField):
         if found is None:
             raise forms.ValidationError(CHAIN_INVALID)
         return found
+
+
+class SlotField(forms.CharField):
+    """An inter-turn slot k (#209): blank → ``None`` (nothing sent), ASCII digits → ``int`` up to
+    :data:`SLOT_MAX`. No HTML ``min``/``max`` (C10): the Console's own messages say why."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("label", SLOT_LABEL)
+        kwargs.setdefault("widget", forms.TextInput(attrs={"inputmode": "numeric", "size": 6}))
+        super().__init__(**kwargs)
+
+    def to_python(self, value: Any) -> Any:
+        text = super().to_python(value)
+        if not text:
+            return None
+        if _DIGITS.fullmatch(text) is None:
+            raise forms.ValidationError(SLOT_INVALID, code="slot_invalid")
+        # Python refuses ``int()`` on very long strings; anything past five digits is too high.
+        if len(text.lstrip("0")) > 5 or int(text) > SLOT_MAX:
+            raise forms.ValidationError(SLOT_TOO_HIGH, code="slot_too_high")
+        return int(text)
+
+
+def slot_help(verb: str, turn: int) -> str:
+    """The slot field's help: what k keeps (``"Keep"``) or copies (``"Copy"``), then D18."""
+    return (
+        f"{verb} turn {turn}'s inter-turn slots 1..k — State sets, clock advances and "
+        f"settlements recorded after turn {turn}. Blank: none of them. {SLOTS_NOT_LISTED}."
+    )
 
 
 class TimelineForm(forms.Form):
@@ -178,15 +225,134 @@ class RegenerateForm(TimelineForm):
         return body
 
 
+class RewindForm(TimelineForm):
+    """Rewind: the hidden fields plus the optional inter-turn slot k (#209)."""
+
+    slot = SlotField()
+
+    def __init__(self, data: Any = None, *, turn: int, **kwargs: Any) -> None:
+        super().__init__(data, **kwargs)
+        self.fields["slot"].help_text = slot_help("Keep", turn)
+
+
 class ForkForm(TimelineForm):
-    """Fork: the new story's name (pre-filled, required) and, from a Variants row, the chain."""
+    """Fork: the new story's name (pre-filled, required), from a Variants row the chain, and the
+    optional inter-turn slot k (#209)."""
 
     new_name = forms.CharField(label="New story's name", max_length=NAME_MAX)
     variant_chain = ChainField(widget=forms.HiddenInput, required=False)
+    slot = SlotField()
 
     HIDDEN = ("rev", "head", "name", "variant_chain")
+
+    def __init__(self, data: Any = None, *, turn: int, **kwargs: Any) -> None:
+        super().__init__(data, **kwargs)
+        self.fields["slot"].help_text = slot_help("Copy", turn)
 
 
 def default_fork_name(name: str, story_id: str, turn: int) -> str:
     """``"<name> (fork at turn T)"``, cut to the 200 characters the Engine accepts."""
     return f"{name or story_id} (fork at turn {turn})"[:NAME_MAX]
+
+
+# --- Correct (#263) -------------------------------------------------------------------------------
+
+INPUT_MAX = 8000  # PlayerInputBody's say/do bound
+ORIGINAL_SALT = "console.correct.original"
+NOTHING_TO_SEND = "Give a say or a do — whitespace alone counts as none."
+UNCHANGED_INPUT = "That's the turn's input unchanged — edit it to correct the turn."
+WHISPER_HELP = "A whisper isn't carried over"
+CHANNELS = ("say", "do")
+
+
+def sign_original(story_id: str, turn: int, say: str | None, do: str | None) -> str:
+    """The turn's own input as the page pre-filled it, signed for the hidden ``original``
+    (``None``: the channel had no readable item)."""
+    return signing.dumps(
+        {"story": story_id, "turn": turn, "say": say, "do": do}, salt=ORIGINAL_SALT
+    )
+
+
+def _compared(text: Any) -> str:
+    """How the Engine compares an input: NFC-normalised and stripped ("" for absent)."""
+    return unicodedata.normalize("NFC", text).strip() if isinstance(text, str) else ""
+
+
+class CorrectForm(TimelineForm):
+    """A correction's replacement input (#263): the turn's ``say`` and ``do``, pre-filled from
+    the history read. The original travels signed in ``original`` so an untouched form sends
+    nothing (C9); a tampered, missing or other story's/turn's value skips that check."""
+
+    snapshot = forms.CharField(widget=forms.HiddenInput, required=False)
+    original = forms.CharField(widget=forms.HiddenInput, required=False)
+    say = forms.CharField(
+        label="Say",
+        required=False,
+        max_length=INPUT_MAX,
+        help_text=WHISPER_HELP,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    do = forms.CharField(
+        label="Do",
+        required=False,
+        max_length=INPUT_MAX,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+    HIDDEN = ("rev", "head", "name", "snapshot", "original")
+
+    def __init__(self, data: Any = None, *, story_id: str, turn: int, **kwargs: Any) -> None:
+        super().__init__(data, **kwargs)
+        self.story_id = story_id
+        self.turn = turn
+        for name in CHANNELS:  # no maxlength attribute: the server says why (C10)
+            self.fields[name].widget.attrs.pop("maxlength", None)
+
+    def hidden(self) -> dict[str, str]:
+        """The hidden fields as posted, or on an unbound (GET) form as its ``initial``."""
+        if self.is_bound:
+            return super().hidden()
+        return {
+            name: "" if self.initial.get(name) is None else str(self.initial[name])
+            for name in self.HIDDEN
+        }
+
+    def original_values(self) -> Mapping[str, Any] | None:
+        """The signed original ``{say, do}``, or ``None`` when missing, tampered or another
+        story's or turn's."""
+        raw = self.data.get("original") if self.is_bound else self.initial.get("original")
+        if not raw:
+            return None
+        try:
+            found = signing.loads(str(raw), salt=ORIGINAL_SALT)
+        except signing.BadSignature:
+            return None
+        if not isinstance(found, dict):
+            return None
+        if found.get("story") != self.story_id or found.get("turn") != self.turn:
+            return None
+        return found
+
+    def clean(self) -> dict[str, Any]:
+        data = super().clean() or {}
+        if any(name in self.errors for name in CHANNELS):
+            return data
+        say, do = data.get("say") or "", data.get("do") or ""
+        if not say.strip() and not do.strip():
+            raise forms.ValidationError(NOTHING_TO_SEND, code="nothing_to_send")
+        original = self.original_values()
+        if original is not None and all(
+            _compared(data.get(name)) == _compared(original.get(name)) for name in CHANNELS
+        ):
+            raise forms.ValidationError(UNCHANGED_INPUT, code="unchanged_input")
+        return data
+
+    def body(self) -> dict[str, Any]:
+        """The ``CorrectRequest`` body: the URL's turn and only the non-blank say/do (stripped);
+        nothing else, so the Engine reuses the turn's recorded viewpoint, render characters and
+        prompt parameters. Call after ``is_valid()``."""
+        given = {name: self.cleaned_data[name].strip() for name in CHANNELS}
+        return {
+            "turn": self.turn,
+            "player_input": {name: text for name, text in given.items() if text},
+        }

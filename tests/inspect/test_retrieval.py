@@ -36,7 +36,10 @@ TOBIN = "01JB2Z8Y5Q3W6K9M1N4P7R0T3B"
 TAVERN = "01JB2Z8Y5Q3W6K9M1N4P7R0E01"
 QUESTION = "What happened at the tavern with Tobin?"
 PROMPT = "Retrieval answers a question — enter one to see the memories it returns."
-NOTE = "Memories this question retrieves — not a full list (nathanpond/Epistrel#531)"
+NOTE = (
+    "Memories this question retrieves — every memory is "
+    f'<a href="/stories/{STORY}/inspect/memory/list/">listed on the Memory tab</a>'
+)
 NOT_RETRIEVED = "That memory isn&#x27;t among what this question retrieves."
 HIDDEN = "That memory is retrieved, but the kind/tier filter hides it."
 M = "01JB2Z8Y5Q3W6K9M1N4P7R0M"  # memory ids: M + "01".."04", "E1", "E2", "A1"
@@ -423,7 +426,9 @@ def test_three_tables_in_order_with_engine_order_rows(
     assert row_ids(html, "memories") == [f"{M}01", f"{M}02", f"{M}03", f"{M}04"]
     assert row_ids(html, "episodes") == [f"{M}E1", f"{M}E2"]
     assert row_ids(html, "assessments") == [f"{M}A1"]
-    assert NOTE in html
+    assert NOTE in html  # links inspect:memory-list (#236)
+    assert "#531" not in html
+    assert "not a full list" not in html
     assert "Showing" not in html
     assert "(4 of 4)" not in html
 

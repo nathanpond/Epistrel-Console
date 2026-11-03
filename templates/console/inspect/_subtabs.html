@@ -1,0 +1,5 @@
+{% load inspect_tags %}{% comment %}
+A sectioned Inspect tab's sub-navigation (#239, D3). Context: sections (console.inspect.SectionLink),
+label (the nav's aria-label, e.g. "World sections"). An open section is a link, aria-current when
+active; a greyed one is a non-link with its reason in title (as the tab bar). No sections: nothing.
+{% endcomment %}{% if sections %}<nav class="subtabs" aria-label="{{ label }}">{% for section in sections %}{% if section.unavailable %}<span class="disabled" aria-disabled="true" title="{{ section.unavailable.reason|no_backticks }}"{% if section.active %} aria-current="page"{% endif %}>{{ section.label }}</span>{% elif section.active %}<a class="active" aria-current="page" href="{{ section.url }}">{{ section.label }}</a>{% else %}<a href="{{ section.url }}">{{ section.label }}</a>{% endif %}{% endfor %}</nav>{% endif %}

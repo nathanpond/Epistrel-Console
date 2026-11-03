@@ -1,9 +1,9 @@
-<div class="confirm">
+{% load inspect_tags %}<div class="confirm">
   <p class="question">{% if has_emphasis %}{{ question_before }}<em>{{ page.emphasis }}</em>{{ question_after }}{% else %}{{ page.question }}{% endif %}</p>
   {% for line in page.lines %}<p>{{ line }}</p>{% endfor %}
   {% if page.facts %}
   <dl>
-    {% for label, value in page.facts %}<dt>{{ label }}</dt><dd><code>{{ value }}</code></dd>{% endfor %}
+    {% for label, value, url in page.fact_rows %}<dt>{{ label }}</dt><dd>{% if url %}<a href="{{ url }}"><code>{{ value }}</code></a>{% else %}<code>{{ value }}</code>{% endif %}</dd>{% endfor %}
   </dl>
   {% endif %}
   <form method="post">
@@ -13,8 +13,9 @@
     {% for name, value in page.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
     {% endfor %}
     {% if page.fields_template %}{% include page.fields_template %}{% endif %}{% if page.error %}
-    <p class="errorlist confirm-error">{{ page.error }}</p>{% endif %}
-    <button type="submit"{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>{% if page.buttons_template %}
+    <p class="errorlist confirm-error">{{ page.error|code_spans }}{% if page.error_url and page.error_link %} — <a href="{{ page.error_url }}">{{ page.error_link }}</a>{% endif %}</p>{% endif %}{% if page.blocked %}
+    <p class="warning">{{ page.blocked }}</p>{% endif %}
+    <button type="submit"{% if page.blocked %} disabled{% endif %}{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>{% if page.buttons_template %}
     {% include page.buttons_template %}{% endif %}
     <a href="{{ next_url }}">Cancel</a>
   </form>

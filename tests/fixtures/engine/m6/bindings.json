@@ -1,0 +1,11 @@
+{
+  "bindings": [
+    {
+      "provider": "bank",
+      "external_ids": {
+        "account_id": "acct-7731"
+      },
+      "bound_at": "2026-10-31T17:50:00Z"
+    }
+  ]
+}

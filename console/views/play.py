@@ -31,7 +31,7 @@ from urllib.parse import urlencode
 
 from django.core import signing
 from django.http import HttpRequest, HttpResponse, QueryDict
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST, require_safe
@@ -41,8 +41,9 @@ from console.canon import cast_names
 from console.cast import CastMember, character_of, viewpoint_for
 from console.cast_panel import CastPanel, cast_panel
 from console.composition import Composition, composition
-from console.confirm import confirm_query, posted_idempotency_key
+from console.confirm import confirm_query, posted_idempotency_key, safe_next
 from console.creation_report import has_creation_report
+from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
 from console.engine.client import (
     DEFAULT_TURN_DEADLINE_S,
     EngineClient,
@@ -64,7 +65,7 @@ from console.engine.models import (
     StorySettings,
     TurnReport,
 )
-from console.engine_access import complete_queued, engine_client_for
+from console.engine_access import complete_queued, engine_client_for, note_engine_record
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.feedback import FeedbackWidget, collapsed, first_parts
@@ -72,6 +73,7 @@ from console.forms.history import PLAYER_VIEW_CHOICES
 from console.forms.ingest import (
     EVENTS_MAX,
     INGEST_PREFIX,
+    STATE_CHANGE,
     BaseIngestFormSet,
     ingest_formset,
     new_row,
@@ -100,6 +102,8 @@ from console.ingest import (
     gate_line,
     place_ingest_error,
     result_rows,
+    states_gate,
+    world_effective,
 )
 from console.inspect import (
     MULTI_CHARACTER,
@@ -107,14 +111,23 @@ from console.inspect import (
     PERCEPTION,
     PIPELINE,
     SETTINGS,
+    STATES,
     STRUCTURED,
     history_turn_url,
     is_module_off,
     is_structured_pipeline,
     setting,
+    short_id,
 )
 from console.models import EngineOperation
 from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
+from console.notices import (
+    NoticeCards,
+    notice_cards,
+    overridden_card,
+    overridden_notices,
+    remember_override,
+)
 from console.operation_log import input_gate_spend, input_violations, turn_report_json
 from console.perception import perception_url, turn_links_perception
 from console.renders import (
@@ -143,6 +156,7 @@ from console.turn_reports import (
     stored_turn_report,
     violation_rows,
 )
+from console.turn_world import TurnWorld, turn_world
 from console.views.ownership import OwnershipPanel, ownership_context
 from console.wording import busy_notice, humanised
 
@@ -175,6 +189,14 @@ INGEST_PLACED = frozenset(
         "unsupported_event_kind",
         "erased_subject_referenced",
         "guardrail_violation",
+        # #260: the state_change and outcome refusals.
+        "effect_not_found",
+        "state_unpermitted",
+        "state_readonly_external",
+        "state_derived",
+        "state_constraint_violation",
+        "not_found",
+        "module_off",
     }
 )
 
@@ -200,6 +222,8 @@ class PlayStory:
     renders: str | None = None
     pipeline: str | None = None
     perception: str | None = None
+    # #245: the effective ``states.level`` (``None`` when missing or unread); #260's gate reads it.
+    states: str | None = None
     partitions: bool | None = None
     roles: dict[str, tuple[str, bool]] = field(default_factory=dict)
     story_multi: dict[str, Any] | None = None
@@ -225,6 +249,7 @@ class PlayStory:
             renders=_text(effective, SETTINGS[MULTI_CHARACTER]),
             pipeline=_text(effective, SETTINGS[PIPELINE]),
             perception=_text(effective, SETTINGS[PERCEPTION]),
+            states=_text(effective, SETTINGS[STATES]),
             partitions=_flag(effective, SETTINGS[PARTITIONS]),
             roles=_stored_roles(story),
             story_multi=_story_multi(settings),
@@ -242,6 +267,7 @@ class PlayStory:
                 "renders": self.renders,
                 "pipeline": self.pipeline,
                 "perception": self.perception,
+                "states": self.states,
                 "partitions": self.partitions,
                 "roles": {cid: [role, fixed] for cid, (role, fixed) in self.roles.items()},
                 "story_multi": self.story_multi,
@@ -272,6 +298,7 @@ class PlayStory:
                 renders=_optional(raw["renders"], str),
                 pipeline=_optional(raw["pipeline"], str),
                 perception=_optional(raw["perception"], str),
+                states=_optional(raw["states"], str),
                 partitions=_optional(raw["partitions"], bool),
                 roles=_signed_roles(raw["roles"]),
                 story_multi=story_multi,
@@ -473,6 +500,18 @@ class Entry:
     feedback: FeedbackWidget | None = None  # the "Rate" control on a generated message (#83)
     trace: BeatTrace | None = None  # a structured beat's trace, item-level only (#147)
     fidelity: FidelityBadge | None = None  # an envelope / not-perceived beat's badge (#62, #196)
+    # #245 (D13): the first item of a staged turn still waiting on its outcome carries the badge,
+    # linked to the turn's Engine operation page once ``operations:engine`` resolves (D19).
+    incomplete: bool = False
+    incomplete_url: str = ""
+
+    @property
+    def incomplete_text(self) -> str:
+        return INCOMPLETE_TEXT
+
+    @property
+    def incomplete_title(self) -> str:
+        return INCOMPLETE_TITLE
 
     @property
     def reaction(self) -> bool:
@@ -607,6 +646,7 @@ def _transcript(
         )
         for item, rate in zip(items, first_parts(items), strict=True)
     ]
+    entries = _with_incomplete(entries, history)
     character_read = history.output_viewpoint != cast_helpers.OMNISCIENT
     chains = story.variant_chains if story is not None else []
     return Transcript(
@@ -624,6 +664,42 @@ def _transcript(
         player_view=requested,
         player_view_disabled=omniscient,
     )
+
+
+def _incomplete_turns(history: History) -> set[tuple[int, int | None]]:
+    """(turn, variant) keys of the page's incomplete turns: by turn number (the active chain),
+    by (turn, variant) only for a turn with two summaries (``variant`` ``None`` = any)."""
+    counts: dict[int, int] = {}
+    for summary in history.turns:
+        counts[summary.turn] = counts.get(summary.turn, 0) + 1
+    return {
+        (s.turn, s.variant if counts[s.turn] > 1 else None) for s in history.turns if s.incomplete
+    }
+
+
+def _with_incomplete(entries: list[Entry], history: History) -> list[Entry]:
+    """#245 (D13): the first transcript item of each incomplete turn carries the badge, linked
+    to the first non-empty ``operation_id`` among that turn's items (plain text without one, or
+    while ``operations:engine`` is unregistered)."""
+    marks = _incomplete_turns(history)
+    if not marks:
+        return entries
+    seen: set[int] = set()
+    marked = []
+    for entry in entries:
+        turn, variant = entry.item.turn, entry.item.variant
+        if (
+            turn is not None
+            and turn not in seen
+            and ((turn, None) in marks or (turn, variant) in marks)
+        ):
+            seen.add(turn)
+            ids = (e.item.operation_id for e in entries if e.item.turn == turn)
+            operation = next((i for i in ids if i), "")
+            url = engine_operation_url(operation) if operation else None
+            entry = replace(entry, incomplete=True, incomplete_url=url or "")
+        marked.append(entry)
+    return marked
 
 
 def _beat_trace(story_id: str, item: HistoryItem, names: dict[str, str]) -> BeatTrace | None:
@@ -678,6 +754,16 @@ class Inspector:
     warnings: tuple[WarningLine, ...] = ()
     # #203: how a multi-character turn was composed (:func:`_with_composition`).
     composition: Composition | None = None
+    # #245: what the turn did to the world (:func:`_with_world`); ``None``: no strip.
+    world: TurnWorld | None = None
+    # #185: the turn's co-author notices (:func:`_with_notices`); ``None``: no section.
+    notices: NoticeCards | None = None
+
+    @property
+    def engine_url(self) -> str:
+        """#250: the "Engine record" link on the "Engine operation" line (D19: "" for a non-ULID
+        id, or while ``operations:engine`` is unregistered)."""
+        return engine_operation_url(self.operation_id) or ""
 
     @property
     def trace_shown(self) -> bool:
@@ -826,6 +912,39 @@ def _with_composition(
     return replace(found, composition=panel)
 
 
+def _with_world(
+    found: Inspector, response: Mapping[str, Any], labels: Mapping[str, str]
+) -> Inspector:
+    """#245: the World strip, from the same raw answer mapping as the Composition (every
+    path's), named by the inspector's labels (C4). No Engine read."""
+    return replace(found, world=turn_world(response, found.story_id, labels))
+
+
+def _with_notices(
+    found: Inspector,
+    response: Mapping[str, Any],
+    labels: Mapping[str, str],
+    overridden: frozenset[str],
+) -> Inspector:
+    """#185: the turn's notice cards from the same raw answer mapping as the World strip, named
+    by the inspector's labels (C4). ``latest=None``: Fix shows whenever a notice is correctable
+    (#263's page re-checks the head). Fix and Override return to the play page at this turn's
+    operation (``?operation=``), else the play page."""
+    play = reverse("stories:detail", args=[found.story_id])
+    next_url = (
+        f"{play}?{urlencode({'operation': found.operation_id})}" if found.operation_id else play
+    )
+    cards = notice_cards(
+        response.get("notices"),
+        found.story_id,
+        labels,
+        overridden=overridden,
+        latest=None,
+        next_url=next_url,
+    )
+    return replace(found, notices=cards or None)
+
+
 def _answer_mapping(result: RespondResponse) -> dict[str, Any]:
     """#203: the live answer as a mapping (``dataclasses.asdict``), each field the model's
     lenient parse lost an entry of (``unparsed``) put back raw, so the panel keeps it under
@@ -945,6 +1064,7 @@ def result_inspector(
     actor: str = "",
     labels: Mapping[str, str] | None = None,
     response: Mapping[str, Any] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector:
     """The inspector for a finished turn: the live answer, or a polled operation's stored
     result. ``actor`` is the turn's (the posted form's, or the logged request's) for the
@@ -965,6 +1085,8 @@ def result_inspector(
     found = _with_answer(found, TurnAnswer.of(result), actor=actor, labels=labels or {})
     raw = response if response is not None else _answer_mapping(result)
     found = _with_composition(found, raw, labels or {})
+    found = _with_world(found, raw, labels or {})
+    found = _with_notices(found, raw, labels or {}, overridden)
     found = _with_warnings(found, labels or {}, story_id)
     return _with_history_link(story_id, found)
 
@@ -992,7 +1114,11 @@ def _row_actor(row: EngineOperation) -> str:
 
 
 def row_inspector(
-    row: EngineOperation, story_id: str = "", *, labels: Mapping[str, str] | None = None
+    row: EngineOperation,
+    story_id: str = "",
+    *,
+    labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector:
     """The inspector for a turn the operation log holds (#44), for ``story_id`` (the page's;
     the row's own by default), its characters named by ``labels`` (C4)."""
@@ -1023,18 +1149,25 @@ def row_inspector(
     found = _with_answer(found, answer, actor=_row_actor(row), labels=labels or {})
     if isinstance(row.response, dict) and not row.error_code and not violations:
         found = _with_composition(found, row.response, labels or {})
+        found = _with_world(found, row.response, labels or {})
+        found = _with_notices(found, row.response, labels or {}, overridden)
     found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 
 
-def _latest_inspector(story_id: str, *, labels: Mapping[str, str] | None = None) -> Inspector:
+def _latest_inspector(
+    story_id: str,
+    *,
+    labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
+) -> Inspector:
     """First load: the newest logged turn of this story with a report, else "select a turn"."""
     rows = EngineOperation.objects.filter(story_id=story_id, response__isnull=False).exclude(
         kind__startswith=INGEST_KIND
     )
     for row in rows[:REPORT_SCAN]:
         if _inspectable(row.response):
-            return row_inspector(row, story_id, labels=labels)
+            return row_inspector(row, story_id, labels=labels, overridden=overridden)
     return NOTHING_SELECTED
 
 
@@ -1044,6 +1177,7 @@ def selected_inspector(
     origin: str = "",
     *,
     labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector:
     """The inspector for a clicked history item of story ``story_id``, by the operation that
     recorded it. #139's trace block is offered unless the turn was ingested."""
@@ -1051,7 +1185,7 @@ def selected_inspector(
     for row in rows:
         # An ingest's answer carries the input gate's model calls, not a turn report.
         if not row.kind.startswith(INGEST_KIND) and _inspectable(row.response):
-            return row_inspector(row, story_id, labels=labels)
+            return row_inspector(row, story_id, labels=labels, overridden=overridden)
     ingested = origin == "ingested" or any(row.kind.startswith(INGEST_KIND) for row in rows)
     return Inspector(
         title=f"Operation {operation_id}",
@@ -1253,6 +1387,7 @@ def _turn_inspector(
     story_structured: bool = False,
     *,
     labels: Mapping[str, str] | None = None,
+    overridden: frozenset[str] = frozenset(),
 ) -> Inspector | None:
     """The inspector for turn ``turn`` of the transcript (``?turn=N``): its reply's operation,
     else any of its items'. Its "Explain retrieval" link (#142) is rebuilt from the transcript's
@@ -1265,7 +1400,11 @@ def _turn_inspector(
     if not chosen:
         return None
     found = selected_inspector(
-        transcript.story_id, chosen[0].operation_id, chosen[0].origin, labels=labels
+        transcript.story_id,
+        chosen[0].operation_id,
+        chosen[0].origin,
+        labels=labels,
+        overridden=overridden,
     )
     query = explain_query(items, turn, chosen[0].variant, lambda: story_structured)
     link = explain_url(transcript.story_id, query) if query is not None else None
@@ -1297,8 +1436,11 @@ def _page(
     built after the story read so it names the characters (#201, C4)."""
     story, play, config = read_story(request, story_id)
     labels = cast_names(play.cast)
+    overridden = overridden_notices(request)  # #185
     if inspector is None and operation:
-        inspector = selected_inspector(story_id, operation, origin, labels=labels)
+        inspector = selected_inspector(
+            story_id, operation, origin, labels=labels, overridden=overridden
+        )
     requested = _player_view(player_view)
     restored = _restored_cards(play, requested) if cards is None else cards
     if form is None:
@@ -1310,13 +1452,17 @@ def _page(
     shown = _transcript(request, play, chosen, story=story, player_view=requested)
     if inspector is None and turn is not None:
         structured = config is not None and is_structured_pipeline(config.effective)
-        inspector = _turn_inspector(shown, turn, structured, labels=labels)
+        inspector = _turn_inspector(shown, turn, structured, labels=labels, overridden=overridden)
     page = PlayPage(
         story,
         play,
         _form_view(play, form, waiting=bool(restored), transcript_player_view=requested),
         shown,
-        inspector if inspector is not None else _latest_inspector(story_id, labels=labels),
+        (
+            inspector
+            if inspector is not None
+            else _latest_inspector(story_id, labels=labels, overridden=overridden)
+        ),
         ingest_view
         or _ingest_view(
             play,
@@ -1442,11 +1588,45 @@ def inspector(request: HttpRequest, story_id: str) -> HttpResponse:
     shown = PlayStory.unsigned(snapshots[0], story_id) if snapshots else None
     labels = cast_names(shown.cast) if shown is not None else {}
     found = (
-        selected_inspector(story_id, operation, origin, labels=labels)
+        selected_inspector(
+            story_id, operation, origin, labels=labels, overridden=overridden_notices(request)
+        )
         if operation
         else NOTHING_SELECTED
     )
     return render(request, "console/play/_inspector_body.html", {"inspector": found})
+
+
+@require_POST
+def override_notice(request: HttpRequest, story_id: str, notice_id: str) -> HttpResponse:
+    """#185: Override a co-author notice for this browser session. The turn is already
+    committed, so this reads nothing from the Engine and writes nothing there; the notice isn't
+    checked against the story either (an unknown id only hides a card that doesn't exist).
+
+    An HTMX request gets the card's overridden line, labelled from the posted signed snapshot,
+    else the posted display-only ``label``, else the character's short id (C4); the posted
+    ``claim_text``/``character_id``/``label`` are never trusted for the action. Otherwise the
+    answer redirects to ``next`` (the story's play page by default)."""
+    remember_override(request, notice_id)
+    if not is_htmx(request):
+        return redirect(safe_next(request, reverse("stories:detail", args=[story_id])))
+    character_id = request.POST.get("character_id", "").strip()
+    snapshots = request.POST.getlist(SNAPSHOT_FIELD)
+    shown = PlayStory.unsigned(snapshots[0], story_id) if snapshots else None
+    names = cast_names(shown.cast) if shown is not None else {}
+    label = (
+        names.get(character_id)
+        or request.POST.get("label", "").strip()
+        or (short_id(character_id) if character_id else "")
+    )
+    card = overridden_card(
+        notice_id,
+        character=label,
+        claim_text=request.POST.get("claim_text", ""),
+        character_id=character_id,
+    )
+    context = {"cards": NoticeCards((card,)), "fragment": True}
+    return render(request, "console/_notices.html", context)
 
 
 def _posted(data: QueryDict) -> dict[str, list[str]]:
@@ -1525,6 +1705,7 @@ def turn(request: HttpRequest, story_id: str) -> HttpResponse:
             operation_id,
             actor=str(form.cleaned_data.get("actor") or ""),
             labels=cast_names(play_story.cast),
+            overridden=overridden_notices(request),
         ),
         viewpoint=result.output_viewpoint,
         config_badge=_badge_after(request, story_id, result),
@@ -1587,9 +1768,16 @@ def _turn_answer(
 
 
 def _ingest_view(
-    play_story: PlayStory, formset: BaseIngestFormSet, viewpoint: str, **changes: Any
+    play_story: PlayStory,
+    formset: BaseIngestFormSet,
+    viewpoint: str,
+    *,
+    key: str | None = None,
+    **changes: Any,
 ) -> IngestView:
-    """The ingest tab for ``formset``: a fresh key, disabled while the story is archived."""
+    """The ingest tab for ``formset``: a fresh key unless ``key`` (D8: the posted one, kept after
+    local invalid input or a transport error), disabled while the story is archived, with the
+    ``states`` gate (#260) beside each row's Kind."""
     archived: dict[str, Any] = {}
     if play_story.archived:
         archived = {"disabled": True, "note": INGEST_ARCHIVED_NOTE}
@@ -1599,11 +1787,25 @@ def _ingest_view(
         play_story.id,
         formset,
         play_story.signed(),
-        new_ulid(),
+        key or new_ulid(),
         viewpoint,
         FormView.timeout_s + EVENTS_MAX,
-        **{**archived, **changes},
+        **{"states_gate": states_gate(play_story), **archived, **changes},
     )
+
+
+def _states_gated(play_story: PlayStory, formset: BaseIngestFormSet) -> bool:
+    """D1 (#260): while States are off, put the reason on each sent ``state_change`` row's Kind;
+    ``True`` when any row was refused (nothing is sent)."""
+    gate = states_gate(play_story)
+    if gate is None:
+        return False
+    refused = False
+    for form in formset.sent_forms():
+        if form.cleaned_data.get("kind") == STATE_CHANGE:
+            form.add_error("kind", gate.reason)
+            refused = True
+    return refused
 
 
 def _ingest_outcome(exc: EngineClientError, key: str, placed: int, batch: BatchErrors) -> Inspector:
@@ -1643,11 +1845,11 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         view = _ingest_view(play_story, edited, viewpoint, show_errors=False, **kept)
         return _ingest_answer(request, play_story, view)
     formset = ingest_formset(play_story.cast, request.POST)
-    if not formset.is_valid():
-        view = _ingest_view(play_story, formset, viewpoint, **kept)
+    key = posted_idempotency_key(request)
+    if not formset.is_valid() or _states_gated(play_story, formset):
+        view = _ingest_view(play_story, formset, viewpoint, key=key, **kept)
         return _ingest_answer(request, play_story, view)
     events = formset.events()
-    key = posted_idempotency_key(request)
     timeout = ingest_timeout(play_story.turn_deadline, len(events))
     try:
         result = engine_client_for(request).ingest(
@@ -1657,15 +1859,24 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         log_engine_error(request, exc)
         batch = BatchErrors()
         placed = (
-            place_ingest_error(exc, formset.sent_forms(), batch)
+            place_ingest_error(
+                exc,
+                formset.sent_forms(),
+                batch,
+                story_id=story_id,
+                effective=world_effective(play_story),
+            )
             if isinstance(exc, EngineError) and exc.code in INGEST_PLACED
             else 0
         )
+        answered = isinstance(exc, EngineError) and exc.code != "bad_response"
         view = _ingest_view(
             play_story,
             formset,
             viewpoint,
+            key=None if answered else key,
             batch_errors=tuple(str(e) for e in batch.non_field_errors()),
+            batch_link=batch.link,
             outcome=_ingest_outcome(exc, key, placed, batch),
             **kept,
         )
@@ -1696,7 +1907,7 @@ def ingest(request: HttpRequest, story_id: str) -> HttpResponse:
         play_story,
         formset,
         viewpoint,
-        results=result_rows(result, events, play_story.cast),
+        results=result_rows(result, events, play_story.cast, story_id),
         timeline_revision=result.timeline_revision,
         gate=gate_line(result),
         **kept,
@@ -1834,6 +2045,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
         return _poll_end(
             request, card, error_inspector(exc, ""), "Polling stopped — see the inspector.", None
         )
+    note_engine_record(op)  # #257: labelled at any status, so a staged turn is while incomplete
     card = replace(card, started_at=op.started_at)
     if op.status not in TERMINAL:
         if op.status == "queued":
@@ -1856,6 +2068,7 @@ def poll(request: HttpRequest, story_id: str, operation_id: str) -> HttpResponse
                 actor=_logged_actor(operation_id),
                 labels=cast_names(pending[0].cast),
                 response=op.result.body if op.result else None,
+                overridden=overridden_notices(request),
             )
             note = f"Turn {result.turn} committed."
             badge = _badge_after(request, story_id, result)

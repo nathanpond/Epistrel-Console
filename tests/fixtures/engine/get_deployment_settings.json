@@ -166,5 +166,9 @@
             "entailment_min_confidence": 0.6
         }
     },
+    "provider_allowed_hosts": [
+        "bank.example",
+        "127.0.0.1:8099"
+    ],
     "config_revision": 0
 }

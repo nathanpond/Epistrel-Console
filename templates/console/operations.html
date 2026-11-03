@@ -19,6 +19,13 @@
       {% for value in kinds %}<option value="{{ value }}"{% if value == filters.kind %} selected{% endif %}>{{ value }}</option>{% endfor %}
     </select>
   </label>
+  <label>Engine label
+    <select name="label">
+      <option value="">all</option>
+      {% for value, text in labels %}<option value="{{ value }}" title="{{ value }}"{% if value == filters.label %} selected{% endif %}>{{ text }}</option>{% endfor %}
+    </select>
+  </label>
+  <p class="filter-note">{{ label_note }}</p>
   <label>Outcome
     <select name="outcome">
       <option value="">all</option>
@@ -70,7 +77,7 @@
       <td><a href="{% url 'operations:detail' row.pk %}">{{ row.created_at|engine_time }}</a></td>
       <td>{{ row.operator_username|default:"—" }}</td>
       <td>{{ row.principal|principal_link }}</td>
-      <td><code>{{ row.kind }}</code>{% if row.replayed %} (replayed){% endif %}</td>
+      <td><code>{{ row.kind }}</code>{% if row.engine_label %} · <span title="{{ row.engine_label }}">{{ row.engine_label|engine_label }}</span>{% endif %}{% if row.replayed %} (replayed){% endif %}</td>
       <td class="entity">{% if row.entity_type %}{{ row.entity_type|entity_display }} {{ row.entity_id|entity_link:row.entity_type }}{% else %}—{% endif %}</td>
       <td>{% if row.story_id %}<a href="/stories/{{ row.story_id }}/"><code>{{ row.story_id }}</code></a>{% else %}—{% endif %}</td>
       <td>{% if row.outcome == "queued" %}queued (unconfirmed){% else %}{{ row.outcome }}{% endif %}{% if row.error_code %} <code>{{ row.error_code }}</code>{% endif %}</td>

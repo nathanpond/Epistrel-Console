@@ -12,9 +12,12 @@ from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
 from console.views import play as play_views
 from console.views import stories as views
+from console.views import story_providers as provider_views
+from console.views import story_settings as settings_views
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
+from tests.fixtures import engine_fixture
 
 
 @pytest.fixture
@@ -23,6 +26,8 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     fake = FakeEngine()
     answer_relations(fake)  # #79: every owned entity's page reads its relations
     answer_effective_config(fake)  # #85: the play header's fingerprint
+    # #259: the creation forms' bindings rows read the registry.
+    fake.respond("GET", "/admin/external-providers", 200, json=engine_fixture("m6/providers"))
 
     def client_with_fake(request: HttpRequest) -> EngineClient:
         client = engine_client_for(request)
@@ -31,5 +36,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
 
     monkeypatch.setattr(views, "engine_client_for", client_with_fake)
     monkeypatch.setattr(play_views, "engine_client_for", client_with_fake)  # /stories/<id>/
+    monkeypatch.setattr(provider_views, "engine_client_for", client_with_fake)  # #247
+    monkeypatch.setattr(settings_views, "engine_client_for", client_with_fake)  # #247's link
     with override_settings(ENGINE_URL="http://engine.test"):
         yield fake

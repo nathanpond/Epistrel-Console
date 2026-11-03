@@ -38,6 +38,14 @@ from tests.fakes.engine import DOC_URI, FakeEngine
 
 pytestmark = pytest.mark.django_db
 
+SUNNY = {
+    "name": "weather",
+    "type": "enum",
+    "constraints": {"allowed_values": ["rain", "sun"]},
+    "initial_value": "sun",
+}
+"""A valid ``ScenarioState`` (M6) that differs from the fixture's ``rain`` start."""
+
 
 def edit_page(client: Client, engine: FakeEngine, body: dict[str, Any] | None = None) -> Any:
     answer_edit_reads(engine, body)
@@ -106,10 +114,17 @@ def test_the_edit_page_header_and_sections(operator_client: Client, engine: Fake
         "Creation rules",
         "Drivers",
         "Plot hooks",
-        "Deferred",
+        "Clock",  # #268
+        "Anchor",
+        "Pacing",
+        "Time-of-day bands",
+        "Scheduled events",
+        "Rules and declarations",
     ):
         assert f"<legend>{legend}</legend>" in html
-    assert "Stored by Lite but not used until a later Engine milestone" in page
+    assert "<legend>Deferred</legend>" not in html
+    assert "Stored by Lite but not used until a later Engine milestone" not in page
+    assert "Each box must be valid JSON before anything is sent." in page
     assert 'name="op" value="refresh"' in html
     # The role selects offer the draft's cast; the location select the world's locations.
     assert '<option value="son" selected>son</option>' in html
@@ -154,7 +169,7 @@ def test_each_section_round_trips_into_the_patch(
     data["drivers__director_guidance"] = ""
     data["hook-0-text"] = "A letter arrives.\nIt is unsigned."
     data["drivers__planned_reveals"] = "[]"
-    data["starting_state__states"] = '[{"name": "weather", "value": "sun"}]'
+    data["state-0-initial_value"] = "sun"  # #267: the States row set (was a JSON box)
     response = save(operator_client, engine, data)
     assert response.status_code == 302, response.content.decode()[:2000]
     assert flashes(response) == ["Saved — draft revision 6."]
@@ -195,7 +210,7 @@ def test_each_section_round_trips_into_the_patch(
                 "starting_location": "barn",
                 "roles_present": ["mother", "son"],
             },
-            "states": [{"name": "weather", "value": "sun"}],
+            "states": [SUNNY],
         },
         "story_settings_defaults": {
             "allow_new_arrivals": False,
@@ -255,9 +270,10 @@ def test_event_types_cleared_send_null(operator_client: Client, engine: FakeEngi
 @pytest.mark.parametrize(
     ("name", "value", "message"),
     [
-        ("starting_state__clock", "{oops", "Enter valid JSON"),
-        ("starting_state__clock", "[1, 2]", "Enter a JSON object"),
-        ("starting_state__states", '{"a": 1}', "Enter a JSON array"),
+        # #268: the clock's one box is its calendar; the events are rows now.
+        ("starting_state__clock__calendar", "{oops", "Enter valid JSON"),
+        ("starting_state__clock__calendar", "[1, 2]", "Enter a JSON object"),
+        ("starting_state__predicates", '{"a": 1}', "Enter a JSON array"),
         ("starting_state__rules", "[NaN]", "NaN is not valid JSON"),
         ("creation_rules__bounds", '{"a": 1, "a": 2}', "duplicate key"),
         ("drivers__planned_reveals", "{}", "Enter a JSON array"),
@@ -277,15 +293,17 @@ def test_json_boxes_are_checked_before_any_call(
 
 
 def test_clearing_the_clock_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    """#268: the draft's clock is only its anchor's time; clearing it leaves no member set."""
     data = form(operator_client, engine)
-    data["starting_state__clock"] = ""
+    data["starting_state__clock__anchor__time"] = ""
     save(operator_client, engine, data)
     assert changes(engine) == {"starting_state": {"clock": None}}
 
 
 def test_reformatting_a_json_box_sends_nothing(operator_client: Client, engine: FakeEngine) -> None:
     data = form(operator_client, engine)
-    data["starting_state__states"] = '[{"value":"rain",  "name":"weather"}]'
+    data["state-0-name"] = "  weather "  # #267: a States row, stripped as the draft is
+    data["state-0-constraints_allowed_values"] = "rain\r\n\r\nsun\r\n"
     data["creation_rules__bounds"] = '{"audit_retention_days":{"max":90}}'
     response = operator_client.post(EDIT, as_post(data))
     assert response.status_code == 302
@@ -631,7 +649,7 @@ def test_create_refusals_are_placed(operator_client: Client, engine: FakeEngine)
 def test_an_invalid_create_makes_no_call(operator_client: Client, engine: FakeEngine) -> None:
     data = posted(new_page(operator_client, engine))
     data["owner"] = "system"
-    data["starting_state__clock"] = "[]"
+    data["starting_state__clock__calendar"] = "[]"
     response = operator_client.post(NEW_URL, as_post(data))
     assert response.status_code == 200
     assert engine.requests == []
@@ -664,6 +682,11 @@ def test_parse_op() -> None:
     assert parse_op("add:loc") == Op("add", "loc")
     assert parse_op("remove:pol-12") == Op("remove", "pol", 12)
     assert parse_op("remove:pol-x") == Op("refresh")  # malformed: changes nothing
+    # #267: the States rows move up and down.
+    assert parse_op("up:state-2") == Op("up", "state", 2)
+    assert parse_op("down:state-0") == Op("down", "state", 0)
+    assert parse_op("up:state") == Op("refresh")
+    assert parse_op("down:state-1").edits_rows
     assert parse_op("refresh").edits_rows
     assert not parse_op("save").edits_rows
 
@@ -777,6 +800,7 @@ def test_the_new_defaults_follow_player_authority_with_c7_choices(
     html = edit_page(operator_client, engine).content.decode()
     order = [
         "story_settings_defaults__player_authority",
+        "story_settings_defaults__co_author_knowledge",
         *M5_FIELDS,
         "story_settings_defaults__turn_concurrency",
     ]
@@ -859,6 +883,62 @@ def test_stored_state_tie_break_is_kept(operator_client: Client, engine: FakeEng
     data["visual_style__prompt"] = "Ink"
     save(operator_client, engine, data)
     assert changes(engine) == {"visual_style": {"prompt": "Ink"}}
+
+
+CO_AUTHOR_FIELD = "story_settings_defaults__co_author_knowledge"
+
+
+def test_co_author_knowledge_round_trips(operator_client: Client, engine: FakeEngine) -> None:
+    """#233: a draft holding ``free`` reads back into the editor as ``free`` and the draft's write
+    shape carries it, so a save never loses it (before #233 the editor had no field for it and
+    :func:`draft_to_write` left it out)."""
+    from console.engine.models import Scenario
+    from console.forms.scenario import draft_to_write
+
+    stored = with_defaults(co_author_knowledge="free")
+    parsed = Scenario.from_json(stored)
+    assert parsed is not None
+    write = draft_to_write(parsed)
+    assert write["story_settings_defaults"]["co_author_knowledge"] == "free"
+    response = edit_page(operator_client, engine, stored)
+    html = response.content.decode()
+    assert options(html, CO_AUTHOR_FIELD) == [
+        ("", "Engine default (confirm)"),
+        ("confirm", "Confirm (accept, with a notice)"),
+        ("free", "Free (accept, no notice)"),
+    ]
+    assert "Only under Co-author player authority with per-character partitions on" in html
+    data = posted(response)
+    assert data[CO_AUTHOR_FIELD] == "free"
+    # Another change re-saves without touching it (the merge patch keeps the stored "free").
+    data["story_settings_defaults__audit_retention_days"] = "45"
+    save(operator_client, engine, data)
+    assert changes(engine) == {"story_settings_defaults": {"audit_retention_days": 45}}
+    # Setting it over the Engine default sends it; an explicit confirm is sent (C7).
+    for value in ("free", "confirm"):
+        engine.reset()
+        data = form(operator_client, engine)
+        data[CO_AUTHOR_FIELD] = value
+        save(operator_client, engine, data)
+        assert changes(engine) == {"story_settings_defaults": {"co_author_knowledge": value}}
+    # Engine default over the stored value sends null.
+    engine.reset()
+    data = form(operator_client, engine, stored)
+    data[CO_AUTHOR_FIELD] = ""
+    save(operator_client, engine, data)
+    assert changes(engine) == {"story_settings_defaults": {"co_author_knowledge": None}}
+
+
+def test_untouched_editor_sends_no_change(operator_client: Client, engine: FakeEngine) -> None:
+    """#233: the new field present, an untouched editor sends nothing, stored value or not."""
+    for body in (None, with_defaults(co_author_knowledge="free")):
+        engine.reset()
+        response = edit_page(operator_client, engine, body)
+        assert f'name="{CO_AUTHOR_FIELD}"' in response.content.decode()
+        data = posted(response)
+        response = operator_client.post(EDIT, as_post(data))
+        assert response.status_code == 302
+        assert engine.requests == []
 
 
 def test_unchanged_new_defaults_are_not_in_the_patch(
@@ -958,6 +1038,7 @@ def test_topology_and_channels_untouched_send_nothing(
         'id="f-world-adjacency"',
         'name="starting_state__opening__roles_present"',
         'id="f-starting_state-channels"',
+        'id="f-starting_state-clock"',  # #268: the Clock section, then the boxes left
         'id="f-deferred"',
     ]
     positions = [html.index(marker) for marker in order]

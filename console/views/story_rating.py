@@ -97,7 +97,7 @@ from console.story_pause import (
     pause_banner,
     progress_text,
 )
-from console.timeline import chain_label
+from console.timeline import EditEffects, chain_label, edit_effects, fork_effects
 from console.views.play import FORK_BANNER_KEY, ForkBanner
 
 KIND = "story_rating"  # the two-stage confirm's kind (salt console.twostage.story_rating)
@@ -828,6 +828,16 @@ class ReactivationView:
     def fork_result(self) -> ForkResult | None:
         found = self.result
         return found if isinstance(found, ForkResult) else None
+
+    @property
+    def effects(self) -> EditEffects | None:
+        """#258: the external effects the applied edit could not undo or re-send (a fork's are
+        the source's, this page's story); ``None`` with none, or for an unreadable outcome."""
+        timeline = self.timeline_result
+        if timeline is not None:
+            return edit_effects(self.story_id, timeline)
+        forked = self.fork_result
+        return fork_effects(self.story_id, forked) if forked is not None else None
 
     @property
     def head(self) -> int | None:

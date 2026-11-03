@@ -4,6 +4,7 @@ import copy
 import re
 from typing import Any
 
+import httpx
 import pytest
 from django.test import Client
 
@@ -11,11 +12,14 @@ from console.engine_api_check import RECORDED
 from console.forms.deployment import (
     CLEAR_PREFIX,
     DEFAULTS,
+    LIST_MAX,
     NULLABLE,
+    PROVIDER_HOST,
     SECTIONS,
     DeploymentSettingsForm,
 )
 from console.models import EngineOperation
+from console.world import ENGINE_NOTHING_CHANGED
 from tests.engine_panel.helpers import (
     RATINGS,
     SETTINGS,
@@ -24,12 +28,15 @@ from tests.engine_panel.helpers import (
     calls,
     error,
     form_data,
+    settings_body,
 )
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 
 URL = "/engine/settings/"
 SCHEMAS = RECORDED["components"]["schemas"]
+HOSTS = "provider_allowed_hosts"
+HOST_ERROR = "Not a host, IPv4/IPv6 address or host:port: "
 
 
 def _load(client: Client, engine: FakeEngine, **changes: Any) -> dict[str, str]:
@@ -92,6 +99,13 @@ def test_help_texts_show_the_schema_defaults() -> None:
     assert set(stated) - {"profile_defaults"} <= set(DEFAULTS)
 
 
+def test_provider_host_pattern_matches_the_schema() -> None:
+    item = SCHEMAS["SettingsBody"]["properties"][HOSTS]["items"]
+    assert PROVIDER_HOST.pattern == item["pattern"]
+    assert item["maxLength"] == 260
+    assert SCHEMAS["SettingsBody"]["properties"][HOSTS]["maxItems"] == 100
+
+
 def test_the_page_shows_every_setting_in_sections(
     operator_client: Client, engine: FakeEngine
 ) -> None:
@@ -114,6 +128,18 @@ def test_the_page_shows_every_setting_in_sections(
     assert 'type="checkbox" name="feedback_export"' in html
     # Clear exists only on the three nullable settings.
     assert html.count('name="clear_') == 3
+    # External providers (#241): its own anchored section, the hosts one per line, no Clear.
+    assert "bank.example\n127.0.0.1:8099" in _field_html(html, HOSTS)
+    assert (
+        '<fieldset class="settings-section" id="settings-external-providers">\n'
+        "    <legend>External providers</legend>"
+    ) in html
+    assert 'id="settings-memory-and-retrieval"' in html
+    assert 'Registered providers: <a href="/engine/providers/">Providers</a>' in html
+    assert "clear_provider_allowed_hosts" not in html
+    assert "Empty refuses every http provider" in _field_html(html, HOSTS)
+    titles = [title for title, _ in SECTIONS]
+    assert titles[titles.index("Catalog") + 1] == "External providers"
     assert "https://hooks.example/m" in _field_html(html, "media_moderation_webhook_url")
     # The M2 engine dials are not offered.
     for dial in ("lite_window_messages", "lite_summary_max_tokens", "max_model_calls_per_turn"):
@@ -259,6 +285,218 @@ def test_a_bad_list_entry_makes_no_call(operator_client: Client, engine: FakeEng
 
     assert "Not 1 to 40 of a-z 0-9 _: Too Long Tag" in _field_html(html, "feedback_tags")
     assert engine.requests == []
+
+
+def test_media_types_keep_the_default_list_cap(operator_client: Client, engine: FakeEngine) -> None:
+    """Complement (#241): ``_lines`` keeps ``LIST_MAX`` (50) for the other list settings."""
+    data = _load(operator_client, engine)
+    data["media_allowed_types"] = "\n".join(f"image/x{i}" for i in range(LIST_MAX + 1))
+
+    html = operator_client.post(URL, data).content.decode()
+
+    assert "List at most 50 entries." in _field_html(html, "media_allowed_types")
+    assert engine.requests == []
+
+
+# --- provider_allowed_hosts (#241) ----------------------------------------------------------
+
+
+def test_hosts_reordered_or_recased_send_nothing(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = _load(operator_client, engine)
+    first, second = data[HOSTS].splitlines()
+    data[HOSTS] = f"{second}\n  {first.upper()}  \n\n"
+
+    response = operator_client.post(URL, data)
+
+    assert response.status_code == 302
+    assert _puts(engine) == []
+    assert engine.requests == []
+    answer_settings(engine)
+    assert "No changes — nothing was sent." in operator_client.get(URL).content.decode()
+
+
+def test_hosts_change_sends_whole_list_in_stored_order(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] = "127.0.0.1:8099\nShop.Example:8443\nbank.example"
+    _saved(engine, provider_allowed_hosts=["bank.example", "127.0.0.1:8099", "shop.example:8443"])
+
+    response = operator_client.post(URL, data)
+
+    assert response.status_code == 302
+    [put] = _puts(engine)
+    assert body(put) == {HOSTS: ["bank.example", "127.0.0.1:8099", "shop.example:8443"]}
+    answer_settings(engine)
+    assert "Saved — config revision 1 (provider_allowed_hosts)" in (
+        operator_client.get(URL).content.decode()
+    )
+
+
+def test_hosts_removed_and_added_keep_the_stored_order(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] = "[::1]:9000\n127.0.0.1:8099\n[::1]:9000"  # a duplicate is dropped
+    _saved(engine)
+
+    operator_client.post(URL, data)
+
+    assert body(_puts(engine)[0]) == {HOSTS: ["127.0.0.1:8099", "[::1]:9000"]}
+
+
+def test_hosts_emptied_sends_empty_list(operator_client: Client, engine: FakeEngine) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] = "\n  \n"
+    data[CLEAR_PREFIX + HOSTS] = "on"  # a forged Clear is ignored: never null
+    _saved(engine, provider_allowed_hosts=[])
+
+    operator_client.post(URL, data)
+
+    [put] = _puts(engine)
+    assert body(put) == {HOSTS: []}
+    assert body(put)[HOSTS] is not None
+
+
+@pytest.mark.parametrize("missing", ["absent", None])
+def test_a_missing_original_reads_as_empty(
+    operator_client: Client, engine: FakeEngine, missing: str | None
+) -> None:
+    """A missing or null original is ``[]``: an empty field sends nothing, an entry is sent."""
+    data = _load(operator_client, engine)
+    original = settings_body()
+    if missing is None:
+        original[HOSTS] = None
+    else:
+        del original[HOSTS]
+    for typed, expected in (("", {}), ("Bank.Example", {HOSTS: ["bank.example"]})):
+        posted = {**data, HOSTS: typed}
+        form = DeploymentSettingsForm(posted, original=original, ratings=None)
+        assert form.is_valid(), form.errors
+        assert form.patch() == expected
+
+
+@pytest.mark.parametrize("entry", ["https://bad/", "bad host", "host:port:extra", "a" * 261])
+def test_bad_host_makes_no_call(operator_client: Client, engine: FakeEngine, entry: str) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] = f"bank.example\n{entry}"
+
+    html = operator_client.post(URL, data).content.decode()
+
+    assert HOST_ERROR + entry in _field_html(html, HOSTS)
+    assert engine.requests == []
+    # D8: nothing was sent, so the page keeps the posted idempotency key.
+    assert f'name="idempotency_key" value="{data["idempotency_key"]}"' in html
+
+
+def test_more_than_100_hosts_makes_no_call(operator_client: Client, engine: FakeEngine) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] = "\n".join(f"h{i}.example" for i in range(101))
+
+    html = operator_client.post(URL, data).content.decode()
+
+    assert "List at most 100 entries." in _field_html(html, HOSTS)
+    assert engine.requests == []
+
+
+def test_100_hosts_after_dropping_duplicates_are_sent(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = _load(operator_client, engine)
+    hosts = ["bank.example", "127.0.0.1:8099"] + [f"h{i}.example" for i in range(98)]
+    data[HOSTS] = "\n".join([*hosts, "BANK.example"])  # 101 lines, 100 entries
+    _saved(engine)
+
+    operator_client.post(URL, data)
+
+    assert body(_puts(engine)[0]) == {HOSTS: hosts}
+
+
+def test_host_refusal_lands_on_its_line(operator_client: Client, engine: FakeEngine) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] += "\nshop.example:8443"
+    message = "String should match pattern"
+    engine.respond(
+        "PUT",
+        SETTINGS,
+        422,
+        json=error(
+            "validation_error",
+            message,
+            field="body.provider_allowed_hosts[1]",
+            errors=[{"field": "body.provider_allowed_hosts[1]", "message": message}],
+        ),
+    )
+
+    response = operator_client.post(URL, data)
+
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert f"Line 2 (`127.0.0.1:8099`): {message}" in _field_html(html, HOSTS)
+    assert 'class="engine-error"' not in html
+    assert "provider_allowed_hosts[1]:" not in html  # not a non-field error too
+    assert data["idempotency_key"] not in html  # D8: an answered refusal gets a fresh key
+
+
+def test_host_refusal_without_an_index_shows_the_message(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = _load(operator_client, engine)
+    data[HOSTS] = "bank.example"
+    data["minor_age_threshold"] = "21"
+    engine.respond(
+        "PUT",
+        SETTINGS,
+        422,
+        json=error(
+            "validation_error",
+            "too many",
+            errors=[
+                {"field": "body.provider_allowed_hosts", "message": "List should have at most"},
+                {"field": "body.provider_allowed_hosts[7]", "message": "past the list"},
+                {"field": "body.minor_age_threshold", "message": "bad age"},
+            ],
+        ),
+    )
+
+    html = operator_client.post(URL, data).content.decode()
+
+    field = _field_html(html, HOSTS)
+    assert "List should have at most" in field
+    assert "past the list" in field
+    assert "Line " not in field
+    assert "bad age" in _field_html(html, "minor_age_threshold")  # others keep their placement
+
+
+def test_engine_accepts_with_no_change(operator_client: Client, engine: FakeEngine) -> None:
+    """D8: an answer at the page's own config revision changed nothing."""
+    data = _load(operator_client, engine)  # read at config revision 0
+    data["minor_age_threshold"] = "21"
+    _saved(engine, config_revision=0)
+
+    response = operator_client.post(URL, data)
+
+    assert response.status_code == 302
+    assert len(_puts(engine)) == 1
+    answer_settings(engine)
+    html = operator_client.get(URL).content.decode()
+    assert ENGINE_NOTHING_CHANGED in html
+    assert "Saved — config revision" not in html
+
+
+def test_a_transport_error_keeps_the_posted_key(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """D8: the outcome is unknown, so a resubmit replays under the same key."""
+    data = _load(operator_client, engine)
+    data["minor_age_threshold"] = "21"
+    engine.fail("PUT", SETTINGS, httpx.ReadTimeout("slow"))
+
+    html = operator_client.post(URL, data).content.decode()
+
+    assert f'name="idempotency_key" value="{data["idempotency_key"]}"' in html
 
 
 def test_feedback_retention_days(operator_client: Client, engine: FakeEngine) -> None:

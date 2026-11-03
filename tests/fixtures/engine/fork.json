@@ -51,5 +51,6 @@
     "relationships": 0,
     "placement": 0,
     "scene_state": 0
-  }
+  },
+  "effects_pending_in_source": []
 }

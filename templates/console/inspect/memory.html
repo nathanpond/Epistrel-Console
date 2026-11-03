@@ -4,7 +4,8 @@
 The Memory tab (#140): the story's hot set from one GET /admin/stories/{id}/hot-set read. Rows and
 markers come from console/hot_set.py; a minor's Counts row is judged against its scaled budget
 (#168), and `minor_notes` say why one can't be. A failed read replaces the "As of" line and the five sections
-(not_found: convention 10's line; else #43's panel); the Browse grid always renders, and so does
+(not_found: convention 10's line; else #43's panel); the Browse section (the memory-list link and
+its kind x tier grid into the list, #236) always renders, and so does
 the last section, "Consolidate a window" (#145; context `consolidate`, a ConsolidateSection).
 {% endcomment %}
 {% block tab_content %}
@@ -118,8 +119,7 @@ the last section, "Consolidate a window" (#145; context `consolidate`, a Consoli
 {% endif %}
 
 <h2>Browse memories</h2>
-<p>The Engine can't list a story's memories yet (nathanpond/Epistrel#531). Retrieval shows the memories a question retrieves, filtered by kind and tier.</p>
-{% if browse_links %}
+<p class="browse-intro">Every memory of the story, filtered by kind, tier, holder, turns, quarantine and pin: <a class="memory-list-link" href="{{ memory_list_url }}">List every memory</a></p>
 <table class="browse-memories">
   <thead><tr><th>Kind</th><th>Hot</th><th>Retired</th></tr></thead>
   <tbody>
@@ -128,7 +128,6 @@ the last section, "Consolidate a window" (#145; context `consolidate`, a Consoli
   {% endfor %}
   </tbody>
 </table>
-{% endif %}
 
 {% with c=consolidate %}
 <section id="consolidate" class="consolidate">

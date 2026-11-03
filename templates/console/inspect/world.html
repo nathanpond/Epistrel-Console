@@ -1,0 +1,17 @@
+{% extends "console/inspect/base.html" %}
+{% comment %}
+The World tab (#239, D3): the shell its sections extend (States #242, Proposed States #266, Clock
+#243, Scheduled events #244, External values #248), each rendered through
+inspect_page(..., Tab.WORLD, ...). Context: world_sections (console.inspect.SectionLink, each greyed
+by its own gate), section_label (the current section's label: the <h2>, none on the shell) and
+section_unavailable (the current section's gate is closed: the inline greyed panel, no read made).
+A section fills {% block world_content %}; the default is the empty shell's line. A page below a
+section may add to {% block section_unavailable %} (#242's one-State page: its name and "Back to
+States" above the panel).
+{% endcomment %}
+{% block tab_content %}
+{% include "console/inspect/_subtabs.html" with sections=world_sections label="World sections" %}
+{% if section_label %}<h2>{{ section_label }}</h2>{% endif %}
+{% if section_unavailable %}{% block section_unavailable %}{% include "console/inspect/_unavailable.html" with unavailable=section_unavailable inline=True %}{% endblock %}
+{% else %}{% block world_content %}<p class="none">No World sections are available yet.</p>{% endblock %}{% endif %}
+{% endblock %}

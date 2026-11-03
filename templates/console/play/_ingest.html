@@ -1,19 +1,20 @@
-{# The ingest tab (#51). Context: iv (console.ingest.IngestView). Add/remove-row buttons post to the same endpoint; the answer replaces this element. #}
+{% load inspect_tags world_tags %}{# The ingest tab (#51, #260). Context: iv (console.ingest.IngestView). Add/remove-row buttons post to the same endpoint; the answer replaces this element. Each row's fields are grouped per kind (IngestEventForm.FIELD_GROUPS), all visible, no JavaScript; error texts go through code_spans. #}
 <div id="ingest">
   <h2>Ingest events</h2>
-  <p class="muted">Record player turns and narration without generating a reply. Each event keeps its client event id; resending an id with the same content changes nothing.</p>
+  <p class="muted">Record player turns, narration, State changes and external outcomes without generating a reply. Each event keeps its client event id; resending an id with the same content changes nothing.</p>
   {% if iv.note %}<p class="warning">{{ iv.note }}</p>{% endif %}
   {% if iv.outcome %}<div class="ingest-outcome">{% include "console/play/_inspector_body.html" with inspector=iv.outcome %}</div>{% endif %}
   {% if iv.results %}
   <h3>Results</h3>
   <table class="ingest-results">
-    <thead><tr><th>Client event id</th><th>Kind</th><th>Actor</th><th>Operation id</th><th>Turn</th><th>Replayed</th></tr></thead>
+    <thead><tr><th>Client event id</th><th>Kind</th><th>Actor</th><th>What</th><th>Operation id</th><th>Turn</th><th>Replayed</th></tr></thead>
     <tbody>
       {% for r in iv.results %}
-      <tr><td><code>{{ r.client_event_id }}</code></td><td>{{ r.kind }}</td><td>{{ r.actor|default:"—" }}</td><td><code>{{ r.operation_id }}</code></td><td>{{ r.turn }}</td><td class="replayed">{{ r.replayed|yesno:"yes,no" }}</td></tr>
+      <tr><td><code>{{ r.client_event_id }}</code></td><td>{{ r.kind }}</td><td>{{ r.actor|default:"—" }}</td><td class="what">{% if r.outcome %}{% if r.what_url %}<a href="{{ r.what_url }}">{{ r.what|outbox_id }}</a>{% else %}{{ r.what|outbox_id }}{% endif %} → {{ r.outcome }}{% else %}{{ r.what|default:"—" }}{% endif %}</td><td><code>{{ r.operation_id }}</code></td><td>{% if r.turn_shown is None %}—{% else %}{{ r.turn_shown }}{% endif %}</td><td class="replayed">{{ r.replayed|yesno:"yes,no" }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  {% if iv.outbox_notice %}<p class="notice">{{ iv.outbox_notice }}</p>{% endif %}
   <p>Timeline revision {{ iv.timeline_revision }}.{% if iv.gate %} {{ iv.gate }}.{% endif %}</p>
   <p><a class="button" href="{% url 'stories:detail' iv.story_id %}?tab=ingest" hx-get="{% url 'stories:detail' iv.story_id %}?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#ingest [name=snapshot], #ingest [name=output_viewpoint], #play-form-area [name=transcript_player_view]">New batch</a></p>
   {% endif %}
@@ -26,17 +27,28 @@
     <input type="hidden" name="output_viewpoint" value="{{ iv.viewpoint }}">
     <input type="hidden" name="transcript_player_view" id="ingest-transcript-player-view" value="{{ iv.transcript_player_view }}">
     {{ iv.formset.management_form }}
-    {% if iv.show_errors %}{{ iv.formset.non_form_errors }}{% if iv.batch_errors %}<ul class="errorlist nonform batch">{% for e in iv.batch_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}{% endif %}
+    {% if iv.show_errors %}{% if iv.formset.non_form_errors %}<ul class="errorlist nonform">{% for e in iv.formset.non_form_errors %}<li>{{ e|code_spans }}</li>{% endfor %}</ul>{% endif %}{% if iv.batch_errors %}<ul class="errorlist nonform batch">{% for e in iv.batch_errors %}<li>{{ e|code_spans }}</li>{% endfor %}</ul>{% endif %}{% if iv.batch_link %}<p class="batch-link"><a href="{{ iv.batch_link.1 }}">{{ iv.batch_link.0 }}</a></p>{% endif %}{% endif %}
     <fieldset{% if iv.disabled %} disabled{% endif %}>
       {% for form in iv.formset %}
       <fieldset class="event" id="ingest-row-{{ forloop.counter0 }}">
         <legend>Event {{ forloop.counter }}</legend>
-        {% if iv.show_errors %}{{ form.non_field_errors }}{% endif %}
-        {% for field in form %}
+        {% if iv.show_errors and form.non_field_errors %}<ul class="errorlist nonfield">{% for e in form.non_field_errors %}<li>{{ e|code_spans }}</li>{% endfor %}</ul>{% endif %}
+        {% for field in form.head_fields %}
         <div class="field field-{{ field.name }}">
-          {{ field.label_tag }} {{ field }}
-          {% if iv.show_errors %}{{ field.errors }}{% endif %}
+          {{ field.label_tag }} {{ field }}{% if field.name == "kind" %} {% include "console/_gated_control.html" with gate=iv.states_gate %}{% endif %}
+          {% if iv.show_errors and field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e|code_spans }}</li>{% endfor %}</ul>{% endif %}
         </div>
+        {% endfor %}
+        {% for legend, fields in form.field_groups %}
+        <fieldset class="kind-fields">
+          <legend>{{ legend }}</legend>
+          {% for field in fields %}
+          <div class="field field-{{ field.name }}">
+            {{ field.label_tag }} {{ field }}{% if field.help_text %} <small class="help">{{ field.help_text }}</small>{% endif %}
+            {% if iv.show_errors and field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e|code_spans }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          {% endfor %}
+        </fieldset>
         {% endfor %}
         {% if iv.can_remove %}<button type="submit" name="remove" value="{{ forloop.counter0 }}" formnovalidate>Remove event {{ forloop.counter }}</button>{% endif %}
       </fieldset>

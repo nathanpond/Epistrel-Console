@@ -1,0 +1,21 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "operation_id": "01JM6QP0000000000000000021",
+  "change_id": "01JM6CG0000000000000000021",
+  "before": {
+    "offset": 130,
+    "display": "+02h 10m (Saturday, between 05:00 and 12:00 (morning))"
+  },
+  "after": {
+    "offset": 190,
+    "display": "+03h 10m (Saturday, between 06:00 and 13:00)"
+  },
+  "position": {
+    "turn": 3,
+    "variant": 0,
+    "slot_k": 2,
+    "beat": 0,
+    "step": 0
+  }
+}

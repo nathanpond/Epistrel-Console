@@ -1,0 +1,24 @@
+{
+  "timeline_revision": 13,
+  "idempotency_key": null,
+  "operation_id": "01JM6QP0000000000000000043",
+  "event": {
+    "event_id": "01JM6EV0000000000000000005",
+    "name": "the dinner",
+    "label": "canon",
+    "status": "cancelled",
+    "planned": 1140,
+    "owner": "author",
+    "shared_owners": [
+      "01JM6CH0000000000000000003"
+    ],
+    "participants": [
+      "01JM6CH0000000000000000001",
+      "01JM6CH0000000000000000003"
+    ],
+    "place_id": null,
+    "grace_minutes": 30,
+    "stopped_clock_at": null,
+    "confidence": null
+  }
+}

@@ -5,15 +5,14 @@ turn inspector (#48) and the #44 detail page.
 Runs on the real urlconf against the schema-validating fake Engine. Fixtures are schema-valid
 ``OperationBody`` answers under ``tests/fixtures/inspect/``: ``operation_turn_structured.json``
 (an omniscient structured turn of story ``STORY``, committed 2026-10-24 14:03 UTC),
-``operation_turn_lite.json``, ``operation_turn_no_viewpoint.json`` (the no-viewpoint fallback
-read of a ``character:…`` turn), ``operation_not_turn.json`` and ``idempotency_conflict.json``.
+``operation_turn_lite.json``, ``operation_not_turn.json`` and ``idempotency_conflict.json``.
 Shapes the schema refuses (a non-object verdict) are tested by rendering the partial directly."""
 
 import copy
 import json
 import re
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,7 +20,6 @@ import pytest
 from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.test import Client, override_settings
-from django.utils import timezone
 
 from console.engine.client import EngineClient, EngineError
 from console.engine.models import EvalHooks, OperationRecord, ReadSet, RepairRung, Verdict
@@ -31,7 +29,6 @@ from console.turn_trace import (
     STAGES,
     TurnTrace,
     beat_of,
-    hooks_unavailable_until,
     read_turn_trace,
     rung_label,
     trace_view,
@@ -64,7 +61,6 @@ URL = f"/stories/{STORY}/inspect/turns/{OP}/trace/"
 STRUCTURED_CAPS = ["budgets", "structured", "models", "episodic"]
 NOT_FOUND = "Not found (it may have been deleted or truncated)"
 NO_HOOKS = "No eval hooks recorded (a Lite turn, or one committed before the Engine recorded them)"
-LEAD = "The Engine shows eval hooks only to an omniscient read, and "
 
 
 def body(name: str, **over: Any) -> dict[str, Any]:
@@ -86,7 +82,7 @@ def record(**over: Any) -> OperationRecord:
 
 def trace_of(**over: Any) -> TurnTrace:
     found = record(**over)
-    return TurnTrace(found, EvalHooks.parse(found.eval_hooks), ReadSet.parse(found.read_set), None)
+    return TurnTrace(found, EvalHooks.parse(found.eval_hooks), ReadSet.parse(found.read_set))
 
 
 def settings_body(**over: Any) -> dict[str, Any]:
@@ -138,28 +134,6 @@ def fragment(client: Client, url: str = URL, **headers: str) -> str:
     return html
 
 
-def withheld_reads(engine: FakeEngine, fallback: dict[str, Any] | None = None) -> None:
-    """The omniscient read is refused (409 ``idempotency_conflict``); the no-viewpoint read
-    answers ``fallback``."""
-    engine.respond_sequence(
-        "GET",
-        OPERATION,
-        [
-            {"status": 409, "json": body("idempotency_conflict")},
-            {"status": 200, "json": fallback or body("operation_turn_no_viewpoint")},
-        ],
-    )
-
-
-@pytest.fixture
-def at(monkeypatch: pytest.MonkeyPatch) -> Any:
-    def set_now(moment: datetime) -> None:
-        monkeypatch.setattr(timezone, "now", lambda: moment)
-
-    set_now(datetime(2026, 10, 25, 9, 0, tzinfo=UTC))
-    return set_now
-
-
 def rows(html: str, table: str) -> list[list[str]]:
     """The cells' text of ``<table class="<table>">``'s rows (tags stripped)."""
     found = re.search(rf'<table class="{table}">(.*?)</table>', html, re.S)
@@ -184,26 +158,34 @@ def test_one_omniscient_read(engine: FakeEngine) -> None:
     client = EngineClient("http://engine.test", "key", transport=engine.transport)
     trace = read_turn_trace(client, OP)
     assert [r.url.params.get("viewpoint") for r in reads(engine)] == ["omniscient"]
-    assert trace.withheld_for is None
     assert trace.eval_hooks is not None
     assert trace.read_set is not None
     assert trace.operation.id == OP
 
 
-def test_a_withheld_read_falls_back_once_naming_no_viewpoint(engine: FakeEngine) -> None:
-    withheld_reads(engine)
-    client = EngineClient("http://engine.test", "key", transport=engine.transport)
-    trace = read_turn_trace(client, OP)
-    sent = reads(engine)
-    assert [dict(r.url.params) for r in sent] == [{"viewpoint": "omniscient"}, {}]
-    assert trace.withheld_for == f"character:{CH1}"
-    assert trace.eval_hooks is None
-    assert trace.read_set is not None
-    assert trace.read_set.keys is None
+def test_a_turn_produced_for_a_character_shows_its_hooks(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Engine #534: the omniscient read of a ``character:<id>`` turn carries the hooks."""
+    engine.respond(
+        "GET", OPERATION, 200, json=structured_body(viewpoint=f"character:{CH1}", result=None)
+    )
+    html = fragment(operator_client)
+    assert [dict(r.url.params) for r in reads(engine)] == [{"viewpoint": "omniscient"}]
+    assert "trace-verdicts" in html
+    assert "trace-latency" in html
+    assert "Keys are shown to an omniscient read only" not in html
+    assert settings_reads(engine) == []
 
 
 @pytest.mark.parametrize(
-    ("status", "code"), [(409, "revision_conflict"), (404, "not_found"), (503, "erasure_pending")]
+    ("status", "code"),
+    [
+        (409, "idempotency_conflict"),
+        (409, "revision_conflict"),
+        (404, "not_found"),
+        (503, "erasure_pending"),
+    ],
 )
 def test_other_errors_raise(engine: FakeEngine, status: int, code: str) -> None:
     engine.respond("GET", OPERATION, status, json=error_json(code))
@@ -212,28 +194,6 @@ def test_other_errors_raise(engine: FakeEngine, status: int, code: str) -> None:
         read_turn_trace(client, OP)
     assert raised.value.code == code
     assert len(reads(engine)) == 1
-
-
-def test_a_failed_fallback_raises(engine: FakeEngine) -> None:
-    engine.respond_sequence(
-        "GET",
-        OPERATION,
-        [
-            {"status": 409, "json": body("idempotency_conflict")},
-            {"status": 503, "json": error_json("database_unavailable")},
-        ],
-    )
-    client = EngineClient("http://engine.test", "key", transport=engine.transport)
-    with pytest.raises(EngineError) as raised:
-        read_turn_trace(client, OP)
-    assert raised.value.code == "database_unavailable"
-    assert len(reads(engine)) == 2
-
-
-def test_hooks_unavailable_until_counts_from_the_commit() -> None:
-    assert hooks_unavailable_until(trace_of(), 48) == datetime(2026, 10, 26, 14, 3, tzinfo=UTC)
-    started = trace_of(committed_at=None)
-    assert hooks_unavailable_until(started, 24) == datetime(2026, 10, 25, 14, 2, 58, tzinfo=UTC)
 
 
 # --- lenient parsing ----------------------------------------------------------------------------
@@ -257,7 +217,7 @@ def test_a_non_object_parses_to_none(raw: object) -> None:
 def test_malformed_parts_never_raise(raw: dict[str, Any]) -> None:
     hooks = EvalHooks.parse(raw)
     assert hooks is not None
-    trace_view(STORY, TurnTrace(record(), hooks, ReadSet.parse({"keys": [1, {}]}), None))
+    trace_view(STORY, TurnTrace(record(), hooks, ReadSet.parse({"keys": [1, {}]})))
 
 
 def test_a_malformed_verdict_field_reads_missing_and_goes_to_more() -> None:
@@ -474,56 +434,17 @@ def test_keys_empty_and_keys_null_and_read_set_null(
     assert '<p class="no-read-set">No read set recorded</p>' in fragment(operator_client)
 
 
-def test_a_withheld_turn(operator_client: Client, engine: FakeEngine, at: Any) -> None:
-    withheld_reads(engine)
+def test_a_409_is_an_error_panel(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", OPERATION, 409, json=body("idempotency_conflict"))
     html = fragment(operator_client)
-    assert [dict(r.url.params) for r in reads(engine)] == [{"viewpoint": "omniscient"}, {}]
-    assert all("character" not in str(r.url) for r in reads(engine))
-    assert len(settings_reads(engine)) == 1
-    note = re.search(r'<p class="notice withheld">(.*?)</p>', html, re.S)
-    assert note is not None
-    text = re.sub(r"<[^>]+>", "", note.group(1))
-    assert text == (
-        f"{LEAD}refuses that read until about 2026-10-26 14:03 UTC for a turn produced for "
-        "character …4P7R0CH1."
-    )
-    assert 'title="2026-10-26T14:03:00+00:00 (estimated from the current setting)"' in html
-    assert f'<code title="{CH1}">…4P7R0CH1</code>' in html
-    assert '<p class="muted">(A Lite turn has no eval hooks.)</p>' in html
-    assert "trace-verdicts" not in html
-    assert "trace-latency" not in html
-    assert '<p class="read-set-counts">14 keys · 9 retrieved</p>' in html
-    assert "Keys are shown to an omniscient read only" in html
-
-
-def test_a_withheld_turn_whose_window_has_passed(
-    operator_client: Client, engine: FakeEngine, at: Any
-) -> None:
-    withheld_reads(engine)
-    at(datetime(2026, 10, 26, 14, 3, tzinfo=UTC))
-    html = fragment(operator_client)
-    assert f"{LEAD}refused that read; the window should have closed — try again shortly." in html
-    assert "until about" not in html
-
-
-def test_unreadable_settings_assume_24_hours(
-    operator_client: Client, engine: FakeEngine, at: Any
-) -> None:
-    withheld_reads(engine)
-    engine.respond("GET", SETTINGS, 503, json=error_json("database_unavailable"))
-    html = fragment(operator_client)
-    assert "until about <time" in html
-    assert "2026-10-25 14:03 UTC</time>" in html
-    assert "(assuming the default 24 h window; deployment settings unreadable)" in html
-
-
-def test_another_409_is_not_withheld(operator_client: Client, engine: FakeEngine) -> None:
-    engine.respond("GET", OPERATION, 409, json=error_json("revision_conflict"))
-    html = fragment(operator_client)
+    assert 'data-state="error"' in html
+    assert "idempotency_conflict" in html
+    assert "engine-error" in html
+    # Complement: exactly one operation read and no settings read.
     assert len(reads(engine)) == 1
     assert settings_reads(engine) == []
-    assert "withheld" not in html
-    assert 'class="panel engine-error"' in html or "engine-error" in html
+    engine.respond("GET", OPERATION, 409, json=error_json("revision_conflict"))
+    assert 'data-state="error"' in fragment(operator_client)
 
 
 def test_a_lite_turn(operator_client: Client, engine: FakeEngine) -> None:
@@ -554,28 +475,11 @@ def test_another_storys_operation_is_not_found(operator_client: Client, engine: 
     assert "trace-latency" not in html
 
 
-def test_another_storys_operation_is_not_found_on_the_fallback_too(
-    operator_client: Client, engine: FakeEngine
-) -> None:
-    withheld_reads(engine, body("operation_turn_no_viewpoint", story_id=OTHER_STORY))
-    html = fragment(operator_client)
-    assert NOT_FOUND in html
-    assert "withheld" not in html
-    assert settings_reads(engine) == []
-
-
 def test_not_a_turn(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", OPERATION, 200, json=body("operation_not_turn"))
     html = fragment(operator_client)
     assert "Not a turn — no eval hooks or read set" in html
     assert "Read set" not in html
-
-
-def test_not_a_turn_wins_over_withheld(operator_client: Client, engine: FakeEngine) -> None:
-    withheld_reads(engine, body("operation_not_turn"))
-    html = fragment(operator_client)
-    assert "Not a turn — no eval hooks or read set" in html
-    assert "withheld" not in html
 
 
 def test_a_404_is_not_found(operator_client: Client, engine: FakeEngine) -> None:
@@ -710,3 +614,43 @@ def test_the_detail_page_has_no_block(
     row = log_row(**fields)
     assert 'class="turn-trace"' not in get(operator_client, f"/operations/{row.pk}/")
     no_trace_reads(engine)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+TRACE_SOURCES = (
+    "console/turn_trace.py",
+    "console/views/inspect.py",
+    "console/history.py",
+    "console/views/history.py",
+    "templates/console/_turn_trace.html",
+)
+
+
+def test_no_withheld_path_remains() -> None:
+    """#237: Engine #534 made the no-viewpoint fallback dead code; none of it is left."""
+    found = [
+        f"{path.relative_to(ROOT)}: {word}"
+        for folder in ("console", "templates")
+        for path in (ROOT / folder).rglob("*")
+        if path.is_file()
+        and path.name != "openapi.json"
+        and path.suffix in (".py", ".html", ".json", ".txt", ".css")
+        for word in ("withheld_for", "is_withheld", "hooks_unavailable_until", "Epistrel#534")
+        if word in path.read_text()
+    ]
+    assert found == []
+    for name in TRACE_SOURCES:
+        assert "idempotency_result_window" not in (ROOT / name).read_text(), name
+    partial = (ROOT / "templates/console/_turn_trace.html").read_text()
+    assert 'state == "withheld"' not in partial
+    assert "notice withheld" not in partial
+
+
+def test_the_trace_read_labels_the_log_rows(operator_client: Client, engine: FakeEngine) -> None:
+    """#257: an eval-hooks block read records the Engine's label on the operation's rows."""
+    row = log_row()
+    engine.respond("GET", OPERATION, 200, json=structured_body(id=OP, label="staged_turn"))
+    fragment(operator_client)
+    row.refresh_from_db()
+    assert row.engine_label == "staged_turn"
+    assert EngineOperation.objects.count() == 1

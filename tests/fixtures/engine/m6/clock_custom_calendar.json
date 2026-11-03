@@ -1,0 +1,78 @@
+{
+  "offset": 600,
+  "display": "+10h 00m",
+  "anchor": null,
+  "level": "on",
+  "mode": "paced",
+  "settings": {
+    "mode": "paced",
+    "pacing_table": [
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        5,
+        51,
+        1
+      ],
+      [
+        51,
+        null,
+        2
+      ]
+    ],
+    "max_unprompted_skip_minutes": 1440,
+    "stop_at_due_events": true,
+    "grace_minutes": 30,
+    "time_statement_tolerance_minutes": 15,
+    "elapsed_tolerance_factor": 2.0,
+    "time_awareness": "approximate",
+    "bands": [
+      [
+        "dark",
+        "00:00",
+        "08:00"
+      ],
+      [
+        "light",
+        "08:00",
+        "20:00"
+      ],
+      [
+        "dark",
+        "20:00",
+        "24:00"
+      ]
+    ],
+    "calendar": {
+      "kind": "custom",
+      "day_minutes": 600,
+      "months": [
+        {
+          "name": "Thaw",
+          "days": 30
+        },
+        {
+          "name": "Bloom",
+          "days": 40
+        },
+        {
+          "name": "Frost",
+          "days": 50
+        }
+      ],
+      "weekdays": [
+        "Oneday",
+        "Twoday",
+        "Threeday",
+        "Fourday",
+        "Fiveday"
+      ],
+      "year_days": 120
+    },
+    "provider_id": null,
+    "external_value_name": null
+  }
+}

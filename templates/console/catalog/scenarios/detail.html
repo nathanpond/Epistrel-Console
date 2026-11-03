@@ -116,6 +116,10 @@
 </section>
 {% endwith %}
 
+{% include "console/catalog/scenarios/_state_table.html" %}
+
+{% include "console/catalog/scenarios/_clock_table.html" %}
+
 {% with s=entry.story_settings_defaults %}
 <section id="story-settings-defaults">
   <h2>Story-setting defaults</h2>
@@ -194,17 +198,12 @@
 
 {% with st=entry.starting_state %}
 <section id="deferred">
-  <h2>Deferred</h2>
-  <details class="deferred"><summary>Stored by Lite but not used until a later Engine milestone</summary>
-  <dl>
-    <dt>States</dt><dd><pre>{{ st.states|pretty_json }}</pre></dd>
-    <dt>Clock</dt><dd><pre>{{ st.clock|pretty_json }}</pre></dd>
-    <dt>Scheduled events</dt><dd><pre>{{ st.scheduled_events|pretty_json }}</pre></dd>
+  <h2>Rules and declarations</h2>
+  <dl class="deferred">
     <dt>Predicates</dt><dd><pre>{{ st.predicates|pretty_json }}</pre></dd>
     <dt>Closed sets</dt><dd><pre>{{ st.closed_sets|pretty_json }}</pre></dd>
     <dt>Rules</dt><dd><pre>{{ st.rules|pretty_json }}</pre></dd>
   </dl>
-  </details>
 </section>
 {% endwith %}
 {% endif %}

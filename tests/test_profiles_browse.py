@@ -8,7 +8,6 @@ from html import unescape
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from django.contrib.messages import get_messages
 from django.http import HttpRequest
@@ -474,44 +473,50 @@ def test_the_versions_page_highlights_nothing_when_opened_directly(
 # --- stories using a profile --------------------------------------------------------------------
 
 
-def _story(story_id: str, name: str, profile_id: str, version: int) -> dict[str, Any]:
-    body: dict[str, Any] = copy.deepcopy(engine_fixture("get_story"))
-    body.update(id=story_id, name=name, engine_profile={"id": profile_id, "version": version})
+def _summary(story_id: str, name: str, profile_id: str = LITE, **ref: Any) -> dict[str, Any]:
+    """An #231 ``StorySummaryBody`` naming ``engine_profile`` (version 1, unpinned unless
+    ``ref`` says otherwise)."""
+    body: dict[str, Any] = copy.deepcopy(engine_fixture("list_stories")["items"][0])
+    body.update(
+        id=story_id,
+        name=name,
+        engine_profile={"id": profile_id, "version": 1, "pinned": False, **ref},
+    )
     return body
 
 
-def test_the_stories_filter_narrows_by_profile_and_counts_failed_reads(
+def _serve_stories(engine: FakeEngine, *items: dict[str, Any]) -> None:
+    engine.respond("GET", STORIES, 200, json={"items": list(items)})
+    engine.respond("GET", STORY, 200, json=engine_fixture("get_story"))
+
+
+def story_reads(engine: FakeEngine) -> list[Any]:
+    return [r for r in engine.requests if r.url.path.startswith("/stories/")]
+
+
+def test_the_stories_filter_is_sent_to_the_engine(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    summaries = engine_fixture("list_stories")["items"]
-    first = summaries[0]
-    using = {**first, "id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2A", "name": "Uses Lite"}
-    other = {**first, "id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2B", "name": "Uses mine"}
-    broken = {**first, "id": "01JB2Z8Y5Q3W6K9M1N4P7R0T2C", "name": "Unreadable"}
-    engine.respond("GET", STORIES, 200, json={"items": [using, other, broken]})
-    engine.respond("GET", ITEM, 200, json=profile())
-    bodies = {
-        using["id"]: _story(using["id"], "Uses Lite", LITE, 1),
-        other["id"]: _story(other["id"], "Uses mine", OTHER, 3),
-    }
-
-    def answer(request: httpx.Request) -> httpx.Response:
-        story_id = request.url.path.rsplit("/", 1)[1]
-        if story_id in bodies:
-            return httpx.Response(200, json=bodies[story_id])
-        return httpx.Response(503, json=error("engine_unavailable"))
-
-    engine.side_effect("GET", STORY, answer)
+    using = _summary("01JB2Z8Y5Q3W6K9M1N4P7R0T2A", "Uses Lite", version=2)
+    stray = _summary("01JB2Z8Y5Q3W6K9M1N4P7R0T2B", "Returned anyway", OTHER, version=3)
+    _serve_stories(engine, using, stray)
     html = get(operator_client, f"/stories/?profile={LITE}")
+    assert params(engine, STORIES) == [("engine_profile", LITE)]
     assert "Showing stories using Lite" in text(html)
     assert "Uses Lite" in html
-    assert "Uses mine" not in html.split("couldn")[0]
-    assert '<td class="profile-version">1</td>' in html
-    assert "1 story couldn't be checked" in text(html)
-    unchecked = html.split('<details class="unchecked">', 1)[1]
-    assert "Unreadable" in unchecked
-    assert broken["id"] in unchecked
-    assert 'name="profile" value="00000000000000000000PRF001"' in html  # the status filter keeps it
+    # The Console no longer filters: a summary naming another profile is listed as returned.
+    assert "Returned anyway" in html
+    assert '<td class="profile-version">2</td>' in html
+    assert '<td class="profile-version">3</td>' in html
+    # One cast read per row on the page, and nothing else.
+    assert sorted(r.url.path for r in story_reads(engine)) == [
+        f"/stories/{using['id']}",
+        f"/stories/{stray['id']}",
+    ]
+    assert "checked" not in text(html)
+    assert 'class="unchecked"' not in html
+    assert f'name="profile" value="{LITE}"' in html  # the status filter keeps it
+    assert 'name="version"' not in html
     assert '<a class="clear-profile" href="?">Clear</a>' in html
 
 
@@ -521,7 +526,7 @@ def test_the_stories_filter_ands_the_status_and_shows_the_empty_state(
     engine.respond("GET", STORIES, 200, json={"items": []})
     engine.respond("GET", ITEM, 404, json=error("not_found"))
     html = get(operator_client, f"/stories/?profile={OTHER}&status=archived")
-    assert ("status", "archived") in params(engine, STORIES)
+    assert params(engine, STORIES) == [("status", "archived"), ("engine_profile", OTHER)]
     assert "No stories use this profile." in html
     assert f"Showing stories using {OTHER}" in text(html)
     assert "Couldn&#x27;t read this profile" in html
@@ -535,6 +540,151 @@ def test_the_story_list_without_the_filter_has_no_profile_column(
     html = get(operator_client, "/stories/")
     assert "Profile version" not in html
     assert calls(engine, "GET", f"/engine-profiles/{LITE}") == []
+
+
+def test_cast_reads_cover_only_the_page(operator_client: Client, engine: FakeEngine) -> None:
+    summaries = [_summary(f"01JB2Z8Y5Q3W6K9M1N4P7R{n:04d}", f"Story {n}") for n in range(60)]
+    _serve_stories(engine, *summaries)
+    first = get(operator_client, f"/stories/?profile={LITE}")
+    assert len(story_reads(engine)) == 50
+    assert "Page 1 of 2" in first
+    assert f"?profile={LITE}&amp;page=2" in first
+    engine.requests.clear()
+    second = get(operator_client, f"/stories/?profile={LITE}&page=2")
+    assert sorted(r.url.path for r in story_reads(engine)) == sorted(
+        f"/stories/{s['id']}" for s in summaries[50:]
+    )
+    assert "Story 55" in second
+    assert "Story 5<" not in second
+
+
+def test_a_version_filter_sends_engine_profile_version(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    _serve_stories(engine, _summary("01JB2Z8Y5Q3W6K9M1N4P7R0T2A", "On one"))
+    html = get(operator_client, f"/stories/?profile={LITE}&version=007&status=active")
+    assert params(engine, STORIES) == [
+        ("status", "active"),
+        ("engine_profile", LITE),
+        ("engine_profile_version", "7"),
+    ]
+    (named,) = calls(engine, "GET", f"/engine-profiles/{LITE}")
+    assert "version" not in named.url.params  # the latest name, whatever the version
+    assert "Showing stories using Lite version 7" in text(html)
+    assert f'<a href="/profiles/{LITE}/?version=7">Lite</a>' in html
+    assert 'name="version" value="7"' in html
+    assert '<a class="clear-profile" href="?status=active">Clear</a>' in html
+
+
+def test_a_version_filter_with_no_match_says_so(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", STORIES, 200, json={"items": []})
+    engine.respond("GET", ITEM, 404, json=error("not_found"))
+    html = get(operator_client, f"/stories/?profile={LITE}&version=2")
+    assert "No stories run version 2 of this profile." in html
+    assert f"Showing stories using {LITE} version 2" in text(html)
+    assert "Couldn&#x27;t read this profile" in html
+
+
+@pytest.mark.parametrize("raw", ["abc", "0", "-2", "1.5", "+3", " 3", "\u0663", "2147483648"])
+def test_an_invalid_list_version_is_ignored_with_a_flash(
+    operator_client: Client, engine: FakeEngine, raw: str
+) -> None:
+    engine.respond("GET", STORIES, 200, json={"items": []})
+    response = operator_client.get("/stories/", {"profile": LITE, "version": raw})
+    assert response.status_code == 200
+    assert params(engine, STORIES) == [("engine_profile", LITE)]  # the version is not sent
+    assert "Ignored invalid version" in flashes(response)
+    html = response.content.decode()
+    assert 'name="version"' not in html
+    assert "No stories use this profile." in html
+
+
+def test_a_version_without_a_profile_is_ignored_silently(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", STORIES, 200, json={"items": []})
+    response = operator_client.get("/stories/?version=abc")
+    assert params(engine, STORIES) == []
+    assert flashes(response) == []
+    assert "Profile version" not in response.content.decode()
+
+
+@pytest.mark.parametrize("raw", ["nope", "00000000000000000000PRI001"])
+def test_an_invalid_profile_id_makes_no_call(
+    operator_client: Client, engine: FakeEngine, raw: str
+) -> None:
+    response = operator_client.get("/stories/", {"profile": f" {raw} ", "status": "active"})
+    assert response.status_code == 200
+    assert engine.requests == []
+    html = unescape(response.content.decode())
+    shown = raw.upper()
+    assert f"Showing stories using <code>{shown}</code>" in html
+    assert "That isn't an engine profile id" in html
+    assert '<a class="clear-profile" href="?status=active">Clear</a>' in html
+    assert f'name="profile" value="{shown}"' in html
+    assert "<table" not in html
+    assert 'class="empty"' not in html
+
+
+def test_an_invalid_profile_id_with_an_invalid_version_flashes_too(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    response = operator_client.get("/stories/?profile=nope&version=x")
+    assert engine.requests == []
+    assert "Ignored invalid version" in flashes(response)
+
+
+def test_a_lowercase_profile_id_is_upper_cased_and_sent(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", STORIES, 200, json={"items": []})
+    html = get(operator_client, f"/stories/?profile={LITE.lower()}")
+    assert params(engine, STORIES) == [("engine_profile", LITE)]
+    assert f'name="profile" value="{LITE}"' in html
+
+
+def test_a_pinned_story_reads_pinned(operator_client: Client, engine: FakeEngine) -> None:
+    pinned = _summary("01JB2Z8Y5Q3W6K9M1N4P7R0T2A", "Kept back", pinned=True)
+    following = _summary("01JB2Z8Y5Q3W6K9M1N4P7R0T2B", "Following", version=2)
+    _serve_stories(engine, pinned, following)
+    html = get(operator_client, f"/stories/?profile={LITE}")
+    assert (
+        '<td class="profile-version">1 <span class="pinned" title="Kept at this version, '
+        "not following the profile's latest\">(pinned)</span></td>"
+    ) in html
+    assert '<td class="profile-version">2</td>' in html
+
+
+def test_the_detail_page_links_the_stories_on_the_viewed_version(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", ITEM, 200, json=profile(version=1))
+    html = get(operator_client, f"{DETAIL}?version=1")
+    assert f'<a class="stories-using" href="/stories/?profile={LITE}">' in html
+    assert (
+        f' · <a class="stories-on-version" href="/stories/?profile={LITE}&amp;version=1">'
+        "Stories on version 1</a>"
+    ) in html
+    engine.respond("GET", ITEM, 200, json=profile())
+    latest = get(operator_client, DETAIL)
+    assert 'class="stories-on-version"' not in latest
+    assert "Stories on version" not in latest
+    assert 'class="stories-using"' in latest
+
+
+def test_stories_url_builds_the_profile_and_version_query() -> None:
+    assert profile_views.stories_url(LITE) == f"/stories/?profile={LITE}"
+    assert profile_views.stories_url(LITE, 3) == f"/stories/?profile={LITE}&version=3"
+
+
+def test_no_engine_filter_workaround_remains() -> None:
+    root = Path(__file__).resolve().parent.parent / "console"
+    for source in root.rglob("*.py"):
+        body = source.read_text(encoding="utf-8")
+        assert "Epistrel#527" not in body, source
+        assert "Unchecked" not in body, source
 
 
 # --- the walker -----------------------------------------------------------------------------------

@@ -1,0 +1,67 @@
+{
+  "memories": [
+    {
+      "id": "01JM6MM0000000000000000001",
+      "kind": "episodic",
+      "text": "Mara paid the harbour fee.",
+      "provenance": "in_world",
+      "membership": "active",
+      "pinned": false,
+      "pinned_by": null,
+      "quarantined": false,
+      "quarantine_reason": null,
+      "quarantined_at": null,
+      "quarantined_by": null,
+      "retrieval_tier": "hot",
+      "retired_reason": null,
+      "holder_character_id": null,
+      "character_id": "01JM6CH0000000000000000001",
+      "narrative_turn": 3,
+      "beat": 2,
+      "implication_count": 0,
+      "embedded": true,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "consolidation": null
+    },
+    {
+      "id": "01JM6MM0000000000000000002",
+      "kind": "reflection",
+      "text": "Mara keeps careful accounts.",
+      "provenance": "system_consolidated",
+      "membership": "active",
+      "pinned": false,
+      "pinned_by": null,
+      "quarantined": false,
+      "quarantine_reason": null,
+      "quarantined_at": null,
+      "quarantined_by": null,
+      "retrieval_tier": "hot",
+      "retired_reason": null,
+      "holder_character_id": "01JM6CH0000000000000000002",
+      "character_id": null,
+      "narrative_turn": null,
+      "beat": null,
+      "implication_count": 0,
+      "embedded": true,
+      "visibility": {
+        "scope": "objective",
+        "characters": null
+      },
+      "consolidation": {
+        "operation_id": "01JM6QP0000000000000000071",
+        "from_turn": 1,
+        "to_turn": 3,
+        "level": 1,
+        "scope": "character:01JM6CH0000000000000000002",
+        "source_memory_ids": [
+          "01JM6MM0000000000000000001"
+        ]
+      }
+    }
+  ],
+  "next_cursor": "01JM6MM0000000000000000002",
+  "timeline_revision": 12
+}

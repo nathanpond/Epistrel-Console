@@ -587,3 +587,72 @@ def test_m5_knowledge_reads_live(url: str, key: str) -> None:
     finally:
         for story_id in stories:
             _delete_when_idle(client, story_id)
+
+
+@pytest.mark.engine_auth
+def test_m6_world_live(url: str, key: str) -> None:
+    """#232: on ``Structured`` v3 (States and the clock on) a story with no turn reads no
+    States, a clock at ``on`` and offset 0, no scheduled events and nothing to reconcile, and
+    the provider registry parses; a declared ``gold`` set by +5 answers 15 at an inter-turn
+    slot after turn 0, and the clock advances 30 minutes. **Complement:** on v2 (no States, no
+    clock) ``get_states`` and ``advance_clock`` are 409 ``module_off`` naming their module."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profile = _structured_profile(client)
+    stories: list[str] = []
+    try:
+        on = _knowledge_story(client, profile, 3)
+        stories.append(on)
+        off = _knowledge_story(client, profile, 2)
+        stories.append(off)
+        states = client.get_states(on)
+        assert states.states == []
+        assert states.clock.level == "on"
+        assert client.get_clock(on).offset == 0
+        assert client.list_scheduled_events(on).events == []
+        assert client.get_reconciliation(on).listings == []
+        client.list_providers()
+        definition = {"name": "gold", "type": "number", "initial_value": 10}
+        revision = client.get_story(on).timeline_revision
+        declared = client.declare_state(
+            on, definition, expected_revision=revision, idempotency_key=new_ulid()
+        )
+        written = client.set_state(
+            on,
+            "gold",
+            {"delta": 5, "reason": "live smoke"},
+            expected_revision=declared.timeline_revision,
+            idempotency_key=new_ulid(),
+        )
+        assert written.new_value == 15
+        position = written.slot_position
+        assert position is not None
+        assert position.turn == 0
+        assert position.slot_k >= 1
+        advanced = client.advance_clock(
+            on,
+            reason="live smoke",
+            minutes=30,
+            expected_revision=written.timeline_revision,
+            idempotency_key=new_ulid(),
+        )
+        assert advanced.after.offset == 30
+        for write, module in (
+            (lambda: client.get_states(off), "states"),
+            (
+                lambda: client.advance_clock(
+                    off,
+                    reason="live smoke",
+                    minutes=30,
+                    expected_revision=None,
+                    idempotency_key=new_ulid(),
+                ),
+                "clock",
+            ),
+        ):
+            with pytest.raises(EngineError) as caught:
+                write()
+            assert caught.value.code == "module_off"
+            assert caught.value.details.get("module") == module
+    finally:
+        for story_id in stories:
+            _delete_when_idle(client, story_id)

@@ -1,0 +1,17 @@
+{
+  "timeline_revision": 8,
+  "idempotency_key": null,
+  "state": "trust",
+  "old_value": 0.4,
+  "new_value": 0.5,
+  "position": "2⁺1",
+  "slot": {
+    "turn": 2,
+    "variant": 0,
+    "slot_k": 1,
+    "beat": 0,
+    "step": 0
+  },
+  "operation_id": "01JM6QP0000000000000000012",
+  "change_id": "01JM6CG0000000000000000012"
+}

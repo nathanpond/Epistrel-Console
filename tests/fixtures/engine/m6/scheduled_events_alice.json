@@ -1,0 +1,37 @@
+{
+  "output_viewpoint": "character:01JM6CH0000000000000000002",
+  "events": [
+    {
+      "event_id": "01JM6EV0000000000000000001",
+      "name": "The harbourmaster's meeting",
+      "label": "canon",
+      "status": "pending",
+      "planned": 240,
+      "owner": "author",
+      "shared_owners": [],
+      "participants": [
+        "01JM6CH0000000000000000001",
+        "01JM6CH0000000000000000002"
+      ],
+      "place_id": "01JM6EN0000000000000000001",
+      "grace_minutes": 30,
+      "stopped_clock_at": null,
+      "confidence": null
+    },
+    {
+      "event_id": "01JM6EV0000000000000000004",
+      "name": "The ferry leaves",
+      "label": "belief",
+      "status": null,
+      "planned": 300,
+      "owner": null,
+      "shared_owners": [],
+      "participants": [],
+      "place_id": null,
+      "grace_minutes": null,
+      "stopped_clock_at": null,
+      "confidence": "believed"
+    }
+  ],
+  "timeline_revision": 12
+}

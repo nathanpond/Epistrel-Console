@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load console_format %}
+{% block title %}Provider {{ name }} — Epistrel Console{% endblock %}
+{% block heading %}Provider <code>{{ name }}</code>{% endblock %}
+{% block content %}
+<p><a href="{% url 'engine:home' %}">← Engine</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a></p>
+
+{% if missing %}
+<p class="not-found">{{ not_found_text }}</p>
+<p><a href="{% url 'engine:providers' %}">All providers</a></p>
+{% elif held %}
+{% include "console/stories/_held.html" with held_text=held.held_text retry_url=held.retry_url delete_url="" ledger_url="" %}
+<p><a href="{% url 'engine:providers' %}">All providers</a></p>
+{% elif engine_error %}
+{% include "console/_engine_error.html" %}
+<p><a href="{% url 'engine:providers' %}">All providers</a></p>
+{% else %}
+<p class="provider-actions"><a class="replace-provider" href="{% url 'engine:provider-edit' name %}">Replace registration</a> · <a class="delete-provider" href="{% url 'engine:provider-delete' name %}?{{ delete_query }}">Delete</a></p>
+<section class="registration">
+  <h2>Registration</h2>
+  <table class="registration">
+    <tbody>
+      {% for row in registration %}
+      {% if row.line %}
+      <tr><td colspan="2">{{ row.line }}</td></tr>
+      {% else %}
+      <tr>
+        <th>{{ row.label }}</th>
+        <td>{% if row.time %}{{ row.time|engine_time }}{% elif row.code %}<code>{{ row.text }}</code>{% elif row.raw %}<span title="{{ row.raw }}">{{ row.text }}</span>{% else %}{{ row.text }}{% endif %}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="values">
+  <h2>Values</h2>
+  {% if values %}
+  <table class="manifest-values">
+    <thead><tr><th>Name</th><th>Type</th><th>Access</th></tr></thead>
+    <tbody>
+      {% for v in values %}
+      <tr><td><code>{{ v.name }}</code></td><td>{{ v.type|default:"—" }}</td><td>{{ v.access }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>None</p>
+  {% endif %}
+</section>
+
+<section class="bindings">
+  <h2>Ids a story binds</h2>
+  {% if binding_keys %}
+  <p class="binding-keys">{% for key in binding_keys %}<code>{{ key }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+  <p class="muted">{{ bindings_note }}</p>
+  {% else %}
+  <p class="binding-keys">{{ no_bindings }}</p>
+  {% endif %}
+</section>
+
+<section class="secrets">
+  <h2>Secrets</h2>
+  {% if secrets %}
+  <ul class="secrets">
+    {% for s in secrets %}
+    <li><code>{{ s.reference }}</code> → environment variable <code>{{ s.env_var }}</code> on the Engine</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">{{ secrets_note }}</p>
+  {% else %}
+  <p>None</p>
+  {% endif %}
+</section>
+
+<section class="manifest">
+  <h2>Manifest</h2>
+  <pre class="manifest">{{ provider.manifest|pretty_json }}</pre>
+</section>
+
+<p><a href="{% url 'engine:providers' %}">All providers</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a></p>
+{% endif %}
+{% endblock %}

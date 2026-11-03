@@ -1,0 +1,33 @@
+{% comment %}#267: the States row set (prefix state), one ScenarioStateForm per row, grouped into
+Identity, Value and Ownership blocks and a "Rules, authorization and transfer" <details> (open
+when a box is set or has an error). Rows move with Up/Down and go with Remove; Add appends a blank
+row (op buttons, no JavaScript). Context: rows (console.forms.scenario.Rows), archived_note.{% endcomment %}
+<fieldset class="section rows rows-{{ rows.prefix }}" id="{{ rows.anchor }}">
+  <legend>{{ rows.title }}</legend>
+  <p class="muted rows-help">{{ rows.help }}</p>
+  {{ rows.formset.management_form }}
+  {{ rows.formset.non_form_errors }}
+  {% for row in rows.formset.forms %}
+  <div class="row state-row" id="{{ rows.prefix }}-{{ forloop.counter0 }}">
+    {{ row.non_field_errors }}
+    {% for field in row.snapshots %}{{ field }}{% endfor %}
+    {% for legend, fields in row.row_groups %}
+    <div class="state-group"><span class="label">{{ legend }}</span>
+      {% for field in fields %}<span class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label> {{ field }}{% if field.help_text %} <small class="muted">{{ field.help_text }}</small>{% endif %}{{ field.errors }}</span>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <details class="state-boxes"{% if row.details_open %} open{% endif %}><summary>Rules, authorization and transfer</summary>
+      {% for field in row.boxes %}<p class="field"><label for="{{ field.id_for_label }}">{{ field.label }}</label><br>{{ field }} <small class="muted">{{ field.help_text }}</small>{{ field.errors }}</p>
+      {% endfor %}
+    </details>
+    {% if not forloop.first %}<button type="submit" name="op" value="up:{{ rows.prefix }}-{{ forloop.counter0 }}" formnovalidate{% if archived_note %} disabled{% endif %}>Up</button>{% endif %}
+    {% if not forloop.last %}<button type="submit" name="op" value="down:{{ rows.prefix }}-{{ forloop.counter0 }}" formnovalidate{% if archived_note %} disabled{% endif %}>Down</button>{% endif %}
+    <button type="submit" name="op" value="remove:{{ rows.prefix }}-{{ forloop.counter0 }}" formnovalidate{% if archived_note %} disabled{% endif %}>Remove</button>
+  </div>
+  {% empty %}
+  <p class="empty">None.</p>
+  {% endfor %}
+  {% if rows.can_add %}<button type="submit" name="op" value="add:{{ rows.prefix }}" formnovalidate{% if archived_note %} disabled{% endif %}>Add</button>{% else %}<small class="muted">At the limit.</small>{% endif %}
+  {% include "console/catalog/scenarios/_refresh.html" %}
+</fieldset>

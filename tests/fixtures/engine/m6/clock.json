@@ -1,0 +1,98 @@
+{
+  "offset": 130,
+  "display": "+02h 10m (Saturday, between 05:00 and 12:00 (morning))",
+  "anchor": {
+    "year": null,
+    "month": null,
+    "day": null,
+    "weekday": "saturday",
+    "band": "morning",
+    "hour": [
+      5,
+      11
+    ],
+    "minute": null,
+    "display": "Saturday, between 05:00 and 12:00 (morning)",
+    "offset": 130,
+    "revision": 1,
+    "anchored_at": {
+      "turn": 3,
+      "variant": 0,
+      "slot_k": 0,
+      "beat": 2
+    },
+    "reference": {
+      "year": null,
+      "month": null,
+      "day": null,
+      "weekday": "saturday"
+    },
+    "segments": [
+      [
+        0,
+        300,
+        720
+      ]
+    ]
+  },
+  "level": "on",
+  "mode": "paced",
+  "settings": {
+    "mode": "paced",
+    "pacing_table": [
+      [
+        0,
+        5,
+        0
+      ],
+      [
+        5,
+        51,
+        1
+      ],
+      [
+        51,
+        null,
+        2
+      ]
+    ],
+    "max_unprompted_skip_minutes": 1440,
+    "stop_at_due_events": true,
+    "grace_minutes": 30,
+    "time_statement_tolerance_minutes": 15,
+    "elapsed_tolerance_factor": 2.0,
+    "time_awareness": "approximate",
+    "bands": [
+      [
+        "night",
+        "00:00",
+        "05:00"
+      ],
+      [
+        "morning",
+        "05:00",
+        "12:00"
+      ],
+      [
+        "afternoon",
+        "12:00",
+        "17:00"
+      ],
+      [
+        "evening",
+        "17:00",
+        "21:00"
+      ],
+      [
+        "night",
+        "21:00",
+        "24:00"
+      ]
+    ],
+    "calendar": {
+      "kind": "gregorian"
+    },
+    "provider_id": null,
+    "external_value_name": null
+  }
+}

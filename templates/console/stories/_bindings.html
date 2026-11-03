@@ -1,0 +1,31 @@
+{# The "Provider bindings" fieldset of both creation forms (#259). Context: bindings (a BindingsForm). Errors show whenever present. #}{% load inspect_tags %}
+<fieldset class="provider-bindings" id="provider-bindings">
+  <legend>Provider bindings</legend>
+  {% if bindings.note %}<p class="bindings-note">{{ bindings.note }}</p>{% endif %}
+  {{ bindings.non_field_errors }}
+  {% for row in bindings.rows %}
+  <div class="binding-row" id="binding-{{ row.name }}">
+    {% if row.provider %}
+    <p class="field-{{ row.checkbox.name }}">
+      {{ row.checkbox }}
+      <label for="{{ row.checkbox.id_for_label }}">Bind {% if row.link %}<a href="{{ row.link }}"><code>{{ row.name }}</code></a>{% else %}<code>{{ row.name }}</code>{% endif %}</label>
+      <small class="muted">{{ row.provider.muted }}</small>
+      {% if row.needed_text %}<small class="needed">{{ row.needed_text }}</small>{% endif %}
+      {% if row.checkbox.help_text %}<small>{{ row.checkbox.help_text }}</small>{% endif %}
+      {{ row.checkbox.errors }}
+    </p>
+    {% for f in row.inputs %}
+    <p class="field-{{ f.name }}">
+      <label for="{{ f.id_for_label }}">{{ f.label }}</label>
+      {{ f }}
+      {% if f.help_text %}<small>{{ f.help_text }}</small>{% endif %}
+      {{ f.errors }}
+    </p>
+    {% endfor %}
+    {% else %}
+    <p class="binding-missing">{% if row.link %}<a href="{{ row.link }}">{{ row.missing|code_spans }}</a>{% else %}{{ row.missing|code_spans }}{% endif %}{% if row.needed_text %} <small class="needed">{{ row.needed_text }}</small>{% endif %}</p>
+    {% endif %}
+    {% if row.errors %}<ul class="errorlist">{% for e in row.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+</fieldset>

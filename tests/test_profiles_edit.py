@@ -12,6 +12,7 @@ from django.test import Client
 
 from console import profile_schema, twostage
 from console.models import EngineOperation
+from console.views import profile_edit
 from tests.fakes.engine import FakeEngine
 from tests.profile_helpers import (
     COPY,
@@ -58,6 +59,10 @@ EDIT = f"/profiles/{OTHER}/edit/"
 APPLY = f"/profiles/{OTHER}/apply/"
 DETAIL = f"/profiles/{OTHER}/"
 WINDOW = "memory.rolling_summary.window_messages"
+LOW_CAP_TEXT = (
+    "Below safety minimum: `model_calls` 1; a turn needs at least 3 "
+    "(reservation: generation=1, guardrail_input=1, guardrail_output=1)"
+)
 POLISH = "repair.polish.max_regenerations"
 OTHER_PATH = f"/engine-profiles/{OTHER}"
 
@@ -318,14 +323,28 @@ def test_invalid_validation_blocks_save_with_no_write(
 def test_warnings_alone_let_create_save_write(operator_client: Client, engine: FakeEngine) -> None:
     page = new_page(operator_client, engine)
     engine.respond("POST", VALIDATE, 200, json=validation(warnings=[low_cap_warning()]))
-    engine.respond("POST", LIST, 201, json=written())
+    engine.respond("POST", LIST, 201, json=written(warnings=[low_cap_warning()]))
     response = operator_client.post(NEW, posted(page, name="Lite-short", action="save"))
     assert response.status_code == 302
     assert response["Location"] == DETAIL
     validate, create = writes(engine)
     assert validate.url.path == f"/engine-profiles/{LITE}/validate"
     assert (create.method, create.url.path) == ("POST", "/engine-profiles")
-    assert "Below safety minimum" in " ".join(flashes(response))
+    # #234: the create's own answer names the warning, once, backticks kept.
+    shown = " ".join(flashes(response))
+    assert shown.count("Below safety minimum") == 1
+    assert f" Warnings: {LOW_CAP_TEXT}" in shown
+
+
+def test_create_flashes_only_the_answers_warnings(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = new_page(operator_client, engine)
+    engine.respond("POST", VALIDATE, 200, json=validation(warnings=[low_cap_warning()]))
+    engine.respond("POST", LIST, 201, json=written(warnings=[]))
+    response = operator_client.post(NEW, posted(page, name="Lite-short", action="save"))
+    assert response.status_code == 302
+    assert "Warnings:" not in " ".join(flashes(response))
 
 
 def test_warnings_alone_let_edit_save_write(operator_client: Client, engine: FakeEngine) -> None:
@@ -335,7 +354,11 @@ def test_warnings_alone_let_edit_save_write(operator_client: Client, engine: Fak
         "PUT",
         ITEM,
         200,
-        json=edit_body(True, other_profile(version=4, current_version=4), impact(affected())),
+        json=edit_body(
+            True,
+            other_profile(version=4, current_version=4),
+            impact(affected(), budget_warnings=[low_cap_warning()]),
+        ),
     )
     response = operator_client.post(EDIT, posted(page, action="save", **{field(POLISH): "0"}))
     assert response.status_code == 302
@@ -344,7 +367,23 @@ def test_warnings_alone_let_edit_save_write(operator_client: Client, engine: Fak
     assert (validate.method, validate.url.path) == ("POST", f"{OTHER_PATH}/validate")
     assert (put.method, put.url.path) == ("PUT", OTHER_PATH)
     assert body_of(put)["ignore_warnings"] is False
-    assert "Below safety minimum" in " ".join(flashes(response))
+    # #234: the suffix comes from the applied answer's impact.budget_warnings.
+    assert flashes(response) == [
+        f"Saved — version 4; 1 story follows it from its next turn Warnings: {LOW_CAP_TEXT}"
+    ]
+
+
+def test_an_applied_edit_without_budget_warnings_has_no_suffix(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = edit_page(operator_client, engine)
+    engine.respond("POST", VALIDATE, 200, json=validation(warnings=[low_cap_warning()]))
+    engine.respond(
+        "PUT", ITEM, 200, json=edit_body(True, other_profile(version=4, current_version=4))
+    )
+    response = operator_client.post(EDIT, posted(page, action="save", **{field(POLISH): "0"}))
+    assert response.status_code == 302
+    assert "Warnings:" not in " ".join(flashes(response))
 
 
 def test_create_invalid_profile_is_placed_at_its_fields(
@@ -577,7 +616,7 @@ def test_a_tampered_page_rereads_and_writes_nothing(
 # --- impact and "Apply anyway" --------------------------------------------------------------------
 
 
-def held(engine: FakeEngine) -> None:
+def held(engine: FakeEngine, **changes: Any) -> None:
     engine.respond("GET", STORY, 200, json=story(STORY_A, "Harbour"))
     report = impact(
         affected(),
@@ -597,6 +636,7 @@ def held(engine: FakeEngine) -> None:
             {"capability": "polish", "recommended_by": "01JSCN0000000000000000000A@2"}
         ],
         affected_count=1003,
+        **changes,
     )
     engine.respond("PUT", ITEM, 200, json=edit_body(False, None, report))
 
@@ -678,6 +718,80 @@ def test_apply_anyway_resends_with_ignore_warnings_and_a_fresh_key(
     assert flashes(response) == ["Saved — version 4; 2 stories follow it from their next turn"]
 
 
+def test_the_held_edit_shows_budget_warnings_once(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = edit_page(operator_client, engine)
+    engine.respond("POST", VALIDATE, 200, json=validation(warnings=[low_cap_warning()]))
+    held(engine, budget_warnings=[low_cap_warning()])
+    response = operator_client.post(EDIT, posted(page, action="save", **{field(POLISH): "0"}))
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert "validation_warnings" not in response.context
+    assert html.count('<ul class="budget-warnings">') == 1
+    assert 'class="validation-warnings"' not in html
+    assert html.count("Below safety minimum") == 1
+    assert "Budget warnings (do not hold the change)" in text(html)
+    assert "<code>model_calls</code> 1; a turn needs at least 3" in html
+
+
+def test_apply_anyway_flashes_the_applied_warnings(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = edit_page(operator_client, engine)
+    held(engine, budget_warnings=[low_cap_warning()])
+    html = operator_client.post(
+        EDIT, posted(page, action="save", **{field(POLISH): "0"})
+    ).content.decode()
+    engine.reset()
+    engine.respond(
+        "PUT",
+        ITEM,
+        200,
+        json=edit_body(
+            True,
+            other_profile(version=4, current_version=4),
+            impact(affected(), budget_warnings=[low_cap_warning()]),
+        ),
+    )
+    response = operator_client.post(
+        APPLY, {"confirm_token": hidden(html, "confirm_token"), "idempotency_key": "k1"}
+    )
+    assert response.status_code == 302
+    # #234: the success flash carries no suffix; the info flash names the warning once.
+    assert flashes(response) == [
+        "Saved — version 4; 1 story follows it from its next turn",
+        f"Warnings: {LOW_CAP_TEXT}",
+    ]
+
+
+def test_an_old_apply_payload_with_warnings_still_applies_without_them(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    page = edit_page(operator_client, engine)
+    held(engine)
+    html = operator_client.post(
+        EDIT, posted(page, action="save", **{field(POLISH): "0"})
+    ).content.decode()
+    current = twostage.unsign(profile_edit.APPLY_KIND, hidden(html, "confirm_token"))
+    assert isinstance(current.base, dict)
+    assert "warnings" not in current.base
+    stale = twostage.sign(
+        profile_edit.APPLY_KIND, OTHER, current.body, {**current.base, "warnings": ["stale"]}
+    )
+    engine.reset()
+    engine.respond(
+        "PUT", ITEM, 200, json=edit_body(True, other_profile(version=4, current_version=4))
+    )
+    response = operator_client.post(APPLY, {"confirm_token": stale, "idempotency_key": "k2"})
+    assert response.status_code == 302
+    assert response["Location"] == DETAIL
+    assert calls(engine, "PUT")
+    shown = flashes(response)
+    assert shown == ["Saved — version 4"]
+    assert not any("stale" in m for m in shown)
+
+
 def test_apply_anyway_with_an_expired_token_makes_no_call(
     operator_client: Client, engine: FakeEngine
 ) -> None:
@@ -739,6 +853,32 @@ def test_copy_sends_the_viewed_version_and_lands_on_the_copy(
     assert dict(sent.url.params) == {"version": "2"}
     assert body_of(sent) == {"name": "Mine", "owner": "bob"}
     assert flashes(response) == [f"Copied Lite-short v2 to Mine ({copy_id}), version 1"]
+
+
+def test_copy_flashes_the_copys_warnings(operator_client: Client, engine: FakeEngine) -> None:
+    copy_id = "01JPRF00000000000000000009"
+    engine.respond(
+        "POST", COPY, 201, json=written(id=copy_id, name="Mine", warnings=[low_cap_warning()])
+    )
+    response = operator_client.post(
+        f"/profiles/{OTHER}/copy/?version=2",
+        {"name": "Mine", "owner": "bob", "source_name": "Lite-short"},
+    )
+    assert response.status_code == 302
+    assert flashes(response) == [
+        f"Copied Lite-short v2 to Mine ({copy_id}), version 1 Warnings: {LOW_CAP_TEXT}"
+    ]
+
+
+def test_a_copy_without_warnings_has_no_suffix(operator_client: Client, engine: FakeEngine) -> None:
+    copy_id = "01JPRF00000000000000000009"
+    engine.respond("POST", COPY, 201, json=written(id=copy_id, name="Mine", warnings=[]))
+    response = operator_client.post(
+        f"/profiles/{OTHER}/copy/?version=2",
+        {"name": "Mine", "owner": "bob", "source_name": "Lite-short"},
+    )
+    assert response.status_code == 302
+    assert "Warnings:" not in " ".join(flashes(response))
     row = EngineOperation.objects.get(kind="copy_engine_profile")
     assert (row.entity_type, row.entity_id) == ("engine_profile", copy_id)
 

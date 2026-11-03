@@ -20,9 +20,15 @@ The page facts (the loaded version, name and settings, the deployment's ``profil
 default profile id, the schema's digest) travel signed (#64 convention 3's helper), so an
 invalid form, an unchanged one and a stale schema make no Engine call. Invalid validation
 blocks Save with zero writes; warnings alone never block.
+
+#234: a flash's warnings come from the write's own answer (``ProfileWritten.warnings`` on a create
+or copy, ``impact.budget_warnings`` on an applied edit), never from the earlier validate call,
+which only places its warnings on the form's fields. A held edit's impact page shows the
+answer's ``budget_warnings`` through the impact report alone; "Apply anyway" names them once, in
+an info flash after the success flash.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 from urllib.parse import urlencode
@@ -47,6 +53,7 @@ from console.engine.models import (
     ProfileEdit,
     ProfileSchema,
     ProfileValidation,
+    ProfileValidationWarning,
 )
 from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
@@ -58,7 +65,7 @@ from console.forms.profile_schema_form import (
     PlacedStories,
     schema_digest,
     validation_banner,
-    warning_text,
+    warning_flash_text,
 )
 from console.forms.profiles import (
     ProfileCopyForm,
@@ -280,10 +287,13 @@ def _validate(
     return result
 
 
-def _warning_suffix(result: ProfileValidation | None) -> str:
-    if result is None or not result.warnings:
-        return ""
-    return " Warnings: " + "; ".join(warning_text(w) for w in result.warnings)
+def _warning_texts(warnings: Sequence[ProfileValidationWarning]) -> str:
+    return "; ".join(warning_flash_text(w) for w in warnings)
+
+
+def _warning_suffix(warnings: Sequence[ProfileValidationWarning]) -> str:
+    """ " Warnings: <t1>; <t2>" for a write answer's warnings, as given; "" for none."""
+    return " Warnings: " + _warning_texts(warnings) if warnings else ""
 
 
 # --- create ---------------------------------------------------------------------------------------
@@ -356,7 +366,7 @@ def profile_new(request: HttpRequest) -> HttpResponse:
     messages.success(
         request,
         f"Created {created.name} ({created.id}), version {created.current_version}"
-        + _warning_suffix(result),
+        + _warning_suffix(created.warnings),
     )
     return redirect(detail_url(created.id))
 
@@ -475,7 +485,6 @@ def profile_edit(request: HttpRequest, profile_id: str) -> HttpResponse:
         shown,
         ignore_warnings=False,
         key=posted_idempotency_key(request),
-        validation=result,
     )
 
 
@@ -517,9 +526,12 @@ def _put(
     *,
     ignore_warnings: bool,
     key: str,
-    validation: ProfileValidation | None,
     data: Mapping[str, list[str]] | None = None,
+    warn_in_flash: bool = True,
 ) -> HttpResponse:
+    """``PUT`` the form's edit. Applied: the success flash, with the answer's
+    ``impact.budget_warnings`` as its suffix, or (``warn_in_flash`` False, "Apply anyway") as an
+    info flash after it. Held: the impact page with a signed "Apply anyway" payload."""
     name, settings = form.cleaned_data["name"], form.settings()
     try:
         edit = client.update_engine_profile(
@@ -536,7 +548,11 @@ def _put(
         _write_refused(exc, form, shown)
         return _render(request, facts, form, _with_labels(client, shown))
     if edit.applied:
-        messages.success(request, _applied_text(edit, facts, name) + _warning_suffix(validation))
+        warnings = edit.impact.budget_warnings
+        suffix = _warning_suffix(warnings) if warn_in_flash else ""
+        messages.success(request, _applied_text(edit, facts, name) + suffix)
+        if not warn_in_flash and warnings:
+            messages.info(request, "Warnings: " + _warning_texts(warnings))
         return redirect(detail_url(facts.profile_id))
     token = twostage.sign(
         APPLY_KIND,
@@ -545,14 +561,9 @@ def _put(
         {
             "facts": facts.signed(),
             "data": dict(data) if data is not None else _posted_data(request),
-            "warnings": [warning_text(w) for w in validation.warnings] if validation else [],
         },
     )
-    return _impact_page(request, client, facts, edit.impact, token, _validation_texts(validation))
-
-
-def _validation_texts(validation: ProfileValidation | None) -> list[str]:
-    return [warning_text(w) for w in validation.warnings] if validation else []
+    return _impact_page(request, client, facts, edit.impact, token)
 
 
 def _applied_text(edit: ProfileEdit, facts: FormFacts, name: str) -> str:
@@ -582,7 +593,6 @@ def _impact_page(
     facts: FormFacts,
     impact: ImpactReport,
     token: str,
-    warnings: list[str],
 ) -> HttpResponse:
     ids = [s.story_id for s in impact.affected_stories]
     context = {
@@ -597,7 +607,6 @@ def _impact_page(
         "cancel_url": edit_url(facts.profile_id),
         "show_apply": True,
         "idempotency_key": new_ulid(),  # the confirming POST's own key (#64 convention 3)
-        "validation_warnings": warnings,
         "upgrade_unavailable_text": UPGRADE_UNAVAILABLE,
     }
     return render(request, "console/profiles/impact.html", context)
@@ -634,9 +643,8 @@ def profile_apply(request: HttpRequest, profile_id: str) -> HttpResponse:
     stale = _version_check(request, client, facts, form, shown)
     if stale is not None:
         return stale
-    warnings = base.get("warnings")
-    shown_warnings = [str(w) for w in warnings] if isinstance(warnings, list) else []
-    response = _put(
+    # A payload signed before #234 may carry a "warnings" list: ignored, never read.
+    return _put(
         request,
         client,
         facts,
@@ -644,12 +652,9 @@ def profile_apply(request: HttpRequest, profile_id: str) -> HttpResponse:
         shown,
         ignore_warnings=True,
         key=posted_idempotency_key(request),
-        validation=None,
         data={str(k): list(v) for k, v in raw_data.items() if isinstance(v, list)},
+        warn_in_flash=False,
     )
-    if shown_warnings and response.status_code == 302:
-        messages.info(request, "Warnings: " + "; ".join(shown_warnings))
-    return response
 
 
 # --- copy -----------------------------------------------------------------------------------------
@@ -704,7 +709,7 @@ def profile_copy(request: HttpRequest, profile_id: str) -> HttpResponse:
     messages.success(
         request,
         f"Copied {source} v{version} to {copied.name} ({copied.id}), "
-        f"version {copied.current_version}",
+        f"version {copied.current_version}" + _warning_suffix(copied.warnings),
     )
     return redirect(detail_url(copied.id))
 

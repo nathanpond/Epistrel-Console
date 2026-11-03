@@ -3,14 +3,8 @@
 **The read.** :func:`read_turn_trace` makes one ``GET /operations/{id}?viewpoint=omniscient``:
 the Engine returns ``eval_hooks`` and the read set's ``keys`` to an omniscient read only.
 
-**The Engine quirk** (``core/operation_view.read_operation``): a turn produced for another
-output viewpoint keeps its stored result for the idempotency result window (the deployment
-setting ``idempotency_result_window``, hours, from about ``committed_at``), and inside it any
-*named* viewpoint but the turn's own is 409 ``idempotency_conflict``. A read naming **no**
-viewpoint never is: it answers the counts-only read set and the operation's own ``viewpoint``.
-On that 409 the Console makes that one read and reports ``withheld_for`` (the turn's
-viewpoint); it never sends a character viewpoint (#135 convention 1). Filed upstream as
-nathanpond/Epistrel#534: when it ships, the withheld path is dead code to remove.
+Since Engine #534 an omniscient read gets ``eval_hooks`` and ``read_set.keys`` whatever the
+turn's output viewpoint (with ``result`` null); any error raises.
 
 **The view.** :func:`trace_view` derives what ``templates/console/_turn_trace.html`` shows:
 latency in the Engine's ``STAGES`` order (unknown stages after, as received), model calls in the
@@ -21,12 +15,11 @@ parts (#135 conventions 12, 13).
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from django.urls import NoReverseMatch, reverse
 
-from console.engine.client import EngineClient, EngineClientError, EngineError
+from console.engine.client import EngineClient
 from console.engine.models import (
     EvalHooks,
     OperationRecord,
@@ -40,8 +33,6 @@ from console.inspect import Tab
 from console.retrieval import humanised
 
 OMNISCIENT = "omniscient"
-IDEMPOTENCY_CONFLICT = "idempotency_conflict"
-DEFAULT_WINDOW_HOURS = 24  # the Engine's default ``idempotency_result_window``
 TURN_KIND = "turn"
 COMMITTED = "committed"
 
@@ -69,7 +60,6 @@ INLINE_JSON_MAX = 80
 HASH_SHOWN = 12
 CANON = "canon"
 HOLDER_PREFIXES = ("utterance", "belief")  # ``<prefix>:<character id>``
-CHARACTER_PREFIX = "character:"
 
 
 # --- the read -----------------------------------------------------------------------------------
@@ -77,55 +67,18 @@ CHARACTER_PREFIX = "character:"
 
 @dataclass(frozen=True)
 class TurnTrace:
-    """What one turn's trace read found: the record actually read (the fallback's when the
-    omniscient read was refused), its parsed hooks and read set, and the turn's own viewpoint
-    when the Engine withheld the hooks (``None`` otherwise)."""
+    """What one turn's trace read found: the record read, its parsed hooks and read set."""
 
     operation: OperationRecord
     eval_hooks: EvalHooks | None
     read_set: ReadSet | None
-    withheld_for: str | None
-
-
-def is_withheld(exc: EngineClientError) -> bool:
-    """The 409 ``idempotency_conflict`` an omniscient read of another viewpoint's turn gets."""
-    return (
-        isinstance(exc, EngineError) and exc.http_status == 409 and exc.code == IDEMPOTENCY_CONFLICT
-    )
 
 
 def read_turn_trace(client: EngineClient, engine_operation_id: str) -> TurnTrace:
-    """One omniscient read; on 409 ``idempotency_conflict`` exactly one more read naming no
-    viewpoint. Any other error, or the fallback's, raises :class:`EngineClientError`."""
-    try:
-        record = client.get_operation(engine_operation_id, viewpoint=OMNISCIENT)
-    except EngineClientError as exc:
-        if not is_withheld(exc):
-            raise
-        record = client.get_operation(engine_operation_id, viewpoint=None)
-        return TurnTrace(record, None, ReadSet.parse(record.read_set), record.viewpoint or "")
-    return TurnTrace(
-        record, EvalHooks.parse(record.eval_hooks), ReadSet.parse(record.read_set), None
-    )
-
-
-def _moment(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        moment = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
-
-
-def hooks_unavailable_until(trace: TurnTrace, window_hours: int) -> datetime | None:
-    """When the Engine should stop refusing the omniscient read: ``(committed_at or
-    started_at) + window_hours``; ``None`` when neither time parses. An estimate: the window
-    runs from when the result was stored, about ``committed_at``."""
-    record = trace.operation
-    start = _moment(record.committed_at) or _moment(record.started_at)
-    return start + timedelta(hours=window_hours) if start is not None else None
+    """One omniscient read (Engine #534: it gets the hooks whatever the turn's viewpoint). Any
+    error raises :class:`console.engine.client.EngineClientError`."""
+    record = client.get_operation(engine_operation_id, viewpoint=OMNISCIENT)
+    return TurnTrace(record, EvalHooks.parse(record.eval_hooks), ReadSet.parse(record.read_set))
 
 
 # --- what the partial shows ---------------------------------------------------------------------
@@ -446,38 +399,4 @@ def trace_view(story_id: str, trace: TurnTrace) -> TraceView:
         hooks_view(hooks) if hooks is not None else None,
         read_set_view(story_id, read_set) if read_set is not None else None,
         more_parts(hooks, read_set),
-    )
-
-
-# --- the withheld note --------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Withheld:
-    """The note shown in place of the hooks when the Engine refused the omniscient read.
-
-    ``viewpoint`` is the turn's own: ``omniscient`` verbatim, else ``character_id`` set for a
-    ``character:<id>`` one (shown as "character " + the id), else the raw value. ``until`` is
-    :func:`hooks_unavailable_until`; ``passed`` when the page's now is at or after it."""
-
-    viewpoint: str
-    character_id: str | None
-    until: datetime | None
-    passed: bool
-    assumed_default: bool  # the deployment settings were unreadable: 24 h assumed
-
-
-def withheld(trace: TurnTrace, window_hours: int | None, now: datetime) -> Withheld:
-    viewpoint = trace.withheld_for or ""
-    character = (
-        viewpoint.removeprefix(CHARACTER_PREFIX) if viewpoint.startswith(CHARACTER_PREFIX) else None
-    )
-    hours = DEFAULT_WINDOW_HOURS if window_hours is None else window_hours
-    until = hooks_unavailable_until(trace, hours)
-    return Withheld(
-        viewpoint,
-        character or None,
-        until,
-        until is not None and now >= until,
-        window_hours is None,
     )

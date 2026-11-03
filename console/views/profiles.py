@@ -62,9 +62,13 @@ def detail_url(profile_id: str, version: int | None = None) -> str:
     return f"{url}?{urlencode({VERSION_PARAM: version})}" if version is not None else url
 
 
-def stories_url(profile_id: str) -> str:
-    """``/stories/?profile=<id>``: the stories running under the profile (any version)."""
-    return f"{reverse('stories:list')}?{urlencode({'profile': profile_id})}"
+def stories_url(profile_id: str, version: int | None = None) -> str:
+    """``/stories/?profile=<id>``: the stories the Engine lists under the profile, at any
+    version, or (``&version=<n>``) on that version only."""
+    query: dict[str, str | int] = {"profile": profile_id}
+    if version is not None:
+        query[VERSION_PARAM] = version
+    return f"{reverse('stories:list')}?{urlencode(query)}"
 
 
 def _positive(raw: str | None) -> int | None:
@@ -203,6 +207,10 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
             f"{urlencode({VIEWED_PARAM: profile.version})}"
         ),
         "stories_url": stories_url(profile.id),
+        # #238: the viewed version's stories, only where a valid ?version= chose one.
+        "version_stories_url": (
+            stories_url(profile.id, profile.version) if version is not None else None
+        ),
         # #84: Edit (the latest version), Copy (the version viewed) and Delete.
         "edit_url": reverse("profiles:edit", args=[profile.id]),
         "copy_url": (

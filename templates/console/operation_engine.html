@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load console_format principals %}
+{# #250: operations:engine, the Engine's record of one operation (GET /operations/{id}, no viewpoint, never recorded) and this Console's log rows for it. The frame (heading, scope line, log links) renders on every Engine error; a malformed id renders only the heading, scope line and "Not found". #}
+{% block title %}Engine operation {% if malformed %}{{ raw_id }}{% else %}{{ operation_id }}{% endif %} — Epistrel Console{% endblock %}
+{% block heading %}Engine operation <code>{% if malformed %}{{ raw_id }}{% else %}{{ operation_id }}{% endif %}</code>{% endblock %}
+{% block content %}
+<p class="scope">{{ scope }}</p>
+{% if malformed %}
+<p class="not-found">{{ not_an_id }}</p>
+{% else %}
+<h2>Engine's view</h2>
+{% if not_found %}
+<p class="not-found">The Engine has no operation {{ operation_id }}</p>
+{% elif held %}
+{% include "console/stories/_held.html" with held_text=held.held_text retry_url=held.retry_url delete_url=held.delete_url ledger_url=held.ledger_url %}
+{% elif engine_error %}
+{% include "console/_engine_error.html" %}
+{% elif record %}
+<section class="engine-operation">
+  <dl>
+    <dt>Status</dt><dd><span title="{{ record.status }}">{{ status_text }}</span></dd>
+    <dt>Kind</dt><dd><code>{{ record.kind }}</code></dd>
+    <dt>Story</dt><dd>{% if record.story_id %}<a href="{% url 'stories:detail' record.story_id %}"><code>{{ record.story_id }}</code></a>{% else %}—{% endif %}</dd>
+    <dt>Turn</dt><dd>{% if record.narrative_turn is not None %}{% if turn_url %}<a class="turn-link" href="{{ turn_url }}">{% endif %}Turn {{ record.narrative_turn }} · variant {{ record.turn_variant|default_if_none:"—" }}{% if turn_url %}</a>{% endif %}{% else %}—{% endif %}</dd>
+    <dt>Timeline revision</dt><dd>{{ record.timeline_revision|default_if_none:"—" }}</dd>
+    <dt>Principal</dt><dd>{{ record.principal|principal_link }}</dd>
+    <dt>Origin</dt><dd>{% if record.origin %}<span title="{{ record.origin }}">{{ origin_text }}</span>{% else %}—{% endif %}</dd>
+    <dt>Started</dt><dd>{{ record.started_at|engine_time }}</dd>
+    <dt>Committed</dt><dd>{{ record.committed_at|engine_time }}</dd>
+  </dl>
+  {% include "console/_engine_operation_stages.html" with record=record stages=stages %}
+</section>
+{% endif %}
+<section class="console-log">
+  <h2>This Console's log</h2>
+  {% if log_rows %}
+  <ul>{% for row in log_rows %}<li><a class="log-link" href="{% url 'operations:detail' row.pk %}"><code>{{ row.kind }}</code> · {{ row.created_at|engine_time }}</a></li>{% endfor %}</ul>
+  {% else %}<p class="no-log-entry">{{ no_log_entry }}</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

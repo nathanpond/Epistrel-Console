@@ -11,6 +11,7 @@ from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
 from console.ids import new_ulid
+from console.operation_log import engine_label_text
 from console.renders import WarningLine, warning_lines
 from console.wording import humanised
 
@@ -96,6 +97,13 @@ def humanised_filter(value: Any) -> str:
     if value is None or value == "":
         return EMPTY
     return humanised(str(value))
+
+
+@register.filter
+def engine_label(value: Any) -> str:
+    """A stored ``EngineOperation.engine_label`` as shown (#257): "Staged turn" (D13), another
+    label humanised (C3), "" for none; templates add the separator, "—" and the raw ``title``."""
+    return engine_label_text(value if isinstance(value, str) else None)
 
 
 @register.filter

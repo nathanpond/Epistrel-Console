@@ -1,0 +1,271 @@
+{
+  "id": "01JC000000000000000000SCN2",
+  "status": "published",
+  "listing_status": "public",
+  "owner_principal": "console:nate",
+  "version": 2,
+  "current_version": 2,
+  "draft_revision": null,
+  "created_at": "2026-10-01T09:00:00.000000Z",
+  "updated_at": "2026-10-20T10:00:00.000000Z",
+  "published_at": "2026-10-20T10:00:00.000000Z",
+  "companion_of": null,
+  "pinned_character_version": null,
+  "schema_version": 1,
+  "public_card": {
+    "name": "Harvest Weekend",
+    "public_description": "The whole family is home for the weekend.",
+    "media": {
+      "cover": null,
+      "gallery": [],
+      "videos": []
+    }
+  },
+  "metadata": {
+    "labels": [
+      "family",
+      "drama"
+    ],
+    "content_rating_id": "00000000000000000000RAT002"
+  },
+  "world": {
+    "description": "A farmhouse outside a small river town.",
+    "locations": [
+      {
+        "id": "farmhouse",
+        "name": "The farmhouse",
+        "description": "Where everyone sleeps.",
+        "adjacent_to": [
+          {
+            "location": "barn",
+            "barrier": "door_closed"
+          }
+        ]
+      },
+      {
+        "id": "barn",
+        "name": "The barn",
+        "located_in": "farmhouse"
+      }
+    ],
+    "entities": [
+      {
+        "id": "tractor",
+        "name": "Old Red",
+        "kind": "item",
+        "aliases": [
+          "the tractor"
+        ],
+        "description": "The tractor that never starts."
+      },
+      {
+        "id": "town",
+        "name": "Riverbend"
+      }
+    ],
+    "event_types": [
+      "harvest",
+      "supper"
+    ]
+  },
+  "cast": {
+    "max_characters_at_start": 6,
+    "roles": [
+      {
+        "id": "guard",
+        "public_label": "Guard",
+        "setup_description": "The guard.",
+        "kind": "npc",
+        "fill": "locked",
+        "required": true,
+        "character": {
+          "catalog_id": "01JC00000000000000000CHAR1",
+          "version": 2
+        }
+      },
+      {
+        "id": "traveller",
+        "public_label": "Traveller",
+        "setup_description": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "kind": "npc",
+        "fill": "open",
+        "required": true,
+        "eligibility": {
+          "labels": [
+            "human"
+          ],
+          "content_ratings": [
+            "00000000000000000000RAT002"
+          ],
+          "age_range": [
+            18,
+            null
+          ]
+        }
+      },
+      {
+        "id": "elder",
+        "public_label": "Elder",
+        "setup_description": "The elder.",
+        "kind": "npc",
+        "fill": "default",
+        "required": true,
+        "character": {
+          "catalog_id": "01JC00000000000000000CHAR2",
+          "version": null
+        }
+      },
+      {
+        "id": "extra",
+        "public_label": "Extra",
+        "setup_description": "The extra.",
+        "kind": "npc",
+        "fill": "open",
+        "required": false
+      },
+      {
+        "id": "hero",
+        "public_label": "Hero",
+        "setup_description": "The hero.",
+        "kind": "player",
+        "fill": "open",
+        "required": true
+      },
+      {
+        "id": "sidekick",
+        "public_label": "Sidekick",
+        "setup_description": "The sidekick.",
+        "kind": "player",
+        "fill": "open",
+        "required": false
+      }
+    ]
+  },
+  "starting_state": {
+    "opening": {
+      "narration": "Dawn over the fields.",
+      "starting_location": "farmhouse",
+      "roles_present": [
+        "mother"
+      ]
+    },
+    "seeded_memories": [
+      {
+        "text": "The harvest is late this year.",
+        "holder": "world"
+      }
+    ],
+    "states": [
+      {
+        "name": "weather",
+        "type": "enum",
+        "constraints": {
+          "allowed_values": [
+            "rain",
+            "sun"
+          ]
+        },
+        "initial_value": "rain"
+      },
+      {
+        "name": "stock_level",
+        "type": "number",
+        "owner": "external",
+        "provider_id": "shop",
+        "external_value_name": "stock"
+      }
+    ],
+    "clock": {
+      "anchor": {
+        "time": "06:00"
+      }
+    },
+    "scheduled_events": [],
+    "predicates": [],
+    "closed_sets": [],
+    "rules": [],
+    "channels": [
+      {
+        "id": "phone",
+        "participants": [
+          "mother",
+          "son"
+        ]
+      }
+    ]
+  },
+  "drivers": {
+    "director_guidance": "Keep it warm.",
+    "plot_hooks": [
+      "A letter arrives."
+    ],
+    "objectives": [
+      "Bring the harvest in."
+    ],
+    "milestones": [],
+    "endings": [
+      "Everyone stays for supper."
+    ],
+    "planned_reveals": [
+      {
+        "truth": {
+          "text": "The farm is for sale."
+        },
+        "allowed_roles": [
+          "mother"
+        ]
+      }
+    ]
+  },
+  "story_settings_defaults": {
+    "allow_new_arrivals": true,
+    "interaction_mode": "sequential",
+    "player_authority": null,
+    "turn_concurrency": null,
+    "ambiguous_retcon_timing": null,
+    "backfill_conflict_policy": null,
+    "audit_retention_days": 30,
+    "default_output_viewpoint": null,
+    "policies": [
+      {
+        "name": "No swearing",
+        "rule": {
+          "type": "wordlist",
+          "words": [
+            "darn"
+          ]
+        },
+        "message": "Keep it clean.",
+        "applies_to": [
+          "text_output"
+        ],
+        "age_condition": "minor_involved_or_present"
+      }
+    ],
+    "required_providers": [
+      "bank"
+    ]
+  },
+  "recommendation": {
+    "engine_profile_id": "lite-default",
+    "capabilities": [
+      "memory"
+    ]
+  },
+  "visual_style": {
+    "prompt": "Warm watercolour",
+    "negative_prompt": null
+  },
+  "creation_rules": {
+    "overridable": [
+      "story_settings_defaults.interaction_mode",
+      "story_settings_defaults.allow_new_arrivals",
+      "story_settings_defaults.audit_retention_days",
+      "story_settings_defaults.policies",
+      "cast.max_characters_at_start"
+    ],
+    "bounds": {
+      "audit_retention_days": 90
+    }
+  }
+}

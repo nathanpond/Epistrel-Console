@@ -8,7 +8,8 @@ index) swap it with its neighbour (#54's pinned memories). The view re-binds the
 A page with several formsets (#68's scenario editor; #64 convention 6) uses one ``op`` button
 name instead: ``op=add:<prefix>``, ``op=remove:<prefix>-<n>`` and ``op=refresh`` ("Update
 form": re-render from the posted state). :func:`parse_op` reads it and :func:`apply_op` edits
-the named formset's rows the same way.
+the named formset's rows the same way; ``op=up:<prefix>-<n>`` / ``op=down:<prefix>-<n>``
+(#267's States rows) move a row.
 """
 
 from collections.abc import Mapping, Sequence
@@ -95,12 +96,16 @@ OP = "op"
 OP_ADD = "add"
 OP_REMOVE = "remove"
 OP_REFRESH = "refresh"
+OP_UP = "up"
+OP_DOWN = "down"
+OP_INDEXED = (OP_REMOVE, OP_UP, OP_DOWN)
 
 
 @dataclass(frozen=True)
 class Op:
     """A posted ``op`` button: ``kind`` (``add``, ``remove``, ``refresh`` or any other value, such
-    as ``save``), the formset ``prefix`` it names and the row ``index`` (``remove`` only)."""
+    as ``save``), the formset ``prefix`` it names and the row ``index`` (``remove``, ``up`` and
+    ``down``)."""
 
     kind: str
     prefix: str = ""
@@ -108,7 +113,7 @@ class Op:
 
     @property
     def edits_rows(self) -> bool:
-        return self.kind in (OP_ADD, OP_REMOVE, OP_REFRESH)
+        return self.kind in (OP_ADD, OP_REFRESH, *OP_INDEXED)
 
 
 def parse_op(value: str | None, default: str = "save") -> Op:
@@ -117,12 +122,12 @@ def parse_op(value: str | None, default: str = "save") -> Op:
     kind, _, target = value.partition(":")
     if kind == OP_ADD and target:
         return Op(OP_ADD, target)
-    if kind == OP_REMOVE and target:
+    if kind in OP_INDEXED and target:
         prefix, _, index = target.rpartition("-")
         if prefix and index.isdecimal():
-            return Op(OP_REMOVE, prefix, int(index))
-        return Op(OP_REFRESH)  # a malformed remove changes nothing
-    if kind in (OP_ADD, OP_REMOVE):
+            return Op(kind, prefix, int(index))
+        return Op(OP_REFRESH)  # a malformed remove or move changes nothing
+    if kind in (OP_ADD, *OP_INDEXED):
         return Op(OP_REFRESH)
     return Op(kind)
 
@@ -138,13 +143,13 @@ def apply_op(
     names (at most ``max_rows[prefix]`` rows; none is kept), or unchanged for ``refresh`` or an
     unknown prefix. The ``op`` key itself is dropped."""
     edited: QueryDict
-    if op.prefix in max_rows and op.kind in (OP_ADD, OP_REMOVE):
+    if op.prefix in max_rows and op.kind in (OP_ADD, *OP_INDEXED):
         request = data.copy()
         request.pop(OP, None)
         if op.kind == OP_ADD:
             request[ADD] = "1"
         else:
-            request[REMOVE] = str(op.index)
+            request[{OP_REMOVE: REMOVE, OP_UP: UP, OP_DOWN: DOWN}[op.kind]] = str(op.index)
         edited = edit_rows(
             request,
             op.prefix,

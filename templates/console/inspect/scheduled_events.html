@@ -1,0 +1,44 @@
+{% extends "console/inspect/world.html" %}{% load inspect_tags console_format world_tags %}
+{% comment %}
+The World tab's Scheduled events section (#244, console/views/inspect_scheduled_events.py): the
+viewpoint form (D4), then one GET /stories/{id}/scheduled-events read: the viewpoint line (and the
+partitions note), the clock's "Now" and stops lines (or "Couldn't read the clock"), the clock-off
+line, the count line, the unparsed notice and the rows (_scheduled_event_row.html, Engine order).
+The form stays above every error (convention 10). Context: form, cast_unavailable, actions,
+actions_template (#262), new_url and new_gate (#253's New link, greyed by D1's clock
+gate), events, viewpoint_line, partitions_note, clock, clock_unread, stops,
+off_line, count, rows, rejected, unparsed_text, empty, not_found, events_error.
+{% endcomment %}
+{% block world_content %}
+<p class="events-new">{% if new_gate %}<span class="disabled events-new-link" aria-disabled="true"{{ new_gate|gate_attrs:"gate-event-new" }}>New scheduled event</span> {% include "console/_gated_control.html" with gate=new_gate gate_id="gate-event-new" %}{% else %}<a class="events-new-link" href="{{ new_url }}">New scheduled event</a>{% endif %}</p>
+{% if cast_unavailable %}<p class="notice cast-unavailable">{{ cast_unavailable }}</p>{% endif %}
+{% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+<form method="get" id="events-viewpoint">
+  <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{{ form.viewpoint.errors }}</div>
+  <button type="submit">Apply</button>
+</form>
+
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif events_error %}{% include "console/_engine_error.html" with engine_error=events_error %}
+{% elif events %}
+<p class="viewpoint-line">{{ viewpoint_line }}</p>
+{% if partitions_note %}<p class="notice events-partitions">{{ partitions_note|code_spans }}</p>{% endif %}
+{% if clock %}<p class="events-now">Now: {{ clock|clock_value }}</p>
+{% if stops %}<p class="events-stops">{{ stops.text|code_spans }}{% if stops.link_text %}{% if stops.url %}<a href="{{ stops.url }}">{{ stops.link_text }}</a>{% else %}{{ stops.link_text }}{% endif %}{{ stops.tail }}{% endif %}</p>{% endif %}
+{% else %}<p class="notice events-clock-unread">{{ clock_unread }}</p>
+{% endif %}
+{% if off_line %}<p class="notice events-clock-off">{{ off_line|code_spans }}</p>{% endif %}
+<p class="events-count">{{ count }}</p>
+{% if empty %}<p class="none events-none">{{ empty }}</p>{% endif %}
+{% if unparsed_text %}<div class="notice events-unparsed"><p>{{ unparsed_text }}</p><details><summary>More</summary>{% for entry in rejected %}<pre class="raw-item">{{ entry|pretty_json }}</pre>{% endfor %}</details></div>{% endif %}
+{% if rows %}
+<table class="scheduled-events">
+  {% include "console/inspect/_scheduled_event_head.html" %}
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_scheduled_event_row.html" %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}

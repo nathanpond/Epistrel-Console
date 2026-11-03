@@ -156,6 +156,11 @@ def complete_queued(engine_operation_id: str, op: OperationRecord) -> int:
     return operation_log.complete_queued(engine_operation_id, op)
 
 
+def note_engine_record(record: OperationRecord) -> int:
+    """Label the operation log's rows for ``record.id`` with the Engine's label (#257)."""
+    return operation_log.note_engine_record(record)
+
+
 def complete_job(
     job_id: str,
     outcome: str,
