@@ -3026,3 +3026,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The `test_scenarios_edit.py` cases that used the clock and events boxes now use the calendar box and `starting_state__predicates`. The header test checks the new legends. `test_clearing_the_clock_sends_null` clears the base fixture's only clock member (the anchor's time). The Opening-before-Deferred order check now includes `f-starting_state-clock`. The detail-page test that checked "Deferred" now checks "Rules and declarations".
   **Why:** The test plan names these updates.
   **Issue:** #268
+- **Decision:** (Rule 3) Raised the CI `test` job's `timeout-minutes` from 25 to 45.
+  **Why:** On milestone PR #275 the job was cancelled by its own 25-minute timeout at 81% (00:12:36 → 00:37:56). M6 grew the suite from about 5,640 to 7,572 tests, so a full run on a hosted runner now takes about 30 minutes. A re-run would have hit the same limit. M5 set the earlier 15 → 25 precedent.
+  **Issue:** M6 milestone PR #275
