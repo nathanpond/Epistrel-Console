@@ -403,6 +403,12 @@ def stored_groups(doc: Mapping[str, Any]) -> dict[str, list[str]]:
     }
 
 
+def split_audience(text: str) -> list[str]:
+    """ "self, public" → ``["self", "public"]``: an "Other audience" box (trimmed, blanks
+    dropped, each once); #268's scheduled events reuse it."""
+    return list(dict.fromkeys(t.strip() for t in text.split(",") if t.strip()))
+
+
 def offered_groups(names: Iterable[str], role_ids: Iterable[str]) -> list[str]:
     """The group names a seed's audience offers (#206): each non-blank trimmed name once, in
     row order, except one equal to a role id, ``world`` or an audience level (its row carries
@@ -821,8 +827,7 @@ class SeedForm(_RowForm):
         return posted if posted in self.original_ids else NEW_SEED
 
     def clean_audience_other(self) -> list[str]:
-        text: str = self.cleaned_data.get("audience_other") or ""
-        return list(dict.fromkeys(t.strip() for t in text.split(",") if t.strip()))
+        return split_audience(self.cleaned_data.get("audience_other") or "")
 
     def clean(self) -> dict[str, Any] | None:
         data = super().clean() or {}

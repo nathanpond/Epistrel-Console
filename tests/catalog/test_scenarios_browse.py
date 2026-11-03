@@ -194,8 +194,10 @@ def test_the_detail_shows_every_section(operator_client: Client, engine: FakeEng
     assert "Lite default" in page  # the profile's name
     assert 'href="/guardrails/ratings/00000000000000000000RAT002/">Teen</a>' in html
     assert "Only when a minor is involved or present" in page
-    assert "Stored by Lite but not used until a later Engine milestone" in page
-    assert '<details class="deferred">' in html
+    # #268: "Deferred" is "Rules and declarations", its three values shown as they are.
+    assert "Stored by Lite but not used until a later Engine milestone" not in page
+    assert "<h2>Rules and declarations</h2>" in html
+    assert '<dl class="deferred">' in html
     # The latest view reads the draft too (identical here: no note).
     reads = [dict(r.url.params) for r in calls(engine, "GET", ITEM_PATH)]
     assert reads == [{"projection": "full"}, {"projection": "full", "draft": "true"}]
@@ -652,3 +654,119 @@ def test_the_state_table_lines() -> None:
         "door_open: true (not a per-character State)",
         "gold: 1,200 gold",
     ]
+
+
+# --- #268: the starting clock and the scheduled events -------------------------------------------
+
+
+def clock_detail(**changes: Any) -> dict[str, Any]:
+    body = fixture("draft_clock", **changes)
+    body["starting_state"]["scheduled_events"][0]["participants"].append("ghost")
+    return body
+
+
+def section_of(html: str, section_id: str) -> str:
+    section = html[html.index(f'<section id="{section_id}">') :]
+    return section[: section.index("</section>")]
+
+
+def test_the_detail_page_shows_the_clock_and_events(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    engine.respond("GET", S_ITEM, 200, json=clock_detail())
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    html = detail_page(operator_client, engine)
+    clock = section_of(html, "clock")
+    page = text(clock)
+    assert "Anchor year 2026 · month 3 · day 14 · Saturday · 06:00 · band morning" in page
+    assert '<dd class="mode" title="manual">Manual</dd>' in clock
+    assert '<dd class="time-awareness" title="approximate">Approximate</dd>' in clock
+    assert '<dd class="skip">90 min</dd>' in clock
+    assert '<dd class="stop">No</dd>' in clock
+    assert "<tr><td>50</td><td>no end</td><td>15</td></tr>" in clock
+    assert "<tr><td>night</td><td>00:00</td><td>06:00</td></tr>" in clock
+    assert "<summary>Custom calendar</summary>" in clock
+    assert "Moonday" in clock
+    events = section_of(html, "scheduled-events")
+    rows = re.findall(r'<tr class="event-row">(.*?)</tr>', events, flags=re.S)
+    assert [text(r) for r in rows] == [
+        "the dinner at 18:00 — world bob , alice , ghost (undeclared) "
+        "The farmhouse ( farmhouse ) — —",
+        "the letter arrives +02h 10m — alice — — alice, family (group) —",
+        "the heist at 02:10 bob — — — — Secret",
+    ]
+    assert '<td class="planned" title="130 min">+02h 10m</td>' in events
+    assert '<td class="planned">at 18:00</td>' in events
+    assert '<td class="disclosure" title="secret">Secret</td>' in events
+    # Order: after the States, before "Rules and declarations", which lists only the three.
+    assert html.index('<section id="states">') < html.index('<section id="clock">')
+    assert html.index('<section id="scheduled-events">') < html.index('<section id="deferred">')
+    deferred = section_of(html, "deferred")
+    assert re.findall(r"<dt>(.*?)</dt>", deferred) == ["Predicates", "Closed sets", "Rules"]
+    # Complement: the public card shows none of it.
+    engine.reset()
+    engine.respond("GET", S_ITEM, 200, json=card_of(clock_detail()))
+    html = detail_page(operator_client, engine, "?projection=card")
+    for marker in ('id="clock"', 'id="scheduled-events"', "Rules and declarations"):
+        assert marker not in html
+
+
+@pytest.mark.parametrize(
+    ("clock", "anchor", "mode"),
+    [
+        (None, None, None),
+        ({}, None, None),
+        ({"mode": "paced"}, "Unanchored (default)", '<dd class="mode" title="paced">Paced</dd>'),
+        ({"anchor": {}}, "Unanchored (default)", '<dd class="mode">Paced (default)</dd>'),
+    ],
+)
+def test_the_detail_page_reads_an_unset_clock(
+    operator_client: Client,
+    engine: FakeEngine,
+    clock: dict[str, Any] | None,
+    anchor: str | None,
+    mode: str | None,
+) -> None:
+    body = fixture("draft_clock")
+    body["starting_state"]["clock"] = clock
+    body["starting_state"]["scheduled_events"] = []
+    engine.respond("GET", S_ITEM, 200, json=body)
+    engine.respond("GET", C_ITEM, 200, json=character_card())
+    html = detail_page(operator_client, engine)
+    section = section_of(html, "clock")
+    if anchor is None:
+        assert "<p>—</p>" in section
+    else:
+        assert f'<dd class="anchor">{anchor}</dd>' in section
+        assert mode is not None
+        assert mode in section
+        assert '<dd class="skip">1,440 min (default)</dd>' in section
+        assert '<dd class="stop">Yes (default)</dd>' in section
+        assert '<dd class="time-awareness">Exact (default)</dd>' in section
+        assert '<dd class="calendar">Gregorian (default)</dd>' in section
+        assert text(section).count("Engine default") == 2
+    assert "<p>—</p>" in section_of(html, "scheduled-events")
+
+
+def test_the_clock_and_event_rows() -> None:
+    from console.catalog.cast_table import clock_view, event_rows
+    from console.engine.models import Scenario
+
+    body = fixture("draft_clock")
+    scenario = Scenario.from_json(body)
+    assert scenario is not None
+    view = clock_view({"max_unprompted_skip_minutes": 2000})
+    assert view is not None
+    assert view.skip == "2,000 min"
+    # Deliberately off-schema: a clock with an extra key and an event missing ``planned`` are
+    # shown raw.
+    raw = clock_view({"mode": "paced", "colour": "red"})
+    assert raw is not None
+    assert raw.clock is None
+    assert '"colour": "red"' in raw.raw
+    (broken,) = event_rows([{"proposition": "x"}], scenario)
+    assert broken.event is None
+    assert broken.raw == '{"proposition": "x"}'
+    (place,) = event_rows([{"proposition": "x", "planned": 0, "place": "cellar"}], scenario)
+    assert place.place is not None
+    assert place.place.name is None  # "cellar (undeclared)"

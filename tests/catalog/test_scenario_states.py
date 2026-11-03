@@ -622,11 +622,9 @@ def test_the_deferred_section_no_longer_has_a_states_box(
     section = html.index('id="f-starting_state-states"')
     settings = html.index('id="f-story_settings_defaults"')
     assert world_seeds < section < settings
-    (deferred,) = [names for title, _, names in SECTIONS if title == "Deferred"]
+    (deferred,) = [names for title, _, names in SECTIONS if title == "Rules and declarations"]
     assert list(deferred) == list(DEFERRED_BOXES)
-    assert list(DEFERRED_BOXES) == [
-        "starting_state__clock",
-        "starting_state__scheduled_events",
+    assert list(DEFERRED_BOXES) == [  # #268 moved the clock and the events out
         "starting_state__predicates",
         "starting_state__closed_sets",
         "starting_state__rules",

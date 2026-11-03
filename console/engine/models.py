@@ -4050,14 +4050,66 @@ class ScenarioState(Model):
 
 
 @dataclass(frozen=True)
+class ScenarioAnchor(Model):
+    """``ScenarioAnchor`` (#268's read-only view): what the author fixes of the absolute time at
+    the story's start, every part optional. Strict like the Engine's ``StartingObject``."""
+
+    STRICT: ClassVar[bool] = True
+
+    year: int | None = None
+    month: int | None = None
+    day: int | None = None
+    weekday: str | None = None
+    time: str | None = None
+    band: str | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioClock(Model):
+    """``ScenarioClock`` (#268's read-only view, read by the detail page; the editor's write path
+    keeps raw dicts): the starting clock's anchor and the settings genesis seeds. Strict: an
+    unknown key or a mistyped member fails to parse. Pacing rows are ``[from, to | null,
+    minutes]``, bands ``[name, from, to]``; the calendar is raw JSON."""
+
+    STRICT: ClassVar[bool] = True
+
+    anchor: ScenarioAnchor | None = None
+    mode: str | None = open_enum(default=None)
+    pacing_table: list[list[int | None]] | None = None
+    max_unprompted_skip_minutes: int | None = None
+    stop_at_due_events: bool | None = None
+    time_awareness: str | None = open_enum(default=None)
+    bands: list[list[str]] | None = None
+    calendar: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ScenarioScheduledEvent(Model):
+    """``ScenarioScheduledEvent`` (#268's read-only view): an event planned from the story's
+    start. ``planned`` is an offset in minutes or a time of day ``"HH:MM"``, kept as its JSON
+    type. Strict like :class:`ScenarioClock`."""
+
+    STRICT: ClassVar[bool] = True
+
+    proposition: str
+    planned: int | str
+    subject: str | None = None
+    participants: list[str] | None = None
+    place: str | None = None
+    owner: str | None = None
+    audience: list[str] | None = None
+    disclosure: str | None = open_enum(default=None)
+
+
+@dataclass(frozen=True)
 class StartingState(Model):
     """``ScenarioStartingState``: the opening, the world seeds (#73) and the sections Lite
     stores but does not use yet, raw.
 
     M6's ``states``, ``clock`` and ``scheduled_events`` (the schema's ``ScenarioState``,
     ``ScenarioClock`` and ``ScenarioScheduledEvent``) stay raw too (D15), so the scenario editor
-    round-trips them and the detail page shows them as JSON; #267 and #268 type their editor's
-    views."""
+    round-trips them; #267 and #268 type their read-only views (:class:`ScenarioState`,
+    :class:`ScenarioClock`, :class:`ScenarioScheduledEvent`), which the detail page reads."""
 
     opening: Opening = field(default_factory=Opening)
     seeded_memories: list[Seed] = field(default_factory=list)

@@ -3002,3 +3002,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The States section of the scenario detail page is its own partial, `_state_table.html`, included between Opening and Story-setting defaults. The plan named `detail.html`.
   **Why:** It keeps `detail.html` short and lets a unit test render the table with an off-schema entry, which the schema-validating fake Engine won't serve. It's a template split only; no behaviour changes.
   **Issue:** #267
+- **Decision:** A stored pacing or band row that isn't 3 cells wide is shown positionally with the note "This row has N cells; the Engine expects 3" (a hidden `cells` field on subclasses of #243's row forms, rendered above the row by `_rows.html`). The row is sent exactly as stored while it reads back unchanged (`kept_rows`); once edited it is sent 3 cells wide. The note is informational, not a validation error, so it never blocks a save. A short band row still needs its missing cells filled before a save, because #243's fields are required.
+  **Why:** The plan's "normalised positionally to 3 on both sides" would lose the stored width before the GET-bound editor could show the note: the signed snapshot holds only the normalised draft. Keeping the stored row gives both "no spurious PATCH" and the note, and drops nothing silently.
+  **Issue:** #268
+- **Decision:** `_rows.html` renders a row's hidden fields bare and its `note()` (when it has one) above the fields. Previously it gave every field a label.
+  **Why:** The pacing and band rows carry the hidden `cells` field. No other row form in the editor has hidden fields, so nothing else renders differently.
+  **Issue:** #268
+- **Decision:** The bare `starting_state.clock` and `starting_state.scheduled_events` paths land prefixed with the path, on the Clock section's errors and the `evt` row set's non-form errors. The bare `starting_state.clock.anchor` lands unprefixed under the Anchor legend. An anchor path naming no part (`anchor.hour`) also goes under the Anchor legend, prefixed.
+  **Why:** This follows the pass-1 and pass-2 discretion lines. The AC says only "on the anchor group's errors" for the bare anchor.
+  **Issue:** #268
+- **Decision:** The events' "Other audience" split moved into `console.forms.scenario_cast.split_audience`. `SeedForm.clean_audience_other` and `EventForm` both call it.
+  **Why:** The plan says to import SeedForm's split helper, but it was inline in a method. A shared function avoids a copy, and `scenario_clock` can import it without a cycle.
+  **Issue:** #268
+- **Decision:** `EventForm` takes the draft's event at its row index through `EventFormSet.get_form_kwargs` (`events` form kwarg). It computes the event it would send during `clean()` (`sent_event`), so error placement uses the ids actually sent even after an earlier error removed a field from `cleaned_data`.
+  **Why:** Without this, two participant errors on the same row would prefix the second one with the wrong id.
+  **Issue:** #268
+- **Decision:** On the detail page, an unset subject, owner or disclosure reads "—". An audience token that is not a role, group, level or `world` is marked "(undeclared)". The owner `world` reads as `world`.
+  **Why:** The AC says "'—' (default)" for the unset cells, and #205's undeclared-marking rule covers the rest.
+  **Issue:** #268
+- **Decision:** The Rules and declarations section on the detail page is now a plain `<dl class="deferred">`. The `<details>` wrapper, whose summary was the "not used until a later Engine milestone" line, is gone. The editor's three remaining boxes lose that note from their help too.
+  **Why:** The AC drops the line from the editor section. Keeping it on the detail page or in the box help would contradict that.
+  **Issue:** #268
+- **Decision:** The `test_scenarios_edit.py` cases that used the clock and events boxes now use the calendar box and `starting_state__predicates`. The header test checks the new legends. `test_clearing_the_clock_sends_null` clears the base fixture's only clock member (the anchor's time). The Opening-before-Deferred order check now includes `f-starting_state-clock`. The detail-page test that checked "Deferred" now checks "Rules and declarations".
+  **Why:** The test plan names these updates.
+  **Issue:** #268

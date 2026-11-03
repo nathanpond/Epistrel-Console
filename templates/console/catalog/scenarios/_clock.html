@@ -1,0 +1,41 @@
+{% comment %}#268: the scenario's starting clock and its scheduled events (fieldset#f-starting_state-clock),
+after the States. The anchor's parts, Mode, the Pacing table, the skip cap, stops and awareness,
+the Time-of-day bands and the Calendar box, in ScenarioClock's schema order, then the Scheduled
+events (evt) rows, each on two lines. Rows are added and removed with op buttons (no
+JavaScript). Context: clock (ScenarioEditor.clock()), row_sets, archived_note.{% endcomment %}
+<fieldset class="section clock" id="f-starting_state-clock"><legend>Clock</legend>
+  <p class="muted">{{ clock.help }}</p>
+  {{ clock.errors }}
+  <fieldset class="clock-anchor" id="{{ clock.anchor_id }}"><legend>Anchor</legend>
+    <p class="muted">Leave every part blank for no anchor: the story's time of day is unknown</p>
+    {{ clock.anchor_errors }}
+    {% include "console/catalog/scenarios/_fields.html" with section=clock.anchor %}
+  </fieldset>
+  {% include "console/catalog/scenarios/_fields.html" with section=clock.mode %}
+  {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.pacing %}
+  {% include "console/catalog/scenarios/_fields.html" with section=clock.settings %}
+  {% include "console/catalog/scenarios/_rows.html" with rows=row_sets.bands %}
+  {% include "console/catalog/scenarios/_fields.html" with section=clock.calendar %}
+  {% with rows=row_sets.evt %}
+  <fieldset class="rows rows-{{ rows.prefix }}" id="{{ rows.anchor }}">
+    <legend>{{ rows.title }}</legend>
+    <p class="muted rows-help">{{ rows.help }}</p>
+    {{ rows.formset.management_form }}
+    {{ rows.formset.non_form_errors }}
+    {% for row in rows.formset.forms %}
+    <div class="row event-row" id="{{ rows.prefix }}-{{ forloop.counter0 }}">
+      {{ row.non_field_errors }}
+      <div class="event-line">{% for field in row.line_one %}{% include "console/catalog/scenarios/_cast_field.html" %}
+      {% endfor %}</div>
+      <div class="event-line">{% for field in row.line_two %}{% include "console/catalog/scenarios/_cast_field.html" %}
+      {% endfor %}
+      <button type="submit" name="op" value="remove:{{ rows.prefix }}-{{ forloop.counter0 }}" formnovalidate{% if archived_note %} disabled{% endif %}>Remove</button></div>
+    </div>
+    {% empty %}
+    <p class="empty">None.</p>
+    {% endfor %}
+    {% if rows.can_add %}<button type="submit" name="op" value="add:{{ rows.prefix }}" formnovalidate{% if archived_note %} disabled{% endif %}>Add</button>{% else %}<small class="muted">At the limit.</small>{% endif %}
+  </fieldset>
+  {% endwith %}
+  {% include "console/catalog/scenarios/_refresh.html" %}
+</fieldset>

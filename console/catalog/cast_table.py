@@ -5,7 +5,9 @@ world seeds in their own table. #205 adds the locations' topology (lies in, adjo
 opening's remote channels, named through the same location lookup (:func:`location_label`).
 #206 adds the cast's groups, each role's relationships as a table, and each seed's confidence
 and nested content. #267 adds the starting States table (:func:`state_rows`) and each role's initial
-State values (:func:`initial_value_lines`), values formatted by D5."""
+State values (:func:`initial_value_lines`), values formatted by D5. #268 adds the starting clock
+(:func:`clock_view`, :func:`anchor_text`) and the scheduled events (:func:`event_rows`), places
+named through the same :func:`location_label`."""
 
 import json
 from collections.abc import Mapping, Sequence
@@ -19,14 +21,17 @@ from console.engine.models import (
     RoleEligibility,
     RoleRelationship,
     Scenario,
+    ScenarioAnchor,
     ScenarioCast,
     ScenarioChannel,
+    ScenarioClock,
     ScenarioRole,
+    ScenarioScheduledEvent,
     ScenarioState,
     Seed,
 )
 from console.wording import humanised
-from console.world import NUMBER, state_value_text
+from console.world import NUMBER, offset_text, state_value_text
 
 ANYONE = "anyone"
 ANY_AGE = "any"
@@ -459,3 +464,139 @@ def initial_value_lines(role: ScenarioRole, states: Sequence[Any]) -> list[str]:
             text += NOT_PER_CHARACTER
         lines.append(text)
     return lines
+
+
+# --- #268: the starting clock and the scheduled events ------------------------------------------
+
+UNANCHORED = "Unanchored (default)"
+PACED_DEFAULT = "Paced (default)"
+EXACT_DEFAULT = "Exact (default)"
+SKIP_DEFAULT = "1,440 min (default)"  # ``ClockSettings``' default
+STOP_DEFAULT = "Yes (default)"
+NO_END = "no end"
+UNDECLARED = " (undeclared)"
+GROUP = " (group)"
+WORLD = "world"
+AUDIENCE_LEVELS = frozenset({"self", "acquaintances", "perceivable", "public"})
+
+
+def anchor_text(anchor: ScenarioAnchor | None) -> str:
+    """ "year 2026 · month 3 · day 14 · Saturday · 06:00 · band morning" (only the parts set),
+    or "Unanchored (default)"."""
+    if anchor is None:
+        return UNANCHORED
+    parts = [
+        f"year {anchor.year}" if anchor.year is not None else "",
+        f"month {anchor.month}" if anchor.month is not None else "",
+        f"day {anchor.day}" if anchor.day is not None else "",
+        anchor.weekday or "",
+        anchor.time or "",
+        f"band {anchor.band}" if anchor.band else "",
+    ]
+    return " · ".join(p for p in parts if p) or UNANCHORED
+
+
+@dataclass(frozen=True)
+class ClockView:
+    """The detail page's Clock ``<dl>``: ``clock`` the parsed clock, or ``None`` with ``raw``
+    its JSON (a stored clock that doesn't parse)."""
+
+    clock: ScenarioClock | None
+    raw: str = ""
+    anchor: str = ""
+    mode: EnumCell | None = None
+    time_awareness: EnumCell | None = None
+    skip: str = ""
+    stop: str = ""
+    pacing: list[tuple[str, str, str]] | None = None
+    bands: list[tuple[str, str, str]] | None = None
+
+
+def _three(row: Sequence[object], null: str = "") -> tuple[str, str, str]:
+    """A pacing or band row's three cells as text: a missing cell blank, a ``null`` second cell
+    (a pacing row's "to") ``null``'s text."""
+    cells = [(null if i == 1 else "") if v is None else str(v) for i, v in enumerate(row[:3])]
+    cells += [""] * (3 - len(cells))
+    return cells[0], cells[1], cells[2]
+
+
+def clock_view(raw: Any) -> ClockView | None:
+    """``starting_state.clock`` as the detail page shows it; ``None`` (read "—") when no clock
+    or an empty one is stored."""
+    if raw is None or raw == {}:
+        return None
+    clock = ScenarioClock.from_json(raw)
+    if clock is None:
+        return ClockView(None, raw=json.dumps(raw, ensure_ascii=False, indent=2))
+    skip = clock.max_unprompted_skip_minutes
+    stop = clock.stop_at_due_events
+    pacing = [_three(row, NO_END) for row in clock.pacing_table or []]
+    bands = [_three(row) for row in clock.bands or []]
+    return ClockView(
+        clock,
+        anchor=anchor_text(clock.anchor),
+        mode=_enum(clock.mode, PACED_DEFAULT),
+        time_awareness=_enum(clock.time_awareness, EXACT_DEFAULT),
+        skip=SKIP_DEFAULT if skip is None else f"{skip:,} min",
+        stop=STOP_DEFAULT if stop is None else ("Yes" if stop else "No"),
+        pacing=pacing or None,
+        bands=bands or None,
+    )
+
+
+@dataclass(frozen=True)
+class EventRow:
+    """A Scheduled events table row: ``event`` the parsed entry, or ``None`` with ``raw`` its
+    JSON. ``planned`` is D6's offset text ("+02h 10m", ``planned_title`` "130 min") or "at
+    18:00"; roles are marked when undeclared (#205's rule)."""
+
+    event: ScenarioScheduledEvent | None
+    raw: str = ""
+    planned: str = ""
+    planned_title: str = ""
+    subject: Participant | None = None
+    owner: Participant | None = None
+    participants: list[Participant] | None = None
+    place: LocationCell | None = None
+    audience: list[str] | None = None
+    disclosure: EnumCell | None = None
+
+
+def _audience_label(token: str, roles: set[str], groups: set[str]) -> str:
+    if token in roles or token == WORLD or token in AUDIENCE_LEVELS:
+        return token
+    if token in groups:
+        return f"{token}{GROUP}"
+    return f"{token}{UNDECLARED}"
+
+
+def event_rows(events: Sequence[Any], scenario: Scenario) -> list[EventRow]:
+    """The detail page's Scheduled events table: one row per stored entry, in order."""
+    roles = {role.id for role in scenario.cast.roles}
+    groups = set((scenario.cast.groups or {}).keys())
+    names = location_names(scenario)
+    rows: list[EventRow] = []
+    for entry in events:
+        event = ScenarioScheduledEvent.from_json(entry)
+        if event is None:
+            rows.append(EventRow(None, raw=json.dumps(entry, ensure_ascii=False)))
+            continue
+        planned = event.planned
+        timed = isinstance(planned, str)
+        owner = event.owner
+        rows.append(
+            EventRow(
+                event,
+                planned=f"at {planned}" if timed else offset_text(planned),
+                planned_title="" if timed else f"{planned} min",
+                subject=Participant(event.subject, event.subject in roles)
+                if event.subject
+                else None,
+                owner=Participant(owner, owner == WORLD or owner in roles) if owner else None,
+                participants=[Participant(p, p in roles) for p in event.participants or []],
+                place=location_label(event.place, names) if event.place else None,
+                audience=[_audience_label(a, roles, groups) for a in event.audience or []],
+                disclosure=_enum(event.disclosure, "—"),
+            )
+        )
+    return rows

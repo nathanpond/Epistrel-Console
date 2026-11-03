@@ -270,12 +270,14 @@ from console.engine.models import (
     RoleEligibility,
     RoleRelationship,
     Scenario,
+    ScenarioAnchor,
     ScenarioCard,
     ScenarioCardMedia,
     ScenarioCardMediaSet,
     ScenarioCardRole,
     ScenarioCast,
     ScenarioChannel,
+    ScenarioClock,
     ScenarioDraft,
     ScenarioListItem,
     ScenarioMediaSet,
@@ -285,6 +287,7 @@ from console.engine.models import (
     ScenarioPolicy,
     ScenarioPublicCard,
     ScenarioRole,
+    ScenarioScheduledEvent,
     ScenarioState,
     ScenarioStatus,
     ScenarioVideo,
@@ -823,6 +826,10 @@ def test_the_widening_only_adds_media_id() -> None:
         # #267: the scenario editor's and detail page's read-only views.
         (ScenarioState, "ScenarioState"),
         (StateConstraints, "StateConstraints"),
+        # #268: the detail page's read-only clock and event views.
+        (ScenarioClock, "ScenarioClock"),
+        (ScenarioAnchor, "ScenarioAnchor"),
+        (ScenarioScheduledEvent, "ScenarioScheduledEvent"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -844,6 +851,27 @@ def test_scenario_state_views_are_strict() -> None:
     assert ScenarioState.from_json({**stored[0], "colour": "gold"}) is None
     assert ScenarioState.from_json({**stored[0], "constraints": {"min": "0"}}) is None
     assert StateConstraints.from_json({"min": 0, "step": 1}) is None
+
+
+def test_scenario_clock_views_are_strict() -> None:
+    """#268: the fixture's clock (with its anchor) and its events (an int and an ``HH:MM``
+    ``planned``) parse; a clock with an extra key, and an event with ``planned: 1.5``, fail to
+    parse (``extra="forbid"``, ``StrictInt``)."""
+    from tests.fixtures import engine_fixture
+
+    start = engine_fixture("catalog_scenarios_draft_clock")["starting_state"]
+    clock = ScenarioClock.from_json(start["clock"])
+    assert clock is not None
+    assert clock.anchor == ScenarioAnchor(2026, 3, 14, "Saturday", "06:00", "morning")
+    assert clock.pacing_table == [[0, 50, 5], [50, None, 15]]
+    events = [ScenarioScheduledEvent.from_json(e) for e in start["scheduled_events"]]
+    assert [e.planned for e in events if e is not None] == ["18:00", 130, "02:10"]
+    assert ScenarioClock.from_json({**start["clock"], "cells": 3}) is None
+    assert ScenarioAnchor.from_json({"time": "06:00", "hour": 6}) is None
+    assert (
+        ScenarioScheduledEvent.from_json({**start["scheduled_events"][1], "planned": 1.5}) is None
+    )
+    assert ScenarioScheduledEvent.from_json({"proposition": "x"}) is None  # planned required
 
 
 def test_operation_labels_match_the_schema() -> None:

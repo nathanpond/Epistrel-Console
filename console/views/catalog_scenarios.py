@@ -42,6 +42,8 @@ from console.catalog.cast_table import (
     cast_table,
     channel_lines,
     character_ids,
+    clock_view,
+    event_rows,
     location_topology,
     rating_ids,
     state_rows,
@@ -600,6 +602,9 @@ def _detail_page(
         context["channels"] = channel_lines(entry.cast, entry.starting_state.channels)
         # #267: the starting States.
         context["states"] = state_rows(entry.starting_state.states, entry.cast, entry)
+        # #268: the starting clock and the scheduled events.
+        context["clock"] = clock_view(entry.starting_state.clock)
+        context["events"] = event_rows(entry.starting_state.scheduled_events, entry)
         profile_id = entry.recommendation.engine_profile_id
         context["profile"] = _profile_name(client, profile_id)
         context["profile_url"] = _profile_url(profile_id) if profile_id else ""

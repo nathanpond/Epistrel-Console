@@ -114,10 +114,17 @@ def test_the_edit_page_header_and_sections(operator_client: Client, engine: Fake
         "Creation rules",
         "Drivers",
         "Plot hooks",
-        "Deferred",
+        "Clock",  # #268
+        "Anchor",
+        "Pacing",
+        "Time-of-day bands",
+        "Scheduled events",
+        "Rules and declarations",
     ):
         assert f"<legend>{legend}</legend>" in html
-    assert "Stored by Lite but not used until a later Engine milestone" in page
+    assert "<legend>Deferred</legend>" not in html
+    assert "Stored by Lite but not used until a later Engine milestone" not in page
+    assert "Each box must be valid JSON before anything is sent." in page
     assert 'name="op" value="refresh"' in html
     # The role selects offer the draft's cast; the location select the world's locations.
     assert '<option value="son" selected>son</option>' in html
@@ -263,9 +270,10 @@ def test_event_types_cleared_send_null(operator_client: Client, engine: FakeEngi
 @pytest.mark.parametrize(
     ("name", "value", "message"),
     [
-        ("starting_state__clock", "{oops", "Enter valid JSON"),
-        ("starting_state__clock", "[1, 2]", "Enter a JSON object"),
-        ("starting_state__scheduled_events", '{"a": 1}', "Enter a JSON array"),
+        # #268: the clock's one box is its calendar; the events are rows now.
+        ("starting_state__clock__calendar", "{oops", "Enter valid JSON"),
+        ("starting_state__clock__calendar", "[1, 2]", "Enter a JSON object"),
+        ("starting_state__predicates", '{"a": 1}', "Enter a JSON array"),
         ("starting_state__rules", "[NaN]", "NaN is not valid JSON"),
         ("creation_rules__bounds", '{"a": 1, "a": 2}', "duplicate key"),
         ("drivers__planned_reveals", "{}", "Enter a JSON array"),
@@ -285,8 +293,9 @@ def test_json_boxes_are_checked_before_any_call(
 
 
 def test_clearing_the_clock_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    """#268: the draft's clock is only its anchor's time; clearing it leaves no member set."""
     data = form(operator_client, engine)
-    data["starting_state__clock"] = ""
+    data["starting_state__clock__anchor__time"] = ""
     save(operator_client, engine, data)
     assert changes(engine) == {"starting_state": {"clock": None}}
 
@@ -640,7 +649,7 @@ def test_create_refusals_are_placed(operator_client: Client, engine: FakeEngine)
 def test_an_invalid_create_makes_no_call(operator_client: Client, engine: FakeEngine) -> None:
     data = posted(new_page(operator_client, engine))
     data["owner"] = "system"
-    data["starting_state__clock"] = "[]"
+    data["starting_state__clock__calendar"] = "[]"
     response = operator_client.post(NEW_URL, as_post(data))
     assert response.status_code == 200
     assert engine.requests == []
@@ -1029,6 +1038,7 @@ def test_topology_and_channels_untouched_send_nothing(
         'id="f-world-adjacency"',
         'name="starting_state__opening__roles_present"',
         'id="f-starting_state-channels"',
+        'id="f-starting_state-clock"',  # #268: the Clock section, then the boxes left
         'id="f-deferred"',
     ]
     positions = [html.index(marker) for marker in order]
