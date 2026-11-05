@@ -45,7 +45,7 @@ from console.forms.fields import JsonBoxField
 
 if TYPE_CHECKING:
     from console.engine.client import EngineClient, EngineClientError, EngineError
-    from console.engine.models import Provider
+    from console.engine.models import Provider, ProviderList
     from console.engine_form_errors import FieldError
 
 ID_PREFIX = "id__"
@@ -330,17 +330,30 @@ class ProviderChoices:
         return cls(found)
 
 
+def read_registry(client: EngineClient) -> ProviderList:
+    """``list_providers`` for a page that needs the whole registry (creation's choices, a
+    story's Providers page). A ``providers`` value that isn't a list is ``bad_response`` here:
+    ``ProviderList`` keeps it for the Engine panel's unread row (#281), but without the list no
+    name can be said to be registered or not."""
+    from console.engine.client import EngineError
+
+    listed = client.list_providers()
+    if not isinstance(listed.unparsed.get("providers", []), list):
+        raise EngineError("bad_response", "the Engine's answer is not a ProviderList", {}, 200)
+    return listed
+
+
 def read_provider_choices(
     client: EngineClient, log: Callable[[EngineClientError], None]
 ) -> ProviderChoices:
-    """``list_providers`` as :class:`ProviderChoices`; any client error (a 403 too) is logged
-    through ``log`` and kept as ``"<code> — <message>"``, so creation goes on without
+    """:func:`read_registry` as :class:`ProviderChoices`; any client error (a 403 too) is
+    logged through ``log`` and kept as ``"<code> — <message>"``, so creation goes on without
     bindings."""
     from console.engine.choices import error_text
     from console.engine.client import EngineClientError, EngineError
 
     try:
-        listed = client.list_providers()
+        listed = read_registry(client)
     except EngineClientError as exc:
         log(exc)
         text = f"{exc.code} — {exc.message}" if isinstance(exc, EngineError) else error_text(exc)

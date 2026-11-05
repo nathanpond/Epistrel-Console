@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+import httpx
 import pytest
 from django.core import signing
 from django.test import Client
@@ -356,6 +357,20 @@ def test_a_failed_registry_read_creates_without_bindings(
     assert response.status_code == 302
     assert "provider_bindings" not in sent(ratings)
     assert calls(ratings, "GET", REGISTRY) == []
+
+
+def test_registry_not_a_list_creates_without_bindings(
+    operator_client: Client, ratings: FakeEngine
+) -> None:
+    """#281: a ``providers`` value that isn't a list is still an unreadable registry here."""
+    raw = {"config_revision": 4, "providers": {"bank": {}}}
+    ratings.side_effect("GET", REGISTRY, lambda request: httpx.Response(200, json=raw))
+    html = operator_client.get(URL).content.decode()
+    assert (
+        "Couldn't read the provider registry (bad_response — the Engine's answer is not a "
+        "ProviderList)"
+    ) in text(html).replace("&#x27;", "'")
+    assert 'name="bind-' not in html
 
 
 def test_tampered_provider_choices_are_read_again(

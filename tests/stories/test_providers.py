@@ -249,6 +249,27 @@ def test_registry_failure_keeps_bindings_hides_bind(
     assert 'id="binding-shop"' not in page
 
 
+def test_registry_not_a_list_is_a_failed_registry_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#281: the model keeps a non-list ``providers`` for the Engine panel's unread row; this
+    page reads it as a failed registry read (bad_response), never as "Provider not
+    registered"."""
+    answer_page(engine)
+    raw = {"config_revision": 4, "providers": {"bank": {}}}
+    engine.side_effect("GET", REGISTRY, lambda request: httpx.Response(200, json=raw))
+    page = operator_client.get(PAGE).content.decode()
+
+    assert "The provider registry couldn&#x27;t be read — binding is unavailable" in page
+    assert 'class="engine-error' in page
+    assert "bad_response" in page
+    bank = row(page, "bank")
+    assert text(cell(bank, "binding-status")) == "Bound"
+    assert "Provider not registered" not in page
+    assert "This provider couldn&#x27;t be read" not in page
+    assert "/bind/" not in page
+
+
 def test_bindings_failure_panel(operator_client: Client, engine: FakeEngine) -> None:
     answer_page(engine)
     engine.respond("GET", BINDINGS, 503, json=error_json("database_unavailable"))
