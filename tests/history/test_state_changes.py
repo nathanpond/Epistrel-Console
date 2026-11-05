@@ -131,6 +131,29 @@ def test_beat_effects_on_omniscient_only(operator_client: Client, engine: FakeEn
     assert "trust" not in alice
 
 
+def test_beat_effects_on_a_character_read_are_not_shown(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """**Complement** (#278): Alice's read with the omniscient read's beat ``effects`` injected
+    (off-contract, served raw) still shows no per-beat changes, so ``trust`` stays hidden."""
+    alice = world("history_world_alice")
+    effects = {
+        (item["turn"], item["beat"]): item["effects"]
+        for item in world()["items"]
+        if item.get("effects")
+    }
+    assert "trust" in json.dumps(list(effects.values()))
+    assert len(effects) == 2
+    for item in alice["items"]:
+        if (item["turn"], item["beat"]) in effects:
+            item["effects"] = effects[item["turn"], item["beat"]]
+
+    html = world_page(operator_client, engine, alice, validated=False)
+    assert "beat-effects" not in html
+    assert "trust" not in html
+    assert len(state_rows(html)) == 2  # the turn-level rows still render
+
+
 def test_character_read_names_hidden_states(operator_client: Client, engine: FakeEngine) -> None:
     alice = world_page(operator_client, engine, world("history_world_alice"))
     assert alice.count(VIEWPOINT_LINE) == 1
