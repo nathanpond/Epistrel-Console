@@ -191,6 +191,9 @@ def test_older_and_newest_links(operator_client: Client, engine: FakeEngine) -> 
     assert "Older →" not in older  # page 2 has no next_before_turn
     assert block_ids(older) == ["trail-turn-2-1"]
     assert dict(reads(engine)[-1].url.params)["before_turn"] == "5"
+    # **Complement** (#279): no row on page 2 carries an outbox id, so no D11 notice.
+    assert OUTBOX_LIST_NOTICE.split("{link}")[0] not in older
+    assert "outbox-notice" not in older
 
 
 @pytest.mark.parametrize("typed", ["x", "-1", "+5", "٣"])
@@ -316,6 +319,23 @@ def test_malformed_effect_kept_raw(operator_client: Client, engine: FakeEngine) 
     # Complement: the other block renders, and the raw entry still counts.
     assert f'<code class="outbox-id">{OUTBOX}</code>' in block(html, 7)
     assert "3 State changes on 2 turns on this page" in html
+
+
+def test_outbox_id_only_in_a_raw_entry_gives_no_notice(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """**Complement** (#279): an ``outbox_id`` inside an unparsed raw entry doesn't trigger
+    D11's notice; only a parsed row's does."""
+    body = fixture("history_trail_page1")
+    seven = next(t for t in body["turns"] if t["turn"] == 7)
+    assert seven["state_effects"][0]["outbox_id"] == OUTBOX
+    del seven["state_effects"][0]["status"]
+    serve_raw(engine, body)
+    html = page(operator_client)
+    assert '<p class="warning">1 State change couldn&#x27;t be read</p>' in block(html, 7)
+    assert '<code class="outbox-id">' not in html
+    assert OUTBOX_LIST_NOTICE.split("{link}")[0] not in html
+    assert "outbox-notice" not in html
 
 
 def test_non_list_field_still_gets_a_block(operator_client: Client, engine: FakeEngine) -> None:
