@@ -223,6 +223,49 @@ def test_actions_hook_renders_a_column() -> None:
     assert re.findall(r'<td class="([a-z]+)">', html)[-2:] == ["actions", "more"]
 
 
+def test_actions_none_renders_no_column() -> None:
+    """**Complement** (#276): ``actions`` None leaves the row without an Actions cell."""
+    from django.template.loader import render_to_string
+
+    from console.engine.models import StoryState
+    from console.states import state_row
+
+    state = StoryState.from_json(fixture("states")["states"][0])
+    assert state is not None
+    built = state_row(state, {}, [], STORY, None)
+    with override_settings(ROOT_URLCONF="epistrel_console.urls"):
+        html = render_to_string(
+            "console/inspect/_state_row.html",
+            {"row": built, "story_id": STORY, "actions": None},
+        )
+    assert '<td class="actions">' not in html
+    assert re.findall(r'<td class="([a-z]+)">', html) == [
+        "name",
+        "value",
+        "scope",
+        "visibility",
+        "owner",
+        "since",
+        "more",
+    ]
+
+
+@pytest.mark.parametrize("url", [URL, f"{STATE}gold/"], ids=["states", "state"])
+def test_actions_none_hides_the_column_header(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    """**Complement** (#276): with no actions hook, neither ``states.html`` nor ``state.html``
+    renders an Actions header or cell."""
+    from console.views import inspect_states
+
+    monkeypatch.setattr(inspect_states, "ACTIONS_TEMPLATE", None)
+    html = page(operator_client, url)
+    assert '<table class="states">' in html
+    assert "<th>Actions</th>" not in html
+    assert '<td class="actions">' not in html
+    assert "<th>More</th>" in html
+
+
 def test_default_viewpoint_is_omniscient_not_the_story_default(
     operator_client: Client, engine: FakeEngine
 ) -> None:
