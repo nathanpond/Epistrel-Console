@@ -317,21 +317,31 @@ def test_a_queued_operation_has_no_cutoff(operator_client: Client, engine: FakeE
 
 
 def test_an_unreachable_engine_keeps_polling(operator_client: Client, engine: FakeEngine) -> None:
+    queue_turn(operator_client, engine)
     engine.fail("GET", OPERATION, httpx.ConnectError("down"))
     html = poll(operator_client)
     assert "Engine unreachable — retrying" in html
     assert 'hx-trigger="load delay:1s"' in html
+    # **Complement** (#280): a failed poll changes nothing on the queued row.
+    row = EngineOperation.objects.get()
+    assert row.engine_label is None
+    assert row.outcome == "queued"
 
 
 def test_a_404_while_polling_stops_with_the_error(
     operator_client: Client, engine: FakeEngine
 ) -> None:
+    queue_turn(operator_client, engine)
     engine.respond("GET", OPERATION, 404, json=error_json("not_found", "no such operation"))
     answer_page(engine)
     html = poll(operator_client)
     assert "Polling stopped" in html
     assert "not_found" in oob(html, "inspector")
     assert 'hx-trigger="load delay:1s"' not in html
+    # **Complement** (#280): a failed poll leaves engine_label unset (#257's AC 2).
+    row = EngineOperation.objects.get()
+    assert row.engine_label is None
+    assert row.outcome == "queued"
 
 
 def test_polls_are_never_recorded(operator_client: Client, engine: FakeEngine) -> None:
