@@ -51,7 +51,7 @@ from console.engine.models import (
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors, engine_field_errors
-from console.forms.bindings import JSON_FIELD, BindingForm, field_name
+from console.forms.bindings import JSON_FIELD, BindingForm, field_name, read_registry
 from console.forms.profile_schema_form import warning_flash_text
 from console.held import is_held
 from console.ids import new_ulid
@@ -270,7 +270,7 @@ def providers(request: HttpRequest, story_id: str) -> HttpResponse:
     bindings = _read(request, lambda: client.list_provider_bindings(story_id))
     if isinstance(bindings, EngineClientError):
         return _read_failed(request, story_id, PAGE_TEMPLATE, bindings, **header)
-    read = _read(request, client.list_providers)
+    read = _read(request, lambda: read_registry(client))  # #281: a non-list is bad_response
     registry: ProviderList | None = None
     registry_error: ErrorPanel | None = None
     if isinstance(read, EngineClientError):

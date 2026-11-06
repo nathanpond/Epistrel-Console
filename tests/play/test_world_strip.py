@@ -379,6 +379,35 @@ def test_count_zero_has_no_link(operator_client: Client) -> None:
     assert "Turn report" in html
 
 
+def guardrail_error() -> dict[str, Any]:
+    error: dict[str, Any] = copy.deepcopy(engine_fixture("respond_guardrail_violation")["error"])
+    return error
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"http_status": 423, "outcome": "error", "error_code": "story_busy"},
+        {"http_status": 422, "outcome": "error", "error_code": "guardrail_violation"},
+        # No error_code, only input violations: the guard's second half on its own.
+        {"http_status": 200, "outcome": "ok", "error_code": ""},
+    ],
+    ids=["story-busy", "guardrail-violation", "violations-only"],
+)
+def test_error_or_violation_row_shows_no_strip(
+    operator_client: Client, fields: dict[str, Any]
+) -> None:
+    """**Complement** (#277): ``row_inspector`` builds the strip only for a row with no
+    ``error_code`` and no input violations, even when the logged body carries M6 world fields."""
+    violations = fields["error_code"] != "story_busy"
+    response = world_json() | ({"error": guardrail_error()} if violations else {})
+    log_row(response=response, **fields)
+    html = inspect(operator_client)
+    assert "world-strip" not in html
+    if violations:
+        assert "Input rejected by a guardrail" in html
+
+
 def test_character_viewpoint_notes_hidden_states(operator_client: Client) -> None:
     log_row(response=world_json(output_viewpoint=f"character:{ALICE}"))
     html = inspect(operator_client, snapshot=snapshot())

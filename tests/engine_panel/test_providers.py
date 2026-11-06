@@ -12,7 +12,7 @@ from django.test import Client
 from django.utils.html import escape
 
 from console.effects import provider_url
-from console.engine.models import Provider
+from console.engine.models import Provider, ProviderList
 from tests.engine_panel.helpers import error
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
@@ -130,15 +130,42 @@ def test_unparsed_provider_shows_raw(operator_client: Client, engine: FakeEngine
     assert f"{parsed} providers" in page  # parsed entries only
 
 
-def test_providers_not_a_list_is_the_panel(operator_client: Client, engine: FakeEngine) -> None:
-    """C15: the Engine always answers a list; the strict ``ProviderList`` (``providers``
-    required, as the schema has it) reads another container as a bad response."""
-    answer_raw(engine, {"config_revision": 4, "providers": {"bank": {}}})
+def test_providers_not_a_list_is_one_unread_row(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#240's AC (#281): a ``providers`` value that isn't a list is one "couldn't be read" row
+    holding the raw value, not #43's panel."""
+    raw: dict[str, Any] = {"bank": {}}
+    answer_raw(engine, {"config_revision": 4, "providers": raw})
 
     page = operator_client.get(URL).content.decode()
 
-    assert 'class="engine-error' in page
-    assert '<table class="providers">' not in page
+    assert 'class="engine-error' not in page
+    assert '<table class="providers">' in page
+    assert re.findall(r'<tr (id="provider-[^"]+"|class="unread")>', page) == ['class="unread"']
+    assert page.count(escape("This provider couldn't be read")) == 1
+    unread = re.search(r'<tr class="unread">(.*?)</tr>', page, re.S)
+    assert unread is not None
+    more = re.search(r"<summary>More</summary><pre>(.*?)</pre>", unread.group(1), re.S)
+    assert more is not None
+    assert json.loads(html_lib.unescape(more.group(1))) == raw
+    assert "Config revision 4" in page
+    assert "No providers are registered." not in page
+
+
+def test_provider_list_model_keeps_a_non_list_raw() -> None:
+    """#281: the model reads a non-list ``providers`` as none parsed, the raw kept in
+    ``unparsed``; a list still parses entry by entry, and a missing ``providers`` is refused."""
+    listed = ProviderList.from_json({"config_revision": 4, "providers": {"bank": {}}})
+    assert listed is not None
+    assert listed.providers == []
+    assert listed.config_revision == 4
+    assert listed.unparsed == {"providers": {"bank": {}}}
+    assert ProviderList.from_json({"config_revision": 4}) is None
+    assert ProviderList.from_json({"providers": "x"}) is None  # config_revision still required
+    fine = ProviderList.from_json(providers_body())
+    assert fine is not None
+    assert fine.unparsed == {}
 
 
 def test_empty_registry_line(operator_client: Client, engine: FakeEngine) -> None:

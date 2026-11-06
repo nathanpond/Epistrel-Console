@@ -5973,7 +5973,10 @@ class ProviderMutation(Provider):
 @dataclass(frozen=True)
 class ProviderList(Model):
     """``ProviderList``: every registered provider by name and the deployment's
-    ``config_revision``. ``from_json`` reads ``providers`` entry by entry (D15)."""
+    ``config_revision``. ``from_json`` reads ``providers`` entry by entry (D15). A ``providers``
+    value that isn't a list reads as no providers, with the raw value kept in ``unparsed``, so
+    the page shows it as one unreadable row (#240's AC, #281). The field stays required, as the
+    schema has it."""
 
     providers: list[Provider]
     config_revision: int
@@ -5982,6 +5985,12 @@ class ProviderList(Model):
 
     @classmethod
     def from_json(cls, obj: object) -> Self | None:
+        if isinstance(obj, dict) and "providers" in obj and not isinstance(obj["providers"], list):
+            raw = obj["providers"]
+            parsed = _lenient_page(cls, {**obj, "providers": []}, (("providers", Provider),))
+            if parsed is not None:
+                object.__setattr__(parsed, "unparsed", {"providers": raw})
+            return parsed
         return _lenient_page(cls, obj, (("providers", Provider),))
 
 

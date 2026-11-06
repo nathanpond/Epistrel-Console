@@ -3029,3 +3029,23 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** (Rule 3) Raised the CI `test` job's `timeout-minutes` from 25 to 45.
   **Why:** On milestone PR #275 the job was cancelled by its own 25-minute timeout at 81% (00:12:36 → 00:37:56). M6 grew the suite from about 5,640 to 7,572 tests, so a full run on a hosted runner now takes about 30 minutes. A re-run would have hit the same limit. M5 set the earlier 15 → 25 precedent.
   **Issue:** M6 milestone PR #275
+
+## /n8-exec M6 (verification fixes) — 2026-11-04
+
+- **Decision:** All six M6 verification bugs (#276–#281) are fixed on one branch, `milestone/m6-world-console-verification-fixes`, with one PR. This follows the M1–M5 "verification fixes" precedent. Each new complement test was checked by mutation: the guard it pins was removed, the test was seen to fail, and the code was restored.
+  **Why:** The M6 milestone PR (#275) is already merged. These are the open stories left in the milestone.
+  **Issue:** #276, #277, #278, #279, #280, #281
+- **Decision:** #277 adds a third case besides the two the issue names: a row with input violations and no `error_code`.
+  **Why:** With `error_code` set, the error half of the guard alone blocks the strip, so the 422 case can't tell if the violations half is gone. The third case pins that half on its own.
+  **Issue:** #277
+- **Decision:** #280's poll tests now call `queue_turn` first, so a queued `EngineOperation` row exists to assert on (`engine_label is None`, `outcome == "queued"`).
+  **Why:** Polls are never recorded. Without a queued row, "the label stays unset" has nothing to check.
+  **Issue:** #280
+- **Decision:** #281 fixes the code to match #240's AC, rather than amending the AC. `ProviderList.from_json` reads a non-list `providers` as `[]` and keeps the raw value in `unparsed["providers"]`. The Engine panel's list then shows one "This provider couldn't be read" row. This supersedes #240's deviation entry ("a `providers` value that isn't a list is not shown as a … row").
+  **Why:** The deviation's reason was that a default on the required field would break `test_contract.py`'s required-field check. The override leaves the fields alone (still required, no default), so the schema check holds. The general `_keep_parsing` rule for every other lenient page is unchanged.
+  **Issue:** #281
+- **Decision:** (Rule 1) `ProviderList`'s two other consumers, the creation form's choices (#259) and a story's Providers page (#247), now read the registry through a new `console.forms.bindings.read_registry`. It raises the same `bad_response` ("the Engine's answer is not a ProviderList") for a non-list `providers`. Both pages behave exactly as before #281.
+  **Why:** Without this, the model change would make the creation form treat an unreadable registry as empty. It would also make a story's Providers page call a bound provider "Provider not registered". Both are wrong, and a non-list registry can't say what is registered. Tests pin both.
+  **Issue:** #281
+- **Blocker:** PR #283 is not merged. Its required `gate` is red only because `engine-smoke` fails against Engine `edge`: Engine M7 (Epistrel 640b5ef, 2026-11-03) replaced the profile set, so the live smoke finds no `Structured` profile (it sees `Max, Standard, Full, Lite`). This PR doesn't cause it; `main`'s daily drift job has failed since 2026-11-03 (#282). Not fixed here: following Engine M7's profiles is Console M7 work, and repointing the smoke is a CI-policy call (#36). Owner options are on #283: (1) admin-override merge, recommended; (2) pin `engine-smoke` to the M6 image digest; (3) update the smoke for M7's profile names via `/n8-replan M7`. #276–#281 are labelled `blocked` + `needs-owner-action`.
+  **Issue:** PR #283, #282
