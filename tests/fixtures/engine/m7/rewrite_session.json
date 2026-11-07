@@ -1,0 +1,143 @@
+{
+  "id": "01JM7RW0000000000000000001",
+  "story_id": "01JM7ST0000000000000000001",
+  "kind": "instruction",
+  "state": "awaiting_approval",
+  "instruction": "Bob never forged the ledger; he only copied it",
+  "resolution_mode": "synchronous",
+  "preview_mode": "preview_first",
+  "pipeline": "structured",
+  "principal": "console:nate",
+  "created_at": "2026-11-05T10:00:00Z",
+  "updated_at": "2026-11-05T10:01:00Z",
+  "expires_at": "2026-11-06T10:00:00Z",
+  "base_revision": 20,
+  "preview": {
+    "base_revision": 20,
+    "plan_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "changes": [
+      {
+        "key": "c1",
+        "kind": "fact",
+        "summary": "Bob copied the ledger (was: forged it)",
+        "subject_id": "01JM7CH0000000000000000003",
+        "fact_id": "01JM7FA0000000000000000001",
+        "old": "forged",
+        "new": "copied"
+      },
+      {
+        "key": "c2",
+        "kind": "belief",
+        "summary": "Alice believes Bob copied the ledger",
+        "holder_id": "01JM7CH0000000000000000002",
+        "fact_id": "01JM7FA0000000000000000002"
+      }
+    ],
+    "blast_radius": {
+      "incidental": [
+        {
+          "record_id": "01JM7EV0000000000000000003",
+          "table": "events",
+          "turn": 3,
+          "excerpt": "Mara eyes the forged ledger.",
+          "after": "Mara eyes the copied ledger."
+        }
+      ],
+      "cascaded": [
+        {
+          "record_id": "01JM7FA0000000000000000003",
+          "table": "facts",
+          "action": "re_evaluate",
+          "severity": "low",
+          "summary": "Alice's distrust of Bob is re-derived"
+        }
+      ],
+      "irreducible": [
+        {
+          "conflict_id": "01JM7CN0000000000000000001",
+          "record_id": "01JM7AM0000000000000000001",
+          "table": "amendment_parts",
+          "reason": "dependent_amendment",
+          "severity": "high",
+          "options": [
+            "rewrite",
+            "drop",
+            "keep",
+            "cascade_undo"
+          ],
+          "excerpt": "Bob confesses the forgery",
+          "before_excerpt": "Bob confesses the forgery"
+        }
+      ]
+    },
+    "blast_radius_truncated": true,
+    "relabels": [
+      {
+        "record_id": "01JM7EV0000000000000000004",
+        "from": "sincere",
+        "to": "deception"
+      }
+    ],
+    "refused_changes": [
+      {
+        "index": 3,
+        "reason": "external_owned",
+        "change": {
+          "kind": "state",
+          "state": "bank_balance"
+        }
+      }
+    ],
+    "notifications": [
+      {
+        "kind": "external_effect",
+        "outbox_id": "01JM7XB0000000000000000001",
+        "text": "The bank was already told about the forged ledger"
+      }
+    ],
+    "timing_uncertain": [],
+    "suggested_ports": [],
+    "new_entities": [],
+    "reach": null
+  },
+  "questions": [
+    {
+      "id": "01JM7QN0000000000000000001",
+      "kind": "conflict",
+      "prompt": "Bob told Alice he forged the ledger in turn 2. Does that line change too?",
+      "options": [
+        {
+          "id": "o1",
+          "label": "Rewrite Bob's line: he only copied the ledger",
+          "effect": {
+            "action": "rewrite",
+            "record_id": "01JM7EV0000000000000000002"
+          }
+        },
+        {
+          "id": "o2",
+          "label": "Keep the line: Bob lied to Alice",
+          "effect": {
+            "action": "keep",
+            "record_id": "01JM7EV0000000000000000002"
+          }
+        }
+      ],
+      "recommended_option_id": "o1",
+      "recommendation_reason": "Bob's line is his own sincere claim; rewriting it keeps him consistent with the change",
+      "required": true,
+      "severity": "high",
+      "accepted_recommendation": true,
+      "answer_option_id": "o1",
+      "answer_text": null,
+      "answered_at": "2026-11-05T10:01:00Z",
+      "answered_by": "console:nate"
+    }
+  ],
+  "held_render": null,
+  "last_error": null,
+  "report": null,
+  "result_amendment_id": null,
+  "stale_count": 0,
+  "target_amendment_id": null
+}

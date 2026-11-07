@@ -9,7 +9,6 @@ from console.engine.client import (
     OPERATIONS,
     Call,
     EngineClient,
-    EngineClientError,
     EngineError,
     EngineNotConfigured,
     EngineUnreachable,
@@ -24,7 +23,6 @@ from console.engine.models import (
     CoverageGap,
     DeferredCharacter,
     DeploymentSettings,
-    DirectedPending,
     EscalationDeferred,
     ForkResult,
     HealthChecks,
@@ -1333,44 +1331,6 @@ def test_settings_parse_the_m7_settings(fake_engine: FakeEngine) -> None:
 def acting(fake: FakeEngine) -> EngineClient:
     """A client with a requesting principal (the writes need one)."""
     return EngineClient(URL, KEY, transport=fake.transport, principal="console:nate")
-
-
-DIRECTED_PENDING: dict[str, Any] = {
-    "timeline_revision": 8,
-    "previous_variant": {"turn": 3, "variant": 1},
-    "rewrite_session": {
-        "id": "01JM7RS0000000000000000001",
-        "story_id": STORY_ID,
-        "kind": "directed_regenerate",
-        "state": "open",
-        "instruction": "Make it rain",
-        "resolution_mode": "synchronous",
-        "preview_mode": "preview_first",
-        "pipeline": "structured",
-        "principal": "console:nate",
-        "created_at": "2026-11-06T10:00:00Z",
-        "updated_at": "2026-11-06T10:00:00Z",
-        "expires_at": "2026-11-07T10:00:00Z",
-    },
-    "disposition": "awaiting_rewrite",
-}
-
-
-def test_regenerate_202_is_bad_response_until_s2(fake_engine: FakeEngine) -> None:
-    """M7's 202 (a directed regenerate's ``DirectedPendingBody``) is registered but not yet
-    returned: ``regenerate`` still parses ``RegenerateResult`` (#292 widens it).
-    **Complement:** a 200 still parses."""
-    regenerate = "/stories/{story_id}/regenerate"
-    fake_engine.respond("POST", regenerate, 202, json=DIRECTED_PENDING)
-    assert DirectedPending.from_json(DIRECTED_PENDING) is not None
-    engine = acting(fake_engine)
-    with pytest.raises(EngineClientError) as caught:
-        engine.regenerate(STORY_ID, {"turn": 3}, expected_revision=None, idempotency_key="k")
-    assert isinstance(caught.value, EngineError)
-    assert caught.value.code == "bad_response"
-    fake_engine.respond("POST", regenerate, 200, json=engine_fixture("regenerate"))
-    result = engine.regenerate(STORY_ID, {"turn": 3}, expected_revision=None, idempotency_key="k2")
-    assert isinstance(result, RegenerateResult)
 
 
 def test_profile_writes_parse_their_202(fake_engine: FakeEngine) -> None:

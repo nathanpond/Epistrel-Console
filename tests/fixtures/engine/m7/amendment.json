@@ -1,0 +1,41 @@
+{
+  "id": "01JM7AM0000000000000000001",
+  "kind": "instruction",
+  "status": "active",
+  "author": "console:nate",
+  "tx_time": "2026-11-04T12:00:00Z",
+  "parts_count": 2,
+  "session_id": "01JM7RW0000000000000000008",
+  "reverted_by": null,
+  "undoes": null,
+  "redoes": null,
+  "parts": [
+    {
+      "id": "01JM7PT0000000000000000001",
+      "kind": "fact",
+      "record_id": "01JM7FA0000000000000000001",
+      "summary": "Bob copied the ledger"
+    },
+    {
+      "id": "01JM7PT0000000000000000002",
+      "kind": "record",
+      "record_id": "01JM7EV0000000000000000002",
+      "summary": "Bob's line rewritten"
+    }
+  ],
+  "relies_on": [
+    {
+      "amendment_id": "01JM7AM0000000000000000005",
+      "part_id": "01JM7PT0000000000000000005",
+      "edge": "presupposes"
+    }
+  ],
+  "dependents": [
+    {
+      "amendment_id": "01JM7AM0000000000000000006",
+      "part_id": "01JM7PT0000000000000000006",
+      "edge": "presupposes"
+    }
+  ],
+  "truncated": false
+}

@@ -42,7 +42,7 @@ from urllib.parse import urlencode, urlsplit
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_http_methods
 
 from console.canon import cast_names
@@ -54,7 +54,7 @@ from console.confirm import (
     safe_next,
 )
 from console.engine.client import EngineClient, EngineClientError, EngineError, turn_timeout
-from console.engine.models import ReactivationCheck, RegenerateResult, Story
+from console.engine.models import DirectedPending, ReactivationCheck, RegenerateResult, Story
 from console.engine_access import engine_client_for
 from console.engine_errors import EMPTY, ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors, engine_field_errors
@@ -105,6 +105,9 @@ FIELDS_TEMPLATE = "console/timeline/_fields.html"
 REWIND_FIELDS = "console/timeline/_rewind_fields.html"
 REGENERATE_FIELDS = "console/timeline/_regenerate_fields.html"
 REFUSED_TEMPLATE = "console/timeline/refused.html"
+DIRECTED_TEMPLATE = "console/timeline/directed_pending.html"
+# #292: a directed regenerate's 202 when the rewrite session page isn't registered yet.
+HELD_FOR_REVIEW_TEXT = "The Engine held this reply for review in a rewrite session"
 FORK_TEMPLATE = "console/timeline/fork.html"
 REPORT_TEMPLATE = "console/timeline/effects_report.html"
 RECHECK_LINE = (
@@ -348,9 +351,38 @@ def regenerate(request: HttpRequest, story_id: str) -> HttpResponse:
                 key=key,
                 basis=_basis(story_id, form, back),
             )
+        if isinstance(result, DirectedPending):
+            return _held_for_review(request, story_id, result)
         return _regenerated(request, story_id, result, key)
 
     return confirm_action(request, page, perform, extra=extra)
+
+
+def _rewrite_session_url(story_id: str, session_id: str) -> str | None:
+    """The rewrite session page (#297), ``None`` while ``stories:rewrite`` is unregistered (D19)
+    or for a blank id. TODO(#294): use ``console.rewrites.rewrite_session_url`` (E6)."""
+    if not session_id:
+        return None
+    try:
+        return reverse("stories:rewrite", args=[story_id, session_id])
+    except NoReverseMatch:
+        return None
+
+
+def _held_for_review(request: HttpRequest, story_id: str, pending: DirectedPending) -> HttpResponse:
+    """A directed regenerate's 202 (#292): the rewrite session holding the reply, else (its
+    page not registered yet) #43's panel with :data:`HELD_FOR_REVIEW_TEXT`. Nothing sends a
+    directive before #301, which replaces this; no flash."""
+    session_id = pending.rewrite_session.id
+    url = _rewrite_session_url(story_id, session_id)
+    if url is not None:
+        return redirect(url)
+    context = {
+        "engine_error": ErrorPanel(HELD_FOR_REVIEW_TEXT),
+        "session_id": session_id,
+        "play_url": _play_url(story_id),
+    }
+    return render(request, DIRECTED_TEMPLATE, context, status=200)
 
 
 def confirm_page(request: HttpRequest, page: ConfirmPage, extra: dict[str, Any]) -> HttpResponse:

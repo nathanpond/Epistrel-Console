@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{# A directed regenerate the Engine held in a rewrite session (#292), shown while the session page isn't registered (#301 replaces this). Context: engine_error (an ErrorPanel headed by the sentence), session_id, play_url. #}
+{% block title %}Regenerate held for review — Epistrel Console{% endblock %}
+{% block heading %}Regenerate held for review{% endblock %}
+{% block content %}
+{% include "console/_engine_error.html" %}
+<p class="held-session">Rewrite session <code>{{ session_id }}</code> · <a href="{{ play_url }}">Back to Play</a></p>
+{% endblock %}

@@ -1,0 +1,24 @@
+{
+  "timeline_revision": 21,
+  "directive_id": "01JM7DV0000000000000000002",
+  "classification": "durable",
+  "disposition": "applied",
+  "position": "4⁺1",
+  "steer_text": null,
+  "rewrite_session": null,
+  "hints": [],
+  "applied": {
+    "facts": [
+      "01JM7FA0000000000000000004"
+    ],
+    "state_changes": [
+      "01JM7SC0000000000000000001"
+    ],
+    "beliefs": [],
+    "clock": [],
+    "scheduled_events": [],
+    "outbox_ids": [],
+    "author_fact": null
+  },
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

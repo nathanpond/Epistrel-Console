@@ -1,0 +1,49 @@
+{
+  "config_revision": 30,
+  "applied": false,
+  "idempotency_key": "01JM7KY0000000000000000001",
+  "impact": {
+    "affected_stories": [
+      {
+        "story_id": "01JM7ST0000000000000000003",
+        "capabilities_gained": [
+          "commitment"
+        ],
+        "capabilities_lost": [],
+        "backfill": {
+          "needed": true,
+          "estimate": {
+            "model_calls": 12,
+            "tokens": 18000,
+            "duration_s": 40.0
+          },
+          "range": {
+            "from_turn": 1,
+            "to_turn": 3
+          }
+        },
+        "upgrade_unavailable": false,
+        "capabilities_after": [
+          "structured",
+          "episodic"
+        ],
+        "fingerprint_before": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "fingerprint_after": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+        "quality_status_after": {
+          "status": "certified",
+          "certification_id": "01JM7CT0000000000000000001"
+        }
+      }
+    ],
+    "affected_count": 1,
+    "recommendations_unmet": [],
+    "guarantees_lost": [],
+    "warnings": [
+      "backfill_needed"
+    ],
+    "capabilities_after": null,
+    "quality_status_after": null,
+    "fingerprint_before": null,
+    "fingerprint_after": null
+  }
+}

@@ -338,6 +338,12 @@ def queued_job_text(kind: str, job_id: str) -> str:
 # --- building and writing rows ------------------------------------------------------------------
 
 
+def _job_id(body: Mapping[str, Any]) -> str | None:
+    """A 202's job: the top-level ``job_id``, falling back to ``started.job_id`` (E19: a
+    started backfill nests it)."""
+    return _str(body, "job_id") or _str(_dict(body.get("started")), "job_id")
+
+
 def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     """The answer-side fields of a row for an HTTP response."""
     status = response.status_code
@@ -346,7 +352,7 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     replayed = response.headers.get(REPLAY_HEADER, "").lower() == "true" or "reference" in obj
     if 200 <= status < 300:
         model = observed.operation.response_model if observed.operation else None
-        if status == 202 and replayed and _str(obj, "job_id"):
+        if status == 202 and replayed and _job_id(obj):
             # A replayed job 202 (#81): the first call's row is the job's ``queued`` one, so a
             # replay records no second (the same check page follows it).
             outcome, code = Outcome.OK, ""
@@ -373,7 +379,7 @@ def _answer(observed: Observed, response: EngineResponse) -> dict[str, Any]:
     reducer = RESPONSE_REDUCERS.get(observed.kind)
     if reducer is not None and stored is not None:
         stored = reducer(stored, observed.body)  # #144: a sanitize keeps only lengths
-    job_id = _str(obj, "job_id") if status == 202 else None
+    job_id = _job_id(obj) if status == 202 else None
     return {
         "job_id": job_id[:64] if job_id else None,
         "http_status": status,

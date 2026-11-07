@@ -1,0 +1,36 @@
+{
+  "id": "01JM7RW0000000000000000011",
+  "story_id": "01JM7ST0000000000000000001",
+  "kind": "redo",
+  "state": "awaiting_approval",
+  "instruction": null,
+  "resolution_mode": "synchronous",
+  "preview_mode": "preview_first",
+  "pipeline": "structured",
+  "principal": "console:nate",
+  "created_at": "2026-11-05T10:00:00Z",
+  "updated_at": "2026-11-05T10:01:00Z",
+  "expires_at": "2026-11-06T10:00:00Z",
+  "base_revision": 20,
+  "preview": {
+    "base_revision": 20,
+    "plan_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "changes": [
+      {
+        "key": "c1",
+        "kind": "fact",
+        "summary": "Reapply: Bob copied the ledger"
+      }
+    ]
+  },
+  "questions": [],
+  "held_render": null,
+  "last_error": null,
+  "report": null,
+  "result_amendment_id": null,
+  "stale_count": 0,
+  "target_amendment_id": "01JM7AM0000000000000000002",
+  "timeline_revision": 20,
+  "apply": null,
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

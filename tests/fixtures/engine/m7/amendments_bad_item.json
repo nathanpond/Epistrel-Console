@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "id": "01JM7AM0000000000000000001",
+      "kind": "instruction",
+      "status": "active",
+      "author": "console:nate",
+      "tx_time": "2026-11-04T12:00:00Z",
+      "parts_count": 2,
+      "session_id": "01JM7RW0000000000000000008",
+      "reverted_by": null,
+      "undoes": null,
+      "redoes": null
+    },
+    {
+      "id": "01JM7AM0000000000000000009",
+      "kind": "instruction",
+      "status": "active"
+    },
+    {
+      "id": "01JM7AM0000000000000000004",
+      "kind": "undo",
+      "status": "active",
+      "author": "console:nate",
+      "tx_time": "2026-11-03T15:00:00Z",
+      "parts_count": 1,
+      "session_id": "01JM7RW0000000000000000003",
+      "reverted_by": null,
+      "undoes": "01JM7AM0000000000000000002",
+      "redoes": null
+    }
+  ],
+  "next_cursor": null
+}

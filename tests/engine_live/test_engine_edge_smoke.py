@@ -6,6 +6,7 @@ Run by ci.yml's engine-smoke job against the Engine ``edge`` image; locally, see
 
 import re
 import time
+from uuid import uuid4
 
 import pytest
 from django.test import Client, override_settings
@@ -656,3 +657,66 @@ def test_m6_world_live(url: str, key: str) -> None:
     finally:
         for story_id in stories:
             _delete_when_idle(client, story_id)
+
+
+FULL_PRESET = "00000000000000000000PRF002"
+PRESET_IDS = {f"00000000000000000000PRF00{n}" for n in (1, 2, 3, 4)}
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _export_ready(client: EngineClient, story_id: str, *, wait: float = 60.0) -> str:
+    """Export the story and poll its job once a second until ``ready`` (E24: 60 s cap); the
+    job id. A story the edge can't export skips the case with the code (E24's precondition)."""
+    try:
+        started = client.export_story(story_id, idempotency_key=uuid4().hex)
+    except EngineError as exc:
+        if exc.http_status in {409, 422}:
+            pytest.skip(f"the edge refused the export: {exc.code}")
+        raise
+    deadline = time.monotonic() + wait
+    while True:
+        job = client.export_status(started.job_id)
+        if job.status == "ready":
+            return started.job_id
+        assert job.status in {"queued", "running"}, (job.status, job.error)
+        assert time.monotonic() < deadline, f"export still {job.status} after {wait:.0f} s"
+        time.sleep(1.0)
+
+
+@pytest.mark.engine_auth
+def test_m7_portability_live(url: str, key: str) -> None:
+    """#292: on a Full v4 story with no turn, the rewrite, amendment, outbox and prune-run lists
+    answer empty, the operations list parses, there is no backfill, a pruning answers its
+    impact unapplied, an export becomes ``ready`` and its bundle starts with the gzip magic,
+    the certification and eval lists parse and the preset filter names the four presets.
+    **Complement:** an unknown State's definition is 404, and the story is deleted in a
+    ``finally``."""
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PRESET, 4)
+    try:
+        assert client.list_rewrites(story).items == []
+        assert client.list_amendments(story).items == []
+        assert client.list_outbox(story).rows == []
+        assert client.list_prune_runs(story).prune_runs == []
+        assert client.list_operations(story).story_id == story
+        with pytest.raises(EngineError) as missing:
+            client.get_backfill(story)
+        assert missing.value.code == "backfill_not_found"
+        pruned = client.prune_story(
+            story, ignore_warnings=False, expected_revision=None, idempotency_key=uuid4().hex
+        )
+        assert pruned.applied is False
+        job_id = _export_ready(client, story)
+        with client.open_export_bundle(job_id) as bundle:
+            assert bundle.status == 200
+            head = next(bundle.iter_bytes(2))
+        assert head[:2] == GZIP_MAGIC
+        client.list_certifications()
+        client.list_eval_runs()
+        presets, _ = client.list_engine_profiles(preset=True)
+        assert {p.id for p in presets} == PRESET_IDS
+        with pytest.raises(EngineError) as unknown:
+            client.get_state_definition(story, "nope")
+        assert unknown.value.http_status == 404
+    finally:
+        _delete_when_idle(client, story)

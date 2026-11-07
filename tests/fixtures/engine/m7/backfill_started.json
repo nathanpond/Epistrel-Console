@@ -1,0 +1,14 @@
+{
+  "timeline_revision": 20,
+  "applied": true,
+  "idempotency_key": "01JM7KY0000000000000000001",
+  "backfill": null,
+  "started": {
+    "id": "01JM7BF0000000000000000001",
+    "job_id": "01JM7JB0000000000000000001",
+    "status": "queued"
+  },
+  "conflicts": null,
+  "conflicts_open": null,
+  "conflicts_made_uncertain": null
+}

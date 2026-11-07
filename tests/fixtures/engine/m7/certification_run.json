@@ -1,0 +1,34 @@
+{
+  "id": "01JM7CR0000000000000000001",
+  "kind": "profile",
+  "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+  "profile_id": "00000000000000000000PRF002",
+  "profile_version": 4,
+  "story_id": null,
+  "suites": [
+    "quality",
+    "smoke"
+  ],
+  "seeds": 3,
+  "sample": null,
+  "estimate": {
+    "model_calls": 1200,
+    "tokens": 2400000,
+    "duration_s": 5400.0,
+    "cost": 18.5
+  },
+  "status": "completed",
+  "job_id": "01JM7JB0000000000000000005",
+  "certification_id": "01JM7CT0000000000000000001",
+  "report": {
+    "floors_passed": 6,
+    "floors_failed": 1,
+    "floors_insufficient": 1,
+    "report_path": "docs/evals/full-4710ae26cb73-2026-11-05.md"
+  },
+  "requested_by": "console:nate",
+  "created_at": "2026-11-05T12:00:00Z",
+  "started_at": "2026-11-05T12:01:00Z",
+  "finished_at": "2026-11-05T13:30:00Z",
+  "error": null
+}

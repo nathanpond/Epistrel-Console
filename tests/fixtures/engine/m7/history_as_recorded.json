@@ -1,0 +1,140 @@
+{
+  "items": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM7CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Who keeps the harbour ledger?",
+      "operation_id": "01JM7QP0000000000000000001",
+      "message_id": "01JM7MM0000000000000000101",
+      "origin": "generated",
+      "true_ages": {
+        "01JM7CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "fidelity": "content"
+    },
+    {
+      "turn": 1,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_say",
+      "actor_character_id": "01JM7CH0000000000000000003",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "I do. I forged it, if you must know.",
+      "operation_id": "01JM7QP0000000000000000001",
+      "message_id": "01JM7MM0000000000000000102",
+      "origin": "generated",
+      "true_ages": {
+        "01JM7CH0000000000000000003": 52
+      },
+      "propositions": [],
+      "effects": [],
+      "fidelity": "content"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 1,
+      "kind": "player_input",
+      "actor_character_id": "01JM7CH0000000000000000001",
+      "render_character_ids": null,
+      "channel": "say",
+      "text": "Show me the ledger, Bob.",
+      "operation_id": "01JM7QP0000000000000000002",
+      "message_id": "01JM7MM0000000000000000201",
+      "origin": "generated",
+      "true_ages": {
+        "01JM7CH0000000000000000001": 34
+      },
+      "propositions": [],
+      "effects": [],
+      "fidelity": "content"
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "beat": 2,
+      "kind": "beat_do",
+      "actor_character_id": "01JM7CH0000000000000000003",
+      "render_character_ids": null,
+      "channel": "do",
+      "text": "Bob slides the forged ledger across the counter.",
+      "operation_id": "01JM7QP0000000000000000002",
+      "message_id": "01JM7MM0000000000000000202",
+      "origin": "generated",
+      "true_ages": {
+        "01JM7CH0000000000000000003": 52
+      },
+      "propositions": [],
+      "effects": [],
+      "fidelity": "content"
+    }
+  ],
+  "turns": [
+    {
+      "turn": 1,
+      "variant": 1,
+      "message": null
+    },
+    {
+      "turn": 2,
+      "variant": 1,
+      "message": null
+    }
+  ],
+  "output_viewpoint": "omniscient",
+  "audience_filter": "none",
+  "player_view": "story",
+  "as_of": 2,
+  "timeline_revision": 20,
+  "next_before_turn": null,
+  "view": "as_recorded",
+  "boundary_tx": "2026-11-02T09:30:12.004511+00:00",
+  "erasure_markers": [
+    {
+      "erasure_id": "01JM7ER0000000000000000001",
+      "at": "2026-11-03T08:00:00+00:00"
+    }
+  ],
+  "derived": {
+    "facts": [
+      {
+        "id": "01JM7FA0000000000000000001",
+        "proposition_id": "01JM7PP0000000000000000011",
+        "subject_id": "01JM7CH0000000000000000003",
+        "predicate_id": "01JM7PD0000000000000000002",
+        "object_id": "01JM7EN0000000000000000003",
+        "literal": null
+      }
+    ],
+    "beliefs": [
+      {
+        "id": "01JM7BE0000000000000000011",
+        "holder_id": "01JM7CH0000000000000000002",
+        "proposition_id": "01JM7PP0000000000000000011",
+        "level": "believed"
+      }
+    ],
+    "memories": [],
+    "states": [
+      {
+        "name": "gold",
+        "value": 120
+      },
+      {
+        "name": "trust",
+        "values": {
+          "01JM7CH0000000000000000002": 2,
+          "01JM7CH0000000000000000003": 1
+        }
+      }
+    ]
+  }
+}

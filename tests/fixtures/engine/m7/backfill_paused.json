@@ -1,0 +1,109 @@
+{
+  "id": "01JM7BF0000000000000000001",
+  "status": "paused_for_conflicts",
+  "kind": "gap_fill",
+  "capabilities": [
+    "episodic",
+    "commitment"
+  ],
+  "range": {
+    "from_turn": 1,
+    "to_turn": 3
+  },
+  "progress": {
+    "phase": "reconciling",
+    "chunks_done": 3,
+    "chunks_total": 3,
+    "reconciled_through_turn": 2,
+    "last_turn": 3
+  },
+  "conflicts": {
+    "open": 2,
+    "resolved": 0,
+    "uncertain": 0
+  },
+  "requested_by": "console:nate",
+  "created_at": "2026-11-05T11:00:00Z",
+  "started_at": "2026-11-05T11:00:00Z",
+  "finished_at": null,
+  "error": null,
+  "conflict_list": [
+    {
+      "id": "01JM7CF0000000000000000001",
+      "status": "open",
+      "subject": {
+        "kind": "attribute",
+        "entity_id": "01JM7CH0000000000000000003",
+        "attribute": "age"
+      },
+      "statements": [
+        {
+          "statement_id": "01JM7SM0000000000000000001",
+          "event_id": "01JM7EV0000000000000000011",
+          "turn": 1,
+          "position": 2,
+          "speaker": "01JM7CH0000000000000000003",
+          "source": "dialogue",
+          "quote": "I'm fifty this winter.",
+          "value": 50
+        },
+        {
+          "statement_id": "01JM7SM0000000000000000002",
+          "event_id": "01JM7EV0000000000000000012",
+          "turn": 3,
+          "position": 1,
+          "speaker": "01JM7CH0000000000000000002",
+          "source": "dialogue",
+          "quote": "Bob's fifty-two, whatever he tells you.",
+          "value": 52
+        }
+      ],
+      "recommended": {
+        "choose": "01JM7SM0000000000000000002",
+        "reason": "last_mention"
+      },
+      "resolution": null,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "01JM7CF0000000000000000002",
+      "status": "open",
+      "subject": {
+        "kind": "attribute",
+        "entity_id": "01JM7CH0000000000000000002",
+        "attribute": "home"
+      },
+      "statements": [
+        {
+          "statement_id": "01JM7SM0000000000000000003",
+          "event_id": "01JM7EV0000000000000000013",
+          "turn": 2,
+          "position": 1,
+          "speaker": "01JM7CH0000000000000000002",
+          "source": "dialogue",
+          "quote": "I grew up in Port Vey.",
+          "value": "Port Vey"
+        },
+        {
+          "statement_id": "01JM7SM0000000000000000004",
+          "event_id": "01JM7EV0000000000000000014",
+          "turn": 3,
+          "position": 2,
+          "speaker": "01JM7CH0000000000000000001",
+          "source": "dialogue",
+          "quote": "You told me you were from the hills.",
+          "value": "the hills"
+        }
+      ],
+      "recommended": {
+        "choose": "01JM7SM0000000000000000004",
+        "reason": "last_mention"
+      },
+      "resolution": null,
+      "resolved_by": null,
+      "resolved_at": null
+    }
+  ],
+  "report": {}
+}

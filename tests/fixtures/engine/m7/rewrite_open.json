@@ -1,0 +1,59 @@
+{
+  "id": "01JM7RW0000000000000000001",
+  "story_id": "01JM7ST0000000000000000001",
+  "kind": "instruction",
+  "state": "awaiting_answers",
+  "instruction": "Bob never forged the ledger; he only copied it",
+  "resolution_mode": "synchronous",
+  "preview_mode": "preview_first",
+  "pipeline": "structured",
+  "principal": "console:nate",
+  "created_at": "2026-11-05T10:00:00Z",
+  "updated_at": "2026-11-05T10:01:00Z",
+  "expires_at": "2026-11-06T10:00:00Z",
+  "base_revision": null,
+  "preview": null,
+  "questions": [
+    {
+      "id": "01JM7QN0000000000000000001",
+      "kind": "conflict",
+      "prompt": "Bob told Alice he forged the ledger in turn 2. Does that line change too?",
+      "options": [
+        {
+          "id": "o1",
+          "label": "Rewrite Bob's line: he only copied the ledger",
+          "effect": {
+            "action": "rewrite",
+            "record_id": "01JM7EV0000000000000000002"
+          }
+        },
+        {
+          "id": "o2",
+          "label": "Keep the line: Bob lied to Alice",
+          "effect": {
+            "action": "keep",
+            "record_id": "01JM7EV0000000000000000002"
+          }
+        }
+      ],
+      "recommended_option_id": "o1",
+      "recommendation_reason": "Bob's line is his own sincere claim; rewriting it keeps him consistent with the change",
+      "required": true,
+      "severity": "high",
+      "accepted_recommendation": null,
+      "answer_option_id": null,
+      "answer_text": null,
+      "answered_at": null,
+      "answered_by": null
+    }
+  ],
+  "held_render": null,
+  "last_error": null,
+  "report": null,
+  "result_amendment_id": null,
+  "stale_count": 0,
+  "target_amendment_id": null,
+  "timeline_revision": 20,
+  "apply": null,
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

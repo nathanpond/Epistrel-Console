@@ -1,0 +1,74 @@
+{
+  "items": [
+    {
+      "run_id": "full-4710ae26cb73-2026-11-01",
+      "date": "2026-11-01",
+      "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+      "host": "Anthropic API",
+      "model": "claude-haiku-5-5",
+      "model_version": null,
+      "preset": "full",
+      "suites": {
+        "quality": "pass"
+      },
+      "requirements": {
+        "NFR-QUAL-2": "pass"
+      },
+      "sample_size": 345,
+      "seeds": [
+        1,
+        2,
+        3
+      ],
+      "metrics": null,
+      "source": "committed",
+      "verdict": "pass"
+    },
+    {
+      "run_id": 7
+    },
+    {
+      "run_id": "full-4710ae26cb73-2026-11-05",
+      "date": "2026-11-05",
+      "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+      "host": "Anthropic API",
+      "model": "claude-haiku-5-5",
+      "model_version": null,
+      "preset": "full",
+      "suites": {
+        "quality": "fail",
+        "smoke": "pass"
+      },
+      "requirements": {
+        "NFR-QUAL-3": "fail"
+      },
+      "sample_size": 150,
+      "seeds": [
+        1,
+        2,
+        3
+      ],
+      "source": "certification",
+      "verdict": "fail",
+      "metrics": [
+        {
+          "id": "NFR-QUAL-3.faithfulness",
+          "requirement": "NFR-QUAL-3",
+          "value": 0.84,
+          "floor": 0.9,
+          "sample_size": 150,
+          "verdict": "fail"
+        },
+        {
+          "id": "NFR-QUAL-2.false_support",
+          "requirement": "NFR-QUAL-2",
+          "value": 0.0,
+          "floor": 0.02,
+          "sample_size": 345,
+          "verdict": "pass"
+        }
+      ]
+    }
+  ],
+  "next_cursor": null
+}

@@ -1,0 +1,16 @@
+{
+  "timeline_revision": 21,
+  "request_id": "01JM7RQ0000000000000000001",
+  "resolution": "applied_elsewhere",
+  "reasons": [],
+  "position": "4⁺1",
+  "slot": {
+    "turn": 4,
+    "variant": 1,
+    "slot_k": 1,
+    "beat": 0,
+    "step": 0
+  },
+  "operation_id": "01JM7QP0000000000000000012",
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

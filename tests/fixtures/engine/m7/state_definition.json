@@ -1,0 +1,22 @@
+{
+  "name": "gold",
+  "created_by": "console:nate",
+  "config_revision": 30,
+  "timeline_revision": 20,
+  "output_viewpoint": "omniscient",
+  "definition": {
+    "name": "gold",
+    "type": "number",
+    "scope": "story",
+    "visibility": "public",
+    "owner": "story",
+    "unit": "coins",
+    "initial_value": 120,
+    "constraints": {
+      "min": 0,
+      "max": 500,
+      "integer": true
+    },
+    "description": "Mara's purse"
+  }
+}

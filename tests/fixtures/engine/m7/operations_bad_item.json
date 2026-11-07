@@ -1,0 +1,34 @@
+{
+  "story_id": "01JM7ST0000000000000000001",
+  "operations": [
+    {
+      "operation_id": "01JM7QP0000000000000000001",
+      "kind": "turn",
+      "label": null,
+      "status": "committed",
+      "staged": false,
+      "narrative_turn": 3,
+      "turn_variant": 1,
+      "principal": "console:nate",
+      "started_at": "2026-11-04T10:00:00Z",
+      "committed_at": "2026-11-04T10:00:09Z"
+    },
+    {
+      "operation_id": "01JM7QP0000000000000000009",
+      "kind": "turn"
+    },
+    {
+      "operation_id": "01JM7QP0000000000000000003",
+      "kind": "rewrite_session",
+      "label": null,
+      "status": "committed",
+      "staged": false,
+      "narrative_turn": null,
+      "turn_variant": null,
+      "principal": "console:nate",
+      "started_at": "2026-11-05T10:00:00Z",
+      "committed_at": "2026-11-05T10:02:00Z"
+    }
+  ],
+  "next_after": null
+}

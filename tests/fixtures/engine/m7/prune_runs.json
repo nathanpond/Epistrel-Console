@@ -1,0 +1,29 @@
+{
+  "prune_runs": [
+    {
+      "prune_id": "01JM7PR0000000000000000001",
+      "trigger": "manual",
+      "policy": null,
+      "principal": "console:nate",
+      "at": "2026-11-05T15:00:00Z",
+      "timeline_revision": 21,
+      "impact": {
+        "deleted": {
+          "events": 9,
+          "operations": 3
+        }
+      }
+    },
+    {
+      "prune_id": "01JM7PR0000000000000000002",
+      "trigger": "policy",
+      "policy": {
+        "keep_days": 30
+      },
+      "principal": "system",
+      "at": "2026-11-02T03:00:00Z",
+      "timeline_revision": 18,
+      "impact": null
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 """Helpers for the Inspect tests (#135): the seeded Lite, "Structured (M4)", Structured v2
-(#188, every M5 module on) and Structured v3 (#239, D16: every M6 module on too) effective
-configurations (``tests/fixtures/inspect/``), with changes laid over ``effective``; Lite as an M6
-Engine serves it (``lite_m6``); the shared Alice/Bob/Pat cast (``story_cast.json``); and an
-``m6/states.json`` State as a ``StateView`` body (``state_view``, #251 and #265)."""
+(#188, every M5 module on), Structured v3 (#239, D16: every M6 module on too) and Full v4
+(#292, E16) effective configurations (``tests/fixtures/inspect/``), with changes laid over
+``effective``; Lite as an M6 Engine serves it (``lite_m6``); the shared Alice/Bob/Pat cast
+(``story_cast.json``); and an ``m6/states.json`` State as a ``StateView`` body (``state_view``,
+#251 and #265)."""
 
 import copy
 import json
@@ -72,6 +73,15 @@ def structured_v3(**effective: Any) -> dict[str, Any]:
     """The seeded Structured v3 configuration (D16: v2 plus the clock, both its flags and States
     ``on``), ``__`` paths as in :func:`config_body`."""
     return config_body("structured_v3", **effective)
+
+
+def full_v4(**effective: Any) -> dict[str, Any]:
+    """The seeded Full v4 configuration (E16): the Engine's ``full_settings()`` at ``95e57a5``
+    (Structured v3 plus M7's ``verification.shape_tightening`` and
+    ``commitment.salience_bias``), ``profile {id: PRF002, version: 4}``, certified by
+    ``m7/certification.json``'s record (``quality_status.certification_id``,
+    ``floors_passed``); ``__`` paths as in :func:`config_body`."""
+    return config_body("full_v4", **effective)
 
 
 # What an M6 Engine merges into a Lite story's configuration: its deployment defaults (D16).
