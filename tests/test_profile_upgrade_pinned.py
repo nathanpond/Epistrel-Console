@@ -443,6 +443,39 @@ def test_refusals_make_no_second_call(operator_client: Client, engine: FakeEngin
     assert len(upgrades(engine)) == 1
 
 
+def deleted_refusal(engine: FakeEngine) -> None:
+    engine.respond("POST", UPGRADE, 422, json=error("profile_deleted", "deleted", reason="deleted"))
+
+
+def test_profile_deleted_at_the_first_stage(operator_client: Client, engine: FakeEngine) -> None:
+    """#310 (#344): a first stage the Engine refuses ``profile_deleted`` reads the deleted text,
+    with no form, no panel and no second call."""
+    deleted_refusal(engine)
+    response = first_stage(operator_client)
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert profile_upgrade.DELETED_TEXT in text(html)
+    assert 'class="engine-error' not in html
+    assert 'name="upgrade_mode"' not in html
+    assert len(upgrades(engine)) == 1
+
+
+def test_profile_deleted_at_the_confirm(operator_client: Client, engine: FakeEngine) -> None:
+    """#310 (#344): a confirm the Engine refuses ``profile_deleted`` reads the deleted text, with
+    no confirm left to resubmit and no second call."""
+    held_answer(engine)
+    data = confirm_data(first_stage(operator_client).content.decode())
+    engine.reset()
+    deleted_refusal(engine)
+    response = operator_client.post(URL, data)
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert profile_upgrade.DELETED_TEXT in text(html)
+    assert 'class="engine-error' not in html
+    assert 'class="two-stage"' not in html
+    assert len(upgrades(engine)) == 1
+
+
 def test_a_confirm_refusal_keeps_the_confirm(operator_client: Client, engine: FakeEngine) -> None:
     held_answer(engine)
     data = confirm_data(first_stage(operator_client).content.decode())
