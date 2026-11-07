@@ -140,7 +140,7 @@ def test_form_renders_with_the_recommendation_checked(
     why = question.index("Why: Bob's line is his own sincere claim")
     assert recommended < why
     assert f'name="text_{Q1}"' in question
-    assert "Text you write here is sent instead of the option picked above" in question
+    assert "Free text replaces the option you picked" in question
     assert '<button type="submit">Submit answers</button>' in html
     assert '<button type="submit" name="accept_all" value="1">Accept every recommendation' in html
     first = key_in(html)
