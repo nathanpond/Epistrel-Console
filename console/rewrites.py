@@ -113,6 +113,13 @@ History's Variants with ``dormant_variant``) and ``author_fact_limit``
 unregistered, or for a blank or non-string id. ``tests/urls_with_m7_pages.py`` is the one
 shared M7 stub urlconf for their linked cases.
 
+**#297's additions.** The Rewrite page's session list: :class:`RewriteRow` and
+:func:`rewrite_rows` (every cell pre-rendered), :func:`rejected_sessions` and
+:func:`rejected_notice` (D15), and the empty texts :data:`NO_SESSIONS`,
+:data:`NO_SESSIONS_MATCH` and :data:`NO_MORE_SESSIONS`. E21's state-driven flash for any write
+that opens, answers or re-plans a session is :func:`session_write_flash` (#297 passes the open's
+texts; a later story passes its own verb and texts).
+
 **E18 — Engine gaps, said once (convention 24's rule).**
 
 - **No canary-run list.** Canary results are reached only through the certification they made
@@ -145,14 +152,19 @@ from typing import Any, ClassVar
 
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 
 from console.engine.client import EngineClientError, EngineError
 from console.engine.models import (
     NarrativePosition,
+    RewriteList,
     RewritePreview,
     RewriteQuestion,
     RewriteSession,
+    RewriteSessionWritten,
     RewriteStaleDetails,
+    RewriteSummary,
     rejected_entries,
 )
 from console.engine_errors import log
@@ -160,6 +172,7 @@ from console.forms.rewrites import RESOLUTION_CHOICES, THRESHOLDS
 from console.inspect import short_id, unavailable_for
 from console.positions import knowledge_position_text
 from console.raw import CELL_LIMIT, EMPTY, compact_json, more_json, number_text, plural
+from console.templatetags.console_format import engine_time
 from console.wording import humanised
 from console.world import WorldRefusal, world_refusal
 
@@ -1109,3 +1122,138 @@ def rewrite_refusal(
     if code == "author_fact_limit":
         return WorldRefusal(_fact_limit(details))
     return world_refusal(exc, story_id, verb_phrase, effective)
+
+
+# --- #297: the Rewrite page's session list and the open's flash ----------------------------------
+
+NO_SESSIONS = "No rewrite sessions yet"
+NO_SESSIONS_MATCH = "No sessions in the chosen states"
+NO_MORE_SESSIONS = "No more sessions after this one"
+SESSION_REJECTED_TEXT = "This session couldn't be read"
+QUESTIONS_OPEN_TEXT = "{n} open"
+
+# E21's session flashes, by the written state. #297's open passes its own verb; a later story
+# that opens, answers or re-plans a session passes its own texts to :func:`session_write_flash`.
+OPEN_VERB = "Rewrite opened"
+APPLIED_DIRECTLY_TEXT = "Applied directly: amendment {amendment} · story revision now {revision}"
+QUESTIONS_TEXT = "The Engine has {n} question(s) before it can plan"
+PLANNED_TEXT = "Planned: review the preview, then apply it"
+SESSION_NOW_TEXT = "{verb} — the session is now {state}"
+NOT_APPLIED_PREFIX = "Not applied directly: "
+KEY_TAIL = " — idempotency key <code>{}</code>"
+
+
+@dataclass(frozen=True)
+class RewriteRow:
+    """One row of the Rewrite page's session list, every cell pre-rendered: ``state`` raw (the
+    badge's ``title``), ``opened_text`` / ``expires_text`` through ``engine_time`` (HTML), and
+    ``url`` the session page (``None`` while unregistered)."""
+
+    state: str
+    state_text: str
+    kind_text: str
+    instruction: str
+    questions_text: str
+    opened_text: str
+    expires_text: str
+    session_id: str
+    url: str | None
+
+
+def _questions_text(summary: RewriteSummary) -> str:
+    open_questions = _int(summary.open_questions)
+    if summary.state in OPEN_STATES and open_questions is not None and open_questions > 0:
+        return QUESTIONS_OPEN_TEXT.format(n=number_text(open_questions))
+    return EMPTY
+
+
+def rewrite_rows(page: RewriteList, story_id: str) -> tuple[RewriteRow, ...]:
+    """The parsed sessions of ``page`` as :class:`RewriteRow`, in the Engine's order (newest
+    first). Questions read "<n> open" only for an open state with open questions (a terminal
+    session can still report some); Expires only for an open state; "—" otherwise."""
+    return tuple(
+        RewriteRow(
+            state=summary.state,
+            state_text=state_text(summary.state),
+            kind_text=kind_text(summary.kind),
+            instruction=summary.instruction or EMPTY,
+            questions_text=_questions_text(summary),
+            opened_text=engine_time(summary.created_at),
+            expires_text=engine_time(summary.expires_at) if summary.state in OPEN_STATES else EMPTY,
+            session_id=summary.id,
+            url=rewrite_session_url(story_id, summary.id),
+        )
+        for summary in page.items
+    )
+
+
+def rejected_sessions(page: RewriteList) -> list[Any]:
+    """The page's raw entries that didn't parse (D15), in the Engine's order (for More)."""
+    unparsed = getattr(page, "unparsed", {}) or {}
+    if "items" not in unparsed:
+        return []
+    return rejected_entries(unparsed["items"], _summary_of)
+
+
+def _summary_of(entry: object) -> RewriteSummary | None:
+    return RewriteSummary.from_json(entry)
+
+
+def rejected_notice(n: int) -> str:
+    """D15's notice: "1 session couldn't be read" / "N sessions couldn't be read"."""
+    return f"{plural(n, 'session')} couldn't be read"
+
+
+def unanswered_count(session: RewriteSession) -> int:
+    """The session's parsed questions with no answer yet (E21's questions-flash count)."""
+    return sum(1 for q in session.questions if question_view(q).answered is None)
+
+
+def _amendment_html(story_id: str, amendment_id: str) -> SafeString:
+    url = amendment_url(story_id, amendment_id)
+    if url is None:
+        return format_html("<code>{}</code>", amendment_id)
+    return format_html('<a href="{}"><code>{}</code></a>', url, amendment_id)
+
+
+def session_write_flash(
+    written: RewriteSessionWritten,
+    story_id: str,
+    key: str,
+    *,
+    apply_directly: bool,
+    verb: str = OPEN_VERB,
+    planned: str = PLANNED_TEXT,
+    questions: str = QUESTIONS_TEXT,
+    applied: str = APPLIED_DIRECTLY_TEXT,
+) -> SafeString:
+    """E21's flash for a write that opened, answered or re-planned a session, picked from the
+    written state: ``apply`` set → ``applied`` (the amendment's full id in ``<code>``, linked
+    through :func:`amendment_url` when it resolves, and the post-apply revision);
+    ``awaiting_answers`` → ``questions`` with the unanswered count (C11 plural);
+    ``awaiting_approval`` → ``planned``; else "<verb> — the session is now <STATE_TEXT>". With
+    "Apply directly" ticked and no ``apply``, it starts :data:`NOT_APPLIED_PREFIX`. It ends with
+    #43's key tail (the answer's key, else ``key``)."""
+    tail = format_html(KEY_TAIL, written.idempotency_key or key)
+    done = written.apply
+    if done is not None:
+        revision = done.timeline_revision
+        if _int(revision) is None:
+            revision = written.timeline_revision
+        amendment_slot, revision_slot = applied.split("{amendment}", 1)
+        return format_html(
+            "{}{}{}{}",
+            amendment_slot,
+            _amendment_html(story_id, done.amendment_id),
+            revision_slot.replace("{revision}", number_text(revision)),
+            tail,
+        )
+    if written.state == AWAITING_ANSWERS:
+        text = _filled(questions, unanswered_count(written), "question")
+    elif written.state == AWAITING_APPROVAL:
+        text = planned
+    else:
+        text = SESSION_NOW_TEXT.format(verb=verb, state=state_text(written.state))
+    if apply_directly:
+        text = f"{NOT_APPLIED_PREFIX}{text}"
+    return format_html("{}{}", text, tail)

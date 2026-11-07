@@ -1,0 +1,17 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#297: one rewrite session (stories:rewrite, console/views/rewrites.py). The heading
+("<kind> session" and the full id), "← All rewrites" and "Reload", E2's omniscient line, then
+E3's partial. A 404 rewrite_session_not_found shows E5's text (session_not_found); any other
+failed read #43's panel (session_error) under "Rewrite session <id>". Context: session_id,
+rewrites_url, session_reload_url, session_view, answers_form, idempotency_key, base_revision,
+session_not_found, session_error.
+{% endcomment %}
+{% block story_page %}
+<h3>{% if session_view %}{{ session_view.kind_text }} session{% else %}Rewrite session{% endif %} <code>{{ session_id }}</code></h3>
+<p class="session-links">{% if rewrites_url %}<a href="{{ rewrites_url }}">← All rewrites</a> · {% endif %}<a href="{{ session_reload_url }}">Reload</a></p>
+{% include "console/rewrites/_omniscient.html" %}
+{% if session_not_found %}<p class="not-found">{{ session_not_found }}</p>
+{% elif session_error %}{% include "console/_engine_error.html" with engine_error=session_error %}
+{% elif session_view %}{% include "console/rewrites/_session.html" with view=session_view %}{% endif %}
+{% endblock %}

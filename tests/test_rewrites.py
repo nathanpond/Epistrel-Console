@@ -649,12 +649,10 @@ def test_the_session_limit_links_the_rewrite_page() -> None:
         "This story already has the most open rewrite sessions allowed (5) — finish or cancel "
         "one first"
     )
-    assert not limit.url
+    assert limit.url == f"/stories/{STORY}/rewrites/"  # #297 registered the Rewrite page
     assert refused("rewrite_session_limit").text.endswith(
         "allowed (the limit) — finish or cancel one first"
     )
-    with override_settings(ROOT_URLCONF=M7_PAGES):
-        assert refused("rewrite_session_limit", limit=5).url == f"/stories/{STORY}/rewrites/"
 
 
 def test_omniscient_required_is_a_logged_console_bug(caplog: pytest.LogCaptureFixture) -> None:
@@ -703,10 +701,14 @@ def test_url_helpers_refuse_blank_or_non_string_ids(bad: Any) -> None:
 
 
 def test_url_helpers_are_none_while_unregistered() -> None:
-    assert rewrites_url(STORY) is None
-    assert rewrite_session_url(STORY, SESSION) is None
     assert amendments_url(STORY) is None
     assert amendment_url(STORY, AMENDMENT) is None
+
+
+def test_the_rewrite_page_helpers_link_under_the_real_urlconf() -> None:
+    """#297 registered ``stories:rewrites`` and ``stories:rewrite``."""
+    assert rewrites_url(STORY) == f"/stories/{STORY}/rewrites/"
+    assert rewrite_session_url(STORY, SESSION) == f"/stories/{STORY}/rewrites/{SESSION}/"
 
 
 def test_url_helpers_link_under_the_stub_urlconf() -> None:

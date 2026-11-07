@@ -54,6 +54,7 @@ from console.views import (
     providers,
     rating_suggestion,
     ratings,
+    rewrites,
     status,
     stories,
     story_characters,
@@ -99,6 +100,13 @@ story_patterns = (
             name="override-notice",
         ),
         path("<str:story_id>/history/", history.history, name="history"),
+        # #297 (E11): the story's Rewrite page and one rewrite session (``<ulid:…>``).
+        path("<str:story_id>/rewrites/", rewrites.rewrites, name="rewrites"),
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/",
+            rewrites.rewrite,
+            name="rewrite",
+        ),
         # #195: one turn's perception trace, reconstructed per character.
         path(
             "<str:story_id>/turns/<int:turn>/perception/",

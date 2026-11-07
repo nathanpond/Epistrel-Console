@@ -14,7 +14,6 @@ ULID = "01JM7RW0000000000000000001"
 # E6's helpers and E11's tables, with the arguments each path takes.
 ARGS: dict[str, list[str]] = {
     "stories:rewrites": [STORY],
-    "stories:rewrite": [STORY, ULID],
     "stories:rewrite-answers": [STORY, ULID],
     "stories:rewrite-apply": [STORY, ULID],
     "stories:rewrite-cancel": [STORY, ULID],
@@ -52,7 +51,6 @@ ARGS: dict[str, list[str]] = {
     "profiles:certify": ["00000000000000000000PRF002"],
 }
 PATHS = {
-    "stories:rewrite": f"/stories/{STORY}/rewrites/{ULID}/",
     "stories:line-edit": f"/stories/{STORY}/history/line/",
     "stories:operations-list": f"/stories/{STORY}/operations/",
     "inspect:resolve-listing": (

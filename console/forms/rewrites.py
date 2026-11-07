@@ -46,6 +46,13 @@ own. ``console.rewrites`` holds the session view these forms read and
   omitted. A required question with no recommendation and no text is Django's required-choice
   error. A 422 ``invalid_answer`` puts ``details.question_id``'s message on that group
   (:meth:`AnswersForm.apply_engine_error`), else above the form.
+
+**#297 — the Rewrite page's forms.** :class:`NewRewriteForm` is the instruction (a textarea,
+required, stripped, at most :data:`INSTRUCTION_MAX` code points with no HTML ``maxlength``, C10)
+plus E4's modes; :meth:`NewRewriteForm.body` is ``{"instruction", **modes()}``.
+:class:`RewriteFilterForm` is E22's state filter: one checkbox per ``STATE_TEXT`` state in its
+order, none ticked meaning every state; :meth:`RewriteFilterForm.states` gives the ticked ones
+de-duplicated in that order.
 """
 
 from __future__ import annotations
@@ -211,3 +218,63 @@ class AnswersForm(forms.Form):
             selected = (str(value) if value else None) if self.is_bound else question.recommended_id
             rows.append(QuestionRow(question, choice, self[text_name(question.id)], selected))
         return tuple(rows)
+
+
+# --- #297: the Rewrite page's forms -----------------------------------------------------------
+
+INSTRUCTION_MAX = 4000  # the Engine's ``instruction`` max_length (code points, stripped)
+INSTRUCTION_REQUIRED = "Say what was really true about the story's past"
+INSTRUCTION_TOO_LONG = "At most 4,000 characters"
+INSTRUCTION_HELP = (
+    "Describe the past as it really was, e.g. “Bobby actually went to UCLA.” Nothing changes "
+    "until you apply the plan"
+)
+STATE_PARAM = "state"
+
+
+class NewRewriteForm(RewriteModesForm):
+    """#297's New rewrite form: the instruction (required, stripped, at most
+    :data:`INSTRUCTION_MAX` characters, no HTML ``maxlength`` per C10) plus E4's modes."""
+
+    instruction = forms.CharField(
+        label="Instruction",
+        help_text=INSTRUCTION_HELP,
+        widget=forms.Textarea(attrs={"rows": 4}),
+        error_messages={"required": INSTRUCTION_REQUIRED},
+    )
+
+    field_order = ("instruction", "resolution", "apply_directly")
+
+    def clean_instruction(self) -> str:
+        text: str = self.cleaned_data["instruction"]
+        if len(text) > INSTRUCTION_MAX:
+            raise forms.ValidationError(INSTRUCTION_TOO_LONG)
+        return text
+
+    def body(self) -> dict[str, Any]:
+        """``POST …/rewrites``'s body (a valid form): the instruction and E4's modes."""
+        return {"instruction": self.cleaned_data["instruction"], **self.modes()}
+
+
+def _state_choices() -> list[tuple[str, str]]:
+    from console.rewrites import STATE_TEXT  # console.rewrites imports this module
+
+    return list(STATE_TEXT.items())
+
+
+class RewriteFilterForm(forms.Form):
+    """#297's state filter (E22): one checkbox per E3 state, in ``STATE_TEXT``'s order. None
+    ticked means every state (no ``state`` sent); a value outside the choices is Django's
+    ``invalid_choice`` error, and the page makes no list read."""
+
+    state = forms.MultipleChoiceField(
+        choices=_state_choices,
+        required=False,
+        label="State",
+        widget=forms.CheckboxSelectMultiple,
+    )
+
+    def states(self) -> tuple[str, ...]:
+        """The ticked states (a valid form), de-duplicated, in the choices' order."""
+        ticked = set(self.cleaned_data.get("state") or ())
+        return tuple(value for value, _ in _state_choices() if value in ticked)

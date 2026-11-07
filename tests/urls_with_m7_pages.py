@@ -9,11 +9,14 @@ dropped first, the stubs appended, and remounted in place of the real include (D
 keeps working as owners land.
 
 **Page stories add a stub here, and never create another stub urlconf.** #292's test-local
-``stories:rewrite`` stub is folded in.
+``stories:rewrite`` stub was folded in, then dropped once #297 registered the real session page
+(the linked cases of its footer and amendment links render the real page here).
 
 **The frames (#296).** ``stories:rewrites`` renders through
 :func:`console.views.story_pages.story_page` and ``engine:certifications`` through
-:func:`~console.views.story_pages.engine_page`, both with :func:`recording_build`: it appends its
+:func:`~console.views.story_pages.engine_page`, both with :func:`recording_build`
+(``stories:rewrites`` keeps this probe after #297 registers the real Rewrite page, so under this
+urlconf ``/stories/<id>/rewrites/`` is the probe, not the page): it appends its
 context to :data:`BUILT` and answers :data:`BUILD`'s callable when a test set one, else ``{}``
 (``tests/test_story_pages.py``'s autouse fixture clears both). Every other stub answers "stub".
 
@@ -71,8 +74,9 @@ def _rebuilt(
 
 S = "<str:story_id>/"
 STORY_STUBS = [
-    path(f"{S}rewrites/", rewrites_frame, name="rewrites"),  # #297 (#296's frame)
-    path(f"{S}rewrites/<ulid:session_id>/", stub, name="rewrite"),  # #297 (#292's stub)
+    # #296's frame probe for ``tests/test_story_pages.py``: it shadows #297's real Rewrite page
+    # under this urlconf only (the real ``stories:rewrite`` session page is served here).
+    path(f"{S}rewrites/", rewrites_frame, name="rewrites"),
     path(f"{S}rewrites/<ulid:session_id>/answers/", stub, name="rewrite-answers"),  # #298
     path(f"{S}rewrites/<ulid:session_id>/apply/", stub, name="rewrite-apply"),  # #299
     path(f"{S}rewrites/<ulid:session_id>/cancel/", stub, name="rewrite-cancel"),  # #299
@@ -174,11 +178,9 @@ NOT_YET_REGISTERED = frozenset(
         "stories:operations-list",
         "stories:prune",
         "stories:prune-confirm",
-        "stories:rewrite",
         "stories:rewrite-answers",
         "stories:rewrite-apply",
         "stories:rewrite-cancel",
-        "stories:rewrites",
     }
 )
 

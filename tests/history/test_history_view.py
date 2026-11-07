@@ -324,12 +324,22 @@ def history_link_line(html: str) -> str:
     return html[start : html.index("</p>", start) + 4]
 
 
-def test_the_link_line_is_unchanged_without_m7_pages(
+# The nav once #297 registered ``stories:rewrites`` (E24: the registering story regenerates).
+REGISTERED_NAV = (
+    ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
+    f'<a href="{S}rewrites/">Rewrite</a></span>'
+)
+
+
+def test_the_link_line_shows_only_the_registered_m7_pages(
     operator_client: Client, engine: FakeEngine
 ) -> None:
+    """Main's link line plus the story nav's registered rows (Rewrite, #297) after Config."""
     answer(engine)
     html = page(operator_client)
-    assert normalise_html(history_link_line(html)) == normalise_html(HISTORY_LINK_LINE)
+    config = f'<a class="config-tab" href="{S}config/">Config</a>'
+    expected = HISTORY_LINK_LINE.replace(config, config + REGISTERED_NAV)
+    assert normalise_html(history_link_line(html)) == normalise_html(expected)
 
 
 def test_the_link_line_shows_the_story_nav_after_config(

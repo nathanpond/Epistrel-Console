@@ -1,0 +1,65 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#297: the story's Rewrite page (stories:rewrites, console/views/rewrites.py). E2's omniscient
+line (no viewpoint picker), the New rewrite form (instruction, E4's modes; refusal or #43's panel
+above it, a field's refusal beside it), then E22's state filter, the count line and the session
+table (rejected entries: D15's notice plus one spanning row each; a failed read: #43's panel).
+Context: form, idempotency_key, form_action, refusal, refusal_url, refusal_link, write_error,
+filter_form, filter_url, cursor_dropped, filtered, clear_url, list_read, list_error, rows, rejected,
+rejected_notice, rejected_text, count_text, empty_text, older_url, newest_url, older_text,
+newest_text.
+{% endcomment %}
+{% load console_format inspect_tags %}
+{% block story_page %}
+{% include "console/rewrites/_omniscient.html" %}
+<section class="new-rewrite">
+  <h3>New rewrite</h3>
+  {% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+  {% if refusal %}<p class="errorlist rewrite-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+  <form method="post" action="{{ form_action }}" class="new-rewrite-form">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    {{ form.non_field_errors }}
+    <div class="field field-instruction">{{ form.instruction.label_tag }}<br>{{ form.instruction }}{% if form.instruction.errors %}<ul class="errorlist">{% for error in form.instruction.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      <p><small class="muted">{{ form.instruction.help_text }}</small></p>
+    </div>
+    {% include "console/rewrites/_modes.html" with form=form %}
+    <button type="submit">Plan rewrite</button>
+  </form>
+</section>
+<section class="rewrite-sessions">
+  <h3>Sessions</h3>
+  {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+  <form method="get" action="{{ filter_url }}" class="rewrite-filter">
+    <fieldset><legend>State</legend>
+      {% for box in filter_form.state %}<label class="inline">{{ box.tag }} {{ box.choice_label }}</label> {% endfor %}
+    </fieldset>{{ filter_form.state.errors }}
+    <button type="submit">Filter</button>{% if clear_url %} <a href="{{ clear_url }}">Clear filters</a>{% endif %}
+  </form>
+  {% if list_error %}{% include "console/_engine_error.html" with engine_error=list_error %}
+  {% elif list_read %}
+  {% if rejected_notice %}<p class="notice rejected-notice">{{ rejected_notice }}</p>{% endif %}
+  {% if count_text %}<p class="count">{{ count_text }}</p>{% endif %}
+  {% if rows %}<table class="rewrite-sessions">
+    <thead><tr><th>State</th><th>Kind</th><th>Instruction</th><th>Questions</th><th>Opened</th><th>Expires</th><th>Session</th></tr></thead>
+    <tbody>
+    {% for row in rows %}<tr>
+      <td><span class="badge session-state-badge state-{{ row.state }}" title="{{ row.state }}">{{ row.state_text }}</span></td>
+      <td>{{ row.kind_text }}</td>
+      <td>{{ row.instruction }}</td>
+      <td>{{ row.questions_text }}</td>
+      <td>{{ row.opened_text }}</td>
+      <td>{{ row.expires_text }}</td>
+      <td>{% if row.url %}<a href="{{ row.url }}"><code>{{ row.session_id }}</code></a>{% else %}<code>{{ row.session_id }}</code>{% endif %}</td>
+    </tr>
+    {% endfor %}{% for raw in rejected %}<tr class="rejected">
+      <td colspan="7">{{ rejected_text }}<details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% elif rejected %}{% for raw in rejected %}<details class="rejected-entry"><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details>
+  {% endfor %}{% endif %}
+  {% if empty_text %}<p class="empty">{{ empty_text }}</p>{% endif %}
+  {% if older_url or newest_url %}<p class="paging">{% if newest_url %}<a href="{{ newest_url }}">{{ newest_text }}</a>{% endif %}{% if newest_url and older_url %} · {% endif %}{% if older_url %}<a href="{{ older_url }}">{{ older_text }}</a>{% endif %}</p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

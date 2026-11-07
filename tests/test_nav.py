@@ -83,9 +83,16 @@ def test_every_page_parent_is_in_e11s_tables() -> None:
     }
 
 
-def test_story_links_are_empty_under_the_real_urlconf() -> None:
-    assert story_links(STORY, None) == []
-    assert story_links(STORY, "stories:rewrite") == []
+def test_rewrite_link_once_registered() -> None:
+    """#297 registered ``stories:rewrites`` (E24: this replaces #296's "empty under the real
+    urlconf" baseline): the real urlconf's nav holds Rewrite alone, marked current from the
+    session page through ``PAGE_PARENT``."""
+    assert story_links(STORY, None) == [
+        NavLink("stories:rewrites", "Rewrite", f"{S}rewrites/", False)
+    ]
+    assert story_links(STORY, "stories:rewrite") == [
+        NavLink("stories:rewrites", "Rewrite", f"{S}rewrites/", True)
+    ]
 
 
 @override_settings(ROOT_URLCONF=M7_PAGES)

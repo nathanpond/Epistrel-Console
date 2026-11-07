@@ -49,27 +49,67 @@
       "blast_radius": {
         "incidental": [
           {
-            "record_id": "01JM7EV0000000000000000003",
-            "table": "events",
-            "turn": 3,
-            "excerpt": "Mara eyes the forged ledger.",
-            "after": "Mara eyes the copied ledger."
+            "record": {
+              "table": "events",
+              "id": "01JM7EV0000000000000000003"
+            },
+            "edge_type": "mentions",
+            "edges": [
+              "01JM7DE0000000000000000001"
+            ],
+            "change_key": "c1",
+            "target": {
+              "kind": "fact",
+              "id": "01JM7FA0000000000000000001"
+            },
+            "action": "fix",
+            "position": [
+              3,
+              0,
+              0,
+              1,
+              0
+            ],
+            "excerpt": "Mara eyes the forged ledger."
           }
         ],
         "cascaded": [
           {
-            "record_id": "01JM7FA0000000000000000003",
-            "table": "facts",
+            "record": {
+              "table": "state_changes",
+              "id": "01JM7SC0000000000000000001"
+            },
+            "edge_type": null,
+            "edges": [],
+            "change_key": "c1",
+            "target": {
+              "kind": "state",
+              "id": "01JM7SD0000000000000000001"
+            },
             "action": "re_evaluate",
-            "severity": "low",
-            "summary": "Alice's distrust of Bob is re-derived"
+            "position": null,
+            "severity": "low"
           }
         ],
         "irreducible": [
           {
+            "record": {
+              "table": "amendment_parts",
+              "id": "01JM7AM0000000000000000001"
+            },
+            "edge_type": "presupposes",
+            "edges": [
+              "01JM7DE0000000000000000002"
+            ],
+            "change_key": "c1",
+            "target": {
+              "kind": "fact",
+              "id": "01JM7FA0000000000000000001"
+            },
+            "action": "fix",
+            "position": null,
+            "excerpt": "Bob confesses the forgery",
             "conflict_id": "01JM7CN0000000000000000001",
-            "record_id": "01JM7AM0000000000000000001",
-            "table": "amendment_parts",
             "reason": "dependent_amendment",
             "severity": "high",
             "options": [
@@ -78,7 +118,6 @@
               "keep",
               "cascade_undo"
             ],
-            "excerpt": "Bob confesses the forgery",
             "before_excerpt": "Bob confesses the forgery"
           }
         ]
@@ -86,7 +125,27 @@
       "blast_radius_truncated": true,
       "relabels": [
         {
-          "record_id": "01JM7EV0000000000000000004",
+          "record": {
+            "table": "utterances",
+            "id": "01JM7YT0000000000000000001"
+          },
+          "edge_type": "asserts",
+          "edges": [
+            "01JM7DE0000000000000000003"
+          ],
+          "change_key": "c1",
+          "target": {
+            "kind": "fact",
+            "id": "01JM7FA0000000000000000001"
+          },
+          "action": "relabel",
+          "position": [
+            2,
+            0,
+            0,
+            0,
+            0
+          ],
           "from": "sincere",
           "to": "deception"
         }

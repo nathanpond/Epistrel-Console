@@ -3256,3 +3256,29 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The preset table and its hidden default submit sit inside the assign form. The bottom Preview button and the select/id input render only when the full list read worked. If both reads fail, no form renders: both notices show. The live edge's presets carry `quality: null`, so their Quality cells read "—". This was checked against `n8-291-smoke` on 127.0.0.1:18000.
   **Why:** AC: the form renders whenever presets exist. Cost if wrong: none.
   **Issue:** #307
+- **Decision:** An invalid New rewrite form re-renders with the **posted** idempotency key, not a fresh one.
+  **Why:** The story's AC says "the posted key kept"; E21 says a local-validation failure mints a fresh key. The story's more specific text wins. No write happened, so either key is safe. Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** The open's D8 key rule: the posted key is kept for no answer (`EngineUnreachable`, a timeout), for `bad_response`, and for a 5xx that `rewrite_refusal` doesn't word. A fresh key follows every answered refusal, including the worded 503 `rewrite_reach_failed`, an unworded 4xx (#43's panel) and a placed `validation_error`.
+  **Why:** E21 and the test plan ("each mints a fresh key", including reach-failed). An unworded 5xx may have written. Cost if wrong: a resubmit after an unworded 5xx replays instead of retrying.
+  **Issue:** #297
+- **Decision:** `tests/urls_with_m7_pages.py` keeps its `stories:rewrites` frame stub (#296's probe for `tests/test_story_pages.py`) and drops only the `stories:rewrite` stub. Under that urlconf, `/stories/<id>/rewrites/` is the probe, while the session page is the real view, so its linked cases (amendment link, footer actions) render the real page. Both names leave `NOT_YET_REGISTERED`, and `stories:rewrite` leaves `test_m7_stub_urlconf.ARGS`/`PATHS`.
+  **Why:** `_rebuilt` drops a real pattern whose name a stub has, so a kept `stories:rewrite` stub would hide the real page from the linked tests. Moving the frame probe would mean rewriting #296's frame tests. Cost if wrong: a later story that wants the real Rewrite page under the stub urlconf must move the probe first.
+  **Issue:** #297
+- **Decision:** E21's state-driven session flash is a shared helper, `console.rewrites.session_write_flash(written, story_id, key, *, apply_directly, verb=, planned=, questions=, applied=)`, which returns a `SafeString` (flashed with `extra_tags="safe"`). #297 passes the open's texts. Every open flash, including `awaiting_answers`, is `messages.success`. "Story revision now" is `apply.timeline_revision`, falling back to the top-level revision.
+  **Why:** #298, #301, #303, #305 and #306 need the same state logic with their own verbs (E1: no story redefines it). Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** The session page's 404 (`rewrite_session_not_found`) renders E5's `NOT_FOUND_TEXT` inside the frame. The view sets `status_code = 404` on `story_page`'s response, from a flag the build closure sets. `story_page` itself is unchanged.
+  **Why:** The frame has no status hook, and a `build` returning its own `HttpResponse` would lose the frame's context. Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** Rule 1: #292's `m7/rewrite_session.json`, `rewrite_session_applied.json` and `rewrite_applied.json` blast-radius and relabel entries now use the Engine's shape, checked against `src/epistrel/orchestrator/rewrite/plan.py` at Engine origin/main `ed2be26`. Each entry has `record {table, id}`, `edge_type`, `edges`, `change_key`, `target {kind, id}`, `action` and `position`. The incidental entry has a 5-list `[3,0,0,1,0]`; the others have `null`. The conflict adds `conflict_id`, `reason`, `severity`, `options` and `before_excerpt`. The cascaded row is a `state_changes` `re_evaluate` (the Engine's severity-bearing cascaded entry), replacing the made-up `facts` row with `summary`. Notifications are unchanged (preview notifications are `[]` in `plan.py`, and E3's reader handles both shapes). The change went through `$SCRATCH/gen_m7.py` (regenerated into a temp copy; only these 3 files differ).
+  **Why:** Fixes #336 (the session page's record column read "—" over them). Shown pre-fix: `test_awaiting_approval_shows_the_preview` fails on "Amendment parts …00000001" against the old fixtures. Cost if wrong: none (the E20 table rows are unchanged).
+  **Issue:** #297, #336
+- **Decision:** These real-urlconf baselines moved when `stories:rewrites`/`stories:rewrite` registered (E24), so this PR regenerates them:
+  - The Play and History link-line goldens now expect Rewrite's nav row (renamed `test_the_link_line_shows_only_the_registered_m7_pages`).
+  - `tests/test_nav.py`'s empty-nav test became `test_rewrite_link_once_registered`.
+  - `tests/inspect/test_shell.py::test_the_play_page_links_inspect_after_history` now has the nav row between History and Inspect.
+  - `tests/test_rewrites.py`: the session limit links the Rewrite page under the real urlconf, and the two helpers resolve there (new test).
+  - `tests/timeline/test_regenerate_directed.py` reaches the panel by patching `rewrite_session_url` to `None`, and the real urlconf now redirects.
+  **Why:** E24's rule: the registering story regenerates the goldens it moves. Cost if wrong: none.
+  **Issue:** #297
