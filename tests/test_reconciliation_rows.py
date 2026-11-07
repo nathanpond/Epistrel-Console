@@ -137,3 +137,61 @@ def test_count_and_unreadable_wording() -> None:
     )
     assert unreadable_text(1) == "1 listing couldn't be read — see More"
     assert unreadable_text(3) == "3 listings couldn't be read — see More"
+
+
+REQUEST = "req-01JM7RQ0000000000000000001"
+
+
+@override_settings(ROOT_URLCONF=ACTIONS)
+def test_a_listing_without_an_outbox_id_has_no_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#291 (Engine #661): a request-keyed row, even with a settleable reason, has no actions and
+    anchors on ``request-<id>``; it is never redacted. **Complement:** ``reverse`` is never
+    called with ``None``, and an outbox-keyed row with the same reason keeps both actions (a
+    settleable reason: ``unconfirmed`` isn't one, so it would have none either way)."""
+    from django.urls import reverse as real
+
+    import console.reconciliation as reconciliation
+
+    def strict(name: str, args: list[Any] | None = None, **kwargs: Any) -> str:
+        assert None not in (args or []), (name, args)
+        return real(name, args=args, **kwargs)
+
+    monkeypatch.setattr(reconciliation, "reverse", strict)
+    keyed = listing(outbox_id=None, request_id=REQUEST, value=None, effect=None)
+    row = listing_row(keyed, STORY, set(), story=story())
+    assert row.actions == ()
+    assert (row.anchor, row.outbox_id, row.request_id) == (f"request-{REQUEST}", None, REQUEST)
+    assert row.redacted is False
+    assert row.effect_text == "—"
+    outbox = listing_row(listing(), STORY, set(), story=story())
+    assert outbox.anchor == f"outbox-{OUTBOX}"
+    assert [a.label for a in outbox.actions] == ["Settle now", "Compensate"]
+    assert all(f"%23outbox-{OUTBOX}" in a.url for a in outbox.actions)  # next= is the anchor
+    neither = listing_row(listing(outbox_id=None), STORY, set())
+    assert (neither.anchor, neither.actions) == (None, ())
+
+
+def test_a_request_keyed_row_renders_its_anchor_and_request_id() -> None:
+    from django.template.loader import render_to_string
+
+    keyed = listing(outbox_id=None, request_id=REQUEST, value=None, effect=None)
+    context = {"actions_gate": None, "gate_id": "gate"}
+    html = render_to_string(
+        "console/inspect/_listing_row.html",
+        {**context, "row": listing_row(keyed, STORY, set())},
+    )
+    assert f'<tr id="request-{REQUEST}" class="listing">' in html
+    assert '<td class="outbox">—</td>' in html
+    assert f"<dt>Request id</dt><dd><code>{REQUEST}</code></dd>" in html
+    assert html.index("<dt>Reason</dt>") < html.index("<dt>Request id</dt>")
+    outbox = render_to_string(
+        "console/inspect/_listing_row.html",
+        {**context, "row": listing_row(listing(), STORY, set())},
+    )
+    assert f'<tr id="outbox-{OUTBOX}" class="listing">' in outbox
+    assert "Request id" not in outbox
+    bare = render_to_string(
+        "console/inspect/_listing_row.html",
+        {**context, "row": listing_row(listing(outbox_id=None), STORY, set())},
+    )
+    assert '<tr class="listing">' in bare

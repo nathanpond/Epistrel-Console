@@ -1437,8 +1437,8 @@ def test_binding_refusals_from_a_scenario_land_on_the_rows(
     form = client.post(URL, data).context["form"]
     assert form.bindings.errors["bindid-bank-account_id"] == ["no NUL"]
     assert not any(e.startswith("external_ids") for e in form.top_errors)
-    # D18's undeclared 404: through place_refusal's headline, on the row.
-    engine.respond_undeclared(
+    # D18's 404, declared since Engine M7 (#682): through place_refusal's headline, on the row.
+    engine.respond(
         "POST", STORIES, 404, json=error("not_found", "no provider 'bank'", provider="bank")
     )
     page = client.post(URL, data)

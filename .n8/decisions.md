@@ -3076,3 +3076,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** This state commit rides on branch `n8/plan-m7-state`. `/n8-exec M7` merges it into the milestone branch first, instead of opening a separate state PR.
   **Why:** Every PR's required `gate` is red until #291/#293 land (Engine edge is M7). A separate state PR would need another bypass. The owner accepted folding at the gate.
   **Issue:** #291
+
+## /n8-exec M7 — 2026-11-06
+
+- **Decision (orchestration):** Each M7 story is implemented by a fresh subagent, one at a time on `milestone/m7-history-portability`, in dependency order. Each works from a shared brief plus a running list of what earlier stories built. After every story the orchestrator re-runs the gates (ruff, ruff format, mypy, and the full suite in 8 parallel file shards) and checks the commit, the push, the ticked boxes and the completion comment before starting the next.
+  **Why:** The precedent from M2–M6. The 42 story bodies total ~830 KB, too much for one context. The serial suite now takes more than 10 minutes, so sharding keeps the per-story gate practical. It covers the same files and markers as `uv run pytest`.
+  **Issue:** #291–#332
+- **Decision:** `n8/plan-m7-state` (8499fe8, the M6 re-verify and M7 plan entries) was fast-forwarded into the milestone branch before #291, as the plan's exec note on #291 says, instead of opening a separate state PR.
+  **Why:** Owner-accepted at planning: every PR's `gate` is red until #291/#293 land.
+  **Issue:** #291
+- **Decision:** Recorded `console/engine/openapi.json` from the pulled `ghcr.io/nathanpond/epistrel:edge`, revision `5cb073bbf2b895c241627faeaa2b6acf0543a638` (one commit past `95e57a5`, decisions-only; `git merge-base --is-ancestor` passes), digest `sha256:b824484e37171a02d7d83361bb12d9c2eb76c239dc805ad0092a0d5e1bd0f3af`. The recording equals Engine `95e57a5:docs/openapi.json` in content (248 operations, 704 components), so nothing drifted past the story's list. Deviation from the AC's command: the smoke compose ran as project `n8-291-smoke` with a scratch override publishing the engine on `127.0.0.1:18000` (port 8000 is the owner's Engine dev stack), and `engine_schema --write/--check` used `--url http://127.0.0.1:18000`. The stack is left running for #292/#293.
+  **Why:** The brief forbids touching port 8000. Same image and compose otherwise, so the recording is identical; cost if wrong: none (the check passed against the same image).
+  **Issue:** #291
+- **Decision (Rule 3):** `SubjectRef` gains `story` (AC), but the same model also reads `DepictedSubject` (contract row `(SubjectRef, "DepictedSubject")`), which has no `story`. The contract test's `_widened` adds `SubjectRef`'s optional `story` to `DepictedSubject` (as #64 widens `EntryLocation`), instead of splitting the model. `SubjectRef.to_json` sends `story` only when set (never for a depicted subject or today's erasure form).
+  **Why:** Splitting would touch the media forms/views for no behaviour change. Cost if wrong: a depicted subject with a `story` key would parse; harmless.
+  **Issue:** #291
+- **Decision (Rule 3):** A 105th failure the story didn't list, `tests/timeline/test_regenerate_async.py::test_the_engine_declares_no_queued_regenerate`, asserted regenerate declares no 202. It now asserts the 202 is `DirectedPendingBody` (a directed regenerate, not a queued turn) and still no `Prefer`.
+  **Why:** M7 declares the 202; the test's intent (no queued regenerate, no `Prefer`) still holds.
+  **Issue:** #291
+- **Decision:** `QualityStatus.status` stays closed, now spelled `QualityStatusValue` (the same three values); only `FloorsMet.status` and `CertificationLost`'s `from`/`to` are open (as the AC lists). `RetrievalBody.unparsed` is now `dict[str, Any]`, so a non-list `coverage_gaps` keeps its raw value (other sections keep their behaviour).
+  **Why:** The AC opens only the fields it names; the enum didn't grow. Cost if wrong: a new quality status would fail answers, as on main.
+  **Issue:** #291
+- **Decision:** The test plan's complement "an outbox-keyed `unconfirmed` row keeps both actions" can't hold: `unconfirmed` isn't in `SETTLEABLE_REASONS`, so such a row has no actions on main either. The test uses the settleable `late_success_after_expiry` for both the request-keyed row (no actions) and the outbox row (both actions), and checks `reverse` never sees `None`.
+  **Why:** It still proves the `None` guard, not the reason gate. Changing the settleable set is out of scope (#326).
+  **Issue:** #291
+- **Decision:** Discretion calls, as the story's Discretion section says: the 23 deployment settings are appended after M6's fields (not interleaved alphabetically); `ReconciliationListing.outbox_id`/`request_id` follow the required fields; `get_history(as_of="")` or a blank string sends no `as_of`; the new guard-set complement tests are `test_the_m7_story_settings_are_exempt_only_until_s23` and `test_the_m7_deployment_settings_are_recorded_and_not_yet_on_the_form`. The live smoke `test_live_engine_api_matches_the_recording` XPASSes against `127.0.0.1:18000`. The only open drift-check issue is #282 (the milestone PR's `Closes #282`).
+  **Why:** Recorded for the PR body and for #292/#293.
+  **Issue:** #291

@@ -15,11 +15,13 @@ from console.engine.models import (
     Adjudication,
     AffectedStory,
     AgeCondition,
+    AmendmentChecks,
     AnalysisQueued,
     AuthoredBelief,
     AuthorPosition,
     Backfill,
     BackfillEstimate,
+    BackfillStarted,
     BeliefItem,
     Beliefs,
     BeliefTransition,
@@ -39,6 +41,8 @@ from console.engine.models import (
     CatalogSource,
     CatalogVersion,
     CatalogVersionList,
+    CertificationLost,
+    ChainMembership,
     ChainRef,
     CharacterDefinition,
     CharacterImage,
@@ -67,6 +71,7 @@ from console.engine.models import (
     ContentRatingMutation,
     ContentRatingSummary,
     CouldHaveKnownFlag,
+    CoverageGap,
     CreatedCharacter,
     CreationCounts,
     CreationReport,
@@ -78,6 +83,7 @@ from console.engine.models import (
     DeferredItem,
     DegradationStep,
     DeploymentSettings,
+    DirectedPending,
     Disposition,
     Dispositions,
     DivergenceItem,
@@ -111,9 +117,11 @@ from console.engine.models import (
     FactListBody,
     FeedbackContext,
     FeedbackHistoryEntry,
+    FloorsMet,
     ForkCharacter,
     ForkedFrom,
     ForkResult,
+    ForwardOnlyGap,
     GuaranteeRequiredModule,
     GuaranteeStatus,
     GuaranteeTable,
@@ -164,6 +172,7 @@ from console.engine.models import (
     ModelConfigMutation,
     ModeledAt,
     ModelIdentity,
+    ModelTiers,
     NarrativePosition,
     NestedSeed,
     Notice,
@@ -215,6 +224,7 @@ from console.engine.models import (
     ProfileVersionRef,
     ProfileWarning,
     ProfileWritten,
+    PromotedDraft,
     Promotion,
     Proposal,
     ProposalApproved,
@@ -229,6 +239,8 @@ from console.engine.models import (
     ProviderList,
     ProviderMutation,
     QualityStatus,
+    QualityStatusValue,
+    QueuedBackfill,
     QueuedTurn,
     RatingApplied,
     RatingCheck,
@@ -318,6 +330,7 @@ from console.engine.models import (
     StoryPauseProgress,
     StoryProfileRef,
     StoryProfileWrite,
+    StoryPruning,
     StoryRating,
     StoryReembed,
     StorySettings,
@@ -325,6 +338,7 @@ from console.engine.models import (
     StorySettingsWrite,
     StoryState,
     StoryStates,
+    StoryStatus,
     StoryStatusChange,
     StorySummary,
     SubjectRef,
@@ -339,6 +353,7 @@ from console.engine.models import (
     TurnMessage,
     TurnReport,
     TurnRole,
+    TurnSpan,
     TurnSummary,
     TurnWarning,
     TypedLiteral,
@@ -379,7 +394,8 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     """``doc`` with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s ``media_id``:
     the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
     publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
-    any object (#78). The owner and relation bodies carry both revisions, optional (#79)."""
+    any object (#78). The owner and relation bodies carry both revisions, optional (#79).
+    ``DepictedSubject`` gains ``SubjectRef``'s optional ``story`` (#291)."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -396,6 +412,9 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
         body = schemas[name]
         body["properties"].update(dict.fromkeys(REVISIONS, NULLABLE_INT))
         body["required"] = [r for r in body["required"] if r not in REVISIONS]
+    # #291: one ``SubjectRef`` model reads ``DepictedSubject`` too; M7 gave ``SubjectRef`` an
+    # optional ``story`` that ``DepictedSubject`` lacks, so it is widened by that one member.
+    schemas["DepictedSubject"]["properties"]["story"] = schemas["SubjectRef"]["properties"]["story"]
     return widened
 
 
@@ -626,7 +645,7 @@ def test_the_widening_only_adds_media_id() -> None:
         (MemberCastCard, "MemberCastCard"),
         (ImpactReport, "ImpactReport"),
         (AffectedStory, "AffectedStory"),
-        (Backfill, "Backfill"),
+        (Backfill, "epistrel__core__profiles__impact__Backfill"),  # M7 renamed it (E15)
         (BackfillEstimate, "BackfillEstimate"),
         (UnmetRecommendation, "UnmetRecommendation"),
         # #76: the principal lookup's pages.
@@ -830,6 +849,19 @@ def test_the_widening_only_adds_media_id() -> None:
         (ScenarioClock, "ScenarioClock"),
         (ScenarioAnchor, "ScenarioAnchor"),
         (ScenarioScheduledEvent, "ScenarioScheduledEvent"),
+        # M7 (#291): the nested components M7's changed components reference.
+        (CoverageGap, "CoverageGap"),
+        (FloorsMet, "FloorsMet"),
+        (CertificationLost, "CertificationLost"),
+        (ForwardOnlyGap, "ForwardOnlyGap"),
+        (TurnSpan, "TurnSpan"),
+        (QueuedBackfill, "Queued"),
+        (BackfillStarted, "BackfillStartedBody"),
+        (PromotedDraft, "PromotedDraftBody"),
+        (AmendmentChecks, "AmendmentChecksBody"),
+        (StoryPruning, "PruningBody"),
+        (ModelTiers, "ModelTiers"),
+        (DirectedPending, "DirectedPendingBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -1304,6 +1336,10 @@ def test_open_enum_reads_a_const() -> None:
         tx_from: str
         provenance_kind: str | None = dc_field(metadata={OPEN_ENUM: True})
         kind: str = dc_field(metadata={OPEN_ENUM: True})
+        attributed_holder_id: str | None = None  # M7 (#291)
+        attributed_level: str | None = None
+        depth: int | None = None
+        speaker_character_id: str | None = None
 
     problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/BeliefItemBody"}, "P")
     assert problems == ["P.kind: an open enum's schema is not a string enum"]
@@ -1542,13 +1578,35 @@ VIEWPOINT_READS = (
 
 
 @pytest.mark.parametrize("path", VIEWPOINT_READS)
-def test_the_three_viewpoint_reads_are_undeclared(path: str) -> None:
-    """Engine bug nathanpond/Epistrel#682 (D18): the recorded schema omits ``?viewpoint=`` on
-    the three reads the client sends it on. When the Engine declares it this fails: update the
+def test_the_three_viewpoint_reads_are_declared(path: str) -> None:
+    """Engine bug nathanpond/Epistrel#682 (D18) is fixed in Engine M7: the recorded schema now
+    declares ``?viewpoint=`` on the three reads the client sends it on. #293 updates the
     ``get_states``/``get_state``/``list_scheduled_events`` docstrings and D18's code comment in
-    ``console/engine/client.py``. **Complement:** a read that declares it
-    (``inspect/external-facts``) is seen."""
+    ``console/engine/client.py``. **Complement:** ``inspect/external-facts`` still declares
+    it."""
     query = [p["name"] for p in DOC["paths"][path]["get"].get("parameters", [])]
-    assert "viewpoint" not in query
+    assert "viewpoint" in query
     declared = DOC["paths"]["/stories/{story_id}/inspect/external-facts"]["get"]["parameters"]
     assert "viewpoint" in [p["name"] for p in declared]
+
+
+def test_status_enums_are_open() -> None:
+    """#291 (#183's rule, E15): the story status and chain membership fields are open enums, and
+    their alias Literals (and the quality status one) are pinned to the recorded enums."""
+    from console.engine.models import OPEN_ENUM
+
+    schemas = DOC["components"]["schemas"]
+    assert set(typing.get_args(StoryStatus)) == set(schemas["StoryStatus"]["enum"])
+    assert set(typing.get_args(ChainMembership)) == set(schemas["Membership"]["enum"])
+    assert set(typing.get_args(QualityStatusValue)) == set(schemas["QualityStatusValue"]["enum"])
+    assert "importing" in typing.get_args(StoryStatus)
+    assert "pruned" in typing.get_args(ChainMembership)
+    for model, name in (
+        (Story, "status"),
+        (StorySummary, "status"),
+        (StoryStatusChange, "status"),
+        (VariantChain, "membership"),
+        (FloorsMet, "status"),
+    ):
+        (f,) = [f for f in fields(model) if f.name == name]
+        assert f.metadata.get(OPEN_ENUM), (model.__name__, name)

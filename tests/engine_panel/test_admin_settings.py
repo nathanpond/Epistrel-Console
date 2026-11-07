@@ -70,9 +70,47 @@ def _field_html(html: str, name: str) -> str:
 # --- the form ---------------------------------------------------------------------------------
 
 
+# #291: M7's 23 deployment settings, recorded but not yet on the form (test-only). #322 shrinks
+# this set and #323 empties it.
+M7_NOT_YET_EDITABLE = {
+    "bundle_export_ttl_hours",
+    "bundle_max_entries",
+    "bundle_max_entry_bytes",
+    "bundle_max_uncompressed_bytes",
+    "certification_canary_enabled",
+    "certification_canary_interval_s",
+    "certification_canary_sample_size",
+    "certification_canary_seeds",
+    "certification_recertify_interval_s",
+    "dependency_search_max_depth",
+    "dependency_search_max_results",
+    "directive_steer_ttl_minutes",
+    "lite_author_facts_max",
+    "lite_reach_chunk_messages",
+    "lite_reach_chunk_tokens",
+    "lite_reach_deadline_seconds",
+    "lite_reach_max_calls",
+    "lite_reach_parallelism",
+    "model_tiers",
+    "rewrite_ambiguity_margin",
+    "rewrite_max_open_sessions",
+    "rewrite_session_ttl_minutes",
+    "rewrite_stale_retries",
+}
+
+
+def test_the_m7_deployment_settings_are_recorded_and_not_yet_on_the_form() -> None:
+    """**Complement:** every exempt name is a recorded ``SettingsPatch`` property (a typo can't
+    silently exempt nothing) and none has a form field yet."""
+    assert len(M7_NOT_YET_EDITABLE) == 23
+    assert set(SCHEMAS["SettingsPatch"]["properties"]) >= M7_NOT_YET_EDITABLE
+    assert not M7_NOT_YET_EDITABLE & set(DeploymentSettingsForm.base_fields)
+
+
 def test_the_form_mirrors_the_settings_patch_schema() -> None:
-    """Guard: one field per ``SettingsPatch`` property except ``profile_defaults``."""
-    patch = set(SCHEMAS["SettingsPatch"]["properties"]) - {"profile_defaults"}
+    """Guard: one field per ``SettingsPatch`` property except ``profile_defaults`` (and, until
+    #322/#323, :data:`M7_NOT_YET_EDITABLE`)."""
+    patch = set(SCHEMAS["SettingsPatch"]["properties"]) - {"profile_defaults"} - M7_NOT_YET_EDITABLE
     fields = set(DeploymentSettingsForm.base_fields)
     settings = {name for name in fields if not name.startswith(CLEAR_PREFIX)}
     assert settings == patch
@@ -92,7 +130,11 @@ def test_the_form_mirrors_the_settings_patch_schema() -> None:
 
 def test_help_texts_show_the_schema_defaults() -> None:
     body_props = SCHEMAS["SettingsBody"]["properties"]
-    stated = {name: p["default"] for name, p in body_props.items() if "default" in p}
+    stated = {
+        name: p["default"]
+        for name, p in body_props.items()
+        if "default" in p and name not in M7_NOT_YET_EDITABLE
+    }
     for name, default in stated.items():
         if name in DEFAULTS:
             assert DEFAULTS[name] == default, name

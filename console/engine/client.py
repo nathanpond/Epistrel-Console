@@ -49,6 +49,7 @@ from console.engine.models import (
     CustomInstructions,
     CustomInstructionsWritten,
     DeploymentSettings,
+    DirectedPending,
     Divergences,
     EffectiveConfig,
     EngineProfile,
@@ -2648,7 +2649,12 @@ class EngineClient:
         self.last_location = response.headers.get("Location")
         return _parse(response, ReactivationCheck)
 
-    @operation("POST", "/stories/{story_id}/regenerate", response_model=RegenerateResult)
+    @operation(
+        "POST",
+        "/stories/{story_id}/regenerate",
+        response_model=RegenerateResult,
+        status_models={202: DirectedPending},
+    )
     def regenerate(
         self,
         story_id: str,
@@ -2662,7 +2668,12 @@ class EngineClient:
         (the old one becomes dormant). ``body`` is a ``RegenerateRequest`` (``turn``, and
         ``prompt_params`` / ``render_character_ids`` / ``output_viewpoint`` overrides; omitted
         ones reuse the recorded values). The Engine never queues it (423 ``story_busy``), so
-        there is no ``Prefer``. ``timeout``: :func:`turn_timeout`."""
+        there is no ``Prefer``. ``timeout``: :func:`turn_timeout`.
+
+        M7 declares a 202 (:class:`DirectedPending`), answered only to a directed regenerate
+        (a ``directive`` in the body), which nothing sends yet (#292/#301). Until then a 202
+        reaching this method is parsed as :class:`RegenerateResult` and so raises
+        ``bad_response``."""
         response = self._timeline(
             story_id,
             "regenerate",
@@ -2836,7 +2847,7 @@ class EngineClient:
         story_id: str,
         *,
         viewpoint: str | None = None,
-        as_of: int | None = None,
+        as_of: int | str | None = None,
         limit: int | None = None,
         before_turn: int | None = None,
         actor_character_id: str | None = None,
@@ -2851,11 +2862,14 @@ class EngineClient:
         ``variant`` (``T:V``). ``include_audit`` needs ``omniscient`` (403
         ``omniscient_required``). ``player_view`` (M5) is sent only when given, whatever the
         viewpoint (the Engine applies it to the one that resolves). A ``None`` or ``False``
-        argument is left out of the query (#52)."""
+        argument is left out of the query (#52).
+
+        M7: the Engine's ``as_of`` is a string, ``N`` or ``N+k``; it is sent as given
+        (``str(as_of)``, unchecked), and an empty or blank string is left out like ``None``."""
         params: dict[str, str] = {}
         if viewpoint:
             params["viewpoint"] = viewpoint
-        if as_of is not None:
+        if as_of is not None and str(as_of).strip():
             params["as_of"] = str(as_of)
         if limit is not None:
             params["limit"] = str(limit)
@@ -4094,6 +4108,7 @@ class EngineClient:
         "PATCH",
         "/stories/{story_id}/profile-overrides",
         response_model=StoryProfileWrite,
+        status_models={202: StoryProfileWrite},
     )
     def patch_profile_overrides(
         self,
@@ -4108,7 +4123,9 @@ class EngineClient:
         overrides (``null`` removes one). ``expected_revision`` goes in the body (no
         ``X-Epistrel-Expected-Revision``): another revision is 409 ``revision_conflict``
         (``details.reason`` ``overrides_revision``). Two stages: ``applied`` false holds the
-        change for ``ignore_warnings``."""
+        change for ``ignore_warnings``. M7: a write that started a backfill answers 202 with the
+        same body and its ``backfill`` (any 2xx parses alike; no ``Location`` is kept, the job
+        is ``backfill.job_id``)."""
         body: dict[str, Any] = {"settings": dict(settings), "ignore_warnings": ignore_warnings}
         if expected_revision is not None:
             body["expected_revision"] = expected_revision
@@ -4125,6 +4142,7 @@ class EngineClient:
         "PUT",
         "/stories/{story_id}/engine-profile",
         response_model=StoryProfileWrite,
+        status_models={202: StoryProfileWrite},
     )
     def assign_engine_profile(
         self,
@@ -4140,7 +4158,8 @@ class EngineClient:
         given: a number pins the story to that version, ``"latest"`` follows the latest and
         clears a pin (422 ``validation_error`` for a version the profile doesn't have). 422
         ``invalid_profile`` (``details.overrides``) or ``profile_deleted``; the story's own
-        profile is a 200 that changes nothing. Two stages, as :meth:`patch_profile_overrides`."""
+        profile is a 200 that changes nothing. Two stages, as :meth:`patch_profile_overrides`;
+        M7's 202 (a backfill started) parses alike."""
         body: dict[str, Any] = {"profile_id": profile_id, "ignore_warnings": ignore_warnings}
         if version is not None:
             body["version"] = version

@@ -302,6 +302,25 @@ def test_retract_is_shown_only_when_rated(
     assert re.search(r'name="rating" value="4"[^>]*checked', html)
 
 
+def test_a_pruned_message_says_pruned(
+    operator_client: Client,
+    engine: FakeEngine,
+    store: FeedbackStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#291 (ADR-175): ``pruned_at`` replaces M6's ``compacted_at``. **Complement:** the word
+    "compacted" appears nowhere in the box, and an unpruned message has no line."""
+    store.seed(STORY, REPLY, ME, rating=4)
+    assert "Message pruned at" not in opened(operator_client)
+    body = store.body
+    monkeypatch.setattr(
+        store, "body", lambda *key: {**body(*key), "pruned_at": "2026-10-26T09:30:00Z"}
+    )
+    html = opened(operator_client)
+    assert re.search(r"Message pruned at .+; the rating is kept", html)
+    assert "compacted" not in html.lower()
+
+
 def test_an_unknown_message_cannot_be_rated(
     operator_client: Client, engine: FakeEngine, store: FeedbackStore
 ) -> None:

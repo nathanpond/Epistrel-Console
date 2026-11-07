@@ -126,10 +126,23 @@ def test_a_failed_deployment_read_marks_unknown_and_the_page_renders(
     assert "Up to 4,000 characters" in section(html, "instructions")
 
 
+# #291: M7's story settings, recorded but not yet on the form (test-only). #318 removes this set
+# when it makes them editable.
+M7_NOT_YET_EDITABLE = {"prune_policy", "backfill_conflict_policy", "ambiguous_retcon_timing"}
+
+
+def test_the_m7_story_settings_are_exempt_only_until_s23() -> None:
+    """Each exempt name is a recorded ``StorySettingsPatch`` property (a typo can't silently
+    exempt nothing), and none is already settable."""
+    patch = recorded_schema()["components"]["schemas"]["StorySettingsPatch"]
+    assert set(patch["properties"]) >= M7_NOT_YET_EDITABLE
+    assert not M7_NOT_YET_EDITABLE & set(SETTABLE)
+
+
 def test_the_default_table_matches_the_recorded_settings_patch() -> None:
     patch = recorded_schema()["components"]["schemas"]["StorySettingsPatch"]
     properties = set(patch["properties"])
-    assert properties == {*SETTABLE, POLICIES}
+    assert properties == {*SETTABLE, POLICIES, *M7_NOT_YET_EDITABLE}
     assert set(CONSTANT_DEFAULTS) | set(NULLABLE) == set(SETTABLE)
     assert not set(CONSTANT_DEFAULTS) & set(NULLABLE)
     assert not set(SUPERSEDED) & properties

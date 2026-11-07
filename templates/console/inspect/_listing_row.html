@@ -1,6 +1,8 @@
 {% load console_format inspect_tags world_tags %}{% comment %}
 One listed outbox row (#249): a console.reconciliation.ListingRow as row, one
-<tr id="outbox-<outbox_id>"> (D11's anchor, the id exactly as sent). Columns: Outbox id (full),
+<tr id="outbox-<outbox_id>"> (D11's anchor, the id exactly as sent; row.anchor). A request-keyed
+row (M7, #291) has no outbox id: <tr id="request-<request_id>">, no actions, and a raw Request id
+as the last entry under More; a row with neither id has no <tr id>. Columns: Outbox id (full),
 Provider (linked through D19's provider_url when engine:provider resolves), Provider value, Status
 and Why listed (C3: humanised, raw in title; the reason's explanation in <small>), Since, Effect
 (REDACTED in span.redacted for a redacted row), Latest outcome, Re-verification (settle reasons'
@@ -8,7 +10,7 @@ backtick spans as <code>), Compensated by (linked to its row when on the page), 
 / Compensate, only for a settleable reason and while the URL names resolve; greyed spans carry the
 gate's attributes, the reason being shown once above the table) and More (the effect, the raw
 status and reason). Context: row, actions_gate, gate_id.
-{% endcomment %}<tr id="outbox-{{ row.outbox_id }}" class="listing">
+{% endcomment %}<tr{% if row.anchor %} id="{{ row.anchor }}"{% endif %} class="listing">
   <td class="outbox">{{ row.outbox_id|outbox_id }}</td>
   <td class="provider">{% if row.provider_url %}<a class="provider-link" href="{{ row.provider_url }}"><code>{{ row.provider }}</code></a>{% else %}<code>{{ row.provider }}</code>{% endif %}</td>
   <td class="value">{% if row.value %}<code>{{ row.value }}</code>{% else %}—{% endif %}</td>
@@ -24,5 +26,6 @@ status and reason). Context: row, actions_gate, gate_id.
     {% if row.effect_json %}<dt>Effect</dt><dd><pre class="raw-effect">{{ row.effect_json }}</pre></dd>{% endif %}
     <dt>Status</dt><dd><code>{{ row.status }}</code></dd>
     <dt>Reason</dt><dd><code>{{ row.reason }}</code></dd>
+    {% if row.request_id %}<dt>Request id</dt><dd><code>{{ row.request_id }}</code></dd>{% endif %}
   </dl></details></td>
 </tr>

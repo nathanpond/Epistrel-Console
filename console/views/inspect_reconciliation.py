@@ -140,7 +140,7 @@ def _section(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
     raw = body.unparsed.get("listings") if body.unparsed else None
     rejected = rejected_entries(raw, ReconciliationListing.from_json) if raw is not None else []
     gate = module_gate(STATES, ctx.effective)
-    on_page = {listing.outbox_id for listing in body.listings}
+    on_page = {listing.outbox_id for listing in body.listings if listing.outbox_id is not None}
     rows = [
         listing_row(listing, ctx.story_id, on_page, story=ctx.story, gate=gate)
         for listing in body.listings

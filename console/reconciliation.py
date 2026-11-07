@@ -19,6 +19,12 @@ carries (:func:`action_query`) is display-only data the action never trusts (#45
 A redacted row (Engine #211: ``value`` and everything after it omitted) shows its ids, status,
 reason and since only; the value-bearing cells read "—" or :data:`REDACTED`.
 
+**Request-keyed rows** (M7, #291; Engine #661). A consumer-applied effect is listed by its
+``request_id`` with no ``outbox_id``: it is never redacted, gets no actions (settle-now and
+compensate name an outbox row), its Outbox id cell reads "—" and its anchor is
+``request-<request_id>`` (:func:`row_anchor`); a raw "Request id" is the last entry under More.
+A row with neither id has no anchor. #326 adds its Resolve action and wording.
+
 **Settle now** (#256; D8, D9, D11, D19). :func:`settle_confirm` builds the ``inspect:settle-now``
 confirm page (``console/confirm.py``'s confirmed mode) from the link's display-only query: the
 facts (Story id, the full Outbox id, Provider linked through D19's ``provider_url``, Provider
@@ -157,8 +163,19 @@ def effect_text(effect: Any) -> str:
 
 
 def is_redacted(listing: ReconciliationListing) -> bool:
-    """A row an erasure redacted: the Engine leaves out ``value`` and everything after it."""
-    return listing.value is None
+    """A row an erasure redacted: the Engine leaves out ``value`` and everything after it. Only
+    an outbox row is: a request-keyed row (no ``outbox_id``, M7) never is."""
+    return listing.outbox_id is not None and listing.value is None
+
+
+def row_anchor(listing: ReconciliationListing) -> str | None:
+    """The row's ``<tr id>`` (no "#"): ``outbox-<outbox_id>``, else ``request-<request_id>`` for
+    a request-keyed row (M7), else ``None`` (no anchor)."""
+    if listing.outbox_id is not None:
+        return f"outbox-{listing.outbox_id}"
+    if listing.request_id is not None:
+        return f"request-{listing.request_id}"
+    return None
 
 
 def _effect_state(listing: ReconciliationListing) -> str | None:
@@ -221,9 +238,12 @@ class OutcomeCell:
 
 @dataclass(frozen=True)
 class ListingRow:
-    """``_listing_row.html``'s context for one listed outbox row."""
+    """``_listing_row.html``'s context for one listed row. ``outbox_id`` is ``None`` for a
+    request-keyed row (M7), whose ``request_id`` is set; ``anchor`` is :func:`row_anchor`."""
 
-    outbox_id: str
+    outbox_id: str | None
+    request_id: str | None
+    anchor: str | None
     provider: str
     provider_url: str | None
     value: str | None
@@ -284,16 +304,17 @@ def _actions(
     story: Story | None,
     gate: Unavailable | None,
 ) -> tuple[ActionLink, ...]:
-    if listing.reason not in SETTLEABLE_REASONS:
-        return ()
-    next_url = f"{section_url(story_id)}#outbox-{listing.outbox_id}"
+    outbox_id = listing.outbox_id
+    if outbox_id is None or listing.reason not in SETTLEABLE_REASONS:
+        return ()  # settle-now and compensate name an outbox row (M7: a request-keyed row has none)
+    next_url = f"{section_url(story_id)}#{row_anchor(listing)}"
     links = []
     for name, label, with_state in (
         (SETTLE_NOW, SETTLE_NOW_LABEL, False),
         (COMPENSATE, COMPENSATE_LABEL, True),
     ):
         query = action_query(listing, story, next_url, with_state=with_state)
-        url = _link(name, story_id, listing.outbox_id, query)
+        url = _link(name, story_id, outbox_id, query)
         if url is not None:
             links.append(ActionLink(label, url, gated=gate is not None))
     return tuple(links)
@@ -315,6 +336,8 @@ def listing_row(
     compensated = listing.compensated_by or None
     return ListingRow(
         outbox_id=listing.outbox_id,
+        request_id=listing.request_id,
+        anchor=row_anchor(listing),
         provider=listing.provider,
         provider_url=provider_url(listing.provider),
         value=listing.value or None,
