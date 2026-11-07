@@ -206,7 +206,11 @@ def test_config_shows_profile_fingerprint_quality_and_revision(
         f'{FP_NOW.replace(":", "%3A")}">Certifications for this configuration</a>'
     )
     assert f'<dd class="fingerprint"><code>{FP_NOW}</code> · {link}</dd>' in html
-    assert '<dd><span class="quality" title="uncertified">Uncertified</span></dd>' in html  # #312
+    assert (  # #312, then #314's link
+        '<dd><span class="quality" title="uncertified">Uncertified</span> · '
+        f'<a class="certify-link" href="/stories/{STORY}/certify/">'
+        "Request a certification run…</a></dd>"
+    ) in html
     assert "Overrides revision 3 — Edit overrides" in shown
     assert "rolling_summary , pins , polish" in shown
 

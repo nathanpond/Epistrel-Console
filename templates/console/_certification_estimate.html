@@ -1,0 +1,11 @@
+{% comment %}
+#314's estimate block (console/views/certify.py EstimateView): the numbers, the cost, the
+fingerprint with its certifications, the suites and ESTIMATE_NOTE. Context: estimate.
+{% endcomment %}<section class="certification-estimate" aria-label="Estimate">
+  <h3>Estimate</h3>
+  <p class="estimate-numbers">{{ estimate.numbers }}</p>
+  <p class="estimate-cost">{{ estimate.cost }}</p>
+  <p class="estimate-fingerprint">Fingerprint: <code class="hash">{{ estimate.fingerprint }}</code>{% if estimate.certifications_url %} · <a class="certifications-link" href="{{ estimate.certifications_url }}">Certifications for this configuration</a>{% endif %}</p>
+  <p class="estimate-suites">Suites: {{ estimate.suites }}</p>
+  <p class="estimate-note">{{ estimate.note }}</p>
+</section>

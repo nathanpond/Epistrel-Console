@@ -12,7 +12,7 @@ import pytest
 from django.test import Client, override_settings
 
 from console.engine.client import ENGINE_PROFILES_PAGE, EngineClient, EngineError
-from console.engine.models import EngineProfile
+from console.engine.models import CertificationRunRequested, EngineProfile
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from console.ids import new_ulid
@@ -817,3 +817,55 @@ def test_backfill_pause_story_read_live(url: str, key: str) -> None:
         pytest.fail("the backfill neither paused the story nor ended within 120 s")
     finally:
         _delete_when_idle(client, story, wait=120.0)
+
+
+def _certification_estimate(client: EngineClient) -> CertificationRunRequested | None:
+    """An unconfirmed request on Full: the estimate, or ``None`` for the edge's 503
+    ``certification_unavailable`` (no eval harness), which passes as an answer."""
+    refused: EngineError | None = None
+    try:
+        return client.request_certification_run_profile(
+            FULL_PROFILE_ID, confirm=False, idempotency_key=new_ulid()
+        )
+    except EngineError as exc:
+        refused = exc
+    assert (refused.http_status, refused.code) == (503, "certification_unavailable")
+    return None
+
+
+@pytest.mark.engine_auth
+@pytest.mark.xfail(
+    strict=True,
+    reason="#337: the edge image ships no eval sets, so every estimate is 0 model calls",
+)
+def test_certification_estimate_live(url: str, key: str) -> None:
+    """#314: an unconfirmed certification request on Full answers its estimate (model calls,
+    the fingerprint and the suites) with no run, or 503 ``certification_unavailable``; both
+    pass. The complement is :func:`test_certification_estimate_queues_nothing_live`."""
+    client = EngineClient(url, key, principal="console:smoke")
+    answer = _certification_estimate(client)
+    if answer is None:
+        return
+    assert answer.fingerprint
+    assert answer.suites
+    assert answer.run_id is None
+    assert answer.estimate.model_calls > 0
+
+
+@pytest.mark.engine_auth
+def test_certification_estimate_queues_nothing_live(url: str, key: str) -> None:
+    """#314's **complement:** the estimate creates no run (no ``run_id`` or ``job_id``), and the
+    fingerprint's certifications are the same before and after it (a 503 passes, no skip)."""
+    client = EngineClient(url, key, principal="console:smoke")
+    first = _certification_estimate(client)
+    if first is None:
+        return
+    assert first.run_id is None
+    assert first.job_id is None
+    before = [c.id for c in client.list_certifications(fingerprint=first.fingerprint).items]
+    again = _certification_estimate(client)
+    assert again is not None
+    assert again.run_id is None
+    assert again.job_id is None
+    after = [c.id for c in client.list_certifications(fingerprint=first.fingerprint).items]
+    assert after == before

@@ -38,11 +38,14 @@ QUALITY_CLASSES = {"certified": "quality-certified", "stale": "quality-stale"}
 
 
 def duration_text(seconds: float) -> str:
-    """ "D s" below a minute, else "Xm Ys"."""
+    """ "D s" below a minute, "Xm Ys" below an hour, else "Xh Ym" (#314: whole seconds, then
+    floored to minutes, so 7,200 s is "2h 0m" and 7,800 s "2h 10m")."""
     whole = round(seconds)
     if whole < 60:
         return f"{whole} s"
-    return f"{whole // 60}m {whole % 60}s"
+    if whole < 3600:
+        return f"{whole // 60}m {whole % 60}s"
+    return f"{whole // 3600:,}h {whole % 3600 // 60}m"
 
 
 def backfill_text(backfill: Backfill) -> str:

@@ -7,6 +7,7 @@ Guarantees link, one-click Preview); the Profile version select (#63); a link to
 overrides form; the story's guarantee table (#57, console/_guarantees.html).
 #312 (E13): the Quality status is console/_quality.html (context quality), and the Fingerprint links
 "Certifications for this configuration" (context certifications_url; plain text while unregistered).
+#314: the Quality status line ends " · Request a certification run…" (stories:certify).
 {% endcomment %}
 {% block title %}Config — {{ story_name }} — Epistrel Console{% endblock %}
 {% block heading %}Config — {{ story_name }}{% endblock %}
@@ -18,7 +19,7 @@ overrides form; the story's guarantee table (#57, console/_guarantees.html).
   <dd class="profile"><a href="{{ profile_url }}">{% if profile %}{{ profile.name }}{% else %}<code>{{ config.profile.id }}</code>{% endif %}</a> v{{ config.profile.version }} — {{ pin_text }}{% if config.profile.deleted %} <span class="badge deleted">deleted</span>{% endif %}</dd>
   <dt>Overrides revision</dt><dd class="overrides-revision">{% if config.overrides.revision == 0 %}0 (no overrides){% else %}{{ config.overrides.revision }}{% endif %} — <a class="overrides-link" href="{{ overrides_url }}">Edit overrides</a></dd>
   <dt>Fingerprint</dt><dd class="fingerprint"><code>{{ config.fingerprint }}</code>{% if config.fingerprint %} · {% if certifications_url %}<a class="certifications-link" href="{{ certifications_url }}">Certifications for this configuration</a>{% else %}Certifications for this configuration{% endif %}{% endif %}</dd>
-  <dt>Quality status</dt><dd>{% include "console/_quality.html" with quality=quality %}</dd>
+  <dt>Quality status</dt><dd>{% include "console/_quality.html" with quality=quality %} · <a class="certify-link" href="{% url 'stories:certify' story_id %}">Request a certification run…</a></dd>
   <dt>Capabilities</dt><dd class="capabilities">{% for c in config.capabilities %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
 </dl>
 

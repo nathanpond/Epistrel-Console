@@ -134,7 +134,7 @@ def test_running_polls_every_5s(operator_client: Client, engine: FakeEngine) -> 
     assert '<p class="sample">Sample: every case</p>' in html
     assert "<dt>Model calls</dt><dd>1,200</dd>" in html
     assert "<dt>Tokens</dt><dd>2,400,000</dd>" in html
-    assert "<dt>Duration</dt><dd>90m 0s</dd>" in html
+    assert "<dt>Duration</dt><dd>1h 30m</dd>" in html
     assert "<dt>Cost</dt><dd>USD 18.5</dd>" in html
     assert "Requested by " in html
     assert "console:nate" in html

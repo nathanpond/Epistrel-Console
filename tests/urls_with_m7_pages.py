@@ -90,7 +90,6 @@ STORY_STUBS = [
     path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
     path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
     path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
-    path(f"{S}certify/", stub, name="certify"),  # #314
     path(f"{S}prune/", stub, name="prune"),  # #317
     path(f"{S}prune/confirm/", stub, name="prune-confirm"),  # #317
     path(f"{S}export/", stub, name="export"),  # #319
@@ -119,9 +118,8 @@ ENGINE_STUBS = [
     path("evals/", stub, name="eval-runs"),  # #316
     path("evals/<str:run_id>/", stub, name="eval-run"),  # #316
 ]
-PROFILE_STUBS = [
-    path("<str:profile_id>/certify/", stub, name="certify"),  # #314
-]
+# Every profile page is registered (#310's upgrade-pinned, #314's certify).
+PROFILE_STUBS: list[URLPattern] = []
 
 MOUNTS = {
     "stories/": _rebuilt(real.story_patterns, STORY_STUBS),
@@ -155,8 +153,6 @@ NOT_YET_REGISTERED = frozenset(
         "inspect:outbox",
         "inspect:resolve-listing",
         "inspect:resolved",
-        "profiles:certify",
-        "stories:certify",
         "stories:export",
         "stories:export-download",
         "stories:export-job",

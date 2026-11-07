@@ -3538,3 +3538,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The corrected-controls golden is three HTMX fragment captures from main (`tests/history/golden/controls_{default,omniscient,character}.html`), compared with the View select's `<div class="field field-view">` stripped (E24). The as-recorded controls are a separate `{% if form.as_recorded %}` branch of `_controls.html`, so main's markup stays untouched. Erasure markers render their full `erasure_id` in `<code>` (the AC's wording) and `at` through `engine_time`; the derived entries' More is E23's `<details><summary>More</summary>` with one `pretty_json` `<pre>` per entry.
   **Why:** The AC names `<code>` for the id; E24 for the golden. Cost if wrong: cosmetic.
   **Issue:** #304
+- **Decision:** One template `console/certify.html` serves both subjects by extending a context variable (`{% extends frame|default:"console/stories/page_base.html" %}`): the story frame is #296's `page_base.html`, the profile frame a new `console/profiles/certify_base.html` (extends `base.html`, title "Request a certification run · <name>", "Back to the profile", a 404 profile read's "No such profile" at 404 and a failed read's #43 panel with no form). Both frames define `{% block story_page %}`, so the form block is written once.
+  **Why:** the AC names one template for both GETs while the story page must use #296's frame and the profile page the profile pages' base (as #310's). Cost if wrong: a template split, no behaviour change.
+  **Issue:** #314
+- **Decision:** `CertifyForm` takes an extra keyword `latest` (the profile's `current_version`) beside the story's `versions`, so "Latest (v<n>)" still names the version when the versions read failed; `seeds`/`sample` are `CharField`s on `NumberInput(step=1)` parsed as ASCII digits, so "2.5", "ten" and a blank seeds all read the AC's exact messages (an `IntegerField` would show Django's own).
+  **Why:** the AC's exact error texts and C10's no-min/max rule. Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** An estimate answer carrying a `run_id` is rendered as #43's `bad_response` panel with the posted key kept (a resubmit replays rather than queuing a second run), and no Start. A confirm that answers 2xx without `run_id`, and any unknown confirm outcome, re-renders the same confirm (same token, same key) under the panel (E21). An answered confirm-stage refusal re-renders the form bound from the signed body (suites joined with ", "), the estimate from `base` with `REESTIMATE_TEXT` and no Start, with a fresh key.
+  **Why:** the story's discretion and E21's unknown-outcome rule. Cost if wrong: one extra click to re-estimate.
+  **Issue:** #314
+- **Decision:** An expired/forged/other-kind/other-subject token answers a 303 to the bare certify GET with `EXPIRED_TEXT` before any read (the story route checks it before `story_page`, so zero calls means none, E24); a signed body must carry `confirm: true` to be accepted.
+  **Why:** E8/E24's "zero calls". Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** `certification_run_in_progress` reads `IN_PROGRESS_TEXT` as a link to `certifications_url(fingerprint=…)` (details, then the signed `base`), followed by " · The run in progress" (`certification_run_url(details.run_id)`) when the run id is known. `story_busy` (423) is C5's `busy_notice` plus " · retry after <n> s"; `story_importing` is caught on the form (E10's `importing_refusal` text and job link), not left to `ImportingStoryMiddleware`; a held story (503 `erasure_pending`) still goes to the middleware.
+  **Why:** the AC places every refusal on the form at 200. Cost if wrong: wording only.
+  **Issue:** #314
+- **Decision:** `console.impact.duration_text` gained the "Xh Ym" branch at ≥ 3,600 s (7,800 s → "2h 10m", 7,200 s → "2h 0m"). It moved one existing assert: `tests/engine_panel/test_certification_run.py` (#313's run page Duration "90m 0s" → "1h 30m"). Adding " · Request a certification run…" to Config's Quality `<dd>` moved `tests/test_quality_everywhere.py::test_config_badge[uncertified]` and `tests/test_story_config.py::test_config_shows_profile_fingerprint_quality_and_revision` (both assert the whole `<dd>`).
+  **Why:** the story's discretion (Demo wording) and E24's rule that the changing story updates the asserts. Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** Registered `profiles:certify` / `stories:certify`; their stubs, `NOT_YET_REGISTERED` names and `test_m7_stub_urlconf.ARGS`/`PATHS` rows are gone (`PROFILE_STUBS` is now empty).
+  **Why:** E6/E11. Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** Live check on `n8-291-smoke` (`127.0.0.1:18000`, left running): the edge answers the Full estimate with `model_calls: 0` — the image ships no eval sets (`DEFAULT_SETS_DIR` resolves under the venv and the Dockerfile copies no `evals/`), so every suite counts 0 cases. Filed Console #337 (needs-triage; the agent was not permitted to file on nathanpond/Epistrel, so it asks for the upstream issue). `test_certification_estimate_live` (the AC's `model_calls > 0`) is `xfail(strict=True)` on #337; its complement runs separately as `test_certification_estimate_queues_nothing_live` and passes (no `run_id`/`job_id`, the fingerprint's certification ids unchanged).
+  **Why:** a strict xfail on a documented Engine gap, as #295 did for Epistrel#783, keeps the complement verified. Cost if wrong: the xfail turns into an XPASS failure once the edge is fixed, prompting its removal.
+  **Issue:** #314

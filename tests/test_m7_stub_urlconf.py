@@ -23,7 +23,6 @@ ARGS: dict[str, list[str]] = {
     "stories:backfill-start": [STORY],
     "stories:backfill-cancel": [STORY],
     "stories:backfill-conflict": [STORY, "c1"],
-    "stories:certify": [STORY],
     "stories:prune": [STORY],
     "stories:prune-confirm": [STORY],
     "stories:export": [STORY],
@@ -41,7 +40,6 @@ ARGS: dict[str, list[str]] = {
     "engine:certification-import": [],
     "engine:eval-runs": [],
     "engine:eval-run": ["run-1"],
-    "profiles:certify": ["00000000000000000000PRF002"],
 }
 PATHS = {
     "stories:line-edit": f"/stories/{STORY}/history/line/",
@@ -50,7 +48,6 @@ PATHS = {
         f"/stories/{STORY}/inspect/effects/reconciliation/listing-1/resolve/"
     ),
     "engine:certification-import": "/engine/certification-import/",
-    "profiles:certify": "/profiles/00000000000000000000PRF002/certify/",
 }
 
 

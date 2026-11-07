@@ -15,6 +15,7 @@ from console.views import (
     catalog_lifecycle,
     catalog_scenarios,
     certifications,
+    certify,
     directives,
     engine_panel,
     erasure,
@@ -254,6 +255,8 @@ story_patterns = (
         path("<str:story_id>/backfill/cancel/", backfill.backfill_cancel, name="backfill-cancel"),
         # #309: start a gap fill or finish a paused one (one URL, ``mode``), resolve a conflict.
         path("<str:story_id>/backfill/start/", backfill.backfill_start, name="backfill-start"),
+        # #314: request a certification run of the story's configuration, estimate first.
+        path("<str:story_id>/certify/", certify.certify_story, name="certify"),
         path(
             "<str:story_id>/backfill/conflicts/<str:conflict_id>/",
             backfill.backfill_conflict,
@@ -694,6 +697,8 @@ profile_patterns = (
             profile_upgrade.upgrade_pinned,
             name="upgrade-pinned",
         ),
+        # #314: request a certification run, estimate first (E8's two stages on one URL).
+        path("<str:profile_id>/certify/", certify.certify_profile, name="certify"),
     ],
     "profiles",
 )

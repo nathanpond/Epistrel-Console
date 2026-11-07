@@ -9,6 +9,7 @@
   {% if not profile.deleted_at %}<a class="button edit" href="{{ edit_url }}">{% if is_latest %}Edit{% else %}Edit latest (v{{ profile.current_version }}){% endif %}</a>{% endif %}
   <a class="button copy" href="{{ copy_url }}">Copy</a>
   {% if not profile.deleted_at %}<a class="button upgrade-pinned" href="{% url 'profiles:upgrade-pinned' profile.id %}">Upgrade pinned stories…</a>{% endif %}
+  {% if not profile.deleted_at %}<a class="button certify" href="{% url 'profiles:certify' profile.id %}{% if not is_latest %}?version={{ profile.version }}{% endif %}">Request a certification run…</a>{% endif %}
   {% if not profile.deleted_at %}{% if is_default %}<button type="button" class="danger delete" disabled>Delete</button> <small class="muted default-no-delete">{{ default_no_delete }}</small>{% else %}<a class="button danger delete" href="{{ delete_url }}">Delete</a>{% endif %}{% endif %}
 </p>
 {% for warning in warnings %}<p class="warning">{{ warning }}</p>{% endfor %}

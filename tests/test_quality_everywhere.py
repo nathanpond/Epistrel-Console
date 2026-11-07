@@ -151,7 +151,10 @@ def test_config_badge(
         ) in quality
         assert f'<span class="quality-floors">{FLOORS}</span>' in quality
     if case == "uncertified":
-        assert quality == badge("quality", "uncertified", "Uncertified")  # exactly
+        # exactly, then #314's link to request a run
+        certify = f'<a class="certify-link" href="{CONFIG.removesuffix("config/")}certify/">'
+        tail = f" · {certify}Request a certification run…</a>"
+        assert quality == badge("quality", "uncertified", "Uncertified") + tail
 
 
 def test_config_links_under_the_m7_urlconf(
