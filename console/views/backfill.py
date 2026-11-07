@@ -7,9 +7,10 @@ first, then ``partial``, then the page:
   through ``console.story_pause.pause_banner``. While the story is paused the fragment is the
   banner (a backfill cause polls this URL at ``SLOW_POLL_TRIGGER``; a rating or reactivation
   check keeps its own poll). Once it isn't, an empty 200 with no trigger: the banner goes and
-  polling stops. A failed read follows ``poll_failure``: unreachable or 503 keeps the banner
-  polling with ``RETRYING_TEXT``; anything else is an empty 200. It never reads the backfill or
-  a rating check.
+  polling stops. A failed read follows ``poll_failure``: unreachable or any 5xx (#353: the
+  story read can 500 while a backfill pauses it, Engine #783) keeps the banner polling with the
+  cause's paused text, no counts, and ``RETRYING_TEXT``; anything else is an empty 200. It never
+  reads the backfill or a rating check.
 - **``?partial=1``** (E7's polled block): one ``GET /stories/{id}/backfill`` (open conflicts,
   ``limit`` 50), answering ``console/_job_poll.html`` around ``_backfill_body.html`` alone (no
   frame, no nav). Once the backfill is terminal or waiting the answer carries
@@ -244,13 +245,19 @@ def _block(story_id: str, view: BackfillView | None, *, retrying: bool = False) 
 # --- ?banner=1 ------------------------------------------------------------------------------------
 
 
+def _server_error(exc: EngineClientError) -> bool:
+    """A 5xx from the story read keeps the banner polling (#353): the Engine's story read can
+    fail while a backfill pauses the story (nathanpond/Epistrel#783), and the pause outlives it."""
+    return isinstance(exc, EngineError) and exc.http_status >= 500
+
+
 def _banner(request: HttpRequest, story_id: str) -> HttpResponse:
     client = engine_client_for(request)
     try:
         story = client.get_story(story_id)
     except EngineClientError as exc:
         failure = poll_failure(request, exc)
-        if not failure.retry:
+        if not failure.retry and not _server_error(exc):
             return HttpResponse("")
         cause = request.GET.get(CAUSE_PARAM, "")
         banner = PauseBanner(

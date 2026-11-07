@@ -527,6 +527,31 @@ def test_banner_retries_when_the_engine_is_down(
     assert TRIGGER in html
 
 
+@pytest.mark.parametrize("status", [500, 502])
+def test_banner_keeps_polling_on_a_5xx(
+    operator_client: Client, engine: FakeEngine, status: int
+) -> None:
+    """#353: the story read 5xx-ing while a backfill pauses the story (Engine #783) keeps the
+    banner and its poll, with neutral paused text; still no backfill read."""
+    # Undeclared in the story read's schema: the live Engine's 500 is a bug (D18).
+    engine.respond_undeclared("GET", STORY_PATH, status, json=error_json("internal", "boom"))
+    html = html_of(operator_client, f"{PAGE}?banner=1&cause=backfill")
+    assert html.lstrip().startswith('<div id="pause-banner"')
+    assert "Paused: backfill in progress" in html
+    assert "chunks" not in html
+    assert RETRYING_TEXT in html
+    assert f'hx-get="{PAGE}?banner=1&amp;cause=backfill" {TRIGGER}' in html
+    assert paths(engine) == [f"GET {STORY_READ}"]
+
+
+def test_banner_on_another_4xx_is_empty(operator_client: Client, engine: FakeEngine) -> None:
+    """#353's complement: only a 5xx keeps polling; another error still empties the banner."""
+    engine.respond("GET", STORY_PATH, 422, json=error_json("validation_error"))
+    response = operator_client.get(f"{PAGE}?banner=1&cause=backfill")
+    assert response.status_code == 200
+    assert response.content == b""
+
+
 def test_banner_on_another_error_is_empty(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", STORY_PATH, 404, json=error_json("story_not_found"))
     response = operator_client.get(f"{PAGE}?banner=1")
