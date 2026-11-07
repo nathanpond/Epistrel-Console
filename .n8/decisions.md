@@ -3049,3 +3049,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #281
 - **Blocker:** PR #283 is not merged. Its required `gate` is red only because `engine-smoke` fails against Engine `edge`: Engine M7 (Epistrel 640b5ef, 2026-11-03) replaced the profile set, so the live smoke finds no `Structured` profile (it sees `Max, Standard, Full, Lite`). This PR doesn't cause it; `main`'s daily drift job has failed since 2026-11-03 (#282). Not fixed here: following Engine M7's profiles is Console M7 work, and repointing the smoke is a CI-policy call (#36). Owner options are on #283: (1) admin-override merge, recommended; (2) pin `engine-smoke` to the M6 image digest; (3) update the smoke for M7's profile names via `/n8-replan M7`. #276–#281 are labelled `blocked` + `needs-owner-action`.
   **Issue:** PR #283, #282
+
+## /n8-verify M6 (re-verify) — 2026-11-06
+
+- **Decision:** M6 re-verified at 922f7ad (PR #283) and closed, with epics #21 and #22. The six fix bugs (#276–#281) were checked by independent verifiers with mutation checks. The full suite passed with 7583 tests. The owner walked a live-Engine outcome walk against the local M6 Engine image (b8fd182, stub model): 10/10 steps passed.
+  **Why:** The first verification deferred live UAT to the re-verify. The coverage finding (reservations view-only) was waived by the owner on PR #283: "Waive: view-only is right".
+  **Issue:** PR #283, #21, #22
+- **Decision:** PR #283 merged through a temporary admin bypass of the `main-pr-required` ruleset. The owner chose option 1 and ran the bypass themselves, because the classifier blocked the agent's ruleset edit. The ruleset was restored right after (`bypass_actors: []`).
+  **Why:** `gate` was red only because Engine `edge` had moved to Engine M7, whose profiles are renamed (`Structured` → Full), not because of the PR (#282).
+  **Issue:** PR #283, #282
+
+## /n8-plan M7 — 2026-11-07
+
+- **Decision:** M7 is planned as 42 stories, #291–#332, under epics #23, #24 and #25, with 88 blocked-by edges. The cross-story conventions E1–E24 are posted as comments on #294.
+  **Why:** The owner answered round one ("all reccs good") and round two ("go": every default accepted). Each story was checked twice by a fresh executor simulation. The coverage check ran in a fresh agent and found no missing items; its fixes were applied.
+  **Issue:** #291–#332
+- **Decision:** Scope renamed to match Engine M7. "Compaction" is pruning (Engine ADR-175). "Snapshot/restore" is bundle export and import as a new story (Engine docs/OPERATIONS.md). Whole-deployment backup and restore are CLI-only, so the Console can't drive them.
+  **Why:** The Engine renamed and reshaped these; the epic AC predates that.
+  **Issue:** #25, #317, #319, #320, #321
+- **Decision:** Triage. #282 is absorbed by #291/#293; #272 by #307 (and #323); #270 by #329; #273 by #312/#313/#314/#310. #18's open AC is delivered by #316. #271 moves to M9.
+  **Why:** Owner-approved at round one and round two.
+  **Issue:** #282, #272, #270, #273, #18, #271
+- **Decision:** Filed Engine issues nathanpond/Epistrel#776 (canary-run list; `CANARY_LIST_REQUEST`), #777 (show a resolved imported row on the outbox), and #778–#780 (three docs mismatches). The suspected backfill `pause.progress` 500 is filed only if #295's live check reproduces it.
+  **Why:** Gaps found while planning. Canary results per fingerprint are only partly deliverable until #776 lands (owner accepted, R2-Q19).
+  **Issue:** #313, #295
+- **Decision:** This state commit rides on branch `n8/plan-m7-state`. `/n8-exec M7` merges it into the milestone branch first, instead of opening a separate state PR.
+  **Why:** Every PR's required `gate` is red until #291/#293 land (Engine edge is M7). A separate state PR would need another bypass. The owner accepted folding at the gate.
+  **Issue:** #291
