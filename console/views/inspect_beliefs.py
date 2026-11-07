@@ -3,9 +3,18 @@
 ``inspect:beliefs`` (``/stories/<id>/inspect/knowledge/beliefs/``, the Knowledge tab selected)
 renders through #135's :func:`console.views.inspect.inspect_page` with ``Tab.KNOWLEDGE`` (#189),
 so a greyed tab makes no beliefs or registry read. The GET filters are
-:class:`console.forms.inspect.BeliefsForm`'s (``character``, ``as_of``, ``proposition_id``), each
-the Engine's query parameter; the cursor is ``after`` (convention 6 via
-:func:`console.paging.paging`).
+:class:`console.forms.inspect.BeliefsForm`'s (``kind``, ``character``, ``as_of``,
+``proposition_id``), each the Engine's query parameter; the cursor is ``after`` (convention 6 via
+:func:`console.paging.paging`, which keeps ``kind``; Apply drops the cursor, so it never crosses
+kinds: the Engine pages first-order by proposition id and the others by belief id).
+
+Kinds (#327): ``kind`` is sent only for ``nested`` / ``speech_act``. On those pages the rows get
+their kind's cells, #191's canon column (no ``list_facts`` call), #194's row actions and the
+identities are left out (they are first-order questions), and the registry read still names the
+predicates. Kind = Nested shows :data:`console.beliefs.NESTED_OFF_NOTE` when the effective
+config closes the ``nested_beliefs`` gate (that module's own reason or its pipeline clause; not
+when the config is unread); the read still happens, since records written before still read
+back.
 
 Reads per render, sequential: the shell's effective config and story (cast names), then one
 ``GET /stories/{id}/inspect/beliefs`` (``viewpoint=omniscient``, ``limit=100``), then, only when
@@ -39,13 +48,18 @@ from django.views.decorators.http import require_http_methods, require_safe
 
 from console.belief_canon import CanonColumn, canon_column
 from console.beliefs import (
+    DEPTH_TITLE,
     ENTER_CHARACTER,
-    FIRST_ORDER_NOTICE,
+    FIRST_ORDER,
+    HOLDER_TITLE,
     IDENTITIES,
     IDENTITIES_FILTERED,
     IDENTITIES_FIRST_PAGE,
+    NESTED,
+    NESTED_OFF_NOTE,
     NO_CHARACTERS,
     PLAYER_NOTICE,
+    SPEAKER_TITLE,
     TESTIMONY,
     belief_rows,
     count_text,
@@ -53,6 +67,7 @@ from console.beliefs import (
     header_text,
     how_text,
     identity_rows,
+    kind_notice,
     story_minor_ids,
     time_text,
 )
@@ -131,9 +146,20 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
     player = any(c.id == character and c.is_player for c in cast or ())
     as_of_valid = form.valid("as_of")
     time = time_text(form.cleaned_data["as_of"]) if as_of_valid else None
-    context["header"] = header_text(label, time, None)
+    kind = form.cleaned_data["kind"] if form.valid("kind") else FIRST_ORDER
+    first_order = kind == FIRST_ORDER
+    context["header"] = header_text(label, time, None, kind=kind)
+    context["kind"] = kind
+    if kind == NESTED:
+        gate = m5_gate(NESTED_BELIEFS, ctx.effective)
+        if gate is not None and gate.module == NESTED_BELIEFS:
+            context["nested_off"] = NESTED_OFF_NOTE.format(reason=gate.reason)
+    if not first_order:
+        context.update(actions=None)
     params = request.GET.copy()
     params["character"] = character  # the (possibly defaulted) character, always explicit
+    if "kind" in params:
+        params["kind"] = str(params.get("kind") or "").strip().lower()  # an explicit one kept
     if "proposition_id" in params:
         params["proposition_id"] = str(form.data.get("proposition_id") or "")
     params.pop(CURSOR, None)
@@ -164,31 +190,39 @@ def _beliefs(ctx: InspectContext) -> dict[str, Any]:
     if body.beliefs:
         registry = _registry(request, ctx.client, ctx.story_id)
         context["predicate_names"] = {} if registry is None else registry.names()
-        column = canon_column(
-            request,
-            ctx.client,
-            ctx.story_id,
-            body.beliefs,
-            body.revision,
-            cardinality=None if registry is None else registry.cardinality(),
-            as_of=as_of,
-        )
-    rows = belief_rows(ctx.story_id, body.beliefs, column.marks, names, minor)
+        if first_order:  # #191's comparison is a first-order question
+            column = canon_column(
+                request,
+                ctx.client,
+                ctx.story_id,
+                body.beliefs,
+                body.revision,
+                cardinality=None if registry is None else registry.cardinality(),
+                as_of=as_of,
+            )
+    marks = column.marks if first_order else None
+    rows = belief_rows(ctx.story_id, body.beliefs, marks, names, minor, kind=kind)
     filtered = as_of is not None or proposition is not None
     context.update(
         beliefs=body,
         rows=rows,
-        header=header_text(label, time, body.revision),
-        count=count_text(len(rows), partial=bool(cursor or body.next_after), filtered=filtered),
-        first_order=FIRST_ORDER_NOTICE,
-        marks=column.marks,
+        header=header_text(label, time, body.revision, kind=kind),
+        count=count_text(
+            len(rows), partial=bool(cursor or body.next_after), filtered=filtered, kind=kind
+        ),
+        kind_notice=kind_notice(kind, label),
+        kind_class=kind.replace("_", "-"),
+        holder_title=HOLDER_TITLE.format(label=label),
+        speaker_title=SPEAKER_TITLE,
+        depth_title=DEPTH_TITLE,
+        marks=marks,
         canon_notices=column.notices,
         canon_summary=column.summary,
         player_notice=PLAYER_NOTICE if player else None,
         empty=empty_text(
-            label, paged=cursor is not None, proposition=bool(proposition), as_of=as_of
+            label, paged=cursor is not None, proposition=bool(proposition), as_of=as_of, kind=kind
         ),
-        show_identities=not player,
+        show_identities=first_order and not player,
         identities_heading=IDENTITIES_FILTERED if filtered else IDENTITIES,
         identities_first_page=IDENTITIES_FIRST_PAGE if cursor else None,
         identities=identity_rows(
@@ -236,8 +270,6 @@ REPORT_PARAM = "report"
 VERB_PHRASE = "direct a belief"
 NOT_FOUND = "Not found (it may have been deleted or truncated)"
 PREFILL_FAILED = "Couldn't pre-fill from that belief"
-FIRST_ORDER = "first_order"
-NESTED = "nested"
 
 
 def beliefs_url(story_id: str, **params: str) -> str:

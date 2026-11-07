@@ -48,6 +48,7 @@ from console.paging import CAST_UNAVAILABLE, CHARACTER_INVALID, CURSOR_DROPPED
 from console.views import inspect as views
 from console.wording import UNKNOWN_CHARACTER
 from tests.fakes.engine import FakeEngine
+from tests.golden import normalise_html
 from tests.inspect.helpers import (
     ALICE,
     BOB,
@@ -58,6 +59,7 @@ from tests.inspect.helpers import (
     STORY_PATH,
     story_cast,
     structured_v2,
+    with_settings,
 )
 from tests.inspect.test_knowledge_shell import partitions_off
 from tests.play.helpers import error_json
@@ -697,8 +699,8 @@ def test_first_order_notice_shown(operator_client: Client, engine: FakeEngine) -
     assert html.index("first-order") < html.index('<table class="beliefs">')
     answer(engine, 200, empty_for())
     assert FIRST_ORDER in page(operator_client)
-    # No "nested" column, filter or row: the word appears only in #189's shell notice.
-    body = html.split("Nested beliefs aren't readable", 1)[1].lower()
+    # No "nested" column or row: the word appears only in #327's Kind select.
+    body = html.split('class="beliefs-form"', 1)[1].split("</form>", 1)[1].lower()
     assert "nested" not in body
 
 
@@ -831,3 +833,393 @@ def test_module_off_after_gate_is_greyed_panel(operator_client: Client, engine: 
     assert '<div class="panel unavailable">' in html
     assert "configuration changed since this page loaded" in html
     assert 'class="engine-error"' not in html
+
+
+# --- kinds (#327) --------------------------------------------------------------------------------
+#
+# #292's ``m7/beliefs_nested.json`` split per kind inline (E16's one-off rule): its nested record
+# ``01JM7BE…01`` and its speech act ``…02``, re-pointed at Alice, Pat as the attributed holder
+# and Bob as the speaker. The fake keys the answers on ``kind`` (C14).
+
+M7_FIXTURES = FIXTURES.parent / "engine" / "m7"
+NESTED_ID, SPEECH_ID = "01JM7BE0000000000000000001", "01JM7BE0000000000000000002"
+KIND_QUERY = {"nested": "kind=nested", "speech_act": "kind=speech_act"}
+NESTED_NOTICE = (
+    "Nested belief records at every level, by belief id: who Alice thinks holds each "
+    "proposition, and how sure they think that holder is."
+)
+SPEECH_ACT_NOTICE = (
+    "What Alice heard another character say, at every level, by belief id — heard, not "
+    "necessarily believed."
+)
+
+
+def kind_page(kind: str, *, holder: str | None = PAT, speaker: str | None = BOB) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads((M7_FIXTURES / "beliefs_nested.json").read_text())
+    body["character"] = ALICE
+    nested, speech = body["beliefs"]
+    nested["attributed_holder_id"] = holder
+    speech["speaker_character_id"] = speaker
+    body["beliefs"] = [nested] if kind == "nested" else [speech]
+    return body
+
+
+def answer_kind(engine: FakeEngine, kind: str, body: dict[str, Any], **query: str) -> None:
+    engine.respond("GET", BELIEFS, 200, json=body, query={"kind": kind, **query})
+
+
+@pytest.fixture
+def kinds(engine: FakeEngine) -> FakeEngine:
+    answer_kind(engine, "nested", kind_page("nested"))
+    answer_kind(engine, "speech_act", kind_page("speech_act"))
+    return engine
+
+
+def headers(html: str) -> list[str]:
+    found = re.search(r'<table class="beliefs">\s*<thead><tr>(.*?)</tr></thead>', html, re.S)
+    assert found is not None
+    return re.findall(r"<th[^>]*>(.*?)</th>", found.group(1))
+
+
+MAIN_QUERY = {"viewpoint": "omniscient", "character": ALICE, "limit": "100"}
+
+
+@pytest.mark.parametrize("query", ["", "?kind=first_order", "?kind=%20First_Order%20"])
+def test_first_order_query_is_mains(
+    operator_client: Client, engine: FakeEngine, query: str
+) -> None:
+    page(operator_client, query)
+    assert sent(engine) == MAIN_QUERY
+    assert "kind" not in sent(engine)  # complement: the Engine's default is never sent
+
+
+def test_nested_sends_kind(operator_client: Client, kinds: FakeEngine) -> None:
+    page(operator_client, "?kind=nested")
+    assert sent(kinds) == {**MAIN_QUERY, "kind": "nested"}
+
+
+def test_speech_act_sends_kind(operator_client: Client, kinds: FakeEngine) -> None:
+    page(operator_client, "?kind=%20SPEECH_ACT")  # trimmed and lower-cased
+    assert sent(kinds) == {**MAIN_QUERY, "kind": "speech_act"}
+
+
+def test_kind_select_first_and_defaults_to_first_order(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = page(operator_client)
+    form = re.search(r'<form method="get".*?</form>', html, re.S)
+    assert form is not None
+    assert form.group(0).index("field-kind") < form.group(0).index("field-character")
+    kind = field(html, "kind")
+    assert '<label for="id_kind">Kind:</label>' in kind
+    assert re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', kind) == [
+        ("first_order", "First-order — what they believe"),
+        ("nested", "Nested — what they believe others believe"),
+        ("speech_act", "Speech acts — what they heard said"),
+    ]
+    assert re.search(r'<option value="first_order" selected>', kind)
+
+
+def test_bad_kind_zero_calls(operator_client: Client, engine: FakeEngine) -> None:
+    html = page(operator_client, "?kind=hearsay")
+    assert escape("Choose one of the listed kinds") in field(html, "kind")
+    assert reads(engine) == []
+    assert header(html) == "What Alice believes · now"  # main's header on an invalid kind
+
+
+def test_kind_422_beside_its_field(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond(
+        "GET",
+        BELIEFS,
+        422,
+        json=error_json("invalid_request", message="kind: not allowed", field="query.kind"),
+        query={"kind": "nested"},
+    )
+    html = page(operator_client, "?kind=nested")
+    assert "kind: not allowed" in field(html, "kind")
+
+
+def test_paging_keeps_kind(operator_client: Client, kinds: FakeEngine) -> None:
+    after = "01JM7BE0000000000000000001"
+    first = kind_page("nested")
+    first["next_after"] = after
+    answer_kind(kinds, "nested", first)
+    answer_kind(kinds, "nested", kind_page("nested"), after=after)
+    html = page(operator_client, "?kind=nested")
+    (following,) = hrefs(html, "next-page")
+    assert dict(httpx.QueryParams(following)) == {
+        "kind": "nested",
+        "character": ALICE,
+        "after": after,
+    }
+    html = page(operator_client, f"?{following}")
+    assert dict(reads(kinds)[-1].url.params) == {**MAIN_QUERY, "kind": "nested", "after": after}
+    (back,) = hrefs(html, "first-page")
+    assert dict(httpx.QueryParams(back)) == {"kind": "nested", "character": ALICE}
+    assert 'class="beliefs-clear" href="' + URL + '"' in html  # Clear drops every filter
+    form = re.search(r'<form method="get".*?</form>', html, re.S)
+    assert form is not None
+    assert "after" not in form.group(0)  # Apply carries no cursor across kinds
+
+
+def test_explicit_first_order_kept_by_paging(operator_client: Client, engine: FakeEngine) -> None:
+    (following,) = hrefs(page(operator_client, "?kind=first_order"), "next-page")
+    assert dict(httpx.QueryParams(following))["kind"] == "first_order"
+
+
+def test_nested_columns(operator_client: Client, kinds: FakeEngine) -> None:
+    html = page(operator_client, "?kind=nested")
+    assert headers(html) == [
+        "Proposition",
+        "Confidence",
+        "Believed held by",
+        "Depth",
+        "How",
+        "Holds since",
+        "Until",
+        "About story-time",
+        "More",
+    ]
+    assert '<th title="Who Alice thinks holds it, and at what level">Believed held by</th>' in html
+    assert '<th title="Nesting depth (1 = direct attribution)">Depth</th>' in html
+    nested = row(html, NESTED_ID)
+    assert cell(nested, "holder") == 'Pat (player) · <span title="believed">Believed</span>'
+    assert cell(nested, "depth") == "2"
+    # Complement: no Canon or Actions column.
+    assert '<td class="canon">' not in nested
+    assert '<td class="actions">' not in nested
+    assert "Change…" not in html
+
+
+def test_speech_act_columns(operator_client: Client, kinds: FakeEngine) -> None:
+    html = page(operator_client, "?kind=speech_act")
+    assert headers(html) == [
+        "Proposition",
+        "Confidence",
+        "Said by",
+        "Depth",
+        "How",
+        "Holds since",
+        "Until",
+        "About story-time",
+        "More",
+    ]
+    assert '<th title="The character heard saying it">Said by</th>' in html
+    speech = row(html, SPEECH_ID)
+    assert cell(speech, "speaker") == "Bob"
+    assert cell(speech, "depth") == "—"
+
+
+def more_raw(row_html: str) -> list[tuple[str, str]]:
+    return re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", cell(row_html, "more"), re.S)
+
+
+def test_nested_null_holder_reads_dash(operator_client: Client, engine: FakeEngine) -> None:
+    answer_kind(engine, "nested", kind_page("nested", holder=None))
+    nested = row(page(operator_client, "?kind=nested"), NESTED_ID)
+    assert cell(nested, "holder") == "—"  # the level shows only in More
+    assert ("Attributed level", '<span title="believed">Believed</span>') in more_raw(nested)
+
+
+def test_unknown_holder_short_id(operator_client: Client, engine: FakeEngine) -> None:
+    answer_kind(engine, "nested", kind_page("nested", holder=OUTSIDER))
+    answer_kind(engine, "speech_act", kind_page("speech_act", speaker=OUTSIDER))
+    nested = row(page(operator_client, "?kind=nested"), NESTED_ID)
+    assert cell(nested, "holder").startswith("…0000ZZ99 · ")
+    speech = row(page(operator_client, "?kind=speech_act"), SPEECH_ID)
+    assert cell(speech, "speaker") == "…0000ZZ99"
+
+
+def test_more_lists_the_m7_fields(operator_client: Client, kinds: FakeEngine) -> None:
+    items = more_raw(row(page(operator_client, "?kind=nested"), NESTED_ID))
+    assert items[-3:] == [
+        ("Attributed holder", f"<code>{PAT}</code>"),
+        ("Attributed level", '<span title="believed">Believed</span>'),
+        ("Depth", "2"),
+    ]
+    assert "Speaker" not in dict(items)
+    items = more_raw(row(page(operator_client, "?kind=speech_act"), SPEECH_ID))
+    assert items[-1] == ("Speaker", f"<code>{BOB}</code>")
+    assert not {"Attributed holder", "Attributed level", "Depth"} & set(dict(items))
+    # First-order: none of them (each only when non-null).
+    first = dict(more_items(row(page(operator_client), BE[1])))
+    assert not {"Attributed holder", "Attributed level", "Depth", "Speaker"} & set(first)
+
+
+def test_first_order_rows_golden(operator_client: Client, engine: FakeEngine) -> None:
+    """E24: main's table for ``beliefs_page1.json`` (``golden/beliefs_page1_table.html``,
+    captured from the render before #327), byte for byte after normalising."""
+    html = page(operator_client)
+    found = re.search(r'<table class="beliefs">.*?</table>', html, re.S)
+    assert found is not None
+    golden = (Path(__file__).parent / "golden" / "beliefs_page1_table.html").read_text()
+    assert normalise_html(found.group(0)) == normalise_html(golden)
+
+
+def test_no_canon_calls_on_nested(operator_client: Client, kinds: FakeEngine) -> None:
+    for kind in ("nested", "speech_act"):
+        kinds.requests.clear()
+        page(operator_client, f"?kind={kind}")
+        assert [r for r in kinds.requests if r.url.path == f"/admin/stories/{STORY}/facts"] == []
+        assert len(registry_reads(kinds)) == 1  # the predicate names still come from it
+
+
+@pytest.mark.parametrize(
+    ("query", "head", "notice", "cls", "noun"),
+    [
+        ("", "What Alice believes", FIRST_ORDER, "first-order", "beliefs"),
+        (
+            "?kind=nested",
+            "What Alice believes others believe",
+            NESTED_NOTICE,
+            "nested",
+            "nested belief",
+        ),
+        (
+            "?kind=speech_act",
+            "What Alice heard said",
+            SPEECH_ACT_NOTICE,
+            "speech-act",
+            "speech act",
+        ),
+    ],
+)
+def test_headers_notices_counts_per_kind(
+    operator_client: Client,
+    kinds: FakeEngine,
+    query: str,
+    head: str,
+    notice: str,
+    cls: str,
+    noun: str,
+) -> None:
+    html = page(operator_client, query)
+    revision = 7 if not query else 20
+    assert header(html) == f"{head} · now · revision {revision}"
+    assert f'<p class="notice {cls}">{escape(notice)}</p>' in html
+    if query:
+        assert count(html) == f"1 {noun}"
+        joined = "&" if query else "?"
+        html = page(operator_client, f"{query}{joined}as_of=4")
+        assert header(html) == f"{head} · as of turn 4 · revision 20"
+        assert count(html) == f"1 {noun} matching filters"
+    else:
+        assert count(html) == "11 beliefs on this page"
+
+
+def test_plural_count_per_kind(operator_client: Client, engine: FakeEngine) -> None:
+    for kind, noun in (("nested", "nested beliefs"), ("speech_act", "speech acts")):
+        body = kind_page(kind)
+        second = copy.deepcopy(body["beliefs"][0])
+        second["belief_id"] = second["belief_id"][:-1] + "9"
+        body["beliefs"].append(second)
+        answer_kind(engine, kind, body)
+        assert count(page(operator_client, f"?kind={kind}")) == f"2 {noun}"
+
+
+@pytest.mark.parametrize(
+    ("query", "line"),
+    [
+        ("?kind=nested", "Alice holds no nested beliefs"),
+        ("?kind=nested&as_of=2", "Alice holds no nested beliefs as of turn 2"),
+        (
+            f"?kind=nested&proposition_id={PROPOSITION}",
+            "Alice holds no nested beliefs in that proposition",
+        ),
+        (
+            f"?kind=nested&proposition_id={PROPOSITION}&as_of=2",
+            "Alice holds no nested beliefs in that proposition as of turn 2",
+        ),
+        ("?kind=speech_act", "Alice has heard no speech acts"),
+        ("?kind=speech_act&as_of=2", "Alice has heard no speech acts as of turn 2"),
+        (
+            f"?kind=speech_act&proposition_id={PROPOSITION}",
+            "Alice has heard no speech acts in that proposition",
+        ),
+        (
+            f"?kind=nested&after={PP11}",
+            "No beliefs on this page — the partition may have changed since the last page.",
+        ),
+    ],
+)
+def test_empty_texts_per_kind(
+    operator_client: Client, engine: FakeEngine, query: str, line: str
+) -> None:
+    for kind in ("nested", "speech_act"):
+        answer_kind(engine, kind, empty_for())
+        answer_kind(engine, kind, empty_for(), after=PP11)
+    html = page(operator_client, query)
+    assert f'<p class="none beliefs-none">{escape(line)}</p>' in html
+    plural = "nested beliefs" if "nested" in query else "speech acts"
+    assert count(html).startswith(f"0 {plural}")
+
+
+NESTED_OFF = "This story doesn&#x27;t record nested beliefs ("
+
+
+def nested_off_config() -> dict[str, Any]:
+    return with_settings(structured_v2(), {"character_knowledge.nested_beliefs.enabled": False})
+
+
+def test_nested_off_note(operator_client: Client, kinds: FakeEngine) -> None:
+    kinds.respond("GET", EFFECTIVE, 200, json=nested_off_config())
+    html = page(operator_client, "?kind=nested")
+    note = re.search(r'<p class="notice nested-off">(.*?)</p>', html, re.S)
+    assert note is not None
+    assert note.group(0).startswith(f'<p class="notice nested-off">{NESTED_OFF}')
+    assert note.group(1).endswith("), so none will be listed")
+    assert "<code>" in note.group(1)  # the gate reason's code spans
+    assert html.index('class="beliefs-header"') < html.index("nested-off")
+    assert html.index("nested-off") < html.index('class="direct-belief"')
+    assert len(reads(kinds)) == 1  # the read still happens
+    assert row(html, NESTED_ID)
+    # An invalid other filter: the note still shows, with no read.
+    kinds.requests.clear()
+    html = page(operator_client, "?kind=nested&as_of=x")
+    assert NESTED_OFF in html
+    assert reads(kinds) == []
+    # Only on Kind = Nested, and not under the open gate.
+    assert NESTED_OFF not in page(operator_client, "?kind=speech_act")
+    assert NESTED_OFF not in page(operator_client)
+    kinds.respond("GET", EFFECTIVE, 200, json=structured_v2())
+    assert NESTED_OFF not in page(operator_client, "?kind=nested")
+
+
+def test_identities_first_order_only(operator_client: Client, kinds: FakeEngine) -> None:
+    assert '<section class="identities">' in page(operator_client)
+    for kind in ("nested", "speech_act"):
+        body = kind_page(kind)
+        body["identities"] = fixture("beliefs_page1")["identities"]
+        answer_kind(kinds, kind, body)
+        html = page(operator_client, f"?kind={kind}")
+        assert '<section class="identities">' not in html  # complement
+
+
+def test_player_notice_keeps_precedence_on_nested(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    body = empty_for(PAT)
+    answer_kind(engine, "nested", body)
+    html = page(operator_client, f"?kind=nested&character={PAT}")
+    assert sent(engine)["kind"] == "nested"
+    assert f'<p class="notice player-notice">{PLAYER_NOTICE}</p>' in html
+    assert "holds no nested beliefs" not in html
+    assert '<section class="identities">' not in html
+
+
+def test_view_model_kind_cells() -> None:
+    body = Beliefs.from_json(kind_page("nested"))
+    assert body is not None
+    names = {PAT: "Pat (player)"}
+    (first_order,) = belief_rows(STORY, body.beliefs, names=names)
+    assert (first_order.holder_text, first_order.depth_text, first_order.speaker_text) == (
+        None,
+        None,
+        None,
+    )
+    (nested,) = belief_rows(STORY, body.beliefs, names=names, kind="nested")
+    assert (nested.holder_text, nested.holder_level, nested.depth_text) == (
+        "Pat (player)",
+        "Believed",
+        "2",
+    )

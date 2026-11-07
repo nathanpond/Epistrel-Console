@@ -3812,3 +3812,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #324: `test_label_note_is_shown` (#257) drops its assertion of the old sentence ("The Engine has no list of operations to filter by.") — the note's rewrite is this story's AC, and `test_label_note_points_to_story_operations` asserts its absence. The log page links the story's Operations only for a ULID story filter, `label` carried only when it is one of the six Engine labels, inside the same `p.filter-note`; under the real urlconf the story nav now reads Rewrite · Amendments · Backfill · Export · Operations (goldens in play/history `REGISTERED_NAV`, `test_nav`, `inspect/test_shell`, `test_story_pages` moved).
   **Why:** E24's "a golden a newly registered URL changes is regenerated in the registering story". Cost if wrong: none.
   **Issue:** #324
+- **Decision:** The first-order golden for `beliefs_page1.json` is a file, `tests/inspect/golden/beliefs_page1_table.html` (the whole `<table class="beliefs">`, captured from the pre-change render), not the inline string the story names.
+  **Why:** The table is about 22 KB (11 rows with Canon, Actions and More); E24 allows a golden under `tests/<area>/golden/`, and it is compared through `normalise_html`. Cost if wrong: none.
+  **Issue:** #327
+- **Decision:** `BeliefRow`'s nested level is `holder_level` (the humanised level, `None` without a holder or level), not the planner's `holder_title`. The `<span title>` takes the raw value from `belief.attributed_level`, as the Confidence cell does with `current_level`.
+  **Why:** The cell needs the humanised text, and the raw value is already on the row's `belief`. Cost if wrong: a field rename.
+  **Issue:** #327
+- **Decision:** An absent or blank `kind` is bound as `first_order` in `BeliefsForm.__init__`, so the select shows First-order as selected. `clean_kind` still maps "" to first-order. Paging writes back the URL's own `kind` (trimmed, lower-cased) only when the URL had one, so an absent kind never appears in Next/First and an explicit `kind=first_order` is kept. The column-header `title`s are view context (`holder_title`, `speaker_title`, `depth_title` from `console/beliefs.py` constants). Depth uses `{:,}` (E23).
+  **Why:** A bound Django form ignores `initial`, and the Demo has Kind reading "First-order". Cost if wrong: none; the Engine query is unchanged either way.
+  **Issue:** #327
+- **Decision:** These existing tests were adapted to the retired #606 notice and the new Kind select. `test_beliefs.test_first_order_notice_shown` now looks for "nested" after the beliefs form's `</form>`, because the select now contains "Nested". In `test_knowledge_shell`, the `NOTICE`/`NOTICE_START` asserts became "aren't readable" absent, and the subnav ordering is re-anchored on the stub section's content (`EMPTY`). `test_no_nested_belief_notice` runs on the real urlconf for Beliefs, Divergences and Exposures.
+  **Why:** The story's test plan asks for these changes. The first-order assertion itself is unchanged. Cost if wrong: none.
+  **Issue:** #327

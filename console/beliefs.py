@@ -16,6 +16,14 @@ How (#190, #227): ``provenance_kind`` (Engine #654), the producing transition's 
 marked (class ``testimony``). ``provenance`` itself is the producing transition's id, shown in
 "More" as an id, never as a kind.
 
+Kinds (#327): the Engine's ``kind`` query reads first-order beliefs (:data:`FIRST_ORDER`, the
+default, the projection above), nested ones (:data:`NESTED`: what the character believes another
+believes, with ``attributed_holder_id``/``attributed_level``/``depth``) or speech acts
+(:data:`SPEECH_ACT`: what it heard said, ``speaker_character_id``). Nested and speech-act rows are
+the belief records at every level, paged by belief id; their extra cells are :class:`BeliefRow`'s
+``holder_text``/``depth_text``/``speaker_text``. The header, notice (:func:`kind_notice`), count
+noun and empty texts take the kind; first-order's are #190's unchanged.
+
 Shown as sent (C15): level and scalar aren't reconciled, ``held_to`` isn't checked against the
 as-of turn, identities always read the current record. A proposition that doesn't parse (C2)
 shows "—" in its column and raw in "More".
@@ -53,6 +61,21 @@ CANON_SOURCE, BELIEF_SOURCE = "canon", "belief"
 SOURCE_TEXT = {CANON_SOURCE: "Canon fact", BELIEF_SOURCE: "Own belief"}
 NOW = "now"
 
+FIRST_ORDER, NESTED, SPEECH_ACT = "first_order", "nested", "speech_act"
+KINDS = (FIRST_ORDER, NESTED, SPEECH_ACT)
+NESTED_NOTICE = (
+    "Nested belief records at every level, by belief id: who {label} thinks holds each "
+    "proposition, and how sure they think that holder is."
+)
+SPEECH_ACT_NOTICE = (
+    "What {label} heard another character say, at every level, by belief id — heard, not "
+    "necessarily believed."
+)
+NESTED_OFF_NOTE = "This story doesn't record nested beliefs ({reason}), so none will be listed"
+HOLDER_TITLE = "Who {label} thinks holds it, and at what level"
+SPEAKER_TITLE = "The character heard saying it"
+DEPTH_TITLE = "Nesting depth (1 = direct attribution)"
+
 
 def story_minor_ids(characters: Sequence[Any] | None) -> frozenset[str]:
     """C4's minor ids from the shell's ``get_story`` items that parse as an omniscient cast member
@@ -86,7 +109,10 @@ class MoreItem:
 class BeliefRow:
     """``_belief_row.html``'s context for one belief. ``until`` is ``None`` while it holds now;
     ``raw_proposition`` is the proposition's JSON when it doesn't parse (else ""); ``mark`` is
-    #191's Canon cell (shown only when the page sets ``marks``)."""
+    #191's Canon cell (shown only when the page sets ``marks``). #327's nested and speech-act
+    cells (``None`` on first-order): ``holder_text`` (the attributed holder's C4 label, "—" when
+    none) and ``holder_level`` (its level humanised, ``None`` when unset or no holder; the raw
+    level is ``belief.attributed_level``), ``depth_text`` and ``speaker_text``."""
 
     belief: BeliefItem
     proposition: Proposition | None
@@ -100,6 +126,10 @@ class BeliefRow:
     more: tuple[MoreItem, ...]
     raw_proposition: str
     mark: Any = None
+    holder_text: str | None = None
+    holder_level: str | None = None
+    depth_text: str | None = None
+    speaker_text: str | None = None
 
 
 def _linked(story_id: str, position: Any) -> Linked:
@@ -134,6 +164,22 @@ def _more(belief: BeliefItem, proposition: Proposition | None) -> tuple[MoreItem
         if belief.provenance_source_character is not None
         else ()
     )
+    m7 = (
+        *_code_item("Attributed holder", belief.attributed_holder_id),
+        *(
+            (
+                MoreItem(
+                    "Attributed level",
+                    humanised(belief.attributed_level),
+                    title=belief.attributed_level,
+                ),
+            )
+            if belief.attributed_level is not None
+            else ()
+        ),
+        *((MoreItem("Depth", f"{belief.depth:,}"),) if belief.depth is not None else ()),
+        *_code_item("Speaker", belief.speaker_character_id),
+    )
     return (
         MoreItem("Belief id", belief.belief_id, "code"),
         MoreItem("Proposition id", belief.proposition_id, "code"),
@@ -148,7 +194,12 @@ def _more(belief: BeliefItem, proposition: Proposition | None) -> tuple[MoreItem
         MoreItem("Polarity", humanised(belief.polarity), title=belief.polarity),
         transition,
         *source,
+        *m7,
     )
+
+
+def _code_item(term: str, value: str | None) -> tuple[MoreItem, ...]:
+    return () if value is None else (MoreItem(term, value, "code"),)
 
 
 def belief_row(
@@ -157,9 +208,21 @@ def belief_row(
     marks: Mapping[str, Any] | None = None,
     names: Mapping[str, str] | None = None,
     minor: frozenset[str] = frozenset(),
+    kind: str = FIRST_ORDER,
 ) -> BeliefRow:
     proposition = belief.proposition_view
     scalar = belief.current_scalar
+    labels = names or {}
+    extra: dict[str, str | None] = {}
+    if kind != FIRST_ORDER:
+        extra["depth_text"] = EMPTY if belief.depth is None else f"{belief.depth:,}"
+    if kind == NESTED:
+        holder = belief.attributed_holder_id
+        level = belief.attributed_level
+        extra["holder_text"] = character_label(holder, labels, minor)
+        extra["holder_level"] = humanised(level) if holder and level else None
+    elif kind == SPEECH_ACT:
+        extra["speaker_text"] = character_label(belief.speaker_character_id, labels, minor)
     return BeliefRow(
         belief=belief,
         proposition=proposition,
@@ -177,6 +240,7 @@ def belief_row(
         if proposition is not None
         else json.dumps(belief.proposition, indent=2, ensure_ascii=False),
         mark=None if marks is None else marks.get(belief.belief_id),
+        **extra,
     )
 
 
@@ -186,9 +250,12 @@ def belief_rows(
     marks: Mapping[str, Any] | None = None,
     names: Mapping[str, str] | None = None,
     minor: frozenset[str] = frozenset(),
+    *,
+    kind: str = FIRST_ORDER,
 ) -> list[BeliefRow]:
-    """The rows in the Engine's order; ``names``/``minor`` label a testimony source (C4)."""
-    return [belief_row(story_id, b, marks, names, minor) for b in beliefs]
+    """The rows in the Engine's order; ``names``/``minor`` label a testimony source, an
+    attributed holder and a speaker (C4); ``kind`` adds its extra cells (#327)."""
+    return [belief_row(story_id, b, marks, names, minor, kind) for b in beliefs]
 
 
 # --- identities ---------------------------------------------------------------------------------
@@ -240,10 +307,34 @@ def time_text(as_of: int | None) -> str:
     return NOW if as_of is None else f"as of turn {as_of}"
 
 
-def header_text(label: str, time: str | None, revision: int | None) -> str:
-    """ "What Alice believes · now · revision 7"; the time part dropped when As of turn is
-    invalid (``None``), the revision when no read answered."""
-    parts = [f"What {label} believes"]
+HEADER = {
+    FIRST_ORDER: "What {label} believes",
+    NESTED: "What {label} believes others believe",
+    SPEECH_ACT: "What {label} heard said",
+}
+NOUNS = {
+    FIRST_ORDER: ("belief", "beliefs"),
+    NESTED: ("nested belief", "nested beliefs"),
+    SPEECH_ACT: ("speech act", "speech acts"),
+}
+
+
+def kind_notice(kind: str, label: str) -> str:
+    """The notice under the count: :data:`FIRST_ORDER_NOTICE` unchanged, else the kind's."""
+    if kind == NESTED:
+        return NESTED_NOTICE.format(label=label)
+    if kind == SPEECH_ACT:
+        return SPEECH_ACT_NOTICE.format(label=label)
+    return FIRST_ORDER_NOTICE
+
+
+def header_text(
+    label: str, time: str | None, revision: int | None, *, kind: str = FIRST_ORDER
+) -> str:
+    """ "What Alice believes · now · revision 7" (nested: "… believes others believe", speech
+    act: "What Alice heard said"); the time part dropped when As of turn is invalid (``None``),
+    the revision when no read answered."""
+    parts = [HEADER.get(kind, HEADER[FIRST_ORDER]).format(label=label)]
     if time is not None:
         parts.append(time)
     if revision is not None:
@@ -251,18 +342,33 @@ def header_text(label: str, time: str | None, revision: int | None) -> str:
     return " · ".join(parts)
 
 
-def count_text(n: int, *, partial: bool, filtered: bool) -> str:
-    """C11: "12 beliefs" / "1 belief", then "on this page" and/or "matching filters"."""
-    noun = "belief" if n == 1 else "beliefs"
+def count_text(n: int, *, partial: bool, filtered: bool, kind: str = FIRST_ORDER) -> str:
+    """C11: "12 beliefs" / "1 belief" ("nested beliefs", "speech acts" per kind), then "on this
+    page" and/or "matching filters"."""
+    singular, plural = NOUNS.get(kind, NOUNS[FIRST_ORDER])
+    noun = singular if n == 1 else plural
     qualifier = ", ".join(text for text, on in ((ON_PAGE, partial), (MATCHING, filtered)) if on)
     return f"{n:,} {noun} {qualifier}" if qualifier else f"{n:,} {noun}"
 
 
-def empty_text(label: str, *, paged: bool, proposition: bool, as_of: int | None) -> str:
+def empty_text(
+    label: str, *, paged: bool, proposition: bool, as_of: int | None, kind: str = FIRST_ORDER
+) -> str:
     """The empty page's line (the player notice, checked first by the view, aside): a cursor
-    page's, then a proposition filter's, then the plain one."""
+    page's, then a proposition filter's, then the plain one. Nested and speech act: "<label>
+    holds no nested beliefs" / "<label> has heard no speech acts", " in that proposition" with
+    one, " as of turn N" with As of turn."""
     if paged:
         return EMPTY_PAGE
+    if kind in (NESTED, SPEECH_ACT):
+        line = (
+            f"{label} holds no nested beliefs"
+            if kind == NESTED
+            else f"{label} has heard no speech acts"
+        )
+        if proposition:
+            line += " in that proposition"
+        return line if as_of is None else f"{line} as of turn {as_of}"
     if proposition:
         if as_of is None:
             return f"{label} holds no current belief in that proposition"
