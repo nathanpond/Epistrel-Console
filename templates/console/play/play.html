@@ -2,7 +2,8 @@
 {% load console_format %}
 {% block title %}{{ story.name|default:story.id }} — Epistrel Console{% endblock %}
 {% block heading %}{{ story.name|default:"—" }}{% endblock %}
-{% block content %}
+{% block content %}{% if checks %}<p class="amendment-checks warning" role="status">{{ checks.text }}{% if checks.url %} · <a class="answer-checks" href="{{ checks.url }}">Answer them</a>{% endif %}</p>
+{% endif %}
 {% if fork_banner %}{% include "console/play/_fork_banner.html" %}{% endif %}
 <dl class="story-header">
   <dt>Id</dt><dd><code>{{ story.id }}</code></dd>

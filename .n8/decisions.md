@@ -3920,3 +3920,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** No live `engine_live` case for #330. The `n8-291-smoke` edge's stub model never rejects `response_format`, and the smoke stories are never upgraded forward-only after turns, so Demos 1 and 4 can't be produced there. The fake Engine (schema-validating) carries both fields in the tests.
   **Why:** the test plan names no live case; a faked live run would prove nothing.
   **Issue:** #330
+- **Decision:** #331: Overview/Play read the story without a viewpoint, so the Engine sends only {count}; a later story adds an omniscient read to link the session. Until then the line shows the count with the omniscient suffix and no "Answer them" link in real use (R2-Q34's default); the link renders only when a read carries `session_id`.
+  **Why:** the story keeps main's reads unchanged (no new Engine read, AC "Unchanged otherwise"); cost if wrong: one added omniscient read later.
+  **Issue:** #331
+- **Decision:** #331: `CHECKS_TEXT`'s "{count}"/"{checks}" are filled by splitting `console.raw.plural(n, "check")` ("2 checks" → "2", "checks"), so the number keeps E23's `{:,}` and the noun its C11 plural; "Answer them" carries `class="answer-checks"` for tests; the omniscient suffix is a plain string constant (no placeholders).
+  **Why:** reuses the one E23 helper rather than formatting inline; the class is an addition the story didn't forbid; cost if wrong: cosmetic.
+  **Issue:** #331
+- **Decision:** #331: the line markup is attached to the preceding line in both templates (`…</p>{% if checks %}` on the Overview, `{% block content %}{% if checks %}` on Play) so the no-checks renders stay byte-identical, not merely equal after normalisation. Goldens `tests/inspect/golden/amendment_checks_{overview,play}_main.html` were captured from the pre-change code (E24) with the field absent; the test additionally masks Django signed-value timestamps/signatures (`:TS:SIG`) because the Play page's signed snapshot and cast forms change with the clock.
+  **Why:** a timestamp in a signed value is not page content; cost if wrong: a golden that hides a real change inside a signature (none possible: signatures follow their payload).
+  **Issue:** #331
+- **Decision:** #331: the "no `stories:rewrite`" complement uses a test-module urlconf (real patterns less `stories:rewrite`, #330's `WITHOUT_BACKFILL` pattern), since `stories:rewrite` is registered for real since #297; the linked case is asserted under both `tests/urls_with_m7_pages.py` and the real urlconf. No live Engine used (smoke stack n8-291-smoke on 127.0.0.1:18000 left running, untouched).
+  **Why:** D19's complement needs a urlconf where the name doesn't resolve; cost if wrong: none.
+  **Issue:** #331

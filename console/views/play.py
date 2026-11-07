@@ -171,6 +171,7 @@ from console.turn_reports import (
     violation_rows,
 )
 from console.turn_world import TurnWorld, turn_world
+from console.views.inspect import ChecksLine, amendment_checks_line
 from console.views.ownership import OwnershipPanel, ownership_context
 from console.wording import busy_notice, humanised
 
@@ -1328,9 +1329,11 @@ class PlayPage:
     pause_banner: PauseBanner | None = None  # #80: a check pauses the story
     config_badge: ConfigBadge | None = None  # #85: fingerprint and quality status
     direct_view: DirectView | None = None  # #300: the Direct tab
+    checks: ChecksLine | None = None  # #331: pending amendment support checks
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "checks": self.checks,
             "config_badge": self.config_badge,
             "pause_banner": self.pause_banner,
             "page_links": story_links(self.story.id, None),  # E11 (#296): no Engine read
@@ -1526,6 +1529,7 @@ def _page(
         badge_or_unavailable(story_id, config),
         direct_view
         or _direct_view(play, str(form_viewpoint or ""), transcript_player_view=requested),
+        amendment_checks_line(story, story_id),  # from the story read above (no new read)
     )
     return render(request, "console/play/play.html", page.context(request))
 
