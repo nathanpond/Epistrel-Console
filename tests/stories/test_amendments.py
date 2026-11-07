@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from html import unescape
 from typing import Any
 
+import httpx
 import pytest
 from django.test import Client, override_settings
 from django.utils.html import escape
@@ -28,6 +29,7 @@ from console.amendments import (
     NO_UNDONE,
     UNPARSED_TEXT,
 )
+from console.engine.models import AmendmentDetail
 from console.forms.amendments import STATUS_INVALID
 from console.paging import CURSOR_DROPPED
 from console.rewrites import OMNISCIENT_LINE, OMNISCIENT_REQUIRED_TEXT
@@ -574,9 +576,10 @@ def test_truncated_warning(operator_client: Client, engine: FakeEngine) -> None:
 
 def test_malformed_part_is_a_dash_row(operator_client: Client, engine: FakeEngine) -> None:
     """E15/E23: a part whose ``ordinal`` isn't an int, and edges with no ``edge_type``, are
-    dash rows with the raw entry under More; the page still renders. (A part or edge that isn't
-    an object fails ``AmendmentDetail``'s parse, so it reaches the page as #43's
-    ``bad_response``; :func:`test_non_object_entries_never_raise` covers the helpers.)"""
+    dash rows with the raw entry under More; the page still renders. (A part that isn't an
+    object is :func:`test_non_object_part_is_a_dash_row`; an edge that isn't one still fails
+    ``AmendmentDetail``'s parse; :func:`test_non_object_entries_never_raise` covers the
+    helpers.)"""
     body = m7("amendment")
     body["parts"] = [{"ordinal": "two", "kind": "record"}, {"ordinal": True}, body["parts"][1]]
     body["relies_on"] = [{"part_id": "x"}]
@@ -591,6 +594,45 @@ def test_malformed_part_is_a_dash_row(operator_client: Client, engine: FakeEngin
     assert "<td>—</td><td>—</td><td>—<details>" in row(html, "relies-bad-0")
     assert "<td>—</td><td>—</td><td>—<details>" in row(html, "dependent-bad-0")
     assert "utterances" in row(html, "dependent-bad-0")
+
+
+def test_non_object_part_keeps_the_detail() -> None:
+    """#347: a part that isn't an object never fails ``AmendmentDetail``'s parse: ``parts``
+    keeps the objects and ``unparsed`` the raw list (a non-list ``parts`` reads as [])."""
+    body = m7("amendment")
+    good = body["parts"][1]
+    body["parts"] = ["x", good, 7]
+    found = AmendmentDetail.from_json(body)
+    assert found is not None
+    assert found.parts == [good]
+    assert found.unparsed == {"parts": ["x", good, 7]}
+    assert found.id == body["id"]
+    whole = AmendmentDetail.from_json(m7("amendment"))
+    assert whole is not None
+    assert whole.unparsed == {}  # nothing lost, nothing kept
+    odd = AmendmentDetail.from_json(dict(m7("amendment"), parts="nope"))
+    assert odd is not None
+    assert odd.parts == []
+    assert odd.unparsed == {"parts": "nope"}
+
+
+def test_non_object_part_is_a_dash_row(operator_client: Client, engine: FakeEngine) -> None:
+    """#302 AC 2 (#347): a part that isn't an object is ``<tr id="part-bad-<index>">`` at its
+    own index, the raw entry under More, with the summary and the other parts still rendered
+    (never #43's panel). The schema types parts as objects, so the body is served unvalidated,
+    as an Engine breaking its contract would send it."""
+    body = m7("amendment")
+    good = body["parts"][1]
+    body["parts"] = ["x", good]
+    engine.side_effect("GET", ONE_ROUTE, lambda _r: httpx.Response(200, json=body))
+    registry(engine)
+    html = page(operator_client, DETAIL_URL)
+    assert 'class="engine-error' not in html
+    assert '<dl class="amendment-summary">' in html
+    assert re.findall(r'<tr id="(part-[^"]+)">', html) == ["part-bad-0", f"part-{good['ordinal']}"]
+    bad = row(html, "part-bad-0")
+    assert bad.count(">—</td>") == 6
+    assert "&quot;x&quot;" in bad  # the raw part under More
 
 
 def test_non_object_entries_never_raise() -> None:
