@@ -36,6 +36,10 @@ matched on ``code`` alone:
 - ``pruned`` (409, #293: a swap, untruncate or fork of a chain a prune discarded, FR-STORE-19)
   → :data:`PRUNED_TEXT` "That chain was pruned — its records are gone, so it can't be restored",
   no URL;
+- ``story_importing`` (409, E10, #295: the story is being imported) →
+  ``console.portability.importing_refusal(exc)``: "This story is being imported — its pages open
+  once the import ends (<stage>, <done>/<total>)", linked to its import job (``engine:import-job``,
+  "" while unregistered);
 - ``idempotency_conflict``, any other code, and a non-``EngineError`` → ``None``: the caller
   renders #43's ``panel_for(exc)``.
 
@@ -175,4 +179,8 @@ def write_refusal(exc: EngineClientError, story_id: str, verb_phrase: str) -> Wr
         return WriteRefusal(ERASED_TEXT)
     if exc.code == "pruned":
         return WriteRefusal(PRUNED_TEXT)
+    if exc.code == "story_importing":
+        from console.portability import importing_refusal  # portability imports WriteRefusal
+
+        return importing_refusal(exc)
     return None

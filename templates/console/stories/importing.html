@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% load inspect_tags %}
+{# A story being imported (E10, #295, console/portability.py): ImportingStoryMiddleware's page for a 409 story_importing. Context: story_id, refusal (WriteRefusal: text, url), retry_url. #}
+{% block title %}Story importing{% endblock %}
+{% block heading %}Story importing{% endblock %}
+{% block content %}
+<p class="story-id">Story {{ story_id|engine_id }}</p>
+<p class="warning importing-message" role="status">{% if refusal.url %}<a class="import-job" href="{{ refusal.url }}">{{ refusal.text }}</a>{% else %}{{ refusal.text }}{% endif %}</p>
+<p class="importing-actions"><a class="retry" href="{{ retry_url }}">Retry</a></p>
+{% endblock %}

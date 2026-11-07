@@ -1,5 +1,5 @@
 {% extends "console/inspect/base.html" %}
-{% load console_format inspect_tags %}
+{% load console_format impact inspect_tags %}
 {% comment %}
 The Inspect area's entry tab (#135; content #151): what the story runs with, from the shell's one
 effective-config read. Header line, the pipeline level, the capabilities the Engine reports (labels
@@ -9,7 +9,7 @@ module's dials in a row under it, console.inspect.MODULE_DIALS).
 {% block tab_content %}
 <p class="overview-header">Profile <code>{{ config.profile.id }}</code> v{{ config.profile.version }}{% if profile_flags %} ({{ profile_flags }}){% endif %}
   · fingerprint {% if config.fingerprint %}<code title="{{ config.fingerprint }}">{{ fingerprint_short }}</code>{% else %}—{% endif %}
-  · <span title="{{ config.quality_status.status }}">{{ config.quality_status.status|humanise|capfirst }}</span>
+  · {% include "console/_quality.html" with quality=config.quality_status|quality_line %}
   · <a href="{{ config_url }}">Config</a></p>
 {% if pipeline is not None %}<p class="overview-pipeline"><code>pipeline</code>: {{ pipeline }}</p>{% endif %}
 

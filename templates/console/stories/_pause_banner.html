@@ -7,7 +7,7 @@ terminal check answers HX-Refresh instead, and the page reloads unpaused.
   <strong>{% if pause_banner.check_url %}<a class="pause-check" href="{{ pause_banner.check_url }}">{{ pause_banner.text }}</a>{% else %}{{ pause_banner.text }}{% endif %}</strong>
   {% if not pause_banner.unavailable and not pause_banner.not_found %}{% if pause_banner.indeterminate %}<progress></progress>{% else %}<progress value="{{ pause_banner.done }}" max="{{ pause_banner.total }}">{{ pause_banner.done }}/{{ pause_banner.total }}</progress>{% endif %}{% endif %}
   {% if pause_banner.retrying_text %}<span class="retrying">{{ pause_banner.retrying_text }}</span>{% endif %}
-  {% if pause_banner.not_found %}<span class="pause-error">No such check, or it expired (kept 30 days)</span>{% endif %}
+  {% if pause_banner.not_found %}<span class="pause-error">{{ pause_banner.not_found_text }}</span>{% endif %}
   {% if pause_banner.unavailable %}{% include "console/_engine_error.html" with engine_error=pause_banner.unavailable %}{% endif %}
   {% if not pause_banner.polling %}<a class="refresh" href="{{ pause_banner.refresh_url }}">Refresh</a>{% endif %}
 </div>

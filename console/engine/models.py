@@ -1376,10 +1376,17 @@ class OmniscientStoryCharacter(Model):
 
 @dataclass(frozen=True)
 class StoryPauseProgress(Model):
-    """``StoryPauseProgressBody``: records checked, of how many."""
+    """``StoryPauseProgressBody``: records checked, of how many. Read leniently (E10, #295): a
+    backfill's pause carries its own progress (``phase``, ``chunks_done``, ``chunks_total``) if the
+    Engine's story read ever serves it (nathanpond/Epistrel#783: at ``5cb073b`` that read answers
+    500 instead), so every member is optional and a strict ``{done, total}`` never fails the whole
+    ``Story`` read."""
 
-    done: int
-    total: int
+    done: int | None = None
+    total: int | None = None
+    chunks_done: int | None = None
+    chunks_total: int | None = None
+    phase: str | None = None
 
 
 @dataclass(frozen=True)

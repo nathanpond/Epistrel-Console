@@ -320,7 +320,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
             else audience_filter_label(history.audience_filter)
         ),
         world_viewpoint=_world_viewpoint(history, groups, labels),
-        outbox_notice=outbox_list_notice_html() if _dispatched(groups) else "",
+        outbox_notice=(outbox_list_notice_html(story_id=story.id) if _dispatched(groups) else ""),
     )
 
 

@@ -490,7 +490,7 @@ def test_header_line_profile_fingerprint_quality_and_config(
     assert "Profile <code>00000000000000000000PRF002</code> v1 (pinned)" in line
     full = "sha256:" + "7" * 64
     assert f'fingerprint <code title="{full}">sha256:{"7" * 12}</code>' in line
-    assert '<span title="uncertified">Uncertified</span>' in line
+    assert '<span class="quality" title="uncertified">Uncertified</span>' in line  # #295: _quality
     assert line.endswith(f'<a href="/stories/{STORY}/config/">Config</a>')
 
 

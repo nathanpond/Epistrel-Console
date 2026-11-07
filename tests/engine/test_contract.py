@@ -457,7 +457,8 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
     publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
     any object (#78). The owner and relation bodies carry both revisions, optional (#79).
-    ``DepictedSubject`` gains ``SubjectRef``'s optional ``story`` (#291)."""
+    ``DepictedSubject`` gains ``SubjectRef``'s optional ``story`` (#291). ``StoryPauseProgressBody``
+    is read leniently (#295)."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -480,6 +481,20 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     # #292: a backfill's conflict_list items are typed as any JSON, though the Engine fills
     # it with Conflict objects; the model reads them entry by entry as Conflict (E15).
     schemas[CORE_BACKFILL]["properties"]["conflict_list"]["items"] = CONFLICT_REF
+    # #295 (E10): a story read's ``pause.progress`` is read leniently: a backfill's pause carries
+    # its own progress (nathanpond/Epistrel#783), so ``done``/``total`` are optional and the
+    # backfill's ``chunks_done``/``chunks_total``/``phase`` are optional members too.
+    progress = schemas["StoryPauseProgressBody"]
+    progress["properties"].update(
+        {
+            "done": NULLABLE_INT,
+            "total": NULLABLE_INT,
+            "chunks_done": NULLABLE_INT,
+            "chunks_total": NULLABLE_INT,
+            "phase": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        }
+    )
+    progress["required"] = []
     return widened
 
 

@@ -79,6 +79,8 @@ MIDDLEWARE = [
     "console.middleware.EngineErrorMiddleware",
     # ...except a story held by a pending erasure (503 erasure_pending): the held message (#87).
     "console.middleware.HeldStoryMiddleware",
+    # ...and a story being imported (409 story_importing): the importing page (E10, #295).
+    "console.middleware.ImportingStoryMiddleware",
 ]
 
 # An erasure preview (#86) may list more candidate mentions than Django's default 1,000 fields,

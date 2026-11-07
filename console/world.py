@@ -244,7 +244,9 @@ Codes outside slot writes (`invalid_manifest`, `provider_in_use`, `binding_incom
 C5 first.
 
 **D18 — Engine gaps, said once (owner #235; convention 24's rule).**
-- **Outbox list.** D11's notice.
+- **Outbox list (nathanpond/Epistrel#679, closed).** Delivered by Engine M7 (`list_outbox`):
+  `outbox_list_notice_html(story_id=…)` links the Effects tab's Outbox section (E17, #295; D11's
+  old notice while `inspect:outbox` is unregistered).
 - **Inter-turn slots in History, and no State change log.** The history read doesn't list
   inter-turn slot operations: `HistoryItemModel`/`TurnSummaryModel` carry no `slot_k`, and
   items come from the transcript. No Engine read lists a story's slots or its State changes
@@ -254,11 +256,11 @@ C5 first.
 - **`viewpoint` on the States and scheduled-event reads.** Declared since Engine M7
   (nathanpond/Epistrel#682): `?viewpoint=` on `GET …/states`, `GET …/states/{name}` and `GET
   …/scheduled-events` is in the Engine's OpenAPI. No page notice.
-- **No State definition read.** `GET …/states/{name}` answers only `visibility` and `unit` of a
-  definition's mutable members, and no route returns a definition. #265 pre-fills those two,
-  shows the Console's own last record as possibly stale, and cites `STATE_DEFINITION_REQUEST`
-  (the Engine request the planner files, "Engine request (State definition read,
-  nathanpond/Epistrel#680)").
+- **State definition read (nathanpond/Epistrel#680, closed).** Read by `get_state_definition`;
+  #329 uses its `config_revision` as D8's base (E17, #295). Until #329 lands, #265's page still
+  cites `STATE_DEFINITION_REQUEST`.
+- **Operations by label (nathanpond/Epistrel#681, closed).** Story operations are listed by
+  `list_operations` (#324) (E17, #295).
 - **No State-proposal analysis status read.** The 202's `job_id` has no read, so #266 flashes
   "queued" and asks for a reload rather than polling.
 - **`StateBody` has no `provider_id`.** An external State's owner reads "External" with no

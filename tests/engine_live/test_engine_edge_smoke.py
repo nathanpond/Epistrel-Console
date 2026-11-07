@@ -760,3 +760,60 @@ def test_m7_portability_live(url: str, key: str) -> None:
         assert unknown.value.http_status == 404
     finally:
         _delete_when_idle(client, story)
+
+
+BACKFILL_ENDED = frozenset({"completed", "cancelled", "failed"})
+
+
+@pytest.mark.engine_auth
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "nathanpond/Epistrel#783: GET /stories/{id} answers 500 while a backfill pauses the "
+        "story (StoryPauseProgressBody requires {done, total})"
+    ),
+)
+def test_backfill_pause_story_read_live(url: str, key: str) -> None:
+    """#295 (E10's suspected Engine bug): on a Full story pinned below v4 with one played turn,
+    assigning v4 with ``upgrade_mode: backfill`` starts a backfill; while it runs, the story read
+    answers 200 with ``pause.cause == "backfill"``. Skips when the edge lacks the presets, starts
+    no backfill, or the backfill ends before any read sees the pause."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profile = _full_profile(client)
+    # Full v3 -> v4 gains no data-producing capability on the edge, so nothing is backfilled;
+    # v1 -> v4 gains several (partitions, States, the clock), which starts one.
+    story = _knowledge_story(client, profile, 1)
+    try:
+        [player] = [c.id for c in client.get_story(story).cast if c.is_player]
+        client.respond(
+            story,
+            {"actor_character_id": player, "player_input": {"say": "Is the ferry late?"}},
+            idempotency_key=new_ulid(),
+            prefer_async=False,
+        )
+        written = client.assign_engine_profile(
+            story,
+            profile,
+            ignore_warnings=True,
+            idempotency_key=new_ulid(),
+            version=4,
+            upgrade_mode="backfill",
+        )
+        if written.backfill is None:
+            pytest.skip("assigning Full v4 started no backfill on this edge")
+        deadline = time.monotonic() + 120.0
+        while time.monotonic() < deadline:
+            read = client.get_story(story)  # the 500 (#783) raises EngineError here
+            if read.pause is not None:
+                assert read.pause.cause == "backfill"
+                return
+            try:
+                status = client.get_backfill(story).status
+            except EngineError as exc:
+                status = exc.code
+            if status in BACKFILL_ENDED or status == "backfill_not_found":
+                pytest.skip(f"the backfill ended ({status}) before a read saw the pause")
+            time.sleep(0.25)  # a stub backfill runs for seconds: once a second could miss it
+        pytest.fail("the backfill neither paused the story nor ended within 120 s")
+    finally:
+        _delete_when_idle(client, story, wait=120.0)

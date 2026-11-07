@@ -205,3 +205,17 @@ def test_staged_markers() -> None:
     assert stage_revision_text(1200) == "revision 1200"
     assert stage_revision_text(None) == "—"
     assert stage_revision_text(True) == "—"
+
+
+def test_e17s_outbox_section_notice() -> None:
+    """#295 (E17): with a story id the notice links the Effects tab's Outbox section once
+    ``inspect:outbox`` resolves; before #325 (the real urlconf) it is D11's old notice."""
+    old = str(outbox_list_notice_html())
+    assert str(outbox_list_notice_html(story_id=STORY)) == old
+    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
+        html = outbox_list_notice_html(story_id=STORY)
+        assert html == (
+            "Every outbox row is listed in "
+            f'<a href="/stories/{STORY}/inspect/effects/outbox/">Effects \u203a Outbox</a>'
+        )
+        assert str(outbox_list_notice_html()) == old  # no story id: nothing to link

@@ -284,7 +284,9 @@ def turn_world(response: Any, story_id: str, names: Mapping[str, str]) -> TurnWo
         unread=tuple(unread),
         required=required,
         reconcile=reconcile,
-        outbox_notice=outbox_list_notice_html() if dispatched or required else "",
+        outbox_notice=(
+            outbox_list_notice_html(story_id=story_id) if dispatched or required else ""
+        ),
         viewpoint=(
             viewpoint_line(viewpoint, names)
             if isinstance(viewpoint, str) and viewpoint and viewpoint != OMNISCIENT

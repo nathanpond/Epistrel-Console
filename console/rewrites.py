@@ -126,9 +126,11 @@ shared M7 stub urlconf for their linked cases.
   restore, the daily policy prune, rewrite expiry, the export retention sweep, and eval and
   certification CLI runs. The Console shows their results (prune runs with ``trigger: policy``,
   expired sessions, expired exports, eval runs) and drives none.
-- **E10's suspected ``pause.progress`` mismatch**: ``GET /stories/{id}`` may build a backfill's
-  ``pause.progress`` in a shape ``StoryPauseProgressBody`` rejects; #295 checks it against the
-  live Engine and records the result here.
+- **E10's ``pause.progress`` mismatch (confirmed by #295, nathanpond/Epistrel#783)**: ``GET
+  /stories/{id}`` answers 500 while a backfill pauses the story, because a backfill's
+  ``pause.progress`` (``{phase, chunks_done, …}``) fails ``StoryPauseProgressBody``'s ``{done,
+  total}``. The Console reads either shape (``StoryPauseProgress`` is lenient) and the 500 shows
+  as #43's panel until the Engine fixes it; the live test is ``xfail(strict=True)`` on #783.
 - **The export bundle route** declares no 409/410 in its schema (Console #333; the tests serve
   the 410 undeclared).
 - **The edge image sets no bundle directory**, and an export whose job fails stays ``running``

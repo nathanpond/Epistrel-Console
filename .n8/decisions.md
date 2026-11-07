@@ -3171,3 +3171,43 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The PR-body copy of E1–E23 is staged in the scratchpad (`pr-conventions-294.md`) for the milestone PR, since story agents don't open PRs. The docstring half of that AC is in `console/rewrites.py`, `console/forms/rewrites.py` and `console/raw.py`.
   **Why:** The brief forbids opening a PR. Cost if wrong: the orchestrator must paste it into the milestone PR body.
   **Issue:** #294
+- **Decision:** `SLOW_POLL_TRIGGER` and `PARTIAL_PARAM` are defined in `console/job_poll.py` (beside `POLL_TRIGGER`) and re-exported by `console/jobs.py`, not defined in `jobs.py` as E1's table lists. `console/upgrades.py` imports `wording.humanised` function-locally, and `wording.write_refusal` imports `portability.importing_refusal` function-locally.
+  **Why:** `story_pause` needs the slow trigger, and `wording → story_pause → upgrades → wording` would be an import cycle. Both names import from `console.jobs` as E1 says. Cost if wrong: none (the same objects either way).
+  **Issue:** #295
+- **Decision:** `JobState` carries E7's eight fields, plus trailing `status` (the raw value always) and `stage` (an import's humanised stage while running). It also has the properties `running`, `succeeded`, `polling` and `indeterminate`, and `text_with_stage(stage_text)`. `stage_text` is a plain string the caller looks up for the current stage, and the template applies it through the new `{% load jobs %}` filters (`job_text`, `job_error`) in `console/templatetags/jobs.py`. `job_error` shows a bare-string error (a certification run's exception name) verbatim, not humanised, and `settle_error_code` implements E7's settle rule.
+  **Why:** The template can't call helpers with arguments. "Timeouterror" misreads an exception name. Cost if wrong: #321 passes a mapping instead of a string, which is a one-line change in the filter.
+  **Issue:** #295
+- **Decision:** `ReportEntry` is a `NamedTuple(code, message, more)`, so it compares equal to the AC's tuple. A missing message reads "—". `#292`'s `import_job_ready.json` warning has no `message`, and its `outbox_id` goes to `more`. `counts` are sorted naturally by raw key (E23), with ties broken by the key.
+  **Why:** The AC calls each entry a tuple, and E23 covers missing values. Cost if wrong: none.
+  **Issue:** #295
+- **Decision:** `typed_name_for(page, name, story_id) -> ConfirmPage` sets `typed_name`/`typed_label` (the stripped name, or the id with `typed_label=""`). `confirm_action` checks the name only where it would otherwise perform: after `blocked`, and after the confirmed/key checks in confirmed mode. A mismatch re-renders with the posted key (in plain mode, `posted_idempotency_key`'s fallback when it is malformed).
+  **Why:** Discretion's typed-confirm paragraph. A helper returning the page avoids `**dict` typing at #317's call site. Cost if wrong: #317 calls `dataclasses.replace` itself.
+  **Issue:** #295
+- **Decision:** `render_importing` (the middleware's page) lives in `console/portability.py`, which E1 gives "E10's importing wording and middleware helper". `ImportingStoryMiddleware` is listed right after `HeldStoryMiddleware`, so Django's reverse-order `process_exception` sees it first. `importing.html` uses `<title>Story importing</title>`, with no " — Epistrel Console" suffix, as the Discretion words it. The demo's `/stories/<id>/` and the play view already let `get_story`'s 409 escape, so no view needed changing. No broad audit was made of views that word an `EngineError` inline.
+  **Why:** AC/Discretion. Cost if wrong: a page that catches every `EngineError` itself shows its own panel for an importing story. #296's frame covers the M7 pages.
+  **Issue:** #295
+- **Decision:** `PauseBanner` gains a `backfill` property and a `not_found_text` property. The banner template now reads `{{ pause_banner.not_found_text }}`, which yields main's exact "No such check…" text for the rating causes (golden-tested). For the backfill causes, `polling` is "the Backfill URL resolves and the last read didn't fail". Rating causes with a missing `done`/`total` (now possible in the lenient model) read as 0, as main's ints did.
+  **Why:** AC (cause-aware failure texts, byte-for-byte rating banners). Cost if wrong: none for the rating paths.
+  **Issue:** #295
+- **Decision:** `StoryPauseProgress` (#291's model) now has `done`/`total` optional, plus optional `chunks_done`, `chunks_total` and `phase`. The contract guard widens `StoryPauseProgressBody` to match (`tests/engine/test_contract.py::_widened`, a #295 block).
+  **Why:** AC (corrected at sim routing): a strict model fails the whole `Story` read. Cost if wrong: none (lenient read).
+  **Issue:** #295
+- **Decision:** Deviation from plan in the live check. The live test pins Full **v1**, not v3. On the edge (`5cb073b`), Full v3 → v4 gains no data-producing capability, so assigning v4 starts no backfill (verified: `backfill: null`, `needed: false`). v1 → v4 starts one. The test polls every 0.25 s (120 s cap), not E24's once a second, because the stub backfill runs for seconds. It reproduced: `GET /stories/{id}` → 500 (`ValidationError` at `api/routes/stories.py:457`). Filed **nathanpond/Epistrel#783**. The test is `xfail(strict=True)` on it, and E18 (`console/rewrites.py`) records it. The live suite on `127.0.0.1:18000` (stack `n8-291-smoke`, left running): 25 passed, 1 xfailed, 1 xpassed.
+  **Why:** The AC's v3 precondition can't produce a backfill on this edge, and a skip would hide the bug. Cost if wrong: if a later Full v4 makes v3 → v4 backfill, v1 still works.
+  **Issue:** #295
+- **Decision:** `quality_line` links a `certification_id` for any status that carries one (not only `certified`), and `QualityLine` gains a trailing `certification_id` so `_quality.html` can show the short id unlinked (`engine_id`) while `engine:certification` is unregistered. `quality_line` also takes a bare status string. The filter maps `None`/`""` → `None`. `floors_text` with only failed floors reads "Floors failed: c".
+  **Why:** Discretion (Overview: an unlinked short id). A stale status's certification is still worth reaching. Cost if wrong: a stale badge shows an id link it needn't.
+  **Issue:** #295
+- **Decision:** Visible markup changes from the `_quality.html` switch:
+  - The Overview header's `<span title="uncertified">Uncertified</span>` gains `class="quality"`.
+  - `_impact_report.html`'s "Quality after" cell and summary `dd` now read "Uncertified" (capitalised, as a badge `<span class="quality" title="uncertified">`). Main read the lowercase raw "uncertified" there.
+  - Two existing assertions moved: `tests/inspect/test_overview.py::test_header_line_profile_fingerprint_quality_and_config` and `tests/test_profiles_edit.py::test_applied_false_renders_the_impact_page`.
+  Config (`config.html`, `_config_badge.html`) and `_turn_report.html` are left for #307/#312, per the AC's list.
+  **Why:** E13: one wording ("Uncertified") everywhere. On the Overview the visible text is byte for byte unchanged. Cost if wrong: the impact report's lowercase text returns with a one-line template change.
+  **Issue:** #295
+- **Decision:** `tests/test_job_poll.py` and `tests/test_story_pause.py` didn't exist on the branch (the test plan calls the first "existing"). Both are new. `poll_context`'s existing callers are proven unchanged by the default-trigger case and the untouched offboarding/rating suites. The rating and reactivation banner goldens were captured from the pre-change render before editing (E24).
+  **Why:** Test plan. Cost if wrong: none.
+  **Issue:** #295
+- **Decision:** `UpgradeModeForm` exposes `.mode()` and pre-selects `initial_mode`. Its `form=` attribute is set on the field's widget per instance. `upgrade_mode_text` shows a non-string value with `str()`. `preset_order` is generic over anything with `id`/`name`/`preset` (`Profiled`), and sorts unknown presets by `(name, id)`.
+  **Why:** E13/E14. Cost if wrong: none.
+  **Issue:** #295

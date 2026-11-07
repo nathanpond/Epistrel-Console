@@ -665,7 +665,7 @@ def test_applied_false_renders_the_impact_page(operator_client: Client, engine: 
     assert f'<code title="{FP_BEFORE}">{FP_BEFORE[:12]}</code> → <code title="{FP_AFTER}">' in html
     assert "…and 1001 more (the Engine lists the first 1,000)" in shown
     assert "Apply anyway" in shown
-    assert "uncertified" in shown
+    assert "Uncertified" in shown  # #295: E13's one quality wording (main read "uncertified")
 
 
 def test_an_edit_no_story_follows_shows_the_top_level_block(

@@ -243,7 +243,7 @@ class EditEffects:
         """D11's outbox-list notice, through its one renderer."""
         from console.effects import outbox_list_notice_html
 
-        return outbox_list_notice_html()
+        return outbox_list_notice_html(story_id=self.story_id)
 
     @property
     def sections(self) -> tuple[EffectSection, ...]:

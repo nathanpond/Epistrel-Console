@@ -24,6 +24,17 @@ Engine call and carries that POST's key forward, so the eventual Confirm sends t
 when the operator's first page rendered. A confirmed POST whose key is missing or malformed
 re-renders with a fresh key and an error instead of performing under a key nobody saw.
 
+**E9's typed-name confirm** (#295, M7; prune #317 is the first user): ``typed_name`` (with
+``typed_label``; :func:`typed_name_for` sets both) renders ``console/_typed_confirm.html``
+right after ``fields_template``: "Type <strong>NAME</strong> to confirm" and an
+``autocomplete="off"`` input with no ``value`` (the typed text is never echoed back). A POST
+that would otherwise perform (after ``blocked`` and the confirmed check) performs only when
+``POST["typed_name"].strip() == typed_name``: exact and case-sensitive. Otherwise the page
+re-renders (200) with :data:`TYPED_NAME_MISMATCH`, keeping the posted key, and ``perform`` is
+never called. A story with no usable name types its id, and the label reads "Type the story's
+id <strong>ID</strong> to confirm". With ``typed_name`` "" (the default) every page renders byte
+for byte as before.
+
 Usage in a view::
 
     def archive(request, story_id):
@@ -53,6 +64,8 @@ KEY_FIELD = "idempotency_key"
 NEXT_FIELD = "next"
 CONFIRMED_FIELD = "confirmed"
 INCOMPLETE = "This confirmation was incomplete — confirm again"
+TYPED_NAME_FIELD = "typed_name"
+TYPED_NAME_MISMATCH = "That isn't the story's name — type it exactly as shown"  # E9
 # The Engine's Idempotency-Key rule.
 _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
 
@@ -116,11 +129,38 @@ class ConfirmPage:
     fact_urls: Mapping[str, str] = field(default_factory=dict)  # fact label → its value's link
     error_url: str = ""  # a link after ``error`` (a ``WorldRefusal.url``) ...
     error_link: str = ""  # ... labelled "Config", "Providers" or "Reconciliation"
+    # E9 (#295): the text to type before Confirm performs, and the name the label shows ("": the
+    # label reads "the story's id" and shows ``typed_name``).
+    typed_name: str = ""
+    typed_label: str = ""
 
     @property
     def fact_rows(self) -> tuple[tuple[str, str, str], ...]:
         """``facts`` as (label, value, link): the link "" unless ``fact_urls`` names the label."""
         return tuple((label, value, self.fact_urls.get(label, "")) for label, value in self.facts)
+
+
+def typed_name_for(page: ConfirmPage, name: str | None, story_id: str) -> ConfirmPage:
+    """``page`` asking for the story's name typed out (E9): its name (stripped), or its id when
+    the name is ``None``, blank or whitespace (the label then names the id)."""
+    shown = (name or "").strip()
+    if shown:
+        return dataclasses.replace(page, typed_name=shown, typed_label=shown)
+    return dataclasses.replace(page, typed_name=story_id, typed_label="")
+
+
+def _typed_matches(request: HttpRequest, page: ConfirmPage) -> bool:
+    if not page.typed_name:
+        return True
+    typed = request.POST.get(TYPED_NAME_FIELD)
+    return isinstance(typed, str) and typed.strip() == page.typed_name
+
+
+def _mismatch(
+    request: HttpRequest, page: ConfirmPage, key: str, extra: Mapping[str, Any] | None
+) -> HttpResponse:
+    page = dataclasses.replace(page, error=TYPED_NAME_MISMATCH)
+    return render_confirm(request, page, extra=extra, idempotency_key=key)
 
 
 def render_confirm(
@@ -167,7 +207,10 @@ def confirm_action(
                 request, page, extra=extra, idempotency_key=key if _KEY.match(key) else None
             )
         if not require_confirmed:
-            return perform(posted_idempotency_key(request))
+            key = posted_idempotency_key(request)
+            if not _typed_matches(request, page):
+                return _mismatch(request, page, key, extra)
+            return perform(key)
         key = request.POST.get(KEY_FIELD, "")
         valid = bool(_KEY.match(key))
         if request.POST.get(CONFIRMED_FIELD) != "1":
@@ -176,6 +219,8 @@ def confirm_action(
             )
         if not valid:
             return render_confirm(request, dataclasses.replace(page, error=INCOMPLETE), extra=extra)
+        if not _typed_matches(request, page):
+            return _mismatch(request, page, key, extra)
         return perform(key)
     if request.method in ("GET", "HEAD"):
         return render_confirm(request, page, extra=extra)

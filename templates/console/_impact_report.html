@@ -34,7 +34,7 @@ always in "story" mode, #85): fingerprint before -> after, capabilities and qual
       <td class="backfill">{{ row.backfill }}</td>
       <td class="upgrade">{% if row.upgrade_unavailable %}<strong>Unavailable</strong> — {{ upgrade_unavailable_text|default:"This story has history the Engine can't backfill — it keeps its current configuration" }}{% else %}—{% endif %}</td>
       <td class="fingerprints">{% if row.fingerprint_before %}<code title="{{ row.fingerprint_before }}">{{ row.before_short }}</code>{% else %}—{% endif %} → {% if row.fingerprint_after %}<code title="{{ row.fingerprint_after }}">{{ row.after_short }}</code>{% else %}—{% endif %}</td>
-      <td>{{ row.quality_after|humanise|default:"—" }}</td>
+      <td>{% include "console/_quality.html" with quality=row.quality_after|quality_line %}</td>
     </tr>{% endfor %}</tbody>
   </table>
   {% impact_more impact as more %}{% if more %}<p class="impact-more">…and {{ more }} more (the Engine lists the first 1,000)</p>{% endif %}
@@ -44,7 +44,7 @@ always in "story" mode, #85): fingerprint before -> after, capabilities and qual
   <dl class="impact-top">
     <dt>Fingerprint before → after</dt><dd class="fingerprints">{% if impact.fingerprint_before %}<code title="{{ impact.fingerprint_before }}">{{ impact.fingerprint_before|short_fp }}</code>{% else %}—{% endif %} → {% if impact.fingerprint_after %}<code title="{{ impact.fingerprint_after }}">{{ impact.fingerprint_after|short_fp }}</code>{% else %}—{% endif %}</dd>
     <dt>Capabilities after</dt><dd class="capabilities-after">{% if impact.capabilities_after is not None %}{% for c in impact.capabilities_after %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</dd>
-    <dt>Quality status after</dt><dd class="quality-after">{% if impact.quality_status_after %}{{ impact.quality_status_after.status|humanise }}{% else %}—{% endif %}</dd>
+    <dt>Quality status after</dt><dd class="quality-after">{% include "console/_quality.html" with quality=impact.quality_status_after|quality_line %}</dd>
   </dl>
   {% endif %}
   {% if show_apply %}{% include "console/_two_stage.html" with token=signed_payload confirm_url=apply_url confirm_label="Apply anyway" cancel_url=cancel_url idempotency_key=idempotency_key %}{% endif %}

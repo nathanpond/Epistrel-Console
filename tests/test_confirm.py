@@ -10,11 +10,13 @@ from django.template.loader import get_template
 from django.test import RequestFactory
 
 from console.confirm import (
+    TYPED_NAME_MISMATCH,
     ConfirmPage,
     confirm_action,
     posted_idempotency_key,
     render_confirm,
     safe_next,
+    typed_name_for,
 )
 
 PAGE = ConfirmPage(title="T", question="Do {name}?", emphasis="it", confirm_label="Go",
@@ -309,3 +311,146 @@ def test_error_link_after_the_error() -> None:
     # Complement: without an error, or without a label, main's markup.
     assert "Config</a>" not in _render(dataclasses.replace(page, error=""))
     assert '<a href="/stories/S/config/">' not in _render(dataclasses.replace(page, error_link=""))
+
+
+# --- E9's typed-name confirm (#295) ---------------------------------------------------------------
+
+# ``_confirm.html`` as main rendered it before #295 (captured from main with a fixed key and CSRF
+# token): a page with ``typed_name`` "" renders it byte for byte.
+MAIN_PLAIN = "\n".join(
+    [
+        '<div class="confirm">',
+        '  <p class="question">Do <em>it</em>?</p>',
+        "  ",
+        "  ",
+        '  <form method="post">',
+        '    <input type="hidden" name="csrfmiddlewaretoken" value="CSRF">',
+        '    <input type="hidden" name="idempotency_key" value="KEY1">',
+        '    <input type="hidden" name="next" value="/back/">',
+        "    ",
+        "    ",
+        '    <button type="submit">Go</button>',
+        '    <a href="/back/">Cancel</a>',
+        "  </form>",
+        "</div>",
+        "",
+    ]
+)
+MAIN_FULL = "\n".join(
+    [
+        '<div class="confirm">',
+        '  <p class="question">Delete?</p>',
+        "  <p>a line</p>",
+        "  ",
+        "  <dl>",
+        '    <dt>Story id</dt><dd><a href="/s/"><code>X1</code></a></dd>',
+        "  </dl>",
+        "  ",
+        '  <form method="post">',
+        '    <input type="hidden" name="csrfmiddlewaretoken" value="CSRF">',
+        '    <input type="hidden" name="idempotency_key" value="KEY1">',
+        '    <input type="hidden" name="next" value="/b/">',
+        '    <input type="hidden" name="h" value="v">',
+        "    ",
+        "    ",
+        '    <p class="errorlist confirm-error">Bad <code>x</code> — <a href="/c/">Config</a></p>',
+        '    <p class="warning">Blocked</p>',
+        '    <button type="submit" disabled class="danger">Delete</button>',
+        '    <a href="/b/">Cancel</a>',
+        "  </form>",
+        "</div>",
+        "",
+    ]
+)
+
+
+def _main_context(page: ConfirmPage) -> dict[str, Any]:
+    before, _, after = page.question.partition("{name}")
+    return {"page": page, "question_before": before, "question_after": after,
+            "has_emphasis": "{name}" in page.question, "idempotency_key": "KEY1",
+            "next_url": page.cancel_url, "csrf_token": "CSRF"}  # fmt: skip
+
+
+def test_a_page_without_a_typed_name_renders_as_on_main() -> None:
+    """**Complement:** ``typed_name`` defaults to "" and leaves main's HTML unchanged."""
+    full = ConfirmPage(title="T", question="Delete?", confirm_label="Delete", cancel_url="/b/",
+                       lines=("a line",), facts=(("Story id", "X1"),), hidden={"h": "v"},
+                       danger=True, error="Bad `x`", blocked="Blocked",
+                       fact_urls={"Story id": "/s/"}, error_url="/c/",
+                       error_link="Config")  # fmt: skip
+    template = get_template("console/_confirm.html")
+    assert template.render(_main_context(PAGE)) == MAIN_PLAIN
+    assert template.render(_main_context(full)) == MAIN_FULL
+
+
+TYPED = dataclasses.replace(PAGE, typed_name="Harbour", typed_label="Harbour")
+
+
+def test_the_typed_input_names_the_story_and_has_no_value() -> None:
+    html = get_template("console/_confirm.html").render(_main_context(TYPED))
+    assert (
+        '<label>Type <strong>Harbour</strong> to confirm <input name="typed_name" '
+        'autocomplete="off"></label>'
+    ) in html
+    assert 'name="typed_name" value' not in html
+    assert html.index('name="typed_name"') < html.index("<button")
+
+
+@pytest.mark.parametrize("name", [None, "", "  "])
+def test_a_story_without_a_name_types_its_id(name: str | None) -> None:
+    page = typed_name_for(PAGE, name, "01JM7ST0000000000000000001")
+    assert (page.typed_name, page.typed_label) == ("01JM7ST0000000000000000001", "")
+    html = get_template("console/_confirm.html").render(_main_context(page))
+    assert "Type the story's id <strong>01JM7ST0000000000000000001</strong> to confirm" in html
+    named = typed_name_for(PAGE, " Harbour ", "S")
+    assert (named.typed_name, named.typed_label) == ("Harbour", "Harbour")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("confirmed", [False, True])
+@pytest.mark.parametrize("typed", ["Harbour", " Harbour "])
+def test_the_exact_name_performs_once(
+    rf: RequestFactory, admin_user: Any, confirmed: bool, typed: str
+) -> None:
+    perform = Recorder()
+    data = {"idempotency_key": "k7", "confirmed": "1", "typed_name": typed}
+    response = confirm_action(
+        _req(rf, admin_user, "POST", data), TYPED, perform, require_confirmed=confirmed
+    )
+    assert response.content == b"done"
+    assert perform.calls == ["k7"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("confirmed", [False, True])
+@pytest.mark.parametrize("typed", ["harbour", "", None])
+def test_a_mismatch_rerenders_and_never_performs(
+    rf: RequestFactory, admin_user: Any, confirmed: bool, typed: str | None
+) -> None:
+    perform = Recorder()
+    data = {"idempotency_key": "k8", "confirmed": "1"}
+    if typed is not None:
+        data["typed_name"] = typed
+    response = confirm_action(
+        _req(rf, admin_user, "POST", data), TYPED, perform, require_confirmed=confirmed
+    )
+    html = response.content.decode()
+    assert response.status_code == 200
+    assert perform.calls == []
+    assert TYPED_NAME_MISMATCH == "That isn't the story's name — type it exactly as shown"
+    assert "That isn&#x27;t the story&#x27;s name — type it exactly as shown" in html
+    assert 'name="idempotency_key" value="k8"' in html
+    assert 'value="harbour"' not in html  # never echoed back
+
+
+@pytest.mark.django_db
+def test_the_first_confirmed_mode_render_is_clean(rf: RequestFactory, admin_user: Any) -> None:
+    """The name is checked only on a POST that would otherwise perform: the originating form's
+    POST (no ``confirmed``) re-renders the page without the mismatch error."""
+    perform = Recorder()
+    response = confirm_action(
+        _req(rf, admin_user, "POST", {"idempotency_key": "k6"}), TYPED, perform,
+        require_confirmed=True,
+    )  # fmt: skip
+    assert perform.calls == []
+    assert "type it exactly" not in response.content.decode()

@@ -1,0 +1,16 @@
+{% comment %}
+An M7 job's block body (E7, console/jobs.py; #295). Context: job (JobState), job_id, facts ((label,
+value) pairs, values pre-rendered or escaped by the caller), error (the job's error: a mapping or
+model with code/message/details, or a bare string) and optionally stage_text (replaces the
+humanised stage). Rendered inside console/_job_poll.html through job_poll_context's body_template.
+{% endcomment %}{% load jobs %}<div class="job-status">
+  <p class="job-state"><strong class="job-status-text"{% if job.raw %} title="{{ job.raw }}"{% endif %}>{% if stage_text %}{{ job|job_text:stage_text }}{% else %}{{ job.text }}{% endif %}</strong> · Job <code>{{ job_id }}</code></p>
+  {% if job.running %}{% if job.indeterminate %}<progress></progress>{% else %}<progress value="{{ job.done }}" max="{{ job.total }}">{{ job.done }}/{{ job.total }}</progress>{% endif %}{% endif %}
+  {% if job.failed %}{% with shown=error|job_error %}{% if shown %}<div class="job-error">
+    <p class="warning"><strong>{{ shown.code_text }}</strong>{% if shown.message %}: {{ shown.message }}{% endif %}</p>
+    {% if shown.more %}<details><summary>More</summary><pre>{{ shown.more }}</pre></details>{% endif %}
+  </div>{% endif %}{% endwith %}{% endif %}
+  {% if job.succeeded and facts %}<dl class="job-facts">
+    {% for label, value in facts %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}
+  </dl>{% endif %}
+</div>
