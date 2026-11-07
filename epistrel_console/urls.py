@@ -14,6 +14,7 @@ from console.views import (
     catalog_characters,
     catalog_lifecycle,
     catalog_scenarios,
+    certifications,
     directives,
     engine_panel,
     erasure,
@@ -552,6 +553,18 @@ engine_patterns = (
             "profile-defaults/edit/",
             profile_defaults.profile_defaults_edit,
             name="profile-defaults",
+        ),
+        # #313: the deployment's certifications, one record, and a certification run's job page.
+        path("certifications/", certifications.certifications, name="certifications"),
+        path(
+            "certifications/<str:certification_id>/",
+            certifications.certification,
+            name="certification",
+        ),
+        path(
+            "certification-runs/<str:run_id>/",
+            certifications.certification_run,
+            name="certification-run",
         ),
     ],
     "engine",

@@ -132,8 +132,13 @@ def test_a_sub_page_marks_its_row_current() -> None:
     assert not any(link.current for link in story_links(STORY, "stories:history"))
 
 
-def test_engine_links_are_empty_under_the_real_urlconf() -> None:
-    assert engine_links(None) == []
+def test_engine_links_show_only_the_registered_rows_under_the_real_urlconf() -> None:
+    """#313 registered Certifications; the other Engine rows stay out until their owners land."""
+    assert engine_links(None) == [
+        NavLink("engine:certifications", "Certifications", "/engine/certifications/", False),
+    ]
+    marked = [link.label for link in engine_links("engine:certification") if link.current]
+    assert marked == ["Certifications"]
 
 
 @override_settings(ROOT_URLCONF=M7_PAGES)

@@ -1,7 +1,8 @@
 """#312: E13's quality badge wherever a quality status appears — Config, the turn report (the Play
 inspector, the turn POST and the operation detail page) and the profile list — and the
 "Certifications for this configuration" link beside each fingerprint (E6 ``certifications_url``,
-D19: plain text while ``engine:certifications`` is unregistered)."""
+D19: plain text while ``engine:certifications`` is unregistered; #313 registered it, so the
+plain cases go through ``tests.certification_helpers.unregistered_certification_pages``)."""
 
 import copy
 import re
@@ -18,6 +19,7 @@ from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
 from console.models import EngineOperation
 from console.views import play, profiles, story_config
+from tests.certification_helpers import unregistered_certification_pages
 from tests.fakes.engine import FakeEngine
 from tests.fakes.guarantees import answer_guarantees
 from tests.fakes.ownership import answer_relations
@@ -143,15 +145,22 @@ def test_config_badge(
     quality = dd(config_page(operator_client, engine, status), "Quality status")
     assert quality.startswith(badge(css, title, shown))
     if case == "certified":
-        assert f'<code title="{CERT}">' in quality  # unlinked while #313 is unregistered
+        assert (  # #313 registered engine:certification
+            f'<a class="certification-link" href="/engine/certifications/{CERT}/">'
+            f'<code title="{CERT}">'
+        ) in quality
         assert f'<span class="quality-floors">{FLOORS}</span>' in quality
     if case == "uncertified":
         assert quality == badge("quality", "uncertified", "Uncertified")  # exactly
 
 
-def test_config_links_under_the_m7_urlconf(operator_client: Client, engine: FakeEngine) -> None:
-    """**Complement:** the real urlconf gives plain text; the M7 stubs give links."""
-    plain = config_page(operator_client, engine, CERTIFIED)
+def test_config_links_under_the_m7_urlconf(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**Complement:** unregistered pages give plain text (D19); registered ones give links."""
+    with monkeypatch.context() as patched:
+        unregistered_certification_pages(patched)
+        plain = config_page(operator_client, engine, CERTIFIED)
     fingerprint = dd(plain, "Fingerprint")
     assert fingerprint == f"<code>{FULL_FP}</code> · {LINK_TEXT}"
     assert "certification-link" not in dd(plain, "Quality status")
@@ -245,7 +254,7 @@ def test_turn_report_badge(
             assert f'<span class="quality-floors">{FLOORS}</span>' in quality, where
         if case == "uncertified":
             assert quality == badge("quality", "uncertified", "Uncertified"), where
-        assert turn_dd(html, "turn-fingerprint").endswith(f"</code> · {LINK_TEXT}"), where
+        assert turn_dd(html, "turn-fingerprint").endswith(f'">{LINK_TEXT}</a>'), where  # #313
     assert certification_reads(engine) == []
 
 
@@ -301,8 +310,11 @@ def profile_list(client: Client) -> str:
     return str(response.content.decode())
 
 
-def test_profile_list_quality_column(operator_client: Client, engine: FakeEngine) -> None:
+def test_profile_list_quality_column(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lite, full, standard, max_ = (p["id"] for p in engine_fixture("m7/presets")["items"])
+    unregistered_certification_pages(monkeypatch)  # D19: before #313 registered its pages
     html = profile_list(operator_client)
     assert "<th>Current version</th><th>Quality</th><th>Preset</th>" in html
     full_floors = (

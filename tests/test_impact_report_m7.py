@@ -16,6 +16,7 @@ from django.test import override_settings
 
 from console.engine.choices import StoryLabel
 from console.engine.models import ImpactReport
+from tests.certification_helpers import unregistered_certification_pages
 from tests.golden import normalise_html
 from tests.profile_helpers import FP_AFTER, FP_BEFORE, STORY_A, STORY_B, affected, impact
 
@@ -248,8 +249,9 @@ def test_certifications_lost_block() -> None:
 
 
 @override_settings(ROOT_URLCONF="epistrel_console.urls")
-def test_certification_ids_are_plain_before_their_page() -> None:
-    """Complement (D19): under the real urlconf before #313 the id isn't linked."""
+def test_certification_ids_are_plain_before_their_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Complement (D19): before #313 registered its page the id isn't linked."""
+    unregistered_certification_pages(monkeypatch)
     block = lost_block(render_partial(lost_report(), mode="profile"))
     assert "certification-link" not in block
     assert f'<code title="{CERT_1}">' in block

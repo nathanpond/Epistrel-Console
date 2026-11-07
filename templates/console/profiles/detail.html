@@ -14,7 +14,7 @@
 {% for warning in warnings %}<p class="warning">{{ warning }}</p>{% endfor %}
 <dl class="profile">
   <dt>Id</dt><dd><code>{{ profile.id }}</code></dd>
-  <dt>Version</dt><dd class="version">Version {{ profile.version }} of {{ profile.current_version }}{% if not is_latest %} — <a class="latest" href="{{ latest_url }}">latest</a>{% endif %} · <a class="versions" href="{{ versions_url }}">Versions</a></dd>
+  <dt>Version</dt><dd class="version">Version {{ profile.version }} of {{ profile.current_version }}{% if not is_latest %} — <a class="latest" href="{{ latest_url }}">latest</a>{% endif %} · <a class="versions" href="{{ versions_url }}">Versions</a>{% if certifications_url %} · <a class="certifications" href="{{ certifications_url }}">Certifications</a>{% endif %}</dd>
   <dt>Owner</dt><dd>{{ profile.owner_principal|principal_link }}</dd>
   <dt>Badges</dt><dd>{% if profile.preset %}<span class="badge preset">preset</span> {% endif %}{% if is_default %}<span class="badge default-marker">Deployment default</span>{% endif %}{% if not profile.preset and not is_default %}—{% endif %}</dd>
   <dt>Created</dt><dd>{{ profile.created_at|engine_time }}</dd>

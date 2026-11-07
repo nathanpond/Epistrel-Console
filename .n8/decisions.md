@@ -3496,3 +3496,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Registering the two routes filled #302's hooks, so `tests/stories/test_amendments.py`'s `test_no_actions_column_by_default` and `test_the_actions_block_is_empty_by_default` became `test_the_actions_column_is_303s` and `test_the_actions_block_holds_only_303s_action`. `test_relations_plain_while_unregistered` also monkeypatches `undo_url`/`redo_url` to `None`. The two `#303` stubs and their `NOT_YET_REGISTERED`/`ARGS` rows are gone.
   **Why:** E6/E24: the registering story updates what its URL moves. Cost if wrong: none.
   **Issue:** #303
+- **Decision:** `tests/urls_with_m7_pages.py` keeps #296's `engine:certifications` frame probe after #313 registers the real list (as #297 kept `stories:rewrites`); only the `engine:certification` and `engine:certification-run` stubs are dropped, so the real detail and run pages serve under the stub urlconf (needed for the D19 Invalidate link test) and `tests/test_story_pages.py` keeps its probe unchanged.
+  **Why:** the stub urlconf drops real patterns of a stub's name, so renaming the probe would churn #296's frame tests for no gain. Cost if wrong: list-page tests must use the real urlconf (they do).
+  **Issue:** #313
+- **Decision:** A canary run's page shows no "Recorded certification" / `NO_CERTIFICATION` line; requested runs show it on any terminal state (completed with an id → the link; completed without one, or failed → `NO_CERTIFICATION`).
+  **Why:** the Engine's canary records no certification by design (`_canary_finish`); "no floor passed, or the run failed" would misstate a canary that held. Cost if wrong: one template condition.
+  **Issue:** #313
+- **Decision:** Run kinds map `certification` → "Requested certification" and `canary` → "Canary check" (the Engine's `ck_certification_runs_kind` values at origin/main); #292's fixtures carry `kind: "profile"`, which renders humanised ("Profile") with the raw value in `title`.
+  **Why:** the AC names `certification`/`canary`; the fixture value is a test artefact left as is (E16). Cost if wrong: a text map entry.
+  **Issue:** #313
+- **Decision:** Floors tables type each raw entry with `FloorResult.from_json` on its own (not `Certification.floors_view()`, which drops untypable entries), so an untypable floor is one "This floor couldn't be read" row with its JSON under More and still counts in the heading. Intervention types (cell and lists) are humanised with the raw value in `title` (E23 enums). The run facts read "Judge calibrated: Yes", "Seeds: 3", "Model tier: Other" as lines; sample sizes and host are `<dl>`s in the Engine's key order.
+  **Why:** the AC requires the untypable row; E23's enum rule. Cost if wrong: cosmetic.
+  **Issue:** #313
+- **Decision:** The run page's report summary: `suites` and `metrics` tables, "Overall: <verdict>", "Missed: …" and the outcome line read the Engine's `summary()` keys (`verdict`, `suites`, `metrics`, `missed_floors`, `outcome`); every other key (e.g. #292's fixture `floors_passed`/`report_path`, the Engine's `run_id`/`date`/`requirements`) goes under one More. A malformed metric entry is one "—" row with its JSON under More.
+  **Why:** the story's discretion; nothing the Console doesn't know is lost. Cost if wrong: none.
+  **Issue:** #313
+- **Decision:** The run's `?partial=1` held answer (503 `erasure_pending`) is a 200 poll block with D17's fragment (no Delete, Retry → the full run page) and no `hx-trigger`; the three full pages answer 503 with the fragment inside the Engine frame through #296's `engine_page`. A malformed run id answers #43's 404 page on the partial too.
+  **Why:** E7's failure order (htmx doesn't swap a 5xx); mirrors #308's backfill partial. Cost if wrong: status code only.
+  **Issue:** #313
+- **Decision:** Registering `engine:certifications`/`engine:certification` moved these real-urlconf asserts (E24, regenerated here): `tests/engine_panel/test_providers.py::test_engine_home_links` and `tests/engine_panel/test_health_detail.py::test_the_page_links_the_re_embed_run` (the Engine nav now shows Certifications), `tests/test_nav.py` (renamed `test_engine_links_show_only_the_registered_rows_under_the_real_urlconf`), `tests/test_story_config.py::test_config_shows_profile_fingerprint_quality_and_revision`, `tests/test_quality_everywhere.py` (`test_config_badge`, `test_turn_report_badge`), and the D19 plain halves of `test_certification_wording.py`, `test_impact_report_m7.py::test_certification_ids_are_plain_before_their_page`, `test_quality_everywhere.py::test_config_links_under_the_m7_urlconf`/`test_profile_list_quality_column`, which now go through a new `tests/certification_helpers.unregistered_certification_pages(monkeypatch)` stand-in.
+  **Why:** E24's rule: the registering story regenerates the goldens its URL changes. Cost if wrong: none (behaviour is the registered one).
+  **Issue:** #313
+- **Decision:** Live check against the smoke stack `n8-291-smoke` on `127.0.0.1:18000` (left running): the list rendered the edge's 3 real certifications, a detail page ("Valid since …", Passed (13) / Failed (4) / Insufficient evidence (0)), the `profile_id` filter (lower-case input upper-cased), and an unknown run's "No such certification run" (404).
+  **Why:** confirms the pages parse the Engine's real records, not only the fixtures. Cost if wrong: none.
+  **Issue:** #313

@@ -200,8 +200,11 @@ def test_config_shows_profile_fingerprint_quality_and_revision(
     html = operator_client.get(CONFIG).content.decode()
     shown = text(html)
     assert f'<a href="/profiles/{LITE}/?version=2">Lite</a> v2 — follows latest' in html
-    # #312: the link is plain text while engine:certifications is unregistered.
-    link = "Certifications for this configuration"
+    # #312: the link to the fingerprint's certifications (#313 registered engine:certifications).
+    link = (
+        f'<a class="certifications-link" href="/engine/certifications/?fingerprint='
+        f'{FP_NOW.replace(":", "%3A")}">Certifications for this configuration</a>'
+    )
     assert f'<dd class="fingerprint"><code>{FP_NOW}</code> · {link}</dd>' in html
     assert '<dd><span class="quality" title="uncertified">Uncertified</span></dd>' in html  # #312
     assert "Overrides revision 3 — Edit overrides" in shown

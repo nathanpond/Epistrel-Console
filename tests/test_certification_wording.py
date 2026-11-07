@@ -18,6 +18,7 @@ from console.certification import (
     quality_line,
 )
 from console.engine.models import FloorsMet, QualityStatus
+from tests.certification_helpers import unregistered_certification_pages
 
 CERT = "01JM7CT0000000000000000001"
 STUBS = "tests.urls_with_m7_pages"
@@ -41,18 +42,20 @@ def test_the_wording_tables() -> None:
     assert CANARY_LIST_REQUEST == "https://github.com/nathanpond/Epistrel/issues/776"
 
 
-def test_certified_with_its_certification_and_floors() -> None:
+def test_certified_with_its_certification_and_floors(monkeypatch: pytest.MonkeyPatch) -> None:
     status = QualityStatus(
         status="certified",
         certification_id=CERT,
         floors_passed=["NFR-QUAL-2.false_support", "smoke.turn_completed"],
         failed_floors=["NFR-QUAL-4.recall"],
     )
-    line = quality_line(status)
+    with monkeypatch.context() as patched:  # D19: before #313 registered its page
+        unregistered_certification_pages(patched)
+        line = quality_line(status)
     assert line.text == "Certified"
     assert line.css_class == "quality-certified"
     assert line.title == "certified"
-    assert line.certification_url is None  # engine:certification unregistered (#313)
+    assert line.certification_url is None  # engine:certification unregistered (D19)
     assert line.floors == (
         "Floors passed: NFR-QUAL-2.false_support, smoke.turn_completed; failed: NFR-QUAL-4.recall"
     )
@@ -60,12 +63,9 @@ def test_certified_with_its_certification_and_floors() -> None:
     assert '<span class="quality quality-certified" title="certified">Certified</span>' in html
     assert f'<code title="{CERT}">…00000001</code>' in html  # unlinked, short id
     assert "<a " not in html
-    with override_settings(ROOT_URLCONF=STUBS):
-        linked = quality_line(status)
-        assert linked.certification_url == f"/engine/certifications/{CERT}/"
-        assert f'<a class="certification-link" href="/engine/certifications/{CERT}/">' in badge(
-            linked
-        )
+    linked = quality_line(status)  # #313 registered engine:certification
+    assert linked.certification_url == f"/engine/certifications/{CERT}/"
+    assert f'<a class="certification-link" href="/engine/certifications/{CERT}/">' in badge(linked)
 
 
 def test_uncertified() -> None:
@@ -122,7 +122,9 @@ def test_floors_text() -> None:
     assert floors_text([], ()) == ""
 
 
-def test_the_url_helpers_are_none_while_unregistered() -> None:
+def test_the_url_helpers_are_none_while_unregistered(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert eval_run_url("2026-11-01-smoke") is None  # #316's page
+    unregistered_certification_pages(monkeypatch)  # D19: before #313 registered its pages
     assert certifications_url() is None
     assert certification_url(CERT) is None
     assert certification_run_url("01JM7CR0000000000000000001") is None

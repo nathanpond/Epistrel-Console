@@ -21,6 +21,8 @@ default); its views are ``console.views.profile_edit``.
 #312 (E13): the list's Quality column is ``_quality.html`` over ``quality_line(profile.quality)``
 (the list's own ``GET /engine-profiles`` carries it; "—" when absent). A stale row's badge links
 the profile's certifications (``certifications_url(profile_id=…)``, plain while unregistered).
+#313: the detail page links the profile's certifications beside "Versions" (D19: no link while
+``engine:certifications`` is unregistered).
 """
 
 from collections.abc import Callable
@@ -232,6 +234,8 @@ def profile_detail(request: HttpRequest, profile_id: str) -> HttpResponse:
             f"{reverse('profiles:versions', args=[profile.id])}?"
             f"{urlencode({VIEWED_PARAM: profile.version})}"
         ),
+        # #313: the profile's certifications, beside Versions (plain text while unregistered).
+        "certifications_url": certifications_url(profile_id=profile.id),
         "stories_url": stories_url(profile.id),
         # #238: the viewed version's stories, only where a valid ?version= chose one.
         "version_stories_url": (

@@ -1,0 +1,68 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#313: one certification (engine:certification, console/views/certifications.py). The status block
+(a stale one says why and when; one a canary made stale links the run and cites the Engine
+request once), what it certifies, the floors tables (Passed, Failed, Insufficient evidence), the
+intervention types, the run, the recording and the actions. not_found: "No such certification".
+Context: not_found, certification, status (StatusBlock), canary_note, canary_run_link,
+canary_list_request, engine_request_link, other_certifications_url/_text, profile, preset, models,
+models_more, floor_tables, floor_rejected_text, none_text, covered, lacking, judge_calibrated,
+seed_count, sample_sizes(_more), model_tier, host(_more), recorded_via, invalidate_url/_label.
+{% endcomment %}
+{% load console_format %}
+{% block engine_page %}
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% else %}
+<section class="certification-status">
+  <p class="status status-{{ status.kind }}">{% if status.kind == "stale" %}<span class="quality quality-stale" title="{{ status.raw }}">{{ status.text }}</span>{% if status.time %} since {{ status.time|engine_time }}{% endif %}{% if status.reason_text %} — {{ status.reason_text }}{% endif %}{% if status.canary_run_url %}; <a class="canary-run" href="{{ status.canary_run_url }}">{{ canary_run_link }}</a>{% endif %}{% elif status.kind == "valid" %}<span class="quality quality-certified" title="{{ status.raw }}">{{ status.text }}</span>{% if status.time %} since {{ status.time|engine_time }}{% endif %}{% else %}<span class="quality" title="{{ status.raw }}">{{ status.text }}</span>{% endif %}</p>
+  {% if status.canary_note %}<p class="canary-note">{{ canary_note }} · <a class="engine-request" href="{{ canary_list_request }}">{{ engine_request_link }}</a></p>{% endif %}
+  {% if invalidate_url %}<p class="certification-actions"><a class="button invalidate" href="{{ invalidate_url }}">{{ invalidate_label }}</a></p>{% endif %}
+</section>
+<section class="certifies">
+  <h3>What it certifies</h3>
+  <dl>
+    <dt>Certification</dt><dd><code>{{ certification.id }}</code></dd>
+    <dt>Fingerprint</dt><dd><code class="hash">{{ certification.fingerprint }}</code>{% if other_certifications_url %} · <a class="other-certifications" href="{{ other_certifications_url }}">{{ other_certifications_text }}</a>{% endif %}</dd>
+    <dt>Profile</dt><dd class="profile">{{ profile }}</dd>
+    <dt>Preset</dt><dd class="preset">{{ preset }}</dd>
+    <dt>Quality settings hash</dt><dd>{% if certification.quality_settings_hash %}<code class="hash">{{ certification.quality_settings_hash }}</code>{% else %}—{% endif %}</dd>
+    <dt>Models</dt><dd class="models">{% if models is None %}<details><summary>More</summary><pre>{{ models_more }}</pre></details>{% elif models %}<ul>{% for line in models %}<li>{{ line }}</li>{% endfor %}</ul>{% else %}{{ none_text }}{% endif %}</dd>
+  </dl>
+</section>
+<section class="floors">
+  <h3>Floors</h3>
+  {% for table in floor_tables %}<section class="floor-table {{ table.key }}">
+    <h4>{{ table.heading }} ({{ table.count }})</h4>
+    {% if table.rows %}<table class="floors {{ table.key }}">
+      <thead><tr><th>Metric</th><th>Rule</th><th>Floor</th><th>Mean ± SD</th><th>n</th><th>Seeds</th><th>95 % upper bound</th><th>Intervention type</th></tr></thead>
+      <tbody>
+      {% for row in table.rows %}{% if row.more %}<tr class="rejected">
+        <td colspan="8">{{ floor_rejected_text }}<details><summary>More</summary><pre>{{ row.more }}</pre></details></td>
+      </tr>{% else %}<tr>
+        <td><code>{{ row.metric }}</code></td><td>{{ row.rule }}</td><td>{{ row.floor }}</td><td>{{ row.mean_sd }}</td><td>{{ row.n }}</td><td>{{ row.seeds }}</td><td class="upper-bound">{{ row.upper_bound }}</td><td class="intervention">{{ row.intervention }}</td>
+      </tr>{% endif %}
+      {% endfor %}</tbody>
+    </table>{% else %}<p class="empty">{{ none_text }}</p>{% endif %}
+  </section>
+  {% endfor %}
+</section>
+<section class="intervention-types">
+  <h3>Intervention types</h3>
+  <p class="covered">Covered: {{ covered }}</p>
+  <p class="lacking">Lacking evidence: {{ lacking }}</p>
+</section>
+<section class="certification-run-facts">
+  <h3>The run</h3>
+  <p class="judge">Judge calibrated: {{ judge_calibrated }}</p>
+  <p class="seed-count">Seeds: {{ seed_count }}</p>
+  <p class="model-tier">Model tier: {{ model_tier }}</p>
+  <dl>
+    <dt>Sample sizes</dt><dd class="sample-sizes">{% if sample_sizes is None %}<details><summary>More</summary><pre>{{ sample_sizes_more }}</pre></details>{% elif sample_sizes %}<dl>{% for key, value in sample_sizes %}<dt><code>{{ key }}</code></dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}{{ none_text }}{% endif %}</dd>
+    <dt>Host</dt><dd class="host">{% if host is None %}<details><summary>More</summary><pre>{{ host_more }}</pre></details>{% elif host %}<dl>{% for key, value in host %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}—{% endif %}</dd>
+    <dt>Report</dt><dd class="report">{% if certification.report_path %}<code>{{ certification.report_path }}</code>{% else %}—{% endif %} · <code class="hash">{{ certification.report_sha256 }}</code></dd>
+    <dt>Ran</dt><dd>{{ certification.run_at|engine_time }}</dd>
+  </dl>
+  <p class="recorded">Recorded {{ certification.recorded_at|engine_time }} via {{ recorded_via }}</p>
+</section>
+{% endif %}
+{% endblock %}

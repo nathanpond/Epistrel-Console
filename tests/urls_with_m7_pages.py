@@ -11,15 +11,18 @@ keeps working as owners land.
 **Page stories add a stub here, and never create another stub urlconf.** #292's test-local
 ``stories:rewrite`` stub was folded in, then dropped once #297 registered the real session page
 (the linked cases of its footer and amendment links render the real page here). #302's
-``stories:amendments``/``stories:amendment`` stubs went the same way.
+``stories:amendments``/``stories:amendment`` stubs went the same way, as did #313's
+``engine:certification`` and ``engine:certification-run``.
 
 **The frames (#296).** ``stories:rewrites`` renders through
 :func:`console.views.story_pages.story_page` and ``engine:certifications`` through
 :func:`~console.views.story_pages.engine_page`, both with :func:`recording_build`
-(``stories:rewrites`` keeps this probe after #297 registers the real Rewrite page, so under this
-urlconf ``/stories/<id>/rewrites/`` is the probe, not the page): it appends its
-context to :data:`BUILT` and answers :data:`BUILD`'s callable when a test set one, else ``{}``
-(``tests/test_story_pages.py``'s autouse fixture clears both). Every other stub answers "stub".
+(``stories:rewrites`` keeps this probe after #297 registers the real Rewrite page, and
+``engine:certifications`` after #313 registers the real list, so under this urlconf
+``/stories/<id>/rewrites/`` and ``/engine/certifications/`` are the probes, not the pages): it
+appends its context to :data:`BUILT` and answers :data:`BUILD`'s callable when a test set one,
+else ``{}`` (``tests/test_story_pages.py``'s autouse fixture clears both). Every other stub
+answers "stub".
 
 **E6's ``NOT_YET_REGISTERED`` rule.** The complement test ("under the real urlconf none of
 these reverses") asserts only the names in :data:`NOT_YET_REGISTERED`. Each owner removes its
@@ -104,15 +107,15 @@ INSPECT_STUBS = [
 ENGINE_STUBS = [
     path("import/", stub, name="import"),  # #320
     path("import/<ulid:job_id>/", stub, name="import-job"),  # #321
-    path("certifications/", certifications_frame, name="certifications"),  # #313 (#296's frame)
-    path("certifications/<str:certification_id>/", stub, name="certification"),  # #313
+    # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
+    # list under this urlconf only (#313's real detail and run pages are served here).
+    path("certifications/", certifications_frame, name="certifications"),
     path(
         "certifications/<str:certification_id>/invalidate/",
         stub,
         name="certification-invalidate",
     ),  # #315
     path("certification-import/", stub, name="certification-import"),  # #315
-    path("certification-runs/<str:run_id>/", stub, name="certification-run"),  # #313
     path("evals/", stub, name="eval-runs"),  # #316
     path("evals/<str:run_id>/", stub, name="eval-run"),  # #316
 ]
@@ -142,11 +145,8 @@ STUB_NAMES = frozenset(
 # PR that registers them; the complement test asserts only these.
 NOT_YET_REGISTERED = frozenset(
     {
-        "engine:certification",
         "engine:certification-import",
         "engine:certification-invalidate",
-        "engine:certification-run",
-        "engine:certifications",
         "engine:eval-run",
         "engine:eval-runs",
         "engine:import",

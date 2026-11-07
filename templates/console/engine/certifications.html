@@ -1,0 +1,45 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#313: the deployment's certifications (engine:certifications, console/views/certifications.py),
+newest first, stale ones included. E22's GET filter (fingerprint, profile id), the count line and
+the table; rejected entries are D15's notice plus one spanning row each; a failed read is #43's
+panel. Context: filter_form, filter_url, cursor_dropped, clear_url, list_read, list_error, rows
+(CertificationRow), rejected, rejected_notice, rejected_text, count_text, empty_text, next_url,
+first_url, next_text, first_text, filter_link.
+{% endcomment %}
+{% load console_format %}
+{% block engine_page %}
+<section class="certifications">
+  {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+  <form method="get" action="{{ filter_url }}" class="certification-filter">
+    <label for="{{ filter_form.fingerprint.id_for_label }}">{{ filter_form.fingerprint.label }}</label> {{ filter_form.fingerprint }}{{ filter_form.fingerprint.errors }}
+    <label for="{{ filter_form.profile_id.id_for_label }}">{{ filter_form.profile_id.label }}</label> {{ filter_form.profile_id }}{{ filter_form.profile_id.errors }}
+    <button type="submit">Filter</button>{% if clear_url %} <a class="clear-filters" href="{{ clear_url }}">Clear filters</a>{% endif %}
+  </form>
+  {% if list_error %}{% include "console/_engine_error.html" with engine_error=list_error %}
+  {% elif list_read %}
+  {% if rejected_notice %}<p class="notice rejected-notice">{{ rejected_notice }}</p>{% endif %}
+  {% if count_text %}<p class="count">{{ count_text }}</p>{% endif %}
+  {% if rows %}<table class="certifications">
+    <thead><tr><th>Certification</th><th>Status</th><th>Profile</th><th>Fingerprint</th><th>Floors</th><th>Tier</th><th>Recorded</th></tr></thead>
+    <tbody>
+    {% for row in rows %}<tr id="certification-{{ row.id }}">
+      <td class="certification">{{ row.link }}</td>
+      <td class="status">{% include "console/_quality.html" with quality=row.status %}</td>
+      <td class="profile">{{ row.profile }}</td>
+      <td class="fingerprint"><code class="hash" title="{{ row.fingerprint }}">{{ row.fingerprint_short }}</code> <a class="fingerprint-filter" href="{{ row.fingerprint_url }}">{{ filter_link }}</a></td>
+      <td class="floors">{{ row.floors }}</td>
+      <td class="tier">{{ row.tier }}</td>
+      <td class="recorded">{{ row.recorded }}</td>
+    </tr>
+    {% endfor %}{% for raw in rejected %}<tr class="rejected">
+      <td colspan="7">{{ rejected_text }}<details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% elif rejected %}{% for raw in rejected %}<details class="rejected-entry"><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details>
+  {% endfor %}{% endif %}
+  {% if empty_text %}<p class="empty">{{ empty_text }}</p>{% endif %}
+  {% if next_url or first_url %}<p class="paging">{% if first_url %}<a class="first-page" href="{{ first_url }}">{{ first_text }}</a>{% endif %}{% if first_url and next_url %} · {% endif %}{% if next_url %}<a class="next-page" href="{{ next_url }}">{{ next_text }}</a>{% endif %}</p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

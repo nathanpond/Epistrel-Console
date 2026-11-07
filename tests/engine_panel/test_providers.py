@@ -382,6 +382,11 @@ ENGINE_NAV = (
     '<a href="/engine/certifications/">Certifications</a> · '
     '<a href="/engine/evals/">Eval runs</a></span>'
 )
+# The registered M7 Engine rows (#313: Certifications); #316 and #320 add their own.
+REGISTERED_ENGINE_NAV = (
+    ' · <span class="engine-pages" role="navigation" aria-label="Engine pages">'
+    '<a href="/engine/certifications/">Certifications</a></span>'
+)
 
 
 def home_link_line(html: str) -> str:
@@ -390,10 +395,13 @@ def home_link_line(html: str) -> str:
 
 
 def test_engine_home_links(operator_client: Client, engine: FakeEngine) -> None:
-    """E11 (#296): with no M7 Engine page registered, the link line is main's."""
+    """E11 (#296): the link line is main's plus the registered M7 Engine rows after Providers
+    (#313 regenerated it: Certifications)."""
     engine.respond("GET", "/stories", 200, json=engine_fixture("list_stories"))
     html = operator_client.get("/engine/").content.decode()
-    assert normalise_html(home_link_line(html)) == normalise_html(ENGINE_HOME_LINK_LINE)
+    providers = '<a href="/engine/providers/">Providers</a>'
+    registered = ENGINE_HOME_LINK_LINE.replace(providers, providers + REGISTERED_ENGINE_NAV)
+    assert normalise_html(home_link_line(html)) == normalise_html(registered)
     # Complement: under the stub urlconf the Engine nav follows Providers.
     with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
         stubbed = operator_client.get("/engine/").content.decode()
