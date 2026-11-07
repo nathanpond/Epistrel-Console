@@ -36,7 +36,6 @@ from console.turn_reports import (
     stored_gaps,
     unread_gap_count,
 )
-from console.views import inspect as inspect_views
 from console.views import play
 from epistrel_console import urls as real
 from tests.fakes.engine import FakeEngine
@@ -44,10 +43,7 @@ from tests.fakes.guarantees import answer_guarantees
 from tests.fakes.ownership import answer_relations
 from tests.fakes.story_config import answer_effective_config
 from tests.golden import normalise_html
-from tests.inspect.helpers import EFFECTIVE, STORY_PATH, structured
-from tests.inspect.test_retrieval import RETRIEVE, ask
-from tests.inspect.test_retrieval import fixture as retrieval_fixture
-from tests.play.helpers import RESPOND, STORY, answer_page, post_turn, respond_json, story_json
+from tests.play.helpers import RESPOND, STORY, answer_page, post_turn, respond_json
 from tests.test_quality_everywhere import inspector, log_turn, turn_dd
 
 pytestmark = pytest.mark.django_db
@@ -394,29 +390,3 @@ def test_m6_turn_reports_render_unchanged() -> None:
         assert normalise_html(render_report(report)) == golden[name], name
         empty = render_report(report, coverage_gaps=(), coverage_gaps_unread=0)
         assert normalise_html(empty) == golden[name], name
-
-
-def test_retrieval_explainer_not_touched(
-    operator_client: Client, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """**Complement:** a ``RetrievalBody`` with ``coverage_gaps`` renders Inspect → Retrieval
-    with no ``coverage-gaps`` section: the explainer half is #332's (#332 removes or inverts
-    this test when it lands)."""
-    fake = FakeEngine()
-
-    def client_with_fake(request: HttpRequest) -> EngineClient:
-        client = engine_client_for(request)
-        client._transport = fake.transport
-        return client
-
-    monkeypatch.setattr(inspect_views, "engine_client_for", client_with_fake)
-    body = retrieval_fixture()
-    body["coverage_gaps"] = [PIPELINE]
-    fake.respond("GET", EFFECTIVE, 200, json=structured())
-    fake.respond("GET", STORY_PATH, 200, json=story_json(next_turn_index=6))
-    fake.respond("GET", RETRIEVE, 200, json=body)
-    with override_settings(ENGINE_URL="http://engine.test"):
-        html = ask(operator_client)
-    assert '<section class="retrieval-resolution">' in html
-    assert "coverage-gaps" not in html
-    assert "has no data for" not in html

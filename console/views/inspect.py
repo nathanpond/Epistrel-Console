@@ -117,6 +117,7 @@ from console.retrieval import (
     Names,
     candidates,
     episodic_skipped,
+    gap_lines,
     legend,
     mention_rows,
     placed,
@@ -676,6 +677,7 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
         actions=MEMORY_ACTIONS_TEMPLATE,  # convention 14: #143's row actions
         actions_next=ctx.request.get_full_path(),  # where a row action returns
         more=retrieval_more(body),
+        coverage_gaps=gap_lines(ctx.story_id, body),  # #332
     )
 
 

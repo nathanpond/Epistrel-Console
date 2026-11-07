@@ -3932,3 +3932,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #331: the "no `stories:rewrite`" complement uses a test-module urlconf (real patterns less `stories:rewrite`, #330's `WITHOUT_BACKFILL` pattern), since `stories:rewrite` is registered for real since #297; the linked case is asserted under both `tests/urls_with_m7_pages.py` and the real urlconf. No live Engine used (smoke stack n8-291-smoke on 127.0.0.1:18000 left running, untouched).
   **Why:** D19's complement needs a urlconf where the name doesn't resolve; cost if wrong: none.
   **Issue:** #331
+- **Decision:** #332's `GAP_NOTE` reaches the template as `GapSection.note` (a property: `GAP_NOTE` when there are lines, else ""), so `_ask` adds exactly one `coverage_gaps=` context key as the AC says, rather than a second key for the note.
+  **Why:** the AC limits the view to one key and the template can't read module constants; cost if wrong: none (a property on the story's own dataclass).
+  **Issue:** #332
+- **Decision:** #332 re-serialises the typed `RetrievalBody.coverage_gaps` to plain dicts (no `unparsed["coverage_gaps"]`) before running #330's `stored_gaps`/`unread_gap_count` on one raw list, per the planner's one-malformation rule; the `{"coverage_gaps": raw}` mapping is the wrap that matches #330's shipped signatures (they take an answer mapping, not a list).
+  **Why:** the helpers are imported unchanged (E1); an entry is a line or an unread entry, never both. Cost if wrong: none visible.
+  **Issue:** #332
+- **Decision:** #332's malformed-entry tests answer the retrieve read through `FakeEngine.side_effect` (unvalidated body, declared 200), because `respond` validates against the schema and rejects `from_turn: "x"`. The "no-link" complement uses a new `tests/inspect/urls_without_backfill.py` (as the story names) rather than #330's test-module urlconf. Added two tests beyond the plan: a non-list `coverage_gaps` shows the section with only the unread note (no `GAP_NOTE`), and gaps are kept when `skipped: ["episodic"]`.
+  **Why:** the test plan's malformed entry is off-schema by design; the extra tests pin the planner's "lines or unread" and "even when episodic was skipped" rules. Cost if wrong: none.
+  **Issue:** #332
+- **Decision:** #332's golden `tests/inspect/golden/retrieval_no_gaps.html` was captured from the milestone tip (5b8e13f) before editing, for `ask()`'s fixed question under the real urlconf; the no-gap test ran green against the pre-change code (stash), and the six gap tests failed there (pre-fix first). #330's `test_retrieval_explainer_not_touched` is deleted (its imports pruned).
+  **Why:** E24's golden rule; the story's Test plan. **Any later change to the Retrieval page's no-gap output must regenerate this golden.**
+  **Issue:** #332
