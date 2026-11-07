@@ -65,6 +65,7 @@ from tests.inspect.helpers import full_v4
 STORY = "01JM7ST0000000000000000001"
 SESSION = "01JM7RW0000000000000000001"
 M7_PAGES = "tests.urls_with_m7_pages"
+BARE = "tests.urls_bare"
 NAMES = {
     "01JM7CH0000000000000000001": "Mara (player)",
     "01JM7CH0000000000000000002": "Alice",
@@ -729,6 +730,22 @@ def test_url_helpers_link_under_the_stub_urlconf() -> None:
         assert rewrite_session_url(STORY, SESSION) == f"/stories/{STORY}/rewrites/{SESSION}/"
         assert amendments_url(STORY) == f"/stories/{STORY}/amendments/"
         assert amendment_url(STORY, AMENDMENT) == f"/stories/{STORY}/amendments/{AMENDMENT}/"
+
+
+@override_settings(ROOT_URLCONF=BARE)
+def test_unregistered_names_leave_actions_and_links_out() -> None:
+    """**Complement (D19, #341):** with no rewrite or amendment route registered, an open or a
+    planned session offers no action, and the URL helpers are ``None`` (no ``NoReverseMatch``)."""
+    for name in ("rewrite_open", "rewrite_session"):
+        shown = view(name)
+        assert shown.actions == ()
+        assert shown.footer_actions == ()
+        assert shown.answer_url is None
+    assert view("rewrite_session_applied").result_amendment_url is None
+    assert rewrites_url(STORY) is None
+    assert rewrite_session_url(STORY, SESSION) is None
+    assert amendments_url(STORY) is None
+    assert amendment_url(STORY, AMENDMENT) is None
 
 
 def test_a_read_only_caller_drops_the_actions() -> None:
