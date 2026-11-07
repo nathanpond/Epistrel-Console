@@ -1291,7 +1291,7 @@ class EngineClient:
         self, patch: Mapping[str, Any], *, idempotency_key: str
     ) -> DeploymentSettings:
         """``PUT /admin/settings`` with a ``SettingsPatch`` body (#50): merge semantics, only the
-        keys sent change (a list replaces the stored list; ``null`` unsets the three nullable
+        keys sent change (a list replaces the stored list; ``null`` unsets the four nullable
         settings). Answers every setting at the new ``config_revision``."""
         response = self._request(
             "PUT",

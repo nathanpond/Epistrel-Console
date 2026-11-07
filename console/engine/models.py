@@ -1852,8 +1852,9 @@ class RatingVersionList(Model):
 
 @dataclass(frozen=True)
 class ModelTiers(Model):
-    """``ModelTiers`` (M7): the deployment's model tiers; ``strongest`` names the model a
-    certification or a hard rewrite escalates to (``None``: no escalation tier)."""
+    """``ModelTiers`` (M7, #227): the deployment's model tiers; ``strongest`` is the model id a
+    profile's ``"@strongest"`` routes resolve to (``None``: each such purpose uses its own
+    configured model)."""
 
     strongest: str | None = None
 

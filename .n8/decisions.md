@@ -3739,3 +3739,27 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   The `engine:import` stub, its `NOT_YET_REGISTERED` name and its `test_m7_stub_urlconf.ARGS` row are gone. The live case `test_import_through_the_console_live` exported, imported (202) and deleted both stories on `n8-291-smoke` at 127.0.0.1:18000, which was left running.
   **Why:** This is E24's regenerate-in-the-registering-story rule.
   **Issue:** #320
+- **Decision:** #323's three sections ("Story bundles", "Certification", "Model tiers") sit immediately after #322's two and before "Retention" (not at the end of `SECTIONS`); #322's `test_m7_rewrite_sections_render` now expects "Story bundles" after its two and "Retention" three further on.
+  **Why:** "after #322's two" read literally, and it keeps the M7 families together. Cost if wrong: a reorder of one tuple and one assertion.
+  **Issue:** #323
+- **Decision:** `DeploymentSettingsForm` takes `models: Sequence[tuple[str, str]] | None` (the strongest-model select's options, built by `engine_panel.model_tier_options`), not `Sequence[str]` as the discretion text said; `SettingsPage.models` holds the sorted ids (the snapshot) and `SettingsPage.model_options` builds the options on GET and POST alike.
+  **Why:** "mirroring ratings" — `ratings` is already the options list, and building options in the view keeps the form from importing the view. Cost if wrong: a signature change.
+  **Issue:** #323
+- **Decision:** The Clear label's `title` is rendered from each Clear checkbox's help text, so the three older nullable settings' Clear labels also gain a `title` ("Send null: unset public base url." etc.), not only `certification_recertify_interval_s`'s.
+  **Why:** one template rule, no special case; additive markup only. Cost if wrong: a template condition.
+  **Issue:** #323
+- **Decision:** Help texts: `certification_canary_sample_size`, `certification_canary_seeds`, `bundle_max_entries` and `bundle_max_entry_bytes` carry only "Default: …" (no meaning sentence); the read-only note is "The model configuration could not be read; shown read-only." (with a period, as the ratings note); days use `console.raw.plural` (#294 has landed) rather than an inline plural; the two en-dash ranges carry `# noqa: RUF001` as `console/rewrites.py` does.
+  **Why:** the AC names no other texts; E23's one set of helpers. Cost if wrong: copy edit.
+  **Issue:** #323
+- **Decision:** A stored `model_tiers` of `null` can't be served by the fake (the recorded `SettingsBody` types it an object), so the "missing or null counts as unset" case is a form-level test (`test_a_missing_or_null_model_tier_counts_as_unset`, absent / `None` / `{}`) rather than a page test. The 422 placement accepts both `body.model_tiers.strongest` and `body.model_tiers` (parametrised) and shares a new `_without(exc, pattern)` with the host placement (refactor of `_place_host_errors`' tail, behaviour unchanged).
+  **Why:** the C15 fake validates answers against the recording. Cost if wrong: none.
+  **Issue:** #323
+- **Decision:** `tests/fixtures/profile_schema_m7.json` was taken from the live `n8-291-smoke` Engine's `GET /engine-profiles/schema` (image 5cb073b), not by running the schema builder from a worktree of 95e57a5: `git diff 95e57a5 5cb073b -- src/epistrel/core/profiles/ src/epistrel/api/routes/engine_profiles.py` is empty, so the output is 95e57a5's. `purposes` copied from `profile_schema.json`.
+  **Why:** same bytes, no Engine dependency install. Cost if wrong: regenerate one fixture.
+  **Issue:** #323
+- **Decision:** #323 live check on `n8-291-smoke` (127.0.0.1:18000): a made-up strongest id is refused 422 `unknown_model` at `body.model_tiers.strongest`; the re-certification interval set to 172800 then Cleared through the Console form is accepted as `null` (so Clear stays). The live model configuration lists no model, so the set-strongest half skips by design; it was also run once with `rating_suggestion`'s model temporarily set to `smoke-strongest` (set → read back → restored to null), then that purpose's own row was deleted (back to inherit). Canary left disabled. Final live state: `model_tiers.strongest` null, recertify null, config revision 51. Stack left running.
+  **Why:** confirms the Engine accepts null for the fourth nullable setting and the field's refusal path. Cost if wrong: none.
+  **Issue:** #323
+- **Decision:** Rule 1 (docs): `EngineClient.update_admin_settings`' docstring now says "the four nullable settings", and `ModelTiers`' docstring now states the Engine's meaning ("the model id a profile's "@strongest" routes resolve to"), replacing #291's "a certification or a hard rewrite escalates to", which the recorded `ModelTiers` description contradicts.
+  **Why:** both were wrong once #323 lands. Cost if wrong: none (docstrings only).
+  **Issue:** #323

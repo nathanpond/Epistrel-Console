@@ -1,13 +1,15 @@
 """#50 against the live Engine: rebuild a story, change a deployment setting and see the change
-in the history with who made it."""
+in the history with who made it. #323: the strongest model tier and the re-certification
+interval's Clear."""
 
 import re
 
 import pytest
 from django.test import Client, override_settings
 
-from console.engine.client import EngineClient
+from console.engine.client import EngineClient, EngineError
 from console.ids import new_ulid
+from console.views.engine_panel import listed_models
 from tests.engine_panel.helpers import form_data
 from tests.plugins.engine_live import live_key, live_url
 
@@ -73,3 +75,60 @@ def test_change_a_setting_and_see_it_in_config_changes_live(
         assert operator_client.post("/engine/settings/", restore).status_code == 302
     assert re.search(rf"<code>{before}</code>\s*→\s*<code>{after}</code>", changes), changes
     assert '<a href="/operations/?operator=nate">console:nate</a>' in changes
+
+
+def test_strongest_model_tier_live() -> None:
+    """#323: ``model_tiers.strongest`` takes a model the deployment lists and refuses a made-up
+    one at ``body.model_tiers.strongest``; the original value is restored."""
+    client = EngineClient(live_url(), live_key(), principal="console:smoke")
+    before = client.get_deployment_settings().model_tiers.strongest
+    with pytest.raises(EngineError) as refused:
+        client.update_admin_settings(
+            {"model_tiers": {"strongest": f"made-up-{new_ulid()}"}}, idempotency_key=new_ulid()
+        )
+    assert refused.value.http_status == 422
+    assert refused.value.details.get("field") == "body.model_tiers.strongest"
+    assert refused.value.details.get("reason") == "unknown_model"
+    listed = listed_models(client.list_model_config())
+    if not listed:
+        pytest.skip("the live model configuration lists no model")
+    try:
+        saved = client.update_admin_settings(
+            {"model_tiers": {"strongest": listed[0]}}, idempotency_key=new_ulid()
+        )
+        assert saved.model_tiers.strongest == listed[0]
+        assert client.get_deployment_settings().model_tiers.strongest == listed[0]
+    finally:
+        if client.get_deployment_settings().model_tiers.strongest != before:
+            client.update_admin_settings(
+                {"model_tiers": {"strongest": before}}, idempotency_key=new_ulid()
+            )
+    assert client.get_deployment_settings().model_tiers.strongest == before
+
+
+def test_recertify_interval_set_and_clear_live(operator_client: Client, operator: object) -> None:
+    """#323: the re-certification interval is set, then Cleared to ``null`` through the form
+    (the Engine accepts ``null`` for it); the original value is restored."""
+    url, key = live_url(), live_key()
+    client = EngineClient(url, key, principal="console:smoke")
+    before = client.get_deployment_settings().certification_recertify_interval_s
+    name = "certification_recertify_interval_s"
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            data = form_data(operator_client.get("/engine/settings/").content.decode())
+            data[name] = "172800" if before != 172800 else "259200"
+            data.pop(f"clear_{name}", None)
+            saved = operator_client.post("/engine/settings/", data)
+            assert saved.status_code == 302, saved.content.decode()
+            assert client.get_deployment_settings().certification_recertify_interval_s == int(
+                data[name]
+            )
+            cleared = form_data(operator_client.get("/engine/settings/").content.decode())
+            cleared[f"clear_{name}"] = "on"
+            done = operator_client.post("/engine/settings/", cleared)
+            assert done.status_code == 302, done.content.decode()
+        assert client.get_deployment_settings().certification_recertify_interval_s is None
+    finally:
+        if client.get_deployment_settings().certification_recertify_interval_s != before:
+            client.update_admin_settings({name: before}, idempotency_key=new_ulid())
+    assert client.get_deployment_settings().certification_recertify_interval_s == before

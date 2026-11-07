@@ -7,13 +7,21 @@ schema default as help text. A guard test compares the fields with the recorded 
 It is a merge-patch form (#43): the page carries the original settings, signed, and
 :meth:`DeploymentSettingsForm.patch` returns only the settings whose value changed. Lists are
 one entry per line and sent whole when changed (``provider_allowed_hosts`` is compared as a set
-of lowercased entries, #241). Only the three nullable settings
+of lowercased entries, #241). Only the four nullable settings
 (:data:`NULLABLE`) have a "Clear" checkbox (``clear_<name>``), which sends ``null`` to unset them;
 no other setting can send ``null`` and there is no reset-to-default.
 
-Engine M7 adds two families (#322): history rewrites, directions and the dependency search
-("History rewrites and directions"), and the Lite reach and author facts ("Lite rewrites and
-author facts"). None of them is nullable.
+Engine M7 adds five families: history rewrites, directions and the dependency search ("History
+rewrites and directions") and the Lite reach and author facts ("Lite rewrites and author
+facts") (#322), none of them nullable; and the story bundles' retention and import limits
+("Story bundles"), the certification canary and re-certification ("Certification") and the
+strongest model tier ("Model tiers") (#323). Of those, only
+``certification_recertify_interval_s`` is nullable (``null``: never re-certify in full; the
+Engine's ``core/deployment.py`` ``NULLABLE`` lists it, though the route's description names only
+three). ``model_tiers`` is :class:`ModelTierField`, a select of the models
+``/admin/model-config`` lists, cleaned to ``{"strongest": <id or None>}`` and sent only as that
+object (never a top-level ``null``). Byte and second values stay in the Engine's units; their
+help shows the human form ("4.0 GB", "7 days").
 """
 
 import re
@@ -22,6 +30,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from django import forms
+from django.template.defaultfilters import filesizeformat
+
+from console.raw import plural
 
 STORY_LIFETIME = "story_lifetime"
 DAYS = "days"
@@ -33,8 +44,31 @@ LIST_MAX = 50
 CLEAR_PREFIX = "clear_"
 FRACTION_BOUNDS = "Must be above 0 and at most 1"
 NAME_PLACEHOLDER_HELP = "{name} is replaced by the character's name."
-# The settings that accept null (unset): no hook, no base URL, no ceiling.
-NULLABLE = ("media_moderation_webhook_url", "public_base_url", "max_characters_at_start_ceiling")
+# The settings that accept null (unset): no hook, no base URL, no ceiling, no full re-certification.
+NULLABLE = (
+    "media_moderation_webhook_url",
+    "public_base_url",
+    "max_characters_at_start_ceiling",
+    "certification_recertify_interval_s",
+)
+DAY_S = 86400
+MODEL_TIERS = "model_tiers"
+STRONGEST = "strongest"
+MODEL_TIER_LABEL = 'Strongest model (for "@strongest" routes)'
+MODEL_TIER_NOT_SET = 'Not set — each "@strongest" purpose uses its own configured model'
+MODEL_TIER_UNLISTED = "{id} (not in the model configuration — saving it again is refused)"
+MODEL_TIER_HELP = (
+    'The model Max\'s "@strongest" routes resolve to; it must be listed under Models. A change '
+    "applies at each story's next turn and changes its fingerprint."
+)
+MODEL_TIER_READ_ONLY = "The model configuration could not be read; shown read-only."
+CANARY_HELP = (
+    "Off by default: every canary run spends real model calls. Re-checks each in-use valid "
+    "certification every interval."
+)
+RECERTIFY_CLEAR_HELP = "Send null: never re-certify in full"
+# The code label a row shows when it is not the setting's name.
+CODE_LABELS = {MODEL_TIERS: "model_tiers.strongest"}
 # Items of the list settings, as ``SettingsBody`` states them.
 FEEDBACK_TAG = re.compile(r"^[a-z0-9_]{1,40}$")
 MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]{0,62}/[a-z0-9][a-z0-9!#$&^_.+-]{0,62}$")
@@ -61,8 +95,10 @@ DEFAULTS: dict[str, Any] = {}
 UNITS: dict[str, str] = {}
 
 
-def _help(default: Any, extra: str = "") -> str:
-    shown = "unset" if default is None else _shown(default)
+def _help(default: Any, extra: str = "", *, shown: str | None = None) -> str:
+    """ "<extra> Default: <default>." (``shown`` overrides how the default is written)."""
+    if shown is None:
+        shown = "unset" if default is None else _shown(default)
     text = f"Default: {shown}."
     return f"{extra} {text}" if extra else text
 
@@ -75,6 +111,17 @@ def _shown(value: Any) -> str:
     return str(value)
 
 
+def _bytes(value: int) -> str:
+    """ "4294967296 (4.0 GB)": the raw value, then ``filesizeformat``'s human form (its
+    non-breaking space made plain)."""
+    return f"{value} ({filesizeformat(value).replace('\xa0', ' ')})"
+
+
+def _days(seconds: int) -> str:
+    """Whole days as E23 pluralises them ("1 day", "7 days")."""
+    return plural(seconds // DAY_S, "day")
+
+
 def _int(
     name: str,
     lo: int,
@@ -84,12 +131,16 @@ def _int(
     *,
     required: bool = True,
     extra: str = "",
+    shown: str | None = None,
 ) -> forms.IntegerField:
     DEFAULTS[name] = default
     if unit:
         UNITS[name] = unit
     return forms.IntegerField(
-        required=required, min_value=lo, max_value=hi, help_text=_help(default, extra)
+        required=required,
+        min_value=lo,
+        max_value=hi,
+        help_text=_help(default, extra, shown=shown),
     )
 
 
@@ -118,9 +169,9 @@ def _fraction(name: str, default: float, extra: str = "") -> forms.FloatField:
     )
 
 
-def _bool(name: str, default: bool) -> forms.BooleanField:
+def _bool(name: str, default: bool, *, extra: str = "") -> forms.BooleanField:
     DEFAULTS[name] = default
-    return forms.BooleanField(required=False, help_text=_help(default))
+    return forms.BooleanField(required=False, help_text=_help(default, extra))
 
 
 def _text(name: str, max_length: int, default: str | None, *, required: bool) -> forms.CharField:
@@ -263,9 +314,44 @@ def _retention(name: str) -> RetentionField:
     return RetentionField(help_text=_help(STORY_LIFETIME))
 
 
-def _clear(name: str) -> forms.BooleanField:
+def _clear(name: str, help_text: str | None = None) -> forms.BooleanField:
     return forms.BooleanField(
-        required=False, label="Clear", help_text=f"Send null: unset {name.replace('_', ' ')}."
+        required=False,
+        label="Clear",
+        help_text=help_text or f"Send null: unset {name.replace('_', ' ')}.",
+    )
+
+
+def strongest(value: Any) -> str | None:
+    """The ``strongest`` id of a ``model_tiers`` value (``{"strongest": id}``); a missing, null
+    or malformed value, or a blank id, is ``None``."""
+    if isinstance(value, Mapping):
+        value = value.get(STRONGEST)
+    return value if isinstance(value, str) and value else None
+
+
+class ModelTierField(forms.ChoiceField):
+    """``model_tiers`` as a select of model ids (#323): its initial is the stored
+    ``{"strongest": id}`` (unwrapped for the select, disabled included) and it cleans to
+    ``{"strongest": <id or None>}`` ("" is "Not set")."""
+
+    def prepare_value(self, value: Any) -> Any:
+        return strongest(value) or ""
+
+    def to_python(self, value: Any) -> str:
+        if isinstance(value, Mapping) or value is None:
+            value = strongest(value) or ""
+        return str(super().to_python(value))
+
+    def clean(self, value: Any) -> dict[str, str | None]:
+        chosen = super().clean(value)
+        return {STRONGEST: chosen or None}
+
+
+def _model_tiers() -> ModelTierField:
+    DEFAULTS[MODEL_TIERS] = None
+    return ModelTierField(
+        required=False, label=MODEL_TIER_LABEL, help_text=_help(None, MODEL_TIER_HELP)
     )
 
 
@@ -383,6 +469,26 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "Story bundles",
+        (
+            "bundle_export_ttl_hours",
+            "bundle_max_uncompressed_bytes",
+            "bundle_max_entries",
+            "bundle_max_entry_bytes",
+        ),
+    ),
+    (
+        "Certification",
+        (
+            "certification_canary_enabled",
+            "certification_canary_interval_s",
+            "certification_canary_sample_size",
+            "certification_canary_seeds",
+            "certification_recertify_interval_s",
+        ),
+    ),
+    ("Model tiers", (MODEL_TIERS,)),
+    (
         "Retention",
         (
             "audit_retention_days",
@@ -400,18 +506,24 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 @dataclass(frozen=True)
 class SettingRow:
-    """One setting on the page: its field, unit suffix and (nullable only) Clear checkbox."""
+    """One setting on the page: its field, unit suffix and (nullable only) Clear checkbox;
+    ``code`` is the code label (the name unless :data:`CODE_LABELS` says otherwise) and
+    ``label`` the field's own label shown beside it ("" when it sets none)."""
 
     name: str
     field: forms.BoundField
     unit: str
     clear: forms.BoundField | None
+    code: str = ""
+    label: str = ""
 
 
 class DeploymentSettingsForm(forms.Form):
     """Every deployment setting but ``profile_defaults``. ``original`` is the settings as
     read (``SettingsBody`` JSON); ``ratings`` the default-rating select's ``(id, label)``
-    options, or ``None`` when the ratings could not be read (the field is then read-only)."""
+    options, or ``None`` when the ratings could not be read (the field is then read-only);
+    ``models`` likewise the strongest-model select's options, or ``None`` when the model
+    configuration could not be read."""
 
     # General
     default_content_rating_id = forms.ChoiceField(help_text="The rating new stories get.")
@@ -632,6 +744,58 @@ class DeploymentSettingsForm(forms.Form):
         "s",
         extra="A whole reach pass's deadline.",
     )
+    # Story bundles (FR-STORE-7)
+    bundle_export_ttl_hours = _int(
+        "bundle_export_ttl_hours",
+        1,
+        720,
+        24,
+        "hours",
+        extra="How long an export's archive is kept before the retention sweep deletes it.",
+    )
+    bundle_max_uncompressed_bytes = _int(
+        "bundle_max_uncompressed_bytes",
+        1048576,
+        68719476736,
+        4294967296,
+        "bytes",
+        extra="The largest import accepted.",
+        shown=_bytes(4294967296),
+    )
+    bundle_max_entries = _int("bundle_max_entries", 10, 10000000, 100000, "entries")
+    bundle_max_entry_bytes = _int(
+        "bundle_max_entry_bytes",
+        1048576,
+        68719476736,
+        1073741824,
+        "bytes",
+        shown=_bytes(1073741824),
+    )
+    # Certification (FR-PROF-17): the canary is off by default, as every run spends model calls.
+    certification_canary_enabled = _bool("certification_canary_enabled", False, extra=CANARY_HELP)
+    certification_canary_interval_s = _int(
+        "certification_canary_interval_s",
+        3600,
+        7776000,
+        604800,
+        "s",
+        extra=f"604800 s is {_days(604800)}.",
+    )
+    certification_canary_sample_size = _int(
+        "certification_canary_sample_size", 10, 1000, 50, "cases"
+    )
+    certification_canary_seeds = _int("certification_canary_seeds", 1, 5, 1, "seeds")
+    certification_recertify_interval_s = _int(
+        "certification_recertify_interval_s",
+        86400,
+        31536000,
+        None,
+        "s",
+        required=False,
+        extra=f"86400–31536000 s is {86400 // DAY_S}–{_days(31536000)}.",  # noqa: RUF001
+    )
+    # Model tiers (#227)
+    model_tiers = _model_tiers()
     # Retention
     audit_retention_days = _int("audit_retention_days", 1, 3650, 90, "days")
     job_retention_days = _int("job_retention_days", 1, 3650, 7, "days")
@@ -652,6 +816,9 @@ class DeploymentSettingsForm(forms.Form):
     clear_media_moderation_webhook_url = _clear("media_moderation_webhook_url")
     clear_public_base_url = _clear("public_base_url")
     clear_max_characters_at_start_ceiling = _clear("max_characters_at_start_ceiling")
+    clear_certification_recertify_interval_s = _clear(
+        "certification_recertify_interval_s", RECERTIFY_CLEAR_HELP
+    )
 
     def __init__(
         self,
@@ -659,6 +826,7 @@ class DeploymentSettingsForm(forms.Form):
         *,
         original: Mapping[str, Any],
         ratings: Sequence[tuple[str, str]] | None,
+        models: Sequence[tuple[str, str]] | None,
     ) -> None:
         self.original = dict(original)
         initial = {name: self.original.get(name) for name in setting_names()}
@@ -672,6 +840,15 @@ class DeploymentSettingsForm(forms.Form):
                 rating.help_text = "The ratings could not be read; shown read-only."
             else:
                 rating.choices = list(ratings)
+        tier = self.fields[MODEL_TIERS]
+        if isinstance(tier, ModelTierField):
+            if models is None:
+                stored = strongest(self.original.get(MODEL_TIERS))
+                tier.choices = [(stored, stored) if stored else ("", MODEL_TIER_NOT_SET)]
+                tier.disabled = True
+                tier.help_text = MODEL_TIER_READ_ONLY
+            else:
+                tier.choices = list(models)
 
     def setting_names(self) -> tuple[str, ...]:
         return setting_names()
@@ -684,6 +861,8 @@ class DeploymentSettingsForm(forms.Form):
                     field=self[name],
                     unit=UNITS.get(name, ""),
                     clear=self[CLEAR_PREFIX + name] if name in NULLABLE else None,
+                    code=CODE_LABELS.get(name, name),
+                    label=str(self.fields[name].label or ""),
                 )
                 for name in names
             ]
@@ -719,7 +898,11 @@ class DeploymentSettingsForm(forms.Form):
             if field.disabled or name not in self.cleaned_data:
                 continue
             value = self.cleaned_data[name]
-            if isinstance(field, LinesField) and field.set_semantics:
+            if isinstance(field, ModelTierField):
+                chosen = strongest(value)
+                if chosen != strongest(self.original.get(name)):
+                    body[name] = {STRONGEST: chosen}  # never a top-level null
+            elif isinstance(field, LinesField) and field.set_semantics:
                 changed = _set_change(value, self.original.get(name))
                 if changed is not None:
                     body[name] = changed

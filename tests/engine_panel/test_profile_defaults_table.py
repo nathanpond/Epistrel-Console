@@ -82,3 +82,23 @@ def test_the_page_offers_no_write_control_for_profile_defaults(
     for control in ("<input", "<textarea", "<select", "<form", "<button"):
         assert control not in section.group(0)
     assert 'name="profile_defaults' not in html
+
+
+def test_m7_dials_listed(operator_client: Client, engine: FakeEngine) -> None:
+    """#323: the settings read carries Max's two dials, so the read-only table lists them."""
+    answer_settings(engine)
+    defaults = settings_body()["profile_defaults"]
+    assert defaults["commitment"]["salience_bias"] == "balanced"
+    assert defaults["verification"]["shape_tightening"] == "on"
+
+    html = operator_client.get(URL).content.decode()
+
+    section = re.search(r'<section class="profile-defaults">.*?</section>', html, re.S)
+    assert section is not None
+    for path, value in (
+        ("commitment.salience_bias", "balanced"),
+        ("verification.shape_tightening", "on"),
+    ):
+        assert (
+            f"<tr><td><code>{path}</code></td><td><code>&quot;{value}&quot;</code></td></tr>"
+        ) in section[0]

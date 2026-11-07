@@ -1,6 +1,7 @@
 """Edit the deployment's profile defaults in the schema-generated form (#84)."""
 
 import copy
+import json
 import re
 from collections.abc import Iterator
 from typing import Any
@@ -14,6 +15,8 @@ from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.profile_helpers import (
     LITE,
+    SCHEMA,
+    SCHEMA_FIXTURE,
     SETTINGS,
     STORY,
     STORY_A,
@@ -226,3 +229,43 @@ def test_the_deployment_settings_table_links_here(
     section = re.search(r'<section class="profile-defaults">.*?</section>', html, re.S)
     assert section is not None
     assert f'<a class="edit-profile-defaults" href="{URL}">Edit profile defaults</a>' in section[0]
+
+
+# --- the M7 dials (#323) ----------------------------------------------------------------------
+
+M7_SCHEMA = json.loads(
+    (SCHEMA_FIXTURE.parent / "profile_schema_m7.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.fixture
+def m7_engine(engine: FakeEngine) -> FakeEngine:
+    """The fake serving the M7 schema and the M7 settings (the two dials at their defaults)."""
+    engine.respond("GET", SCHEMA, 200, json=M7_SCHEMA)
+    return engine
+
+
+def test_saving_one_m7_dial_sends_only_it(operator_client: Client, m7_engine: FakeEngine) -> None:
+    shown = page(operator_client, m7_engine)
+    form = shown.context["form"]
+    assert form[f("commitment.salience_bias")].value() == "balanced"
+    assert form[f("verification.shape_tightening")].value() == "on"
+    html = shown.content.decode()
+    assert f'name="{f("commitment.salience_bias")}"' in html
+    assert f'name="{f("verification.shape_tightening")}"' in html
+
+    response = operator_client.post(URL, posted(shown, **{f("commitment.salience_bias"): "recall"}))
+
+    assert response.status_code == 302
+    (put,) = calls(m7_engine, "PUT", SETTINGS)
+    assert body_of(put) == {"profile_defaults": {"commitment": {"salience_bias": "recall"}}}
+
+
+def test_an_untouched_m7_editor_sends_nothing(
+    operator_client: Client, m7_engine: FakeEngine
+) -> None:
+    """Complement: the M7 editor posted unchanged makes no call."""
+    shown = page(operator_client, m7_engine)
+    response = operator_client.post(URL, posted(shown))
+    assert response.status_code == 302
+    assert m7_engine.requests == []

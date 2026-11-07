@@ -602,3 +602,41 @@ def test_m6_modules_render_from_the_schema() -> None:
     }
     # Complement: the shared schema fixture is untouched (no clock/states block).
     assert "clock" not in schema_body()["schema"]["properties"]
+
+
+# --- K3 at M7: the two Max dials come from the schema alone (#323) -------------------------------
+
+M7_SCHEMA_FIXTURE = SCHEMA_FIXTURE.parent / "profile_schema_m7.json"
+M7_DIALS = {
+    "commitment.salience_bias": ["", "balanced", "recall"],
+    "verification.shape_tightening": ["", "on", "off"],
+}
+
+
+def test_m7_dials_render_from_the_schema() -> None:
+    """``profile_schema_m7.json`` is ``GET /engine-profiles/schema`` at Engine ``95e57a5`` (its
+    ``purposes`` copied from ``profile_schema.json``, #239's rule): ``commitment.salience_bias``
+    and ``verification.shape_tightening`` lay out through the existing walker as selects of the
+    Engine's raw enum values, with no Console list of dials involved."""
+    body = json.loads(M7_SCHEMA_FIXTURE.read_text(encoding="utf-8"))
+    assert body["purposes"] == schema_body()["purposes"]
+    schema = schema_model(body)
+    tree = build_tree(schema)
+    groups = {node.dotted: node for node in tree if isinstance(node, Group)}
+    for path in M7_DIALS:
+        group = path.split(".")[0]
+        assert path in [leaf.dotted for leaf in leaves(groups[group].children)], path
+    built = SchemaSettingsForm(schema=schema)
+    for path, values in M7_DIALS.items():
+        dial = built.fields[field(path)]
+        assert isinstance(dial, forms.ChoiceField), path
+        assert isinstance(dial.widget, forms.Select), path
+        assert [value for value, _ in cast(list[tuple[str, str]], dial.choices)] == values
+        assert [label for _, label in cast(list[tuple[str, str]], dial.choices)][1:] == values[1:]
+    filled = SchemaSettingsForm({field("commitment.salience_bias"): "recall"}, schema=schema)
+    assert filled.is_valid(), filled.errors
+    assert filled.settings() == {"commitment": {"salience_bias": "recall"}}
+    # Complement: the shared schema fixture is untouched (no M7 dials).
+    shared = schema_body()["schema"]["properties"]
+    assert "salience_bias" not in shared["commitment"]["properties"]
+    assert "shape_tightening" not in shared["verification"]["properties"]
