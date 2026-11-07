@@ -150,6 +150,18 @@ texts; a later story passes its own verb and texts). #298 adds
 - **The resolve route's description** still says an outbox row is 404; the code resolves a
   parked ``imported_unsettled`` row by its ``outbox_id`` (nathanpond/Epistrel#787, found by
   #326, which follows the code).
+- **A structured line's stored text isn't readable** (Console #357, found by ``/n8-verify M7``).
+  A line edit plans against ``transcript_messages.text``: the preview's ``old_text`` and the
+  Engine's ``rewrite_noop`` check both read it. For a structured turn's ``message_rendered``,
+  that is the message composed for the turn's own viewpoint (``operations.viewpoint``) under
+  its audience filter. The omniscient history read that Edit this line… pre-fills from
+  (#305) recomposes that message from the beats (Engine ``core/history.py``
+  ``_recomposed``). So on a Full story the pre-fill can differ from what the Engine holds:
+  ``old_text: ""`` against a non-empty omniscient line. The local "unchanged" check then
+  compares against the wrong text. No read returns the stored text, or says whether an item
+  was recomposed. A read under the turn's viewpoint matches it only while the story's
+  perception and player view are still the ones it was composed under. The Console keeps
+  the omniscient pre-fill.
 """
 
 import re
