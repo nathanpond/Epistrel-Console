@@ -161,9 +161,13 @@ from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
 from console.timeline import Basis, Link, TurnControls, turn_controls
 from console.turn_reports import (
+    GapLine,
     ViolationRow,
+    coverage_gap_lines,
     input_gate_text,
+    stored_gaps,
     stored_turn_report,
+    unread_gap_count,
     violation_rows,
 )
 from console.turn_world import TurnWorld, turn_world
@@ -769,6 +773,10 @@ class Inspector:
     world: TurnWorld | None = None
     # #185: the turn's co-author notices (:func:`_with_notices`); ``None``: no section.
     notices: NoticeCards | None = None
+    # #330: the answer's coverage gaps as lines, and how many entries couldn't be read
+    # (:func:`_with_gaps`); a refusal, error, queued or held inspector has none.
+    coverage_gaps: tuple[GapLine, ...] = ()
+    coverage_gaps_unread: int = 0
 
     @property
     def engine_url(self) -> str:
@@ -880,6 +888,19 @@ def _with_warnings(found: Inspector, labels: Mapping[str, str], story_id: str) -
     if found.report is None:
         return found
     return replace(found, warnings=warning_lines(found.report.warnings, labels, story_id))
+
+
+def _with_gaps(found: Inspector, answer: object, story_id: str) -> Inspector:
+    """#330: an inspector carrying a report gets the turn answer's ``coverage_gaps`` (the raw
+    or recorded 2xx answer's top-level field) as lines linked to ``story_id``'s gap fill, and
+    the count of entries that couldn't be read."""
+    if found.report is None:
+        return found
+    return replace(
+        found,
+        coverage_gaps=tuple(coverage_gap_lines(stored_gaps(answer), story_id)),
+        coverage_gaps_unread=unread_gap_count(answer),
+    )
 
 
 def _with_history_link(story_id: str, found: Inspector) -> Inspector:
@@ -1099,6 +1120,7 @@ def result_inspector(
     found = _with_world(found, raw, labels or {})
     found = _with_notices(found, raw, labels or {}, overridden)
     found = _with_warnings(found, labels or {}, story_id)
+    found = _with_gaps(found, raw, story_id)
     return _with_history_link(story_id, found)
 
 
@@ -1162,6 +1184,7 @@ def row_inspector(
         found = _with_composition(found, row.response, labels or {})
         found = _with_world(found, row.response, labels or {})
         found = _with_notices(found, row.response, labels or {}, overridden)
+        found = _with_gaps(found, row.response, found.story_id)
     found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 

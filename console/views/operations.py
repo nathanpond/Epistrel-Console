@@ -57,7 +57,15 @@ from console.operation_log import (
 from console.reactivation import OP_NAMES, OP_PARAM
 from console.redaction import redact
 from console.story_pause import check_url
-from console.turn_reports import input_gate_text, stored_turn_report, violation_rows
+from console.turn_reports import (
+    GapLine,
+    coverage_gap_lines,
+    input_gate_text,
+    stored_gaps,
+    stored_turn_report,
+    unread_gap_count,
+    violation_rows,
+)
 from console.wording import humanised
 
 PAGE_SIZE = 50
@@ -286,6 +294,12 @@ def fetch_offered(row: EngineOperation) -> bool:
     return row.kind not in NO_FETCH_KINDS
 
 
+def turn_gaps(answer: object, story_id: str) -> tuple[list[GapLine], int]:
+    """#330: a 2xx turn answer's Coverage gaps lines (linked into ``story_id``'s gap fill; a
+    blank id gives no link, D19) and its unread-entry count, for ``_turn_report.html``."""
+    return coverage_gap_lines(stored_gaps(answer), story_id), unread_gap_count(answer)
+
+
 @require_safe
 def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     row = get_object_or_404(EngineOperation, pk=pk)
@@ -301,6 +315,10 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "fetch_offered": fetch_offered(row),
         "trace_url": trace_url(row),
     }
+    if not row.error_code:  # #330: only a 2xx turn answer's top-level gaps
+        context["coverage_gaps"], context["coverage_gaps_unread"] = turn_gaps(
+            row.response, row.story_id
+        )
     if request.GET.get("fetch") == "1" and row.engine_operation_id and context["fetch_offered"]:
         fetched: OperationRecord | None = None
         fetch_error: ErrorPanel | None = None
@@ -324,6 +342,15 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             fetched_body=result_body,
             fetched_report=stored_turn_report(result_body),
         )
+        if (
+            fetched is not None
+            and fetched.result is not None
+            and 200 <= fetched.result.status < 300
+        ):
+            # #330: the record's own gaps, passed to its include explicitly (never the row's).
+            context["fetched_gaps"], context["fetched_gaps_unread"] = turn_gaps(
+                result_body, row.story_id
+            )
     return render(request, "console/operation_detail.html", context)
 
 

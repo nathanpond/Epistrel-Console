@@ -183,3 +183,27 @@ def omniscient_line(variant: str = "") -> str:
     from console.rewrites import OMNISCIENT_LINE, OUTBOX_OMNISCIENT_LINE
 
     return OUTBOX_OMNISCIENT_LINE if variant == OUTBOX_VARIANT else OMNISCIENT_LINE
+
+
+@register.filter
+def probe_count(calls: Any) -> int:
+    """#330 (Engine ADR-180): how many of a turn report's model calls are refunded
+    response-format probes, ``probe is True`` only (a raw call with a missing or non-bool
+    ``probe`` isn't one), so the "Model calls" heading's count less this equals "used"."""
+    if not isinstance(calls, list | tuple):
+        return 0
+    count = 0
+    for call in calls:
+        probe = call.get("probe") if isinstance(call, dict) else getattr(call, "probe", None)
+        count += probe is True
+    return count
+
+
+@register.filter
+def gap_unread(count: Any) -> str:
+    """#330: ``console.turn_reports.GAP_UNREAD`` for ``count`` skipped gap entries ("" for 0)."""
+    from console.turn_reports import unread_gap_text
+
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        return ""
+    return unread_gap_text(count)

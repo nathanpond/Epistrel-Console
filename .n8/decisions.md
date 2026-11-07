@@ -3902,3 +3902,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Filed nathanpond/Epistrel#787 (the resolve route's description still says an outbox row is 404, at origin/main `ed2be26`) and added it to E18's list in `console/rewrites.py`.
   **Why:** the planner's instruction to file it if the description still disagreed at execution.
   **Issue:** #326
+- **Decision:** `GapLine.url` is `console.upgrades.gap_fill_url(story_id) or ""` (#309's helper, which is `backfill_url` + `#gap-fill`), not a second `backfill_url + "#gap-fill"` built in `console/turn_reports.py`.
+  **Why:** #309's note names `gap_fill_url` as the helper for #330/#332's links (E1 import rule); same URL, one definition.
+  **Issue:** #330
+- **Decision:** `stored_gaps`/`unread_gap_count` read the raw answer's top-level `coverage_gaps` with their own strict entry check (non-blank string capability; non-bool ints ≥ 0, so a negative turn is malformed; `to_turn ≥ from_turn`), not `RespondResponse.coverage_gaps`. The live answer goes through `_answer_mapping` (asdict plus `unparsed`, which restores the raw list when an entry was dropped), so live and stored count unread entries the same way.
+  **Why:** the story's discretion ("one path counts malformed entries on the raw/recorded answer"). A negative turn is read as malformed because "any int ≥ 0 is accepted" implies the bound. If that's wrong, a negative-turn gap is hidden and counted unread instead of shown.
+  **Issue:** #330
+- **Decision:** The pluralised unread note reaches the template through a second small `console_format` filter, `gap_unread` (it wraps `console.turn_reports.unread_gap_text`, built from `GAP_UNREAD` and `console.raw.plural`), next to `probe_count`. The probe heading pluralises with Django's `pluralize` ("1 probe refunded", "2 probes refunded").
+  **Why:** the AC passes the count (`coverage_gaps_unread`) as an int, so the template needs a filter to word it. `probe_count` is already in `console_format`.
+  **Issue:** #330
+- **Decision:** Gaps are applied in `result_inspector` (respond, polled turn) and in `row_inspector` for a 2xx, non-violation row. That covers the stored regenerate, the #53 swap and the transcript selection, which all read logged rows. `error_inspector` (including model_unavailable's report) and the queued/held inspectors get none. Operation detail reads `row.response` only when `row.error_code` is blank, and the `?fetch=1` record only for a 2xx `result.status`. Its include gets `fetched_gaps`/`fetched_gaps_unread` explicitly, so the row's gaps never leak into it.
+  **Why:** the story's discretion (only a 2xx answer's top-level field; no leak between the two includes).
+  **Issue:** #330
+- **Decision:** The no-gap/no-probe golden `tests/turn_report/golden/turn_reports_main.json` covers the 9 fixtures whose answer (or an operation's `result.body`) parses to a `TurnReport` through `turn_report_json`. That includes `ingest.json`, `put_custom_instructions.json` and `put_pinned_memories.json`, which carry a `model_calls` list. It was captured on the lane tip (`955b23e`) before any edit, and the test asserts the fixture set equals the golden's keys. The en dashes are written as `–` escapes, not with `noqa: RUF001`.
+  **Why:** the story's "by glob" rule (E24). The escape keeps ruff clean without a suppression.
+  **Issue:** #330
+- **Decision:** No live `engine_live` case for #330. The `n8-291-smoke` edge's stub model never rejects `response_format`, and the smoke stories are never upgraded forward-only after turns, so Demos 1 and 4 can't be produced there. The fake Engine (schema-validating) carries both fields in the tests.
+  **Why:** the test plan names no live case; a faked live run would prove nothing.
+  **Issue:** #330

@@ -1,4 +1,4 @@
-{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation", then its perception trace (#195); a generated turn shows its composed narrative (or the nothing-perceived notice), the M5 facts and a multi-character turn's Renders (#201) and Composition (#203, shown even when the report can't be read); a turn answer's World strip (#245) follows the facts; a generated turn ends with #139's lazy "Eval hooks & read set" block. A co-author turn's notices (#185) sit right after the title, before the notice and the facts. #}
+{# The inspector's content (#48). Context: inspector (console.views.play.Inspector). A structured turn links its retrieval re-run (#142) after "Engine operation", then its perception trace (#195); a generated turn shows its composed narrative (or the nothing-perceived notice), the M5 facts and a multi-character turn's Renders (#201) and Composition (#203, shown even when the report can't be read); a turn answer's World strip (#245) follows the facts; the turn report carries the answer's Coverage gaps (#330); a generated turn ends with #139's lazy "Eval hooks & read set" block. A co-author turn's notices (#185) sit right after the title, before the notice and the facts. #}
 {% if inspector.title %}<h3>{{ inspector.title }}</h3>{% endif %}{% if inspector.notices %}
 {% include "console/_notices.html" with cards=inspector.notices %}{% endif %}
 {% if inspector.notice %}<p class="notice"><strong>{% if inspector.notice_url %}<a class="notice-link" href="{{ inspector.notice_url }}">{{ inspector.notice }}</a>{% else %}{{ inspector.notice }}{% endif %}</strong></p>{% endif %}
@@ -25,7 +25,7 @@
 <tbody>{% for v in inspector.report.guardrail.violations %}<tr><td><code>{{ v.policy_id }}</code></td><td>{{ v.name }}</td><td>{{ v.message }}</td><td>{{ v.kind }}</td></tr>{% endfor %}</tbody></table>
 {% endif %}
 {% else %}<p>—</p>{% endif %}
-{% include "console/_turn_report.html" with report=inspector.report warning_lines=inspector.warnings %}
+{% include "console/_turn_report.html" with report=inspector.report warning_lines=inspector.warnings coverage_gaps=inspector.coverage_gaps coverage_gaps_unread=inspector.coverage_gaps_unread %}
 {% endif %}
 {% if inspector.revisions %}
 <dl class="revisions">
