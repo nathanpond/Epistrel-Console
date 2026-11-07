@@ -47,7 +47,6 @@ ARGS: dict[str, list[str]] = {
     "engine:certification-run": ["run-1"],
     "engine:eval-runs": [],
     "engine:eval-run": ["run-1"],
-    "profiles:upgrade-pinned": ["00000000000000000000PRF002"],
     "profiles:certify": ["00000000000000000000PRF002"],
 }
 PATHS = {

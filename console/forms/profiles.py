@@ -6,6 +6,8 @@
   above the settings generated from the profile schema
   (``console.forms.profile_schema_form``).
 - :class:`ProfileCopyForm` (#84): a copy's name and owner.
+- :class:`UpgradePinnedForm` (#310): the upgrade mode (E14's ``UpgradeModeField``, ``backfill``
+  initial) for "Upgrade pinned stories…".
 
 Names are trimmed; empty after trimming is "Enter a name", and 1 to 120 characters is checked
 after trimming, before any Engine call.
@@ -19,6 +21,12 @@ from django.core.exceptions import ValidationError
 from console.forms.persona import PersonaFilterForm
 from console.forms.principal import PrincipalField
 from console.forms.profile_schema_form import SchemaSettingsForm
+from console.forms.upgrades import (
+    DEFAULT_UPGRADE_MODE,
+    UPGRADE_MODE_CHOICES,
+    UPGRADE_MODE_FIELD,
+    UpgradeModeField,
+)
 
 NAME_MAX = 120
 ENTER_NAME = "Enter a name"
@@ -88,3 +96,22 @@ class ProfileCopyForm(forms.Form):
 
     name = _NameField(label="Name")
     owner = PrincipalField(label="Owner")
+
+
+UPGRADE_MODES = tuple(value for value, _ in UPGRADE_MODE_CHOICES)
+
+
+class UpgradePinnedForm(forms.Form):
+    """#310: how a pinned story with history gains data-producing capability (E14), sent as
+    ``upgrade_mode``. ``initial_mode`` pre-selects a valid mode ("Change the upgrade mode"); any
+    other value falls back to ``backfill``."""
+
+    upgrade_mode = UpgradeModeField(required=True)
+
+    def __init__(self, data: Any = None, *, initial_mode: str | None = None) -> None:
+        mode = initial_mode if initial_mode in UPGRADE_MODES else DEFAULT_UPGRADE_MODE
+        super().__init__(data, initial={UPGRADE_MODE_FIELD: mode})
+
+    def mode(self) -> str:
+        """The cleaned mode (call after ``is_valid()``)."""
+        return str(self.cleaned_data[UPGRADE_MODE_FIELD])

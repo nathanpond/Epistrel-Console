@@ -52,6 +52,7 @@ from console.views import (
     principals,
     profile_defaults,
     profile_edit,
+    profile_upgrade,
     profiles,
     providers,
     rating_suggestion,
@@ -655,6 +656,12 @@ profile_patterns = (
         path("<str:profile_id>/apply/", profile_edit.profile_apply, name="apply"),
         path("<str:profile_id>/copy/", profile_edit.profile_copy, name="copy"),
         path("<str:profile_id>/delete/", profile_edit.profile_delete, name="delete"),
+        # #310: upgrade the profile's pinned stories (E8's two stages on one URL).
+        path(
+            "<str:profile_id>/upgrade-pinned/",
+            profile_upgrade.upgrade_pinned,
+            name="upgrade-pinned",
+        ),
     ],
     "profiles",
 )

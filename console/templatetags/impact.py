@@ -1,4 +1,5 @@
-"""``{% impact_rows impact story_labels as rows %}`` and ``{% impact_more impact as n %}`` for
+"""``{% impact_rows impact story_labels as rows %}``, ``{% impact_more impact as n %}`` and
+(#310) ``{% certifications_lost impact story_labels as lost %}`` for
 ``console/_impact_report.html`` (``console.impact``), ``|budget_warning`` for
 ``console/_budget_warnings.html`` (#234), and E13's one template-side quality adapter,
 ``|quality_line`` (#295):
@@ -17,7 +18,15 @@ from console.certification import QualityLine
 from console.certification import quality_line as quality_line_of
 from console.engine.models import FloorsMet, ImpactReport, ProfileValidationWarning, QualityStatus
 from console.forms.profile_schema_form import warning_text
-from console.impact import ImpactRow, impact_rows, more_count, quality_class, short_fingerprint
+from console.impact import (
+    CertificationLostRow,
+    ImpactRow,
+    certifications_lost,
+    impact_rows,
+    more_count,
+    quality_class,
+    short_fingerprint,
+)
 from console.templatetags.inspect_tags import code_spans
 
 register = template.Library()
@@ -28,6 +37,13 @@ def impact_rows_tag(
     impact: ImpactReport, labels: Mapping[str, Any] | None = None
 ) -> list[ImpactRow]:
     return impact_rows(impact, labels if isinstance(labels, Mapping) else None)
+
+
+@register.simple_tag(name="certifications_lost")
+def certifications_lost_tag(
+    impact: ImpactReport, labels: Mapping[str, Any] | None = None
+) -> list[CertificationLostRow]:
+    return certifications_lost(impact, labels if isinstance(labels, Mapping) else None)
 
 
 @register.simple_tag(name="impact_more")

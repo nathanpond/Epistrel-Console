@@ -120,7 +120,6 @@ ENGINE_STUBS = [
     path("evals/<str:run_id>/", stub, name="eval-run"),  # #316
 ]
 PROFILE_STUBS = [
-    path("<str:profile_id>/upgrade-pinned/", stub, name="upgrade-pinned"),  # #310
     path("<str:profile_id>/certify/", stub, name="certify"),  # #314
 ]
 
@@ -160,7 +159,6 @@ NOT_YET_REGISTERED = frozenset(
         "inspect:resolve-listing",
         "inspect:resolved",
         "profiles:certify",
-        "profiles:upgrade-pinned",
         "stories:amendment",
         "stories:amendment-redo",
         "stories:amendment-undo",

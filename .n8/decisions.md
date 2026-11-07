@@ -3400,3 +3400,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The Demo was not run against a live Engine. Every AC is covered by the fake-Engine suite, against the recorded schema's `POST /stories/{id}/directives` (200/202/409/422/423).
   **Why:** No live test is in the story's test plan, and the fixtures are schema-validated. Cost if wrong: a live-only shape mismatch, which #300's verify would catch.
   **Issue:** #300
+- **Decision:** The result of an upgrade (applied at the first stage or on confirm) renders in place at 200 on `upgrade_pinned.html`, as the story says, not E21's 303 PRG. Per E21's sim2 refinement for in-place results, it gets no flash and ends with a muted "Idempotency key <code>K</code>" line, using the key that was sent.
+  **Why:** The story's more specific text wins over E21's default. Cost if wrong: a reload re-POSTs the confirm, and the same key makes it a replay.
+  **Issue:** #310
+- **Decision:** The confirm token's `base` is `{name, current_version, report}`, where `report` is #307's `model_json(impact)`. A confirm that fails with anything other than `not_found`/`profile_deleted` re-renders the same confirm under #43's panel from the token, with no read and no label call. It keeps the same token, and keeps the key on an unknown outcome (E21, E8's "report signed into base" rule). `model_json` is imported from `console.views.story_config`.
+  **Why:** E21 requires the same confirm page on an unknown outcome, and the story requires that no second call is made. Cost if wrong: a larger token (it is compressed).
+  **Issue:** #310
+- **Decision:** On an invalid mode, the first-stage POST still reads `get_engine_profile` for the heading and version line (an allowed page read, E24), and sends no upgrade. The tests assert no `POST …/upgrade-pinned`. The route's profile id is trimmed and upper-cased before `is_ulid` (C13). A failing id gets the 404 `engine_error_page` reading "No such profile — the id in the address isn't an Engine id", with no call. A GET whose profile read answers 404 reads "No such profile" (404). Any other read failure shows #43's panel in-page.
+  **Why:** Following the backfill page's precedent avoids signing page facts into the form. Cost if wrong: one extra read on an invalid post.
+  **Issue:** #310
+- **Decision:** Moved #307's `turns_text(TurnSpan)` from `console/views/story_config.py` to `console/impact.py`. `story_config` imports it from there, so it can be shared with the Backfill cell's " (turns a–b)" suffix (`backfill_cell`). It now formats with E23's `{:,}`. `console.impact._story_url` became the public `story_url`.
+  **Why:** That suggestion was in #307's progress note. The partial needs the same wording, and a copy would drift. Cost if wrong: none (#307's tests are unchanged).
+  **Issue:** #310
+- **Decision:** `profiles:upgrade-pinned` is out of `NOT_YET_REGISTERED`. Its stub is also removed from `tests/urls_with_m7_pages.py` and `test_m7_stub_urlconf.ARGS`, because stubs shadow real patterns there. This follows #297's precedent for `stories:rewrite`, so the confirm POST works under the M7 urlconf (`test_backfill_link_d19`). The "before #308" complement monkeypatches `backfill_url` to `None`, because #308 is registered.
+  **Why:** The stub urlconf mechanics. Cost if wrong: none.
+  **Issue:** #310
+- **Decision:** `test_confirm_resends_and_lists_backfills` adds the impact fixture's second pinned story to `upgrade_pinned_applied` in the test, to match the plan's "Upgraded 2 pinned stories to v4". The fixture itself lists one story, and it stays unchanged. The `impact_m6` goldens are 7 cases (#84's held edit with and without labels, no followers, budget + gained, #85's override in story mode with and without labels, and the held report in story mode). They were rendered from the unedited partial by a scratch capture script. The comparison strips exactly one `<th>Mode</th><th>Gap</th>` and one "—" cell pair per row. Certification ids are kept out of the M6 cases, so #313 registering `engine:certification` doesn't move these goldens.
+  **Why:** The test plan and E24. Cost if wrong: none.
+  **Issue:** #310
+- **Decision:** A `CertificationLost` entry reads "<story>: <from> → <to> · certification <id>". The story is labelled and linked as in the per-story table, or reads "this profile's own configuration". Statuses use E13's `QUALITY_TEXT`, and an unknown one is humanised with the raw value in `title` (E23). The id goes through `engine_id`, linked via `certification_url` (D19). Queued-backfill rows show the status through `job_state("backfill", …).text`, sorted by `queue_position` with nulls last.
+  **Why:** Claude's Discretion. Cost if wrong: wording.
+  **Issue:** #310

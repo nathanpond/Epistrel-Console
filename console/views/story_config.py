@@ -100,7 +100,7 @@ from console.forms.upgrades import DEFAULT_UPGRADE_MODE, UpgradeModeForm
 from console.guarantees import CONFIG_SCOPE
 from console.guarantees import section as guarantees_section
 from console.ids import new_ulid
-from console.impact import backfill_text, quality_class, short_fingerprint
+from console.impact import backfill_text, quality_class, short_fingerprint, turns_text
 from console.profile_schema import get_profile_schema_cached
 from console.story_config import badge_for, config_layers, config_url
 from console.upgrades import backfill_url, gap_fill_url, preset_label, preset_order
@@ -568,15 +568,6 @@ def story_entry(impact: ImpactReport, story_id: str) -> AffectedStory | None:
     """The story's own ``affected_stories`` entry (``story_id`` match), else the first."""
     stories = impact.affected_stories
     return next((s for s in stories if s.story_id == story_id), stories[0] if stories else None)
-
-
-def turns_text(span: TurnSpan | None) -> str:
-    """ "turns 1\u20133", "turn 3" for a one-turn span, "" with no span."""
-    if span is None:
-        return ""
-    if span.from_turn == span.to_turn:
-        return f"turn {span.from_turn}"
-    return f"turns {span.from_turn}–{span.to_turn}"  # noqa: RUF001
 
 
 def backfill_line(impact: ImpactReport, story_id: str) -> str:
