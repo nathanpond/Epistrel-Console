@@ -1,4 +1,4 @@
-{# The story's variant chains (#52): GET /stories/{id}/variants, each with a "view" link, and Swap (not on the active chain) and Fork (#53). A pruned chain (#293) reads "Pruned" with its note and has no link. #}
+{# The story's variant chains (#52): GET /stories/{id}/variants, each with a "view" link, and Swap (not on the active chain) and Fork (#53). A pruned chain (#293) reads "Pruned" with its note and has no link. Below the table, #317's Prune link (prunable_chains: a discarded or dormant chain; prune_url). #}
 {% load console_format %}
 <section class="variants" id="variants">
   <h2>Variants</h2>
@@ -23,5 +23,6 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if prunable_chains and prune_url %}<p class="prune-chains"><a class="prune-link" href="{{ prune_url }}">Prune discarded and dormant chains…</a></p>{% endif %}
   {% else %}<p>No chains yet.</p>{% endif %}
 </section>

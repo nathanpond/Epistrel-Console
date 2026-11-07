@@ -53,7 +53,12 @@ def test_the_url_helpers_are_none_while_unregistered() -> None:
     assert export_url(STORY) is None
     assert export_job_url(STORY, JOB) is None
     assert import_job_url(JOB) is None
-    assert prune_url(STORY) is None
+
+
+def test_prune_url_once_registered() -> None:
+    """#317 registered ``stories:prune``: the real urlconf reverses it."""
+    assert prune_url(STORY) == f"/stories/{STORY}/prune/"
+    assert prune_url("") is None
 
 
 @override_settings(ROOT_URLCONF="tests.urls_with_m7_pages")

@@ -39,17 +39,21 @@
     "lost_operations": [
       {
         "operation": "untruncate",
-        "turn": 3
+        "target": "01JM7CN0000000000000000011"
       },
       {
         "operation": "swap",
-        "turn": 4,
-        "variant": 2
+        "target": "01JM7CN0000000000000000012"
+      },
+      {
+        "operation": "promote",
+        "target": "01JM7CN0000000000000000012"
       }
     ],
     "retained": {
       "audit_events": 4,
-      "outbox_rows": 1
+      "outbox_rows": 1,
+      "feedback_marked": 2
     },
     "excluded": [
       {
@@ -63,10 +67,18 @@
     ],
     "suggestions": [
       {
-        "kind": "promote_before_pruning",
+        "code": "promote_before_pruning",
         "target": "01JM7CN0000000000000000012",
-        "turn": 4,
-        "variant": 2
+        "request": {
+          "method": "POST",
+          "path": "/stories/01JM7ST0000000000000000001/fork",
+          "body": {
+            "variant_chain": {
+              "turn": 4,
+              "variant": 2
+            }
+          }
+        }
       }
     ]
   },

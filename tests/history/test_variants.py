@@ -11,6 +11,7 @@ from console.timeline import PRUNED_CHAIN_NOTE
 from tests.fakes.engine import FakeEngine
 from tests.history.helpers import (
     HISTORY,
+    STORY,
     VARIANTS,
     answer,
     history_calls,
@@ -147,3 +148,32 @@ def test_a_pruned_variant_url_reads_the_note(operator_client: Client, engine: Fa
     other = other.split("</section>")[0]
     assert "Engine error 409 unknown_chain" in other
     assert PRUNED_CHAIN_NOTE not in other
+
+
+# --- The Prune link (#317) ---------------------------------------------------------------------
+
+
+PRUNE_LINK = re.compile(
+    r'<a class="prune-link" href="([^"]+)">Prune discarded and dormant chains…</a>'
+)
+
+
+def test_prune_link_only_with_inactive_chains(operator_client: Client, engine: FakeEngine) -> None:
+    """Shown below the chain table with a ``dormant`` (or ``discarded``) chain; absent when every
+    chain is ``active`` or ``pruned`` (#293's pruned rows don't count)."""
+    answer(engine)
+    html = page(operator_client)
+    [link] = PRUNE_LINK.findall(html)
+    assert link == f"/stories/{STORY}/prune/"
+    assert html.index("</table>", html.index('class="variants"')) < html.index("prune-link")
+    discarded = variants_json()
+    discarded["items"][1]["membership"] = "discarded"
+    engine.respond("GET", VARIANTS, 200, json=discarded)
+    assert len(PRUNE_LINK.findall(page(operator_client))) == 1
+    # Complement: only active and pruned chains.
+    engine.respond("GET", VARIANTS, 200, json=_pruned_variants())
+    assert PRUNE_LINK.findall(page(operator_client)) == []
+    active = variants_json()
+    active["items"] = active["items"][:1]
+    engine.respond("GET", VARIANTS, 200, json=active)
+    assert "prune-link" not in page(operator_client)

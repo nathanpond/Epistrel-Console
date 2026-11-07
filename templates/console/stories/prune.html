@@ -1,0 +1,61 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#317: the story's Prune page (console/views/prune.py, console/pruning.py). The policy line, then
+either the result of an applied pruning (result), or: a refusal / error / #43's panel, the dry run's
+report (console/stories/_prune_impact.html, when report is set) and its two forms, the "Run a dry
+run" form, and Past prunings (runs, or runs_error).
+{% endcomment %}
+{% block story_page %}{% load console_format principals %}
+<p class="policy-line">{{ policy.text }}{% if policy.next_run_at %} · Next run {{ policy.next_run_at|engine_time }}{% endif %}{% if policy.show_last %} · {% if policy.last_prune_at %}Last pruned {{ policy.last_prune_at|engine_time }}{% else %}Never pruned{% endif %}{% endif %} · <a class="settings-link" href="{{ settings_url }}">Change in Settings</a></p>
+{% if policy.malformed %}<details><summary>More</summary><pre>{{ policy.raw_policy|pretty_json }}</pre></details>{% endif %}
+{% if result %}
+<section class="prune-result">
+  <p class="pruned">{{ result.pruned_text }}</p>
+  <p class="deleted">{{ result.deleted_text }}</p>
+  <p class="revision">{{ result.revision_text }}</p>
+  <p class="prune-id">Prune <code title="{{ result.prune_id }}">{{ result.prune_id }}</code></p>
+  <details><summary>More</summary><pre>{{ result.more|pretty_json }}</pre></details>
+  <p class="links"><a class="history-link" href="{% url 'stories:history' story_id %}">Back to History</a> · <a class="prune-link" href="{{ prune_url }}">Past prunings</a></p>
+  <p class="muted key-tail">— idempotency key <code>{{ result.key }}</code></p>
+</section>
+{% else %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if refusal %}<p class="refusal" role="alert">{% if refusal.url %}<a href="{{ refusal.url }}">{{ refusal.text }}</a>{% else %}{{ refusal.text }}{% endif %}</p>{% if refusal.then %}
+<p class="refusal rerun">{{ refusal.then }}</p>{% endif %}{% endif %}
+{% if replanned_text %}<p class="warning replanned" role="alert">{{ replanned_text }}</p>{% endif %}
+{% if error %}<p class="errorlist prune-error" role="alert">{{ error }}</p>{% endif %}
+{% if report %}{% include "console/stories/_prune_impact.html" %}{% endif %}
+<form method="post" action="{{ prune_url }}" class="dry-run">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ dry_run_key }}">
+  <button type="submit">{% if report %}{{ full_dry_run_label }}{% else %}{{ dry_run_label }}{% endif %}</button> <small class="muted">{{ dry_run_line }}</small>
+</form>
+<section class="past-prunings">
+  <h3>Past prunings</h3>
+  {% if runs_error %}{% include "console/_engine_error.html" with engine_error=runs_error %}
+  {% elif runs %}
+  {% if runs.rejected_text %}<p class="warning rejected">{{ runs.rejected_text }}</p>{% endif %}
+  {% if runs.rows or runs.rejected %}
+  {% if runs.count_text %}<p class="count">{{ runs.count_text }}</p>{% endif %}
+  <table class="prune-runs">
+    <thead><tr><th>When</th><th>Trigger</th><th>By</th><th>Revision</th><th>Pruned</th><th>More</th></tr></thead>
+    <tbody>
+      {% for row in runs.rows %}<tr class="prune-run" id="prune-{{ row.prune_id }}">
+        <td>{{ row.at|engine_time }}</td>
+        <td><span class="trigger" title="{{ row.trigger_raw }}">{{ row.trigger_text }}</span></td>
+        <td>{{ row.principal|principal_link }}</td>
+        <td>{{ row.revision_text }}</td>
+        <td>{{ row.counts_text }}</td>
+        <td><details><summary>More</summary><pre>{{ row.impact|pretty_json }}</pre><pre>{{ row.policy|pretty_json }}</pre></details></td>
+      </tr>
+      {% endfor %}{% for raw in runs.rejected %}<tr class="prune-run rejected" id="prune-bad-{{ forloop.counter0 }}">
+        <td colspan="5">This pruning couldn't be read</td>
+        <td><details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">{{ never_pruned }}</p>{% endif %}
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -62,6 +62,7 @@ from console.views import (
     profile_upgrade,
     profiles,
     providers,
+    prune,
     rating_suggestion,
     ratings,
     rewrite_answers,
@@ -268,6 +269,9 @@ story_patterns = (
             backfill.backfill_conflict,
             name="backfill-conflict",
         ),
+        # #317: prune after a dry run (and the past prunings), then the typed-name confirm.
+        path("<str:story_id>/prune/", prune.prune, name="prune"),
+        path("<str:story_id>/prune/confirm/", prune.prune_confirm, name="prune-confirm"),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),

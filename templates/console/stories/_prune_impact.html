@@ -1,0 +1,57 @@
+{% comment %}
+E8's prune report (#317, console/pruning.py impact_view → report). The target tables sit inside the
+narrow form ("Dry run with only the ticked", narrowed=1, the signed report_token); "Prune these…" is
+a separate console/_two_stage.html-style form posting the confirm token to stories:prune-confirm.
+Context: report, prune_url, confirm_url, narrow_key, confirm_key, narrow_label, prune_label,
+prune_all_note, nothing_to_prune.
+{% endcomment %}{% load console_format %}<section class="prune-report">
+  <p class="dry-run-at">{{ report.revision_text }}</p>
+  {% if report.nothing_to_prune %}<p class="nothing-to-prune">{{ nothing_to_prune }}</p>
+  {% else %}
+  <form method="post" action="{{ prune_url }}" class="narrow">{% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ narrow_key }}">
+    <input type="hidden" name="narrowed" value="1">
+    <input type="hidden" name="report_token" value="{{ report.report_token }}">
+    <h3>Would be deleted</h3>
+    {% for bucket in report.buckets %}
+    <h4 class="bucket bucket-{{ bucket.key }}">{{ bucket.title }}</h4>
+    {% if bucket.rows %}<table class="prune-targets bucket-{{ bucket.key }}">
+      <thead><tr><th></th><th>Range</th><th>Operations</th><th>Left behind</th><th>Id</th></tr></thead>
+      <tbody>
+        {% for row in bucket.rows %}<tr class="prune-target">
+          <td>{% if row.id %}<input type="checkbox" name="target" value="{{ row.id }}" checked>{% endif %}</td>
+          <td>{{ row.range_text }}</td>
+          <td>{{ row.operations_text }}</td>
+          <td>{{ row.flipped_at|engine_time }}</td>
+          <td>{% if row.id %}<code>{{ row.id }}</code>{% else %}—<details><summary>More</summary><pre>{{ row.raw|pretty_json }}</pre></details>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>{% else %}<p class="none">None</p>{% endif %}
+    {% endfor %}
+    <p><button type="submit">{{ narrow_label }}</button></p>
+  </form>
+  {% endif %}
+  {% if report.lost %}<h3>No longer possible afterwards</h3>
+  <ul class="lost-operations">{% for line in report.lost %}<li>{{ line.text }}</li>{% endfor %}</ul>{% endif %}
+  {% if not report.nothing_to_prune %}<h3>Kept</h3>
+  <p class="kept">{{ report.kept_text }}</p>{% endif %}
+  {% if report.excluded %}<h3>Left out</h3>
+  <table class="prune-excluded">
+    <thead><tr><th>Target</th><th>Why</th></tr></thead>
+    <tbody>
+      {% for row in report.excluded %}<tr class="excluded reason-{{ row.reason }}">
+        <td><code>{{ row.target }}</code></td>
+        <td>{% if row.known %}{{ row.text }}{% else %}<span title="{{ row.reason }}">{{ row.text }}</span>{% endif %}{% for ref in row.amendments %} {% if ref.url %}<a class="amendment" href="{{ ref.url }}"><code>{{ ref.id }}</code></a>{% else %}<code>{{ ref.id }}</code>{% endif %}{% endfor %}{% for change in row.change_ids %} <code>{{ change }}</code>{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>{% endif %}
+  {% if report.keep_first %}<h3>Keep it first</h3>
+  <ul class="keep-first">{% for line in report.keep_first %}<li><a href="{{ line.url }}">{{ line.text }}</a> <details><summary>More</summary><pre>{{ line.raw|pretty_json }}</pre></details></li>{% endfor %}</ul>{% endif %}
+  {% if report.token %}<form method="post" action="{{ confirm_url }}" class="two-stage prune-confirm">{% csrf_token %}
+    <input type="hidden" name="confirm_token" value="{{ report.token }}">
+    <input type="hidden" name="idempotency_key" value="{{ confirm_key }}">
+    <button type="submit" class="danger">{{ prune_label }}</button> <small class="muted">{{ prune_all_note }}</small>
+  </form>{% endif %}
+</section>

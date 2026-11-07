@@ -90,8 +90,6 @@ STORY_STUBS = [
     path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
     path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
     path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
-    path(f"{S}prune/", stub, name="prune"),  # #317
-    path(f"{S}prune/confirm/", stub, name="prune-confirm"),  # #317
     path(f"{S}export/", stub, name="export"),  # #319
     path(f"{S}export/<ulid:job_id>/", stub, name="export-job"),  # #319
     path(f"{S}export/<ulid:job_id>/bundle/", stub, name="export-download"),  # #319
@@ -143,8 +141,6 @@ NOT_YET_REGISTERED = frozenset(
         "stories:export-download",
         "stories:export-job",
         "stories:operations-list",
-        "stories:prune",
-        "stories:prune-confirm",
     }
 )
 

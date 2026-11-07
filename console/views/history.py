@@ -109,7 +109,7 @@ from console.nav import story_links
 from console.notices import notice_cards, overridden_notices
 from console.operation_log import note_engine_record
 from console.perception import perception_url, turn_links_perception
-from console.portability import is_importing
+from console.portability import is_importing, prune_url
 from console.predicates import predicate_names
 from console.rewrites import AS_RECORDED_LINE, OMNISCIENT_REQUIRED_TEXT
 from console.story_pause import is_paused, pause_banner
@@ -300,6 +300,15 @@ def switched_view(params: QueryDict) -> QueryDict:
         if parsed is not None:
             data["as_of"] = str(parsed[0])
     return data
+
+
+PRUNABLE_MEMBERSHIPS = frozenset({"discarded", "dormant"})  # #317: what a pruning can delete
+
+
+def prunable(chains: list[VariantChain]) -> bool:
+    """#317: whether any chain is ``discarded`` or ``dormant`` (History's Prune link shows only
+    then; a ``pruned`` chain, #293, doesn't count)."""
+    return any(chain.membership in PRUNABLE_MEMBERSHIPS for chain in chains)
 
 
 def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) -> list[ChainRow]:
@@ -792,6 +801,8 @@ def history(request: HttpRequest, story_id: str) -> HttpResponse:
         "controls": _controls(story, form, chains, checkpoint_error=checkpoint_error),
         "page": page,
         "chains": _chain_rows(request, story, chains),
+        "prunable_chains": prunable(chains),  # #317: the Prune link
+        "prune_url": prune_url(story_id),
         "variants_error": variants_error,
         "archived_note": ARCHIVED_NOTE if story.status == "archived" else "",
         "paused_note": PAUSED_NOTE if is_paused(story) else "",

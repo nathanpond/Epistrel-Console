@@ -22,8 +22,6 @@ ARGS: dict[str, list[str]] = {
     "stories:backfill-start": [STORY],
     "stories:backfill-cancel": [STORY],
     "stories:backfill-conflict": [STORY, "c1"],
-    "stories:prune": [STORY],
-    "stories:prune-confirm": [STORY],
     "stories:export": [STORY],
     "stories:export-job": [STORY, ULID],
     "stories:export-download": [STORY, ULID],

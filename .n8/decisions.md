@@ -3634,3 +3634,33 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The verdict badges get four rules in `base.html` (`.verdict-badge` plus pass/fail/other: borders and weight only, so the text carries the meaning). The raw Suites/Requirements tables share one partial, `templates/console/engine/_eval_raw_table.html` (one file over the planned count). The live edge on :18000 serves 0 eval runs (`list_eval_runs` returns an empty page), so the live check covered only the empty state.
   **Why:** Discretion. Cost if wrong: none.
   **Issue:** #316
+- **Decision:** Aligned the `m7/prune_impact.json`, `prune_applied.json`, `prune_runs.json` and `prune_runs_bad_item.json` fixtures with the Engine's shapes in `core/prune.py`: `lost_operations[]` carry `target` (untruncate/swap per target, promote per dormant one), `suggestions[]` are `{code: promote_before_pruning, target, request{method, path, body.variant_chain}}`, `retained` gains `feedback_marked`, the policy run's `policy` is `{older_than_days: 30}`, and a run's `impact` is the full report (it was `{deleted}`). No new file, so `M7_FIXTURES` is unchanged.
+  **Why:** #292's shapes (`kind`, no `target`, `keep_days`) aren't what the Engine sends, so the range lookups and "By policy (older than 30 days)" couldn't be tested. If wrong, only fixtures move. `$SCRATCH/gen_m7.py` still has the old shapes.
+  **Issue:** #317
+- **Decision:** A `story_importing` refusal of the dry run or the apply is re-raised to `ImportingStoryMiddleware` (#295's importing page, 409), the same as a held story. It is not shown as a refusal line.
+  **Why:** The AC lists `story_importing` as "(#295's middleware page)". The frame's story read would raise it anyway on a re-render.
+  **Issue:** #317
+- **Decision:** The narrow form's `report_token` is signed with its own salt (`console.pruning.report`, max age `twostage.MAX_AGE_S`), not as a `twostage` kind, so it can never be posted as a confirm token. A token past its age shows "Tick at least one target" on the bare page. A tampered token, one for another story, or one that no longer parses as `Pruned` gives `EXPIRED_TEXT` and a redirect. None of them makes an Engine call.
+  **Why:** The planner line splits expired from invalid, and `twostage.unsign` folds both into one exception. If this is wrong, only the re-render path differs.
+  **Issue:** #317
+- **Decision:** An unknown outcome on the dry run (timeout, transport, `bad_response`) re-renders the Prune page with #43's panel, and the dry-run form keeps the posted key (E21). An unknown outcome on the apply re-renders the typed-name confirm under the panel, with the same token, key and `confirmed=1`. A dry run that answers `applied: true` goes straight to the result (E8's applied-at-once rule).
+  **Why:** These follow E21 and E8. The story doesn't spell them out for the dry run.
+  **Issue:** #317
+- **Decision:** Wording fallbacks:
+  - an unknown `lost_operations.operation` reads "<Humanised op>: <range or id>";
+  - an unknown `retained` key reads "<Humanised key> <n>";
+  - a target refusal humanises `details.reason` (the Engine's mid-plan `moved` reads "(Moved)");
+  - the confirm fact is ("Dry run at revision", "<n>");
+  - with nothing to prune, the narrow form is left out too (there is nothing to tick).
+  **Why:** E23's humanise rule, applied where the AC says only "humanised".
+  **Issue:** #317
+- **Decision:** `impact_view`'s `names` stays (`{"story_name": story.name}` from the frame's read). The token's `base["story_name"]` needs the raw name (`None` when unnamed, for E9's id fallback), and the frame's `story_name` is already the id-substituted one. "Busy · retry after <n> s" reuses `console.views.certify.busy_text` instead of a copy. History's Prune link goes through E6's `prune_url`.
+  **Why:** The planner asked for `names` to be dropped if it proved redundant. It isn't.
+  **Issue:** #317
+- **Decision:** Tests:
+  - Expiry tests monkeypatch `time.time` past `twostage.MAX_AGE_S`, as `tests/test_m3_shared.py` does. They don't use `freezegun`, which the test plan names but which isn't a dependency (adding it would be a library change).
+  - `amendment_ids` as plain `<code>` is tested by monkeypatching `console.pruning.amendment_url` to `None`. #302 already registered `stories:amendment`, so ids link under the real urlconf too.
+  - The plan's "3 operation(s)" is the confirm page's total. The fixture's two targets carry 2 and 1.
+  - `tests/test_portability_helpers.py`'s "prune_url is None" line moved to a registered-case test.
+  **Why:** These keep the plan's intent without a new dependency.
+  **Issue:** #317
