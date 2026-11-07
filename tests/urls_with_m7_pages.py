@@ -93,7 +93,6 @@ STORY_STUBS = [
     path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
 ]
 INSPECT_STUBS = [
-    path("effects/outbox/", stub, name="outbox"),  # #325
     path("effects/reconciliation/<str:listing>/resolve/", stub, name="resolve-listing"),  # #326
     path("effects/reconciliation/resolved/", stub, name="resolved"),  # #326
 ]
@@ -127,7 +126,6 @@ STUB_NAMES = frozenset(
 # PR that registers them; the complement test asserts only these.
 NOT_YET_REGISTERED = frozenset(
     {
-        "inspect:outbox",
         "inspect:resolve-listing",
         "inspect:resolved",
     }

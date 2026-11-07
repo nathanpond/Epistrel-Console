@@ -19,8 +19,9 @@ from epistrel_console import urls as real
 
 MOUNT = "stories/<str:story_id>/inspect/"
 WORLD_TEMPLATE = "console/inspect/world.html"
-# ``reconciliation`` (#249) and ``effects-trail`` (#255) too, so the Effects shell keeps rendering
-# with no section; ``state-proposals`` (#266) so the stubbed World keeps its two sections.
+# ``reconciliation`` (#249), ``outbox`` (#325) and ``effects-trail`` (#255) too, so the Effects
+# shell keeps rendering with no section; ``state-proposals`` (#266) so the stubbed World keeps
+# its two sections.
 STUBBED = {
     "states",
     "state-proposals",
@@ -29,6 +30,7 @@ STUBBED = {
     "scheduled-events",
     "external-values",
     "reconciliation",
+    "outbox",
     "effects-trail",
 }
 BUILT: list[str] = []  # the URL name of each stub build called, in order
@@ -37,7 +39,8 @@ BUILT: list[str] = []  # the URL name of each stub build called, in order
 def without_stubbed() -> list[Any]:
     """The real Inspect patterns minus any real ``inspect:states`` / ``inspect:state`` /
     ``inspect:clock`` / ``inspect:scheduled-events`` (#244) / ``inspect:external-values`` (#248)
-    / ``inspect:reconciliation`` (#249) / ``inspect:effects-trail`` (#255) /
+    / ``inspect:reconciliation`` (#249) / ``inspect:outbox`` (#325) /
+    ``inspect:effects-trail`` (#255) /
     ``inspect:state-proposals`` (#266) route (the real
     one-State page would shadow ``world/state/probe/``)."""
     return [p for p in real.inspect_patterns[0] if getattr(p, "name", None) not in STUBBED]

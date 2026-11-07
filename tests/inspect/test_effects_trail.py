@@ -21,7 +21,7 @@ from django.http import HttpRequest
 from django.test import Client, override_settings
 from django.utils.html import escape
 
-from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, OUTBOX_LIST_NOTICE
+from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, OUTBOX_SECTION_NOTICE
 from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
 from console.forms.inspect import OMNISCIENT_TEXT
@@ -138,8 +138,9 @@ def test_turns_with_changes_listed(operator_client: Client, engine: FakeEngine) 
     assert ">Pending</td>" in seven
     assert ">Conditional</td>" in seven
     assert f'<code class="outbox-id">{OUTBOX}</code>' in seven
-    notice = OUTBOX_LIST_NOTICE.split("{link}")[0]
+    notice = OUTBOX_SECTION_NOTICE.split("{link}")[0]  # E17: #325 registered inspect:outbox
     assert notice in html
+    assert f'<a href="/stories/{STORY}/inspect/effects/outbox/">' in html
     assert html.index(notice) < html.index('class="trail-turn"')
     # Complement: turn 6 committed nothing, so it has no block.
     assert "trail-turn-6-" not in html
@@ -192,7 +193,7 @@ def test_older_and_newest_links(operator_client: Client, engine: FakeEngine) -> 
     assert block_ids(older) == ["trail-turn-2-1"]
     assert dict(reads(engine)[-1].url.params)["before_turn"] == "5"
     # **Complement** (#279): no row on page 2 carries an outbox id, so no D11 notice.
-    assert OUTBOX_LIST_NOTICE.split("{link}")[0] not in older
+    assert OUTBOX_SECTION_NOTICE.split("{link}")[0] not in older
     assert "outbox-notice" not in older
 
 
@@ -334,7 +335,7 @@ def test_outbox_id_only_in_a_raw_entry_gives_no_notice(
     html = page(operator_client)
     assert '<p class="warning">1 State change couldn&#x27;t be read</p>' in block(html, 7)
     assert '<code class="outbox-id">' not in html
-    assert OUTBOX_LIST_NOTICE.split("{link}")[0] not in html
+    assert OUTBOX_SECTION_NOTICE.split("{link}")[0] not in html
     assert "outbox-notice" not in html
 
 

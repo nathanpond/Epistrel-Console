@@ -48,7 +48,7 @@ linked through ``outbox_url``) and :func:`compensated_row` finds a ``?report=<pk
 import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from django.urls import NoReverseMatch, reverse
 from django.utils.http import urlencode
@@ -57,7 +57,6 @@ from console.confirm import ConfirmPage
 from console.effects import outbox_url, provider_url
 from console.engine.models import (
     Compensated,
-    ListingOutcome,
     ReconciliationListing,
     SettledNow,
     Story,
@@ -264,7 +263,21 @@ class ListingRow:
     effect_json: str
 
 
-def _outcome(outcome: ListingOutcome | None) -> OutcomeCell | None:
+class Outcome(Protocol):
+    """An outcome the Latest outcome cell words: ``ListingOutcome`` (Reconciliation and the
+    Outbox section's rows, #325) fits."""
+
+    @property
+    def kind(self) -> str: ...
+    @property
+    def received_via(self) -> str: ...
+    @property
+    def received_at(self) -> str: ...
+
+
+def outcome_cell(outcome: Outcome | None) -> OutcomeCell | None:
+    """The Latest outcome cell (#249), shared with the Outbox section (#325); ``None`` when
+    absent."""
     if outcome is None:
         return None
     return OutcomeCell(
@@ -273,6 +286,9 @@ def _outcome(outcome: ListingOutcome | None) -> OutcomeCell | None:
         received_at=outcome.received_at,
         title=" · ".join((outcome.kind, outcome.received_via)),
     )
+
+
+_outcome = outcome_cell
 
 
 def _reverification(listing: ReconciliationListing) -> tuple[str, str]:

@@ -173,9 +173,13 @@ def new_idempotency_key() -> str:
     return new_ulid()
 
 
-@register.simple_tag
-def omniscient_line() -> str:
-    """E2's :data:`console.rewrites.OMNISCIENT_LINE` (#294), for ``_omniscient.html``."""
-    from console.rewrites import OMNISCIENT_LINE
+OUTBOX_VARIANT = "outbox"
 
-    return OMNISCIENT_LINE
+
+@register.simple_tag
+def omniscient_line(variant: str = "") -> str:
+    """E2's :data:`console.rewrites.OMNISCIENT_LINE` (#294), for ``_omniscient.html``; the
+    ``"outbox"`` variant is the Outbox section's ``OUTBOX_OMNISCIENT_LINE`` (#325)."""
+    from console.rewrites import OMNISCIENT_LINE, OUTBOX_OMNISCIENT_LINE
+
+    return OUTBOX_OMNISCIENT_LINE if variant == OUTBOX_VARIANT else OMNISCIENT_LINE

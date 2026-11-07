@@ -37,6 +37,7 @@ from console.views import (
     inspect_memories,
     inspect_memory,
     inspect_merge,
+    inspect_outbox,
     inspect_predicates,
     inspect_reconciliation,
     inspect_scene,
@@ -448,6 +449,8 @@ inspect_patterns = (
             inspect_reconciliation.reconciliation,
             name="reconciliation",
         ),
+        # #325: the Outbox section (every outbox row the story committed, each at #outbox-<id>).
+        path("effects/outbox/", inspect_outbox.outbox, name="outbox"),
         # #256: settle a listed effect now (confirm page, then the call) and its result again.
         path(
             "effects/reconciliation/settled/",

@@ -138,9 +138,9 @@ def test_section_registries_are_d3s_table() -> None:
 
 
 def test_effects_sections_order(operator_client: Client, engine: FakeEngine) -> None:
-    """E12 (#296): with ``inspect:outbox`` stubbed, Reconciliation, Outbox, Effects trail.
-    **Complement:** under the real urlconf the Effects sub-navigation is unchanged
-    (Reconciliation, Effects trail) and the landing still redirects to Reconciliation."""
+    """E12 (#296): with the M7 stub urlconf, Reconciliation, Outbox, Effects trail. Under the
+    real urlconf too, now that #325 registered ``inspect:outbox`` (the real-urlconf half moved
+    from "Reconciliation, Effects trail"), and the landing still redirects to Reconciliation."""
     effective = structured_v3()["effective"]
     with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
         stubbed = sections(Tab.EFFECTS, STORY, None, effective)
@@ -151,7 +151,8 @@ def test_effects_sections_order(operator_client: Client, engine: FakeEngine) -> 
         real = sections(Tab.EFFECTS, STORY, None, effective)
         answer_config(engine, structured_v3())
         landing = operator_client.get(EFFECTS)
-    assert [link.label for link in real] == ["Reconciliation", "Effects trail"]
+    assert [link.label for link in real] == ["Reconciliation", "Outbox", "Effects trail"]
+    assert real[1].url == f"{EFFECTS}outbox/"
     assert landing.status_code == 302
     assert landing["Location"] == f"{EFFECTS}reconciliation/"
 

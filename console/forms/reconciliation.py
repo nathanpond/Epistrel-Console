@@ -21,6 +21,17 @@ alias lookup, D9):
 
 :meth:`CompensateForm.clean` wants exactly one of delta and value (:data:`BOTH_GIVEN`,
 :data:`NONE_GIVEN`, non-field errors); :meth:`CompensateForm.effect` is the request's ``effect``.
+
+:class:`OutboxFilterForm` (#325; E22, C3, C7) is the Outbox section's GET filter form
+(``console/views/inspect_outbox.py``), its names the Engine's query names:
+
+- ``status``: a select of "Any" (sends nothing), then ``console.outbox.OUTBOX_STATUSES``
+  humanised (C3). A requested value outside them is kept as one more choice, humanised (C7's
+  kept-choice rule), and sent as given; longer than 64 characters it is a field error;
+- ``provider``: free text, trimmed (never case-changed), at most 64 characters.
+
+A blank filter is left out of the query (:meth:`OutboxFilterForm.query`); an invalid form makes
+no read. There is no cursor field: changing a filter restarts at the first page (E22).
 """
 
 from collections.abc import Mapping, Sequence
@@ -33,6 +44,8 @@ from console.cast import Character
 from console.forms.scheduled_events import NOT_IN_CAST
 from console.forms.states import normalised_id
 from console.forms.world import DeltaField, ScalarValueField
+from console.outbox import OUTBOX_STATUSES
+from console.wording import humanised
 
 STATE_MAX = 64  # CompensatingEffect.state / scope_key: 1-64
 SCOPE_MAX = 64
@@ -128,3 +141,44 @@ class CompensateForm(forms.Form):
             effect["value"] = cleaned["value"]
         effect["reason"] = cleaned["reason"]
         return effect
+
+
+# --- the Outbox section's filters (#325) ---------------------------------------------------------
+
+OUTBOX_FILTER_MAX = 64  # status (a kept choice) and provider
+ANY_STATUS = ("", "Any")
+OUTBOX_FILTERS: tuple[str, ...] = ("status", "provider")
+
+
+def outbox_status_choices(kept: str = "") -> list[tuple[str, str]]:
+    """ "Any", the documented statuses humanised, then ``kept`` (an out-of-list request, C7)."""
+    choices = [ANY_STATUS, *((value, humanised(value)) for value in OUTBOX_STATUSES)]
+    if kept and kept not in OUTBOX_STATUSES:
+        choices.append((kept, humanised(kept)))
+    return choices
+
+
+class OutboxFilterForm(forms.Form):
+    """The Outbox section's filters (see the module docstring)."""
+
+    status = forms.CharField(
+        label="Status", required=False, max_length=OUTBOX_FILTER_MAX, widget=forms.Select
+    )
+    provider = forms.CharField(label="Provider", required=False, max_length=OUTBOX_FILTER_MAX)
+
+    def __init__(self, data: Mapping[str, Any] | None = None) -> None:
+        super().__init__(data)
+        kept = data.get("status", "") if data is not None else ""
+        kept = kept.strip() if isinstance(kept, str) else ""
+        self.fields["status"].widget.choices = outbox_status_choices(kept)
+
+    @property
+    def filtered(self) -> bool:
+        """Any non-blank filter was requested (the "Clear filters" link, the count's suffix)."""
+        data = self.data if self.is_bound else {}
+        return any(str(data.get(name, "")).strip() for name in OUTBOX_FILTERS)
+
+    def query(self) -> dict[str, str]:
+        """The cleaned, non-blank filters, by the Engine's names (valid form only)."""
+        cleaned = self.cleaned_data
+        return {name: cleaned[name] for name in OUTBOX_FILTERS if cleaned.get(name)}

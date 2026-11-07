@@ -188,6 +188,7 @@ OMNISCIENT_LINE = "Viewpoint: Omniscient — history rewrites read and change th
 AS_RECORDED_LINE = (
     "Viewpoint: Omniscient — the history as originally recorded is read only as omniscient"
 )
+OUTBOX_OMNISCIENT_LINE = "Viewpoint: Omniscient — every outbox row"  # the Outbox section (#325)
 OMNISCIENT_REQUIRED_TEXT = (
     "The Engine refused a character viewpoint here — this page reads as omniscient only "
     "(a Console bug; report it)"

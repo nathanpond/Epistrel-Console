@@ -20,7 +20,7 @@ import httpx
 import pytest
 from django.test import Client, override_settings
 
-from console.effects import INCOMPLETE_TITLE, OUTBOX_LIST_REQUEST
+from console.effects import INCOMPLETE_TITLE
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.history.helpers import HISTORY, answer, page
@@ -41,7 +41,7 @@ GOLDEN = Path(__file__).parent / "golden" / "m5_items_linked.html"
 STUB_URLS = "tests.urls_with_engine_operation"
 WITHOUT_ENGINE_OPERATION = "tests.urls_without_engine_operation"
 OUTBOX = "01JM6BX0000000000000000021"
-OUTBOX_NOTICE = "Outbox rows are shown where the Engine reports them"
+OUTBOX_NOTICE = "Every outbox row is listed in "  # E17: #325 registered inspect:outbox
 VIEWPOINT_LINE = "Viewpoint: Alice — hidden States are left out"
 MINUS = "\u2212"  # D5's signed delta
 
@@ -245,7 +245,8 @@ def test_outbox_notice_only_with_an_outbox_id(operator_client: Client, engine: F
     body["turns"][0]["state_effects"][0]["outbox_id"] = OUTBOX
     html = world_page(operator_client, engine, body)
     assert html.count(OUTBOX_NOTICE) == 1
-    assert f'<a href="{OUTBOX_LIST_REQUEST}">' in html
+    assert f'<a href="/stories/{STORY}/inspect/effects/outbox/">' in html
+    assert "no list of every row yet" not in html
     assert f'<code class="outbox-id">{OUTBOX}</code>' in html
 
     engine.reset()

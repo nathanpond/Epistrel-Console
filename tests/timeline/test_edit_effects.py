@@ -116,7 +116,8 @@ def test_rewind_with_required_effects_renders_the_report(
     assert "<td><code>balance</code></td>" in page
     assert '<td title="confirmed">Confirmed</td>' in page
     assert f'<a href="{reconciliation()}">1 effect to reconcile</a>' in page
-    assert str(outbox_list_notice_html()) in page
+    assert str(outbox_list_notice_html(story_id=STORY)) in page  # E17 (#325)
+    assert "no list of every row yet" not in page
     assert f'<a class="button" href="{PLAY}">Continue to the story</a>' in page
     # Complement: the report replaces the flash; nothing is queued.
     assert flash(response) == []

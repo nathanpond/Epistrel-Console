@@ -457,7 +457,8 @@ def test_results_show_what_was_ingested(operator_client: Client, engine: FakeEng
     assert f'<td class="what"><code class="outbox-id">{EFFECT}</code> → Failed</td>' in table
     assert f"<td><code>{OP_1}</code></td><td>—</td>" in table  # an outcome has no turn
     assert table.count("<td>outcome</td>") == 2
-    assert "there is no list of every row yet" in html  # D11's notice under the results
+    assert "Every outbox row is listed in " in html  # E17's notice under the results (#325)
+    assert "there is no list of every row yet" not in html
     # A state change: "<state> <delta>", its turn as the Engine gives it.
     engine.requests.clear()
     answer(engine, ("evt-s", OP_1, 5), ("evt-v", OP_2, 5))
@@ -470,7 +471,7 @@ def test_results_show_what_was_ingested(operator_client: Client, engine: FakeEng
     assert f'<td class="what">gold +5</td><td><code>{OP_1}</code></td><td>5</td>' in table
     assert '<td class="what">mood &quot;calm&quot; · Alice</td>' in table
     assert "<td>state change</td>" in table
-    assert "there is no list of every row yet" not in again
+    assert "Every outbox row is listed in " not in again
 
 
 def test_the_tab_groups_each_rows_fields_by_kind(

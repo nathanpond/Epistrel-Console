@@ -3836,3 +3836,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** the no-#606 scan (`test_no_606_sentence_left`) also asserts `knowledge.html` still contains "#606", so the exemption fails loudly once #327's comment no longer needs it; #327's comment already says "delivered", so no flag was needed. `console/engine/openapi.json` mentions #606 but is outside the scan (`*.py`/`*.html` only, as planned).
   **Why:** an exemption with nothing to exempt is a silent gap. Cost if wrong: a future edit of that comment fails this test and must drop the last assert.
   **Issue:** #328
+- **Decision:** `OUTBOX_OMNISCIENT_LINE` is defined in `console/rewrites.py` beside E2's other lines, and `_omniscient.html` takes a `variant` (`{% include … with variant="outbox" %}`) through an optional argument on the `omniscient_line` tag. No earlier story had defined the constant.
+  **Why:** E1/E2 give the wording to #294's module, and the AC names "_omniscient.html's Outbox variant". Every other include is unchanged (no variant, same line). Cost if wrong: one import to move.
+  **Issue:** #325
+- **Decision:** `OutboxFilterForm.status` is a `CharField(max_length=64)` with a `Select` widget whose choices are "Any", the eight documented statuses and the kept requested value. It is not a `ChoiceField`.
+  **Why:** C7's kept choice must be sent as given, and a value over 64 characters must be a field error with no read. A CharField gives both without a custom `invalid_choice`. Cost if wrong: a later status shows as a kept option until it is added to `OUTBOX_STATUSES`.
+  **Issue:** #325
+- **Decision:** A redacted row's "Attempts and times" cell shows only "created …". It does not show a "—" line for attempts.
+  **Why:** The discretion text says both "Attempts … read '—'" and "'created …' still shows". A "—" line above the time read oddly, so the attempts line is left out. Cost if wrong: one template line.
+  **Issue:** #325
+- **Decision:** A 422 `validation_error` naming `query.status` or `query.provider` (`details.errors[*].field` or `loc`, else `details.field`) goes beside that field. Any unmapped failure (`query.after_id`, `query.limit`) is #43's panel. Every error is logged, and the filter form stays rendered on every error.
+  **Why:** This is E21 plus the story's sim2 note. The path reader is a local copy of #324's `_failure_paths`, kept private because #324's version is tied to its own form. Cost if wrong: small duplication.
+  **Issue:** #325
+- **Decision (Rule 3):** `tests/inspect/urls_world_stub_sections.STUBBED` now drops `outbox` too, so `test_effects_shell_without_sections` (and `urls_world_no_sections`) keep an Effects tab with no sections. Also added `tests/urls_without_outbox.py` (D19's unregistered fallback for the notice and the strip's unlinked case). The real-urlconf asserts on D11's old text were repointed to `OUTBOX_SECTION_NOTICE` in `test_effects_trail`, `test_state_changes`, `test_ingest_world`, `test_world_strip`, `test_reactivation_check` and `test_edit_effects`, and `test_effects_sections_order`'s real half now reads Reconciliation, Outbox, Effects trail. `test_effects.py::test_outbox_list_notice` still pins the no-story-id fallback.
+  **Why:** Registering `inspect:outbox` flips E17's notice everywhere (as #295 planned). Cost if wrong: none (tests only).
+  **Issue:** #325
+- **Decision:** `outcome_cell` is now the public name in `console/reconciliation.py`, typed to a small `Outcome` Protocol, and `_outcome = outcome_cell` is kept. `console/outbox.py` imports `REDACTED`, `effect_text` and `outcome_cell` from there; the view imports `NOT_FOUND` from there.
+  **Why:** The story's discretion asks for a minimal diff, and #326 edits the same file after this story. Cost if wrong: none.
+  **Issue:** #325
+- **Decision:** The live check was query-shape only: on `n8-291-smoke` (127.0.0.1:18000), `GET /stories/{id}/outbox?viewpoint=omniscient[&status&provider&after_id]&limit=50` answered 200 `{rows: [], next_after: null}`, and without `viewpoint` it answered 422 `viewpoint_unresolved`. No live pytest was added (the AC asks for none). The stack is left running.
+  **Why:** It confirms the client's query is accepted by the edge. Cost if wrong: none.
+  **Issue:** #325

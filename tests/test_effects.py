@@ -13,6 +13,8 @@ from console.effects import (
     INCOMPLETE_TITLE,
     OUTBOX_LIST_NOTICE,
     OUTBOX_LIST_REQUEST,
+    OUTBOX_SECTION_LABEL,
+    OUTBOX_SECTION_NOTICE,
     STAGED_LABEL,
     effect_line,
     engine_operation_url,
@@ -33,6 +35,7 @@ EFFECT_ID = "01JM6BX0000000000000000009"
 OPERATION = "01JM6QP0000000000000000011"
 STUB_URLS = "tests.urls_with_engine_operation"
 WITHOUT_ENGINE_OPERATION = "tests.urls_without_engine_operation"
+WITHOUT_OUTBOX = "tests.urls_without_outbox"
 
 BASE: dict[str, Any] = {
     "state": "gold",
@@ -209,9 +212,11 @@ def test_staged_markers() -> None:
 
 def test_e17s_outbox_section_notice() -> None:
     """#295 (E17): with a story id the notice links the Effects tab's Outbox section once
-    ``inspect:outbox`` resolves; before #325 (the real urlconf) it is D11's old notice."""
+    ``inspect:outbox`` resolves; while it doesn't (a urlconf without #325's route) it is D11's
+    old notice, as it is with no story id."""
     old = str(outbox_list_notice_html())
-    assert str(outbox_list_notice_html(story_id=STORY)) == old
+    with override_settings(ROOT_URLCONF=WITHOUT_OUTBOX):
+        assert str(outbox_list_notice_html(story_id=STORY)) == old
     with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
         html = outbox_list_notice_html(story_id=STORY)
         assert html == (
@@ -219,3 +224,13 @@ def test_e17s_outbox_section_notice() -> None:
             f'<a href="/stories/{STORY}/inspect/effects/outbox/">Effects \u203a Outbox</a>'
         )
         assert str(outbox_list_notice_html()) == old  # no story id: nothing to link
+
+
+def test_outbox_notice_links_the_section() -> None:
+    """#325 (E17, the real urlconf): ``OUTBOX_SECTION_NOTICE`` linking ``inspect:outbox``."""
+    section = reverse("inspect:outbox", args=[STORY])
+    html = str(outbox_list_notice_html(story_id=STORY))
+    assert html == OUTBOX_SECTION_NOTICE.replace(
+        "{link}", f'<a href="{section}">{OUTBOX_SECTION_LABEL}</a>'
+    )
+    assert "no list of every row yet" not in html
