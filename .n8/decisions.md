@@ -3763,3 +3763,37 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Rule 1 (docs): `EngineClient.update_admin_settings`' docstring now says "the four nullable settings", and `ModelTiers`' docstring now states the Engine's meaning ("the model id a profile's "@strongest" routes resolve to"), replacing #291's "a certification or a hard rewrite escalates to", which the recorded `ModelTiers` description contradicts.
   **Why:** both were wrong once #323 lands. Cost if wrong: none (docstrings only).
   **Issue:** #323
+- **Decision:** The import job page's body template is #321's `_import_report.html`. It is `job_poll_context`'s `body_template`: it holds the held, not-found and panel branches, includes #295's `_job_status.html` (passed `error=None`), then renders the stage line, the ready link and notes, the error with its violations, the report and "Try again". The two-template budget is kept, and neither `_job_status.html` nor `console/jobs.py` is edited.
+  **Why:** The import's error needs `IMPORT_ERROR_TEXT`, the violations and the "No story was created" line in a fixed order, which the generic error block can't give. #319's export page does the same. Cost if wrong: one more template if a later story wants the import block without the poll branches.
+  **Issue:** #321
+- **Decision:** The status line comes from E7's `job_state`, so a running job with a usable total keeps E7's count parenthesis: "Importing — Checking the history against the rating (3/9)". "Stage 5 of 10" is its own line (`p.import-stage`). The stage is passed to `job_state` only when `shows_stage` holds (status `running`, stage a non-blank string other than `queued`). Otherwise the progress is withheld, so a `queued` or missing stage reads plain "Importing" with an indeterminate bar. A `queued` status keeps E7's no-bar rule.
+  **Why:** The AC calls for E7's texts plus a stage count, with no count for a stageless run. Cost if wrong: wording only.
+  **Issue:** #321
+- **Decision:** `ImportJob.report` and `.error` stay typed `dict | None` (#292, matching the Engine schema's `object | null`). A non-object report or bare-string error from the Engine is therefore #43's `bad_response` panel, not the lenient row. The lenient renderings ("The report couldn't be read", "The Engine gave no error details" for a string) live in `console/imports_status.py` and are tested by rendering the view's block context directly. A null error, or one with no code, does reach the page and is tested through it.
+  **Why:** Loosening a client model is a contract change outside this story. The schema forbids those shapes, so only a non-conforming Engine would send them. Cost if wrong: such an Engine shows a panel instead of the row.
+  **Issue:** #321
+- **Decision:** `REPORT_UNREADABLE_TEXT` = "The report couldn't be read" is #321's own, in `console/imports_status.py`, as the AC words it. `import_report_rows` handles a non-object report before calling #295's `report_rows`, whose own row reads "The validation report couldn't be read". Each error and warning row's More holds the raw entry, not `ReportEntry.more` (the entry minus code and message).
+  **Why:** The AC quotes this text and asks for "the raw entry in More". Cost if wrong: wording only.
+  **Issue:** #321
+- **Decision:** Wording and shapes the story left open:
+  - The ready line is one link, `<a class="import-story">Imported as <name> — open it</a>`. A null `story_id` reads "Imported as —".
+  - Each note is one `p.notice.import-note`, whose whole text is the link.
+  - The parked note pluralises as "1 external effect was parked …" / "2 external effects were parked …".
+  - The Outbox line reads "<n> staged turn(s) closed, <n> effect(s) parked, <n> reservation timer(s)". A missing slot reads "— staged turns closed"; a non-int slot is shown raw with the plural noun.
+  - A rating check's `details.reason` is its own `p.error-reason` line, not appended to the code text, because the reason text is a capitalised sentence.
+  - Violation positions: a 5-int list goes through C1 in full; a shorter `[turn, variant, …]` list shows its turn and variant only; a map with a null beat shows "turn N" (" · vV" when the variant isn't 0).
+  - The report section is headed "Validation report" (h3), and Errors/Warnings/Counts are h4s.
+  **Why:** These are the smallest readable choices consistent with E23 and C1. Cost if wrong: wording only.
+  **Issue:** #321
+- **Decision:** On the full page, a failed job read other than 404 or `erasure_pending` is #43's panel inside the frame (raised from `build`). M3's `poll_failure` (retrying on unreachable or 503) applies to the `?partial=1` poll only, as on #313's and #319's job pages.
+  **Why:** A first render has nothing yet to keep polling, and the frame's panel offers Retry. Cost if wrong: an unreachable Engine on first load shows the panel, not "retrying".
+  **Issue:** #321
+- **Decision:** Registering `engine:import-job` removed its stub, its `NOT_YET_REGISTERED` name and its `test_m7_stub_urlconf.ARGS` row. These tests flipped to the linked case:
+  - `test_import.test_rating_fix_reuses_the_spool` now expects a 303 to the job page.
+  - `test_recent_imports_from_the_log`'s job cell is now a link.
+  - `test_importing.test_the_play_page_of_an_importing_story` and `test_write_refusal_words_story_importing` now expect the job link.
+  - `test_portability_helpers` asserts the real reverse.
+  
+  `test_before_s25b_the_result_block_shows` keeps covering the D19 branch by monkeypatching `console.views.imports.import_job_url` to `None`. The live `test_import_through_the_console_live` now accepts a first-stage 303. It then polls the Console job page every 2 s (120 s cap) until "Imported" and opens the story link. It passed on `n8-291-smoke` (127.0.0.1:18000), and both of its stories were deleted.
+  **Why:** E24 says the registering story regenerates these, and D19 says the unregistered branch stays covered. Cost if wrong: none.
+  **Issue:** #321

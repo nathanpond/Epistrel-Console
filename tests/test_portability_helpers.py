@@ -49,8 +49,10 @@ def test_bundle_filename_falls_back_to_story() -> None:
     assert bundle_filename(Named("", None)) == "story-20261106.epistrel.tgz"
 
 
-def test_the_url_helpers_are_none_while_unregistered() -> None:
-    assert import_job_url(JOB) is None
+def test_import_job_url_once_registered() -> None:
+    """#321 registered ``engine:import-job``: the real urlconf reverses it."""
+    assert import_job_url(JOB) == f"/engine/import/{JOB}/"
+    assert import_job_url("") is None
 
 
 def test_export_urls_once_registered() -> None:

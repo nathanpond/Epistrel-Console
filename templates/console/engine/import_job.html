@@ -1,0 +1,10 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#321: one import job (engine:import-job, console/views/imports.py import_job), E7's import job
+page: console/_job_poll.html around _import_report.html, polling every 2s until ready, refused or
+failed. not_found: "Not found (no such import)" (404 inside the frame).
+{% endcomment %}
+{% block engine_page %}
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% else %}{% include "console/_job_poll.html" %}{% endif %}
+{% endblock %}

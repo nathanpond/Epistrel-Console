@@ -66,8 +66,11 @@ def test_the_play_page_of_an_importing_story(operator_client: Client, engine: Fa
     assert "<title>Story importing</title>" in html
     assert "<h1>Story importing</h1>" in html
     assert f'Story <code title="{STORY}">…00000003</code>' in html
-    # The real urlconf has no ``engine:import-job`` yet (#321): plain text.
-    assert f'<p class="warning importing-message" role="status">{TEXT}</p>' in html
+    # #321 registered ``engine:import-job``: the text links the job page.
+    assert (
+        f'<p class="warning importing-message" role="status"><a class="import-job" '
+        f'href="/engine/import/{JOB}/">{TEXT}</a></p>'
+    ) in html
     assert f'<a class="retry" href="/stories/{STORY}/?tab=ingest">Retry</a>' in html
     assert "Engine error" not in html
 
@@ -125,7 +128,7 @@ def test_write_refusal_words_story_importing() -> None:
     refusal = write_refusal(_exc(), STORY, "play a turn")
     assert refusal is not None
     assert refusal.text == TEXT
-    assert refusal.url == ""  # engine:import-job unregistered
+    assert refusal.url == f"/engine/import/{JOB}/"  # #321 registered engine:import-job
     assert is_importing(_exc())
 
 

@@ -920,9 +920,11 @@ def test_import_through_the_console_live(
 ) -> None:
     """#320 (E24): export the smoke's story (#319's helper), then import its bundle through the
     Engine panel's Import page with "Forward only"; when the Engine warns, post "Import anyway".
-    The Engine answers 202 (before #321 the page shows "Import started: job …"); the job is
-    polled through ``import_status`` once a second (120 s cap) until it ends. **Complement:**
-    both stories are deleted in a ``finally``."""
+    The Engine answers 202, a 303 to #321's job page (before #321 the page showed "Import
+    started: job …"); the job is polled through ``import_status`` once a second (120 s cap) until
+    it ends. Then (#321) the Console's job page is polled every 2 s (120 s cap) until it reads
+    "Imported", and its story link opens a story that is ``active`` or ``paused``.
+    **Complement:** both stories are deleted in a ``finally``."""
     settings.DATA_DIR = tmp_path
     client = EngineClient(url, key, principal="console:smoke")
     story = _knowledge_story(client, FULL_PROFILE_ID, 4)
@@ -938,7 +940,7 @@ def test_import_through_the_console_live(
                 "/engine/import/",
                 {"file": upload, "upgrade_mode": "forward_only", "idempotency_key": new_ulid()},
             )
-            assert page.status_code == 200, page.content.decode()
+            assert page.status_code in (200, 303), page.content.decode()
             html = page.content.decode()
             if "confirm_token" in html:  # the impact warned: confirm it
                 token = re.search(r'name="confirm_token" value="([^"]+)"', html)
@@ -966,6 +968,28 @@ def test_import_through_the_console_live(
         assert job.status == "ready", (job.status, job.error)
         assert job.story_id is not None
         assert job.story_id != story  # always a new story
+        # #321 (E24): the Console's job page, polled every 2 s (120 s cap), reads "Imported"
+        # and its story link opens a story that is active or paused.
+        job_page = f"/engine/import/{import_job}/"
+        deadline = time.monotonic() + 120.0
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            while True:
+                shown = operator_client.get(f"{job_page}?partial=1").content.decode()
+                if "Imported</strong>" in shown:
+                    break
+                assert "hx-trigger" in shown, shown  # still polling, never ended otherwise
+                assert time.monotonic() < deadline, "the job page isn't Imported after 120 s"
+                time.sleep(2.0)
+            full = operator_client.get(job_page)
+            assert full.status_code == 200
+            html = full.content.decode()
+            link = re.search(r'<a class="import-story" href="(/stories/([0-9A-Z]{26})/)">', html)
+            assert link is not None, html
+            assert link.group(2) == job.story_id
+            assert "Errors (" in html
+            opened = operator_client.get(link.group(1))
+            assert opened.status_code == 200
+        assert client.get_story(job.story_id).status in {"active", "paused"}
     finally:
         for made in dict.fromkeys(created):
             _delete_when_idle(client, made)

@@ -608,6 +608,8 @@ engine_patterns = (
         path("evals/<str:run_id>/", eval_runs.eval_run, name="eval-run"),
         # #320: import a bundle as a new story (form, impact confirm, refusals).
         path("import/", imports.import_page, name="import"),
+        # #321: one import job (stage, progress, validation report; ?partial=1 polls it).
+        path("import/<ulid:job_id>/", imports.import_job, name="import-job"),
     ],
     "engine",
 )

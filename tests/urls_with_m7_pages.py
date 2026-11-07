@@ -99,7 +99,6 @@ INSPECT_STUBS = [
     path("effects/reconciliation/resolved/", stub, name="resolved"),  # #326
 ]
 ENGINE_STUBS = [
-    path("import/<ulid:job_id>/", stub, name="import-job"),  # #321
     # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
     # list under this urlconf only (#313's real detail and run pages are served here).
     path("certifications/", certifications_frame, name="certifications"),
@@ -129,7 +128,6 @@ STUB_NAMES = frozenset(
 # PR that registers them; the complement test asserts only these.
 NOT_YET_REGISTERED = frozenset(
     {
-        "engine:import-job",
         "inspect:outbox",
         "inspect:resolve-listing",
         "inspect:resolved",

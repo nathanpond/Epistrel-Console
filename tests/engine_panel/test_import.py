@@ -35,6 +35,7 @@ from console.forms.imports import (
 )
 from console.import_spool import IMPORT_SPOOL_EXPIRED
 from console.models import EngineOperation
+from console.views import imports as import_views
 from console.views import story_pages
 from console.views.imports import NOT_LISTED_NOTE, NOTHING_CREATED_YET
 from tests.fakes.engine import FakeEngine
@@ -565,8 +566,11 @@ def test_started_without_a_warning_goes_straight_on(
 
 
 def test_before_s25b_the_result_block_shows(
-    client: Client, engine: FakeEngine, settings: Any
+    client: Client, engine: FakeEngine, settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """D19's unregistered case: #321 registered ``engine:import-job``, so ``import_job_url``
+    answering ``None`` stands in for a build without it."""
+    monkeypatch.setattr(import_views, "import_job_url", lambda job_id: None)
     engine.respond("POST", IMPORT, 202, json=m7("import_started"))
     response = client.post(URL, form_data())
     html = response.content.decode()
@@ -705,7 +709,8 @@ def test_rating_fix_reuses_the_spool(client: Client, engine: FakeEngine, setting
         "idempotency_key": hidden(html, "idempotency_key"),
     }
     response = client.post(URL, data)  # no file part
-    assert response.status_code == 200  # the result block (engine:import-job unregistered)
+    assert response.status_code == 303  # #321: to the job page
+    assert response["Location"] == JOB_URL
     first, second = imports(engine)
     assert file_of(second)[2] == file_of(first)[2] == BUNDLE
     assert metadata_of(second)["content_rating_id"] == "00000000000000000000RAT003"
@@ -857,7 +862,8 @@ def test_recent_imports_from_the_log(client: Client, engine: FakeEngine) -> None
     assert len(rows) == 2
     assert newer.job_id in rows[0]  # newest first
     assert older.job_id in rows[1]
-    assert "<code>01JM7JB0000000000000000012</code>" in rows[0]  # plain while unregistered
+    # #321 registered the job page: each job links it.
+    assert '<a href="/engine/import/01JM7JB0000000000000000012/"><code>' in rows[0]
     assert f'<a href="/stories/{newer.entity_id}/"><code>{newer.entity_id}</code></a>' in rows[0]
     assert 'title="ok">Ok</span>' in rows[0]
     assert 'title="queued">Queued</span>' in rows[1]

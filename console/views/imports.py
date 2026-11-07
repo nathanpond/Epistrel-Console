@@ -31,9 +31,9 @@ carrying ``twostage.CONFIRM_FIELD`` is the confirm (E8).
   must be chosen again, so the confirm itself can't be resent).
 - **202 ``ImportStarted``** (either stage): the spool is deleted, the #44 row is ``queued`` on the
   new story (E19), and the view flashes "Import started: job <code>id</code>" with E21's key tail
-  and answers 303 to ``import_job_url(job_id)`` (E6, #321). While that name is unregistered (D19)
-  the POST answers 200 with :data:`STARTED_TEXT` (the new story linked to ``stories:detail``) and
-  the form reset below it.
+  and answers 303 to ``import_job_url(job_id)`` (E6), #321's job page below. Were that name
+  unregistered (D19) the POST would answer 200 with :data:`STARTED_TEXT` (the new story linked
+  to ``stories:detail``) and the form reset below it.
 - **Refusals** (``console.forms.imports.import_refusal``) re-render (200) with the text on its
   field. After a refusal a metadata change can fix (``rating_required``, ``validation_error``,
   ``profile_deleted``) the spool is kept and its signed name rides in the hidden ``spool`` field
@@ -44,6 +44,29 @@ carrying ``twostage.CONFIRM_FIELD`` is the confirm (E8).
 - **Recent imports from this Console**: ``jobs.recent_jobs("import")`` (E7; the Engine keeps no
   list of imports, E18), each row's job linked through ``import_job_url`` and its new story
   (``EngineOperation.entity_id``, one query) through ``stories:detail``.
+
+**The import job page** (#321; owner answer 12; E7, E11, E23): ``engine:import-job``
+(``/engine/import/<ulid:job_id>/``, :func:`import_job`, ``@require_safe``) renders through
+``engine_page(..., current="engine:import", label="Import job …<short id>")``, one
+``import_status`` read per render; ``?partial=1`` answers only ``console/_job_poll.html``
+(``jobs.job_poll_context(JobKind.IMPORT, …)``, every 2 s, stopping at ``ready``, ``refused`` or
+``failed``; an unknown status keeps polling) around ``_import_report.html``, which includes
+#295's ``_job_status.html`` and then the import's own block (``console.imports_status``):
+
+- running: the status line with E7's ``stage_text`` (``STAGE_TEXT``), a ``<progress>`` and
+  "Stage <i> of 10" (a known stage only); a ``queued`` or missing stage reads "Importing" with an
+  indeterminate bar;
+- ``ready``: "Imported as <name> — open it" (``stories:detail``; the name from one ``get_story``
+  on each terminal render only, any ``EngineClientError`` logged and the id shown instead), the
+  backfill and parked-effects notes, the validation report;
+- ``refused``/``failed``: "No story was created", the error (code, ``IMPORT_ERROR_TEXT``, the
+  message, a rating check's violations, ``details`` in More), the report, "Try again".
+
+Any terminal read settles the start's ``queued`` #44 row (E7). The partial's failure order is
+E7's: 503 ``erasure_pending`` → the held fragment in the block with no trigger; 404 →
+:data:`JOB_NOT_FOUND_TEXT` with no trigger (the full page answers 404 inside the frame); anything
+else ``poll_failure`` unchanged. The full page leaves a held read to the frame and shows any
+other failed read as #43's panel inside it.
 """
 
 import logging
@@ -53,12 +76,12 @@ from typing import Any
 
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.template.defaultfilters import filesizeformat
 from django.urls import NoReverseMatch, reverse
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_safe
 
 from console import twostage
 from console.acting import acting_principal
@@ -70,7 +93,8 @@ from console.engine.client import (
     EngineUnreachable,
     UploadPart,
 )
-from console.engine.models import ImpactReport, ImportImpact, ImportStarted
+from console.engine.models import ImpactReport, ImportImpact, ImportJob, ImportStarted, Story
+from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.forms.imports import (
     FIXABLE_REFUSALS,
@@ -85,7 +109,7 @@ from console.forms.imports import (
     owner_text,
     read_import_choices,
 )
-from console.held import is_held
+from console.held import _ledger_url, held_text, is_held
 from console.ids import new_ulid
 from console.import_spool import (
     IMPORT_SPOOL_EXPIRED,
@@ -98,10 +122,31 @@ from console.import_spool import (
     spool_from_json,
     sweep_spools,
 )
-from console.jobs import JobKind, recent_jobs
+from console.imports_status import (
+    NO_STORY_TEXT,
+    TRY_AGAIN,
+    error_view,
+    import_report_rows,
+    ready_html,
+    ready_notes,
+    shows_stage,
+    stage_count_text,
+    stage_text,
+)
+from console.inspect import short_id
+from console.job_poll import POLL_TEMPLATE, poll_context, poll_failure, settle_job
+from console.jobs import (
+    PARTIAL_PARAM,
+    POLL_TRIGGER,
+    JobKind,
+    job_poll_context,
+    job_state,
+    recent_jobs,
+    settle_error_code,
+)
 from console.models import EngineOperation
 from console.portability import import_job_url
-from console.upgrades import UPGRADE_MODE_TEXT, upgrade_mode_text
+from console.upgrades import UPGRADE_MODE_TEXT, backfill_url, upgrade_mode_text
 from console.views.story_config import model_json
 from console.views.story_pages import EnginePageContext, engine_page
 
@@ -529,3 +574,177 @@ def _build(ctx: EnginePageContext) -> Mapping[str, Any] | HttpResponse:
 def import_page(request: HttpRequest) -> HttpResponse:
     """``engine:import`` (module docstring)."""
     return engine_page(request, TEMPLATE, _build, current=CURRENT)
+
+
+# --- the import job page (#321) -------------------------------------------------------------------
+
+JOB_TEMPLATE = "console/engine/import_job.html"
+JOB_BODY_TEMPLATE = "console/engine/_import_report.html"
+JOB_NOT_FOUND_TEXT = "Not found (no such import)"
+READY = "ready"
+
+
+def job_label(job_id: str) -> str:
+    """E11's label for a page with no nav row: "Import job …<short id>"."""
+    return f"Import job {short_id(job_id)}"
+
+
+def job_page_url(job_id: str) -> str:
+    return reverse("engine:import-job", args=[job_id])
+
+
+def _job_urls(job_id: str) -> dict[str, str]:
+    base = job_page_url(job_id)
+    return {"poll_url": f"{base}?{PARTIAL_PARAM}=1", "refresh_url": base}
+
+
+def settle_import(job: ImportJob) -> None:
+    """E7: any terminal read settles the start's ``queued`` #44 row (idempotent)."""
+    state = job_state(JobKind.IMPORT, job.status)
+    if state.terminal and job.job_id:
+        settle_job(job.job_id, failed=state.failed, error_code=settle_error_code(job.error))
+
+
+def _ready_story(request: HttpRequest, client: EngineClient, story_id: str) -> Story | None:
+    """The new story, read once on a ``ready`` render (the omniscient default the story page
+    uses); ``None`` when the read fails (logged): the link then reads the id."""
+    try:
+        return client.get_story(story_id)
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        return None
+
+
+def _progress(job: ImportJob) -> dict[str, Any] | None:
+    """E7's progress for ``job_state``: the job's counts with its stage, only while a stage
+    shows (a ``queued`` or missing stage reads plain "Importing", the bar indeterminate)."""
+    if not shows_stage(job.status, job.stage):
+        return None
+    raw = job.progress if isinstance(job.progress, Mapping) else {}
+    return {**raw, "stage": job.stage}
+
+
+def import_job_block(
+    request: HttpRequest, client: EngineClient, job_id: str, job: ImportJob
+) -> dict[str, Any]:
+    """The polled block's context for ``job`` (E7's import kind, every 2 s): the status, the
+    stage line, and once it ends the ready link and notes or the error, and the report."""
+    urls = _job_urls(job_id)
+    block = job_poll_context(
+        JobKind.IMPORT,
+        job_id,
+        job.status,
+        poll_url=urls["poll_url"],
+        refresh_url=urls["refresh_url"],
+        body_template=JOB_BODY_TEMPLATE,
+        progress=_progress(job),
+    )
+    state = block["job"]
+    staged = shows_stage(job.status, job.stage)
+    ready = state.terminal and job.status == READY
+    story: Story | None = None
+    if ready and job.story_id:
+        story = _ready_story(request, client, job.story_id)
+    return {
+        **block,
+        "import_job": job,
+        "error": None,  # the import's error renders below, not in the generic block
+        "facts": (),
+        "stage_text": stage_text(job.stage) if staged else "",
+        "stage_count": stage_count_text(job.stage) if staged else "",
+        "ready": ready,
+        "ready_html": ready_html(job.story_id, story) if ready else "",
+        "notes": (
+            ready_notes(job.story_id, story, job.report, backfill_url(job.story_id or ""))
+            if ready
+            else []
+        ),
+        "no_story_text": NO_STORY_TEXT,
+        "failed_view": error_view(job.error) if state.terminal and state.failed else None,
+        "report": (
+            import_report_rows(job.report) if state.terminal and job.report is not None else None
+        ),
+        "try_again_url": page_url() if state.terminal and state.failed else "",
+        "try_again": TRY_AGAIN,
+    }
+
+
+def _empty_job_block(job_id: str, *, polling: bool, retrying: bool = False) -> dict[str, Any]:
+    urls = _job_urls(job_id)
+    return {
+        **poll_context(
+            poll_url=urls["poll_url"],
+            refresh_url=urls["refresh_url"],
+            body_template=JOB_BODY_TEMPLATE,
+            polling=polling,
+            retrying=retrying,
+            trigger=POLL_TRIGGER,
+        ),
+        "import_job": None,
+    }
+
+
+def _is_404(exc: EngineClientError) -> bool:
+    return isinstance(exc, EngineError) and exc.http_status == 404
+
+
+def _job_partial(request: HttpRequest, job_id: str) -> HttpResponse:
+    """E7's partial failure order: held, then not found, then ``poll_failure`` unchanged."""
+    client = engine_client_for(request)
+    try:
+        job = client.import_status(job_id)
+    except EngineClientError as exc:
+        if is_held(exc):
+            log_engine_error(request, exc)
+            held = {
+                "held": True,
+                "held_text": held_text(exc.retry_after),
+                "retry_url": job_page_url(job_id),
+                "ledger_url": _ledger_url(),
+                "delete_url": "",
+            }
+            return render(
+                request, POLL_TEMPLATE, {**_empty_job_block(job_id, polling=False), **held}
+            )
+        if _is_404(exc):
+            log_engine_error(request, exc)
+            context = {**_empty_job_block(job_id, polling=False), "not_found": JOB_NOT_FOUND_TEXT}
+            return render(request, POLL_TEMPLATE, context)
+        failure = poll_failure(request, exc)
+        if failure.retry:
+            return render(
+                request, POLL_TEMPLATE, _empty_job_block(job_id, polling=True, retrying=True)
+            )
+        context = {**_empty_job_block(job_id, polling=False), "poll_panel": failure.panel}
+        return render(request, POLL_TEMPLATE, context)
+    settle_import(job)
+    return render(request, POLL_TEMPLATE, import_job_block(request, client, job_id, job))
+
+
+@require_safe
+def import_job(request: HttpRequest, job_id: str) -> HttpResponse:
+    """``engine:import-job`` (``/engine/import/<ulid:job_id>/``, #321): one ``import_status``
+    read per render, framed by ``engine_page`` with "Import a bundle" current; ``?partial=1``
+    answers only the poll block. A 404 is :data:`JOB_NOT_FOUND_TEXT` (404 inside the frame; 200
+    with no trigger on the partial); a 503 ``erasure_pending`` is the frame's held fragment; any
+    other failed read of the full page is #43's panel inside the frame."""
+    if request.GET.get(PARTIAL_PARAM) == "1":
+        return _job_partial(request, job_id)
+    missing: list[bool] = []
+
+    def build(ctx: EnginePageContext) -> Mapping[str, Any]:
+        try:
+            job = ctx.client.import_status(job_id)
+        except EngineClientError as exc:
+            if not _is_404(exc):
+                raise
+            log_engine_error(ctx.request, exc)
+            missing.append(True)
+            return {"not_found": JOB_NOT_FOUND_TEXT, "job_id": job_id}
+        settle_import(job)
+        return import_job_block(ctx.request, ctx.client, job_id, job)
+
+    response = engine_page(request, JOB_TEMPLATE, build, current=CURRENT, label=job_label(job_id))
+    if missing and response.status_code == 200:
+        response.status_code = 404
+    return response
