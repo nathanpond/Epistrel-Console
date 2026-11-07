@@ -3857,3 +3857,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The live check was query-shape only: on `n8-291-smoke` (127.0.0.1:18000), `GET /stories/{id}/outbox?viewpoint=omniscient[&status&provider&after_id]&limit=50` answered 200 `{rows: [], next_after: null}`, and without `viewpoint` it answered 422 `viewpoint_unresolved`. No live pytest was added (the AC asks for none). The stack is left running.
   **Why:** It confirms the client's query is accepted by the edge. Cost if wrong: none.
   **Issue:** #325
+- **Decision:** #329's snapshot check lets `visibility` be a string **or `null`** (the story's Discretion says "`visibility` and `unit` are `str`", but also that a missing/null visibility snapshots as `null`).
+  **Why:** a strict `str` check would make a stored definition without a visibility fail its own snapshot forever (SNAPSHOT_INVALID on every save). Cost if wrong: nil; a tampered `null` only diffs against the select's first choice, as the Discretion accepts.
+  **Issue:** #329
+- **Decision:** `StateDefinition.config_revision` stays typed `int | None` (#292's model). A non-int one fails the typed read (#43's panel, no form) rather than reading as null; the page's own helpers (`last_changed_text`, `sign_definition_snapshot`) still treat anything but an int as null, and are tested directly.
+  **Why:** loosening #292's model to `Any` to honour an Engine body that breaks its own schema trades typing for a case that can't happen. Cost if wrong: such a body shows the read panel instead of "Unchanged since it was declared".
+  **Issue:** #329
+- **Decision:** the normalisation (`console.forms.states.definition_members`) is one function used for both the snapshot and the cleaned form, so pre-fill, diff base and the form side can't drift. A typed `null` key in a box is stripped before the diff, so `{"max": null}` on a stored `max` is a removal (`{"max": null}` sent) and on an absent key is nothing.
+  **Why:** the story's "normalised the same way" and "Null-valued keys typed into a box are stripped recursively". Cost if wrong: nil (tested both ways).
+  **Issue:** #329
+- **Decision:** the fixture variant (`definition_body` in `tests/inspect/test_state_definition.py`) overrides #292's `m7/state_definition.json` inline: `created_by` "author" (the fixture's "console:nate" isn't one of the Engine's `StateCreatedBy` values genesis/consumer/author/proposal), visibility "player_visible" (the fixture's "public" is unknown; kept as the unknown-visibility variant), unit "gold" and the Demo's constraints. Not filed: the fixture's `definition` is free-form and #292's own tests don't depend on these values.
+  **Why:** the story's Demo and refusal tests need a realistic `gold`. Cost if wrong: nil.
+  **Issue:** #329
+- **Decision:** `console/world.py`'s E17 #680 line now says `STATE_DEFINITION_REQUEST` "stays for history; no page cites it since #329" (the constant stays in `console/world.py`, E17's; only `console/states.py`'s re-export goes). D8's cite line reads "#265/#329, #246, #241 and #247" (#243 dropped: the clock no longer compares).
+  **Why:** the old line said "Until #329 lands"; the amended D8 drops the clock's comparison. Cost if wrong: docstring only.
+  **Issue:** #329
+- **Decision:** #329 adds tests beyond the plan: odd `config_revision` (bool/str/float), thousands in "Last changed", "Created by —", typed-null removal, add-a-key, fill-an-empty-member, stored-null stripping, odd expiry, Silent required, the read's error panel, "the patch is diffed against the rendered snapshot" (another writer's Unit survives) and "the base is the rendered snapshot's, not the POST's re-read". Pre-fix run: `test_nothing_changed_against_rendered_revision` against the old view fails with `At index 0 diff: 'Unit: saved' != 'The Engine found nothing to change'`. Live probe on `n8-291-smoke` (127.0.0.1:18000, scratch test, not committed): after declaration `config_revision` is null and `created_by` "consumer"; a constraints write answers 2 and the read then says 2; repeating it answers 2 (nothing changed); `{"constraints": null}` answers 3 and reads `{}`.
+  **Why:** pins the Discretion's edge rules and D8's base semantics against the real Engine. Cost: a few cheap tests.
+  **Issue:** #329

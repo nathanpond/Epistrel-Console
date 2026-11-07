@@ -1,17 +1,18 @@
-"""Change a State's definition (#265): ``inspect:state-definition`` and ``PATCH
-/stories/{id}/states/{name}/definition``.
+"""Change a State's definition (#265, rebuilt on the definition read by #329):
+``inspect:state-definition`` and ``PATCH /stories/{id}/states/{name}/definition``.
 
 Runs against the real urlconf on the schema-validating fake Engine, under Structured v3 (#239)
-and #232's M6 cast. The page reads ``gold`` (``m6/states.json`` wrapped by
-:func:`tests.inspect.helpers.state_view`: number, unit "gold", player visible); a save answers
-``m6/state_definition_written.json`` (``config_revision`` 6). Each test posts back what the
-rendered form holds (:func:`form_data`, scraped from the HTML), with its changes. Refusal bodies
-are built inline (D16)."""
+and #232's M6 cast. The page reads ``gold`` from #292's ``m7/state_definition.json``, with the
+inline variant of :func:`definition_body` (number, unit "gold", player visible, created by the
+author, constraints ``{"max": 500, "non_negative": true}``, ``config_revision`` 30); a save answers
+#265's ``m6/state_definition_written.json`` (``config_revision`` 6). Each test posts back what the
+rendered form holds (:func:`form_data`, scraped from the HTML), with its changes. Other variants
+and refusal bodies are built inline (D16)."""
 
+import copy
 import json
 import re
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
@@ -19,43 +20,47 @@ from typing import Any
 import httpx
 import pytest
 from django.contrib.messages import get_messages
+from django.core import signing
+from django.db import connection
 from django.http import HttpRequest
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils.html import escape
 
+import console.states
 from console.engine.client import MUTATION_TIMEOUT_S, EngineClient
 from console.engine_access import engine_client_for
 from console.forms.states import (
     MINUTES_INVALID,
     MUTABLE_MEMBERS,
     NOTHING_CHANGED,
-    RESET_OR_EDIT,
+    PATCH_BOX_HELP,
     RULES_KIND,
     SNAPSHOT_INVALID,
+    read_definition_snapshot,
     sign_definition_snapshot,
 )
 from console.held import held_text
 from console.models import EngineOperation
-from console.states import STATE_DEFINITION_REQUEST
+from console.states import UNCHANGED_SINCE_DECLARED, last_changed_text
 from console.views import inspect as views
-from console.views import inspect_state_definition
-from console.views.inspect_state_definition import AUTHORIZATION_REDACTED, UNREADABLE_SAVED
+from console.views import inspect_clock, inspect_state_definition
+from console.views.inspect_state_definition import UNREADABLE_SAVED
 from console.world import ENGINE_NOTHING_CHANGED
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
-from tests.inspect.helpers import EFFECTIVE, STORY_PATH, lite_m6, state_view, structured_v3
+from tests.inspect.helpers import EFFECTIVE, STORY_PATH, full_v4, lite_m6, state_view, structured_v3
 from tests.play.helpers import error_json
 
 pytestmark = pytest.mark.django_db
 
 STORY = "01JM6ST0000000000000000001"
-OTHER_STORY = "01JM6ST0000000000000000002"
-ONE_STATE = "/stories/{story_id}/states/{name}"
 DEFINITION = "/stories/{story_id}/states/{name}/definition"
 GOLD_PATH = f"/stories/{STORY}/states/gold"
-PATCH_PATH = f"{GOLD_PATH}/definition"
+DEFINITION_PATH = f"{GOLD_PATH}/definition"
 NOT_FOUND = "Not found (it may have been deleted or truncated)"
-WRITES = ("PUT", "POST", "PATCH", "DELETE")
+V1_SALT = "console.states.definition.snapshot"
+GOLD_CONSTRAINTS = {"max": 500, "non_negative": True}
 
 
 def url(name: str = "gold") -> str:
@@ -63,6 +68,28 @@ def url(name: str = "gold") -> str:
 
 
 STATE_URL = f"/stories/{STORY}/inspect/world/state/gold/"
+
+
+def definition_body(*, config_revision: Any = 30, **members: Any) -> dict[str, Any]:
+    """#292's ``m7/state_definition.json`` with this suite's ``gold`` (see the module
+    docstring), then ``members`` over its ``definition`` (``None`` removes one)."""
+    body: dict[str, Any] = copy.deepcopy(engine_fixture("m7/state_definition"))
+    body["created_by"] = "author"
+    body["config_revision"] = config_revision
+    definition = body["definition"]
+    definition.update(visibility="player_visible", unit="gold", constraints=dict(GOLD_CONSTRAINTS))
+    for member, value in members.items():
+        if value is None:
+            definition.pop(member, None)
+        else:
+            definition[member] = value
+    return body
+
+
+def serve(engine: FakeEngine, body: dict[str, Any]) -> None:
+    """Serve ``body`` unvalidated (``definition`` is a free-form object; an odd
+    ``config_revision`` would fail the schema)."""
+    engine.side_effect("GET", DEFINITION, lambda request: httpx.Response(200, json=body))
 
 
 @pytest.fixture
@@ -77,7 +104,7 @@ def engine(monkeypatch: pytest.MonkeyPatch, operator: Any) -> Iterator[FakeEngin
     monkeypatch.setattr(views, "engine_client_for", client_with_fake)
     fake.respond("GET", EFFECTIVE, 200, json=structured_v3())
     fake.respond("GET", STORY_PATH, 200, json=engine_fixture("m6/story"))
-    fake.respond("GET", ONE_STATE, 200, json=state_view("gold"))
+    fake.respond("GET", DEFINITION, 200, json=definition_body())
     fake.respond("PATCH", DEFINITION, 200, json=engine_fixture("m6/state_definition_written"))
     with override_settings(ENGINE_URL="http://engine.test", ROOT_URLCONF="epistrel_console.urls"):
         yield fake
@@ -198,137 +225,396 @@ def change(client: Client, engine: FakeEngine, **changes: str) -> Any:
     return sent(engine)
 
 
-# --- the patch --------------------------------------------------------------------------------
+def definition_reads(engine: FakeEngine) -> list[Any]:
+    return [r for r in engine.requests if r.method == "GET" and r.url.path == DEFINITION_PATH]
 
 
-def test_untouched_form_zero_calls(operator_client: Client, engine: FakeEngine) -> None:
-    html = page(post(operator_client, form_data(get(operator_client))))
+def panel(html: str) -> str:
+    found = re.search(r'<section class="stored-definition">(.*?)</section>', html, re.S)
+    assert found is not None
+    return found.group(1)
+
+
+def unchanged_from_read(client: Client, engine: FakeEngine, data: dict[str, str]) -> None:
+    html = page(post(client, data))
     assert NOTHING_CHANGED in html
     assert 'class="state-definition-form"' in html
     assert not patches(engine)
 
 
-def test_page_prefills_only_visibility_and_unit(
-    operator_client: Client, engine: FakeEngine
+# --- the read and the stored definition --------------------------------------------------
+
+
+@pytest.mark.parametrize("config", [structured_v3, full_v4])
+def test_reads_the_definition_once(
+    operator_client: Client, engine: FakeEngine, config: Any
 ) -> None:
-    data = form_data(get(operator_client))
-    assert data["visibility"] == "player_visible"
-    assert data["unit"] == "gold"
-    for blank in ("constraints", "rules", "authorization", "transfer", "aliases"):
-        assert data[blank] == ""
-    assert data["reservation_expiry_minutes"] == ""
-    assert data["silent"] == ""
-    assert not any(name.endswith("_reset") for name in data)
+    engine.respond("GET", EFFECTIVE, 200, json=config())
+    with CaptureQueriesContext(connection) as queries:
+        html = get(operator_client)
+        assert len(definition_reads(engine)) == 1
+        post(operator_client, form_data(html, unit="coins"))
+    assert len(definition_reads(engine)) == 2
+    assert all(r.url.params["viewpoint"] == "omniscient" for r in definition_reads(engine))
+    assert [(r.method, r.url.path) for r in engine.requests[:3]] == [
+        ("GET", f"/stories/{STORY}/effective-config"),
+        ("GET", f"/stories/{STORY}"),
+        ("GET", DEFINITION_PATH),
+    ]
+    # Complement: no State read and no local #44 definition query (the save's own #44 write
+    # is the only SQL on that table).
+    assert not [r for r in engine.requests if r.url.path == GOLD_PATH]
+    table = EngineOperation._meta.db_table
+    reads = [q["sql"] for q in queries.captured_queries if table in q["sql"]]
+    assert not [sql for sql in reads if sql.lstrip().upper().startswith("SELECT")]
+    assert not hasattr(console.states, "last_recorded_definition")
 
 
-def test_unit_changed_sends_unit_only(operator_client: Client, engine: FakeEngine) -> None:
-    assert change(operator_client, engine, unit="coins") == {"unit": "coins"}
+def test_stored_definition_panel(operator_client: Client, engine: FakeEngine) -> None:
+    shown = panel(get(operator_client))
+    assert "<h4>Stored definition</h4>" in shown
+    assert '<dd class="member-type">Number</dd>' in shown
+    assert '<dd class="member-scope">Story</dd>' in shown
+    assert '<dd class="member-owner">Story</dd>' in shown
+    assert '<dd class="member-initial_value">120 gold</dd>' in shown
+    assert 'class="member-provider_id"' in shown
+    assert 'class="member-created_by"' not in shown  # shown once, on the line below
+    assert '<p class="definition-created-by">Created by Author</p>' in shown
+    assert (
+        '<p class="definition-last-changed">Last changed at configuration revision 30</p>'
+    ) in shown
+    serve(engine, definition_body(config_revision=None))
+    assert '<p class="definition-last-changed">Unchanged since it was declared</p>' in panel(
+        get(operator_client)
+    )
 
 
-def test_unit_cleared_sends_null(operator_client: Client, engine: FakeEngine) -> None:
-    assert change(operator_client, engine, unit="") == {"unit": None}
+@pytest.mark.parametrize("odd", [True, "7", 1.5])
+def test_odd_config_revision(operator_client: Client, engine: FakeEngine, odd: Any) -> None:
+    # The typed read refuses it (#43's panel, no form); the page's own helpers read anything
+    # but an int as null.
+    serve(engine, definition_body(config_revision=odd))
+    html = get(operator_client)
+    assert "engine-error" in html
+    assert 'class="state-definition-form"' not in html
+    assert last_changed_text(odd) == UNCHANGED_SINCE_DECLARED
+    signed = sign_definition_snapshot("gold", definition_body()["definition"], odd)
+    snapshot = read_definition_snapshot(signed, "gold")
+    assert snapshot is not None
+    assert snapshot["config_revision"] is None
 
 
-def test_whitespace_unit_is_blank(operator_client: Client, engine: FakeEngine) -> None:
-    assert change(operator_client, engine, unit="   ") == {"unit": None}
+def test_last_changed_thousands(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(config_revision=1200))
+    assert "Last changed at configuration revision 1,200" in panel(get(operator_client))
 
 
-def test_unitless_state_blank_unit_sends_nothing(
-    operator_client: Client, engine: FakeEngine
-) -> None:
-    engine.respond("GET", ONE_STATE, 200, json=state_view("door_open"))
-    html = page(post(operator_client, form_data(get(operator_client, "door_open")), "door_open"))
-    assert NOTHING_CHANGED in html
+def test_missing_created_by_reads_dash(operator_client: Client, engine: FakeEngine) -> None:
+    body = definition_body()
+    body["created_by"] = ""
+    serve(engine, body)
+    assert '<p class="definition-created-by">Created by —</p>' in panel(get(operator_client))
+
+
+def test_no_unreadable_notice_or_last_recorded(operator_client: Client, engine: FakeEngine) -> None:
+    html = get(operator_client)
+    assert "definition-unreadable" not in html
+    assert "recorded-definition" not in html
+    assert "#680" not in html
+    assert "state-identity" not in html
+    assert "Change gold&#x27;s definition</h3>" in html
+    assert "turns checked under the old ones are re-checked" in html
+    for gone in (
+        "DEFINITION_UNREADABLE",
+        "definition_unreadable_html",
+        "STATE_DEFINITION_REQUEST",
+        "STATE_DEFINITION_REQUEST_LABEL",
+        "RecordedDefinition",
+        "NO_RECORDED_DEFINITION",
+        "RECORDED_HEADING",
+        "DEFINITION_KINDS",
+        "no_recorded_definition_text",
+    ):
+        assert not hasattr(console.states, gone), gone
+    assert not hasattr(inspect_state_definition, "AUTHORIZATION_REDACTED")
+
+
+def test_unknown_state_not_found_page(operator_client: Client, engine: FakeEngine) -> None:
+    engine.respond("GET", DEFINITION, 404, json=error_json("not_found", state="silver"))
+    for response in (
+        operator_client.get(url("silver")),
+        operator_client.post(url("silver"), {"unit": "x", "visibility": "hidden"}),
+    ):
+        html = page(response)
+        assert NOT_FOUND in html
+        assert 'class="state-definition-form"' not in html
+        assert "stored-definition" not in html
     assert not patches(engine)
 
 
-def test_visibility_changed(operator_client: Client, engine: FakeEngine) -> None:
-    assert change(operator_client, engine, visibility="hidden") == {"visibility": "hidden"}
+def test_read_error_panel(operator_client: Client, engine: FakeEngine) -> None:
+    engine.fail("GET", DEFINITION, httpx.ConnectError("down"))
+    html = get(operator_client)
+    assert "engine-error" in html
+    assert 'class="state-definition-form"' not in html
 
 
-def test_unknown_read_visibility_kept_selected(operator_client: Client, engine: FakeEngine) -> None:
-    # An open enum (D15) the recorded schema doesn't list yet: served unvalidated.
-    body = state_view("gold", visibility="secret_ish")
-    engine.side_effect("GET", ONE_STATE, lambda request: httpx.Response(200, json=body))
+def test_invalid_name_django_404(operator_client: Client, engine: FakeEngine) -> None:
+    for bad in ("9gold", "go-ld", "_gold"):
+        assert operator_client.get(url(bad)).status_code == 404
+    assert not engine.requests
+
+
+@pytest.mark.parametrize("config", ["lite", "off"])
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_gate_closed_zero_calls(
+    operator_client: Client, engine: FakeEngine, config: str, method: str
+) -> None:
+    data = form_data(get(operator_client), unit="coins")
+    engine.requests.clear()
+    body = lite_m6() if config == "lite" else structured_v3(states__level="off")
+    engine.respond("GET", EFFECTIVE, 200, json=body)
+    if method == "get":
+        html = get(operator_client)
+        assert 'class="state-definition-form"' not in html
+    else:
+        html = page(post(operator_client, data))
+        assert "states.level" in refusal(html)
+        assert f'<a href="/stories/{STORY}/config/">Config</a>' in refusal(html)
+        kept = form_data(html)
+        assert kept["unit"] == "coins"
+        assert kept["constraints"] == data["constraints"]
+        assert kept["idempotency_key"] == data["idempotency_key"]
+        assert kept["snapshot"] == data["snapshot"]
+    assert "states.level" in html
+    assert "Change gold&#x27;s definition" in html
+    assert not [r for r in engine.requests if r.url.path.startswith(GOLD_PATH)]
+    assert not patches(engine)
+
+
+# --- pre-fill ---------------------------------------------------------------------------------
+
+
+STORED = {
+    "aliases": ["coin", "doubloon"],
+    "silent": True,
+    "rules": {"kind": "derived", "expr": "a + b"},
+    "authorization": {"sources": ["rule"]},
+    "transfer": {"to": "Bob", "nested": {"a": 1}},
+    "reservation_expiry_minutes": 15,
+}
+
+
+def test_every_member_prefilled(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(**STORED))
+    data = form_data(get(operator_client))
+    assert data["visibility"] == "player_visible"
+    assert data["unit"] == "gold"
+    assert data["aliases"] == "coin\ndoubloon"
+    assert data["silent"] == "true"
+    assert data["reservation_expiry_minutes"] == "15"
+    assert json.loads(data["constraints"]) == GOLD_CONSTRAINTS
+    assert data["constraints"] == json.dumps(GOLD_CONSTRAINTS, indent=2)  # stored order
+    for member in ("rules", "authorization", "transfer"):
+        assert data[member] == json.dumps(STORED[member], indent=2, ensure_ascii=False)
+    # Complement: the restored form sends nothing.
+    unchanged_from_read(operator_client, engine, data)
+
+
+def test_box_help_says_clear_resets(operator_client: Client, engine: FakeEngine) -> None:
+    html = get(operator_client)
+    help_html = "Edit the stored value; clear the box to reset it to the default (<code>{}</code>)"
+    assert PATCH_BOX_HELP == (
+        "Edit the stored value; clear the box to reset it to the default (`{}`)"
+    )
+    for member in ("constraints", "rules", "authorization", "transfer"):
+        assert help_html in field(html, member), member
+    assert "One per line; clear to remove them all" in field(html, "aliases")
+    assert "Clear to remove it" in field(html, "reservation_expiry_minutes")
+    assert "Blank: no unit" in field(html, "unit")
+    assert "<small" not in field(html, "silent")
+    assert "changes Max only" not in html  # CONSTRAINTS_EXAMPLE is gone
+
+
+def test_defaults_render_blank(operator_client: Client, engine: FakeEngine) -> None:
+    serve(
+        engine,
+        definition_body(
+            unit="",
+            constraints={},
+            rules={},
+            authorization=None,
+            transfer={"gone": None},
+            aliases=[],
+            silent=None,
+            reservation_expiry_minutes=None,
+        ),
+    )
+    data = form_data(get(operator_client))
+    for member in ("unit", "aliases", "constraints", "rules", "authorization", "transfer"):
+        assert data[member] == "", member
+    assert data["reservation_expiry_minutes"] == ""
+    assert data["silent"] == "false"
+    unchanged_from_read(operator_client, engine, data)
+
+
+def test_no_reset_ticks(operator_client: Client, engine: FakeEngine) -> None:
+    html = get(operator_client)
+    data = form_data(html)
+    assert not any(name.endswith("_reset") for name in data)
+    assert 'type="checkbox"' not in html
+    assert "Either reset it or edit it" not in html
+    assert options(html, "silent") == [("true", "Yes", False), ("false", "No", True)]
+    assert "Leave as is" not in html
+
+
+def test_silent_is_required(operator_client: Client, engine: FakeEngine) -> None:
+    data = form_data(get(operator_client))
+    del data["silent"]
+    html = page(post(operator_client, data))
+    assert "This field is required." in field(html, "silent")
+    assert not patches(engine)
+
+
+def test_unknown_visibility_kept_selected(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(visibility="public"))
     html = get(operator_client)
     assert options(html, "visibility") == [
         ("player_visible", "Player visible", False),
         ("hidden", "Hidden", False),
-        ("secret_ish", "Secret ish", True),
+        ("public", "Public", True),
     ]
-    assert NOTHING_CHANGED in page(post(operator_client, form_data(html)))
+    unchanged_from_read(operator_client, engine, form_data(html))
+
+
+@pytest.mark.parametrize(("member", "stored"), [("constraints", [1, 2]), ("rules", "derived")])
+def test_non_dict_stored_member_errors_untouched(
+    operator_client: Client, engine: FakeEngine, member: str, stored: Any
+) -> None:
+    serve(engine, definition_body(**{member: stored}))
+    data = form_data(get(operator_client))
+    assert data[member] == json.dumps(stored, indent=2)
+    html = page(post(operator_client, data))
+    assert "Enter a JSON object" in field(html, member)
     assert not patches(engine)
+    # Clearing the box is the way on: it sends the reset.
+    response = post(operator_client, {**data, member: ""})
+    assert response.status_code == 302
+    assert sent(engine) == {member: None}
 
 
-def test_constraints_box_sent_as_member_patch(operator_client: Client, engine: FakeEngine) -> None:
-    body = change(operator_client, engine, constraints='{"max": 500}')
-    assert body == {"constraints": {"max": 500}}
-    # Complement: no other member is sent.
-    assert set(body) == {"constraints"}
+def test_odd_stored_scalars_prefill_blank(operator_client: Client, engine: FakeEngine) -> None:
+    serve(
+        engine,
+        definition_body(
+            unit=7, silent="yes", reservation_expiry_minutes=True, aliases=["coin", 3, " "]
+        ),
+    )
+    html = get(operator_client)
+    data = form_data(html)
+    assert data["unit"] == ""
+    assert data["silent"] == "false"
+    assert data["reservation_expiry_minutes"] == ""
+    assert data["aliases"] == "coin"
+    # The raw values still show in the Stored definition panel.
+    assert '<dd class="member-unit">7</dd>' in panel(html)
+    unchanged_from_read(operator_client, engine, data)
 
 
-def test_nested_null_sent_as_given(operator_client: Client, engine: FakeEngine) -> None:
-    assert change(operator_client, engine, constraints='{"max": null}') == {
+@pytest.mark.parametrize("expiry", [-5, 2.5, "15"])
+def test_odd_expiry_prefills_blank(
+    operator_client: Client, engine: FakeEngine, expiry: Any
+) -> None:
+    serve(engine, definition_body(reservation_expiry_minutes=expiry))
+    data = form_data(get(operator_client))
+    assert data["reservation_expiry_minutes"] == ""
+    unchanged_from_read(operator_client, engine, data)
+
+
+def test_stored_null_keys_are_stripped(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(constraints={"max": 500, "min": None, "x": {"y": None}}))
+    data = form_data(get(operator_client))
+    assert json.loads(data["constraints"]) == {"max": 500, "x": {}}
+    unchanged_from_read(operator_client, engine, data)
+
+
+# --- the patch --------------------------------------------------------------------------------
+
+
+def test_untouched_zero_calls(operator_client: Client, engine: FakeEngine) -> None:
+    unchanged_from_read(operator_client, engine, form_data(get(operator_client)))
+
+
+def test_restored_values_zero_calls(operator_client: Client, engine: FakeEngine) -> None:
+    data = form_data(
+        get(operator_client),
+        unit="  gold ",
+        constraints='{"non_negative": true,   "max": 500.0}',
+        rules="{}",
+        aliases="\n\n",
+        silent="false",
+    )
+    unchanged_from_read(operator_client, engine, data)
+
+
+def test_edit_one_key_sends_that_key(operator_client: Client, engine: FakeEngine) -> None:
+    body = change(operator_client, engine, constraints='{"max": 600, "non_negative": true}')
+    assert body == {"constraints": {"max": 600}}
+
+
+def test_remove_a_key_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    assert change(operator_client, engine, constraints='{"max": 500}') == {
+        "constraints": {"non_negative": None}
+    }
+
+
+def test_typed_null_key_is_a_removal(operator_client: Client, engine: FakeEngine) -> None:
+    # A typed null is stripped before the diff: the key is gone, so it is sent as a removal.
+    assert change(operator_client, engine, constraints='{"max": null, "non_negative": true}') == {
         "constraints": {"max": None}
     }
 
 
-def test_empty_object_box_is_blank(operator_client: Client, engine: FakeEngine) -> None:
-    html = page(post(operator_client, form_data(get(operator_client), rules="{}")))
-    assert NOTHING_CHANGED in html
-    assert not patches(engine)
+def test_add_a_key(operator_client: Client, engine: FakeEngine) -> None:
+    body = change(
+        operator_client, engine, constraints='{"max": 500, "non_negative": true, "min": 1}'
+    )
+    assert body == {"constraints": {"min": 1}}
 
 
-@pytest.mark.parametrize(
-    "member",
-    ["constraints", "rules", "authorization", "transfer", "aliases", "reservation_expiry_minutes"],
-)
-def test_reset_sends_null(operator_client: Client, engine: FakeEngine, member: str) -> None:
-    assert change(operator_client, engine, **{f"{member}_reset": "on"}) == {member: None}
-
-
-@pytest.mark.parametrize(
-    ("member", "typed"),
-    [
-        ("constraints", '{"max": 1}'),
-        ("rules", '{"kind": "derived"}'),
-        ("authorization", '{"sources": ["rule"]}'),
-        ("transfer", '{"x": 1}'),
-        ("aliases", "coin"),
-        ("reservation_expiry_minutes", "5"),
-    ],
-)
-def test_reset_and_edit_zero_calls(
-    operator_client: Client, engine: FakeEngine, member: str, typed: str
-) -> None:
-    data = form_data(get(operator_client), **{member: typed, f"{member}_reset": "on"})
-    html = page(post(operator_client, data))
-    assert escape(RESET_OR_EDIT) in field(html, member)
-    assert not patches(engine)
-
-
-def test_aliases_replace_whole(operator_client: Client, engine: FakeEngine) -> None:
-    body = change(operator_client, engine, aliases="  coin \n\ndoubloon\ncoin\n")
-    assert body == {"aliases": ["coin", "doubloon", "coin"]}
-
-
-def test_silent_leave_as_is_sends_nothing(operator_client: Client, engine: FakeEngine) -> None:
-    body = change(operator_client, engine, silent="", unit="coins")
-    assert "silent" not in body
-
-
-def test_silent_false_is_sent(operator_client: Client, engine: FakeEngine) -> None:
-    assert change(operator_client, engine, silent="false") == {"silent": False}
+def test_clear_box_resets_member(operator_client: Client, engine: FakeEngine) -> None:
+    assert change(operator_client, engine, constraints="") == {"constraints": None}
     engine.requests.clear()
+    assert change(operator_client, engine, constraints="{}") == {"constraints": None}
+
+
+def test_fill_an_empty_member(operator_client: Client, engine: FakeEngine) -> None:
+    assert change(operator_client, engine, transfer='{"to": "Bob"}') == {"transfer": {"to": "Bob"}}
+
+
+def test_aliases_replaced_whole(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(aliases=["coin", "doubloon"]))
+    body = change(operator_client, engine, aliases="  coin \n\nducat\ncoin\n")
+    assert body == {"aliases": ["coin", "ducat", "coin"]}
+
+
+def test_clear_aliases_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(aliases=["coin", "doubloon"]))
+    assert change(operator_client, engine, aliases="") == {"aliases": None}
+
+
+def test_silent_change(operator_client: Client, engine: FakeEngine) -> None:
     assert change(operator_client, engine, silent="true") == {"silent": True}
+    serve(engine, definition_body(silent=True))
+    engine.requests.clear()
+    assert change(operator_client, engine, silent="false") == {"silent": False}
 
 
-def test_silent_labels(operator_client: Client, engine: FakeEngine) -> None:
-    assert options(get(operator_client), "silent") == [
-        ("", "Leave as is", True),
-        ("true", "Yes", False),
-        ("false", "No", False),
-    ]
+def test_expiry_cleared_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(reservation_expiry_minutes=15))
+    assert change(operator_client, engine, reservation_expiry_minutes="") == {
+        "reservation_expiry_minutes": None
+    }
 
 
 @pytest.mark.parametrize(("typed", "number"), [("007", 7), ("0", 0), ("1440", 1440)])
@@ -349,15 +635,23 @@ def test_expiry_invalid_zero_calls(operator_client: Client, engine: FakeEngine, 
     assert not patches(engine)
 
 
-def test_no_immutable_member_ever_sent(operator_client: Client, engine: FakeEngine) -> None:
+def test_unit_and_visibility(operator_client: Client, engine: FakeEngine) -> None:
+    assert change(operator_client, engine, unit="coins") == {"unit": "coins"}
+    engine.requests.clear()
+    assert change(operator_client, engine, unit="  ") == {"unit": None}
+    engine.requests.clear()
+    assert change(operator_client, engine, visibility="hidden") == {"visibility": "hidden"}
+
+
+def test_only_mutable_members_ever_sent(operator_client: Client, engine: FakeEngine) -> None:
     cases: list[dict[str, str]] = [
         {"unit": "coins"},
         {"visibility": "hidden"},
         {"aliases": "coin"},
         {"silent": "true"},
-        {"constraints": '{"max": 5}', "rules_reset": "on"},
+        {"constraints": '{"max": 5}', "rules": '{"kind": "derived"}'},
         {"authorization": '{"sources": ["consumer"]}', "transfer": '{"to": "x"}'},
-        {"reservation_expiry_minutes": "3", "aliases_reset": "on"},
+        {"reservation_expiry_minutes": "3", "constraints": ""},
         # Posted extras named after immutable members are never sent.
         {"unit": "x", "scope": "character", "type": "text", "name": "silver", "owner": "external"},
     ]
@@ -369,47 +663,6 @@ def test_no_immutable_member_ever_sent(operator_client: Client, engine: FakeEngi
         assert body
         assert set(body) <= set(MUTABLE_MEMBERS)
     assert len(MUTABLE_MEMBERS) == 9
-
-
-def test_no_expected_revision_header(operator_client: Client, engine: FakeEngine) -> None:
-    change(operator_client, engine, unit="coins")
-    (request,) = patches(engine)
-    assert "X-Epistrel-Expected-Revision" not in request.headers
-    assert request.headers["Idempotency-Key"]
-
-
-def test_patch_timeout_is_mutation_timeout(operator_client: Client, engine: FakeEngine) -> None:
-    change(operator_client, engine, unit="coins")
-    (request,) = patches(engine)
-    assert request.extensions["timeout"]["read"] == MUTATION_TIMEOUT_S
-
-
-def test_page_key_is_sent(operator_client: Client, engine: FakeEngine) -> None:
-    data = form_data(get(operator_client), unit="coins")
-    post(operator_client, data)
-    (request,) = patches(engine)
-    assert request.headers["Idempotency-Key"] == data["idempotency_key"]
-
-
-@pytest.mark.parametrize(
-    "snapshot",
-    [
-        "tampered",
-        "",
-        sign_definition_snapshot("silver", "player_visible", "gold"),
-    ],
-)
-def test_tampered_snapshot_zero_calls(
-    operator_client: Client, engine: FakeEngine, snapshot: str
-) -> None:
-    data = form_data(get(operator_client), unit="coins", constraints="{bad", snapshot=snapshot)
-    html = page(post(operator_client, data))
-    assert escape(SNAPSHOT_INVALID) in html
-    assert "Enter valid JSON" not in html  # the snapshot alone: no field errors
-    assert not patches(engine)
-    kept = form_data(html)
-    assert kept["unit"] == "coins"
-    assert kept["idempotency_key"] == data["idempotency_key"]
 
 
 @pytest.mark.parametrize(
@@ -431,89 +684,83 @@ def test_bad_json_zero_calls(
     assert kept["idempotency_key"] == data["idempotency_key"]  # local invalid: the posted key
 
 
-# --- the gate and the read ------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("config", ["lite", "off"])
-@pytest.mark.parametrize("method", ["get", "post"])
-def test_gate_closed_zero_calls(
-    operator_client: Client, engine: FakeEngine, config: str, method: str
-) -> None:
+def test_no_expected_revision_header(operator_client: Client, engine: FakeEngine) -> None:
     data = form_data(get(operator_client), unit="coins")
-    engine.requests.clear()
-    body = lite_m6() if config == "lite" else structured_v3(states__level="off")
-    engine.respond("GET", EFFECTIVE, 200, json=body)
-    if method == "get":
-        html = get(operator_client)
-        assert 'class="state-definition-form"' not in html
-    else:
-        html = page(post(operator_client, data))
-        assert "states.level" in refusal(html)
-        assert f'<a href="/stories/{STORY}/config/">Config</a>' in refusal(html)
-        kept = form_data(html)
-        assert kept["unit"] == "coins"
-        assert kept["idempotency_key"] == data["idempotency_key"]
-        assert kept["snapshot"] == data["snapshot"]
-    assert "states.level" in html
-    assert "Change gold&#x27;s definition" in html
-    assert not [r for r in engine.requests if r.url.path == GOLD_PATH]
-    assert not patches(engine)
+    post(operator_client, data)
+    (request,) = patches(engine)
+    assert "X-Epistrel-Expected-Revision" not in request.headers
+    assert request.headers["Idempotency-Key"] == data["idempotency_key"]
+    assert request.extensions["timeout"]["read"] == MUTATION_TIMEOUT_S
 
 
-def test_reads_shell_then_one_omniscient_state(operator_client: Client, engine: FakeEngine) -> None:
-    get(operator_client)
-    assert [(r.method, r.url.path) for r in engine.requests] == [
-        ("GET", f"/stories/{STORY}/effective-config"),
-        ("GET", f"/stories/{STORY}"),
-        ("GET", GOLD_PATH),
-    ]
-    assert engine.requests[-1].url.params["viewpoint"] == "omniscient"
+def test_patch_diffs_against_the_rendered_snapshot(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    # Another writer changed Unit after the render: the POST re-reads, but an untouched Unit is
+    # never sent (save wins, R2-Q32).
+    data = form_data(get(operator_client), silent="true")
+    serve(engine, definition_body(unit="coins"))
+    post(operator_client, data)
+    assert sent(engine) == {"silent": True}
 
 
-def test_page_shows_identity_and_notice(operator_client: Client, engine: FakeEngine) -> None:
-    html = get(operator_client)
-    assert "Change gold&#x27;s definition</h3>" in html
-    identity = re.search(r'<dl class="state-identity">(.*?)</dl>', html, re.S)
-    assert identity is not None
-    assert identity.group(1) == (
-        "<dt>Type</dt><dd>Number</dd><dt>Scope</dt><dd>Story</dd><dt>Owner</dt><dd>Story</dd>"
+# --- the snapshot ----------------------------------------------------------------------------
+
+
+def test_v1_snapshot_rejected(operator_client: Client, engine: FakeEngine) -> None:
+    v1 = signing.dumps(
+        {"name": "gold", "visibility": "player_visible", "unit": "gold"}, salt=V1_SALT
     )
-    assert (
-        "The Engine serves no read of a State&#x27;s definition, so only Visibility and Unit "
-        "start from the State as it stands; leave the others blank to keep them "
-        f'(<a href="{STATE_DEFINITION_REQUEST}">Engine request (State definition read, '
-        "nathanpond/Epistrel#680)</a>)"
-    ) in html
-    assert STATE_DEFINITION_REQUEST == "https://github.com/nathanpond/Epistrel/issues/680"
-    assert "turns checked under the old ones are re-checked" in html
-    assert '<details class="recorded-definition">' in html  # closed
-
-
-def test_unknown_state_not_found_page(operator_client: Client, engine: FakeEngine) -> None:
-    engine.respond("GET", ONE_STATE, 404, json=error_json("not_found", state="silver"))
-    for response in (
-        operator_client.get(url("silver")),
-        operator_client.post(url("silver"), {"unit": "x", "visibility": "hidden"}),
-    ):
-        html = page(response)
-        assert NOT_FOUND in html
-        assert 'class="state-definition-form"' not in html
+    data = form_data(get(operator_client), unit="coins", snapshot=v1)
+    html = page(post(operator_client, data))
+    assert escape(SNAPSHOT_INVALID) in html
     assert not patches(engine)
 
 
-def test_invalid_name_django_404(operator_client: Client, engine: FakeEngine) -> None:
-    for bad in ("9gold", "go-ld", "_gold"):
-        assert operator_client.get(url(bad)).status_code == 404
-    assert not engine.requests
+def _signed(payload: Any) -> str:
+    return signing.dumps(payload, salt="console.states.definition.snapshot.v2", compress=True)
 
 
-# --- the outcome ----------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        "tampered",
+        "",
+        sign_definition_snapshot("silver", definition_body()["definition"], 30),
+        _signed({"name": "gold", "members": {}, "config_revision": 30, "x": 1}),
+        _signed({"name": "gold", "members": {"scope": "story"}, "config_revision": 30}),
+        _signed({"name": "gold", "members": {"unit": 7}, "config_revision": 30}),
+        _signed({"name": "gold", "members": {"silent": "true"}, "config_revision": 30}),
+        _signed({"name": "gold", "members": {"aliases": [1]}, "config_revision": 30}),
+        _signed({"name": "gold", "members": {"rules": None}, "config_revision": 30}),
+        _signed(
+            {"name": "gold", "members": {"reservation_expiry_minutes": True}, "config_revision": 1}
+        ),
+        _signed({"name": "gold", "members": [], "config_revision": 30}),
+        _signed({"name": "gold", "members": {}, "config_revision": True}),
+        _signed({"name": "gold", "members": {}, "config_revision": "30"}),
+    ],
+)
+def test_tampered_snapshot_zero_calls(
+    operator_client: Client, engine: FakeEngine, snapshot: str
+) -> None:
+    data = form_data(get(operator_client), unit="coins", constraints="{bad", snapshot=snapshot)
+    html = page(post(operator_client, data))
+    assert escape(SNAPSHOT_INVALID) in html
+    assert "Enter valid JSON" not in html  # the snapshot alone: no field errors
+    assert not patches(engine)
+    kept = form_data(html)
+    assert kept["unit"] == "coins"
+    assert kept["idempotency_key"] == data["idempotency_key"]
+
+
+# --- the outcome and D8's base ---------------------------------------------------------------
 
 
 def test_success_redirects_with_member_flashes(operator_client: Client, engine: FakeEngine) -> None:
     data = form_data(
         get(operator_client),
-        constraints='{"max": 500}',
+        constraints='{"max": 600, "non_negative": true}',
         unit="coins",
         reservation_expiry_minutes="30",
         aliases="coin",
@@ -530,21 +777,42 @@ def test_success_redirects_with_member_flashes(operator_client: Client, engine: 
     ]
 
 
-def test_engine_found_nothing_to_change(
-    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+def test_nothing_changed_against_rendered_revision(
+    operator_client: Client, engine: FakeEngine
 ) -> None:
-    # The shell's effective config carries no config_revision at the recorded schema (#270);
-    # stand one in equal to the answer's.
-    monkeypatch.setattr(inspect_state_definition, "base_revision", lambda ctx: 6)
+    serve(engine, definition_body(config_revision=6))
     response = post(operator_client, form_data(get(operator_client), unit="coins"))
     assert response.status_code == 302
     assert len(patches(engine)) == 1
     assert flashes(response) == [ENGINE_NOTHING_CHANGED]
 
 
-def test_unknown_base_revision_shows_saved(operator_client: Client, engine: FakeEngine) -> None:
+def test_null_base_shows_saved(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(config_revision=None))
     response = post(operator_client, form_data(get(operator_client), unit="coins"))
     assert flashes(response) == ["Unit: saved", "Configuration revision now 6"]
+
+
+def test_moved_revision_shows_saved(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine, definition_body(config_revision=6))
+    written = engine_fixture("m6/state_definition_written")
+    engine.respond("PATCH", DEFINITION, 200, json={**written, "config_revision": 7})
+    response = post(operator_client, form_data(get(operator_client), unit="coins"))
+    assert flashes(response) == ["Unit: saved", "Configuration revision now 7"]
+
+
+def test_base_is_the_rendered_snapshot_not_the_post_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = form_data(get(operator_client), unit="coins")  # rendered at 30
+    serve(engine, definition_body(config_revision=6))  # the POST's re-read says 6
+    response = post(operator_client, data)
+    assert flashes(response) == ["Unit: saved", "Configuration revision now 6"]
+
+
+def test_no_base_revision_name() -> None:
+    assert not hasattr(inspect_state_definition, "base_revision")
+    assert not hasattr(inspect_clock, "base_revision")
 
 
 def test_unreadable_200_warns_and_redirects(operator_client: Client, engine: FakeEngine) -> None:
@@ -553,98 +821,6 @@ def test_unreadable_200_warns_and_redirects(operator_client: Client, engine: Fak
     assert response.status_code == 302
     assert response["Location"] == STATE_URL
     assert flashes(response) == [UNREADABLE_SAVED]
-
-
-# --- last recorded definition ---------------------------------------------------------------
-
-
-def record(
-    kind: str,
-    definition: dict[str, Any],
-    when: datetime,
-    *,
-    story_id: str = STORY,
-    outcome: str = "ok",
-) -> EngineOperation:
-    row: EngineOperation = EngineOperation.objects.create(
-        operator_username="op",
-        principal="op",
-        story_id=story_id,
-        kind=kind,
-        http_method="POST",
-        path="/x",
-        outcome=outcome,
-        response={"definition": definition, "timeline_revision": 1},
-        created_at=when,
-    )
-    return row
-
-
-def gold(**changes: Any) -> dict[str, Any]:
-    definition: dict[str, Any] = dict(engine_fixture("m6/state_definition_written")["definition"])
-    definition.update(changes)
-    return definition
-
-
-def recorded(html: str) -> str:
-    found = re.search(r'<details class="recorded-definition">(.*?)</details>', html, re.S)
-    assert found is not None
-    return found.group(1)
-
-
-def test_last_recorded_definition_picks_newest_matching_row(
-    operator_client: Client, engine: FakeEngine
-) -> None:
-    record("declare_state", gold(unit="old"), datetime(2026, 10, 1, 9, 0, tzinfo=UTC))
-    record("update_state_definition", gold(unit="newest"), datetime(2026, 10, 2, 14, 3, tzinfo=UTC))
-    later = datetime(2026, 10, 3, 9, 0, tzinfo=UTC)
-    record("declare_state", gold(name="silver", unit="other state"), later)
-    record("declare_state", gold(unit="other story"), later, story_id=OTHER_STORY)
-    record("declare_state", gold(unit="refused"), later, outcome="error")
-    record("set_state", gold(unit="other kind"), later)
-    html = get(operator_client)
-    panel = recorded(html)
-    assert (
-        "Last definition this Console recorded (2026-10-02 14:03 UTC, Update state definition)"
-        " — it may be out of date"
-    ) in panel
-    assert '<dd class="member-unit">newest</dd>' in panel
-    for ignored in ("old", "other state", "other story", "refused", "other kind"):
-        assert f'<dd class="member-unit">{ignored}</dd>' not in panel
-    # Complement: the panel makes no Engine call (the three reads only).
-    assert [r.url.path for r in engine.requests] == [
-        f"/stories/{STORY}/effective-config",
-        f"/stories/{STORY}",
-        GOLD_PATH,
-    ]
-
-
-def test_approved_proposal_row_counts(operator_client: Client, engine: FakeEngine) -> None:
-    record("approve_state_proposal", gold(unit="flasks"), datetime(2026, 10, 2, 9, 0, tzinfo=UTC))
-    panel = recorded(get(operator_client))
-    assert "Approve state proposal" in panel
-    assert '<dd class="member-unit">flasks</dd>' in panel
-
-
-def test_redacted_authorization_says_so(operator_client: Client, engine: FakeEngine) -> None:
-    record("declare_state", gold(authorization="***"), datetime(2026, 10, 2, tzinfo=UTC))
-    panel = recorded(get(operator_client))
-    assert f'<dd class="member-authorization">{escape(AUTHORIZATION_REDACTED)}</dd>' in panel
-
-
-def test_no_recorded_definition_text(operator_client: Client, engine: FakeEngine) -> None:
-    record("declare_state", gold(name="silver"), datetime(2026, 10, 2, tzinfo=UTC))
-    panel = recorded(get(operator_client))
-    assert "This Console has recorded no definition of gold" in panel
-    assert "member-unit" not in panel
-
-
-def test_successful_change_becomes_the_last_record(
-    operator_client: Client, engine: FakeEngine
-) -> None:
-    change(operator_client, engine, unit="coins")
-    panel = recorded(get(operator_client))
-    assert "Update state definition" in panel
 
 
 # --- refusals --------------------------------------------------------------------------------
@@ -829,6 +1005,7 @@ def test_erasure_pending_held(operator_client: Client, engine: FakeEngine) -> No
 def test_one_state_page_links_change_definition(
     operator_client: Client, engine: FakeEngine
 ) -> None:
+    engine.respond("GET", "/stories/{story_id}/states/{name}", 200, json=state_view("gold"))
     html = get_page(operator_client, STATE_URL)
     assert f'<a class="state-definition" href="{url()}">Change definition…</a>' in html
 

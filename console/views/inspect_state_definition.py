@@ -1,35 +1,41 @@
-"""Change a State's definition (#265; D1, D8, D9, D14, D18), below the World tab's States section.
+"""Change a State's definition (#265, rebuilt on the definition read by #329; D1, D8, D9, D14),
+below the World tab's States section.
 
 ``inspect:state-definition`` (``/stories/<id>/inspect/world/state/<state_name:name>/definition/``,
 GET/HEAD/POST) renders through :func:`console.views.inspect.inspect_page` with ``Tab.WORLD`` and
 ``current="inspect:states"``. The shell's own section gate is off (``gate_section=False``) so
 that ``build`` checks ``module_gate(STATES, ctx.effective)`` itself (D1): with the gate closed a
 GET renders the inline greyed panel, and a POST the reason (with the Config link) above the kept
-inputs (the posted key and snapshot kept, #261's rule). Neither makes a State read or a
+inputs (the posted key and snapshot kept, #261's rule). Neither makes a definition read or a
 ``PATCH``.
 
 Reads per render, GET and POST: the shell's effective-config and story reads, then one
-``get_state(story_id, name, viewpoint="omniscient")``; a 404 is convention 10's not-found page
-with no form. The page shows the read's type, scope and owner, D18's
-:data:`console.states.DEFINITION_UNREADABLE` notice, and "Last recorded definition" (the local
-#44 query :func:`console.states.last_recorded_definition`; no Engine call).
+``get_state_definition(story_id, name)`` (always omniscient); a 404 is convention 10's not-found
+page with no form. No local #44 query. Above the form, "Stored definition": #261's
+``_state_definition.html`` of :func:`definition_rows` (every row but ``created_by``, which the
+Engine strips from ``definition``), then "Created by <humanised created_by>" and
+:func:`console.states.last_changed_text` (the read's ``config_revision``, the revision of the
+definition's last change; ``null`` reads "Unchanged since it was declared").
 
-The form (:class:`console.forms.states.StateDefinitionForm`) pre-fills only Visibility and Unit,
-signed into ``snapshot``; a POST checks the snapshot first (``SNAPSHOT_INVALID`` alone, no
-call), then the form, then the patch: an empty one makes **no** call and re-renders with
-``NOTHING_CHANGED`` (C9, D14). Otherwise one ``update_state_definition`` with the page's
-idempotency key (no expected revision, ``MUTATION_TIMEOUT_S``: a configuration write, D8), then
-POST-redirect-GET to ``inspect:state`` flashing "<Member>: saved" per patched member and
-"Configuration revision now <n>", or D8's ``ENGINE_NOTHING_CHANGED`` when the answer's
-``config_revision`` equals the shell's (:func:`base_revision`; the Engine's ``EffectiveConfig``
-carries none today, so the base is unknown and the saved lines show: #270). A 200 whose answer
+The form (:class:`console.forms.states.StateDefinitionForm`) starts from the stored definition's
+normalised mutable members, signed with the read's ``config_revision`` into ``snapshot`` (v2
+salt). A POST checks the snapshot first (``SNAPSHOT_INVALID`` alone, no call), then the form,
+then the patch, the diff of the snapshot's members against the cleaned form: an empty one makes
+**no** call and re-renders with ``NOTHING_CHANGED`` (C9). Otherwise one
+``update_state_definition`` with the page's idempotency key (no expected revision,
+``MUTATION_TIMEOUT_S``: a configuration write, D8), then POST-redirect-GET to ``inspect:state``
+flashing "<Member>: saved" per patched member and "Configuration revision now <n>", or D8's
+``ENGINE_NOTHING_CHANGED`` when the answer's ``config_revision`` equals the snapshot's (D8 as
+amended by #329: the revision the page rendered from; a ``null`` base is unknown, so the saved
+lines show). The patch is diffed against the render-time snapshot, not the POST's re-read, so
+a member the operator didn't touch is never sent (save wins, R2-Q32). A 200 whose answer
 doesn't parse flashes only :data:`UNREADABLE_SAVED`.
 
 Refusals re-render with every input and the snapshot kept, by D8's key rule (a fresh key after an
 answered refusal, the posted one after an unknown outcome). Order: this story's own wordings
 (``rules_kind`` on Rules, ``unknown`` above the form), then ``apply_engine_errors`` with
 :data:`ALIASES` for any other ``validation_error`` but ``immutable_field``/``reserved_state``,
-then D9's ``world_refusal`` (verb phrase ``DEFINITION_VERB``, the read State's type and unit),
+then D9's ``world_refusal`` (verb phrase ``DEFINITION_VERB``, the definition's type and unit),
 then #43's panel. A 404 is the not-found page; 503 ``erasure_pending`` escapes to #87's held
 wrapper.
 """
@@ -43,10 +49,8 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from console.cast import OMNISCIENT
 from console.confirm import KEY_FIELD, posted_idempotency_key
 from console.engine.client import EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import StoryState
 from console.engine_errors import EMPTY, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.forms.states import (
@@ -63,17 +67,8 @@ from console.forms.states import (
 from console.held import is_held
 from console.ids import new_ulid
 from console.inspect import STATES, Tab, is_module_off, module_gate
-from console.redaction import MASK
-from console.states import (
-    SCOPE_LABELS,
-    definition_unreadable_html,
-    definition_url,
-    last_recorded_definition,
-    no_recorded_definition_text,
-    state_url,
-)
+from console.states import created_by_text, definition_url, last_changed_text, state_url
 from console.views.inspect import InspectContext, inspect_page
-from console.views.inspect_clock import base_revision
 from console.views.inspect_state_declare import DefinitionRow, definition_rows
 from console.wording import humanised
 from console.world import (
@@ -92,7 +87,6 @@ HEADING = "Change {name}'s definition"
 SAVED = "{member}: saved"
 UNREADABLE_SAVED = "Saved — the Engine's answer couldn't be read"
 UNKNOWN_MEMBER = "{field} isn't a State definition member"
-AUTHORIZATION_REDACTED = "Hidden in the Console's log (redacted)"
 # The label of a refusal's link: convention 24's Config, else the paused story's check.
 REFUSAL_LINKS: Mapping[str, str] = {"module_off": "Config"}
 PAUSED_LINK = "See the check"
@@ -108,28 +102,15 @@ ALIASES: Mapping[str, str] = {
 }
 
 
-def _recorded(name: str, story_id: str) -> dict[str, Any]:
-    """ "Last recorded definition": its heading and rows, or the "none recorded" line."""
-    found = last_recorded_definition(story_id, name)
-    if found is None:
-        return {"recorded_none": no_recorded_definition_text(name)}
-    rows = [
-        DefinitionRow(row.member, row.label, AUTHORIZATION_REDACTED)
-        if row.member == "authorization" and found.definition.get("authorization") == MASK
-        else row
-        for row in definition_rows(found.definition)
-    ]
-    return {"recorded_heading": found.heading, "definition_rows": rows}
+def _stored_rows(definition: Mapping[str, Any]) -> list[DefinitionRow]:
+    """ "Stored definition": every ``definition_rows`` row but ``created_by`` (the Engine strips
+    it from ``definition``; the line under the panel shows it)."""
+    return [row for row in definition_rows(definition) if row.member != "created_by"]
 
 
-def _identity(state: StoryState) -> list[tuple[str, str]]:
-    """C3: the read's type, scope and owner."""
-    scope = state.scope if isinstance(state.scope, str) else ""
-    return [
-        ("Type", humanised(state.type) if state.type else EMPTY),
-        ("Scope", SCOPE_LABELS.get(scope) or (humanised(scope) if scope else EMPTY)),
-        ("Owner", humanised(state.owner) if state.owner else EMPTY),
-    ]
+def _text(definition: Mapping[str, Any], member: str) -> str | None:
+    value = definition.get(member)
+    return value if isinstance(value, str) and value else None
 
 
 def _place(form: StateDefinitionForm, refusal: Any, code: str, page: dict[str, Any]) -> None:
@@ -146,7 +127,7 @@ def _place(form: StateDefinitionForm, refusal: Any, code: str, page: dict[str, A
 def _refused(
     ctx: InspectContext,
     exc: EngineClientError,
-    state: StoryState,
+    definition: Mapping[str, Any],
     form: StateDefinitionForm,
     page: dict[str, Any],
 ) -> dict[str, Any]:
@@ -187,8 +168,8 @@ def _refused(
         DEFINITION_VERB,
         ctx.effective,
         field_map=ALIASES,
-        value_type=state.type,
-        unit=state.unit,
+        value_type=_text(definition, "type"),
+        unit=_text(definition, "unit"),
     )
     if refusal is not None:
         _place(form, refusal, exc.code, page)
@@ -205,10 +186,10 @@ def _rekey(form: StateDefinitionForm, key: str) -> None:
     form.data = data
 
 
-def _saved(
-    request: HttpRequest, ctx: InspectContext, patch: Mapping[str, Any], answer: Any
-) -> None:
-    if nothing_changed(answer.config_revision, base_revision(ctx)):
+def _saved(request: HttpRequest, patch: Mapping[str, Any], answer: Any, base: Any) -> None:
+    """D8 (amended by #329): ``base`` is the snapshot's ``config_revision``, the revision the
+    page rendered from (``None`` is unknown: the saved lines)."""
+    if nothing_changed(answer.config_revision, base):
         messages.info(request, ENGINE_NOTHING_CHANGED)  # D8
         return
     for member in patch:
@@ -226,7 +207,6 @@ def _definition(name: str) -> Any:
             "heading": HEADING.replace("{name}", name),
             "back_url": state_url(story_id, name),
             "action_url": definition_url(story_id, name),
-            "unreadable_notice": definition_unreadable_html(),
             "interpretive_note": INTERPRETIVE_NOTE,
         }
         closed = module_gate(STATES, ctx.effective)
@@ -247,7 +227,7 @@ def _definition(name: str) -> Any:
                 page["refusal_link"] = REFUSAL_LINKS["module_off"]
             return page
         try:
-            view = ctx.client.get_state(story_id, name, viewpoint=OMNISCIENT)
+            read = ctx.client.get_state_definition(story_id, name)
         except EngineClientError as exc:
             if is_held(exc) or is_module_off(exc):
                 raise
@@ -257,10 +237,14 @@ def _definition(name: str) -> Any:
             else:
                 page["read_error"] = panel_for(exc)
             return page
-        state = view.state
-        page.update(identity=_identity(state), **_recorded(name, story_id))
-        fresh = {"visibility": state.visibility, "unit": state.unit or None}
-        fresh_signed = sign_definition_snapshot(name, state.visibility, state.unit)
+        definition = read.definition
+        page.update(
+            definition_rows=_stored_rows(definition),
+            created_by=created_by_text(read.created_by),
+            last_changed=last_changed_text(read.config_revision),
+        )
+        fresh_signed = sign_definition_snapshot(name, definition, read.config_revision)
+        fresh = read_definition_snapshot(fresh_signed, name)
         if not posted:
             page["form"] = StateDefinitionForm(snapshot=fresh, signed_snapshot=fresh_signed)
             return page
@@ -299,8 +283,8 @@ def _definition(name: str) -> Any:
                 log_engine_error(request, exc)
                 messages.warning(request, UNREADABLE_SAVED)
                 return redirect(state_url(story_id, name))
-            return _refused(ctx, exc, state, form, page)
-        _saved(request, ctx, patch, answer)
+            return _refused(ctx, exc, definition, form, page)
+        _saved(request, patch, answer, snapshot["config_revision"])
         return redirect(state_url(story_id, name))
 
     return build

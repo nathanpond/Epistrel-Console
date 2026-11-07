@@ -1,19 +1,18 @@
 {% extends "console/inspect/world.html" %}{% load inspect_tags %}
 {% comment %}
-Change a State's definition (#265, console/views/inspect_state_definition.py's
-state_definition), below the States section (current inspect:states): "Change <name>'s
-definition", the read's type, scope and owner, D18's definition-read notice, "Last recorded
-definition" (a closed <details> of _state_definition.html from this Console's own #44 rows,
-labelled as possibly stale) and console.forms.states.StateDefinitionForm POSTing to
-inspect:state-definition with its hidden snapshot and idempotency key. Fieldsets: Shown as,
-Constraints, Effect rules; the interpretive note sits under them. A refusal, #43's panel, the
-snapshot notice and "Nothing changed" stay above the form, a field's refusal beside it; success
-redirects to inspect:state. In place of the form: the not-found line (missing) or the read's
-panel (read_error). With the States gate closed: a GET shows the inline greyed panel
+Change a State's definition (#265, rebuilt on the definition read by #329;
+console/views/inspect_state_definition.py's state_definition), below the States section (current
+inspect:states): "Change <name>'s definition", then "Stored definition" (section.stored-definition:
+_state_definition.html of the read's definition, then p.definition-created-by and
+p.definition-last-changed) and console.forms.states.StateDefinitionForm, pre-filled from the stored
+definition, POSTing to inspect:state-definition with its hidden snapshot and idempotency key.
+Fieldsets: Shown as, Constraints, Effect rules; the interpretive note sits under them. A refusal,
+#43's panel, the snapshot notice and "Nothing changed" stay above the form, a field's refusal
+beside it; success redirects to inspect:state. In place of the form: the not-found line (missing)
+or the read's panel (read_error). With the States gate closed: a GET shows the inline greyed panel
 (gate_unavailable), a POST the kept inputs with the reason above them (refusal; no read, so no
-identity or last record). Context: state_name, heading,
-back_url, action_url, unreadable_notice, interpretive_note, gate_unavailable, missing,
-read_error, identity, recorded_heading, definition_rows, recorded_none, form, refusal,
+stored definition). Context: state_name, heading, back_url, action_url, interpretive_note,
+gate_unavailable, missing, read_error, definition_rows, created_by, last_changed, form, refusal,
 refusal_url, refusal_link, write_error, notice_error, nothing_changed.
 {% endcomment %}
 {% block title %}Inspect · Change {% firstof state_name request.resolver_match.kwargs.name %}'s definition · {{ story_name }}{% endblock %}
@@ -23,13 +22,12 @@ refusal_url, refusal_link, write_error, notice_error, nothing_changed.
 {% elif missing %}<div class="engine-error" role="alert"><p class="not-found"><strong>{{ missing }}</strong></p></div>
 {% elif read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}
 {% else %}
-{% if identity %}<dl class="state-identity">{% for label, text in identity %}<dt>{{ label }}</dt><dd>{{ text }}</dd>{% endfor %}</dl>{% endif %}
-<p class="notice definition-unreadable">{{ unreadable_notice }}</p>
-{% if identity %}<details class="recorded-definition">
-  <summary>Last recorded definition</summary>
-  {% if definition_rows %}<p class="recorded-heading">{{ recorded_heading }}</p>
-  {% include "console/inspect/_state_definition.html" %}{% else %}<p class="recorded-none">{{ recorded_none }}</p>{% endif %}
-</details>{% endif %}
+{% if last_changed %}<section class="stored-definition">
+  <h4>Stored definition</h4>
+  {% include "console/inspect/_state_definition.html" %}
+  <p class="definition-created-by">{{ created_by }}</p>
+  <p class="definition-last-changed">{{ last_changed }}</p>
+</section>{% endif %}
 {% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
 {% if refusal %}<p class="errorlist state-definition-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
 {% if notice_error %}<p class="errorlist state-definition-snapshot" role="alert">{{ notice_error }}</p>{% endif %}

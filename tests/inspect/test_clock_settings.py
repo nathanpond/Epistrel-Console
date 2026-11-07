@@ -322,23 +322,21 @@ def test_wholly_blank_row_is_dropped_partial_row_required(
     assert patches(engine) == []
 
 
-def test_engine_found_nothing_to_change(
-    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("revision", [5, 1, 0, 999])
+def test_save_always_flashes_saved(
+    operator_client: Client, engine: FakeEngine, revision: int
 ) -> None:
-    # The shell's effective config carries no config_revision at the recorded schema; stand one
-    # in equal to the answer's.
-    monkeypatch.setattr(inspect_clock, "base_revision", lambda ctx: 5)
+    # D8 amended by #329 (#270): the clock read carries no configuration revision, so there's no
+    # base to compare against; whatever the answer's revision, the saved flash shows.
+    written = engine_fixture("m6/clock_settings_written")
+    engine.respond("PATCH", CLOCK, 200, json={**written, "config_revision": revision})
     data = form_data(get(operator_client), mode="manual")
     response = save(operator_client, data)
     assert len(patches(engine)) == 1
-    assert flashes(response) == [ENGINE_NOTHING_CHANGED]
-    assert not any("saved" in m for m in flashes(response))
-
-
-def test_unknown_base_revision_shows_saved(operator_client: Client, engine: FakeEngine) -> None:
-    data = form_data(get(operator_client), mode="manual")
-    response = save(operator_client, data)
-    assert flashes(response) == ["Mode: saved — Configuration revision now 5"]
+    assert flashes(response) == [f"Mode: saved — Configuration revision now {revision}"]
+    # Complement: ENGINE_NOTHING_CHANGED is never flashed, and the base helper is gone.
+    assert ENGINE_NOTHING_CHANGED not in flashes(response)
+    assert not hasattr(inspect_clock, "base_revision")
 
 
 def test_switch_to_external_sends_provider_value(

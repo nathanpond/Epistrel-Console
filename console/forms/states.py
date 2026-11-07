@@ -4,6 +4,7 @@ Set form (#251), :class:`StateSetForm`; and the State definition fields with the
 :class:`StateDeclarationForm` (#266 and #267 import them); and the definition change (#265),
 :class:`StateDefinitionForm`."""
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
@@ -693,13 +694,15 @@ class StateOverridesForm(StateDeclarationForm):
         return merged or None
 
 
-# --- change a State's definition (#265) -----------------------------------------------------------
+# --- change a State's definition (#265, #329) ----------------------------------------------------
 #
-# The Engine serves no read of a definition (D18): ``GET …/states/{name}`` answers only
-# ``visibility`` and ``unit`` of the nine mutable members. Those two start from the read and are
-# diffed against the signed snapshot (M3 convention 5); every other member is "leave as is"
-# unless filled or reset, and an object member's box *is* that member's merge patch (D14). No
-# HTML ``min``/``max``/``maxlength`` (C10).
+# The form starts from the State's stored definition (#329: ``GET …/states/{name}/definition``).
+# Every mutable member is pre-filled from the *normalised* members (:func:`definition_members`),
+# which are also signed into the snapshot with the read's ``config_revision`` (D8's base); the
+# patch is ``console.merge_patch.diff`` of the snapshot's members against the cleaned form,
+# normalised the same way (M3 convention 5, D14). So clearing a member resets it, editing part
+# of an object sends only that part, and an untouched form sends nothing. No HTML
+# ``min``/``max``/``maxlength`` (C10).
 
 # The members ``PATCH …/definition`` may change, in the form's (and the flash's) order: #261's
 # fieldsets Shown as | Constraints | Effect rules.
@@ -715,68 +718,164 @@ MUTABLE_MEMBERS = (
     "reservation_expiry_minutes",
 )
 DEFINITION_BOXES = ("constraints", "rules", "authorization", "transfer")
-RESET_SUFFIX = "_reset"
-DEFINITION_SNAPSHOT_SALT = "console.states.definition.snapshot"
+EXPIRY = "reservation_expiry_minutes"
+# v2 (#329): ``{name, members, config_revision}``; a #265-era (v1) form fails to verify.
+DEFINITION_SNAPSHOT_SALT = "console.states.definition.snapshot.v2"
 SNAPSHOT_FIELD = "snapshot"
+SNAPSHOT_KEYS = frozenset({"name", "members", "config_revision"})
 
 NOTHING_CHANGED = "Nothing changed — nothing was sent"
-RESET_OR_EDIT = "Either reset it or edit it"
 RULES_KIND = "A State can't become, or stop being, derived — declare a new State instead"
 SNAPSHOT_INVALID = "This form was incomplete — reload it and edit again"
 INTERPRETIVE_NOTE = (
     "Constraints, Rules, Authorization, Transfer and Visibility are interpretive: turns checked "
     "under the old ones are re-checked"
 )
-PATCH_BOX_HELP = (
-    "A merge patch of {member}: keys you give change, `null` removes one; blank keeps it as is"
-)
-CONSTRAINTS_EXAMPLE = '`{"max": 500}` changes Max only; `{"max": null}` removes it'
-PATCH_ALIASES_HELP = "One per line; replaces the whole list; blank keeps them"
-PATCH_MINUTES_HELP = "Blank keeps it as is"
+PATCH_BOX_HELP = "Edit the stored value; clear the box to reset it to the default (`{}`)"
+PATCH_ALIASES_HELP = "One per line; clear to remove them all"
+PATCH_MINUTES_HELP = "Clear to remove it"
 
 DEFINITION_VISIBILITY_CHOICES = [("player_visible", "Player visible"), ("hidden", "Hidden")]
-SILENT_CHOICES = [("", "Leave as is"), ("true", "Yes"), ("false", "No")]
+SILENT_CHOICES = [("true", "Yes"), ("false", "No")]
 
 
-def _box_help(member: str) -> str:
-    text = PATCH_BOX_HELP.replace("{member}", member)
-    return f"{text}. {CONSTRAINTS_EXAMPLE}" if member == "constraints" else text
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
-def sign_definition_snapshot(name: str, visibility: Any, unit: Any) -> str:
-    """The signed ``{"name", "visibility", "unit"}`` the page rendered from (a blank or missing
-    unit stored as ``None``)."""
+def _without_nulls(value: dict[str, Any]) -> dict[str, Any]:
+    """``value`` with every ``null``-valued key removed, recursively through nested objects (a
+    merge patch can't carry a ``null`` value: it would read as a removal)."""
+    kept = {k: v for k, v in value.items() if v is not None}
+    return {k: _without_nulls(v) if isinstance(v, dict) else v for k, v in kept.items()}
+
+
+def definition_members(definition: Mapping[str, Any]) -> dict[str, Any]:
+    """The nine mutable members of ``definition`` (a stored definition, or the cleaned form's
+    values), normalised: a member at its default is left out (``{}`` for the four objects,
+    ``[]`` for aliases, ``null``/``""`` for unit, ``null`` for the expiry), and ``visibility``
+    and ``silent`` are always present. Odd stored values normalise so an untouched form always
+    matches: a non-string visibility is ``None``; a non-string unit and an expiry that isn't a
+    non-negative int (not a bool) are absent; aliases keep only their non-blank strings,
+    stripped; a non-bool ``silent`` is ``False``; an object member has its ``null`` keys
+    stripped, and one that isn't an object is kept as is (it pre-fills raw)."""
+    visibility = definition.get("visibility")
+    silent = definition.get("silent")
+    members: dict[str, Any] = {
+        "visibility": visibility if isinstance(visibility, str) else None,
+        "silent": silent if isinstance(silent, bool) else False,
+    }
+    unit = definition.get("unit")
+    if isinstance(unit, str) and unit:
+        members["unit"] = unit
+    aliases = definition.get("aliases")
+    kept = (
+        [a.strip() for a in aliases if isinstance(a, str) and a.strip()]
+        if isinstance(aliases, list)
+        else []
+    )
+    if kept:
+        members["aliases"] = kept
+    for member in DEFINITION_BOXES:
+        value = definition.get(member)
+        if isinstance(value, dict):
+            value = _without_nulls(value)
+            if value:
+                members[member] = value
+        elif value is not None:
+            members[member] = value
+    expiry = definition.get(EXPIRY)
+    if isinstance(expiry, int) and not isinstance(expiry, bool) and expiry >= 0:
+        members[EXPIRY] = expiry
+    return {member: members[member] for member in MUTABLE_MEMBERS if member in members}
+
+
+def _member_valid(member: str, value: Any) -> bool:
+    """A snapshot member's JSON type (#329): an object box member is any non-null value;
+    ``visibility`` a string (or ``None``, a stored definition without one); ``unit`` a string;
+    ``aliases`` a list of strings; ``silent`` a bool; the expiry an int, not a bool."""
+    if member in DEFINITION_BOXES:
+        return value is not None
+    if member == "visibility":
+        return value is None or isinstance(value, str)
+    if member == "unit":
+        return isinstance(value, str)
+    if member == "aliases":
+        return isinstance(value, list) and all(isinstance(a, str) for a in value)
+    if member == "silent":
+        return isinstance(value, bool)
+    return _is_int(value)
+
+
+def sign_definition_snapshot(name: str, definition: Mapping[str, Any], config_revision: Any) -> str:
+    """The signed ``{"name", "members", "config_revision"}`` the page rendered from: the
+    normalised mutable members (:func:`definition_members`) and the read's ``config_revision``
+    (an int, else ``None``: unknown)."""
     return signing.dumps(
         {
             "name": name,
-            "visibility": visibility if isinstance(visibility, str) else None,
-            "unit": unit if isinstance(unit, str) and unit else None,
+            "members": definition_members(definition),
+            "config_revision": config_revision if _is_int(config_revision) else None,
         },
         salt=DEFINITION_SNAPSHOT_SALT,
+        compress=True,
     )
 
 
 def read_definition_snapshot(value: Any, name: str) -> dict[str, Any] | None:
-    """The snapshot ``value`` signs, or ``None`` when it doesn't verify, isn't the expected
-    shape or names another State."""
+    """The snapshot ``value`` signs, or ``None`` when it doesn't verify (a #265-era one
+    included), isn't exactly ``{name, members, config_revision}`` with valid members, or names
+    another State."""
     try:
         raw = signing.loads(value if isinstance(value, str) else "", salt=DEFINITION_SNAPSHOT_SALT)
     except signing.BadSignature:
         return None
-    if not isinstance(raw, dict) or raw.get("name") != name:
+    if not isinstance(raw, dict) or set(raw) != SNAPSHOT_KEYS or raw["name"] != name:
         return None
-    if set(raw) != {"name", "visibility", "unit"}:
+    members = raw["members"]
+    if not isinstance(members, dict) or not set(members) <= set(MUTABLE_MEMBERS):
         return None
-    if not all(raw[k] is None or isinstance(raw[k], str) for k in ("visibility", "unit")):
+    if not all(_member_valid(member, value) for member, value in members.items()):
+        return None
+    revision = raw["config_revision"]
+    if revision is not None and not _is_int(revision):
         return None
     return raw
 
 
+def _box_initial(value: Any) -> Any:
+    """An object box's pre-fill: a stored object as is (``JsonBoxField.prepare_value`` indents
+    it), any other stored value as its raw JSON."""
+    if value is None or isinstance(value, dict):
+        return value
+    return json.dumps(value, indent=2, ensure_ascii=False)
+
+
+def _initial(members: Mapping[str, Any]) -> dict[str, Any]:
+    """The form's initial values from the snapshot's members (never the raw definition, so
+    pre-fill and diff base can't drift)."""
+    initial: dict[str, Any] = {
+        "unit": members.get("unit", ""),
+        "aliases": "\n".join(members.get("aliases", [])),
+        "silent": "true" if members.get("silent") is True else "false",
+        EXPIRY: str(members[EXPIRY]) if EXPIRY in members else "",
+    }
+    if members.get("visibility") is not None:
+        initial["visibility"] = members["visibility"]
+    for member in DEFINITION_BOXES:
+        initial[member] = _box_initial(members.get(member))
+    return initial
+
+
+def _box(label: str) -> JsonBoxField:
+    return JsonBoxField(dict, empty=None, required=False, label=label, help_text=PATCH_BOX_HELP)
+
+
 class StateDefinitionForm(forms.Form):
-    """The Change definition form (#265): one field per mutable member, named after it, plus the
-    reset controls (``<member>_reset``), the hidden ``snapshot`` and ``idempotency_key``.
-    :attr:`patch` is the merge patch (valid form only); its keys are always a subset of
-    :data:`MUTABLE_MEMBERS`."""
+    """The Change definition form (#265, #329): one field per mutable member, named after it,
+    pre-filled from the snapshot's members, plus the hidden ``snapshot`` and
+    ``idempotency_key``. :attr:`patch` is the merge patch (valid form only); its keys are always
+    a subset of :data:`MUTABLE_MEMBERS`."""
 
     visibility = forms.ChoiceField(label="Visibility", choices=DEFINITION_VISIBILITY_CHOICES)
     unit = forms.CharField(label="Unit", required=False, strip=True, help_text="Blank: no unit")
@@ -786,54 +885,24 @@ class StateDefinitionForm(forms.Form):
         help_text=PATCH_ALIASES_HELP,
         widget=forms.Textarea(attrs={"rows": 3}),
     )
-    aliases_reset = forms.BooleanField(label="Remove all aliases", required=False)
-    silent = forms.ChoiceField(label="Silent", required=False, choices=SILENT_CHOICES)
-    constraints = JsonBoxField(
-        dict, empty=None, required=False, label="Constraints", help_text=_box_help("constraints")
-    )
-    constraints_reset = forms.BooleanField(label="Reset to default", required=False)
-    rules = JsonBoxField(
-        dict, empty=None, required=False, label="Rules", help_text=_box_help("rules")
-    )
-    rules_reset = forms.BooleanField(label="Reset to default", required=False)
-    authorization = JsonBoxField(
-        dict,
-        empty=None,
-        required=False,
-        label="Authorization",
-        help_text=_box_help("authorization"),
-    )
-    authorization_reset = forms.BooleanField(label="Reset to default", required=False)
-    transfer = JsonBoxField(
-        dict, empty=None, required=False, label="Transfer", help_text=_box_help("transfer")
-    )
-    transfer_reset = forms.BooleanField(label="Reset to default", required=False)
+    silent = forms.ChoiceField(label="Silent", choices=SILENT_CHOICES)
+    constraints = _box("Constraints")
+    rules = _box("Rules")
+    authorization = _box("Authorization")
+    transfer = _box("Transfer")
     reservation_expiry_minutes = forms.CharField(
         label="Reservation expiry (minutes)",
         required=False,
         strip=True,
         help_text=PATCH_MINUTES_HELP,
     )
-    reservation_expiry_minutes_reset = forms.BooleanField(label="Clear", required=False)
     snapshot = forms.CharField(required=False, widget=forms.HiddenInput)
     idempotency_key = forms.CharField(required=False, widget=forms.HiddenInput)
 
     GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("Shown as", ("visibility", "unit", "aliases", "aliases_reset", "silent")),
-        ("Constraints", ("constraints", "constraints_reset")),
-        (
-            "Effect rules",
-            (
-                "rules",
-                "rules_reset",
-                "authorization",
-                "authorization_reset",
-                "transfer",
-                "transfer_reset",
-                "reservation_expiry_minutes",
-                "reservation_expiry_minutes_reset",
-            ),
-        ),
+        ("Shown as", ("visibility", "unit", "aliases", "silent")),
+        ("Constraints", ("constraints",)),
+        ("Effect rules", ("rules", "authorization", "transfer", EXPIRY)),
     )
 
     def __init__(
@@ -845,19 +914,15 @@ class StateDefinitionForm(forms.Form):
         idempotency_key: str | None = None,
         initial: Mapping[str, Any] | None = None,
     ) -> None:
-        self.snapshot_values = dict(snapshot or {})
-        kept = dict(initial or {})
-        if initial is None:
-            visibility = self.snapshot_values.get("visibility")
-            if visibility is not None:
-                kept["visibility"] = visibility
-            kept["unit"] = self.snapshot_values.get("unit") or ""
+        members = (snapshot or {}).get("members")
+        self.members: dict[str, Any] = dict(members) if isinstance(members, Mapping) else {}
+        kept = dict(initial) if initial is not None else _initial(self.members)
         kept[SNAPSHOT_FIELD] = signed_snapshot
         kept[KEY_FIELD] = idempotency_key or new_ulid()
         super().__init__(data, initial=kept)
         # A read visibility outside the two choices stays selectable (humanised), so an
         # untouched form is still an empty patch.
-        visibility = self.snapshot_values.get("visibility")
+        visibility = self.members.get("visibility")
         known = {value for value, _ in DEFINITION_VISIBILITY_CHOICES}
         if isinstance(visibility, str) and visibility and visibility not in known:
             field = self.fields["visibility"]
@@ -874,55 +939,25 @@ class StateDefinitionForm(forms.Form):
     def clean_aliases(self) -> list[str]:
         return _lines(self.cleaned_data.get("aliases"))
 
-    def clean_silent(self) -> bool | None:
-        return _choice_bool(self.cleaned_data.get("silent"))
+    def clean_silent(self) -> bool:
+        return self.cleaned_data.get("silent") == "true"
 
     def clean_reservation_expiry_minutes(self) -> int | None:
-        text = str(self.cleaned_data.get("reservation_expiry_minutes") or "")
+        text = str(self.cleaned_data.get(EXPIRY) or "")
         if not text:
             return None
         if not (text.isascii() and text.isdigit()):
             raise forms.ValidationError(MINUTES_INVALID, code="invalid")
         return int(text)
 
-    def clean(self) -> dict[str, Any]:
-        cleaned = super().clean() or {}
-        for member in DEFINITION_BOXES:
-            if cleaned.get(member + RESET_SUFFIX) and cleaned.get(member):
-                self.add_error(member, RESET_OR_EDIT)
-        if cleaned.get("aliases_reset") and cleaned.get("aliases"):
-            self.add_error("aliases", RESET_OR_EDIT)
-        if (
-            cleaned.get("reservation_expiry_minutes_reset")
-            and cleaned.get("reservation_expiry_minutes") is not None
-        ):
-            self.add_error("reservation_expiry_minutes", RESET_OR_EDIT)
-        return cleaned
-
     @property
     def patch(self) -> dict[str, Any]:
-        """The merge patch: Visibility and Unit through ``console.merge_patch.diff`` against the
-        snapshot, then each other member filled (sent as given; a box holding ``{}`` is blank)
-        or reset (``null``), in :data:`MUTABLE_MEMBERS` order."""
+        """The merge patch: ``console.merge_patch.diff`` of the snapshot's members against the
+        cleaned form, normalised the same way (:func:`definition_members`), in
+        :data:`MUTABLE_MEMBERS` order. A cleared member is ``null`` (reset to its default), an
+        edited object sends only its changed keys (a removed key ``null``), aliases are
+        replaced whole, and an untouched or restored form is ``{}``."""
         cleaned = self.cleaned_data
-        snap = self.snapshot_values
-        changes: dict[str, Any] = diff(
-            {"visibility": snap.get("visibility"), "unit": snap.get("unit")},
-            {"visibility": cleaned["visibility"], "unit": cleaned.get("unit") or None},
-        )
-        if cleaned.get("aliases_reset"):
-            changes["aliases"] = None
-        elif cleaned.get("aliases"):
-            changes["aliases"] = list(cleaned["aliases"])
-        if cleaned.get("silent") is not None:
-            changes["silent"] = cleaned["silent"]
-        for member in DEFINITION_BOXES:
-            if cleaned.get(member + RESET_SUFFIX):
-                changes[member] = None
-            elif cleaned.get(member):
-                changes[member] = cleaned[member]
-        if cleaned.get("reservation_expiry_minutes_reset"):
-            changes["reservation_expiry_minutes"] = None
-        elif cleaned.get("reservation_expiry_minutes") is not None:
-            changes["reservation_expiry_minutes"] = cleaned["reservation_expiry_minutes"]
+        typed = definition_members({member: cleaned.get(member) for member in MUTABLE_MEMBERS})
+        changes = diff(self.members, typed)
         return {member: changes[member] for member in MUTABLE_MEMBERS if member in changes}

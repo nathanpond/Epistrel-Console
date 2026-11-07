@@ -111,16 +111,20 @@ now and compensate.
   `CONFIG_REVISION_TEXT`) instead and, as POST-redirect-GET, flash "<Humanised member>: saved"
   (C3, convention 23).
 - **Nothing to change (configuration writes).** When the Engine accepts a configuration write
-  that changed nothing, the answer's `config_revision` equals the one the page rendered from:
-  the shell's effective-config read's `config_revision` for a story's configuration (#265's
-  definition PATCH, #243's clock PATCH), the signed snapshot's for a deployment write (#246's
-  provider replace, #241's settings). Then the page flashes `ENGINE_NOTHING_CHANGED` "The
-  Engine found nothing to change" (info) in place of the "saved" lines, and still redirects.
+  that changed nothing, the answer's `config_revision` equals the one the page rendered from.
+  *(D8, amended by #329.)* The base a story configuration write compares against is the
+  revision the page rendered from: for a State's definition, the definition read's
+  `config_revision` (#329: the revision of its last change; `null` is unknown); for the clock
+  settings there is none, because no story read carries a configuration revision, so the
+  comparison is dropped there and the saved flash always shows (#270). Deployment writes keep
+  the signed snapshot's (#246's provider replace, #241's settings). Then the page flashes
+  `ENGINE_NOTHING_CHANGED` "The Engine found nothing to change" (info) in place of the "saved"
+  lines, and still redirects.
   When the base revision is unknown, or the answer carries no `config_revision` (#247's binding
   PUT, whose answer has only `timeline_revision`), the usual flash shows; the Console's own
   "untouched sends nothing" check (C9) stays first everywhere.
   `console.world.nothing_changed(answer_revision, base_revision) -> bool` is the one
-  comparison; #265, #243, #246, #241 and #247 cite this rule.
+  comparison; #265/#329, #246, #241 and #247 cite this rule.
 - **Re-rendering a refused or invalid form (every slot write and configuration write; the
   confirm page counts as the form).**
   - *Local invalid input* (the Console's own checks, a gate refusal, a bad snapshot): nothing
@@ -257,8 +261,8 @@ C5 first.
   (nathanpond/Epistrel#682): `?viewpoint=` on `GET …/states`, `GET …/states/{name}` and `GET
   …/scheduled-events` is in the Engine's OpenAPI. No page notice.
 - **State definition read (nathanpond/Epistrel#680, closed).** Read by `get_state_definition`;
-  #329 uses its `config_revision` as D8's base (E17, #295). Until #329 lands, #265's page still
-  cites `STATE_DEFINITION_REQUEST`.
+  #329 uses its `config_revision` as D8's base (E17, #295). `STATE_DEFINITION_REQUEST` stays
+  for history; no page cites it since #329.
 - **Operations by label (nathanpond/Epistrel#681, closed).** Story operations are listed by
   `list_operations` (#324) (E17, #295).
 - **No State-proposal analysis status read.** The 202's `job_id` has no read, so #266 flashes
