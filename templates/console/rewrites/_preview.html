@@ -1,7 +1,7 @@
 <section class="rewrite-preview">
   <h3>Preview</h3>
   {% if not view.preview %}<p class="pending">{{ view.preview_pending }}</p>{% else %}
-  <p>{{ view.preview.base_text }}</p>
+  <p>{{ view.preview.base_text }}{% if preview_source_note %} {{ preview_source_note }}{% endif %}</p>
   <details><summary>More</summary><p>Plan <code class="hash">{{ view.preview.plan_hash }}</code></p></details>
   <h4>Changes ({{ view.preview.changes|length }})</h4>
   {% if view.preview.changes %}<table class="changes">

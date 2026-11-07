@@ -56,6 +56,7 @@ from console.views import (
     rating_suggestion,
     ratings,
     rewrite_answers,
+    rewrite_apply,
     rewrites,
     status,
     stories,
@@ -114,6 +115,17 @@ story_patterns = (
             "<str:story_id>/rewrites/<ulid:session_id>/answers/",
             rewrite_answers.answers,
             name="rewrite-answers",
+        ),
+        # #299 (E11): apply a session's plan (POST) and cancel it behind a confirm page.
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/apply/",
+            rewrite_apply.apply,
+            name="rewrite-apply",
+        ),
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/cancel/",
+            rewrite_apply.cancel,
+            name="rewrite-cancel",
         ),
         # #195: one turn's perception trace, reconstructed per character.
         path(

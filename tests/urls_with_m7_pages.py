@@ -176,8 +176,6 @@ NOT_YET_REGISTERED = frozenset(
         "stories:operations-list",
         "stories:prune",
         "stories:prune-confirm",
-        "stories:rewrite-apply",
-        "stories:rewrite-cancel",
     }
 )
 

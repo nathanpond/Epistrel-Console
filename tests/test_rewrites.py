@@ -15,6 +15,7 @@ import dataclasses
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 from django.test import override_settings
@@ -162,14 +163,21 @@ def test_an_open_session_waits_for_answers() -> None:
     assert question.why_text.startswith("Why: Bob's line is his own sincere claim")
     assert question.answered is None
     base = f"/stories/{STORY}/rewrites/{SESSION}/"
-    # The real urlconf: #298 registered Answer; Cancel (#299) is still unregistered.
-    assert shown.actions == (SessionAction("Answer", f"{base}answers/", "post"),)
+    # The real urlconf: #298 registered Answer, #299 Cancel (its link carries the facts).
+    cancel = f"{base}cancel/?" + urlencode(
+        {
+            "kind": "instruction",
+            "state": "awaiting_answers",
+            "instruction": "Bob never forged the ledger; he only copied it",
+        }
+    )
+    assert shown.actions == (
+        SessionAction("Answer", f"{base}answers/", "post"),
+        SessionAction("Cancel", cancel, "get"),
+    )
     with override_settings(ROOT_URLCONF=M7_PAGES):
         linked = view("rewrite_open")
-    assert linked.actions == (
-        SessionAction("Answer", f"{base}answers/", "post"),
-        SessionAction("Cancel", f"{base}cancel/", "get"),
-    )
+    assert linked.actions == shown.actions
     assert linked.answer_url == f"{base}answers/"
     assert [a.label for a in linked.footer_actions] == ["Cancel"]
 

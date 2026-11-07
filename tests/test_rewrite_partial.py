@@ -7,6 +7,7 @@ from typing import Any
 
 from django.template.loader import render_to_string
 from django.test import override_settings
+from django.utils.html import escape
 
 from console.engine.models import RewriteSession
 from console.forms.rewrites import AnswersForm, RewriteModesForm
@@ -17,6 +18,7 @@ from console.rewrites import (
     TRUNCATED_TEXT,
     session_view,
 )
+from console.views.rewrite_apply import APPLY_LABEL, APPLY_LINE
 from tests.fixtures import engine_fixture
 
 STORY = "01JM7ST0000000000000000001"
@@ -66,7 +68,7 @@ def test_the_recommended_option_is_checked_and_explained() -> None:
     assert f'value="{KEY}"' in html
     assert PREVIEW_PENDING in html
     # The footer has Cancel as a plain link, and no per-question accept button.
-    assert f'<a href="/stories/{STORY}/rewrites/{SESSION}/cancel/" class="session-action">' in html
+    assert f'<a href="/stories/{STORY}/rewrites/{SESSION}/cancel/?kind=instruction&amp;' in html
     assert html.count("<form") == 1
 
 
@@ -115,8 +117,16 @@ def test_a_lite_session_renders_its_reach() -> None:
 
 
 def test_apply_is_a_post_form_with_the_key_and_base_revision() -> None:
+    """#299: the Apply form renders from the page's ``apply_hidden`` (the preview's base and
+    plan hash), with ``APPLY_LINE`` above "Apply this plan"; without it there is no form."""
+    hidden = {"base_revision": 20, "plan_hash": "sha256:" + "7" * 64, "plan_short": "7" * 12}
     with override_settings(ROOT_URLCONF=M7_PAGES):
-        html = render(view("rewrite_session"), base_revision=20)
+        html = render(
+            view("rewrite_session"),
+            apply_hidden=hidden,
+            apply_line=APPLY_LINE,
+            apply_label=APPLY_LABEL,
+        )
     apply = re.search(
         rf'<form method="post" action="/stories/{STORY}/rewrites/{SESSION}/apply/".*?</form>',
         html,
@@ -125,11 +135,15 @@ def test_apply_is_a_post_form_with_the_key_and_base_revision() -> None:
     assert apply is not None
     assert f'name="idempotency_key" value="{KEY}"' in apply.group(0)
     assert 'name="base_revision" value="20"' in apply.group(0)
-    assert ">Apply</button>" in apply.group(0)
+    assert f'<p class="apply-line">{escape(APPLY_LINE)}</p>' in apply.group(0)
+    assert ">Apply this plan</button>" in apply.group(0)
+    plan = f'Plan <code class="hash" title="sha256:{"7" * 64}">{"7" * 12}</code>'
+    assert plan in apply.group(0)
     assert "Submit answers" not in html
     with override_settings(ROOT_URLCONF=M7_PAGES):
         bare = render(view("rewrite_session"))
     assert "base_revision" not in bare
+    assert "<form" not in bare
 
 
 def test_without_an_answers_form_there_is_no_answers_form() -> None:

@@ -1,4 +1,4 @@
-{# E3 (#294): the one rewrite-session partial. Context: view (console.rewrites.SessionView); answers_form (an AnswersForm, only where the page takes answers); idempotency_key (the page's fresh key, #43); base_revision (the plan revision Apply sends); answer_errors (#298: the Engine's answer errors, .above / .groups {qid: [message]} / .texts {qid: [message]}) and rejected_question_text (#298's REJECTED_QUESTION while answering). It makes no read and calls no helper beyond the loaded filters. #}
+{# E3 (#294): the one rewrite-session partial. Context: view (console.rewrites.SessionView); answers_form (an AnswersForm, only where the page takes answers); idempotency_key (the page's fresh key, #43); apply_hidden (#299: the Apply form's base_revision = the preview's, plan_hash and plan_short; no Apply form without it), apply_line and apply_label (#299's APPLY_LINE and "Apply this plan"); answer_errors (#298: the Engine's answer errors, .above / .groups {qid: [message]} / .texts {qid: [message]}) and rejected_question_text (#298's REJECTED_QUESTION while answering). It makes no read and calls no helper beyond the loaded filters. #}
 <section class="rewrite-session" id="session-{{ view.id }}">
 {% include "console/rewrites/_state.html" %}
 {% include "console/rewrites/_questions.html" %}
@@ -14,12 +14,13 @@
   <details><summary>More</summary><pre>{{ view.report_more.1 }}</pre></details>
 </section>{% endif %}
 {% if view.footer_actions %}<div class="session-actions">
-  {% for action in view.footer_actions %}{% if action.method == "post" %}<form method="post" action="{{ action.url }}" class="session-action">
+  {% for action in view.footer_actions %}{% if action.method == "post" %}{% if apply_hidden %}<form method="post" action="{{ action.url }}" class="session-action">
     {% csrf_token %}
-    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">{% if base_revision is not None and base_revision != "" %}
-    <input type="hidden" name="base_revision" value="{{ base_revision }}">{% endif %}
-    <button type="submit">{{ action.label }}</button>
-  </form>{% else %}<a href="{{ action.url }}" class="session-action">{{ action.label }}</a>{% endif %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <input type="hidden" name="base_revision" value="{{ apply_hidden.base_revision }}">
+    <p class="apply-line">{{ apply_line }}</p>
+    <button type="submit">{{ apply_label }}</button> <small>Plan <code class="hash" title="{{ apply_hidden.plan_hash }}">{{ apply_hidden.plan_short }}</code></small>
+  </form>{% endif %}{% else %}<a href="{{ action.url }}" class="session-action">{{ action.label }}</a>{% endif %}
   {% endfor %}
 </div>{% endif %}
 </section>

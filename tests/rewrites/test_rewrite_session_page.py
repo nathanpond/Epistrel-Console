@@ -6,9 +6,11 @@ rule across the list, the open and the session read."""
 import re
 from html import unescape
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 from django.test import Client, override_settings
+from django.utils.html import escape
 
 from console.rewrites import (
     NOT_FOUND_TEXT,
@@ -151,48 +153,56 @@ def _session_forms(html: str) -> list[str]:
     return re.findall(r"<form[^>]*>", session)
 
 
-def test_no_actions_before_s7(operator_client: Client, engine: FakeEngine) -> None:
+INSTRUCTION = "Bob never forged the ledger; he only copied it"
+
+
+def cancel_link(state: str) -> str:
+    """E3's Cancel link (#299): the confirm page, carrying the display facts."""
+    query = urlencode({"kind": "instruction", "state": state, "instruction": INSTRUCTION})
+    return f'<a href="{escape(f"{SESSION_URL}cancel/?{query}")}" class="session-action">Cancel</a>'
+
+
+def test_apply_and_cancel_once_s7_registered(operator_client: Client, engine: FakeEngine) -> None:
+    """#299 registered ``stories:rewrite-apply`` and ``stories:rewrite-cancel``: under the real
+    urlconf an awaiting-approval session renders the Apply form and the Cancel link."""
     served(engine, "rewrite_session")
     html = page(operator_client)
-    assert _session_forms(html) == []
-    assert "session-actions" not in html
+    assert _session_forms(html) == [
+        f'<form method="post" action="{SESSION_URL}apply/" class="session-action">'
+    ]
+    assert '<input type="hidden" name="base_revision" value="20">' in html
+    assert cancel_link("awaiting_approval") in html
 
 
-def test_awaiting_answers_has_only_the_answers_form_once_s6_registered(
+def test_awaiting_answers_has_the_answers_form_and_cancel(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """#298 registered ``stories:rewrite-answers``: under the real urlconf an awaiting-answers
-    session renders the questions form and no footer action (S7's are still unregistered)."""
+    """An awaiting-answers session renders the questions form (#298) and the Cancel link
+    (#299), and no Apply form."""
     served(engine, "rewrite_open")
     html = page(operator_client)
     assert _session_forms(html) == [
         f'<form method="post" action="{SESSION_URL}answers/" class="answers">'
     ]
-    assert "session-actions" not in html
+    assert cancel_link("awaiting_answers") in html
+    assert "Apply this plan" not in html
 
 
-def test_actions_render_once_their_names_resolve(
-    operator_client: Client, engine: FakeEngine
-) -> None:
-    """**Complement:** under the stub urlconf, ``awaiting_approval`` renders Apply and Cancel,
-    and ``awaiting_answers`` renders Answer (the questions form) and Cancel."""
+def test_actions_render_under_the_stub_urlconf(operator_client: Client, engine: FakeEngine) -> None:
+    """**Complement:** the stub urlconf serves the real routes the same way."""
     served(engine, "rewrite_session")
     with override_settings(ROOT_URLCONF=M7_PAGES):
         html = page(operator_client)
     assert _session_forms(html) == [
         f'<form method="post" action="{SESSION_URL}apply/" class="session-action">'
     ]
-    assert '<input type="hidden" name="base_revision" value="20">' in html
-    assert f'<a href="{SESSION_URL}cancel/" class="session-action">Cancel</a>' in html
+    assert cancel_link("awaiting_approval") in html
     served(engine, "rewrite_open")
     with override_settings(ROOT_URLCONF=M7_PAGES):
         html = page(operator_client)
-    assert _session_forms(html) == [
-        f'<form method="post" action="{SESSION_URL}answers/" class="answers">'
-    ]
     assert "Submit answers" in html
-    assert f'<a href="{SESSION_URL}cancel/" class="session-action">Cancel</a>' in html
-    assert '<button type="submit">Apply</button>' not in html
+    assert cancel_link("awaiting_answers") in html
+    assert "Apply this plan" not in html
 
 
 def test_unknown_session_is_404(operator_client: Client, engine: FakeEngine) -> None:

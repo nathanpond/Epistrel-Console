@@ -150,6 +150,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar
+from urllib.parse import urlencode
 
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
@@ -328,6 +329,7 @@ LOCATOR_FIELDS = {
 }
 ANSWER_LOCATOR = re.compile(r"^body\.answers\[(\d+)\]\.text$")
 LITE_REWRITES = "lite_rewrites"
+CANCEL_INSTRUCTION_LIMIT = 200  # #299: the Cancel link carries at most this much instruction
 VARIANTS_ANCHOR = "#variants"
 
 # --- E6: URL helpers -----------------------------------------------------------------------------
@@ -352,6 +354,31 @@ def rewrites_url(story_id: object) -> str | None:
 def rewrite_session_url(story_id: object, session_id: object) -> str | None:
     """A rewrite session's page (#297, ``stories:rewrite``)."""
     return _reversed("stories:rewrite", story_id, session_id)
+
+
+def rewrite_cancel_url(
+    story_id: object,
+    session_id: object,
+    *,
+    kind: object = None,
+    state: object = None,
+    instruction: object = None,
+) -> str | None:
+    """``stories:rewrite-cancel`` (#299's confirm page) with its display-only query (``kind``,
+    ``state``, ``instruction``, each left out when blank; the instruction cut to
+    :data:`CANCEL_INSTRUCTION_LIMIT` characters with "…"); ``None`` while unregistered (D19)."""
+    url = _reversed("stories:rewrite-cancel", story_id, session_id)
+    if url is None:
+        return None
+    query: dict[str, str] = {}
+    for name, value in (("kind", kind), ("state", state), ("instruction", instruction)):
+        text = _text(value)
+        if text is None:
+            continue
+        if name == "instruction" and len(text) > CANCEL_INSTRUCTION_LIMIT:
+            text = text[:CANCEL_INSTRUCTION_LIMIT] + "…"
+        query[name] = text
+    return f"{url}?{urlencode(query)}" if query else url
 
 
 def amendments_url(story_id: object) -> str | None:
@@ -883,20 +910,22 @@ def _last_error(error: Mapping[str, Any] | None) -> tuple[str, str, str] | None:
     return (humanised(code) if code else EMPTY, message or EMPTY, more_json(error))
 
 
-def _actions(state: str, story_id: str, session_id: str) -> tuple[SessionAction, ...]:
-    wanted: list[tuple[str, str, str]] = []
+def _actions(session: RewriteSession, story_id: str) -> tuple[SessionAction, ...]:
+    """E3's actions that resolve (D19): Answer while ``awaiting_answers``, Apply while
+    ``awaiting_approval`` with a preview to apply (#299), and Cancel (#299's confirm link,
+    carrying the display facts) while open."""
+    state, session_id = session.state, session.id
+    found: list[tuple[str, str | None, str]] = []
     if state == AWAITING_ANSWERS:
-        wanted.append((ANSWER, "stories:rewrite-answers", "post"))
-    if state == AWAITING_APPROVAL:
-        wanted.append((APPLY, "stories:rewrite-apply", "post"))
+        found.append((ANSWER, _reversed("stories:rewrite-answers", story_id, session_id), "post"))
+    if state == AWAITING_APPROVAL and session.preview is not None:
+        found.append((APPLY, _reversed("stories:rewrite-apply", story_id, session_id), "post"))
     if state in OPEN_STATES:
-        wanted.append((CANCEL, "stories:rewrite-cancel", "get"))
-    actions = []
-    for label, name, method in wanted:
-        url = _reversed(name, story_id, session_id)
-        if url is not None:
-            actions.append(SessionAction(label, url, method))
-    return tuple(actions)
+        cancel = rewrite_cancel_url(
+            story_id, session_id, kind=session.kind, state=state, instruction=session.instruction
+        )
+        found.append((CANCEL, cancel, "get"))
+    return tuple(SessionAction(label, url, method) for label, url, method in found if url)
 
 
 def session_view(
@@ -946,7 +975,7 @@ def session_view(
             None if session.preview is None else preview_view(session.preview, names, entity_names)
         ),
         report_more=_report_more(session.report),
-        actions=_actions(session.state, story_id, session.id),
+        actions=_actions(session, story_id),
     )
 
 
@@ -1278,3 +1307,74 @@ def session_write_flash(
     if apply_directly:
         text = f"{NOT_APPLIED_PREFIX}{text}"
     return format_html("{}{}", text, tail)
+
+
+# --- #299: a stale plan's notice ------------------------------------------------------------------
+
+CARRIED_TEXT = "Answers carried over: {n}"
+
+
+@dataclass(frozen=True)
+class StaleNotice:
+    """A refused apply's ``rewrite_stale`` notice on the session page (#299; a stable contract
+    for #301): E5's sentence (``text``; ``url`` is reserved for #301 and ``None`` here), the
+    count of carried answers (``None`` unless ``carried_answers`` is a non-empty list), the
+    reasons' refs by humanised kind (:func:`stale_reason_refs`), and whether the preview shown
+    comes from the refusal itself (the re-read failed). ``stale_text`` is E3's stale count, set
+    only when ``from_refusal`` (otherwise the partial shows it); ``more`` is the raw reasons and
+    carried answers for More ("" when both are empty)."""
+
+    text: str
+    url: str | None
+    carried_count: int | None
+    reason_refs: list[tuple[str, list[dict[str, Any]]]]
+    from_refusal: bool
+    stale_text: str = ""
+    more: str = ""
+
+    @property
+    def carried_text(self) -> str:
+        return CARRIED_TEXT.format(n=number_text(self.carried_count)) if self.carried_count else ""
+
+    @property
+    def ref_rows(self) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
+        """One row per humanised kind: each ref as ``(humanised table, id)``, "—" for either
+        when missing (E23)."""
+        return tuple(
+            (
+                kind,
+                tuple(
+                    (
+                        humanised(_text(ref.get("table")) or "") or EMPTY,
+                        _text(ref.get("id")) or EMPTY,
+                    )
+                    for ref in refs
+                ),
+            )
+            for kind, refs in self.reason_refs
+        )
+
+
+def stale_notice(text: str, details: object, *, from_refusal: bool = False) -> StaleNotice:
+    """The :class:`StaleNotice` for a ``rewrite_stale`` refusal worded ``text`` (E5's), over its
+    ``details``. ``base_mismatch`` and ``pipeline_changed`` details carry no reasons or carried
+    answers, so they read as empty."""
+    parsed = RewriteStaleDetails.from_details(details)
+    carried = parsed.carried_answers if parsed is not None else None
+    count = len(carried) if isinstance(carried, list) and carried else None
+    reasons = parsed.reasons if parsed is not None else []
+    stale = _int(parsed.stale_count) if parsed is not None else None
+    raw: dict[str, Any] = {}
+    if reasons:
+        raw["reasons"] = reasons
+    if isinstance(carried, list) and carried:
+        raw["carried_answers"] = carried
+    return StaleNotice(
+        text=text,
+        url=None,
+        carried_count=count,
+        reason_refs=stale_reason_refs(details),
+        from_refusal=from_refusal,
+        stale_text=(_filled(STALE_COUNT_TEXT, stale, "time") if from_refusal and stale else ""),
+        more=more_json(raw) if raw else "",
+    )

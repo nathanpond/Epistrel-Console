@@ -40,7 +40,10 @@ shows only the actions whose URL names resolve (D19). #298 factored the page int
 :func:`render_session_page` (the frame, the links and the 404), :func:`read_session` (the one
 ``get_rewrite`` and its failure context) and :func:`session_context` (E3's view, the answers
 form while ``awaiting_answers``, the key, and the answers POST's notices and errors), which
-``console/views/rewrite_answers.py`` re-renders through.
+``console/views/rewrite_answers.py`` re-renders through. #299's apply and cancel
+(``console/views/rewrite_apply.py``) re-render through the same three; ``session_context``
+adds the Apply form's ``apply_hidden`` (the *preview's* ``base_revision``) and the stale
+notice.
 """
 
 from collections.abc import Mapping, Sequence
@@ -59,16 +62,20 @@ from console.engine_form_errors import apply_engine_errors
 from console.forms.rewrites import AnswersForm, NewRewriteForm, RewriteFilterForm
 from console.held import is_held
 from console.ids import is_ulid, new_ulid
+from console.impact import short_fingerprint
 from console.paging import CURSOR_DROPPED
 from console.portability import is_importing
 from console.raw import plural
 from console.rewrites import (
+    APPLY,
     AWAITING_ANSWERS,
+    AWAITING_APPROVAL,
     NO_MORE_SESSIONS,
     NO_SESSIONS,
     NO_SESSIONS_MATCH,
     NOT_FOUND_TEXT,
     SESSION_REJECTED_TEXT,
+    StaleNotice,
     rejected_notice,
     rejected_sessions,
     rewrite_refusal,
@@ -266,25 +273,50 @@ def session_context(
     key: str | None = None,
     notices: Sequence[str] = (),
     answer_errors: Mapping[str, Any] | None = None,
+    stale: StaleNotice | None = None,
+    display_only: bool = False,
+    preview_source_note: str = "",
 ) -> dict[str, Any]:
     """The session page's context for ``session``: E3's view, the answers form (an unbound
     ``AnswersForm`` while ``awaiting_answers`` unless the caller passes its own; none in any
-    other state), the key (fresh unless given), and #298's notices and answer errors."""
+    other state), the key (fresh unless given), #298's notices and answer errors, and #299's
+    Apply form (``apply_hidden``: the preview's ``base_revision`` and plan hash, while
+    ``awaiting_approval`` with a preview and Apply resolves), stale notice and preview note. A
+    ``display_only`` session (#299's synthetic one, read from a refusal) gets no answers form
+    and no Apply form."""
     from console.views.rewrite_answers import REJECTED_QUESTION  # it imports this module
+    from console.views.rewrite_apply import APPLY_LABEL, APPLY_LINE  # likewise
 
     names = cast_names(ctx.story.cast if ctx.story is not None else None)
     view = session_view(session, ctx.story_id, names)
-    awaiting = view.state == AWAITING_ANSWERS
+    awaiting = view.state == AWAITING_ANSWERS and not display_only
     if awaiting and answers_form is None:
         answers_form = AnswersForm(view.questions)
+    preview = session.preview
+    apply_hidden = None
+    if (
+        not display_only
+        and preview is not None
+        and view.state == AWAITING_APPROVAL
+        and any(action.label == APPLY for action in view.actions)
+    ):
+        apply_hidden = {
+            "base_revision": preview.base_revision,
+            "plan_hash": preview.plan_hash,
+            "plan_short": short_fingerprint(preview.plan_hash),
+        }
     return {
         "session_view": view,
         "answers_form": answers_form if awaiting else None,
         "idempotency_key": key or new_ulid(),
-        "base_revision": session.base_revision,
+        "apply_hidden": apply_hidden,
+        "apply_line": APPLY_LINE if apply_hidden else "",
+        "apply_label": APPLY_LABEL,
         "session_notices": tuple(notices),
         "answer_errors": answer_errors,
         "rejected_question_text": REJECTED_QUESTION if awaiting else "",
+        "stale_notice": stale,
+        "preview_source_note": preview_source_note,
     }
 
 
