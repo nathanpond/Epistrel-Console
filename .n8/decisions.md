@@ -3433,3 +3433,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The tests use `m7/directed_pending.json` as recorded, with `previous_variant {turn: 4, variant: 1}`, and override it to `{turn: 2, variant: 1}` in `test_held_202_lands_on_the_session` to match the test plan. E3's calls line renders pluralised as "3 model calls to replay" (E23's `_filled`), not the literal "call(s)". The Demo was not run against a live Engine. The body shape was checked against the recorded `RegenerateRequest` / `RegenerateDirective` schema and the Engine source (`engine.py` gates `body.directive.text`, and `lite_no_reconciliation` is a `TurnWarning` kind).
   **Why:** No live test is in the test plan, and the held 202 isn't reproducible under the stub. Cost if wrong: a live-only mismatch, which verify would catch.
   **Issue:** #301
+- **Decision:** A profile edit's "Apply anyway" offers the upgrade mode only when a listed story has `backfill.needed` **and** `upgrade_unavailable` false (the count line's rows), not on `backfill.needed` alone as the story's discretion note says.
+  **Why:** The AC requires `tests/test_profiles_edit.py` to pass unchanged; its M6-era `held()` report has a story with `backfill.needed` and `upgrade_unavailable` both true, and posts "Apply anyway" with no mode. Asking for the mode there would re-render the page instead of applying. The Engine's M7 `impact.py` always sends `upgrade_unavailable: false`, so live behaviour is the same either way. If that's wrong, a report that only lists unavailable stories would apply without asking (no mode is sent, so the Engine uses its default, `backfill`).
+  **Issue:** #311
+- **Decision:** The applied flash sorts `edit.backfills` by `queue_position` (nulls last, ties kept in the Engine's order), the same rule as #310's `queued_rows`. It is built inline because `profile_upgrade` imports `profile_edit`, so importing back would be circular. A queued story whose label read fails reads as its id.
+  **Why:** "In queue order" is defined by the queue position. The Engine already lists them in that order, so sorting is only a safeguard.
+  **Issue:** #311
+- **Decision:** The test plan's complement "under the real urlconf they are plain text" no longer holds, because #308 registered `stories:backfill`. The real urlconf now links each story too (asserted). The D19 plain-text case is tested by patching `profile_edit.backfill_url` to `None`.
+  **Why:** The story was planned before #308 landed. D19's fallback is still exercised.
+  **Issue:** #311
+- **Decision:** A linked backfills flash is a `SafeString` flashed with `extra_tags="safe"` (#297's rule). Main's warnings suffix, on an edit applied at the first stage, is escaped into it with `format_html`. The count line reads "N following stor(y|ies) gain(s) …" and sits at the top of the fieldset, above the radios and the field's errors.
+  **Why:** E21's flash rule and the story's verb-agreement note. The template position is discretion.
+  **Issue:** #311
+- **Decision:** The "renders as on main" complement compares the impact `<section>` against a golden captured from the pre-change code, `tests/fixtures/profile_edit_m6/impact_behavioural.html`, using `normalise_html`, with the signed and CSRF token values masked.
+  **Why:** E24's region golden.
+  **Issue:** #311
