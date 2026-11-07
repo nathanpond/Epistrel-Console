@@ -1,6 +1,10 @@
 """engine_live tests: deselected by default, and an error (never a skip) without ENGINE_LIVE_URL or
 ENGINE_LIVE_SERVICE_KEY."""
 
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import cast
+
 import pytest
 
 from tests.helpers import REPO
@@ -81,3 +85,27 @@ def test_selected_with_url_and_key_runs(
     monkeypatch.setenv("ENGINE_LIVE_SERVICE_KEY", KEY)
     result = run(pytester, monkeypatch, "-m", "engine_live")
     result.assert_outcomes(passed=1, deselected=1)
+
+
+def test_full_profile_refuses_a_profile_named_structured() -> None:
+    """#293 (#282): the live smoke finds Full by its stable id and checks its name, so a seed
+    still (or again) named "Structured" fails loudly instead of silently testing it."""
+    from console.engine.client import EngineClient
+    from tests.engine_live.test_engine_edge_smoke import FULL_PROFILE_ID, _full_profile
+
+    asked: list[str] = []
+
+    def answer(name: str) -> Callable[[str], SimpleNamespace]:
+        def get_engine_profile(profile_id: str) -> SimpleNamespace:
+            asked.append(profile_id)
+            return SimpleNamespace(name=name, preset=True, current_version=4)
+
+        return get_engine_profile
+
+    stub = SimpleNamespace(get_engine_profile=answer("Structured"))
+    with pytest.raises(AssertionError, match="Structured"):
+        _full_profile(cast(EngineClient, stub))
+    assert asked == [FULL_PROFILE_ID]
+    # Complement: the seeded Full passes and its id comes back.
+    stub = SimpleNamespace(get_engine_profile=answer("Full"))
+    assert _full_profile(cast(EngineClient, stub)) == FULL_PROFILE_ID

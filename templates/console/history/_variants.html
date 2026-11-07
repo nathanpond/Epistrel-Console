@@ -1,4 +1,4 @@
-{# The story's variant chains (#52): GET /stories/{id}/variants, each with a "view" link, and Swap (not on the active chain) and Fork (#53). #}
+{# The story's variant chains (#52): GET /stories/{id}/variants, each with a "view" link, and Swap (not on the active chain) and Fork (#53). A pruned chain (#293) reads "Pruned" with its note and has no link. #}
 {% load console_format %}
 <section class="variants" id="variants">
   <h2>Variants</h2>
@@ -12,11 +12,11 @@
       {% for row in chains %}
       <tr class="chain membership-{{ row.chain.membership }}">
         <td>turn {{ row.chain.turn }} · variant {{ row.chain.variant }}</td>
-        <td>{{ row.chain.membership }}{% if row.chain.membership_tx %} <small class="muted">since {{ row.chain.membership_tx|engine_time }}</small>{% endif %}{% if row.chain.requires_check %} <span class="badge-recheck">needs a guardrail re-check to activate</span>{% endif %}</td>
+        <td><span class="membership" title="{{ row.chain.membership }}">{{ row.chain.membership|humanised }}</span>{% if row.note %} <span class="note">{{ row.note }}</span>{% endif %}{% if row.chain.membership_tx %} <small class="muted">since {{ row.chain.membership_tx|engine_time }}</small>{% endif %}{% if row.chain.requires_check and not row.pruned %} <span class="badge-recheck">needs a guardrail re-check to activate</span>{% endif %}</td>
         <td>{{ row.chain.tip_turn }}</td>
         <td>{{ row.chain.turn_count }}</td>
         <td>{{ row.parent }}</td>
-        <td><a class="view-chain" href="{{ row.view_url }}">view</a>
+        <td>{% if row.view_url %}<a class="view-chain" href="{{ row.view_url }}">view</a>{% endif %}
           {% if row.swap %}{% if paused_note %}<button type="button" class="swap" disabled title="{{ paused_note }}">Swap</button>{% elif archived_note %}<button type="button" class="swap" disabled title="{{ archived_note }}">Swap</button>{% else %}<a class="button swap" href="{{ row.swap.url }}">Swap</a>{% endif %}{% endif %}
           {% if row.fork %}{% if paused_note %}<button type="button" class="fork" disabled title="{{ paused_note }}">Fork</button>{% else %}<a class="button fork" href="{{ row.fork.url }}">Fork</a>{% endif %}{% endif %}</td>
       </tr>

@@ -6,7 +6,7 @@
 {% if fork_banner %}{% include "console/play/_fork_banner.html" %}{% endif %}
 <dl class="story-header">
   <dt>Id</dt><dd><code>{{ story.id }}</code></dd>
-  <dt>Status</dt><dd class="status">{% if story.status == "paused" %}Paused{% else %}{{ story.status }}{% endif %}</dd>
+  <dt>Status</dt><dd class="status"><span title="{{ story.status }}">{{ story.status|status_label }}</span></dd>
   <dt>Timeline revision</dt><dd>{{ story.timeline_revision }}{% if timeline.undo %} {% if timeline.archived_note %}<button type="button" class="undo-rewind" disabled title="{{ timeline.archived_note }}">{{ timeline.undo.label }}</button>{% else %}<a class="button undo-rewind" href="{{ timeline.undo.url }}">{{ timeline.undo.label }}</a>{% endif %}{% endif %}{% if timeline.dormant %} <a class="dormant-chains" href="{{ timeline.variants_url }}">{{ timeline.dormant }} dormant chain{{ timeline.dormant|pluralize }}</a>{% endif %}</dd>
   <dt>Configuration</dt><dd>{% include "console/stories/_config_badge.html" %}</dd>
   <dt>Content rating</dt><dd><a class="rating-link" href="{{ rating_url }}">{{ story.content_rating.name|default:"—" }}</a></dd>

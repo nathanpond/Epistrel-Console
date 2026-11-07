@@ -784,7 +784,7 @@ def test_the_play_view_shows_the_banner_and_disables_its_controls(
         in banner
     )
     assert f'hx-get="{CHECK_URL}?banner=1&amp;cause=rating_check"' in html
-    assert '<dd class="status">Paused</dd>' in html
+    assert '<dd class="status"><span title="paused">Paused</span></dd>' in html
     assert "Paused — turns are refused until the check finishes" in html
     turn_form = html.split('id="turn-form"')[1].split("</form>")[0]
     assert "<fieldset disabled>" in turn_form

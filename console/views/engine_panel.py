@@ -50,6 +50,7 @@ from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.engine_probe import HEARTBEAT_LATE_S, OVERDUE_ALERT_S, ProbeResult
 from console.forms.config_changes import ConfigChangeFilterForm
 from console.forms.deployment import DeploymentSettingsForm, profile_default_rows
+from console.forms.stories import IMPORTING_STATUS
 from console.ids import new_ulid
 from console.models import EngineOperation
 from console.operation_log import REBUILD_KIND, queued_job_id, queued_job_text
@@ -159,10 +160,14 @@ class StoryOption:
 
 def story_option(story: StorySummary) -> StoryOption:
     """A rebuild-select option: held stories are listed without a name and cannot be rebuilt
-    (503 ``erasure_pending``); archived ones can (maintenance is allowed there)."""
+    (503 ``erasure_pending``); archived ones can (maintenance is allowed there). An importing
+    story is listed disabled, "<name> (importing)": a rebuild is refused with 409
+    ``story_importing`` (#293)."""
     if story.status == HELD:
         return StoryOption(story.id, "", f"(held) …{story.id[-6:]}", True)
     label = story.name or story.id
+    if story.status == IMPORTING_STATUS:
+        return StoryOption(story.id, story.name or "", f"{label} (importing)", True)
     if story.status != "active":
         label = f"{label} ({story.status})"
     return StoryOption(story.id, story.name or "", label, False)

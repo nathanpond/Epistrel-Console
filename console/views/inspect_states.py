@@ -17,8 +17,8 @@ section, so it checks ``module_gate(STATES, …)`` itself; it passes ``current="
 renders the inline panel before ``build`` runs. Reads: the shell's two, then one
 ``GET /stories/{id}/states/{name}?viewpoint=&as_of=``.
 
-``?viewpoint=`` is undeclared on both routes in the Engine's OpenAPI (D18, Engine bug
-nathanpond/Epistrel#682); the client sends it anyway.
+``?viewpoint=`` is declared on both routes since Engine M7 (D18, nathanpond/Epistrel#682); the
+client always sends it.
 
 Errors stay inside the section (convention 10), the form always rendered: a 404 is the
 not-found line (the one-State page's not-readable line when ``details.state`` is present); a 422

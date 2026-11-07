@@ -3,6 +3,7 @@ waiting cards and per-section degradation."""
 
 from typing import Any
 
+import httpx
 import pytest
 from django.test import Client
 from django.urls import reverse
@@ -20,6 +21,7 @@ from tests.play.helpers import (
     calls,
     error_json,
     snapshot,
+    story_json,
 )
 
 pytestmark = pytest.mark.django_db
@@ -217,3 +219,22 @@ def test_transcript_at_a_character_viewpoint_shows_no_classification(
     assert "beat-classification" not in html
     assert "(corrected)" not in html
     assert "<dt>classification</dt>" not in html
+
+
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [("paused", "Paused"), ("archived", "Archived"), ("later_status", "Later status")],
+)
+def test_the_status_reads_through_the_labels(
+    operator_client: Client, engine: FakeEngine, status: str, label: str
+) -> None:
+    """#293: ``dd.status`` reads through ``STATUS_LABELS`` (the one status wording), the raw value
+    in ``title``. A status a later Engine adds (open enum, E15) can't pass the fake's schema
+    validation, so the story read answers through ``side_effect``."""
+    answer_page(engine)
+    body = story_json(status=status)
+    engine.side_effect(
+        "GET", "/stories/{story_id}", lambda _request: httpx.Response(200, json=body)
+    )
+    html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    assert f'<dd class="status"><span title="{status}">{label}</span></dd>' in html

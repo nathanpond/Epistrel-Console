@@ -12,6 +12,7 @@ import pytest
 from django.test import Client, override_settings
 
 from console.engine.client import ENGINE_PROFILES_PAGE, EngineClient, EngineError
+from console.engine.models import EngineProfile
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from console.ids import new_ulid
@@ -19,6 +20,19 @@ from console.models import EngineOperation
 from tests.plugins.engine_live import live_key, live_url
 
 pytestmark = pytest.mark.engine_live
+
+# Engine M7's seeded presets (#293, absorbing #282): ``Structured`` became Full in place (same id,
+# version 4; versions 1 to 3 stay pinnable), beside Lite, Standard and Max.
+LITE_PROFILE_ID = "00000000000000000000PRF001"
+FULL_PROFILE_ID = "00000000000000000000PRF002"
+STANDARD_PROFILE_ID = "00000000000000000000PRF003"
+MAX_PROFILE_ID = "00000000000000000000PRF004"
+PRESET_NAMES = {
+    LITE_PROFILE_ID: "Lite",
+    STANDARD_PROFILE_ID: "Standard",
+    FULL_PROFILE_ID: "Full",
+    MAX_PROFILE_ID: "Max",
+}
 
 
 @pytest.fixture
@@ -132,7 +146,10 @@ def test_story_create_archive_list_delete_live(
             listing = operator_client.get("/stories/").content.decode()
             assert f"<code>{story_id}</code>" in listing  # archived stories are listed
             row = listing[listing.index(f"<code>{story_id}</code>") :]
-            assert '<td class="status">archived</td>' in row[: row.index("</tr>")]
+            assert (
+                '<td class="status"><span title="archived">Archived</span></td>'
+                in row[: row.index("</tr>")]
+            )
             assert "<td>2</td>" in row[: row.index("</tr>")]  # the cast
         finally:
             deleted = operator_client.post(
@@ -451,9 +468,9 @@ def test_two_primary_sequential_turn_live(
     url: str, key: str, operator_client: Client, operator: object
 ) -> None:
     """#200: as ``test_play_one_turn_live``, on a story with a player and two non-players
-    assigned the seeded ``Structured`` profile v2 (per-character renders): one turn from the play
-    view naming both non-players as render characters, sequentially, answers 200 with an
-    ``order`` of length 2."""
+    assigned the seeded Full v2 (formerly Structured v2) profile (per-character renders): one
+    turn from the play view naming both non-players as render characters, sequentially, answers
+    200 with an ``order`` of length 2."""
     client = EngineClient(url, key, principal="console:smoke")
     ratings = client.list_content_ratings()
     created = client.create_story(
@@ -474,7 +491,7 @@ def test_two_primary_sequential_turn_live(
     try:
         client.assign_engine_profile(
             story_id,
-            _structured_profile(client),
+            _full_profile(client),
             ignore_warnings=True,
             idempotency_key=new_ulid(),
             version=2,
@@ -511,19 +528,42 @@ def test_two_primary_sequential_turn_live(
         _delete_when_idle(client, story_id)
 
 
-def _structured_profile(client: EngineClient) -> str:
-    """The id of the one profile named exactly ``Structured`` (no hard-coded id)."""
-    names: list[str] = []
-    found: list[str] = []
+def _full_profile(client: EngineClient) -> str:
+    """The Full preset's id, read by its stable id (#282): it must be named ``Full``, be a
+    preset and be at version 4 or later, so a renamed or moved seed fails loudly rather than
+    silently testing another profile."""
+    profile = client.get_engine_profile(FULL_PROFILE_ID)
+    assert profile.name == "Full", f"{FULL_PROFILE_ID} is named {profile.name!r}, not 'Full'"
+    assert profile.preset is True, f"{FULL_PROFILE_ID} is not a preset"
+    assert profile.current_version >= 4, f"Full is at version {profile.current_version}"
+    return FULL_PROFILE_ID
+
+
+def _every_profile(client: EngineClient) -> list[EngineProfile]:
+    """Every listed profile (``include_deleted`` off), through every cursor."""
+    found: list[EngineProfile] = []
     cursor: str | None = None
     while True:
         profiles, cursor = client.list_engine_profiles(cursor=cursor, limit=ENGINE_PROFILES_PAGE)
-        names.extend(p.name for p in profiles)
-        found.extend(p.id for p in profiles if p.name == "Structured")
+        found.extend(profiles)
         if not cursor:
-            break
-    assert len(found) == 1, f"expected one profile named 'Structured', saw {names}"
-    return found[0]
+            return found
+
+
+@pytest.mark.engine_auth
+def test_m7_presets_live(url: str, key: str) -> None:
+    """#293: the profile list names Lite, Standard, Full and Max at their four stable ids, each a
+    preset, with Full at version 4 or later (other profiles are tolerated). **Complement:** no
+    profile is named ``Structured`` any more."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profiles = _every_profile(client)
+    by_id = {p.id: p for p in profiles}
+    for profile_id, name in PRESET_NAMES.items():
+        assert profile_id in by_id, f"{name} ({profile_id}) is not listed"
+        assert by_id[profile_id].name == name
+        assert by_id[profile_id].preset is True
+    assert by_id[FULL_PROFILE_ID].current_version >= 4
+    assert [p.id for p in profiles if p.name == "Structured"] == []
 
 
 def _knowledge_story(client: EngineClient, profile: str, version: int) -> str:
@@ -559,11 +599,11 @@ def _knowledge_story(client: EngineClient, profile: str, version: int) -> str:
 
 @pytest.mark.engine_auth
 def test_m5_knowledge_reads_live(url: str, key: str) -> None:
-    """#186: on ``Structured`` v2 (partitions on) the three knowledge reads answer empty pages
-    for a story with no turn; **Complement:** on v1 ("Structured (M4)", no partitions) each is
-    409 ``module_off``."""
+    """#186: on Full v2 (formerly Structured v2; partitions on) the three knowledge reads answer
+    empty pages for a story with no turn; **Complement:** on Full v1 (formerly Structured v1,
+    "Structured (M4)", no partitions) each is 409 ``module_off``."""
     client = EngineClient(url, key, principal="console:smoke")
-    profile = _structured_profile(client)
+    profile = _full_profile(client)
     stories: list[str] = []
     try:
         on = _knowledge_story(client, profile, 2)
@@ -592,13 +632,14 @@ def test_m5_knowledge_reads_live(url: str, key: str) -> None:
 
 @pytest.mark.engine_auth
 def test_m6_world_live(url: str, key: str) -> None:
-    """#232: on ``Structured`` v3 (States and the clock on) a story with no turn reads no
-    States, a clock at ``on`` and offset 0, no scheduled events and nothing to reconcile, and
-    the provider registry parses; a declared ``gold`` set by +5 answers 15 at an inter-turn
-    slot after turn 0, and the clock advances 30 minutes. **Complement:** on v2 (no States, no
-    clock) ``get_states`` and ``advance_clock`` are 409 ``module_off`` naming their module."""
+    """#232: on Full v3 (formerly Structured v3; States and the clock on) a story with no turn
+    reads no States, a clock at ``on`` and offset 0, no scheduled events and nothing to
+    reconcile, and the provider registry parses; a declared ``gold`` set by +5 answers 15 at an
+    inter-turn slot after turn 0, and the clock advances 30 minutes. **Complement:** on Full v2
+    (formerly Structured v2; no States, no clock) ``get_states`` and ``advance_clock`` are 409
+    ``module_off`` naming their module."""
     client = EngineClient(url, key, principal="console:smoke")
-    profile = _structured_profile(client)
+    profile = _full_profile(client)
     stories: list[str] = []
     try:
         on = _knowledge_story(client, profile, 3)
@@ -659,8 +700,7 @@ def test_m6_world_live(url: str, key: str) -> None:
             _delete_when_idle(client, story_id)
 
 
-FULL_PRESET = "00000000000000000000PRF002"
-PRESET_IDS = {f"00000000000000000000PRF00{n}" for n in (1, 2, 3, 4)}
+PRESET_IDS = set(PRESET_NAMES)
 GZIP_MAGIC = b"\x1f\x8b"
 
 
@@ -692,7 +732,7 @@ def test_m7_portability_live(url: str, key: str) -> None:
     **Complement:** an unknown State's definition is 404, and the story is deleted in a
     ``finally``."""
     client = EngineClient(url, key, principal="console:smoke")
-    story = _knowledge_story(client, FULL_PRESET, 4)
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
     try:
         assert client.list_rewrites(story).items == []
         assert client.list_amendments(story).items == []

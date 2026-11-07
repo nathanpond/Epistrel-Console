@@ -77,7 +77,14 @@ from console.operation_log import note_engine_record
 from console.perception import perception_url, turn_links_perception
 from console.predicates import predicate_names
 from console.story_pause import is_paused, pause_banner
-from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
+from console.timeline import (
+    ARCHIVED_NOTE,
+    PAUSED_NOTE,
+    PRUNED_CHAIN_NOTE,
+    PRUNED_MEMBERSHIP,
+    Basis,
+    Link,
+)
 from console.turn_trace import TurnTrace, read_turn_trace
 from console.world import viewpoint_line
 
@@ -110,8 +117,13 @@ class ChainRow:
     key: str
     view_url: str
     parent: str
-    swap: Link | None = None  # every chain but the active one (#53)
-    fork: Link | None = None  # fork along this chain, through its tip (#53)
+    swap: Link | None = None  # every chain but the active one (#53) and a pruned one (#293)
+    fork: Link | None = None  # fork along this chain, through its tip (#53); not when pruned
+    note: str = ""  # a pruned chain's PRUNED_CHAIN_NOTE (#293)
+
+    @property
+    def pruned(self) -> bool:
+        return self.chain.membership == PRUNED_MEMBERSHIP
 
 
 @dataclass(frozen=True)
@@ -127,6 +139,9 @@ class Page:
     newest_url: str = ""
     chain: str = ""  # the variant parameter, when set
     clear_chain_url: str = ""
+    # ``?variant=`` naming a pruned chain, answered 409 ``pruned`` (#293): the note and "Clear
+    # chain" stand in for the error panel.
+    pruned_note: str = ""
     settings_error: ErrorPanel | None = None
     legend: bool = False  # a structured beat is shown: the verdict legend (#147)
     classification_legend: bool = False  # a classified say is shown: the legend line (#207)
@@ -202,7 +217,8 @@ def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) 
     """Each chain with its "view" link (``viewpoint``, ``limit`` and ``player_view`` kept,
     ``variant`` set) and
     its Swap (not on the active chain; ``&check=1`` when it ``requires_check``) and Fork links,
-    carrying the story read's revision and head (#53)."""
+    carrying the story read's revision and head (#53). A pruned chain (#293) gets none of the
+    three, only :data:`PRUNED_CHAIN_NOTE`: the Engine refuses each with 409 ``pruned``."""
     story_id = story.id
     basis = Basis(
         story_id,
@@ -222,6 +238,9 @@ def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) 
                 params[name] = request.GET[name]
         params["variant"] = key
         parent = f"{chain.parent.turn}:{chain.parent.variant}" if chain.parent else "—"
+        if chain.membership == PRUNED_MEMBERSHIP:
+            rows.append(ChainRow(chain, key, "", parent, note=PRUNED_CHAIN_NOTE))
+            continue
         swap = (
             basis.swap(chain.turn, chain.variant, requires_check=chain.requires_check)
             if chain.membership != "active"
@@ -238,7 +257,11 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         history = client.get_history(story.id, **query)
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return Page(error=panel_for(exc), chain=query["variant"] or "")
+        variant = query["variant"] or ""
+        if variant and isinstance(exc, EngineError) and exc.code == PRUNED_MEMBERSHIP:
+            clear = _url(story.id, _with(request, variant=None))
+            return Page(chain=variant, clear_chain_url=clear, pruned_note=PRUNED_CHAIN_NOTE)
+        return Page(error=panel_for(exc), chain=variant)
     cast = story.cast
     labels = cast_helpers.character_labels(cast)
     items, audit_items = split_audit(history)

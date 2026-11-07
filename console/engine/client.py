@@ -1670,11 +1670,10 @@ class EngineClient:
         return _parse(self._request("GET", path, params=params), Exposures)
 
     # --- States (M6) ------------------------------------------------------------------------------
-    # D18: the Engine reads ``?viewpoint=`` on ``GET …/states``, ``GET …/states/{name}`` and
-    # ``GET …/scheduled-events`` through its request context, so its OpenAPI doesn't declare it
-    # there (Engine bug nathanpond/Epistrel#682). The client sends it anyway (D4: ``omniscient``
-    # unless given, never the story's default); the fake Engine doesn't check query names, and
-    # ``test_the_three_viewpoint_reads_are_undeclared`` pins the omission.
+    # D18: ``?viewpoint=`` on ``GET …/states``, ``GET …/states/{name}`` and
+    # ``GET …/scheduled-events`` is declared since Engine M7 (nathanpond/Epistrel#682). The client
+    # always sends it (D4: ``omniscient`` unless given, never the story's default), and
+    # ``test_the_three_viewpoint_reads_are_declared`` pins the declaration.
     #
     # D8: the timeline-moving slot writes (set, declare, approve, advance, the three scheduled-
     # event writes, settle now, compensate) send ``X-Epistrel-Expected-Revision`` when given and
@@ -1686,8 +1685,8 @@ class EngineClient:
     def get_states(self, story_id: str, *, viewpoint: str = OMNISCIENT_VIEWPOINT) -> StoryStates:
         """``GET /stories/{id}/states`` (FR-STATE-9, FR-STORE-31): the States ``viewpoint`` may
         read (``omniscient`` or ``character:<id>``; a character is never given a ``hidden``
-        State) and the world clock. ``viewpoint`` is always sent, though the recorded schema
-        doesn't declare it here (D18); ``actor_character_id`` is never sent. 409 ``module_off``
+        State) and the world clock. ``viewpoint`` is always sent (declared since Engine M7, #682);
+        ``actor_character_id`` is never sent. 409 ``module_off``
         (``states``) while States are off; 422 ``viewpoint_unresolved``."""
         params = {"viewpoint": viewpoint}
         path = f"{_story_path(story_id)}/states"
@@ -1703,7 +1702,7 @@ class EngineClient:
         as_of: str | None = None,
     ) -> StateView:
         """``GET /stories/{id}/states/{name}`` (FR-STATE-9): one State for ``viewpoint`` (always
-        sent, undeclared in the recorded schema, D18), folded through ``as_of`` when given: the
+        sent; declared since Engine M7, #682), folded through ``as_of`` when given: the
         D7 boundary ``N`` or ``N+k``, sent as given (httpx encodes ``+`` as ``%2B``); ``None``
         leaves it out (the story as it stands). 404 for a State declared after ``as_of``, an
         unknown name, ``world_clock`` or a ``hidden`` State read for a character; 409
@@ -1915,8 +1914,8 @@ class EngineClient:
     ) -> ScheduledEvents:
         """``GET /stories/{id}/scheduled-events`` (FR-CLOCK-9): the events ``viewpoint`` holds
         (``omniscient``: every canon event; a character: the canon events it takes part in and
-        its own belief-only schedules). ``viewpoint`` is always sent, though the recorded
-        schema doesn't declare it here (D18). Never gated; 422 ``viewpoint_unresolved``."""
+        its own belief-only schedules). ``viewpoint`` is always sent (declared since Engine M7,
+        #682). Never gated; 422 ``viewpoint_unresolved``."""
         params = {"viewpoint": viewpoint}
         path = f"{_story_path(story_id)}/scheduled-events"
         return _parse(self._request("GET", path, params=params), ScheduledEvents)

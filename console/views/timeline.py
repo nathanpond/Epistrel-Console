@@ -96,7 +96,7 @@ from console.views.play import (
     error_inspector,
     read_story,
 )
-from console.wording import archived_refusal, character_label
+from console.wording import archived_refusal, character_label, write_refusal
 from console.world import slot_turn_text, world_refusal
 
 log = logging.getLogger(__name__)
@@ -239,6 +239,9 @@ def _candidates(exc: EngineError) -> list[tuple[int, int]]:
     return found
 
 
+TIMELINE_VERB = "change the timeline"  # C5's verb phrase for ``_refused``'s ``pruned`` branch
+
+
 def _refused(
     request: HttpRequest,
     exc: EngineClientError,
@@ -267,6 +270,10 @@ def _refused(
             )
         elif exc.code == "nothing_to_regenerate":
             refusal = replace(refusal, notice=nothing_text)
+        elif exc.code == "pruned":  # #293: C5's sentence alone, no links or inspector
+            pruned = write_refusal(exc, story_id, TIMELINE_VERB)
+            if pruned is not None:
+                refusal = replace(refusal, notice=pruned.text, inspector=None)
         elif exc.code == "not_latest_turn" and turn is not None:
             refusal = replace(
                 refusal, notice=not_latest_text(turn), links=_not_latest_links(story_id, turn)

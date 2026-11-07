@@ -33,6 +33,9 @@ matched on ``code`` alone:
 - ``revision_conflict`` → ``console.timeline.reload_message(details.current_revision)``;
 - ``erased_subject_referenced`` → :data:`ERASED_TEXT` "This text refers to an erased subject —
   nothing was saved" (#48's);
+- ``pruned`` (409, #293: a swap, untruncate or fork of a chain a prune discarded, FR-STORE-19)
+  → :data:`PRUNED_TEXT` "That chain was pruned — its records are gone, so it can't be restored",
+  no URL;
 - ``idempotency_conflict``, any other code, and a non-``EngineError`` → ``None``: the caller
   renders #43's ``panel_for(exc)``.
 
@@ -90,6 +93,7 @@ MINOR = "minor"
 MINOR_SUFFIX = " (minor)"
 UNKNOWN_CHARACTER = "That character isn't in this story's cast"
 ERASED_TEXT = "This text refers to an erased subject — nothing was saved"
+PRUNED_TEXT = "That chain was pruned — its records are gone, so it can't be restored"  # #293
 
 
 def humanised(value: str) -> str:
@@ -169,4 +173,6 @@ def write_refusal(exc: EngineClientError, story_id: str, verb_phrase: str) -> Wr
         return WriteRefusal(reload_message(exc.details.get("current_revision")))
     if exc.code == "erased_subject_referenced":
         return WriteRefusal(ERASED_TEXT)
+    if exc.code == "pruned":
+        return WriteRefusal(PRUNED_TEXT)
     return None

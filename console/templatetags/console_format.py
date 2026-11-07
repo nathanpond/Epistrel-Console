@@ -99,6 +99,16 @@ def humanised_filter(value: Any) -> str:
     return humanised(str(value))
 
 
+@register.filter(name="status_label")
+def status_label_filter(value: Any) -> str:
+    """A story status in the one wording (#293, ``console.forms.stories.STATUS_LABELS``):
+    ``paused`` → "Paused", ``later_status`` → "Later status", ``None`` or blank → "—". The
+    template puts the raw value in ``title``."""
+    from console.forms.stories import status_label
+
+    return status_label(None if value is None else str(value))
+
+
 @register.filter
 def engine_label(value: Any) -> str:
     """A stored ``EngineOperation.engine_label`` as shown (#257): "Staged turn" (D13), another

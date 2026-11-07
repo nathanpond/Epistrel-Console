@@ -9,8 +9,10 @@ from django.http import HttpRequest
 from django.test import Client
 
 from console.engine.client import EngineClient
+from console.engine.models import StorySummary
 from console.engine_access import engine_client_for
 from console.models import EngineOperation
+from console.views import engine_panel
 from console.views import play as play_views
 from tests.engine_panel.helpers import HELD_STORY, REBUILD, STORY, calls, error
 from tests.fakes.engine import FakeEngine
@@ -44,6 +46,27 @@ def test_the_select_lists_stories_and_disables_held_ones(
     # Archived stories can be rebuilt (maintenance is allowed there).
     assert '<option value="01JB2Z8Y5Q3W6K9M1N4P7R0T2X">Old pier (archived)</option>' in html
     assert f'<option value="{HELD_STORY}" disabled>(held) …{HELD_STORY[-6:]}</option>' in html
+
+
+def test_an_importing_story_cannot_be_picked(operator_client: Client, engine: FakeEngine) -> None:
+    """#293: a rebuild of an importing story is refused with 409 ``story_importing``, so it is
+    listed disabled, labelled "(importing)", and left out of the signed names. **Complement:**
+    an archived story stays pickable (#43's maintenance rule)."""
+    importing = "01JB2Z8Y5Q3W6K9M1N4P7R0T2Y"
+    items = [
+        summary(importing, "Imported", "importing"),
+        summary("01JB2Z8Y5Q3W6K9M1N4P7R0T2X", "Old pier", "archived"),
+    ]
+    engine.respond("GET", "/stories", 200, json={"items": items})
+
+    html = operator_client.get("/engine/").content.decode()
+
+    assert f'<option value="{importing}" disabled>Imported (importing)</option>' in html
+    assert '<option value="01JB2Z8Y5Q3W6K9M1N4P7R0T2X">Old pier (archived)</option>' in html
+    parsed = StorySummary.from_json(items[0])
+    assert parsed is not None
+    option = engine_panel.story_option(parsed)
+    assert option == engine_panel.StoryOption(importing, "Imported", "Imported (importing)", True)
 
 
 def test_the_select_goes_to_the_confirm_page_with_the_name(

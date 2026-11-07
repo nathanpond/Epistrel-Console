@@ -251,9 +251,9 @@ C5 first.
   across turns and slots. #209's slot field carries the exported
   `console.world.SLOTS_NOT_LISTED` = "History doesn't list inter-turn slots; a State's "since"
   position or a write's result names one"; #255's trail lists turn changes only and says so.
-- **Undeclared `viewpoint`.** `?viewpoint=` on `GET …/states`, `GET …/states/{name}` and `GET
-  …/scheduled-events` is undeclared (Engine bug nathanpond/Epistrel#682) in the Engine's
-  OpenAPI. This goes in code comments and is a candidate Engine request; no page notice.
+- **`viewpoint` on the States and scheduled-event reads.** Declared since Engine M7
+  (nathanpond/Epistrel#682): `?viewpoint=` on `GET …/states`, `GET …/states/{name}` and `GET
+  …/scheduled-events` is in the Engine's OpenAPI. No page notice.
 - **No State definition read.** `GET …/states/{name}` answers only `visibility` and `unit` of a
   definition's mutable members, and no route returns a definition. #265 pre-fills those two,
   shows the Console's own last record as possibly stale, and cites `STATE_DEFINITION_REQUEST`
@@ -265,9 +265,9 @@ C5 first.
   provider (#242); the provider shows in #247 and #248.
 - **`ExternalReadItemBody` names no State.** It carries `state_id` only, and no read maps ids
   to names, so #248 labels a read by provider and value name.
-- **`POST /stories` doesn't declare its 404.** A `provider_bindings` entry naming an
-  unregistered provider answers 404 `not_found` (`details.provider`, `ProviderNotFound`),
-  undeclared among the route's responses. #259 handles it by `details.provider`.
+- **`POST /stories`'s 404.** Declared since Engine M7 (#682): a `provider_bindings` entry
+  naming an unregistered provider answers 404 `not_found` (`details.provider`,
+  `ProviderNotFound`). #259 handles it by `details.provider`.
 - **History has no `whisper_to`.** The history read doesn't return a turn's whisper target, so
   #263's correction can't carry a whisper over (its help says so).
 - **Clock anchor components are the anchoring offset's, not now's.** `ClockBody.anchor`'s
