@@ -49,6 +49,7 @@ from console.engine.models import (
     DirectedPending,
     Directive,
     DoneTotal,
+    ErasureResult,
     EvalRun,
     EvalRunPage,
     ExportJob,
@@ -56,6 +57,7 @@ from console.engine.models import (
     FloorResult,
     GapFill,
     GapFillPreview,
+    ImpactReport,
     ImportImpact,
     ImportingDetails,
     ImportJob,
@@ -83,6 +85,7 @@ from console.engine.models import (
     StoryBackfill,
     StoryCertificationRunRequested,
     StoryOperations,
+    StoryProfileWrite,
     rejected_entries,
 )
 from console.engine.timeouts import PROFILE_EDIT, UPLOAD
@@ -664,6 +667,72 @@ def test_write_answers_are_strict() -> None:
     written["questions"][0]["severity"] = 7
     assert RewriteSessionWritten.from_json(written) is None
     assert RewriteSessionWritten.from_json(m7("rewrite_open")) is not None
+
+
+ERASURE: dict[str, Any] = {
+    "config_revision": 7,
+    "dry_run": False,
+    "subject": {"kind": "character", "id": BOB},
+    "scope": "story",
+    "story_id": STORY,
+    "records": {"story.characters": 1},
+    "prose_segments": 2,
+    "media": 0,
+    "idempotency_results": 0,
+    "regeneration": "redaction",
+    "degradation": [],
+    "referencing_stories": [],
+    "erasure_id": "01JM7ER0000000000000000001",
+    "promoted_drafts": [
+        {
+            "catalog_id": "01JM7CC0000000000000000001",
+            "character_id": BOB,
+            "companion_ids": [],
+            "follow_up": {"kind": "review_draft"},
+        }
+    ],
+}
+
+
+def _strict(model: type[Model], good: dict[str, Any], bad: dict[str, Any]) -> None:
+    """D15 (#342): the good answer parses whole; with one bad entry the answer is ``None``."""
+    assert model.from_json(good) is not None
+    assert model.from_json(bad) is None
+
+
+def test_profile_edit_backfills_are_strict() -> None:
+    good = m7("profile_edit_backfills_applied")
+    assert len(good["backfills"]) == 1
+    bad = copy.deepcopy(good)
+    bad["backfills"].append({"id": "01JM7BF0000000000000000009", "status": "queued"})  # no job
+    _strict(ProfileEdit, good, bad)
+
+
+def test_story_profile_write_backfill_is_strict() -> None:
+    good = m7("assign_backfill_started")
+    bad = copy.deepcopy(good)
+    bad["backfill"] = {"id": 1}
+    _strict(StoryProfileWrite, good, bad)
+
+
+def test_erasure_promoted_drafts_are_strict() -> None:
+    good = copy.deepcopy(ERASURE)
+    parsed = ErasureResult.from_json(good)
+    assert parsed is not None
+    assert [d.character_id for d in parsed.promoted_drafts] == [BOB]
+    bad = copy.deepcopy(good)
+    bad["promoted_drafts"].append({"catalog_id": "01JM7CC0000000000000000002"})
+    _strict(ErasureResult, good, bad)
+
+
+def test_impact_certifications_lost_are_strict() -> None:
+    good = m7("upgrade_pinned_impact")
+    assert len(good["impact"]["certifications_lost"]) == 1
+    bad = copy.deepcopy(good)
+    bad["impact"]["certifications_lost"].append({})
+    _strict(ImpactReport, good["impact"], bad["impact"])
+    # The write that carries the report fails whole too.
+    _strict(ProfileEdit, good, bad)
 
 
 def test_a_write_answer_that_does_not_parse_is_a_bad_response(fake_engine: FakeEngine) -> None:
