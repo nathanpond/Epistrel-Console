@@ -68,7 +68,7 @@ def test_the_recommended_option_is_checked_and_explained() -> None:
     assert f'value="{KEY}"' in html
     assert PREVIEW_PENDING in html
     # The footer has Cancel as a plain link, and no per-question accept button.
-    assert f'<a href="/stories/{STORY}/rewrites/{SESSION}/cancel/?kind=instruction&amp;' in html
+    assert f'<a href="/stories/{STORY}/rewrites/{SESSION}/cancel/?kind=rewrite&amp;' in html
     assert html.count("<form") == 1
 
 
