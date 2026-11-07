@@ -863,8 +863,12 @@ def _start_refused(
 ) -> HttpResponse:
     """A refusal at either stage: the plain form with the refusal's text (a fresh key), or
     #43's panel (an unknown outcome keeps the posted key); ``kept`` re-shows what was
-    previewed, muted, above it."""
+    previewed, muted, above it. ``nothing_to_backfill`` on a resume (a stale "Finish now…"
+    once the backfill ended) follows the Engine (#309, #352): the gap-fill form in ``start``
+    mode, with nothing kept from the resume."""
     data = request.POST if mode == START else None
+    if mode == RESUME and isinstance(exc, EngineError) and exc.code == NOTHING_TO_BACKFILL:
+        mode, kept = START, None
     verb = RESUME_VERB if mode == RESUME else GAP_FILL_VERB
     changes: dict[str, Any] = {}
     errors: list[tuple[str, str]] = []

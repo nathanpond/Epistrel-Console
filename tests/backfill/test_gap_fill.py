@@ -315,6 +315,45 @@ def test_a_stale_start_on_a_paused_story_renders_the_resume_confirm(
     assert "2 open conflicts uncertain" in html
 
 
+def test_a_stale_finish_now_on_an_ended_backfill_renders_the_gap_fill_form(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#352: a "Finish now…" posted after the backfill ended; the Engine answers 409
+    ``nothing_to_backfill``, so the page follows it with the gap-fill form (``mode=start``)."""
+    engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_completed"))
+    engine.respond("POST", BACKFILL_PATH, 409, json=error_json("nothing_to_backfill"))
+    response = post(operator_client, mode="resume")
+    section = gap_section(response.content.decode())
+    assert response.status_code == 200
+    assert escape(NOTHING_TO_FILL) in section
+    assert "Fill coverage gaps…" in section
+    assert '<input type="hidden" name="mode" value="start">' in section
+    assert '<button type="submit">Preview</button>' in section
+    # The complement: none of the resume form is left.
+    assert "Finish the backfill" not in section
+    assert "Finish now" not in section
+    assert 'name="mode" value="resume"' not in section
+    assert len(writes(engine)) == 1
+
+
+def test_a_stale_finish_now_confirm_on_an_ended_backfill_renders_the_gap_fill_form(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#352 at the confirm stage: the resume summary isn't kept; the gap-fill form shows."""
+    engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_paused"))
+    engine.respond("POST", BACKFILL_PATH, 200, json=m7("backfill_resume_preview"))
+    data = confirm_data(post(operator_client, mode="resume").content.decode())
+    engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_completed"))
+    engine.respond("POST", BACKFILL_PATH, 409, json=error_json("nothing_to_backfill"))
+    section = gap_section(operator_client.post(START, data).content.decode())
+    assert escape(NOTHING_TO_FILL) in section
+    assert '<input type="hidden" name="mode" value="start">' in section
+    assert '<button type="submit">Preview</button>' in section
+    assert "Finish now" not in section
+    assert "open conflicts uncertain" not in section
+    assert len(writes(engine)) == 2
+
+
 def test_a_resume_finished_at_once_redirects(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_paused"))
     engine.respond("POST", BACKFILL_PATH, 200, json=resumed(conflicts_made_uncertain=None))
