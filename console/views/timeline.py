@@ -42,7 +42,7 @@ from urllib.parse import urlencode, urlsplit
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from console.canon import cast_names
@@ -78,6 +78,7 @@ from console.ids import new_ulid
 from console.inspect import history_turn_url
 from console.notices import EXTERNAL_EFFECTS_TEXT, NoticeCards, notice_cards
 from console.reactivation import FORK, OP_PARAM, SWAP, UNTRUNCATE
+from console.rewrites import rewrite_session_url
 from console.story_pause import check_url, is_paused, story_paused_refusal
 from console.timeline import (
     Basis,
@@ -365,23 +366,12 @@ def regenerate(request: HttpRequest, story_id: str) -> HttpResponse:
     return confirm_action(request, page, perform, extra=extra)
 
 
-def _rewrite_session_url(story_id: str, session_id: str) -> str | None:
-    """The rewrite session page (#297), ``None`` while ``stories:rewrite`` is unregistered (D19)
-    or for a blank id. TODO(#294): use ``console.rewrites.rewrite_session_url`` (E6)."""
-    if not session_id:
-        return None
-    try:
-        return reverse("stories:rewrite", args=[story_id, session_id])
-    except NoReverseMatch:
-        return None
-
-
 def _held_for_review(request: HttpRequest, story_id: str, pending: DirectedPending) -> HttpResponse:
     """A directed regenerate's 202 (#292): the rewrite session holding the reply, else (its
     page not registered yet) #43's panel with :data:`HELD_FOR_REVIEW_TEXT`. Nothing sends a
     directive before #301, which replaces this; no flash."""
     session_id = pending.rewrite_session.id
-    url = _rewrite_session_url(story_id, session_id)
+    url = rewrite_session_url(story_id, session_id)
     if url is not None:
         return redirect(url)
     context = {

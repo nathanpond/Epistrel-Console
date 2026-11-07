@@ -1,0 +1,25 @@
+{# E3 (#294): the one rewrite-session partial. Context: view (console.rewrites.SessionView); answers_form (an AnswersForm, only where the page takes answers); idempotency_key (the page's fresh key, #43); base_revision (the plan revision Apply sends). It makes no read and calls no helper beyond the loaded filters. #}
+<section class="rewrite-session" id="session-{{ view.id }}">
+{% include "console/rewrites/_state.html" %}
+{% include "console/rewrites/_questions.html" %}
+{% include "console/rewrites/_preview.html" %}
+{% if view.held_render %}<section class="held-reply">
+  <h3>{{ view.held_render.heading }}</h3>
+  <blockquote>{{ view.held_render.message_text }}</blockquote>
+  <p>{{ view.held_render.calls_text }}</p>
+</section>{% endif %}
+{% if view.report_more %}<section class="session-report">
+  <h3>Report</h3>
+  {% if view.report_more.0 %}<p>{{ view.report_more.0 }}</p>{% endif %}
+  <details><summary>More</summary><pre>{{ view.report_more.1 }}</pre></details>
+</section>{% endif %}
+{% if view.footer_actions %}<div class="session-actions">
+  {% for action in view.footer_actions %}{% if action.method == "post" %}<form method="post" action="{{ action.url }}" class="session-action">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">{% if base_revision is not None and base_revision != "" %}
+    <input type="hidden" name="base_revision" value="{{ base_revision }}">{% endif %}
+    <button type="submit">{{ action.label }}</button>
+  </form>{% else %}<a href="{{ action.url }}" class="session-action">{{ action.label }}</a>{% endif %}
+  {% endfor %}
+</div>{% endif %}
+</section>

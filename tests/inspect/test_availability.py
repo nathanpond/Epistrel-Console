@@ -1034,3 +1034,38 @@ def test_m6_leaves_the_m4_and_m5_reasons_unchanged() -> None:
         assert unavailable_for("commitment", effective) == COMMITMENT
     assert unavailable_for("pipeline", lite_world()) == PIPELINE_LITE
     assert m5_gate(PARTITIONS, lite_world()) == UNREAD  # Lite has no M5 keys
+
+
+# --- #294: ``lite_rewrites`` (E5) ----------------------------------------------------------------
+
+MAIN_REASONS = {
+    "states": Unavailable(
+        "states", "states.level", "Needs `states.level` at `prompt_only` or above"
+    ),
+    "clock": Unavailable("clock", "clock.level", "Needs `clock.level` at `prompt_only` or above"),
+    "episodic": Unavailable(
+        "episodic",
+        "memory.episodic.enabled",
+        "Needs the `episodic` module (`memory.episodic.enabled` is off under this story's profile)",
+    ),
+    "commitment": Unavailable(
+        "commitment",
+        "commitment.enabled",
+        "Needs the `commitment` module (`commitment.enabled` is off under this story's profile)",
+    ),
+    "perception": Unavailable(
+        "perception", "perception.level", "Needs `perception.level` at `co_location` or above"
+    ),
+}
+
+
+def test_lite_rewrites_wording() -> None:
+    text = "History rewrites need a planner for this story's pipeline (`lite_rewrites` is off)"
+    expected = Unavailable("lite_rewrites", None, text)
+    assert unavailable_for("lite_rewrites") == expected
+    assert unavailable_for("lite_rewrites", V2) == expected
+
+
+@pytest.mark.parametrize("module", sorted(MAIN_REASONS))
+def test_other_wordings_are_as_on_main(module: str) -> None:
+    assert unavailable_for(module) == MAIN_REASONS[module]

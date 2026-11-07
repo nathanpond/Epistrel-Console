@@ -171,3 +171,11 @@ def new_idempotency_key() -> str:
     """A fresh ULID per call (#43's per-render key, #135 convention 8), for a page that renders
     several write forms (#143's memory row buttons): ``{% new_idempotency_key as key %}``."""
     return new_ulid()
+
+
+@register.simple_tag
+def omniscient_line() -> str:
+    """E2's :data:`console.rewrites.OMNISCIENT_LINE` (#294), for ``_omniscient.html``."""
+    from console.rewrites import OMNISCIENT_LINE
+
+    return OMNISCIENT_LINE

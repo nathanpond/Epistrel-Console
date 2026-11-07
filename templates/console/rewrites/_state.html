@@ -1,0 +1,15 @@
+{% load console_format inspect_tags %}<div class="session-state">
+  <p><span class="badge session-state-badge state-{{ view.state }}" title="{{ view.state }}">{{ view.state_text }}</span> · {{ view.kind_text }}{% if view.expires_text %} · {{ view.expires_text }}{% endif %}</p>
+  <dl>
+    <dt>Instruction</dt><dd>{{ view.instruction }}</dd>
+    <dt>Pipeline</dt><dd>{{ view.pipeline_text }}</dd>
+    <dt>Conflicts</dt><dd>{{ view.resolution_text }}</dd>
+    <dt>Preview</dt><dd>{{ view.preview_mode_text }}</dd>
+    <dt>Expires</dt><dd>{{ view.expires_at|engine_time }}</dd>{% if view.result_amendment_id %}
+    <dt>Amendment</dt><dd>{% if view.result_amendment_url %}<a href="{{ view.result_amendment_url }}">{{ view.result_amendment_id|engine_id }}</a>{% else %}{{ view.result_amendment_id|engine_id }}{% endif %}</dd>{% endif %}{% if view.target_amendment_id %}
+    <dt>{{ view.target_label }}</dt><dd>{% if view.target_amendment_url %}<a href="{{ view.target_amendment_url }}">{{ view.target_amendment_id|engine_id }}</a>{% else %}{{ view.target_amendment_id|engine_id }}{% endif %}</dd>{% endif %}
+  </dl>{% if view.stale_text %}
+  <p class="stale">{{ view.stale_text }}</p>{% endif %}{% if view.last_error %}
+  <p class="warning">{{ view.last_error.0 }}: {{ view.last_error.1 }}</p>
+  <details><summary>More</summary><pre>{{ view.last_error.2 }}</pre></details>{% endif %}
+</div>

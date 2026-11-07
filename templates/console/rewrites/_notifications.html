@@ -1,0 +1,7 @@
+<h4>{{ view.preview.notifications_heading }} ({{ view.preview.notifications|length }})</h4>
+{% if view.preview.notifications %}<table class="notifications">
+  <thead><tr><th>Kind</th><th>Notice</th><th></th></tr></thead>
+  <tbody>{% for row in view.preview.notifications %}
+    <tr><td>{{ row.kind_text }}</td><td>{{ row.summary }}</td><td class="more"><details><summary>More</summary><pre>{{ row.more }}</pre></details></td></tr>{% endfor %}
+  </tbody>
+</table>{% else %}<p>None</p>{% endif %}

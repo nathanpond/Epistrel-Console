@@ -36,8 +36,8 @@ def test_a_directed_answer_reaches_the_session_or_the_panel(
     assert flash(response) == []
     row = EngineOperation.objects.get(kind="regenerate")
     assert (row.http_status, row.outcome) == (202, EngineOperation.Outcome.OK)  # ``ended``
-    # E24's linked case: a test-local urlconf with a stub ``stories:rewrite``.
-    with override_settings(ROOT_URLCONF="tests.timeline.urls_with_rewrite_stub"):
+    # E24's linked case: the shared M7 stub urlconf (``stories:rewrite``).
+    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
         linked = operator_client.post(url("regenerate"), regenerate_posted())
     assert linked.status_code == 302
     assert linked["Location"] == f"/stories/{STORY}/rewrites/{SESSION}/"

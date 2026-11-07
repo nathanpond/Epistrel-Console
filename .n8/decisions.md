@@ -3142,3 +3142,32 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The live smoke ran against `n8-291-smoke` on `127.0.0.1:18000` (left running): `-m engine_live tests/engine_live/`, 25 passed and 1 xpassed. `test_m7_presets_live`, `test_m5_knowledge_reads_live`, `test_m6_world_live` and `test_two_primary_sequential_turn_live` pass on Full. The pre-fix check for `test_no_source_calls_the_viewpoint_reads_undeclared` ran the scan over `git archive HEAD console`, which flagged 5 lines. Flaky test #335 was filed (signed-snapshot timestamp); it isn't fixed here.
   **Why:** Evidence. #335 is outside this story's scope.
   **Issue:** #293
+- **Decision:** `ChangeRow.more`, `RadiusRow.more` and `rejected_questions` hold the raw entry as compact JSON (uncut), as the AC says, not E23's pretty More JSON. `report_more` and `last_error`'s third member use `more_json` (full pretty JSON). The partial renders each in `<pre>` under More.
+  **Why:** The AC's "the raw entry as compact JSON in `more`" is more specific than E23's general More rule. Cost if wrong: a long entry reads on one line under More; switching to `more_json` is a one-line change in `console/rewrites.py`.
+  **Issue:** #294
+- **Decision:** `AnswersForm.answers()` checks `accept_all` before text. With "Accept every recommendation", a question that has a recommendation sends `accept_recommended` even if its text box has text. Questions without a recommendation go by text, then radio, as for "Submit answers". The form also exposes `question_rows` (each question with its bound fields and the checked option) and `text_question_ids()` (the order the Engine's `body.answers[n].text` locator counts in) for #298.
+  **Why:** The Discretion ties `accept_all` to the questions with a recommendation, and the button's label promises that. Cost if wrong: a typed answer is dropped when the author also clicks Accept all; #298 can swap the two branches.
+  **Issue:** #294
+- **Decision:** Fields beyond E3's lists are trailing and defaulted, so the listed positional order still holds: `RadiusRow.severity_raw`, `QuestionView.severity_raw`, `AnsweredView.quoted`/`more`. `SessionView` also gains `id`, `expires_at`, `result_amendment_id` and `target_amendment_id`, plus properties (`answer_url`, `footer_actions`, `awaiting_answers`) and ClassVar texts so the templates hold no wording. `ReachView(text, truncated_text)` and `HeldView(message_text, calls_text)` are the reach and held views. Each question renders through one more include, `templates/console/rewrites/_question.html`, so the form and read-only layouts share markup. Read-only options render as `disabled` radios.
+  **Why:** The badge class and raw `title` (E23) need the raw severity, and the partial must not call helpers. Cost if wrong: none (additive).
+  **Issue:** #294
+- **Decision:** Low-cost wording fallbacks the E-list doesn't cover:
+  - `record_inactive` without `membership` drops the parenthesis.
+  - `author_fact_limit` without `max` reads "keeps the most lasting author facts".
+  - `merge_invalid` with an unknown reason gives the Engine's message on `entity_ids`.
+  - `guardrail_violation` with no policy names drops the parenthesis.
+  - `rewrite_session_closed` humanises an unknown state.
+  - `resolution_mode_text` gives compact JSON for any unknown value, a bare string included (the AC's rule, not C3 humanising).
+  - `last_error`'s code is humanised.
+  - `expires_text` reads "" for an unreadable timestamp.
+  **Why:** E23's "never raise, read '—' or leave out" rule. Cost if wrong: a sentence's wording on a rare path.
+  **Issue:** #294
+- **Decision:** `radius_rows` reads only the Engine's `record: {table, id}` shape, as the Discretion says. #292's `m7/rewrite_session.json` gives radius entries a top-level `record_id`/`table`, so their record cells read "—" (filed as #336, not fixed here). `radius_rows` sorts the conflicts itself when `bucket == "irreducible"`: High, then Low, then anything else, stable. It takes a keyword `entity_names` for #306's merge.
+  **Why:** The fixture's shape isn't the Engine's, and the AC fixes the reader. Cost if wrong: none at runtime against the real Engine.
+  **Issue:** #294
+- **Decision:** `tests/urls_with_m7_pages.py` mounts its stubs at E11's paths with `<ulid:…>` for session, amendment and job ids, and `<str:…>` elsewhere. `NOT_YET_REGISTERED` is an explicit literal of all 37 stub names (owners trim it), and `STUB_NAMES` is derived from the stub lists. #292's `tests/timeline/urls_with_rewrite_stub.py` is deleted, and `test_regenerate_directed.py` now uses the shared file. `console/views/timeline.py`'s private `_rewrite_session_url` (TODO(#294)) is replaced by `console.rewrites.rewrite_session_url`. E18 gains #333 and #334, and names `CANARY_LIST_REQUEST` (nathanpond/Epistrel#776, defined by #295) by citation, through `CANARY_LIST_REQUEST_URL`.
+  **Why:** #292's notes, and E6/E11. Cost if wrong: a page story adjusts one stub path.
+  **Issue:** #294
+- **Decision:** The PR-body copy of E1–E23 is staged in the scratchpad (`pr-conventions-294.md`) for the milestone PR, since story agents don't open PRs. The docstring half of that AC is in `console/rewrites.py`, `console/forms/rewrites.py` and `console/raw.py`.
+  **Why:** The brief forbids opening a PR. Cost if wrong: the orchestrator must paste it into the milestone PR body.
+  **Issue:** #294
