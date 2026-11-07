@@ -25,6 +25,7 @@ CI_KEY = "ci-only-credential-not-a-secret-0000"
 CREDENTIALS = f"EPISTREL_SERVICE_CREDENTIALS={CI_KEY}"
 CONFIG_KEY = "EPISTREL_CONFIG_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 STUB_ADAPTER = "EPISTREL_MODEL_ADAPTER=stub"  # the smoke's turn needs a model (#48)
+BUNDLE_DIR = "EPISTREL_BUNDLE_DIR=/var/lib/epistrel/bundles"  # the M7 export smoke (#334)
 # What the probe printed for the real images (checked 2026-10-24, the `edge` list trimmed).
 RELEASED = [
     "EPISTREL_DATABASE_URL",
@@ -36,6 +37,7 @@ RELEASED = [
 EDGE = [
     *RELEASED,
     "EPISTREL_AUTH_DISABLED",
+    "EPISTREL_BUNDLE_DIR",
     "EPISTREL_CONFIG_KEY",
     "EPISTREL_MODEL_ADAPTER",
     "EPISTREL_SERVICE_CREDENTIALS",
@@ -100,11 +102,12 @@ def test_a_released_engine_gets_only_the_settings_it_knows(tmp_path: Path) -> No
     assert f"{IMAGE} has no EPISTREL_SERVICE_CREDENTIALS; not passed" in out
     assert f"{IMAGE} has no EPISTREL_CONFIG_KEY; not passed" in out
     assert f"{IMAGE} has no EPISTREL_MODEL_ADAPTER; not passed" in out
+    assert f"{IMAGE} has no EPISTREL_BUNDLE_DIR; not passed" in out
     # The smoke still gets a key: an Engine without service auth ignores it.
     assert github_env == f"ENGINE_LIVE_SERVICE_KEY={CI_KEY}\n"
 
 
-def test_edge_gets_all_five(tmp_path: Path) -> None:
+def test_edge_gets_all_six(tmp_path: Path) -> None:
     code, out, calls, github_env = start(tmp_path, EDGE)
     assert code == 0, out
     run = engine_run(calls)
@@ -120,6 +123,8 @@ def test_edge_gets_all_five(tmp_path: Path) -> None:
         CONFIG_KEY,
         "-e",
         STUB_ADAPTER,
+        "-e",
+        BUNDLE_DIR,
         IMAGE,
     ]
     assert "not passed" not in out

@@ -3958,3 +3958,9 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (Rule 1, PR gate):** `.github/scripts/engine-up.sh` now passes `EPISTREL_BUNDLE_DIR=/var/lib/epistrel/bundles` to the CI Engine. PR #338's `engine-smoke` failed 4 export/import live tests ("export still running after 60 s"; the Engine logged `PermissionError` on `story_export`). #292 had fixed the same gap in `docker-compose.yml` only, and CI starts the Engine through this script instead. The script already drops settings an image doesn't know, so release smokes on older Engines are unaffected. A plain `docker run` of the edge image as uid 10001 creates and writes that directory.
   **Why:** The M7 live smokes (#319–#321, #326) need a writable bundle directory; the Engine gap is #334.
   **Issue:** #319, #334
+- **Decision (Rule 1, PR gate, fix 2 of 3):** The bundle-dir fix (409bacf) broke two guard tests that pin the CI Engine's environment to five variables (`test_engine_up_script.py::test_edge_gets_all_five`, `test_workflows.py::test_engine_may_get_only_these_five_variables`). Both now name six, adding `EPISTREL_BUNDLE_DIR`. The edge probe list gains it, and a released Engine without it is asserted to get "not passed". The orchestrator had pushed 409bacf without re-running the suite; the gates were re-run before this fix.
+  **Why:** The guards exist so any new Engine variable is a deliberate, reviewed choice; this one is (#334).
+  **Issue:** #319, #334
+- **Decision (deviation):** CI's `test` job was allowed past the skill's 30-minute pending budget, since a full serial run now takes about 22–35 minutes (28 min at M6's 7.6k tests; 22 min 20 s for 9.6k here).
+  **Why:** The budget exists to catch hung runs; this job's run time is known.
+  **Issue:** PR #338
