@@ -3944,3 +3944,14 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #332's golden `tests/inspect/golden/retrieval_no_gaps.html` was captured from the milestone tip (5b8e13f) before editing, for `ask()`'s fixed question under the real urlconf; the no-gap test ran green against the pre-change code (stash), and the six gap tests failed there (pre-fix first). #330's `test_retrieval_explainer_not_touched` is deleted (its imports pruned).
   **Why:** E24's golden rule; the story's Test plan. **Any later change to the Retrieval page's no-gap output must regenerate this golden.**
   **Issue:** #332
+- **Decision (orchestration):** From #297 on, stories ran in two parallel lanes, each in its own git worktree (`Epistrel-Console-laneA`/`-laneB`). Lane A took rewrite/history, portability and beliefs; lane B took profiles/certification, settings and effects. Before publishing, each lane rebased onto the milestone tip, re-ran every gate on the rebased tree, and pushed fast-forward only. The orchestrator re-ran the gates on the merged tip after each push. Dependency order was kept: a story started only after its blockers had landed on the tip. #330→#331→#332 ran alone at the end.
+  **Why:** About 36 page stories at roughly 15–25 minutes each. Two lanes halved the wall-clock time. The rebase-then-regate rule keeps the shared branch green after every push (every merged tip passed: 7613 → 9646 tests, 0 failures).
+  **Issue:** #297–#332
+- **Decision (deviation):** #294's "the PR body carries E1–E23 in full" can't be met literally. The text is about 77 KB, and GitHub caps a PR body at 65,536 characters. The PR body links to the full E1–E23 text, posted as PR comments (in two parts), and the M7 milestone description already carries it. #294's first box is ticked on that basis.
+  **Why:** It is a platform limit. Comments on the PR are still the PR's own record.
+  **Issue:** #294
+- **Blocker:** #314's live AC (estimate `model_calls > 0`, or a 503) fails on the edge because the image ships no eval sets, so every estimate is 0 calls (#337). The story agent's attempt to file the matching Engine issue on nathanpond/Epistrel was refused by the permission system, and the orchestrator didn't file it in its place. #314 is labelled `blocked` + `needs-owner-action`, and the milestone PR doesn't close it. Its code is merged.
+  **Issue:** #314, #337
+- **Decision:** The live smoke stack `n8-291-smoke` (Engine edge 5cb073b on 127.0.0.1:18000) served every live check of the run and was torn down at the end.
+  **Why:** Port 8000 belongs to the owner's own Engine dev stack, which wasn't touched.
+  **Issue:** #291
