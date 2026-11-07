@@ -34,8 +34,6 @@ ARGS: dict[str, list[str]] = {
     "engine:import": [],
     "engine:import-job": [ULID],
     "engine:certifications": [],
-    "engine:certification-invalidate": ["cert-1"],
-    "engine:certification-import": [],
     "engine:eval-runs": [],
     "engine:eval-run": ["run-1"],
 }
@@ -44,7 +42,6 @@ PATHS = {
     "inspect:resolve-listing": (
         f"/stories/{STORY}/inspect/effects/reconciliation/listing-1/resolve/"
     ),
-    "engine:certification-import": "/engine/certification-import/",
 }
 
 

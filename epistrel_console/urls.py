@@ -14,6 +14,7 @@ from console.views import (
     catalog_characters,
     catalog_lifecycle,
     catalog_scenarios,
+    certification_admin,
     certifications,
     certify,
     directives,
@@ -574,6 +575,18 @@ engine_patterns = (
             "certification-runs/<str:run_id>/",
             certifications.certification_run,
             name="certification-run",
+        ),
+        # #315: invalidate a certification (confirm page) and import a hand run's record (a
+        # sibling of certifications/, so an id "import" is never shadowed).
+        path(
+            "certifications/<str:certification_id>/invalidate/",
+            certification_admin.certification_invalidate,
+            name="certification-invalidate",
+        ),
+        path(
+            "certification-import/",
+            certification_admin.certification_import,
+            name="certification-import",
         ),
     ],
     "engine",

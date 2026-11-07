@@ -12,7 +12,8 @@ keeps working as owners land.
 ``stories:rewrite`` stub was folded in, then dropped once #297 registered the real session page
 (the linked cases of its footer and amendment links render the real page here). #302's
 ``stories:amendments``/``stories:amendment`` stubs went the same way, as did #313's
-``engine:certification`` and ``engine:certification-run``.
+``engine:certification`` and ``engine:certification-run`` and #315's
+``engine:certification-invalidate`` and ``engine:certification-import``.
 
 **The frames (#296).** ``stories:rewrites`` renders through
 :func:`console.views.story_pages.story_page` and ``engine:certifications`` through
@@ -107,12 +108,6 @@ ENGINE_STUBS = [
     # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
     # list under this urlconf only (#313's real detail and run pages are served here).
     path("certifications/", certifications_frame, name="certifications"),
-    path(
-        "certifications/<str:certification_id>/invalidate/",
-        stub,
-        name="certification-invalidate",
-    ),  # #315
-    path("certification-import/", stub, name="certification-import"),  # #315
     path("evals/", stub, name="eval-runs"),  # #316
     path("evals/<str:run_id>/", stub, name="eval-run"),  # #316
 ]
@@ -141,8 +136,6 @@ STUB_NAMES = frozenset(
 # PR that registers them; the complement test asserts only these.
 NOT_YET_REGISTERED = frozenset(
     {
-        "engine:certification-import",
-        "engine:certification-invalidate",
         "engine:eval-run",
         "engine:eval-runs",
         "engine:import",

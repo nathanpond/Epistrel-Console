@@ -432,7 +432,8 @@ def test_stale_without_time_or_reason(operator_client: Client, engine: FakeEngin
 
 def test_invalidate_link_d19(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", "/certifications/{certification_id}", 200, json=certification())
-    assert "Invalidate…" not in operator_client.get(DETAIL).content.decode()
+    # #315 registered engine:certification-invalidate: the real urlconf links it too.
+    assert "Invalidate…" in operator_client.get(DETAIL).content.decode()
     with override_settings(ROOT_URLCONF=M7_URLCONF):
         html = operator_client.get(DETAIL).content.decode()
         link = re.search(r'<a class="button invalidate" href="([^"]+)">Invalidate…</a>', html)

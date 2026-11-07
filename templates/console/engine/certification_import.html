@@ -1,0 +1,22 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#315: import a certification record (engine:certification-import,
+console/views/certification_admin.py). The record as its .json file or pasted (exactly one), the
+preview line once it parsed, a refusal (text and lines) or #43's panel above the form.
+Context: form (CertificationImportForm), idempotency_key, refusal (ImportRefusal), engine_error,
+import_button, certifications_url, certifications_link.
+{% endcomment %}
+{% block engine_page %}
+<section class="certification-import">
+  {% if certifications_url %}<p class="cross-links"><a class="certifications" href="{{ certifications_url }}">{{ certifications_link }}</a></p>{% endif %}
+  {% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+  {% if refusal %}<div class="refusal" role="alert"><p class="refusal-text">{{ refusal.text }}</p>{% if refusal.lines %}<ul class="refusal-lines">{% for line in refusal.lines %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
+  {% if form.preview %}<p class="record-preview">{{ form.preview }}</p>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="certification-import-form">{% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    {{ form.non_field_errors }}
+    {% for field in form %}<p class="field field-{{ field.name }}">{{ field.errors }}{{ field.label_tag }} {{ field }}<br><small class="muted help">{{ field.help_text }}</small></p>
+    {% endfor %}<p><button type="submit">{{ import_button }}</button></p>
+  </form>
+</section>
+{% endblock %}

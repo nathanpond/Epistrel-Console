@@ -10,6 +10,7 @@ first_url, next_text, first_text, filter_link.
 {% load console_format %}
 {% block engine_page %}
 <section class="certifications">
+  {% url 'engine:certification-import' as import_url %}{% if import_url %}<p class="cross-links"><a class="certification-import" href="{{ import_url }}">Import a certification record…</a></p>{% endif %}
   {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
   <form method="get" action="{{ filter_url }}" class="certification-filter">
     <label for="{{ filter_form.fingerprint.id_for_label }}">{{ filter_form.fingerprint.label }}</label> {{ filter_form.fingerprint }}{{ filter_form.fingerprint.errors }}
