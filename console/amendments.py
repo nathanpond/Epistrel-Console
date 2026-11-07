@@ -6,9 +6,10 @@ E1 assigns no amendment wording to another module, so this one holds it: the ame
 (:data:`AMENDMENT_KIND_TEXT`, a different enum from E3's session ``KIND_TEXT``), the status
 (:data:`STATUS_TEXT`, ``reverted`` read as "Undone" to match E5's "This amendment is already
 undone"; the raw value stays in ``title`` and the filter sends ``reverted``), the part kinds,
-and the list's empty, rejected and truncated texts. #303 adds its Undo/Redo action helper here.
-It imports E2's lines, E5's refusals and E6's URL helpers from ``console/rewrites.py`` and
-defines none of them.
+and the list's empty, rejected and truncated texts. #303 adds its Undo/Redo action helper
+(:func:`amendment_action`), the open form's texts and its two :class:`SessionSpec` constants
+(:data:`UNDO`, :data:`REDO`). It imports E2's lines, E5's refusals and E6's URL helpers from
+``console/rewrites.py`` and defines none of them.
 
 **Rows never raise (E15, E23).** ``parts``, ``relies_on`` and ``dependents`` are raw JSON. A
 part that isn't an object, or whose ``ordinal`` isn't an int, is a :class:`PartRow` anchored
@@ -24,13 +25,15 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from django.urls import NoReverseMatch, reverse
+
 from console.canon import EntityRef, entity_ref, lineage_url
 from console.engine.models import AmendmentPage, AmendmentSummary, rejected_entries
 from console.inspect import short_id
 from console.positions import valid_minutes_text
 from console.predicates import PredicateRef
 from console.raw import EMPTY, number_text
-from console.rewrites import amendment_url, rewrite_session_url
+from console.rewrites import AMENDMENT_TEXT, amendment_url, rewrite_session_url
 from console.wording import humanised
 
 AMENDMENTS_PAGE = 50  # convention 6: the Engine's default (it allows 200)
@@ -153,7 +156,7 @@ class AmendmentRow:
     """One row of the Amendments list (and the detail page's summary): ``tx_time`` raw for
     ``engine_time``, the kind and status cells, the principal, the part count (``{:,}``), the
     relations, the session (linked through E6's ``rewrite_session_url``) and the amendment's
-    own link (``amendment_url``)."""
+    own link (``amendment_url``), and #303's Undo…/Redo… :class:`AmendmentAction`."""
 
     id: str
     tx_time: str
@@ -165,6 +168,7 @@ class AmendmentRow:
     session_id: str | None
     session_url: str | None
     url: str | None
+    action: AmendmentAction | None = None
 
 
 def amendment_row(summary: AmendmentSummary, story_id: str) -> AmendmentRow:
@@ -180,6 +184,7 @@ def amendment_row(summary: AmendmentSummary, story_id: str) -> AmendmentRow:
         session_id=session,
         session_url=rewrite_session_url(story_id, session) if session else None,
         url=amendment_url(story_id, summary.id),
+        action=amendment_action(summary, story_id),
     )
 
 
@@ -488,3 +493,128 @@ def dependent_rows(dependents: Iterable[Any]) -> list[DependentRow]:
 def raw_list(value: object) -> Sequence[Any]:
     """A raw member that should be a list, as one (anything else is no entries)."""
     return value if isinstance(value, list) else []
+
+
+# --- #303: undo and redo -------------------------------------------------------------------------
+
+ACTIVE = "active"
+REVERTED = "reverted"
+UNDO_KIND = "undo"
+
+UNDO_LABEL = "Undo…"
+REDO_LABEL = "Redo…"
+USE_REDO_HINT = "This is an undo — to bring back what it undid, redo"
+UNDO_EXPLAIN = (
+    "Undo is a new, checked amendment: the Engine plans taking back this amendment's parts "
+    "against the story as it is now, asks you about later amendments that rely on it, and "
+    "records an undo. This amendment is kept, marked undone."
+)
+REDO_EXPLAIN = (
+    "Redo re-plans this amendment's original parts against the story as it is now. Applied, it "
+    "records a redo amendment; this one stays undone."
+)
+OPENED = "{what} planned as rewrite session {session}"
+OPENED_UNREADABLE = (
+    "Planned — the Engine's answer couldn't be read; find the session on the Rewrite page"
+)
+CANCEL_TEXT = "Cancel"
+BACK_TO_AMENDMENT = "Back to the amendment"
+
+
+@dataclass(frozen=True)
+class AmendmentAction:
+    """What an amendment offers (#303): ``label`` and ``url`` for Undo…/Redo… (``url`` is
+    ``None`` while the route is unregistered, D19, or for an active ``undo``), or, for an active
+    ``undo``, :data:`USE_REDO_HINT` followed by the ``undoes`` amendment, linked through
+    ``hint_url`` (plain ``<code>`` of ``hint_code`` when it doesn't resolve; neither when
+    ``undoes`` is null). A row renders only an action with a ``url``, so the hint is
+    detail-only."""
+
+    label: str
+    url: str | None
+    hint_url: str | None = None
+    hint_code: str | None = None
+
+
+def _action_url(name: str, story_id: str, amendment_id: str) -> str | None:
+    try:
+        return reverse(name, args=[story_id, amendment_id])
+    except NoReverseMatch:
+        return None
+
+
+def undo_url(story_id: str, amendment_id: str) -> str | None:
+    return _action_url("stories:amendment-undo", story_id, amendment_id)
+
+
+def redo_url(story_id: str, amendment_id: str) -> str | None:
+    return _action_url("stories:amendment-redo", story_id, amendment_id)
+
+
+def amendment_action(amendment: AmendmentSummary, story_id: str) -> AmendmentAction | None:
+    """Which action ``amendment`` (a summary or a detail) offers: an active non-undo → Undo…;
+    an active undo → no Undo, the redo hint instead; an undone one → Redo… (an undone undo
+    included: the Engine refuses what it won't redo); any other status → ``None``."""
+    if amendment.status == ACTIVE:
+        if amendment.kind == UNDO_KIND:
+            undoes = _text(amendment.undoes)
+            return AmendmentAction(
+                "",
+                None,
+                hint_url=amendment_url(story_id, undoes) if undoes else None,
+                hint_code=undoes,
+            )
+        return AmendmentAction(UNDO_LABEL, undo_url(story_id, amendment.id))
+    if amendment.status == REVERTED:
+        return AmendmentAction(REDO_LABEL, redo_url(story_id, amendment.id))
+    return None
+
+
+@dataclass(frozen=True)
+class SessionSpec:
+    """One of the two open forms (#303): the E5 verb phrase, the ``<title>`` stem, the
+    explanation, the submit, the flash's opening word, the client method's name, and which
+    refusal code (if any) the GET shows for an amendment the form can't open."""
+
+    verb_phrase: str
+    title: str
+    explanation: str
+    submit: str
+    what: str
+    method: str
+    css: str
+
+    def ineligible(self, amendment: AmendmentSummary) -> str | None:
+        """The E5 code the GET shows in place of the form, or ``None`` (an unknown status shows
+        the form and lets the Engine decide)."""
+        if self.method == "undo_amendment":
+            if amendment.status == REVERTED:
+                return "amendment_already_reverted"
+            if amendment.status == ACTIVE and amendment.kind == UNDO_KIND:
+                return "use_redo"
+            return None
+        return "amendment_not_reverted" if amendment.status == ACTIVE else None
+
+    def ineligible_text(self, amendment: AmendmentSummary) -> str | None:
+        code = self.ineligible(amendment)
+        return AMENDMENT_TEXT[code] if code else None
+
+
+UNDO = SessionSpec(
+    verb_phrase="undo an amendment",
+    title="Undo amendment",
+    explanation=UNDO_EXPLAIN,
+    submit="Plan the undo",
+    what="Undo",
+    method="undo_amendment",
+    css="undo",
+)
+REDO = SessionSpec(
+    verb_phrase="redo an amendment",
+    title="Redo amendment",
+    explanation=REDO_EXPLAIN,
+    submit="Plan the redo",
+    what="Redo",
+    method="redo_amendment",
+    css="redo",
+)

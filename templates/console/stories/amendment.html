@@ -2,11 +2,12 @@
 {% comment %}
 #302: one amendment's page (stories:amendment, console/views/amendments.py). The summary <dl>
 (the list's Kind, Status, Author, When, Parts, Relations and Session), the actions hook
-({% block amendment_actions %}, convention 14: #303 fills it from the parsed `amendment`), E2's
+({% block amendment_actions %}, convention 14: #303's Undo…/Redo… link, or the redo hint for an
+active undo, from `action`), E2's
 omniscient line and "Back to Amendments"; then Parts, Relies on and Depends on it. A failed read
 replaces the summary and the tables: E5's not-found sentence (not_found), E2's text or the
 Engine's 422 message (refusal), or #43's panel (detail_error); "Back to Amendments" still shows.
-Context: amendment_id, amendment, summary, parts, relies, dependents, truncated_text, no_parts,
+Context: amendment_id, amendment, action, use_redo_hint, summary, parts, relies, dependents, truncated_text, no_parts,
 no_relies, no_dependents, timing_uncertain_text, not_found, refusal, detail_error,
 amendments_url, back_text.
 {% endcomment %}
@@ -15,16 +16,8 @@ amendments_url, back_text.
 {% if not_found %}<p class="not-found amendment-not-found">{{ not_found }}</p>
 {% elif refusal %}<p class="errorlist amendment-refusal" role="alert">{{ refusal }}</p>
 {% elif detail_error %}{% include "console/_engine_error.html" with engine_error=detail_error %}
-{% elif summary %}{% with row=summary %}<dl class="amendment-summary">
-  <dt>Kind</dt><dd class="kind"><span title="{{ row.kind.raw }}">{{ row.kind.text }}</span></dd>
-  <dt>Status</dt><dd class="status"><span class="badge status-{{ row.status.raw }}" title="{{ row.status.raw }}">{{ row.status.text }}</span></dd>
-  <dt>Author</dt><dd class="author">{{ row.author|principal_link }}</dd>
-  <dt>When</dt><dd class="when">{{ row.tx_time|engine_time }}</dd>
-  <dt>Parts</dt><dd class="parts">{{ row.parts_text }}</dd>
-  <dt>Relations</dt><dd class="relations">{% include "console/stories/_amendment_relations.html" %}</dd>
-  <dt>Session</dt><dd class="session">{% include "console/stories/_amendment_session.html" %}</dd>
-</dl>{% endwith %}
-{% block amendment_actions %}{% endblock %}
+{% elif summary %}{% include "console/stories/_amendment_summary.html" with row=summary %}
+{% block amendment_actions %}{% if action %}{% include "console/stories/_amendment_action.html" %}{% endif %}{% endblock %}
 {% endif %}
 {% include "console/rewrites/_omniscient.html" %}
 <p class="back">{% if amendments_url %}<a href="{{ amendments_url }}">{{ back_text }}</a>{% else %}{{ back_text }}{% endif %}</p>

@@ -1,0 +1,13 @@
+{% load console_format principals %}{% comment %}
+#302's amendment summary <dl> (Kind, Status, Author, When, Parts, Relations, Session), extracted
+by #303 so the amendment page and the undo/redo open form share it. Context: row (an
+AmendmentRow). No trailing newline.
+{% endcomment %}<dl class="amendment-summary">
+  <dt>Kind</dt><dd class="kind"><span title="{{ row.kind.raw }}">{{ row.kind.text }}</span></dd>
+  <dt>Status</dt><dd class="status"><span class="badge status-{{ row.status.raw }}" title="{{ row.status.raw }}">{{ row.status.text }}</span></dd>
+  <dt>Author</dt><dd class="author">{{ row.author|principal_link }}</dd>
+  <dt>When</dt><dd class="when">{{ row.tx_time|engine_time }}</dd>
+  <dt>Parts</dt><dd class="parts">{{ row.parts_text }}</dd>
+  <dt>Relations</dt><dd class="relations">{% include "console/stories/_amendment_relations.html" %}</dd>
+  <dt>Session</dt><dd class="session">{% include "console/stories/_amendment_session.html" %}</dd>
+</dl>

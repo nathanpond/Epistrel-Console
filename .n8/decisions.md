@@ -3475,3 +3475,24 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** There are three small shared partials beyond the story's two templates: `stories/_amendment_relations.html`, `_amendment_session.html` and `_amendment_target.html`. The list and the detail summary render Relations and Session the same way through them. The Actions hook is `row_actions` (a row template name; `None` here), and the detail page's hook is `{% block amendment_actions %}` under the summary `<dl>`. Bad cursor, bad status and refused-cursor notices sit above the filter form.
   **Why:** One code path per cell. Cost if wrong: cosmetic.
   **Issue:** #302
+- **Decision:** `AmendmentRow` gained an `action` field (set by `amendment_row` through `amendment_action`), so the list's `row_actions` template and the detail's summary read `row.action` directly; the planned "attach `action=` in both builds" became one field. The detail context also carries `action` for `{% block amendment_actions %}`, which is filled in place in `amendment.html` (no child template).
+  **Why:** One code path; a row template can't call a function. Cost if wrong: none (internal shape).
+  **Issue:** #303
+- **Decision:** One extra partial beyond the planned 8 files: `stories/_amendment_action.html` renders the Undo…/Redo… link or, for an active undo, `USE_REDO_HINT` and the `undoes` id (linked; plain `<code>` when `amendment_url` doesn't resolve; "—" when `undoes` is null, read as the AC's "plain `<code>` when `undoes` is null" having nothing to show). The amendment page and the ineligible open form share it; `_amendment_row_actions.html` renders only a link with a url.
+  **Why:** The hint shows on two pages; the row stays link-only. Cost if wrong: cosmetic.
+  **Issue:** #303
+- **Decision:** `AmendmentAction` is `(label, url, hint_url, hint_code)`, with an active undo as `label=""`, `url=None`. The Undo/Redo URLs come from `console.amendments.undo_url`/`redo_url` (D19, `None` while unregistered). On the open form, an ineligible amendment's sentence is followed by `_amendment_action.html` (Redo… on the undo page, Undo… on the redo page, the hint for an undo), then "Back to the amendment".
+  **Why:** As the story's Discretion sets out. Cost if wrong: cosmetic.
+  **Issue:** #303
+- **Decision:** A GET whose `get_amendment` read fails with `omniscient_required`/`viewpoint_unresolved` shows E2's `OMNISCIENT_REQUIRED_TEXT` (reusing #302's `_refusal`), not #43's panel. Every other non-404 failure is the panel, with no form.
+  **Why:** E2 says a viewpoint refusal reaching a page is worded as a Console bug; this matches #302's detail page. Cost if wrong: cosmetic.
+  **Issue:** #303
+- **Decision:** A 2xx `bad_response` from the write (checked by `http_status`) is the `OPENED_UNREADABLE` warning flash (with E21's key tail, the posted key) and a 303 to `rewrites_url`, else the amendment page. A non-2xx `bad_response` and any transport error or timeout re-render with #43's panel and the posted key (D8). An answered refusal re-renders with a fresh key. `idempotency_conflict` (no `rewrite_refusal` wording) is the panel with a fresh key. A `validation_error` goes through `apply_engine_errors` with #297's `ALIASES`. The refusal links reuse #297's `REFUSAL_LINKS`/`DEFAULT_LINK`.
+  **Why:** The AC distinguishes a 2xx that doesn't parse (redirect) from an unreadable non-2xx (panel, posted key). Cost if wrong: one flash.
+  **Issue:** #303
+- **Decision:** The POST's `<title>` and "Amendment <short id>" come from the URL's id (no read). Both views are `require_http_methods(["GET","HEAD","POST"])` over one `_open_session`. The client method is picked by name from `SessionSpec.method`. The test plan's `caplog` logger is `console.engine` (the actual name of `console.engine_errors.log`), not `console.engine_errors`.
+  **Why:** The story names the module, not the logger. Cost if wrong: none (test-only).
+  **Issue:** #303
+- **Decision:** Registering the two routes filled #302's hooks, so `tests/stories/test_amendments.py`'s `test_no_actions_column_by_default` and `test_the_actions_block_is_empty_by_default` became `test_the_actions_column_is_303s` and `test_the_actions_block_holds_only_303s_action`. `test_relations_plain_while_unregistered` also monkeypatches `undo_url`/`redo_url` to `None`. The two `#303` stubs and their `NOT_YET_REGISTERED`/`ARGS` rows are gone.
+  **Why:** E6/E24: the registering story updates what its URL moves. Cost if wrong: none.
+  **Issue:** #303

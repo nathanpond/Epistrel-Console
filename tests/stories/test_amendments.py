@@ -178,6 +178,8 @@ def test_relations_plain_while_unregistered(
 
     monkeypatch.setattr(amendments, "rewrite_session_url", lambda *a: None)
     monkeypatch.setattr(amendments, "amendment_url", lambda *a: None)
+    monkeypatch.setattr(amendments, "undo_url", lambda *a: None)  # #303's actions, likewise
+    monkeypatch.setattr(amendments, "redo_url", lambda *a: None)
     listed(engine)
     html = page(operator_client)
     first, undo = row(html, f"amendment-{A1}"), row(html, f"amendment-{A4}")
@@ -323,11 +325,12 @@ def test_no_viewpoint_picker(operator_client: Client, engine: FakeEngine) -> Non
     assert queries(engine, "GET", LIST)[0][0] == ("viewpoint", "omniscient")
 
 
-def test_no_actions_column_by_default(operator_client: Client, engine: FakeEngine) -> None:
+def test_the_actions_column_is_303s(operator_client: Client, engine: FakeEngine) -> None:
+    """#302 left ``row_actions`` unset; #303 fills it (its own tests cover the links)."""
     listed(engine)
     html = page(operator_client)
-    assert "<th>Actions</th>" not in html
-    assert 'class="actions"' not in html
+    assert "<th>Actions</th>" in html
+    assert html.count('<td class="actions">') == 3
 
 
 # --- the list: errors -----------------------------------------------------------------------------
@@ -626,11 +629,14 @@ def test_lite_empty_edges_texts(operator_client: Client, engine: FakeEngine) -> 
     assert f'<p class="empty">{NO_DEPENDENTS}</p>' in html
 
 
-def test_the_actions_block_is_empty_by_default(operator_client: Client, engine: FakeEngine) -> None:
+def test_the_actions_block_holds_only_303s_action(
+    operator_client: Client, engine: FakeEngine
+) -> None:
     detail(engine)
     registry(engine)
     html = squeezed(page(operator_client, DETAIL_URL))
-    assert '</dl><p class="viewpoint">' in html  # nothing between the summary and the line
+    # Only #303's action line sits between the summary and the viewpoint line.
+    assert re.search(r'</dl><p class="amendment-actions">[^\n]*?</p><p class="viewpoint">', html)
 
 
 def test_malformed_amendment_id_is_django_404(operator_client: Client, engine: FakeEngine) -> None:

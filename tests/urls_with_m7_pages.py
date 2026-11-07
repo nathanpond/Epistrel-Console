@@ -83,8 +83,6 @@ STORY_STUBS = [
     path(f"{S}rewrites/<ulid:session_id>/cancel/", stub, name="rewrite-cancel"),  # #299
     path(f"{S}history/line/", stub, name="line-edit"),  # #305
     path(f"{S}direct/", stub, name="direct"),  # #300
-    path(f"{S}amendments/<ulid:amendment_id>/undo/", stub, name="amendment-undo"),  # #303
-    path(f"{S}amendments/<ulid:amendment_id>/redo/", stub, name="amendment-redo"),  # #303
     path(f"{S}backfill/", stub, name="backfill"),  # #308
     path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
     path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
@@ -158,8 +156,6 @@ NOT_YET_REGISTERED = frozenset(
         "inspect:resolve-listing",
         "inspect:resolved",
         "profiles:certify",
-        "stories:amendment-redo",
-        "stories:amendment-undo",
         "stories:certify",
         "stories:export",
         "stories:export-download",

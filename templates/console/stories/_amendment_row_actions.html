@@ -1,0 +1,6 @@
+{% comment %}
+#303: an amendment's Undo…/Redo… link (console.amendments.amendment_action), rendered only when
+the action has a url, so an active undo's redo hint stays on its page. The Amendments list
+includes it per row (row_actions); the amendment page and the open form reuse it. Context: row
+(an AmendmentRow). No trailing newline.
+{% endcomment %}{% if row.action.url %}<a class="amendment-action" href="{{ row.action.url }}">{{ row.action.label }}</a>{% endif %}

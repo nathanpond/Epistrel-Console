@@ -139,6 +139,17 @@ story_patterns = (
             amendments.amendment,
             name="amendment",
         ),
+        # #303 (E11): plan an undo or a redo of an amendment as a rewrite session.
+        path(
+            "<str:story_id>/amendments/<ulid:amendment_id>/undo/",
+            amendments.amendment_undo,
+            name="amendment-undo",
+        ),
+        path(
+            "<str:story_id>/amendments/<ulid:amendment_id>/redo/",
+            amendments.amendment_redo,
+            name="amendment-redo",
+        ),
         # #195: one turn's perception trace, reconstructed per character.
         path(
             "<str:story_id>/turns/<int:turn>/perception/",
