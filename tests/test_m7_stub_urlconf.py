@@ -34,8 +34,6 @@ ARGS: dict[str, list[str]] = {
     "engine:import": [],
     "engine:import-job": [ULID],
     "engine:certifications": [],
-    "engine:eval-runs": [],
-    "engine:eval-run": ["run-1"],
 }
 PATHS = {
     "stories:operations-list": f"/stories/{STORY}/operations/",

@@ -132,6 +132,7 @@ def test_the_page_links_the_re_embed_run(
         '<a href="/engine/config-changes/">Config changes</a> · '
         '<a href="/engine/providers/">Providers</a> · '  # #240
         '<span class="engine-pages" role="navigation" aria-label="Engine pages">'  # E11
-        '<a href="/engine/certifications/">Certifications</a></span> · '  # #313
+        '<a href="/engine/certifications/">Certifications</a> · '  # #313
+        '<a href="/engine/evals/">Eval runs</a></span> · '  # #316
         '<a href="/models/embedding/reembed/">Re-embed run</a></p>' in html
     )

@@ -11,7 +11,7 @@ failing still renders the other.
 {% block heading %}Eval reports{% endblock %}
 {% block content %}
 <p class="scope"><a href="{% url 'operations:list' %}">← Operations</a></p>
-<p class="muted eval-runs">Eval runs aren't served by the Engine yet (<a href="{{ eval_runs_issue }}">nathanpond/Epistrel#532</a>).</p>
+<p class="eval-runs">Per-run results: {% if eval_runs_url %}<a href="{{ eval_runs_url }}">Eval runs</a>{% else %}Eval runs{% endif %}</p>
 
 <section id="escalation-yield">
 <h2>Escalation yield</h2>

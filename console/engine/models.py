@@ -7123,7 +7123,8 @@ class EvalMetric(Model):
 @dataclass(frozen=True)
 class EvalRun(Model):
     """``EvalRun``: one eval run report: when and where it ran, against which model, preset and
-    fingerprint, its suites and requirements (raw), sample size, seeds, metrics and verdict.
+    fingerprint, its suites and requirements (raw, E15: any JSON value, a dict when well formed),
+    sample size, seeds, metrics and verdict.
     ``source`` (``committed`` or ``certification``) is an open enum. ``run_id`` is a report
     path stem, not a ULID (E16)."""
 
@@ -7135,11 +7136,11 @@ class EvalRun(Model):
     model: str | None = None
     model_version: str | None = None
     preset: str | None = None
-    requirements: dict[str, Any] = field(default_factory=dict)
+    requirements: Any = field(default_factory=dict)  # raw (E15): a non-dict is shown whole
     sample_size: int | None = None
     seeds: list[int] | None = None
     source: str = open_enum(default="committed")
-    suites: dict[str, Any] = field(default_factory=dict)
+    suites: Any = field(default_factory=dict)  # raw (E15): a non-dict is shown whole
     verdict: str | None = None
 
 

@@ -108,8 +108,6 @@ ENGINE_STUBS = [
     # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
     # list under this urlconf only (#313's real detail and run pages are served here).
     path("certifications/", certifications_frame, name="certifications"),
-    path("evals/", stub, name="eval-runs"),  # #316
-    path("evals/<str:run_id>/", stub, name="eval-run"),  # #316
 ]
 # Every profile page is registered (#310's upgrade-pinned, #314's certify).
 PROFILE_STUBS: list[URLPattern] = []
@@ -136,8 +134,6 @@ STUB_NAMES = frozenset(
 # PR that registers them; the complement test asserts only these.
 NOT_YET_REGISTERED = frozenset(
     {
-        "engine:eval-run",
-        "engine:eval-runs",
         "engine:import",
         "engine:import-job",
         "inspect:outbox",

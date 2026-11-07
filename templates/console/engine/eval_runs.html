@@ -1,0 +1,40 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#316: the Engine's eval runs (engine:eval-runs, console/views/eval_runs.py), newest first:
+committed reports and completed certification runs. Model/version and sample size per row; seeds
+and per-metric floors are on each run's page. Rejected entries are D15's notice plus one spanning
+row each; a failed read is #43's panel in the frame. Context: cursor_dropped, rows (EvalRunRow),
+rejected, rejected_notice, rejected_text, columns, count_text, empty_text, next_url, first_url,
+next_text, first_text.
+{% endcomment %}
+{% load console_format %}
+{% block engine_page %}
+<section class="eval-runs">
+  {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+  {% if rejected_notice %}<p class="notice rejected-notice">{{ rejected_notice }}</p>{% endif %}
+  {% if count_text %}<p class="count">{{ count_text }}</p>{% endif %}
+  {% if rows %}<table class="eval-runs">
+    <thead><tr><th>Run</th><th>Date</th><th>Source</th><th>Preset</th><th>Model</th><th>Fingerprint</th><th>Host</th><th>Verdict</th><th>Metrics</th><th>Sample size</th></tr></thead>
+    <tbody>
+    {% for row in rows %}<tr>
+      <td class="run">{{ row.link }}</td>
+      <td class="date">{{ row.date }}</td>
+      <td class="source">{{ row.source }}</td>
+      <td class="preset">{{ row.preset }}</td>
+      <td class="model">{{ row.model }}</td>
+      <td class="fingerprint">{% if row.fingerprint %}{% if row.fingerprint_url %}<a class="certifications-link" href="{{ row.fingerprint_url }}"><code class="hash" title="{{ row.fingerprint }}">{{ row.fingerprint_short }}</code></a>{% else %}<code class="hash" title="{{ row.fingerprint }}">{{ row.fingerprint_short }}</code>{% endif %}{% else %}—{% endif %}</td>
+      <td class="host">{{ row.host }}</td>
+      <td class="verdict">{{ row.verdict }}</td>
+      <td class="metrics">{{ row.metrics }}</td>
+      <td class="sample-size">{{ row.sample_size }}</td>
+    </tr>
+    {% endfor %}{% for raw in rejected %}<tr class="rejected">
+      <td colspan="{{ columns }}">{{ rejected_text }}<details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% elif rejected %}{% for raw in rejected %}<details class="rejected-entry"><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details>
+  {% endfor %}{% endif %}
+  {% if empty_text %}<p class="empty">{{ empty_text }}</p>{% endif %}
+  {% if next_url or first_url %}<p class="paging">{% if first_url %}<a class="first-page" href="{{ first_url }}">{{ first_text }}</a>{% endif %}{% if first_url and next_url %} · {% endif %}{% if next_url %}<a class="next-page" href="{{ next_url }}">{{ next_text }}</a>{% endif %}</p>{% endif %}
+</section>
+{% endblock %}

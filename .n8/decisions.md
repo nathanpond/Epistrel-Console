@@ -3616,3 +3616,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The success redirect after an invalidation is always the certification page (`engine:certification`), not `next`; `next` only drives Cancel. The display-only Fingerprint/Profile facts render inside the confirm page's usual `<code>` value cells ("—" when absent).
   **Why:** AC ("a 303 to engine:certification"); reusing `_confirm.html` unchanged. Cost if wrong: none.
   **Issue:** #315
+- **Decision:** Rule 3: `EvalRun.suites`/`requirements` widened from `dict[str, Any]` to `Any` (default `{}`), as E15 lists them raw. A non-dict value used to make the whole run unparseable (`bad_response`), so the AC's "a non-dict shows as `pretty_json` in More" couldn't be met.
+  **Why:** E15 says eval `suites`/`requirements` are raw. Cost if wrong: none for well-formed reports (still dicts).
+  **Issue:** #316
+- **Decision:** `console.certification.eval_runs_url()` (E6's home for M7 URL helpers) is the reverse-or-`None` helper the Eval reports page uses for "Per-run results: Eval runs". The line keeps class `eval-runs` but drops `muted`.
+  **Why:** The AC asks for a reverse-or-`None` helper; E6 keeps them together. Cost if wrong: none.
+  **Issue:** #316
+- **Decision:** Eval runs list: E22's count line ("N eval runs on this page") and D15's rejected notice plus spanning rows (colspan 10) are applied, though the AC names only the rejected row. An empty cursor page reads "No more eval runs after this one" with "First page". A blank cursor is no cursor (no notice); one over 200 characters or with a `Cc` character is dropped with `CURSOR_DROPPED`. Any failed list read (no filter form here) is #43's panel through the frame.
+  **Why:** E22 applies to every M7 list. Cost if wrong: an extra line.
+  **Issue:** #316
+- **Decision:** Run page: known source/preset values carry their raw value in `title` too (as #313's `_enum` does). An empty `seeds` list reads "None" (E23), `null` reads "—". The metric id is plain text and the requirement is in `<code>` ("—" with no `<code>` when null). A string in Suites/Requirements is a verdict badge, and a blank string is "—". A non-404 detail failure is #43's panel in the frame. A 404 `eval_run_not_found` is status 404 and still shows "Back to eval runs". The guard's own 404 (overlong/control id) says "No such eval run — the id in the address isn't an eval run id". The run id is never trimmed or case-folded (it is a path stem).
+  **Why:** Discretion + E23; #313's precedent for the 404 status. Cost if wrong: cosmetic.
+  **Issue:** #316
+- **Decision:** `test_fingerprint_link_d19` checks "linked" under both the real urlconf and `tests/urls_with_m7_pages.py`, and "plain text" with `tests/certification_helpers.unregistered_certification_pages`. The test plan's "plain under the real urlconf before #313" can't hold now that #313 has landed. `test_certification_wording.test_the_url_helpers_are_none_while_unregistered`'s `eval_run_url` half now asserts the real path, and its unregistered half monkeypatches the two #316 names.
+  **Why:** #313 landed first. Cost if wrong: none.
+  **Issue:** #316
+- **Decision:** The verdict badges get four rules in `base.html` (`.verdict-badge` plus pass/fail/other: borders and weight only, so the text carries the meaning). The raw Suites/Requirements tables share one partial, `templates/console/engine/_eval_raw_table.html` (one file over the planned count). The live edge on :18000 serves 0 eval runs (`list_eval_runs` returns an empty page), so the live check covered only the empty state.
+  **Why:** Discretion. Cost if wrong: none.
+  **Issue:** #316

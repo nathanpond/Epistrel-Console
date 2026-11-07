@@ -17,6 +17,7 @@ from django.utils.html import format_html
 from django.utils.safestring import SafeString
 from django.views.decorators.http import require_safe
 
+from console.certification import eval_runs_url
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, STAGED_LABEL, stage_revision_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
 from console.engine.models import OperationRecord, StorySummary
@@ -24,7 +25,6 @@ from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.evals import (
     BLANK_HINT,
-    EVAL_RUNS_ISSUE,
     NO_SAMPLES,
     SAMPLE_LIMIT,
     SHAPE_TITLE,
@@ -479,6 +479,6 @@ def evals(request: HttpRequest) -> HttpResponse:
         "no_samples": NO_SAMPLES,
         "shape_title": SHAPE_TITLE,
         "stories_unavailable": STORIES_UNAVAILABLE,
-        "eval_runs_issue": EVAL_RUNS_ISSUE,
+        "eval_runs_url": eval_runs_url(),
     }
     return render(request, "console/operations_evals.html", context)

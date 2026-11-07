@@ -1,10 +1,15 @@
 """E13's quality wording (#295): ``console.certification.quality_line`` over a ``QualityStatus``
 and a ``FloorsMet``, ``_quality.html``, ``floors_text`` and the E6 certification links."""
 
+from typing import Any
+
 import pytest
 from django.template.loader import render_to_string
 from django.test import override_settings
+from django.urls import NoReverseMatch
+from django.urls import reverse as real_reverse
 
+from console import certification
 from console.certification import (
     CANARY_LIST_REQUEST,
     INVALIDATED_REASON_TEXT,
@@ -14,6 +19,7 @@ from console.certification import (
     certification_url,
     certifications_url,
     eval_run_url,
+    eval_runs_url,
     floors_text,
     quality_line,
 )
@@ -123,12 +129,22 @@ def test_floors_text() -> None:
 
 
 def test_the_url_helpers_are_none_while_unregistered(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert eval_run_url("2026-11-01-smoke") is None  # #316's page
+    assert eval_run_url("2026-11-01-smoke") == "/engine/evals/2026-11-01-smoke/"  # #316
+    assert eval_runs_url() == "/engine/evals/"
+    assert eval_run_url("a/b") is None  # a run id with "/" can't be reversed
     unregistered_certification_pages(monkeypatch)  # D19: before #313 registered its pages
     assert certifications_url() is None
     assert certification_url(CERT) is None
     assert certification_run_url("01JM7CR0000000000000000001") is None
+
+    def without_eval_runs(name: str, *args: Any, **kwargs: Any) -> str:
+        if name in {"engine:eval-runs", "engine:eval-run"}:
+            raise NoReverseMatch(name)
+        return real_reverse(name, *args, **kwargs)
+
+    monkeypatch.setattr(certification, "reverse", without_eval_runs)  # before #316
     assert eval_run_url("2026-11-01-smoke") is None
+    assert eval_runs_url() is None
 
 
 @override_settings(ROOT_URLCONF=STUBS)

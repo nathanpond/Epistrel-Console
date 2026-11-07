@@ -26,7 +26,8 @@ any status; ``intervention_types_*`` aren't shown. The one template-side adapter
 
 **E6 — URL helpers** (D19: ``None`` while unregistered, or for a blank or non-string id):
 :func:`certifications_url` (``engine:certifications`` with the ``fingerprint``/``profile_id``
-query), :func:`certification_url`, :func:`certification_run_url` and :func:`eval_run_url`.
+query), :func:`certification_url`, :func:`certification_run_url`, :func:`eval_runs_url` and
+:func:`eval_run_url`.
 
 **E18 — no canary-run list.** Canary results are reached only through the certification they made
 stale; :data:`CANARY_LIST_REQUEST` is the Engine request, cited once on the certification page.
@@ -149,6 +150,11 @@ def certification_url(certification_id: str | None) -> str | None:
 def certification_run_url(run_id: str | None) -> str | None:
     """One certification run (``engine:certification-run``, #313)."""
     return _reversed("engine:certification-run", run_id)
+
+
+def eval_runs_url() -> str | None:
+    """The Eval runs list (``engine:eval-runs``, #316)."""
+    return _reversed("engine:eval-runs")
 
 
 def eval_run_url(run_id: str | None) -> str | None:

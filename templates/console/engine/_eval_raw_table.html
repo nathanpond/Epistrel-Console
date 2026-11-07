@@ -1,0 +1,6 @@
+{% comment %}#316: a raw suites/requirements value (RawTable): a key → value table, "None" when empty, or the whole value under More. Context: table, key_label, value_label, code_keys, none_text.{% endcomment %}{% if table.rows is None %}<details><summary>More</summary><pre>{{ table.more }}</pre></details>{% elif table.rows %}<table class="raw-verdicts">
+    <thead><tr><th>{{ key_label }}</th><th>{{ value_label }}</th></tr></thead>
+    <tbody>
+    {% for key, value in table.rows %}<tr><td class="key">{% if code_keys %}<code>{{ key }}</code>{% else %}{{ key }}{% endif %}</td><td class="value">{{ value }}</td></tr>
+    {% endfor %}</tbody>
+  </table>{% else %}<p class="empty">{{ none_text }}</p>{% endif %}

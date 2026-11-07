@@ -20,6 +20,7 @@ from console.views import (
     directives,
     engine_panel,
     erasure,
+    eval_runs,
     feedback,
     history,
     inspect,
@@ -588,6 +589,9 @@ engine_patterns = (
             certification_admin.certification_import,
             name="certification-import",
         ),
+        # #316: the Engine's eval runs (committed reports and certification runs) and one run.
+        path("evals/", eval_runs.eval_runs, name="eval-runs"),
+        path("evals/<str:run_id>/", eval_runs.eval_run, name="eval-run"),
     ],
     "engine",
 )

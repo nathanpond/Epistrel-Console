@@ -57,7 +57,6 @@ NO_CLAIMS = "No claims checked in this window"
 NO_EXTRACTED = "no claims extracted in this window"
 NO_SAMPLES = "No samples in this window — shadow sampling may be off, or nothing was sampled yet."
 STORIES_UNAVAILABLE = "Story list unavailable — enter an id"
-EVAL_RUNS_ISSUE = "https://github.com/nathanpond/Epistrel/issues/532"
 SHAPE_TITLE = "layer|cardinality|temporal|polarity"
 EMPTY = "—"
 

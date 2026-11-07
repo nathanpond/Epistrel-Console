@@ -382,10 +382,11 @@ ENGINE_NAV = (
     '<a href="/engine/certifications/">Certifications</a> · '
     '<a href="/engine/evals/">Eval runs</a></span>'
 )
-# The registered M7 Engine rows (#313: Certifications); #316 and #320 add their own.
+# The registered M7 Engine rows (#313: Certifications, #316: Eval runs); #320 adds its own.
 REGISTERED_ENGINE_NAV = (
     ' · <span class="engine-pages" role="navigation" aria-label="Engine pages">'
-    '<a href="/engine/certifications/">Certifications</a></span>'
+    '<a href="/engine/certifications/">Certifications</a> · '
+    '<a href="/engine/evals/">Eval runs</a></span>'
 )
 
 

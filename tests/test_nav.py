@@ -133,12 +133,15 @@ def test_a_sub_page_marks_its_row_current() -> None:
 
 
 def test_engine_links_show_only_the_registered_rows_under_the_real_urlconf() -> None:
-    """#313 registered Certifications; the other Engine rows stay out until their owners land."""
+    """#313 registered Certifications and #316 Eval runs; Import a bundle stays out until #320."""
     assert engine_links(None) == [
         NavLink("engine:certifications", "Certifications", "/engine/certifications/", False),
+        NavLink("engine:eval-runs", "Eval runs", "/engine/evals/", False),
     ]
     marked = [link.label for link in engine_links("engine:certification") if link.current]
     assert marked == ["Certifications"]
+    marked = [link.label for link in engine_links("engine:eval-run") if link.current]
+    assert marked == ["Eval runs"]
 
 
 @override_settings(ROOT_URLCONF=M7_PAGES)
