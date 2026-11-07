@@ -32,6 +32,7 @@ from console.views import (
     inspect_ledger,
     inspect_memories,
     inspect_memory,
+    inspect_merge,
     inspect_predicates,
     inspect_reconciliation,
     inspect_scene,
@@ -298,6 +299,8 @@ inspect_patterns = (
         path("canon/<ulid:fact_id>/lineage/", inspect_canon.lineage, name="canon-lineage"),
         # #146: write author canon (commit and its result page again; lock, unlock, supersede).
         path("canon/new/", inspect_canon.new_fact, name="canon-new"),
+        # #306: Merge entities (E11), a rewrite session of kind ``entity_merge``.
+        path("canon/merge/", inspect_merge.entity_merge, name="entity-merge"),
         path("canon/written/", inspect_canon.written, name="canon-written"),
         path("canon/<ulid:fact_id>/lock/", inspect_canon.lock, name="canon-lock"),
         path("canon/<ulid:fact_id>/unlock/", inspect_canon.unlock, name="canon-unlock"),

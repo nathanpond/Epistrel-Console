@@ -72,6 +72,7 @@ from console.scene import (
 from console.story_pause import is_paused
 from console.templatetags.inspect_tags import code_spans
 from console.views.inspect import InspectContext, inspect_page
+from console.views.inspect_merge import entity_merge_url
 from console.views.story_characters import cast_row_url
 from console.wording import archived_refusal, write_refusal
 
@@ -175,6 +176,7 @@ def _entity(ctx: InspectContext, entity_id: str) -> dict[str, Any]:
         link_as_of=profile.as_of,
         link_viewpoint=profile.viewpoint,
         more=raw(profile),
+        merge_url=entity_merge_url(ctx.story_id, entity_id),  # #306, once the profile answered
     )
     return context
 

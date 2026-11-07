@@ -97,7 +97,6 @@ STORY_STUBS = [
     path(f"{S}operations/", stub, name="operations-list"),  # #324
 ]
 INSPECT_STUBS = [
-    path("canon/merge/", stub, name="entity-merge"),  # #306
     path("effects/outbox/", stub, name="outbox"),  # #325
     path("effects/reconciliation/<str:listing>/resolve/", stub, name="resolve-listing"),  # #326
     path("effects/reconciliation/resolved/", stub, name="resolved"),  # #326
@@ -148,7 +147,6 @@ NOT_YET_REGISTERED = frozenset(
         "engine:eval-runs",
         "engine:import",
         "engine:import-job",
-        "inspect:entity-merge",
         "inspect:outbox",
         "inspect:resolve-listing",
         "inspect:resolved",

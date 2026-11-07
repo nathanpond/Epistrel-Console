@@ -28,7 +28,6 @@ ARGS: dict[str, list[str]] = {
     "stories:export-job": [STORY, ULID],
     "stories:export-download": [STORY, ULID],
     "stories:operations-list": [STORY],
-    "inspect:entity-merge": [STORY],
     "inspect:outbox": [STORY],
     "inspect:resolve-listing": [STORY, "listing-1"],
     "inspect:resolved": [STORY],
