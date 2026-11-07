@@ -16,6 +16,14 @@ through, so the Engine's 422 shows.
 (``story``) history of a character viewpoint; blank sends nothing (the story's setting). An
 explicit ``omniscient`` viewpoint never sends it: :meth:`HistoryForm.clean` blanks it in
 ``cleaned_data`` (the submitted value stays, so the page keeps it for a character viewpoint).
+
+"View" (``view``, #304) picks the corrected history (blank, main's form byte for byte:
+``checkpoint`` is ignored and :meth:`HistoryForm.query` returns main's keys) or the history
+**as originally recorded** (``as_recorded``, FR-STORE-23). That view is omniscient-only (E2):
+:meth:`HistoryForm.clean` forces the omniscient viewpoint and blanks every control the Engine
+doesn't read there (actor, player view, audit, summary, traces, ``before_turn``; ``as_of`` and
+``limit`` are ignored, their errors dropped), and :meth:`HistoryForm.query` sends only ``view``,
+``viewpoint``, ``as_of`` (D7's ``checkpoint``, ``N`` or ``N+k``) and ``variant``.
 """
 
 from collections.abc import Sequence
@@ -38,6 +46,26 @@ PLAYER_VIEW_CHOICES = [
     ("character", "Character (filtered)"),
     ("story", "Story (everything, marked)"),
 ]
+AS_RECORDED = "as_recorded"
+# #304: the corrected history (main's page) or the history as originally recorded.
+VIEW_CHOICES = [
+    ("", "Corrected (as the story stands)"),
+    (AS_RECORDED, "As originally recorded"),
+]
+CHECKPOINT_HELP = "A turn (12), or a turn and slot (12+1); blank for the latest"
+# The controls the as-recorded view doesn't read, blanked in ``cleaned_data`` (#304).
+AS_RECORDED_BLANKED: dict[str, Any] = {
+    "actor_character_id": "",
+    "player_view": "",
+    "include_audit": False,
+    "include_summary": False,
+    "traces": False,
+    "before_turn": None,
+    "as_of": None,
+    "limit": None,
+}
+# Submitted controls a disabled as-recorded control carries in a hidden input (#304).
+CARRIED = ("viewpoint", "actor_character_id", "include_audit", "include_summary", "traces", "limit")
 
 
 class HistoryForm(forms.Form):
@@ -62,12 +90,22 @@ class HistoryForm(forms.Form):
     )
     before_turn = forms.IntegerField(required=False, min_value=0, widget=forms.HiddenInput)
     variant = forms.CharField(required=False, widget=forms.HiddenInput)
+    # #304: which history; ``checkpoint`` (D7's ``BoundaryField``, added in ``__init__``) is
+    # read only on the as-recorded view.
+    view = forms.ChoiceField(required=False, choices=VIEW_CHOICES, label="View")
 
     def __init__(self, data: QueryDict | dict[str, Any], *, cast: Sequence[Character]) -> None:
         bound = data.copy()
         if not bound.get("limit"):
             bound["limit"] = str(DEFAULT_PAGE_SIZE)  # the required control's default
         super().__init__(bound)
+        # Imported here: console.forms.world imports console.forms.inspect, which imports this
+        # module's as_of_options.
+        from console.forms.world import BoundaryField
+
+        self.fields["checkpoint"] = BoundaryField(
+            required=False, label="Checkpoint", help_text=CHECKPOINT_HELP
+        )
         characters = character_choices(cast)
         viewpoint = self.fields["viewpoint"]
         if isinstance(viewpoint, forms.ChoiceField):
@@ -82,16 +120,43 @@ class HistoryForm(forms.Form):
 
     def clean(self) -> dict[str, Any] | None:
         cleaned = super().clean()
+        if self.as_recorded:
+            return self._clean_as_recorded(cleaned or {})
+        self._ignore(cleaned, "checkpoint")  # #304: read on the as-recorded view only
         if cleaned and cleaned.get("include_audit") and cleaned.get("viewpoint") != OMNISCIENT:
             self.add_error("include_audit", AUDIT_NEEDS_OMNISCIENT)
         if cleaned and cleaned.get("viewpoint") == OMNISCIENT and "player_view" in cleaned:
             cleaned["player_view"] = ""  # applies to a character viewpoint only (#62)
         return cleaned
 
+    def _ignore(self, cleaned: dict[str, Any] | None, *names: str) -> None:
+        """Drop the errors of controls the current view doesn't read (#304); their cleaned
+        value is ``None``."""
+        for name in names:
+            self.errors.pop(name, None)  # set by now: clean() runs inside full_clean()
+            if cleaned is not None:
+                cleaned[name] = None
+
+    def _clean_as_recorded(self, cleaned: dict[str, Any]) -> dict[str, Any]:
+        """#304: omniscient whatever was submitted (E2), every control the Engine doesn't read
+        on this view blanked."""
+        self._ignore(cleaned, "viewpoint", *AS_RECORDED_BLANKED)
+        cleaned.update(AS_RECORDED_BLANKED)
+        cleaned["viewpoint"] = OMNISCIENT
+        return cleaned
+
     def query(self) -> dict[str, Any]:
         """``get_history``'s keyword arguments (valid form only); ``None``/``False`` values
-        are left out of the request by the client."""
+        are left out of the request by the client. As recorded (#304): ``view``, the omniscient
+        viewpoint, the checkpoint as ``as_of`` and ``variant``, nothing else."""
         data = self.cleaned_data
+        if self.as_recorded:
+            return {
+                "view": AS_RECORDED,
+                "viewpoint": OMNISCIENT,
+                "as_of": data["checkpoint"] or None,
+                "variant": data["variant"] or None,
+            }
         return {
             "viewpoint": data["viewpoint"] or None,
             "as_of": data["as_of"],
@@ -117,6 +182,27 @@ class HistoryForm(forms.Form):
     @property
     def omniscient(self) -> bool:
         return self.value("viewpoint") == OMNISCIENT
+
+    @property
+    def as_recorded(self) -> bool:
+        """View is "As originally recorded" (#304); the raw value, so the unvalidated HTMX
+        re-render can read it."""
+        return self.value("view") == AS_RECORDED
+
+    @property
+    def carried(self) -> list[tuple[str, str]]:
+        """The hidden inputs that carry each disabled as-recorded control's submitted value
+        (#304), only when it is one of that control's choices: switching back restores it."""
+        found = []
+        for name in CARRIED:
+            value = self.value(name)
+            field = self.fields[name]
+            if isinstance(field, forms.BooleanField):
+                if value and value.lower() not in {"0", "false", "off"}:
+                    found.append((name, "1"))
+            elif isinstance(field, forms.ChoiceField) and value and field.valid_value(value):
+                found.append((name, value))
+        return found
 
     @property
     def player_view_kept(self) -> str:

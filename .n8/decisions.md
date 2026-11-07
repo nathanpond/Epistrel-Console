@@ -3520,3 +3520,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Live check against the smoke stack `n8-291-smoke` on `127.0.0.1:18000` (left running): the list rendered the edge's 3 real certifications, a detail page ("Valid since …", Passed (13) / Failed (4) / Insufficient evidence (0)), the `profile_id` filter (lower-case input upper-cased), and an unknown run's "No such certification run" (404).
   **Why:** confirms the pages parse the Engine's real records, not only the fixtures. Cost if wrong: none.
   **Issue:** #313
+- **Decision:** `HistoryForm.checkpoint` (D7's `BoundaryField`) is added in `__init__`, not declared on the class: `console.forms.world` imports `console.forms.inspect`, which imports `console.forms.history.as_of_options`, so a module-level import cycles. The field order is irrelevant (the template renders fields by name).
+  **Why:** Avoids moving D7's field or touching `console/forms/inspect.py`. Cost if wrong: none.
+  **Issue:** #304
+- **Decision:** On the as-recorded view `clean()` drops the errors of every control the view ignores — `viewpoint` and `actor_character_id` too (an invalid character there no longer blocks the read), beyond the story's named `as_of`/`before_turn`/`limit` — and sets them as the AC says. The hidden inputs that carry disabled controls (`HistoryForm.carried`) only carry a valid choice, so a bad value is dropped on the way back.
+  **Why:** The as-recorded read forces omniscient (E2), so a stale character value must not refuse it. Cost if wrong: an invalid value silently ignored on a view that ignores it anyway.
+  **Issue:** #304
+- **Decision:** The HTMX View switch pre-fills Checkpoint from a valid `as_of` (and `as_of` from a checkpoint's turn going back) only on the HTMX re-render (`views.history.switched_view`), never on a full GET, so a submitted as-recorded page still ignores `as_of` and the corrected page still ignores `checkpoint`, as the AC says.
+  **Why:** Keeps the corrected query byte for byte and the AC's "as_of is ignored" literal. Cost if wrong: a non-JS switch doesn't carry the turn over.
+  **Issue:** #304
+- **Decision:** 503 `erasure_pending` and 409 `story_importing` from the as-recorded history read are re-raised to their middleware (#87's held page, E10's importing page), as the AC says; main's corrected `_page` is left as it was (it panels them).
+  **Why:** The AC names the middleware for this view only; the corrected view must stay main's. Cost if wrong: none.
+  **Issue:** #304
+- **Decision:** The `query.as_of` validation message is read from the Engine's `details.errors[*].field` (what `InvalidRequest.from_errors` sends: `field`/`message`), with a `loc` list ending in `as_of` accepted as well (the story's wording). Any other `validation_error` is #43's panel.
+  **Why:** The Engine's envelope uses `field`, not `loc`. Cost if wrong: the panel instead of the inline message.
+  **Issue:** #304
+- **Decision:** The corrected-controls golden is three HTMX fragment captures from main (`tests/history/golden/controls_{default,omniscient,character}.html`), compared with the View select's `<div class="field field-view">` stripped (E24). The as-recorded controls are a separate `{% if form.as_recorded %}` branch of `_controls.html`, so main's markup stays untouched. Erasure markers render their full `erasure_id` in `<code>` (the AC's wording) and `at` through `engine_time`; the derived entries' More is E23's `<details><summary>More</summary>` with one `pretty_json` `<pre>` per entry.
+  **Why:** The AC names `<code>` for the id; E24 for the golden. Cost if wrong: cosmetic.
+  **Issue:** #304

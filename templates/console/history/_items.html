@@ -1,12 +1,20 @@
-{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). A structured turn's header links "Explain retrieval" (#142), then "Perception" (#195). A structured beat's Text cell is its trace (#147), under the verdict legend and the trace notices. A character read names its audience filter and player view; envelope and not-perceived beats are badged and styled (#62). A multi-render turn's header names its render order; a reaction row is indented and prefixed "↳ " (#202). An operation id with no log row links its Engine operation page (#250). Each turn's State changes sit in a row under its header (#245's table), an omniscient read's beats list their own in a closed "beat-effects" details, an unfinished staged turn is badged Incomplete (never "no reply"), and the D4 viewpoint line and D11 outbox notice sit above the table (#254). A turn's co-author notices sit in a row after its State changes (#185). A pruned chain's ?variant= (409 pruned, #293) shows PRUNED_CHAIN_NOTE and "Clear chain" alone. #}
+{# A history page's items (#52): per-turn headers, one row per item, audit records under their turn; a generated message's "Rate" control in a full-width row under it (#83). Erased spans marked, redacted items badged and erasure markers worded (#87). A structured turn's header links "Explain retrieval" (#142), then "Perception" (#195). A structured beat's Text cell is its trace (#147), under the verdict legend and the trace notices. A character read names its audience filter and player view; envelope and not-perceived beats are badged and styled (#62). A multi-render turn's header names its render order; a reaction row is indented and prefixed "↳ " (#202). An operation id with no log row links its Engine operation page (#250). Each turn's State changes sit in a row under its header (#245's table), an omniscient read's beats list their own in a closed "beat-effects" details, an unfinished staged turn is badged Incomplete (never "no reply"), and the D4 viewpoint line and D11 outbox notice sit above the table (#254). A turn's co-author notices sit in a row after its State changes (#185). A pruned chain's ?variant= (409 pruned, #293) shows PRUNED_CHAIN_NOTE and "Clear chain" alone. As originally recorded (#304, page.as_recorded): the as-recorded header, AS_RECORDED_NOTE, the erasures since, the "See turn N corrected" link, the table (read-only: no feedback, Explain, Perception, Report or paging) and the records at the checkpoint; a checkpoint refusal shows only the "nothing was read" line (its text sits under Checkpoint), and a Console-bug refusal its worded line over #43's panel, collapsed. #}
 {% load console_format erasure %}
 {% if page.pruned_note %}<p class="notice pruned-chain">{{ page.pruned_note }} · <a class="clear-chain" href="{{ page.clear_chain_url }}">Clear chain</a></p>
 {% else %}{% if page.chain %}<p class="chain-line">Viewing chain {{ page.chain }} — <a href="{{ page.clear_chain_url }}">clear</a></p>{% endif %}
-{% if page.error %}
+{% if page.as_recorded_error %}<p class="muted">Correct the controls above — nothing was read.</p>
+{% elif page.error_text %}<p class="error">{{ page.error_text }}</p>
+<details class="engine-error-details"><summary>Engine error</summary>{% include "console/_engine_error.html" with engine_error=page.error %}</details>
+{% elif page.error %}
 {% include "console/_engine_error.html" with engine_error=page.error %}
 {% else %}
 {% with h=page.history %}
-<p class="history-header">Viewpoint {{ page.viewpoint_label }} <code>{{ h.output_viewpoint }}</code> · as of {{ h.as_of }} · revision {{ h.timeline_revision }}{% if page.audience_filter %} · audience filter <span class="audience-filter" title="{{ page.audience_filter.1 }}">{{ page.audience_filter.0 }}</span> · player view <span class="player-view">{{ h.player_view }}</span>{% endif %}{% if page.chain %} · chain {{ page.chain }}{% endif %}</p>
+{% if page.as_recorded %}<p class="history-header as-recorded">As originally recorded · checkpoint {{ page.checkpoint_text }} · committed {% if h.boundary_tx %}{{ h.boundary_tx|engine_time }}{% else %}—{% endif %} · revision {{ h.timeline_revision }}{% if page.chain %} · chain {{ page.chain }}{% endif %}</p>
+<p class="notice as-recorded-note">{{ page.as_recorded_note }}</p>
+{% if page.erasures %}<p class="warning erased-since">{{ page.erased_since }}</p>
+<details class="erasures"><summary>Erasures</summary><ul>{% for e in page.erasures %}<li><code>{{ e.erasure_id }}</code> · {% if e.at %}{{ e.at|engine_time }}{% else %}—{% endif %}{% if e.raw is not None %}<details class="more"><summary>More</summary><pre>{{ e.raw|pretty_json }}</pre></details>{% endif %}</li>{% endfor %}</ul></details>
+{% endif %}<p class="back-to-corrected"><a href="{{ page.back_url }}">See turn {{ h.as_of }} corrected</a></p>
+{% else %}<p class="history-header">Viewpoint {{ page.viewpoint_label }} <code>{{ h.output_viewpoint }}</code> · as of {{ h.as_of }} · revision {{ h.timeline_revision }}{% if page.audience_filter %} · audience filter <span class="audience-filter" title="{{ page.audience_filter.1 }}">{{ page.audience_filter.0 }}</span> · player view <span class="player-view">{{ h.player_view }}</span>{% endif %}{% if page.chain %} · chain {{ page.chain }}{% endif %}</p>
 {% if page.summary is not None %}
 <section class="summary">
   <h2>Summary</h2>
@@ -15,7 +23,7 @@
   {% else %}<p class="muted">No summary segments.</p>{% endif %}
 </section>
 {% endif %}
-{% if page.settings_error %}<p class="warning">Policy names unavailable — showing ids.</p>{% include "console/_engine_error.html" with engine_error=page.settings_error %}{% endif %}
+{% endif %}{% if page.settings_error %}<p class="warning">Policy names unavailable — showing ids.</p>{% include "console/_engine_error.html" with engine_error=page.settings_error %}{% endif %}
 {% if page.legend %}{% include "console/_verdict_legend.html" with classification=page.classification_legend %}
 {% endif %}{% if page.trace_cap_note %}<p class="warning trace-notice">{{ page.trace_cap_note }}</p>
 {% endif %}{% if page.trace_failures %}<p class="warning trace-notice">{{ page.trace_failures }}</p>
@@ -63,6 +71,7 @@
   {% endfor %}
 </table>
 {% else %}<p>No items on this page.</p>{% endif %}
-<p class="paging">{% if page.older_url %}<a href="{{ page.older_url }}">Older →</a>{% endif %}{% if page.newest_url %} <a href="{{ page.newest_url }}">Newest page</a>{% endif %}</p>
-{% endwith %}
+{% if page.as_recorded %}{% include "console/history/_as_recorded.html" with rows=page.derived %}
+{% else %}<p class="paging">{% if page.older_url %}<a href="{{ page.older_url }}">Older →</a>{% endif %}{% if page.newest_url %} <a href="{{ page.newest_url }}">Newest page</a>{% endif %}</p>
+{% endif %}{% endwith %}
 {% endif %}{% endif %}

@@ -1,0 +1,8 @@
+{# The records at the checkpoint (#304), from an as-recorded answer's ``derived`` (raw, E15): Facts, Beliefs, Memories and States, each its label and bare count, its entries raw under More when there are any; a missing or non-list member reads "—". Context: rows (console.history.derived_rows; None leaves the section out). #}
+{% load console_format %}{% if rows is not None %}<section class="records-at-checkpoint">
+  <h2>Records at the checkpoint</h2>
+  <ul class="derived">{% for row in rows %}
+    <li class="derived-{{ row.key }}">{{ row.label }} · {{ row.count }}{% if row.entries %} <details class="more"><summary>More</summary>{% for entry in row.entries %}<pre>{{ entry|pretty_json }}</pre>{% endfor %}</details>{% endif %}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
