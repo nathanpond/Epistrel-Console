@@ -31,6 +31,15 @@ When a rewind's, undo rewind's, swap's or fork's answer lists external effects t
 not undo or re-send (#258), the POST answers 200 with ``timeline/effects_report.html`` instead:
 the flash's success line, the lists (``_edit_effects.html``) and "Continue to the story", with
 no flash queued. With every list empty the redirect and flash are as before.
+
+Regenerate with a direction (#301, FR-COMMIT-12): the confirm page's optional Direction box and
+E4's modes (:class:`console.forms.timeline.RegenerateForm`). A 200 keeps #53's redirect and flash,
+plus ``console.directives``'s steered/Lite notes. A 202 ``DirectedPending`` (recorded history
+disagrees) commits nothing: a 303 to the ``directed_resolution`` session's page (#297) with a
+``messages.warning`` naming the held reply (#292's panel stays as the fallback while
+``stories:rewrite`` doesn't resolve). The directive codes and a ``body.directive…`` guardrail are
+placed on Direction through E5's ``rewrite_refusal``; ``rewrite_session_limit``, ``module_off`` and
+E5's other directed-path codes are the refused page's notice and link.
 """
 
 import logging
@@ -52,6 +61,12 @@ from console.confirm import (
     posted_idempotency_key,
     render_confirm,
     safe_next,
+)
+from console.directives import (
+    DIRECTIVE_UNAVAILABLE,
+    ambiguous_suffix,
+    held_flash_text,
+    steered_suffix,
 )
 from console.engine.client import EngineClient, EngineClientError, EngineError, turn_timeout
 from console.engine.models import DirectedPending, ReactivationCheck, RegenerateResult, Story
@@ -75,10 +90,10 @@ from console.forms.timeline import (
     sign_original,
 )
 from console.ids import new_ulid
-from console.inspect import history_turn_url
+from console.inspect import LITE_REWRITES, SETTINGS, history_turn_url
 from console.notices import EXTERNAL_EFFECTS_TEXT, NoticeCards, notice_cards
 from console.reactivation import FORK, OP_PARAM, SWAP, UNTRUNCATE
-from console.rewrites import rewrite_session_url
+from console.rewrites import rewrite_refusal, rewrite_session_url
 from console.story_pause import check_url, is_paused, story_paused_refusal
 from console.timeline import (
     Basis,
@@ -107,7 +122,7 @@ REWIND_FIELDS = "console/timeline/_rewind_fields.html"
 REGENERATE_FIELDS = "console/timeline/_regenerate_fields.html"
 REFUSED_TEMPLATE = "console/timeline/refused.html"
 DIRECTED_TEMPLATE = "console/timeline/directed_pending.html"
-# #292: a directed regenerate's 202 when the rewrite session page isn't registered yet.
+# #292 (kept by #301): a directed regenerate's 202 when the session page isn't registered.
 HELD_FOR_REVIEW_TEXT = "The Engine held this reply for review in a rewrite session"
 FORK_TEMPLATE = "console/timeline/fork.html"
 REPORT_TEMPLATE = "console/timeline/effects_report.html"
@@ -121,8 +136,37 @@ REGENERATE_QUESTION = (
 NOTHING_TO_REGENERATE = "Nothing to regenerate — the latest turn has no reply."
 NOTHING_TO_UNDO = "Nothing to undo — there is no rewind to reverse."
 SWAP_INSTEAD = "New turns were added since the rewind — swap to the old chain instead"
-# Regenerate refusals placed beside the form's fields (the operator's inputs kept).
-REGENERATE_PLACED = frozenset({"validation_error", "viewpoint_unresolved"})
+# Regenerate refusals placed beside the form's fields (the operator's inputs kept). #301 adds
+# the directive codes (on Direction, E5's text; a ``guardrail_violation`` only when its locator is
+# ``body.directive…``, else #53's refused page: the turn's recorded input is re-checked too).
+DIRECTIVE_CODES = frozenset({"guardrail_violation", "directive_unparseable", "directive_ambiguous"})
+REGENERATE_PLACED = frozenset({"validation_error", "viewpoint_unresolved"}) | DIRECTIVE_CODES
+DIRECTIVE_FIELD = "directive"
+REGENERATE_VERB = "regenerate"
+# #301: E5's own directed-path codes, worded as the refused page's notice (and link). Any other
+# code keeps #53's ``_refused`` unchanged.
+DIRECTED_REFUSALS = frozenset(
+    {
+        "rewrite_session_limit",
+        "module_off",
+        "record_in_flight",
+        "rewrite_noop",
+        "rewrite_unparseable",
+        "rewrite_apply_failed",
+        "rewrite_reach_failed",
+        "rewrite_stale",
+        "steer_budget_exceeded",
+        "author_fact_limit",
+        "directive_no_changes",
+        "directive_split_required",
+    }
+)
+DIRECTED_LINKS = {"rewrite_session_limit": "Rewrites", "module_off": "Config"}
+DIRECTED_DEFAULT_LINK = "Details"
+DIRECTED_LINE = (
+    "With a direction, a reply that contradicts recorded history isn't committed — it waits in a "
+    "rewrite session for your approval"
+)
 SLOT_PATHS = frozenset({"body.slot", "slot"})  # a 422 about the slot k (#209)
 
 
@@ -152,8 +196,16 @@ def _success_text(text: str, *, operation: str | None, rev: int, key: str) -> st
     return f"{text} — {op}timeline revision {rev}, idempotency key {key}"
 
 
-def _flash(request: HttpRequest, text: str, *, operation: str | None, rev: int, key: str) -> None:
-    messages.success(request, _success_text(text, operation=operation, rev=rev, key=key))
+def _flash(
+    request: HttpRequest,
+    text: str,
+    *,
+    operation: str | None,
+    rev: int,
+    key: str,
+    level: int = messages.SUCCESS,
+) -> None:
+    messages.add_message(request, level, _success_text(text, operation=operation, rev=rev, key=key))
 
 
 @dataclass(frozen=True)
@@ -332,6 +384,8 @@ def regenerate(request: HttpRequest, story_id: str) -> HttpResponse:
         facts=(*_facts(story_id, form), ("Turn", str(form.value("head") or "—"))),
         hidden={**form.hidden(), SNAPSHOT_FIELD: play_story.signed()},
         fields_template=REGENERATE_FIELDS,
+        # #301: only on a re-render of a POST that carried a direction (valid or not).
+        lines=(DIRECTED_LINE,) if request.method == "POST" and form.posted_direction() else (),
     )
     extra = {"form": form, "archived": play_story.archived}
 
@@ -347,10 +401,12 @@ def regenerate(request: HttpRequest, story_id: str) -> HttpResponse:
                 timeout=turn_timeout(play_story.turn_deadline),
             )
         except EngineClientError as exc:
-            if isinstance(exc, EngineError) and exc.code in REGENERATE_PLACED:
+            if isinstance(exc, EngineError) and _placed(exc, story_id, form):
                 log_engine_error(request, exc)
-                apply_engine_errors(exc, form, aliases=REGENERATE_ERRORS)
                 return confirm_page(request, page, extra)
+            directed = _directed_refused(request, exc, story_id, key)
+            if directed is not None:
+                return directed
             return _refused(
                 request,
                 exc,
@@ -360,20 +416,90 @@ def regenerate(request: HttpRequest, story_id: str) -> HttpResponse:
                 basis=_basis(story_id, form, back),
             )
         if isinstance(result, DirectedPending):
-            return _held_for_review(request, story_id, result)
-        return _regenerated(request, story_id, result, key)
+            return _directed_pending(request, story_id, result, key)
+        return _regenerated(request, story_id, result, key, form=form)
 
     return confirm_action(request, page, perform, extra=extra)
 
 
-def _held_for_review(request: HttpRequest, story_id: str, pending: DirectedPending) -> HttpResponse:
-    """A directed regenerate's 202 (#292): the rewrite session holding the reply, else (its
-    page not registered yet) #43's panel with :data:`HELD_FOR_REVIEW_TEXT`. Nothing sends a
-    directive before #301, which replaces this; no flash."""
+def _placed(exc: EngineError, story_id: str, form: RegenerateForm) -> bool:
+    """Place a regenerate refusal on the form, if it belongs there: a directive code (#301) on
+    Direction with E5's text, ``validation_error``/``viewpoint_unresolved`` through
+    ``apply_engine_errors`` (#53). ``False``: the refused page shows it."""
+    if exc.code not in REGENERATE_PLACED:
+        return False
+    if exc.code not in DIRECTIVE_CODES:
+        apply_engine_errors(exc, form, aliases=REGENERATE_ERRORS)
+        return True
+    refusal = rewrite_refusal(exc, story_id, REGENERATE_VERB, None)
+    if refusal is None:
+        return False
+    if exc.code == "guardrail_violation" and refusal.field != DIRECTIVE_FIELD:
+        return False  # the turn's recorded input: #53's refused page
+    text = refusal.text
+    if exc.code == "directive_ambiguous":
+        text += ambiguous_suffix(exc.details)
+    form.add_error(DIRECTIVE_FIELD, text)
+    return True
+
+
+def _known_module(module: object) -> bool:
+    """Whether ``console.inspect.unavailable_for`` has its own wording for ``module``."""
+    return isinstance(module, str) and (module == LITE_REWRITES or module in SETTINGS)
+
+
+def _directed_refused(
+    request: HttpRequest, exc: EngineClientError, story_id: str, key: str
+) -> HttpResponse | None:
+    """#301: E5's own directed-path codes as the refused page's notice and link (a link whose
+    URL doesn't resolve is left out); ``None`` for any other code (#53's page unchanged). A
+    ``module_off`` naming no known module reads :data:`DIRECTIVE_UNAVAILABLE`, with no link."""
+    if not isinstance(exc, EngineError) or exc.code not in DIRECTED_REFUSALS:
+        return None
+    links: tuple[Link, ...] = ()
+    if exc.code == "module_off" and not _known_module(exc.details.get("module")):
+        notice = DIRECTIVE_UNAVAILABLE
+    else:
+        refusal = rewrite_refusal(exc, story_id, REGENERATE_VERB, None)
+        if refusal is None:
+            return None
+        label = DIRECTED_LINKS.get(exc.code, DIRECTED_DEFAULT_LINK)
+        notice = refusal.text
+        links = (Link(label, refusal.url),) if refusal.url else ()
+    log_engine_error(request, exc)
+    found = replace(error_inspector(exc, key), title="", revisions=False)
+    shown = Refusal(
+        title="Regenerate refused",
+        story_id=story_id,
+        notice=notice,
+        links=links,
+        inspector=found,
+    )
+    return render(request, REFUSED_TEMPLATE, {"refusal": shown})
+
+
+def _directed_pending(
+    request: HttpRequest, story_id: str, pending: DirectedPending, key: str
+) -> HttpResponse:
+    """A directed regenerate's 202 (#301): nothing committed; the reply is held in a
+    ``directed_resolution`` session. A 303 to its page (#297) with a ``messages.warning``
+    (E21: held, waiting on the author) naming the still-active variant, the warnings, the
+    unchanged revision and the key, and no operation id. While ``stories:rewrite`` doesn't
+    resolve, #292's #43 panel with :data:`HELD_FOR_REVIEW_TEXT` instead, and no flash."""
     session_id = pending.rewrite_session.id
     url = rewrite_session_url(story_id, session_id)
     if url is not None:
-        return redirect(url)
+        _flash(
+            request,
+            held_flash_text(pending.previous_variant, pending.warnings),
+            operation=None,
+            rev=pending.timeline_revision,
+            key=pending.idempotency_key or key,
+            level=messages.WARNING,
+        )
+        response = redirect(url)
+        response.status_code = 303
+        return response
     context = {
         "engine_error": ErrorPanel(HELD_FOR_REVIEW_TEXT),
         "session_id": session_id,
@@ -388,14 +514,24 @@ def confirm_page(request: HttpRequest, page: ConfirmPage, extra: dict[str, Any])
 
 
 def _regenerated(
-    request: HttpRequest, story_id: str, result: RegenerateResult, key: str
+    request: HttpRequest,
+    story_id: str,
+    result: RegenerateResult,
+    key: str,
+    *,
+    form: RegenerateForm,
 ) -> HttpResponse:
     operation = result.entries[0].operation_id if result.entries else None
     config = f", config revision {result.config_revision}" if result.config_revision else ""
+    steered = steered_suffix(  # #301: "" for a plain regenerate (main's flash)
+        directed=bool(form.direction()),
+        warning_kinds=[warning.kind for warning in result.warnings],
+        apply_directly=bool(form.cleaned_data.get("apply_directly")),
+    )
     _flash(
         request,
         f"Regenerated turn {result.turn}: variant {result.variant} is active, previous variant "
-        f"{result.previous_variant} is kept as a dormant variant{config}",
+        f"{result.previous_variant} is kept as a dormant variant{config}{steered}",
         operation=operation,
         rev=result.timeline_revision,
         key=result.idempotency_key or key,

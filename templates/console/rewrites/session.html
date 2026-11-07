@@ -10,11 +10,12 @@ session_notices (warnings above the partial), write_error (#43's panel for the a
 answer_errors and rejected_question_text. #299's apply POST adds stale_notice (a
 console.rewrites.StaleNotice: E5's stale sentence in <p class="warning stale">, the carried-answers
 line, the stale count when the preview comes from the refusal, the reasons' refs under More) and
-preview_source_note ("(read from the refusal)" after the base line).
+preview_source_note ("(read from the refusal)" after the base line). #301: back_to_story_url
+(stories:detail) for a directed_resolution session, "← Back to the story" beside "← All rewrites".
 {% endcomment %}
 {% block story_page %}
 <h3>{% if session_view %}{{ session_view.kind_text }} session{% else %}Rewrite session{% endif %} <code>{{ session_id }}</code></h3>
-<p class="session-links">{% if rewrites_url %}<a href="{{ rewrites_url }}">← All rewrites</a> · {% endif %}<a href="{{ session_reload_url }}">Reload</a></p>
+<p class="session-links">{% if back_to_story_url %}<a href="{{ back_to_story_url }}">← Back to the story</a> · {% endif %}{% if rewrites_url %}<a href="{{ rewrites_url }}">← All rewrites</a> · {% endif %}<a href="{{ session_reload_url }}">Reload</a></p>
 {% include "console/rewrites/_omniscient.html" %}
 {% if stale_notice %}<div class="stale-notice">
   <p class="warning stale">{{ stale_notice.text }}</p>{% if stale_notice.carried_text %}

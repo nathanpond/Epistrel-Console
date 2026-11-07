@@ -8,6 +8,12 @@ temperature, top_p as #48's turn form; up to 64 render characters; viewpoint up 
 characters), ``ForkRequest.name`` up to 200 characters, chains ``{turn ≥ 1, variant ≥ 1}``,
 ``TruncateRequest.slot``/``ForkRequest.slot`` 0 to 32767 (#209: keep or copy turn N's inter-turn
 slots 1..k; blank sends nothing).
+
+#301 (FR-COMMIT-12): :class:`RegenerateForm` mixes in E4's :class:`RewriteModesForm` and adds the
+optional ``directive`` (the Direction box, at most :data:`DIRECTIVE_MAX` code points, no HTML
+``maxlength``, C10). Its body gains ``directive``, ``preview`` and ``resolution_mode`` only with a
+direction, and only the modes that differ from the Engine's defaults (``preview_first``,
+``synchronous``): a regenerate without a direction is byte for byte #53's.
 """
 
 import re
@@ -20,6 +26,13 @@ from django.core import signing
 
 from console.cast import CastMember, character_choices, viewpoint_for
 from console.forms.play import CUSTOM, TurnForm
+from console.forms.rewrites import (
+    APPLY_DIRECTLY,
+    RESOLUTION_CHOICES,
+    RESOLUTION_LABEL,
+    SYNCHRONOUS,
+    RewriteModesForm,
+)
 from console.world import SLOTS_NOT_LISTED
 
 REVISION_MISSING = "This page carries no timeline revision — reload the story and try again."
@@ -38,7 +51,22 @@ REGENERATE_ERRORS = {
     "prompt_params.length": "length_custom",
     "prompt_params.temperature": "temperature",
     "prompt_params.top_p": "top_p",
+    # #301: the direction and E4's modes (E21's ``body.<member>`` locs; the helper strips
+    # ``body.``, so both spellings are listed).
+    "directive": "directive",
+    "directive.text": "directive",
+    "body.directive": "directive",
+    "body.directive.text": "directive",
+    "preview": "apply_directly",
+    "resolution_mode": "resolution",
 }
+DIRECTIVE_MAX = 2000  # RegenerateRequest.directive.text's bound
+DIRECTIVE_LABEL = "Direction (optional)"
+DIRECTIVE_HELP = (
+    "Steer the new reply, e.g. “the knocker is George”. If recorded history disagrees, the "
+    "reply is held in a rewrite session until you apply it"
+)
+DIRECTIVE_TOO_LONG = "At most 2,000 characters"
 # Where an Engine 422 about a correction's input goes (#263); any other field is a refusal.
 CORRECT_ERRORS = {
     "player_input": "__all__",
@@ -146,8 +174,9 @@ class SwapForm(TimelineForm):
     HIDDEN = ("rev", "head", "name", "chain", "check")
 
 
-class RegenerateForm(TimelineForm):
-    """Regenerate's optional overrides; blank keeps what the turn was played with."""
+class RegenerateForm(TimelineForm, RewriteModesForm):
+    """Regenerate's optional overrides; blank keeps what the turn was played with. #301 adds the
+    optional direction and E4's modes (sent only with a direction)."""
 
     snapshot = forms.CharField(widget=forms.HiddenInput, required=False)
     length = TurnForm.base_fields["length"]
@@ -160,6 +189,19 @@ class RegenerateForm(TimelineForm):
         required=False,
         help_text="none selected = keep recorded",
         widget=forms.SelectMultiple(attrs={"size": 3}),
+    )
+    directive = forms.CharField(
+        label=DIRECTIVE_LABEL,
+        required=False,
+        max_length=DIRECTIVE_MAX,
+        help_text=DIRECTIVE_HELP,
+        error_messages={"max_length": DIRECTIVE_TOO_LONG},
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    # E4's resolution, optional here: Play's Regenerate link is a GET with no modes, and blank
+    # means ``synchronous``. A value outside the choices is still a field error.
+    resolution = forms.ChoiceField(
+        choices=RESOLUTION_CHOICES, required=False, initial=SYNCHRONOUS, label=RESOLUTION_LABEL
     )
 
     HIDDEN = ("rev", "head", "name", "snapshot")
@@ -183,6 +225,15 @@ class RegenerateForm(TimelineForm):
             (viewpoint_for(cid), label) for cid, label in characters
         ]
         render.choices = characters
+        self.fields["directive"].widget.attrs.pop("maxlength", None)  # C10: the server says why
+
+    @property
+    def param_fields(self) -> list[forms.BoundField]:
+        """The Parameters ``<details>``'s fields, in :data:`PARAMS` order."""
+        return [self[name] for name in self.PARAMS]
+
+    def clean_resolution(self) -> str:
+        return str(self.cleaned_data.get("resolution") or SYNCHRONOUS)
 
     def clean_render_character_ids(self) -> list[str]:
         chosen: list[str] = self.cleaned_data.get("render_character_ids") or []
@@ -200,6 +251,20 @@ class RegenerateForm(TimelineForm):
     def has_overrides(self) -> bool:
         """Whether any parameter was given (the ``<details>`` opens to show them)."""
         return any(self.data.get(name) for name in self.PARAMS)
+
+    def has_mode_overrides(self) -> bool:
+        """Whether Apply directly or a non-default resolution was posted (the modes'
+        ``<details>`` opens to show them)."""
+        resolution = self.data.get("resolution")
+        return bool(self.data.get("apply_directly")) or resolution not in (None, "", SYNCHRONOUS)
+
+    def posted_direction(self) -> bool:
+        """Whether the bound data holds a non-blank direction, valid or not."""
+        return self.is_bound and bool(str(self.data.get("directive") or "").strip())
+
+    def direction(self) -> str:
+        """The cleaned direction ("" for none). Call after ``is_valid()``."""
+        return str(self.cleaned_data.get("directive") or "")
 
     def body(self) -> dict[str, Any]:
         """The ``RegenerateRequest`` body: ``turn`` (the head the page showed, so a stale page
@@ -222,6 +287,14 @@ class RegenerateForm(TimelineForm):
             body["output_viewpoint"] = data["output_viewpoint"]
         if data["render_character_ids"]:
             body["render_character_ids"] = list(data["render_character_ids"])
+        direction = self.direction()
+        if direction:  # #301: the modes ride only with a direction, and only non-defaults
+            body["directive"] = {"text": direction}
+            modes = self.modes()
+            if modes["preview"] == APPLY_DIRECTLY:
+                body["preview"] = APPLY_DIRECTLY
+            if modes["resolution_mode"] != SYNCHRONOUS:
+                body["resolution_mode"] = modes["resolution_mode"]
         return body
 
 

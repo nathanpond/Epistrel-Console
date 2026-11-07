@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# A directed regenerate the Engine held in a rewrite session (#292), shown while the session page isn't registered (#301 replaces this). Context: engine_error (an ErrorPanel headed by the sentence), session_id, play_url. #}
+{# A directed regenerate the Engine held in a rewrite session (#292), shown while the session page isn't registered (#301 keeps it as the fallback; with stories:rewrite resolving, the 202 redirects to the session). Context: engine_error (an ErrorPanel headed by the sentence), session_id, play_url. #}
 {% block title %}Regenerate held for review — Epistrel Console{% endblock %}
 {% block heading %}Regenerate held for review{% endblock %}
 {% block content %}

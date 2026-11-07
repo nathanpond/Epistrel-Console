@@ -51,6 +51,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, QueryDict
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
 from console.canon import cast_names
@@ -101,6 +102,7 @@ FILTERED_SUFFIX = ", matching filters"
 OLDER = "Older →"
 NEWEST = "Newest page"
 # E21: an Engine ``body.<member>`` path → the form field that carries it.
+DIRECTED_RESOLUTION = "directed_resolution"  # #301's session kind
 ALIASES: Mapping[str, str] = {"preview": "apply_directly", "resolution_mode": "resolution"}
 # The label of a refusal's link, by code (E5's session limit, convention 24's Config).
 REFUSAL_LINKS: Mapping[str, str] = {"rewrite_session_limit": "Rewrite", "module_off": "Config"}
@@ -317,6 +319,12 @@ def session_context(
         "rejected_question_text": REJECTED_QUESTION if awaiting else "",
         "stale_notice": stale,
         "preview_source_note": preview_source_note,
+        # #301: a directed regenerate's session links back to the story it was regenerating.
+        "back_to_story_url": (
+            reverse("stories:detail", args=[ctx.story_id])
+            if session.kind == DIRECTED_RESOLUTION
+            else None
+        ),
     }
 
 

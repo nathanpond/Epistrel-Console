@@ -25,9 +25,20 @@ Hints: ``use_custom_instructions`` → :data:`STANDING_HINT`, linked to ``storie
 (plain while unregistered, D19); any other hint humanised with the raw value in ``title``. More
 always holds ``directive_id`` and the idempotency key. A replayed key (the #44 row) ends the
 headline " (replayed)". The tab gives no flash for any outcome.
+
+**#301 — a directed regenerate's wording** (FR-COMMIT-12), used by ``console.views.timeline``:
+
+- a 200 (steered, or Lite's nudge): #53's flash plus :data:`DIRECTED_DONE`, then
+  :data:`LITE_NUDGE_NOTE` when the turn warnings hold ``lite_no_reconciliation``, then
+  :data:`APPLIED_DIRECTLY_NOTE` when Apply directly was ticked;
+- a 202 ``DirectedPending`` (the reply held in a ``directed_resolution`` session):
+  :func:`held_text` (:data:`HELD_STEM`, plus the still-active variant when ``previous_variant``
+  names it), :data:`BINDING_UNMATCHED_TEXT` for ``binding_unmatched``, and any other warning
+  humanised (:func:`held_flash_text`);
+- a ``module_off`` naming no module the Console knows: :data:`DIRECTIVE_UNAVAILABLE`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
@@ -61,6 +72,26 @@ STANDING_HINT = (
 CLOCK_TEXT = "Clock advanced"
 REPLAYED_SUFFIX = " (replayed)"
 AMBIGUOUS_SUFFIX = " (could be: {candidates})"
+
+# #301: a directed regenerate.
+DIRECTED_DONE = " — steered by your direction"
+LITE_NUDGE_NOTE = (
+    " (a Lite story has no recorded canon to reconcile, so the direction only steered this reply)"
+)
+APPLIED_DIRECTLY_NOTE = " — any conflicting history was amended directly"
+HELD_STEM = (
+    "Recorded history disagrees with your direction — the new reply is held in this rewrite "
+    "session until you apply it"
+)
+HELD_VARIANT_CLAUSE = "; turn {turn}'s variant {variant} is still active"
+BINDING_UNMATCHED_TEXT = (
+    " Your direction didn't name an open question of the scene, so it was applied as general "
+    "steering"
+)
+WARNINGS_TEXT = " Warnings: {warnings}."
+DIRECTIVE_UNAVAILABLE = "This story can't take a direction on regenerate — regenerate without one"
+LITE_NO_RECONCILIATION = "lite_no_reconciliation"
+BINDING_UNMATCHED = "binding_unmatched"
 
 STEER_QUEUED, APPLIED, ROUTED = "steer_queued", "applied", "routed_to_rewrite"
 USE_CUSTOM_INSTRUCTIONS = "use_custom_instructions"
@@ -257,3 +288,43 @@ def ambiguous_suffix(details: object) -> str:
         return ""
     names = [c for c in found if isinstance(c, str) and c]
     return AMBIGUOUS_SUFFIX.format(candidates=", ".join(names)) if names else ""
+
+
+# --- #301: a directed regenerate ------------------------------------------------------------------
+
+
+def held_text(previous_variant: object) -> str:
+    """:data:`HELD_STEM`, plus "; turn <t>'s variant <v> is still active" when
+    ``previous_variant`` holds an int ``turn`` and ``variant`` (a bool is not one)."""
+    found = previous_variant if isinstance(previous_variant, Mapping) else {}
+    turn, variant = found.get("turn"), found.get("variant")
+    if all(isinstance(v, int) and not isinstance(v, bool) for v in (turn, variant)):
+        return HELD_STEM + HELD_VARIANT_CLAUSE.format(turn=turn, variant=variant)
+    return HELD_STEM
+
+
+def held_flash_text(previous_variant: object, warnings: Sequence[object]) -> str:
+    """The 202's flash text before #53's revision/key tail: :func:`held_text` + ".", then
+    :data:`BINDING_UNMATCHED_TEXT` + "." for ``binding_unmatched``, then " Warnings: <the other
+    warnings humanised, comma-joined>." for any others (blanks and non-strings skipped)."""
+    text = held_text(previous_variant) + "."
+    shown = [w for w in warnings if isinstance(w, str) and w]
+    if BINDING_UNMATCHED in shown:
+        text += BINDING_UNMATCHED_TEXT + "."
+    others = list(dict.fromkeys(humanised(w) for w in shown if w != BINDING_UNMATCHED))
+    if others:
+        text += WARNINGS_TEXT.format(warnings=", ".join(others))
+    return text
+
+
+def steered_suffix(*, directed: bool, warning_kinds: Sequence[str], apply_directly: bool) -> str:
+    """What a 200 regenerate appends to #53's flash text: :data:`DIRECTED_DONE` when a direction
+    was sent, :data:`LITE_NUDGE_NOTE` whenever the turn warnings hold ``lite_no_reconciliation``,
+    and :data:`APPLIED_DIRECTLY_NOTE` when a direction was sent with Apply directly ticked. ""
+    for a plain regenerate, so main's flash is unchanged."""
+    text = DIRECTED_DONE if directed else ""
+    if LITE_NO_RECONCILIATION in warning_kinds:
+        text += LITE_NUDGE_NOTE
+    if directed and apply_directly:
+        text += APPLIED_DIRECTLY_NOTE
+    return text
