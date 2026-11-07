@@ -22,10 +22,12 @@ carrying ``twostage.CONFIRM_FIELD`` is the confirm (E8).
   ``ignore_warnings: true``, ``base`` the spool's description, ``config_revision`` and the facts'
   labels.
 - **The confirm** unsigns the token (expired or tampered → ``EXPIRED_TEXT`` flashed, zero Engine
-  calls, the spool deleted when the token still names it), opens the spool (missing →
-  :data:`~console.import_spool.IMPORT_SPOOL_EXPIRED` flashed, zero calls), sends one
-  ``import_story(body, part, idempotency_key=<the partial's fresh key>)`` and deletes the spool
-  whatever the answer. A 200 again shows the new report with no confirm and
+  calls, the spool deleted: an expired token still names it; for a tampered one the name comes
+  from the session's record of the spool the impact page was rendered over, keyed by that
+  page's confirm key (:data:`SPOOLS_KEY`, #345), never from the untrusted token), opens the
+  spool (missing → :data:`~console.import_spool.IMPORT_SPOOL_EXPIRED` flashed, zero calls),
+  sends one ``import_story(body, part, idempotency_key=<the partial's fresh key>)`` and deletes
+  the spool whatever the answer. A 200 again shows the new report with no confirm and
   ``IMPORT_SPOOL_EXPIRED`` above the form; a refusal re-renders the form bound to the token's
   metadata with no keep box; an unknown outcome keeps the posted key under #43's panel (the file
   must be chosen again, so the confirm itself can't be resent).
@@ -168,6 +170,10 @@ HELD_LINE = (
 STARTED_FLASH = "Import started: job <code>{}</code>"
 STARTED_TEXT = "Import started: job <code>{job}</code>; the new story {story} opens once it ends"
 KEY_TAIL = " — idempotency key <code>{}</code>"
+SPOOLS_KEY = "console.imports.spools"
+"""The session's record of the spools impact pages were rendered over: ``{confirm key: spool
+name}``, newest last, at most :data:`SPOOLS_MAX` (#345)."""
+SPOOLS_MAX = 20
 SPOOL_FAILED_TEXT = "The Console couldn't hold the upload ({reason}) — nothing was created"
 RECENT_HEADING = "Recent imports from this Console"
 NOT_LISTED_NOTE = (
@@ -362,6 +368,8 @@ def _impact_context(
 ) -> dict[str, Any]:
     facts = _facts(request, held, metadata, choices)
     body = {**metadata, "ignore_warnings": True}
+    confirm_key = new_ulid()
+    _record_spool(request, confirm_key, held)
     base = {
         "spool": held.as_json(),
         "config_revision": answer.config_revision,
@@ -385,7 +393,7 @@ def _impact_context(
         "confirm_url": page_url(),
         "confirm_label": CONFIRM_LABEL,
         "cancel_url": page_url(),
-        "confirm_key": new_ulid(),
+        "confirm_key": confirm_key,
         **_recent(),
     }
 
@@ -518,13 +526,35 @@ def _signed(token: str) -> Signed | None:
     return Signed(body, held)
 
 
+def _record_spool(request: HttpRequest, confirm_key: str, held: Spool) -> None:
+    """Remember (server side) which spool the impact page keyed ``confirm_key`` holds."""
+    found = request.session.get(SPOOLS_KEY)
+    record = {k: v for k, v in found.items() if k != confirm_key} if isinstance(found, dict) else {}
+    record[confirm_key] = held.name
+    request.session[SPOOLS_KEY] = dict(list(record.items())[-SPOOLS_MAX:])
+
+
+def _recorded_spool(request: HttpRequest, confirm_key: str) -> str | None:
+    """Forget and answer the spool name the session recorded for ``confirm_key``; ``None`` when
+    it recorded none (a key this session never rendered)."""
+    found = request.session.get(SPOOLS_KEY)
+    if not isinstance(found, dict) or confirm_key not in found:
+        return None
+    name = found.pop(confirm_key)
+    request.session[SPOOLS_KEY] = found
+    return name if isinstance(name, str) else None
+
+
 def _confirm(ctx: EnginePageContext) -> dict[str, Any] | HttpResponse:
     request = ctx.request
+    key = posted_idempotency_key(request)
+    recorded = _recorded_spool(request, key)
     signed = _signed(request.POST.get(twostage.CONFIRM_FIELD, ""))
     if signed is None:
+        if recorded is not None:  # #345: the session's record, never the untrusted token
+            delete_spool(recorded)  # spool_path's strict name check still applies
         messages.error(request, twostage.EXPIRED_TEXT)
         return _see_other(page_url())
-    key = posted_idempotency_key(request)
     try:
         answer = _send(ctx.client, signed.metadata, signed.held, key)
     except EngineClientError as exc:

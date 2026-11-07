@@ -3964,3 +3964,55 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (deviation):** CI's `test` job was allowed past the skill's 30-minute pending budget, since a full serial run now takes about 22–35 minutes (28 min at M6's 7.6k tests; 22 min 20 s for 9.6k here).
   **Why:** The budget exists to catch hung runs; this job's run time is known.
   **Issue:** PR #338
+
+## /n8-exec M7 (verification fixes) — 2026-11-07
+
+- **Decision (orchestration):** The 17 code-bearing bugs ran in three parallel lanes, each in its own git worktree off `milestone/m7-verification-fixes`. Lane A took the complement tests (#341–#344) and the certification fixtures (#348). Lane B took rewrite, history and amendments (#346, #347, #349, #350, #357). Lane C took backfill, import, prune, beliefs and presets (#339, #340, #345, #351–#354). The orchestrator fixed the two docs-only bugs (#355, #356) itself, then cherry-picked the lanes onto the branch in order (A by fast-forward; B and C by cherry-pick) and re-ran every gate on the merged tip.
+  **Why:** the bugs are independent and touch disjoint files. Each lane ran the full suite on its own tip, but lanes A and B reported identical counts and durations to the second, so the merged tip was gated again by the orchestrator rather than trusting the lane numbers.
+  **Issue:** #339–#357
+- **Decision:** #355 was fixed by amending #294's AC, not by moving the E1–E24 text into the repo or wiki. The amended line says the full text is PR #338's first two comments and #294's comments, because it exceeds GitHub's 65,536-character PR-body cap.
+  **Why:** a third copy would be one more place to drift. The deviation was already logged under M7 (#294).
+  **Issue:** #355
+- **Decision:** #356: a `### Convention notes` section under the M7 milestone description's E1–E24 heading carries "D8 (amended by #329)" verbatim from #329's AC.
+  **Why:** #329's AC asked for exactly this.
+  **Issue:** #356
+- **Decision:** One new urlconf, `tests/urls_without_story_operations.py` (the `urls_without_*` pattern), serves both the nav and the operation-log complements. The empty-nav `''` test renders the `_page_nav.html` partials directly, because no full page renders under `urls_bare`.
+  **Why:** no existing urlconf lacked `stories:operations-list`.
+  **Issue:** #341
+- **Decision:** The `ErasureResult.promoted_drafts` strictness test uses an inline body, and `profile_deleted` is sent as 422 per the Engine's openapi. The Engine at origin/main declares no `profile_deleted` refusal on `upgrade_pinned_stories`, so #344's tests cover a defensive branch the Engine can't currently trigger.
+  **Why:** no fixture carries `promoted_drafts`. The `profile_deleted` branch is in #310's AC.
+  **Issue:** #342, #344
+- **Decision:** The off-contract `recorded_via: "run"` was corrected in all three certification fixtures, not only `certification.json`. An off-contract kind (`nightly_check`) is kept as the humanised-fallback complement.
+  **Why:** the same fixture family had the same error, and the fallback case keeps E23's coverage.
+  **Issue:** #348
+- **Decision:** #346: `KIND_TEXT` is keyed on the Engine's `SESSION_KINDS`. `support_check` reads "Support check" (E23). "Line edit" is derived from `kind == "rewrite"` with a null or empty `instruction`, via `kind_text(kind, instruction)` with the instruction a required argument. #297's and #305's Demos therefore stand unamended.
+  **Why:** the session read echoes `instruction`, `RewriteRequest` requires exactly one of instruction and `line_edit`, and every other kind-rewrite open sets an instruction. If the Engine ever opens an instruction-less rewrite that isn't a line edit, it would mislabel.
+  **Issue:** #346
+- **Decision:** #350: a message-less `last_error` shows its reasons, humanised through E5's `_stale_kinds` ("Rewrite stale: Record changed; State changed"), or the code's text alone when there are none. A message still wins.
+  **Why:** it reuses existing humanising, invents no sentence, and keeps the behaviour with a message.
+  **Issue:** #350
+- **Decision:** #347: `AmendmentDetail.parts` reads leniently. A non-object entry is left out, and the raw list is kept in `unparsed["parts"]`, which the view renders so the dash row sits at the entry's own index. `relies_on`/`dependents` have the same gap, filed as #358.
+  **Why:** this is the existing read-model pattern. Write answers stay strict (D15).
+  **Issue:** #347
+- **Decision:** #357 is fixed by documentation. A new E18 entry in `console/rewrites.py` records that, for a structured `message_rendered` line, the Engine's `old_text` and `rewrite_noop` use the viewpoint's stored composition while the omniscient History read recomposes it. The pre-fill is unchanged. The Engine ask is #360.
+  **Why:** no read reliably returns the stored text, and copying the Engine's recompose rules would be guessing.
+  **Issue:** #357
+- **Decision:** #345: the impact page records `{confirm key: spool name}` in the session (`console.imports.spools`, at most 20 entries). A confirm whose token doesn't unsign deletes the recorded spool for its posted key, still through `spool_path`'s strict pattern. Nothing is ever read from the untrusted token, so a hand-crafted POST without the page's key deletes nothing and is left to the hourly sweep.
+  **Why:** never act on untrusted input; it also handles several import tabs at once.
+  **Issue:** #345
+- **Decision:** #353: on a 5xx story read, the `?banner=1` poll returns the banner still polling every 5 s, with the cause's neutral paused text, an indeterminate `<progress>`, no counts and "Engine unavailable — retrying". It makes no backfill read. A 404 or other 4xx is still empty. The tests use `respond_undeclared` because the story read declares no 5xx (#359).
+  **Why:** #308's AC forbids the banner from reading the backfill route, so no counts are available. "Unavailable" is slightly loose for a 500.
+  **Issue:** #353
+- **Decision:** #352: `nothing_to_backfill` after a resume re-renders the unbound gap-fill form in `mode=start` and drops the resume's kept summary.
+  **Why:** #309's follow-the-Engine Discretion. The resume carried no capability choices.
+  **Issue:** #352
+- **Decision:** #351: `is not None` replaces the truthiness test. #354: the two dead `kind` lines are removed.
+  **Why:** straightforward fixes.
+  **Issue:** #351, #354
+- **Blocker:** #339 (partial). The fixture now has the live shape (no `quality` on list items), tests cover both the dash and the inline-quality badge, and no per-profile read was added. The owner chooses: (a) an Engine request to fill `quality` on `GET /engine-profiles` (recommended), or (b) a per-profile read, which contradicts #312/#307's "no extra read" AC. Labelled `blocked` + `needs-owner-action`.
+  **Issue:** #339
+- **Blocker:** #340 (partial). Rule 1: a 422 `not_enabled` now names the refused capabilities on the checkboxes. Narrowing the boxes needs an Engine read of the gap-fillable set (`coverage.capabilities_of`), and none exists. Options: (a) an Engine request for `gap_fillable` on effective-config or the backfill read (recommended); (b) hardcode the module map (rejected); (c) a preview POST per page view; (d) keep offering everything, as now. `test_ticked_capabilities_are_sent` and `m7/backfill_preview.json` still use `episodic`. Labelled `blocked` + `needs-owner-action`.
+  **Issue:** #340
+- **Decision (Rule 1, integration):** On the merged tip `44069b4`, the full suite gave 1 failed, 9682 passed. `tests/test_rewrite_partial.py::test_the_recommended_option_is_checked_and_explained` still expected the Cancel link's `kind=instruction`, a kind the Engine never sends. #346 had moved the fixtures to `kind: rewrite`. The assertion now expects `kind=rewrite`, which is the page's actual output under the corrected fixture. Lane B had reported its full suite as 0 failed. That claim was false: the test was on its branch too.
+  **Why:** a stale assertion of an off-contract value, the same correction #346 made elsewhere. It also confirms that lane-reported suite numbers aren't evidence. Only the orchestrator's run on the merged tip counts.
+  **Issue:** #346

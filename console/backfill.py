@@ -155,6 +155,10 @@ PAUSES_LINE = (
     "The story pauses while it runs; nothing is regenerated, only re-derived from the transcript"
 )
 CAPABILITIES_UNREAD = "The capability list couldn't be read"
+NOT_FILLABLE_TEXT = (
+    "The Engine can't gap-fill {capabilities}: it fills only the capabilities that "
+    "produce data (named without a mode)"
+)
 ANSWER_UNREADABLE = "The Engine's answer couldn't be read — reload the page"
 GAP_FILL_HEADING = "Fill coverage gaps…"
 GAP_FILL_HELP = "Tick none to fill every capability that has a gap"
@@ -658,6 +662,11 @@ def finished_text(made_uncertain: object) -> str:
     if n is None:
         return FINISHED_BARE
     return FINISHED_TEXT.format(conflicts=plural(n, "conflict"))
+
+
+def not_fillable_text(refused: Sequence[str]) -> str:
+    """#340: a gap fill's 422 ``validation_error`` naming ``details.not_enabled``."""
+    return NOT_FILLABLE_TEXT.format(capabilities=", ".join(refused))
 
 
 def resume_line(conflicts_open: int) -> str:

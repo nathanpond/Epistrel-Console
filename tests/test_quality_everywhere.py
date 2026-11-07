@@ -27,7 +27,15 @@ from tests.fakes.story_config import EFFECTIVE, answer_effective_config
 from tests.fixtures import engine_fixture
 from tests.inspect.helpers import full_v4
 from tests.play.helpers import HTMX, RESPOND, STORY, TURN_OP, answer_page, post_turn, respond_json
-from tests.profile_helpers import ITEM, LIST, SCHEMA, fresh_cache, profile, schema_body
+from tests.profile_helpers import (
+    ITEM,
+    LIST,
+    SCHEMA,
+    fresh_cache,
+    profile,
+    schema_body,
+    with_quality,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -313,10 +321,16 @@ def profile_list(client: Client) -> str:
     return str(response.content.decode())
 
 
+def answer_presets_with_quality(engine: FakeEngine) -> None:
+    """The list as it would answer once the Engine fills ``quality`` (#339: it doesn't yet)."""
+    engine.respond("GET", LIST, 200, json=with_quality(engine_fixture("m7/presets")))
+
+
 def test_profile_list_quality_column(
     operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lite, full, standard, max_ = (p["id"] for p in engine_fixture("m7/presets")["items"])
+    answer_presets_with_quality(engine)
     unregistered_certification_pages(monkeypatch)  # D19: before #313 registered its pages
     html = profile_list(operator_client)
     assert "<th>Current version</th><th>Quality</th><th>Preset</th>" in html
@@ -342,6 +356,7 @@ def test_a_stale_profile_row_links_its_certifications(
 ) -> None:
     presets = engine_fixture("m7/presets")["items"]
     max_ = presets[3]["id"]
+    answer_presets_with_quality(engine)
     with override_settings(ROOT_URLCONF=M7_URLS):
         html = profile_list(operator_client)
     assert quality_cell(html, max_) == (
@@ -352,6 +367,21 @@ def test_a_stale_profile_row_links_its_certifications(
     # **Complement:** certified and uncertified rows have no certifications link.
     for other in presets[:3]:
         assert "certifications-link" not in quality_cell(html, other["id"])
+
+
+def test_the_live_preset_list_reads_a_dash_per_row(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#339: the live list carries no ``quality`` (``m7/presets.json``): every row reads "—",
+    with no badge, no certifications link and no extra read."""
+    presets = engine_fixture("m7/presets")["items"]
+    assert not [p for p in presets if "quality" in p]  # the live shape
+    with override_settings(ROOT_URLCONF=M7_URLS):
+        html = profile_list(operator_client)
+    for preset in presets:
+        assert quality_cell(html, preset["id"]) == "—", preset["name"]
+    assert '<span class="quality' not in html
+    assert not [r for r in engine.requests if r.url.path.startswith("/engine-profiles/")]
 
 
 def test_a_profile_without_quality_reads_a_dash(

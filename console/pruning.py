@@ -489,7 +489,7 @@ def confirm_page(
         lines=tuple(lines),
         facts=(
             ("Story id", story_id),
-            ("Dry run at revision", f"{revision:,}" if revision else EMPTY),
+            ("Dry run at revision", f"{revision:,}" if revision is not None else EMPTY),
         ),
         hidden={twostage.CONFIRM_FIELD: token},
         danger=True,

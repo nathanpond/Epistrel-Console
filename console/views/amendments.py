@@ -273,7 +273,8 @@ def _detail(ctx: StoryPageContext, amendment_id: str) -> dict[str, Any]:
 
 
 def _detail_view(ctx: StoryPageContext, detail: AmendmentDetail) -> dict[str, Any]:
-    parts = raw_list(detail.parts)
+    # #347: a part that isn't an object is kept in the raw list, so its dash row keeps its index.
+    parts = raw_list((getattr(detail, "unparsed", {}) or {}).get("parts", detail.parts))
     predicate_names: Mapping[str, str] = {}
     if needs_predicate_names(parts):
         predicate_names = read_predicate_names(ctx.request, ctx.client, ctx.story_id)

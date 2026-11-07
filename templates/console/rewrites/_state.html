@@ -10,6 +10,6 @@
     <dt>{{ view.target_label }}</dt><dd>{% if view.target_amendment_url %}<a href="{{ view.target_amendment_url }}">{{ view.target_amendment_id|engine_id }}</a>{% else %}{{ view.target_amendment_id|engine_id }}{% endif %}</dd>{% endif %}
   </dl>{% if view.stale_text %}
   <p class="stale">{{ view.stale_text }}</p>{% endif %}{% if view.last_error %}
-  <p class="warning">{{ view.last_error.0 }}: {{ view.last_error.1 }}</p>
+  <p class="warning">{{ view.last_error.0 }}{% if view.last_error.1 %}: {{ view.last_error.1 }}{% endif %}</p>
   <details><summary>More</summary><pre>{{ view.last_error.2 }}</pre></details>{% endif %}
 </div>

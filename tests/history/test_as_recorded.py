@@ -610,6 +610,39 @@ def test_invalid_view(
     _controls_and_variants(html)
 
 
+def test_erasure_pending_is_the_held_page(operator_client: Client, engine: FakeEngine) -> None:
+    """#304 AC 4 (#343): a 503 ``erasure_pending`` on the as-recorded read is #87's held page
+    (the middleware), never the items-area panel."""
+    engine.respond("GET", STORY_PATH, 200, json=m7("story"))
+    engine.respond("GET", VARIANTS, 200, json=variants_json())
+    engine.respond(
+        "GET",
+        HISTORY,
+        503,
+        json=error_json("erasure_pending", "held", story_id=M7_STORY),
+        headers={"Retry-After": "30"},
+    )
+    response = operator_client.get(f"/stories/{M7_STORY}/history/?view=as_recorded")
+    assert response.status_code == 503
+    html = response.content.decode()
+    assert "Held until the erasure ledger is re-applied — retry in 30 s" in html
+    assert '<section class="items">' not in html
+    assert 'class="engine-error' not in html
+    assert "Engine error 503" not in html
+
+
+def test_story_importing_is_the_importing_page(operator_client: Client, engine: FakeEngine) -> None:
+    """#304 AC 4 (#343): a 409 ``story_importing`` on the as-recorded read is E10's importing
+    page (the middleware), never the items-area panel."""
+    refuse(engine, 409, "story_importing", job_id="01JM7JB0000000000000000007")
+    response = operator_client.get(f"/stories/{M7_STORY}/history/?view=as_recorded")
+    assert response.status_code == 409
+    html = response.content.decode()
+    assert "This story is being imported" in html
+    assert '<section class="items">' not in html
+    assert 'class="engine-error' not in html
+
+
 def test_unknown_chain_is_the_panel(operator_client: Client, engine: FakeEngine) -> None:
     refuse(engine, 409, "unknown_chain")
     html = show(operator_client, "view=as_recorded&variant=7:1")

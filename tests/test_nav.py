@@ -1,5 +1,6 @@
 """E11's page registries and nav rows (#296, ``console/nav.py``)."""
 
+from django.template.loader import render_to_string
 from django.test import override_settings
 
 from console.nav import (
@@ -182,3 +183,37 @@ def test_engine_links_are_the_three_rows_once_registered() -> None:
     marked = [link.label for link in engine_links("engine:certification-run") if link.current]
     assert marked == ["Certifications"]
     assert not any(link.current for link in engine_links("engine:home"))
+
+
+@override_settings(ROOT_URLCONF="tests.urls_without_story_operations")
+def test_an_unregistered_row_is_left_out() -> None:
+    """**Complement (D19, #341):** a urlconf without ``stories:operations-list`` drops that row
+    and keeps the others in order, still marking the current one."""
+    assert [link.label for link in story_links(STORY, None)] == [
+        "Rewrite",
+        "Amendments",
+        "Backfill",
+        "Export",
+    ]
+    assert [link.label for link in story_links(STORY, "stories:export-job") if link.current] == [
+        "Export"
+    ]
+    assert not any(link.current for link in story_links(STORY, "stories:operations-list"))
+
+
+@override_settings(ROOT_URLCONF="tests.urls_bare")
+def test_with_nothing_registered_the_nav_renders_nothing() -> None:
+    """**Complement (D19, #341):** no row resolves, so both navs are empty and their partials,
+    given those empty lists, render ``''``."""
+    story_rows = story_links(STORY, "stories:rewrite")
+    engine_rows = engine_links("engine:certification")
+    assert story_rows == []
+    assert engine_rows == []
+    story_nav = render_to_string(
+        "console/stories/_page_nav.html", {"page_links": story_rows, "nav_label": "Story pages"}
+    )
+    engine_nav = render_to_string(
+        "console/engine/_page_nav.html", {"page_links": engine_rows, "nav_label": "Engine pages"}
+    )
+    assert story_nav == ""
+    assert engine_nav == ""

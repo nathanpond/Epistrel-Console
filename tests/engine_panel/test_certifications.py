@@ -128,7 +128,7 @@ def test_list_one_read(operator_client: Client, engine: FakeEngine) -> None:
     assert "6 passed · 1 failed · 1 insufficient" in valid
     assert '<td class="tier"><span title="other">Other</span></td>' in valid
     assert text(re.search(r'<td class="recorded">.*?</td>', valid, re.S).group(0)).startswith(  # type: ignore[union-attr]
-        "Run · 2026-11-05 13:30:00 UTC"
+        "Job · 2026-11-05 13:30:00 UTC"
     )
     assert "Import · " in text(stale)
     # Profile: the preset, then the short id "@v<version>" linked at that version.
@@ -335,7 +335,7 @@ def test_detail_floors_tables(operator_client: Client, engine: FakeEngine) -> No
     assert "<dt>kind</dt><dd>hosted</dd>" in run
     assert '<code class="hash">' + "3" * 64 + "</code>" in run
     assert "<code>docs/evals/full-4710ae26cb73-2026-11-05.md</code>" in run
-    assert "Recorded 2026-11-05 13:30:00 UTC via run" in text(run)
+    assert "Recorded 2026-11-05 13:30:00 UTC via job" in text(run)
     status = section(html, "certification-status")
     assert text(status).startswith("Valid since 2026-11-05 13:00:00 UTC")
 

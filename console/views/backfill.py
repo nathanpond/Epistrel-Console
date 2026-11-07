@@ -7,9 +7,10 @@ first, then ``partial``, then the page:
   through ``console.story_pause.pause_banner``. While the story is paused the fragment is the
   banner (a backfill cause polls this URL at ``SLOW_POLL_TRIGGER``; a rating or reactivation
   check keeps its own poll). Once it isn't, an empty 200 with no trigger: the banner goes and
-  polling stops. A failed read follows ``poll_failure``: unreachable or 503 keeps the banner
-  polling with ``RETRYING_TEXT``; anything else is an empty 200. It never reads the backfill or
-  a rating check.
+  polling stops. A failed read follows ``poll_failure``: unreachable or any 5xx (#353: the
+  story read can 500 while a backfill pauses it, Engine #783) keeps the banner polling with the
+  cause's paused text, no counts, and ``RETRYING_TEXT``; anything else is an empty 200. It never
+  reads the backfill or a rating check.
 - **``?partial=1``** (E7's polled block): one ``GET /stories/{id}/backfill`` (open conflicts,
   ``limit`` 50), answering ``console/_job_poll.html`` around ``_backfill_body.html`` alone (no
   frame, no nav). Once the backfill is terminal or waiting the answer carries
@@ -65,8 +66,10 @@ again; "no Engine call" means no write.
   renders ``_gap_fill_preview.html`` signed under ``backfill-start`` with ``base``
   ``{preview}`` (no token when ``needed`` is false). The Engine's state wins over the posted
   mode. Refusals at either stage re-render the plain form with the reason (nothing to fill, in
-  progress, ``validation_error`` at ``body.capabilities`` on the checkboxes, E10, C5, else the
-  panel); a confirm-stage refusal keeps the signed preview above it, muted. An unknown outcome
+  progress, ``validation_error`` at ``body.capabilities`` on the checkboxes (one naming
+  ``details.not_enabled`` reads :func:`~console.backfill.not_fillable_text`, #340), E10, C5,
+  else the panel); a confirm-stage refusal keeps the signed preview above it, muted (a stale
+  resume's ``nothing_to_backfill`` shows the gap-fill form instead, #352). An unknown outcome
   on the confirm re-renders the same confirm (token and key) with #43's panel.
 - **The page's ``#gap-fill`` section** (:func:`_default_gap`): the "Fill coverage gaps…" form
   when there is no backfill or it ended, "Finish now…" while it waits on conflicts, nothing
@@ -137,6 +140,7 @@ from console.backfill import (
     conflict_url,
     finished_text,
     gap_fill_preview,
+    not_fillable_text,
     pending_change,
     resolved_text,
     resume_line,
@@ -244,13 +248,19 @@ def _block(story_id: str, view: BackfillView | None, *, retrying: bool = False) 
 # --- ?banner=1 ------------------------------------------------------------------------------------
 
 
+def _server_error(exc: EngineClientError) -> bool:
+    """A 5xx from the story read keeps the banner polling (#353): the Engine's story read can
+    fail while a backfill pauses the story (nathanpond/Epistrel#783), and the pause outlives it."""
+    return isinstance(exc, EngineError) and exc.http_status >= 500
+
+
 def _banner(request: HttpRequest, story_id: str) -> HttpResponse:
     client = engine_client_for(request)
     try:
         story = client.get_story(story_id)
     except EngineClientError as exc:
         failure = poll_failure(request, exc)
-        if not failure.retry:
+        if not failure.retry and not _server_error(exc):
             return HttpResponse("")
         cause = request.GET.get(CAUSE_PARAM, "")
         banner = PauseBanner(
@@ -852,6 +862,13 @@ def _answered(
     return _render_page(request, story_id, PageExtras(gap=factory))
 
 
+def _not_enabled(exc: EngineError) -> list[str]:
+    """The capabilities a gap fill's 422 refused (``details.not_enabled``, #340): the Engine
+    fills only its data-producing capabilities, named without a ``:mode`` suffix."""
+    found = exc.details.get("not_enabled")
+    return [c for c in found if isinstance(c, str)] if isinstance(found, list) else []
+
+
 def _start_refused(
     request: HttpRequest,
     story_id: str,
@@ -863,8 +880,12 @@ def _start_refused(
 ) -> HttpResponse:
     """A refusal at either stage: the plain form with the refusal's text (a fresh key), or
     #43's panel (an unknown outcome keeps the posted key); ``kept`` re-shows what was
-    previewed, muted, above it."""
+    previewed, muted, above it. ``nothing_to_backfill`` on a resume (a stale "Finish now…"
+    once the backfill ended) follows the Engine (#309, #352): the gap-fill form in ``start``
+    mode, with nothing kept from the resume."""
     data = request.POST if mode == START else None
+    if mode == RESUME and isinstance(exc, EngineError) and exc.code == NOTHING_TO_BACKFILL:
+        mode, kept = START, None
     verb = RESUME_VERB if mode == RESUME else GAP_FILL_VERB
     changes: dict[str, Any] = {}
     errors: list[tuple[str, str]] = []
@@ -874,6 +895,8 @@ def _start_refused(
         changes["error"] = NOTHING_TO_FILL
     elif exc.code == IN_PROGRESS:
         changes["error"] = IN_PROGRESS_TEXT
+    elif exc.code == VALIDATION_ERROR and _not_enabled(exc):
+        errors = [(CAPABILITIES, not_fillable_text(_not_enabled(exc)))]
     elif exc.code == VALIDATION_ERROR:
         failures = engine_field_errors(exc)
         errors = [

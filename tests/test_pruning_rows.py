@@ -195,6 +195,14 @@ def test_confirm_page_for_an_unnamed_story() -> None:
     assert page.danger
 
 
+@pytest.mark.parametrize(("revision", "shown"), [(0, "0"), (1234, "1,234"), (None, "—")])
+def test_confirm_page_dry_run_revision(revision: object, shown: str) -> None:
+    """#351: revision 0 is a revision ("0"); only a missing or non-int one reads "—"."""
+    base = {"timeline_revision": revision, "story_name": "Harbour Ledger", "counts": {}}
+    page = pruning.confirm_page(STORY, base, "tok", "/p/")
+    assert dict(page.facts)["Dry run at revision"] == shown
+
+
 def test_result_view() -> None:
     body = m7("prune_applied")
     answer = Pruned.from_json(body)

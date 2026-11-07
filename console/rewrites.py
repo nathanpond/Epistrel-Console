@@ -35,10 +35,12 @@ page, #298's answers, #299's apply/cancel and stale, #305's line edit, #300's ro
 ``RewriteSessionWritten.session``) and C4's cast names:
 
 - **State**: ``state_text`` from :data:`STATE_TEXT` (an unknown state humanised, the raw value
-  in ``title``), ``kind_text`` from :data:`KIND_TEXT`, the instruction verbatim (or "—"), the
+  in ``title``), ``kind_text`` from :data:`KIND_TEXT` (a ``rewrite`` with no instruction reads
+  "Line edit", #346), the instruction verbatim (or "—"), the
   pipeline humanised, ``expires_at`` through ``engine_time`` plus ``expires_text`` ("expires in
   Nm", "expires in Hh Mm", "expires in <1m"; empty once past or closed), the stale count as
-  :data:`STALE_COUNT_TEXT` when > 0, ``last_error`` as ``(code, message, more)``, and the result
+  :data:`STALE_COUNT_TEXT` when > 0, ``last_error`` as ``(code, detail, more)`` (a message-less
+  error's detail is its humanised ``reasons``, else empty and the code shows alone), and the result
   and target amendments linked through :func:`amendment_url` (plain ``<code>`` while
   unregistered; the target labelled "Undoes" / "Redoes" by kind). ``held_render`` reads "Held
   reply (shown once applied)" with the reply quoted and "N model call(s) to replay".
@@ -148,6 +150,18 @@ texts; a later story passes its own verb and texts). #298 adds
 - **The resolve route's description** still says an outbox row is 404; the code resolves a
   parked ``imported_unsettled`` row by its ``outbox_id`` (nathanpond/Epistrel#787, found by
   #326, which follows the code).
+- **A structured line's stored text isn't readable** (Console #357, found by ``/n8-verify M7``).
+  A line edit plans against ``transcript_messages.text``: the preview's ``old_text`` and the
+  Engine's ``rewrite_noop`` check both read it. For a structured turn's ``message_rendered``,
+  that is the message composed for the turn's own viewpoint (``operations.viewpoint``) under
+  its audience filter. The omniscient history read that Edit this line… pre-fills from
+  (#305) recomposes that message from the beats (Engine ``core/history.py``
+  ``_recomposed``). So on a Full story the pre-fill can differ from what the Engine holds:
+  ``old_text: ""`` against a non-empty omniscient line. The local "unchanged" check then
+  compares against the wrong text. No read returns the stored text, or says whether an item
+  was recomposed. A read under the turn's viewpoint matches it only while the story's
+  perception and player view are still the ones it was composed under. The Console keeps
+  the omniscient pre-fill.
 """
 
 import re
@@ -214,14 +228,19 @@ AWAITING_ANSWERS = "awaiting_answers"
 AWAITING_APPROVAL = "awaiting_approval"
 
 KIND_TEXT = {
-    "instruction": "Rewrite",
-    "line_edit": "Line edit",
-    "directive": "Directive",
-    "directed_resolution": "Directed regenerate",
+    "rewrite": "Rewrite",
     "undo": "Undo",
     "redo": "Redo",
+    "directed_resolution": "Directed regenerate",
+    "support_check": "Support check",
     "entity_merge": "Entity merge",
+    "directive": "Directive",
 }
+"""E3's session kinds, keyed on the Engine's ``SESSION_KINDS`` (the ``kind`` CHECK of
+``core/tables/rewrites.py`` at origin/main; #346). A line edit is ``kind: rewrite`` too: see
+:func:`kind_text`."""
+REWRITE_KIND = "rewrite"
+LINE_EDIT_TEXT = "Line edit"
 TARGET_LABELS = {"undo": "Undoes", "redo": "Redoes"}
 TARGET_LABEL = "Target amendment"
 
@@ -427,7 +446,14 @@ def state_text(state: object) -> str:
     return _enum(state, STATE_TEXT)
 
 
-def kind_text(kind: object) -> str:
+def kind_text(kind: object, instruction: object) -> str:
+    """E3's kind text: :data:`KIND_TEXT`, an unknown kind humanised, "—" for none. The Engine
+    stores a line edit as ``kind: rewrite`` and echoes no ``line_edit`` (#346), but its
+    ``RewriteRequest`` takes exactly one of ``instruction`` and ``line_edit``, and every other
+    ``rewrite`` session it opens carries an instruction. So a ``rewrite`` whose ``instruction``
+    is null (or empty: the Cancel link leaves a blank one out) reads :data:`LINE_EDIT_TEXT`."""
+    if _text(kind) == REWRITE_KIND and _text(instruction) is None:
+        return LINE_EDIT_TEXT
     return _enum(kind, KIND_TEXT)
 
 
@@ -909,11 +935,19 @@ def _report_more(report: Mapping[str, Any] | None) -> tuple[str, str] | None:
 
 
 def _last_error(error: Mapping[str, Any] | None) -> tuple[str, str, str] | None:
+    """``(code, detail, more)``: the humanised code ("—" for none); the detail is the Engine's
+    ``message``, else (#350) its ``reasons`` read as E5's stale sentence reads them (each kind
+    C3-humanised, de-duplicated, "; "-joined), else "" (the partial then shows the code alone,
+    never "<code>: —"); the raw JSON for More."""
     if error is None:
         return None
     code = _text(error.get("code"))
     message = _text(error.get("message"))
-    return (humanised(code) if code else EMPTY, message or EMPTY, more_json(error))
+    if message is None:
+        reasons = error.get("reasons")
+        kinds = _stale_kinds(reasons) if isinstance(reasons, list) else []
+        message = "; ".join(kind for kind, _ in kinds)
+    return (humanised(code) if code else EMPTY, message, more_json(error))
 
 
 def _actions(session: RewriteSession, story_id: str) -> tuple[SessionAction, ...]:
@@ -956,7 +990,7 @@ def session_view(
         id=session.id,
         state=session.state,
         state_text=state_text(session.state),
-        kind_text=kind_text(session.kind),
+        kind_text=kind_text(session.kind, session.instruction),
         instruction=session.instruction or EMPTY,
         pipeline_text=_enum(session.pipeline, {}),
         resolution_text=resolution_mode_text(session.resolution_mode),
@@ -1231,7 +1265,7 @@ def rewrite_rows(page: RewriteList, story_id: str) -> tuple[RewriteRow, ...]:
         RewriteRow(
             state=summary.state,
             state_text=state_text(summary.state),
-            kind_text=kind_text(summary.kind),
+            kind_text=kind_text(summary.kind, summary.instruction),
             instruction=summary.instruction or EMPTY,
             questions_text=_questions_text(summary),
             opened_text=engine_time(summary.created_at),

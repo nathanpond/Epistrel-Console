@@ -978,6 +978,21 @@ def test_story_filter_links_engine_operations_with_label(
         assert views.STORY_OPERATIONS_TEXT not in page
 
 
+@override_settings(ROOT_URLCONF="tests.urls_without_story_operations")
+def test_no_story_operations_link_while_unregistered(
+    operator_client: Client, operator: Any
+) -> None:
+    """**Complement (D19, #341):** without ``stories:operations-list`` a log filtered to one
+    story still renders, with the note and no link to that story's Operations page."""
+    assert views.story_operations_url(STORY_A, "staged_turn") is None
+    response = operator_client.get(f"/operations/?story={STORY_A}&label=staged_turn")
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert f'<p class="filter-note">{escape(views.LABEL_NOTE)}</p>' in html
+    assert "story-operations-link" not in html
+    assert views.STORY_OPERATIONS_TEXT not in html
+
+
 def test_kind_cell_shows_the_label(operator_client: Client, operator: Any) -> None:
     make_row(engine_label="staged_turn", replayed=True)
     make_row(kind="set_story_content_rating", engine_label="rating_check")

@@ -18,6 +18,7 @@ from console.backfill import (
     IN_PROGRESS_TEXT,
     NOTHING_TO_FILL,
     PAUSES_LINE,
+    not_fillable_text,
 )
 from console.engine.models import Backfill, BackfillEstimate
 from console.impact import backfill_text
@@ -315,6 +316,45 @@ def test_a_stale_start_on_a_paused_story_renders_the_resume_confirm(
     assert "2 open conflicts uncertain" in html
 
 
+def test_a_stale_finish_now_on_an_ended_backfill_renders_the_gap_fill_form(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#352: a "Finish now…" posted after the backfill ended; the Engine answers 409
+    ``nothing_to_backfill``, so the page follows it with the gap-fill form (``mode=start``)."""
+    engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_completed"))
+    engine.respond("POST", BACKFILL_PATH, 409, json=error_json("nothing_to_backfill"))
+    response = post(operator_client, mode="resume")
+    section = gap_section(response.content.decode())
+    assert response.status_code == 200
+    assert escape(NOTHING_TO_FILL) in section
+    assert "Fill coverage gaps…" in section
+    assert '<input type="hidden" name="mode" value="start">' in section
+    assert '<button type="submit">Preview</button>' in section
+    # The complement: none of the resume form is left.
+    assert "Finish the backfill" not in section
+    assert "Finish now" not in section
+    assert 'name="mode" value="resume"' not in section
+    assert len(writes(engine)) == 1
+
+
+def test_a_stale_finish_now_confirm_on_an_ended_backfill_renders_the_gap_fill_form(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#352 at the confirm stage: the resume summary isn't kept; the gap-fill form shows."""
+    engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_paused"))
+    engine.respond("POST", BACKFILL_PATH, 200, json=m7("backfill_resume_preview"))
+    data = confirm_data(post(operator_client, mode="resume").content.decode())
+    engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_completed"))
+    engine.respond("POST", BACKFILL_PATH, 409, json=error_json("nothing_to_backfill"))
+    section = gap_section(operator_client.post(START, data).content.decode())
+    assert escape(NOTHING_TO_FILL) in section
+    assert '<input type="hidden" name="mode" value="start">' in section
+    assert '<button type="submit">Preview</button>' in section
+    assert "Finish now" not in section
+    assert "open conflicts uncertain" not in section
+    assert len(writes(engine)) == 2
+
+
 def test_a_resume_finished_at_once_redirects(operator_client: Client, engine: FakeEngine) -> None:
     engine.respond("GET", BACKFILL_PATH, 200, json=m7("backfill_paused"))
     engine.respond("POST", BACKFILL_PATH, 200, json=resumed(conflicts_made_uncertain=None))
@@ -354,6 +394,36 @@ def test_capability_validation_error_on_checkboxes(
     section = gap_section(response.content.decode())
     fieldset = section.split('<fieldset class="capabilities">', 1)[1].split("</fieldset>", 1)[0]
     assert "not on: canon_extras" in fieldset
+    assert 'class="engine-error' not in section
+    assert len(writes(no_backfill)) == 1
+
+
+ENGINE_NOT_ENABLED = "a gap fill names capabilities the story's configuration has on"
+
+
+def test_refused_capabilities_are_named_on_the_checkboxes(
+    operator_client: Client, no_backfill: FakeEngine
+) -> None:
+    """#340: the live Engine's 422 for a capability it can't gap-fill (``details.not_enabled``)
+    names the refused capabilities in plain words, not the Engine's misleading message."""
+    no_backfill.respond(
+        "POST",
+        BACKFILL_PATH,
+        422,
+        json=error_json(
+            "validation_error",
+            ENGINE_NOT_ENABLED,
+            field="body.capabilities",
+            not_enabled=["pins", "perception:full"],
+        ),
+    )
+    response = post(operator_client, mode="start", capabilities=["pins", "perception:full"])
+    section = gap_section(response.content.decode())
+    fieldset = section.split('<fieldset class="capabilities">', 1)[1].split("</fieldset>", 1)[0]
+    assert escape(not_fillable_text(["pins", "perception:full"])) in fieldset
+    assert "pins, perception:full" in fieldset
+    # The complement: the Engine's own wording isn't shown, and nothing went above the form.
+    assert escape(ENGINE_NOT_ENABLED) not in section
     assert 'class="engine-error' not in section
     assert len(writes(no_backfill)) == 1
 

@@ -2,7 +2,7 @@
   "items": [
     {
       "id": "01JM7RW0000000000000000001",
-      "kind": "instruction",
+      "kind": "rewrite",
       "state": "awaiting_answers",
       "instruction": "Bob never forged the ledger; he only copied it",
       "open_questions": 1,
@@ -12,7 +12,7 @@
     },
     {
       "id": "01JM7RW0000000000000000002",
-      "kind": "line_edit",
+      "kind": "rewrite",
       "state": "awaiting_approval",
       "instruction": null,
       "open_questions": 0,

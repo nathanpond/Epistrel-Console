@@ -88,7 +88,7 @@ THRESHOLDS = {"threshold_high": "high", "threshold_low": "low"}
 APPLY_DIRECTLY_LABEL = "Apply directly (skip the preview)"
 RESOLUTION_LABEL = "Conflicts"
 ANSWER_TEXT_MAX = 2000  # the Engine's ``ANSWER_TEXT_MAX``
-ANSWER_TEXT_HELP = "Text you write here is sent instead of the option picked above"
+ANSWER_TEXT_HELP = "Free text replaces the option you picked"
 ACCEPT_ALL = "accept_all"
 INVALID_ANSWER = "invalid_answer"
 

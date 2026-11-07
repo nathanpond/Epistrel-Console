@@ -467,6 +467,15 @@ def test_effects_subnav_lists_outbox(operator_client: Client, engine: FakeEngine
     assert landing["Location"] == RECONCILIATION
 
 
+@override_settings(ROOT_URLCONF="tests.urls_without_outbox")
+def test_effects_subnav_leaves_outbox_out_while_unregistered() -> None:
+    """**Complement (D19, #341):** without ``inspect:outbox`` the Effects sections are
+    Reconciliation and Effects trail, with no Outbox row."""
+    links = sections(Tab.EFFECTS, STORY, None, full_v4()["effective"])
+    assert [link.label for link in links] == ["Reconciliation", "Effects trail"]
+    assert all(link.name != "inspect:outbox" for link in links)
+
+
 def test_the_notice_links_this_section() -> None:
     with override_settings(ROOT_URLCONF="epistrel_console.urls"):
         from console.effects import outbox_list_notice_html

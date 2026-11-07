@@ -27,7 +27,7 @@ KEY = "01JM7KY0000000000000000009"
 CANCEL_ROUTE = "/stories/{story_id}/rewrites/{session_id}/cancel"
 CANCEL = f"{GET_ONE}/cancel"
 INSTRUCTION = "Bob never forged the ledger; he only copied it"
-FACTS = {"kind": "instruction", "state": "awaiting_approval", "instruction": INSTRUCTION}
+FACTS = {"kind": "rewrite", "state": "awaiting_approval", "instruction": INSTRUCTION}
 CANCEL_URL = f"{SESSION_URL}cancel/"
 LINKED = f"{CANCEL_URL}?{urlencode(FACTS)}"
 WRITTEN_ONLY = ("timeline_revision", "apply", "idempotency_key")
@@ -82,6 +82,14 @@ def test_cancel_facts_default_to_a_dash(operator_client: Client, fake: FakeEngin
     raw = operator_client.get(f"{CANCEL_URL}?instruction=%3Cb%3E").content.decode()
     assert f"<dd><code>{escape('<b>')}</code></dd>" in raw  # verbatim, escaped
     html = page(operator_client.get(CANCEL_URL))
+    assert "<dt>Instruction</dt><dd><code>—</code></dd>" in html
+    assert fake.requests == []
+
+
+def test_cancel_a_line_edit_reads_line_edit(operator_client: Client, fake: FakeEngine) -> None:
+    """#346: a line edit's Cancel link carries ``kind=rewrite`` and no instruction."""
+    html = page(operator_client.get(f"{CANCEL_URL}?kind=rewrite&state=awaiting_approval"))
+    assert "<dt>Kind</dt><dd><code>Line edit</code></dd>" in html
     assert "<dt>Instruction</dt><dd><code>—</code></dd>" in html
     assert fake.requests == []
 
@@ -170,7 +178,7 @@ def test_cancel_link_only_while_open(
 ) -> None:
     fake.respond("GET", ONE_ROUTE, 200, json=session_body(name, state=state, id=SESSION))
     html = operator_client.get(SESSION_URL).content.decode()
-    facts = {"kind": "instruction", "state": state, "instruction": INSTRUCTION}
+    facts = {"kind": "rewrite", "state": state, "instruction": INSTRUCTION}
     link = f'<a href="{escape(f"{CANCEL_URL}?{urlencode(facts)}")}" class="session-action">'
     assert (link in html) is linked
     if not linked:

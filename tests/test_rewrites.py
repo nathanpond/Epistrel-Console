@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import pytest
+from django.template.loader import render_to_string
 from django.test import override_settings
 
 from console.engine.client import EngineError, EngineUnreachable
@@ -51,6 +52,7 @@ from console.rewrites import (
     amendment_url,
     amendments_url,
     expires_text,
+    kind_text,
     radius_rows,
     rewrite_refusal,
     rewrite_session_url,
@@ -65,6 +67,7 @@ from tests.inspect.helpers import full_v4
 STORY = "01JM7ST0000000000000000001"
 SESSION = "01JM7RW0000000000000000001"
 M7_PAGES = "tests.urls_with_m7_pages"
+BARE = "tests.urls_bare"
 NAMES = {
     "01JM7CH0000000000000000001": "Mara (player)",
     "01JM7CH0000000000000000002": "Alice",
@@ -108,15 +111,32 @@ def test_the_state_and_kind_tables() -> None:
     }
     assert frozenset({"applied", "cancelled", "expired", "abandoned"}) == TERMINAL_STATES
     assert frozenset({"awaiting_answers", "awaiting_approval"}) == OPEN_STATES
+    # #346: keyed on the Engine's SESSION_KINDS (core/tables/rewrites.py at origin/main).
     assert KIND_TEXT == {
-        "instruction": "Rewrite",
-        "line_edit": "Line edit",
-        "directive": "Directive",
-        "directed_resolution": "Directed regenerate",
+        "rewrite": "Rewrite",
         "undo": "Undo",
         "redo": "Redo",
+        "directed_resolution": "Directed regenerate",
+        "support_check": "Support check",
         "entity_merge": "Entity merge",
+        "directive": "Directive",
     }
+
+
+def test_a_rewrite_with_no_instruction_is_a_line_edit() -> None:
+    """#346: the Engine stores a line edit as ``kind: rewrite`` with a null instruction (its
+    request takes exactly one of the two), so that alone reads "Line edit"."""
+    assert view("rewrite_line_edit").kind_text == "Line edit"
+    assert kind_text("rewrite", None) == "Line edit"
+    assert kind_text("rewrite", "") == "Line edit"
+    # Complement: a rewrite with an instruction, and any other kind without one, never do.
+    assert view("rewrite_open").kind_text == "Rewrite"
+    assert kind_text("rewrite", "Bob copied it") == "Rewrite"
+    assert kind_text("undo", None) == "Undo"
+    assert kind_text("support_check", None) == "Support check"
+    assert kind_text("entity_merge", None) == "Entity merge"
+    assert kind_text("later_kind", None) == "Later kind"
+    assert kind_text(None, None) == "—"
 
 
 def test_the_sentences_are_exact() -> None:
@@ -166,7 +186,7 @@ def test_an_open_session_waits_for_answers() -> None:
     # The real urlconf: #298 registered Answer, #299 Cancel (its link carries the facts).
     cancel = f"{base}cancel/?" + urlencode(
         {
-            "kind": "instruction",
+            "kind": "rewrite",
             "state": "awaiting_answers",
             "instruction": "Bob never forged the ledger; he only copied it",
         }
@@ -307,6 +327,54 @@ def test_the_stale_count_and_last_error() -> None:
     assert shown.last_error is not None
     assert shown.last_error[:2] == ("Model timeout", "The planner timed out")
     assert '"model_timeout"' in shown.last_error[2]
+
+
+def state_html(shown: Any) -> str:
+    return render_to_string("console/rewrites/_state.html", {"view": shown})
+
+
+STALE_ERROR_REASONS = [
+    {"kind": "record_changed", "refs": [{"table": "events", "id": "01JM7EV0000000000000000001"}]},
+    {"kind": "state_changed", "refs": []},
+    {"kind": "record_changed", "refs": []},
+]
+
+
+def test_a_message_less_last_error_reads_its_reasons() -> None:
+    """#350: the Engine's stale apply stores ``{code, reasons, at}`` with no message; the line
+    reads the reasons as E5 does (humanised, de-duplicated, Engine order), never ": —"."""
+    error = {"code": "rewrite_stale", "reasons": STALE_ERROR_REASONS, "at": "2026-11-07"}
+    shown = view("rewrite_open", last_error=error)
+    assert shown.last_error is not None
+    assert shown.last_error[:2] == ("Rewrite stale", "Record changed; State changed")
+    assert '"record_changed"' in shown.last_error[2]
+    html = state_html(shown)
+    assert '<p class="warning">Rewrite stale: Record changed; State changed</p>' in html
+    assert "Rewrite stale: —" not in html
+
+
+def test_a_message_less_last_error_without_reasons_reads_the_code_alone() -> None:
+    """#350's complement: no message and no reasons is the humanised code, with no dash."""
+    for error in (
+        {"code": "rewrite_stale"},
+        {"code": "rewrite_stale", "reasons": []},
+        {"code": "rewrite_stale", "reasons": "not a list"},
+    ):
+        shown = view("rewrite_open", last_error=error)
+        assert shown.last_error is not None
+        assert shown.last_error[:2] == ("Rewrite stale", "")
+        html = state_html(shown)
+        assert '<p class="warning">Rewrite stale</p>' in html
+        assert "Rewrite stale:" not in html
+
+
+def test_a_last_error_with_a_message_is_unchanged() -> None:
+    """#350: a message wins over reasons, and renders "<code>: <message>" as before."""
+    error = {"code": "provider_timeout", "message": "the model timed out", "reasons": ["x"]}
+    shown = view("rewrite_open", last_error=error)
+    assert shown.last_error is not None
+    assert shown.last_error[:2] == ("Provider timeout", "the model timed out")
+    assert '<p class="warning">Provider timeout: the model timed out</p>' in state_html(shown)
 
 
 def test_the_modes_read_back() -> None:
@@ -729,6 +797,22 @@ def test_url_helpers_link_under_the_stub_urlconf() -> None:
         assert rewrite_session_url(STORY, SESSION) == f"/stories/{STORY}/rewrites/{SESSION}/"
         assert amendments_url(STORY) == f"/stories/{STORY}/amendments/"
         assert amendment_url(STORY, AMENDMENT) == f"/stories/{STORY}/amendments/{AMENDMENT}/"
+
+
+@override_settings(ROOT_URLCONF=BARE)
+def test_unregistered_names_leave_actions_and_links_out() -> None:
+    """**Complement (D19, #341):** with no rewrite or amendment route registered, an open or a
+    planned session offers no action, and the URL helpers are ``None`` (no ``NoReverseMatch``)."""
+    for name in ("rewrite_open", "rewrite_session"):
+        shown = view(name)
+        assert shown.actions == ()
+        assert shown.footer_actions == ()
+        assert shown.answer_url is None
+    assert view("rewrite_session_applied").result_amendment_url is None
+    assert rewrites_url(STORY) is None
+    assert rewrite_session_url(STORY, SESSION) is None
+    assert amendments_url(STORY) is None
+    assert amendment_url(STORY, AMENDMENT) is None
 
 
 def test_a_read_only_caller_drops_the_actions() -> None:

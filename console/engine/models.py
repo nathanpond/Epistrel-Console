@@ -6763,12 +6763,41 @@ class AmendmentPage(Model):
 @dataclass(frozen=True)
 class AmendmentDetail(AmendmentSummary):
     """``AmendmentDetail``: an amendment with its parts, what it relies on and what depends on
-    it (all raw, E15), and whether the parts were cut short."""
+    it (all raw, E15), and whether the parts were cut short.
+
+    ``from_json`` reads ``parts`` leniently (#347, #302 AC 2): an entry that isn't an object is
+    left out of ``parts`` and ``unparsed["parts"]`` keeps the raw list, so the page shows a
+    dash row at the entry's own index instead of the whole detail failing. A ``parts`` value
+    that isn't a list reads as ``[]``, with the raw value in ``unparsed`` too. ``unparsed`` is
+    the Console's, not the schema's (not a dataclass field)."""
 
     dependents: list[dict[str, Any]] = field(default_factory=list)
     parts: list[dict[str, Any]] = field(default_factory=list)
     relies_on: list[dict[str, Any]] = field(default_factory=list)
     truncated: bool = False
+
+    unparsed: ClassVar[dict[str, Any]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        if not isinstance(obj, dict):
+            return None
+        obj = dict(obj)
+        unparsed: dict[str, Any] = {}
+        if "parts" in obj:
+            raw = obj["parts"]
+            if not isinstance(raw, list):
+                unparsed["parts"] = raw
+                del obj["parts"]  # reads as its default, []
+            elif not all(isinstance(entry, dict) for entry in raw):
+                unparsed["parts"] = raw
+                obj["parts"] = [entry for entry in raw if isinstance(entry, dict)]
+        parsed = _from_json(cls, obj)
+        if not isinstance(parsed, cls):
+            return None
+        if unparsed:
+            object.__setattr__(parsed, "unparsed", unparsed)
+        return parsed
 
 
 # --- M7: backfill and profile upgrades (#292) ------------------------------------------------
