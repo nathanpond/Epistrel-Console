@@ -25,8 +25,28 @@ def test_engine_default_choice_names_the_default_and_sends_nothing() -> None:
     )
 
 
-def test_setting_choices_cover_the_seven_and_hold_no_engine_default() -> None:
-    assert list(SETTING_CHOICES) == list(SETTABLE[-7:])
+def test_setting_choices_cover_the_nine_and_hold_no_engine_default() -> None:
+    assert SETTABLE == (
+        "turn_concurrency",
+        "turn_queue_max",
+        "default_output_viewpoint",
+        "regenerate_retry_budget",
+        "lite_summary_chunk",
+        "audit_retention_days",
+        "allow_new_arrivals",
+        "player_authority",
+        "co_author_knowledge",
+        "player_view",
+        "interaction_mode",
+        "sequence_order",
+        "simultaneous_tie_break",
+        "reactive_interjections",
+        "prune_policy",
+        "backfill_conflict_policy",
+        "ambiguous_retcon_timing",
+    )
+    # M7's two choice keys are appended at the dict's end (#318); the prune policy has none.
+    assert list(SETTING_CHOICES) == [*SETTABLE[-10:-3], *SETTABLE[-2:]]
     assert SETTING_CHOICES["reactive_interjections"] == BOOLEAN_SELECT
     for name, choices in SETTING_CHOICES.items():
         assert ENGINE_DEFAULT not in {value for value, _ in choices}, name

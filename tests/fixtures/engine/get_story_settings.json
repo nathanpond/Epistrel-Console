@@ -6,7 +6,10 @@
     "default_output_viewpoint": "character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A",
     "lite_summary_chunk": null,
     "audit_retention_days": null,
-    "allow_new_arrivals": true
+    "allow_new_arrivals": true,
+    "prune_policy": null,
+    "backfill_conflict_policy": "last_mention",
+    "ambiguous_retcon_timing": "include_if_possible"
   },
   "effective_policies": [],
   "inactive_policies": [

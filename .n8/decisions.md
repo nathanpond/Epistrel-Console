@@ -3664,3 +3664,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   - `tests/test_portability_helpers.py`'s "prune_url is None" line moved to a registered-case test.
   **Why:** These keep the plan's intent without a new dependency.
   **Issue:** #317
+- **Decision:** #317 landed before this story, so `stories:prune` already resolves under the real urlconf. `test_pruning_facts_and_link` asserts "Prune now…" there. The "before #317" case (`test_the_prune_link_is_left_out_until_the_page_registers`) monkeypatches `django.urls.reverse` to raise `NoReverseMatch` for that name. The link is still the AC's guarded `{% url 'stories:prune' … as prune_link %}`, not E6's `prune_url`.
+  **Why:** The planned "no link under the real urlconf" assertion would be false now. This test keeps the guard's coverage without adding another stub urlconf, which E24 rules out. Cost if wrong: none (test-only).
+  **Issue:** #318
+- **Decision:** `#294` has landed, so the flash's day count and the odd-policy suffix use `console.raw.plural` and `compact_json(…, CELL_LIMIT)` and don't format inline. The recorded bounds are named once, in `console/story_settings.py` (`PRUNE_MIN_DAYS`/`PRUNE_MAX_DAYS`/`PRUNE_DAYS`). `policy_days` uses them, and `PrunePolicyField.MIN_DAYS`/`MAX_DAYS` point to them.
+  **Why:** E23's refinement allows inline formatting only for a story that lands before #294. Keeping one set of bounds means the guard pins the field and the well-formed test together.
+  **Issue:** #318
+- **Decision:** The pruning facts and the "Prune now…" link are a small partial, `templates/console/settings/_pruning_facts.html`, included in the Value cell when `row.name == "prune_policy"`. That makes 9 files, not the planned 8. Rule 2 adds: a re-render after an invalid POST shows the facts from the signed `Snapshot.pruning`, and an older token without `pruning` still unsigns as `None`; both are tested. The odd-path test also covers a stored bool, 0 and `"30"`. The plan's `…_cover_the_seven_…` choices test is renamed `…_cover_the_nine_…`.
+  **Why:** The partial keeps the row loop readable. The extra tests pin the planner's snapshot and well-formed rules.
+  **Issue:** #318
+- **Decision:** The `engine_live` case `test_prune_policy_live` ran against #291's `n8-291-smoke` stack on `127.0.0.1:18000`, which stays up. The stack's `GET /stories/{id}` returns `pruning.next_run_at` once a policy is set and `null` after it is cleared.
+  **Why:** E24 requires the live case. The stack is shared.
+  **Issue:** #318

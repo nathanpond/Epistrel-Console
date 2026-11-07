@@ -1,4 +1,4 @@
-{# The settings form (#54). Context: settings_form, settings_refusal, deployment_error, others, superseded, config_url, settings_key, snapshot, snap, archived_note. #}
+{# The settings form (#54). Context: settings_form, settings_refusal, deployment_error, others, superseded, config_url, settings_key, snapshot, snap, archived_note, pruning (#318). #}
 {% load console_format %}
 {% include "console/settings/_refusal.html" with refusal=settings_refusal %}
 {% if deployment_error %}
@@ -17,7 +17,7 @@
       {% for row in settings_form.rows %}
       <tr class="setting setting-{{ row.name }}">
         <th><label for="{{ row.field.id_for_label }}">{{ row.field.label }}</label></th>
-        <td>{{ row.field }}{% if row.field.help_text %}<br><small>{{ row.field.help_text }}</small>{% endif %}{{ row.field.errors }}</td>
+        <td>{{ row.field }}{% if row.field.help_text %}<br><small>{{ row.field.help_text }}</small>{% endif %}{{ row.field.errors }}{% if row.name == "prune_policy" %}{% include "console/settings/_pruning_facts.html" %}{% endif %}</td>
         <td class="marker marker-{{ row.marker.source }}">{{ row.marker.text }}</td>
         <td>{% if row.marker.overridden %}<label>{{ row.reset }} {{ row.reset.label }}</label>{% else %}<span class="muted">—</span>{% endif %}</td>
       </tr>

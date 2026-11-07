@@ -21,7 +21,6 @@ from tests.settings.helpers import (
     section,
     story_json,
 )
-from tests.settings.test_story_settings import M7_NOT_YET_EDITABLE
 
 CHANGES_PATH = f"/stories/{STORY}/config-changes"
 
@@ -112,6 +111,8 @@ def test_the_setting_select_is_grouped_and_has_no_since(
 
     for title in ("Settings", "Historical", "Profile overrides", "Rating and profile"):
         assert f'<optgroup label="{title}">' in html
+    # Complement (#318): every recorded name has a group, so "Other" never renders.
+    assert '<optgroup label="Other">' not in html
     assert 'name="since"' not in html
 
 
@@ -121,18 +122,25 @@ def test_the_groups_cover_the_recorded_enum() -> None:
 
     grouped = [value for options in groups.values() for value, _ in options]
     assert sorted(grouped) == sorted(names)
-    assert {value for value, _ in groups["Settings"]} == set(SETTABLE)
+    # "Settings" is every recorded name whose root is settable (built from the recording, not
+    # ``set(SETTABLE)``), M7's three and ``prune_policy.older_than_days`` among them (#318).
+    settings = {value for value, _ in groups["Settings"]}
+    assert settings == {name for name in names if name.split(".", 1)[0] in SETTABLE}
+    assert settings >= {
+        "prune_policy",
+        "backfill_conflict_policy",
+        "ambiguous_retcon_timing",
+        "prune_policy.older_than_days",
+    }
     historical = {value.split(".", 1)[0] for value, _ in groups["Historical"]}
     assert historical == set(SUPERSEDED)
     assert "engine_profile_version_pin" in {value for value, _ in groups["Rating and profile"]}
     # M6's creation-time ``required_providers`` (no PATCH sets it) has a group of its own.
     assert {value for value, _ in groups["Providers"]} == {"required_providers"}
     # Every other recorded name has a group: the M5 settings and M6's co-author knowledge fall
-    # under "Settings" (#197, #233). "Other" holds exactly M7's not-yet-editable story settings
-    # (#291, test-only); #318 is the story that empties it.
-    assert "co_author_knowledge" in {value for value, _ in groups["Settings"]}
-    other = {value for value, _ in groups["Other"]}
-    assert other == M7_NOT_YET_EDITABLE | {"prune_policy.older_than_days"}
+    # under "Settings" (#197, #233), and since #318 no "Other" group renders.
+    assert "co_author_knowledge" in settings
+    assert "Other" not in groups
     # ``participation:<id>`` is a prefixed key (the recorded pattern), not an enum value.
     assert not any(value.startswith("participation:") for value in grouped)
     accepted = setting_filter(RECORDED, "/stories/{story_id}/config-changes")
