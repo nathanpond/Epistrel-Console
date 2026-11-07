@@ -91,7 +91,6 @@ STORY_STUBS = [
     path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
     path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
     path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
-    path(f"{S}operations/", stub, name="operations-list"),  # #324
 ]
 INSPECT_STUBS = [
     path("effects/outbox/", stub, name="outbox"),  # #325
@@ -131,7 +130,6 @@ NOT_YET_REGISTERED = frozenset(
         "inspect:outbox",
         "inspect:resolve-listing",
         "inspect:resolved",
-        "stories:operations-list",
     }
 )
 

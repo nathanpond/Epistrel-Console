@@ -75,6 +75,7 @@ from console.views import (
     story_characters,
     story_config,
     story_from_scenario,
+    story_operations,
     story_providers,
     story_rating,
     story_settings,
@@ -108,6 +109,12 @@ story_patterns = (
         # #300 (E11): the Play page's Direct tab POST.
         path("<str:story_id>/direct/", directives.direct, name="direct"),
         path("<str:story_id>/operations/<str:operation_id>/poll/", play.poll, name="poll"),
+        # #324 (E11): the story's operations as the Engine lists them, beside the poll path.
+        path(
+            "<str:story_id>/operations/",
+            story_operations.operations_list,
+            name="operations-list",
+        ),
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         # #185: Override a co-author notice for this session (no Engine call; ``<ulid:…>``).

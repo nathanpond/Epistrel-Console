@@ -22,14 +22,12 @@ ARGS: dict[str, list[str]] = {
     "stories:backfill-start": [STORY],
     "stories:backfill-cancel": [STORY],
     "stories:backfill-conflict": [STORY, "c1"],
-    "stories:operations-list": [STORY],
     "inspect:outbox": [STORY],
     "inspect:resolve-listing": [STORY, "listing-1"],
     "inspect:resolved": [STORY],
     "engine:certifications": [],
 }
 PATHS = {
-    "stories:operations-list": f"/stories/{STORY}/operations/",
     "inspect:resolve-listing": (
         f"/stories/{STORY}/inspect/effects/reconciliation/listing-1/resolve/"
     ),

@@ -939,7 +939,43 @@ def test_label_note_is_shown(operator_client: Client, operator: Any) -> None:
     note = f'<p class="filter-note">{escape(views.LABEL_NOTE)}</p>'
     assert note in html
     assert html.index('<select name="label">') < html.index(note)
-    assert "The Engine has no list of operations to filter by." in views.LABEL_NOTE
+
+
+def test_label_note_points_to_story_operations(operator_client: Client, operator: Any) -> None:
+    """#324: the note says what the log covers and points to the story's Operations page."""
+    assert views.LABEL_NOTE == (
+        "Known only for operations whose Engine record this Console has read (Fetch from "
+        "Engine, the Engine record page, a queued turn's poll, an opened History page or "
+        "eval-hooks block). A story's Operations page lists every operation of that story with "
+        "the Engine's own label."
+    )
+    html = operator_client.get("/operations/").content.decode()
+    assert escape(views.LABEL_NOTE) in html
+    # **Complement:** the old sentence is gone.
+    assert "The Engine has no list of operations to filter by" not in html
+    assert "The Engine has no list of operations to filter by" not in views.LABEL_NOTE
+
+
+def test_story_filter_links_engine_operations_with_label(
+    operator_client: Client, operator: Any
+) -> None:
+    """#324: a log filtered to one story links that story's Operations page, the label carried."""
+    html = operator_client.get(f"/operations/?story={STORY_A}&label=staged_turn").content.decode()
+    link = (
+        f'<a class="story-operations-link" href="/stories/{STORY_A}/operations/'
+        f'?label=staged_turn">{views.STORY_OPERATIONS_TEXT}</a>'
+    )
+    assert f'<p class="filter-note">{escape(views.LABEL_NOTE)} {link}</p>' in html
+    # No label (or one the Engine doesn't list): the bare page.
+    for query in (f"story={STORY_A}", f"story={STORY_A}&label=made_up"):
+        page = operator_client.get(f"/operations/?{query}").content.decode()
+        assert f'href="/stories/{STORY_A}/operations/">' in page
+        assert "/operations/?label=" not in page
+    # **Complement:** no link without a story filter, or with one that isn't an id.
+    for query in ("", "label=staged_turn", "story=not-an-id"):
+        page = operator_client.get(f"/operations/?{query}").content.decode()
+        assert "story-operations-link" not in page
+        assert views.STORY_OPERATIONS_TEXT not in page
 
 
 def test_kind_cell_shows_the_label(operator_client: Client, operator: Any) -> None:

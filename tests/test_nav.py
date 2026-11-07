@@ -85,32 +85,36 @@ def test_every_page_parent_is_in_e11s_tables() -> None:
 
 def test_rewrite_link_once_registered() -> None:
     """#297 registered ``stories:rewrites``, #302 ``stories:amendments``, #308
-    ``stories:backfill`` and #319 ``stories:export`` (E24: this replaces #296's "empty under the
-    real urlconf" baseline):
+    ``stories:backfill``, #319 ``stories:export`` and #324 ``stories:operations-list`` (E24:
+    this replaces #296's "empty under the real urlconf" baseline):
     the real urlconf's nav holds those rows, marked current from a sub-page through
     ``PAGE_PARENT``."""
     rewrite = NavLink("stories:rewrites", "Rewrite", f"{S}rewrites/", False)
     amendments = NavLink("stories:amendments", "Amendments", f"{S}amendments/", False)
     backfill = NavLink("stories:backfill", "Backfill", f"{S}backfill/", False)
     export = NavLink("stories:export", "Export", f"{S}export/", False)
-    assert story_links(STORY, None) == [rewrite, amendments, backfill, export]
+    operations = NavLink("stories:operations-list", "Operations", f"{S}operations/", False)
+    assert story_links(STORY, None) == [rewrite, amendments, backfill, export, operations]
     assert story_links(STORY, "stories:rewrite") == [
         NavLink("stories:rewrites", "Rewrite", f"{S}rewrites/", True),
         amendments,
         backfill,
         export,
+        operations,
     ]
     assert story_links(STORY, "stories:amendment") == [
         rewrite,
         NavLink("stories:amendments", "Amendments", f"{S}amendments/", True),
         backfill,
         export,
+        operations,
     ]
     assert story_links(STORY, "stories:backfill-cancel") == [
         rewrite,
         amendments,
         NavLink("stories:backfill", "Backfill", f"{S}backfill/", True),
         export,
+        operations,
     ]
     current_export = NavLink("stories:export", "Export", f"{S}export/", True)
     assert story_links(STORY, "stories:export-job") == [
@@ -118,8 +122,16 @@ def test_rewrite_link_once_registered() -> None:
         amendments,
         backfill,
         current_export,
+        operations,
     ]
-    assert story_links(STORY, "stories:export-download")[-1] == current_export
+    assert story_links(STORY, "stories:export-download")[-2] == current_export
+    assert story_links(STORY, "stories:operations-list") == [
+        rewrite,
+        amendments,
+        backfill,
+        export,
+        NavLink("stories:operations-list", "Operations", f"{S}operations/", True),
+    ]
 
 
 @override_settings(ROOT_URLCONF=M7_PAGES)

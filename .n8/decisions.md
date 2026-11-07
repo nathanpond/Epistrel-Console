@@ -3797,3 +3797,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   `test_before_s25b_the_result_block_shows` keeps covering the D19 branch by monkeypatching `console.views.imports.import_job_url` to `None`. The live `test_import_through_the_console_live` now accepts a first-stage 303. It then polls the Console job page every 2 s (120 s cap) until "Imported" and opens the story link. It passed on `n8-291-smoke` (127.0.0.1:18000), and both of its stories were deleted.
   **Why:** E24 says the registering story regenerates these, and D19 says the unregistered branch stays covered. Cost if wrong: none.
   **Issue:** #321
+- **Decision:** #324 keeps `OPERATION_KINDS`/`OPERATION_STATUSES` in `console/forms/story_operations.py` (#292 defined no alias for them in `console/engine/models.py`); `OPERATION_LABELS` is `typing.get_args(OperationLabel)`. A test pins all three against the recorded `list_operations` query-parameter enums.
+  **Why:** the story's stated fallback; E15 keeps the summary's `kind`/`status` plain `str`. Cost if wrong: move two tuples.
+  **Issue:** #324
+- **Decision:** #324's 422 placement reads `details.errors[*].field` (the Engine's actual shape, `InvalidRequest`) or a `loc` list joined with ".", falling back to `details.field`; a `query.<filter>` goes to that field via `form.add_error`, `query.after_id` above the filters with "First page" (keeping every filter), anything else above the filters. A non-`validation_error` 422 shows its message above the filters.
+  **Why:** E21's refinement and the Engine's `InvalidRequest` docstring. Cost if wrong: a message lands above the filters instead of beside a field.
+  **Issue:** #324
+- **Decision:** #324: any 404 from `list_operations` renders the frame's not-found line (status 404, no nav) through the build's context and a status flag (#297's closure pattern); the "500 → #43's panel" test uses `respond_undeclared` (the route declares no 500).
+  **Why:** the AC's "404 → the frame's not-found page"; the fake refuses an undeclared status through `respond`. Cost if wrong: none.
+  **Issue:** #324
+- **Decision:** #324: the unparsed notice is the story's `UNPARSED_TEXT` "Some operations couldn't be read" (as #302's Amendments), not E22's counted "N operations couldn't be read"; the count line counts parsed rows only and sits on the scope line ("<SCOPE_TEXT> · N operations on this page[, matching filters]"). Paging links and "Clear filters" are rebuilt from the typed (valid) filter values, so Since/Until echo as typed; stray parameters are dropped. The Label cell shows the raw label in `title` whenever the Engine sent one (a staged turn with a null label reads "Staged turn" untitled, as #250's page does). A turn number uses `{:,}` (E23).
+  **Why:** the story's more specific text wins over E22's generic notice; the rest are discretion calls within E22/E23. Cost if wrong: a wording change.
+  **Issue:** #324
+- **Decision:** #324: `test_label_note_is_shown` (#257) drops its assertion of the old sentence ("The Engine has no list of operations to filter by.") — the note's rewrite is this story's AC, and `test_label_note_points_to_story_operations` asserts its absence. The log page links the story's Operations only for a ULID story filter, `label` carried only when it is one of the six Engine labels, inside the same `p.filter-note`; under the real urlconf the story nav now reads Rewrite · Amendments · Backfill · Export · Operations (goldens in play/history `REGISTERED_NAV`, `test_nav`, `inspect/test_shell`, `test_story_pages` moved).
+  **Why:** E24's "a golden a newly registered URL changes is regenerated in the registering story". Cost if wrong: none.
+  **Issue:** #324

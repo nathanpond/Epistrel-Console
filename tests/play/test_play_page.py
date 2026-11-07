@@ -278,7 +278,8 @@ def play_link_line(html: str) -> str:
 REGISTERED_NAV = (
     ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
     f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}amendments/">Amendments</a> · '
-    f'<a href="{S}backfill/">Backfill</a> · <a href="{S}export/">Export</a></span>'
+    f'<a href="{S}backfill/">Backfill</a> · <a href="{S}export/">Export</a> · '
+    f'<a href="{S}operations/">Operations</a></span>'
 )
 
 
@@ -286,7 +287,7 @@ def test_the_link_line_shows_only_the_registered_m7_pages(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     """Main's link line plus the registered nav rows (Rewrite #297, Amendments #302, Backfill
-    #308, Export #319) after History."""
+    #308, Export #319, Operations #324) after History."""
     answer_page(engine)
     html = operator_client.get(f"/stories/{STORY}/").content.decode()
     history = f'<a class="history-link" href="{S}history/">History</a>'

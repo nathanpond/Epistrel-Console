@@ -391,7 +391,8 @@ def test_the_play_page_links_inspect_after_history(
         f'<a href="/stories/{STORY}/rewrites/">Rewrite</a> · '  # #297's nav row (E11)
         f'<a href="/stories/{STORY}/amendments/">Amendments</a> · '  # #302's
         f'<a href="/stories/{STORY}/backfill/">Backfill</a> · '  # #308's
-        f'<a href="/stories/{STORY}/export/">Export</a></span> '  # #319's
+        f'<a href="/stories/{STORY}/export/">Export</a> · '  # #319's
+        f'<a href="/stories/{STORY}/operations/">Operations</a></span> '  # #324's
         f'<a class="inspect-link" href="{URL}">Inspect</a>'
     ) in html
 

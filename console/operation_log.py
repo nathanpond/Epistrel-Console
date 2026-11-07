@@ -16,7 +16,7 @@ import logging
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from django.db import transaction
 
@@ -477,7 +477,18 @@ LABEL_SIZE = 32
 STAGED_TURN = "staged_turn"
 
 
-def engine_label_value(record: OperationRecord) -> str:
+class LabelledOperation(Protocol):
+    """Anything with the Engine's ``label`` and ``staged`` (#324): an :class:`OperationRecord`
+    or a story list's ``OperationSummary``, so a staged turn reads the same on both pages."""
+
+    @property
+    def label(self) -> str | None: ...
+
+    @property
+    def staged(self) -> bool: ...
+
+
+def engine_label_value(record: LabelledOperation) -> str:
     """What ``EngineOperation.engine_label`` stores for ``record``: its ``label``; else
     ``"staged_turn"`` when ``staged`` (the flag stays authoritative); else ``""``. Cut to 32."""
     if record.label is not None:

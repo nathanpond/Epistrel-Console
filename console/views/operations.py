@@ -5,7 +5,8 @@ of any operation id, whether or not this Console made the call, with its label a
 (a staged turn's five, D13)."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_args
+from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.db.models import QuerySet
@@ -20,7 +21,7 @@ from django.views.decorators.http import require_safe
 from console.certification import eval_runs_url
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, STAGED_LABEL, stage_revision_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
-from console.engine.models import OperationRecord, StorySummary
+from console.engine.models import OperationLabel, OperationRecord, StorySummary
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.evals import (
@@ -64,8 +65,23 @@ EMPTY = "—"
 LABEL_NOTE = (
     "Known only for operations whose Engine record this Console has read (Fetch from Engine, "
     "the Engine record page, a queued turn's poll, an opened History page or eval-hooks block). "
-    "The Engine has no list of operations to filter by."
+    "A story's Operations page lists every operation of that story with the Engine's own label."
 )
+STORY_OPERATIONS_TEXT = "Operations of this story on the Engine"
+ENGINE_LABELS = frozenset(get_args(OperationLabel))
+
+
+def story_operations_url(story: str, label: str = "") -> str | None:
+    """#324: the story's Operations page (``stories:operations-list``) for a log filtered to one
+    story, ``label`` carried when it is one of the Engine's labels; ``None`` for a story filter
+    that isn't a ULID, or while the page is unregistered (D19)."""
+    if not is_ulid(story):
+        return None
+    try:
+        url = reverse("stories:operations-list", args=[story])
+    except NoReverseMatch:
+        return None
+    return f"{url}?{urlencode({'label': label})}" if label in ENGINE_LABELS else url
 
 
 @dataclass(frozen=True)
@@ -155,6 +171,8 @@ def operation_list(request: HttpRequest) -> HttpResponse:
         "policies": _seen_policies(),
         "labels": [(value, engine_label_text(value)) for value in _distinct("engine_label")],
         "label_note": LABEL_NOTE,
+        "story_operations_url": story_operations_url(filters.story, filters.label),
+        "story_operations_text": STORY_OPERATIONS_TEXT,
     }
     return render(request, "console/operations.html", context)
 

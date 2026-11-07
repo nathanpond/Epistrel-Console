@@ -25,7 +25,7 @@
       {% for value, text in labels %}<option value="{{ value }}" title="{{ value }}"{% if value == filters.label %} selected{% endif %}>{{ text }}</option>{% endfor %}
     </select>
   </label>
-  <p class="filter-note">{{ label_note }}</p>
+  <p class="filter-note">{{ label_note }}{% if story_operations_url %} <a class="story-operations-link" href="{{ story_operations_url }}">{{ story_operations_text }}</a>{% endif %}</p>
   <label>Outcome
     <select name="outcome">
       <option value="">all</option>
