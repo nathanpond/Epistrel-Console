@@ -3310,3 +3310,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   - The name left the stub urlconf's `NOT_YET_REGISTERED`.
   **Why:** The registering story regenerates what it moves. Cost if wrong: none.
   **Issue:** #298
+- **Decision:** The Backfill page reads `pending_backfill` from #296's frame config read (`ctx.config`). It does not make a second `get_effective_config` fanned out beside the backfill read, so `build` makes the one backfill read.
+  **Why:** #296's `story_page` already reads the effective config on every story page "for `pending_backfill`" (its docstring). A second read would double the call. Same outcome: a failed config read leaves the line out. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** Rule 1 (C15): aligned the m7 backfill fixtures with the Engine source (`core/backfill`, `core/pause.backfill_progress`, `reconcile.merge_report`). `backfill_extracting` status `running` → `extracting` (`running` isn't an Engine backfill status). `progress.phase` now equals the status in all four. `backfill_completed` is now `kind: upgrade` with the Engine's report shape: top-level tally ints, `policy`, `conflicts {total, by_resolution}`, `materialization {counts, by_outcome, conflicts}`. Scratch `gen_m7.py` updated to match.
+  **Why:** A `running` status would poll as an unknown status. The old report shape doesn't occur. Cost if wrong: fixture only.
+  **Issue:** #308
+- **Decision:** In the report `<dl>`, "Counts" falls back to the report's top-level int members when there is no `counts` object. Each group lists its int members plus one level of nested int maps ("By resolution · Last mention", "Counts · Episodic").
+  **Why:** The Engine's real backfill report has no `counts` key: its tally sits at the top level. The literal AC would show only `materialization.conflicts` and the conflict total. Cost if wrong: extra rows.
+  **Issue:** #308
+- **Decision:** "The new configuration now applies" shows only for a completed backfill of `kind: upgrade`, not for every completed one. The report shows only for `completed`. A cancelled backfill is terminal but not a success, so its report goes raw under More.
+  **Why:** The Engine applies a held configuration only for an upgrade ("applies the held configuration (an upgrade's)"). A gap fill or resummarize holds no change, so the sentence would be false there. Cost if wrong: one line missing on a non-upgrade.
+  **Issue:** #308
+- **Decision:** A failed backfill's `error` shows once, in `_job_status.html`'s error block (`<p class="warning">`). The facts' own `<p class="warning">` shows only when `error` is set and the status isn't failed.
+  **Why:** E7 puts the error block in the status block, so rendering both would print it twice. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** The conflict subject also renders the Engine's real members: `entity_id` as a C4 cast name (else short id) and `predicate` in `<code>`, beside the AC's `kind`/`key`. A resolution reads the Engine's `{choice: {statement_id|value}, via, by}`, the fixture's `{choose}`, or an automatic one's `{policy}`. `via` is humanised ("Choose Turn 3 “…”").
+  **Why:** `core/backfill/reconcile` writes `subject = {entity_id, predicate}`, so with kind/key only every live conflict would show compact JSON. Cost if wrong: display only.
+  **Issue:** #308
+- **Decision:** `?banner=1` on a failed story read that retries (unreachable/503) rebuilds the banner from the query's `cause` (backfill causes only, else `backfill`) with `retrying=True` and no counts, and keeps polling.
+  **Why:** The planner's poll_failure rule, without a story body to rebuild from. Cost if wrong: one retry render.
+  **Issue:** #308
+- **Decision:** The real-urlconf goldens that move now that `stories:backfill` is registered: `tests/play/test_play_page.py` and `tests/history/test_history_view.py` (`test_the_link_line_is_unchanged_without_m7_pages` → `test_the_link_line_shows_the_registered_pages` with `REAL_NAV`), `tests/test_nav.py` (real-urlconf story links = the Backfill row), `tests/inspect/test_shell.py::test_the_play_page_links_inspect_after_history`, and `tests/test_story_pause.py` / `tests/test_story_config_presets.py`. Each D19 "while unregistered" test there now monkeypatches `backfill_url` to `None`, and its linked twin runs under the real urlconf.
+  **Why:** E24: the registering story regenerates them. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** Live check on `n8-291-smoke` (127.0.0.1:18000): a fresh story's `GET`/`DELETE /stories/{id}/backfill` answer 404 `backfill_not_found`, and `pending_backfill` is absent. Nothing ran mid-backfill (Engine #783).
+  **Why:** Confirms the not-found branch the page and the cancel rely on. Cost if wrong: none.
+  **Issue:** #308

@@ -14,7 +14,7 @@
       "to_turn": 3
     },
     "progress": {
-      "phase": "extracting",
+      "phase": "cancelled",
       "chunks_done": 1,
       "chunks_total": 3,
       "reconciled_through_turn": null,

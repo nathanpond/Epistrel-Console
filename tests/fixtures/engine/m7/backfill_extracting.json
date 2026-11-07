@@ -1,6 +1,6 @@
 {
   "id": "01JM7BF0000000000000000001",
-  "status": "running",
+  "status": "extracting",
   "kind": "gap_fill",
   "capabilities": [
     "episodic",

@@ -1,7 +1,7 @@
 {
   "id": "01JM7BF0000000000000000001",
   "status": "completed",
-  "kind": "gap_fill",
+  "kind": "upgrade",
   "capabilities": [
     "episodic",
     "commitment"
@@ -11,7 +11,7 @@
     "to_turn": 3
   },
   "progress": {
-    "phase": "done",
+    "phase": "completed",
     "chunks_done": 3,
     "chunks_total": 3,
     "reconciled_through_turn": 3,
@@ -29,11 +29,33 @@
   "error": null,
   "conflict_list": [],
   "report": {
+    "policy": "last_mention",
     "facts": 9,
-    "beliefs": 14,
     "memories": 6,
+    "exposures": 4,
+    "skipped_erased": 0,
+    "clock_minutes": 0,
+    "skipped_skips": 0,
+    "observations": 3,
+    "placements": 1,
+    "testimonies": 2,
+    "thunks": 0,
+    "settled": 0,
+    "state_changes": 1,
     "conflicts": {
-      "resolved": 2
+      "total": 2,
+      "by_resolution": {
+        "last_mention": 2
+      }
+    },
+    "materialization": {
+      "counts": {
+        "episodic": 2
+      },
+      "by_outcome": {
+        "added": 2
+      },
+      "conflicts": 0
     }
   }
 }

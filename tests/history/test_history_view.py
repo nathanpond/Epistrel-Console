@@ -324,17 +324,18 @@ def history_link_line(html: str) -> str:
     return html[start : html.index("</p>", start) + 4]
 
 
-# The nav once #297 registered ``stories:rewrites`` (E24: the registering story regenerates).
+# The nav once #297 registered ``stories:rewrites`` and #308 ``stories:backfill`` (E24: the
+# registering story regenerates).
 REGISTERED_NAV = (
     ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
-    f'<a href="{S}rewrites/">Rewrite</a></span>'
+    f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}backfill/">Backfill</a></span>'
 )
 
 
 def test_the_link_line_shows_only_the_registered_m7_pages(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """Main's link line plus the story nav's registered rows (Rewrite, #297) after Config."""
+    """Main's link line plus the registered nav rows (Rewrite #297, Backfill #308) after Config."""
     answer(engine)
     html = page(operator_client)
     config = f'<a class="config-tab" href="{S}config/">Config</a>'

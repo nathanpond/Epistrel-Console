@@ -147,7 +147,11 @@ def test_the_banner_falls_back_to_done_and_total() -> None:
     assert banner.text == "Paused: backfill in progress (3/9 chunks)"
 
 
-def test_backfill_banners_neither_link_nor_poll_while_unregistered() -> None:
+def test_backfill_banners_neither_link_nor_poll_while_unregistered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ``stories:backfill`` is registered since #308: stand in for a build without it (D19).
+    monkeypatch.setattr(story_pause, "backfill_url", lambda story_id: None)
     for cause in ("backfill", "backfill_conflicts"):
         banner = pause_banner(_story(cause, {"chunks_done": 2, "chunks_total": 7}))
         assert banner is not None
@@ -197,7 +201,7 @@ def test_the_refusals_word_the_backfill_causes() -> None:
         _paused("backfill", progress={"phase": "extracting", "chunks_done": 2, "chunks_total": 7})
     )
     assert refusal.text == "Paused: backfill in progress (2/7 chunks)"
-    assert refusal.url == ""
+    assert refusal.url == f"/stories/{S}/backfill/"  # registered by #308
     conflicts = paused_refusal(_paused("backfill_conflicts", conflicts_open=2, backfill_id="B"))
     assert conflicts.text == "Paused: the backfill is waiting for you to resolve 2 conflicts"
     one = paused_refusal(_paused("backfill_conflicts", conflicts_open=1))
@@ -207,7 +211,7 @@ def test_the_refusals_word_the_backfill_causes() -> None:
     assert written.text == BACKFILL_PAUSED_TEXT
     read = story_paused_refusal(_story("backfill", {"chunks_done": 1, "chunks_total": 4}))
     assert read.text == "Paused: backfill in progress (1/4 chunks)"
-    assert read.url == ""
+    assert read.url == f"/stories/{S}/backfill/"
 
 
 @override_settings(ROOT_URLCONF=STUBS)
@@ -227,7 +231,7 @@ def test_backfill_pause_text() -> None:
         == "Paused: backfill in progress (1,200/3,400 chunks)"
     )
     assert backfill_url("") is None
-    assert backfill_url(S) is None  # unregistered on main
+    assert backfill_url(S) == f"/stories/{S}/backfill/"  # registered by #308
 
 
 @pytest.mark.parametrize("cause", ["backfill", "backfill_conflicts"])

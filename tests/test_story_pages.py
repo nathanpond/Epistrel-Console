@@ -281,6 +281,29 @@ def test_the_story_nav_follows_config_in_the_link_line(
     ) in html
 
 
+def test_the_story_nav_shows_backfill_under_the_real_urlconf(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#308 registered ``stories:backfill``: under the real urlconf its page's nav holds the
+    registered rows (#297's Rewrite too), Backfill marked current."""
+    from console.views import backfill as backfill_views
+
+    patched = vars(story_pages)["engine_client_for"]  # the fixture's fake-wired client
+    monkeypatch.setattr(backfill_views, "engine_client_for", patched)
+    engine.respond(
+        "GET", "/stories/{story_id}/backfill", 200, json=engine_fixture("m7/backfill_extracting")
+    )
+    S = f"/stories/{STORY}/"
+    with override_settings(ROOT_URLCONF="epistrel_console.urls"):
+        html = operator_client.get(f"{S}backfill/").content.decode()
+    assert (
+        f'<a class="config-tab" href="{S}config/">Config</a> · <span class="story-pages" '
+        'role="navigation" aria-label="Story pages">'
+        f'<a href="{S}rewrites/">Rewrite</a> · '
+        f'<a href="{S}backfill/" aria-current="page">Backfill</a></span></p>'
+    ) in html
+
+
 def test_a_paused_story_shows_the_banner(operator_client: Client, engine: FakeEngine) -> None:
     pause = {"job_id": JOB, "cause": "backfill", "progress": {"done": 2, "total": 7}}
     engine.respond("GET", "/stories/{story_id}", 200, json=story_json(status="paused", pause=pause))

@@ -9,6 +9,7 @@ from console.ids import UlidConverter
 from console.states import StateNameConverter
 from console.views import (
     acting,
+    backfill,
     catalog_characters,
     catalog_lifecycle,
     catalog_scenarios,
@@ -212,6 +213,9 @@ story_patterns = (
             story_rating.rating_check,
             name="rating-check",
         ),
+        # #308: the story's Backfill page (?banner=1, ?partial=1) and its cancel confirm.
+        path("<str:story_id>/backfill/", backfill.backfill_page, name="backfill"),
+        path("<str:story_id>/backfill/cancel/", backfill.backfill_cancel, name="backfill-cancel"),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),

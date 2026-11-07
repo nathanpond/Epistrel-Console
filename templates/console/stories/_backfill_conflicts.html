@@ -1,0 +1,32 @@
+{% comment %}
+A backfill's conflicts, read-only (#308; #309 adds the resolve controls per conflict once
+stories:backfill-conflict resolves, D19). Context: conflicts (ConflictRow tuple: parsed in the
+Engine's order, then the rejected entries) and backfill (BackfillView: showing_text,
+rejected_count).
+{% endcomment %}{% load console_format principals %}{% if backfill.rejected_count %}<p class="notice rejected">{{ backfill.rejected_count|count }} conflict{{ backfill.rejected_count|pluralize }} couldn't be read</p>
+{% endif %}{% if backfill.showing_text %}<p class="showing">{{ backfill.showing_text }}</p>
+{% endif %}{% for conflict in conflicts %}{% if conflict.bad %}<section class="conflict conflict-bad" id="{{ conflict.anchor }}">
+  <p>This conflict couldn't be read</p>
+  <details><summary>More</summary><pre>{{ conflict.more }}</pre></details>
+</section>
+{% else %}<section class="conflict" id="{{ conflict.anchor }}">
+  <h4 class="conflict-subject">{% if conflict.subject_parts %}{% for text, code in conflict.subject_parts %}{% if code %}<code>{{ text }}</code>{% else %}{{ text }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}{% else %}<code>{{ conflict.subject }}</code>{% endif %} <span class="badge conflict-status conflict-{{ conflict.status_raw }}"{% if conflict.status_title %} title="{{ conflict.status_title }}"{% endif %}>{{ conflict.status }}</span></h4>
+  <details><summary>More</summary><pre>{{ conflict.subject_more }}</pre></details>
+  <table class="statements">
+    <thead><tr><th>Turn</th><th>Speaker</th><th>Source</th><th>Quote</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+    {% for statement in conflict.statements %}<tr class="statement{% if statement.recommended %} recommended{% endif %}">
+      <td><a href="{{ statement.turn_url }}">Turn {{ statement.turn|count }}</a> <details><summary>More</summary><pre>position {{ statement.position }}</pre></details></td>
+      <td>{{ statement.speaker }}</td>
+      <td><span{% if statement.source_raw %} title="{{ statement.source_raw }}"{% endif %}>{{ statement.source }}</span></td>
+      <td>{% if statement.quoted %}<q>{{ statement.quote }}</q>{% else %}—{% endif %}</td>
+      <td>{{ statement.value }}</td>
+      <td>{% if statement.recommended %}<span class="recommended-marker">{{ statement.recommended }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>
+  {% if conflict.resolved %}<p class="conflict-resolved">Resolved by {{ conflict.resolved_by|principal_link }} · {{ conflict.resolved_at|engine_time }}: {{ conflict.resolved }}</p>{% endif %}
+  {% if conflict.more %}<details><summary>More</summary><pre>{{ conflict.more }}</pre></details>{% endif %}
+</section>
+{% endif %}{% empty %}<p class="no-conflicts">None</p>
+{% endfor %}

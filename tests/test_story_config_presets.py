@@ -556,9 +556,16 @@ def test_backfill_202_redirects_to_the_backfill(
     assert EngineOperation.objects.filter(kind="assign_engine_profile").count() == 1
 
 
+def unregistered_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D19's unregistered case: ``stories:backfill`` registered since #308, so these tests stand
+    in for a build without it by making ``backfill_url`` answer ``None``."""
+    monkeypatch.setattr(story_config, "backfill_url", lambda story_id: None)
+
+
 def test_backfill_202_before_the_backfill_page_lands_on_config(
-    operator_client: Client, engine: FakeEngine
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    unregistered_backfill(monkeypatch)
     html = preview_full(operator_client, engine, backfill_report())
     engine.respond("PUT", PUT, 202, json=engine_shaped_202())
     response = confirm(operator_client, html, upgrade_mode="backfill")
@@ -592,8 +599,7 @@ def test_forward_only_flash_names_the_gap(operator_client: Client, engine: FakeE
         "through_turn": 3,
     }
     engine.respond("PUT", PUT, 200, json=applied_write(report))
-    with override_settings(ROOT_URLCONF=M7_URLS):
-        [flash] = flashes(confirm(operator_client, html, upgrade_mode="forward_only"))
+    [flash] = flashes(confirm(operator_client, html, upgrade_mode="forward_only"))  # #308: real
     assert flash.endswith(
         ". Turns through 3 keep a coverage gap for: <code>episodic</code> — fill it from the "
         f'<a href="{BACKFILL_PAGE}">Backfill page</a>'
@@ -613,8 +619,9 @@ def test_without_a_gap_the_flash_is_mains(operator_client: Client, engine: FakeE
 
 
 def test_the_gap_sentence_is_plain_text_before_the_backfill_page(
-    operator_client: Client, engine: FakeEngine
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    unregistered_backfill(monkeypatch)
     html = preview_full(operator_client, engine, backfill_report())
     report = backfill_report()
     report["affected_stories"][0]["forward_only_gap"] = {

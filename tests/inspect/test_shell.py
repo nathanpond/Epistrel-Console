@@ -388,7 +388,8 @@ def test_the_play_page_links_inspect_after_history(
     assert (
         f'<a class="history-link" href="/stories/{STORY}/history/">History</a>'
         ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
-        f'<a href="/stories/{STORY}/rewrites/">Rewrite</a></span> '  # #297's nav row (E11)
+        f'<a href="/stories/{STORY}/rewrites/">Rewrite</a> · '  # #297's nav row (E11)
+        f'<a href="/stories/{STORY}/backfill/">Backfill</a></span> '  # #308's
         f'<a class="inspect-link" href="{URL}">Inspect</a>'
     ) in html
 

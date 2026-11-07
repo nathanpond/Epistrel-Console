@@ -165,8 +165,6 @@ NOT_YET_REGISTERED = frozenset(
         "stories:amendment-redo",
         "stories:amendment-undo",
         "stories:amendments",
-        "stories:backfill",
-        "stories:backfill-cancel",
         "stories:backfill-conflict",
         "stories:backfill-start",
         "stories:certify",
