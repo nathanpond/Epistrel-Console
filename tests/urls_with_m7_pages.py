@@ -92,10 +92,8 @@ STORY_STUBS = [
     path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
     path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
 ]
-INSPECT_STUBS = [
-    path("effects/reconciliation/<str:listing>/resolve/", stub, name="resolve-listing"),  # #326
-    path("effects/reconciliation/resolved/", stub, name="resolved"),  # #326
-]
+# Every inspect page is registered (#325's outbox, #326's resolve-listing and resolved).
+INSPECT_STUBS: list[URLPattern] = []
 ENGINE_STUBS = [
     # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
     # list under this urlconf only (#313's real detail and run pages are served here).
@@ -124,12 +122,7 @@ STUB_NAMES = frozenset(
 
 # E6: the stubbed names no real pattern registers yet. Each owner removes its own names in the
 # PR that registers them; the complement test asserts only these.
-NOT_YET_REGISTERED = frozenset(
-    {
-        "inspect:resolve-listing",
-        "inspect:resolved",
-    }
-)
+NOT_YET_REGISTERED: frozenset[str] = frozenset()  # #326 registered the last two
 
 
 def _remounted(pattern: URLPattern | URLResolver) -> URLPattern | URLResolver:

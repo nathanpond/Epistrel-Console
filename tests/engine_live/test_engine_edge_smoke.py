@@ -914,6 +914,34 @@ IMPORT_ENDED = frozenset({"ready", "refused", "failed"})
 IMPORT_STARTED = re.compile(r"Import started: job <code>([0-9A-Z]{26})</code>")
 
 
+def _console_import(operator_client: Client, url: str, key: str, content: bytes) -> str:
+    """#320/#321: import ``content`` (a bundle) through the Engine panel's Import page with
+    "Forward only", posting "Import anyway" when the Engine warns; the import job's id (from
+    #321's 303 to the job page, else #320's "Import started" line)."""
+    upload = SimpleUploadedFile("smoke.epistrel.tgz", content, content_type="application/gzip")
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        page = operator_client.post(
+            "/engine/import/",
+            {"file": upload, "upgrade_mode": "forward_only", "idempotency_key": new_ulid()},
+        )
+        assert page.status_code in (200, 303), page.content.decode()
+        html = page.content.decode()
+        if "confirm_token" in html:  # the impact warned: confirm it
+            token = re.search(r'name="confirm_token" value="([^"]+)"', html)
+            assert token is not None
+            page = operator_client.post(
+                "/engine/import/",
+                {"confirm_token": token.group(1), "idempotency_key": new_ulid()},
+            )
+            html = page.content.decode()
+        if page.status_code == 303:  # #321 registered the job page
+            found = re.search(r"/engine/import/([0-9A-Z]{26})/", page["Location"])
+        else:
+            found = IMPORT_STARTED.search(html)
+        assert found is not None, html
+    return found.group(1)
+
+
 @pytest.mark.engine_auth
 def test_import_through_the_console_live(
     url: str, key: str, operator_client: Client, settings: Any, tmp_path: Any
@@ -934,28 +962,7 @@ def test_import_through_the_console_live(
         with client.open_export_bundle(job_id) as bundle:
             assert bundle.status == 200
             content = b"".join(bundle.iter_bytes())
-        upload = SimpleUploadedFile("smoke.epistrel.tgz", content, content_type="application/gzip")
-        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
-            page = operator_client.post(
-                "/engine/import/",
-                {"file": upload, "upgrade_mode": "forward_only", "idempotency_key": new_ulid()},
-            )
-            assert page.status_code in (200, 303), page.content.decode()
-            html = page.content.decode()
-            if "confirm_token" in html:  # the impact warned: confirm it
-                token = re.search(r'name="confirm_token" value="([^"]+)"', html)
-                assert token is not None
-                page = operator_client.post(
-                    "/engine/import/",
-                    {"confirm_token": token.group(1), "idempotency_key": new_ulid()},
-                )
-                html = page.content.decode()
-            if page.status_code == 303:  # #321 registered the job page
-                found = re.search(r"/engine/import/([0-9A-Z]{26})/", page["Location"])
-            else:
-                found = IMPORT_STARTED.search(html)
-            assert found is not None, html
-        import_job = found.group(1)
+        import_job = _console_import(operator_client, url, key, content)
         deadline = time.monotonic() + 120.0
         while True:
             job = client.import_status(import_job)
@@ -990,6 +997,69 @@ def test_import_through_the_console_live(
             opened = operator_client.get(link.group(1))
             assert opened.status_code == 200
         assert client.get_story(job.story_id).status in {"active", "paused"}
+    finally:
+        for made in dict.fromkeys(created):
+            _delete_when_idle(client, made)
+        _delete_when_idle(client, story)
+
+
+@pytest.mark.engine_auth
+def test_resolve_an_imported_unsettled_row_live(
+    url: str, key: str, operator_client: Client, settings: Any, tmp_path: Any
+) -> None:
+    """#326: import the smoke's exported story through the Console (#320/#321's
+    :func:`_console_import`), then resolve its first parked ``imported_unsettled`` row as
+    abandoned through ``inspect:resolve-listing``; the next reconciliation read no longer lists
+    it. Skips when the imported story lists no such row (the smoke's story commits no effect).
+    **Complement:** both stories are deleted in a ``finally``."""
+    settings.DATA_DIR = tmp_path
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    created: list[str] = []
+    try:
+        job_id = _export_ready(client, story)
+        with client.open_export_bundle(job_id) as bundle:
+            assert bundle.status == 200
+            content = b"".join(bundle.iter_bytes())
+        import_job = _console_import(operator_client, url, key, content)
+        deadline = time.monotonic() + 120.0
+        while True:
+            job = client.import_status(import_job)
+            if job.story_id:
+                created.append(job.story_id)
+            if job.status in IMPORT_ENDED:
+                break
+            assert time.monotonic() < deadline, f"import still {job.status} after 120 s"
+            time.sleep(1.0)
+        assert job.status == "ready", (job.status, job.error)
+        assert job.story_id is not None
+        imported = job.story_id
+        parked = [
+            listing.outbox_id
+            for listing in client.get_reconciliation(imported).listings
+            if listing.reason == "imported_unsettled" and listing.outbox_id
+        ]
+        if not parked:
+            pytest.skip("the imported story lists no imported_unsettled row")
+        outbox_id = parked[0]
+        revision = client.get_story(imported).timeline_revision
+        resolve = f"/stories/{imported}/inspect/effects/reconciliation/{outbox_id}/resolve/"
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            response = operator_client.post(
+                resolve,
+                {
+                    "idempotency_key": new_ulid(),
+                    "confirmed": "1",
+                    "resolution": "abandoned",
+                    "expected_revision": str(revision),
+                    "listed_reason": "imported_unsettled",
+                },
+            )
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert f"{outbox_id}</code> marked abandoned" in html, html
+        remaining = [listing.outbox_id for listing in client.get_reconciliation(imported).listings]
+        assert outbox_id not in remaining
     finally:
         for made in dict.fromkeys(created):
             _delete_when_idle(client, made)

@@ -145,6 +145,9 @@ texts; a later story passes its own verb and texts). #298 adds
   (nathanpond/Epistrel#786, found by #320; the tests serve it undeclared).
 - **The edge image sets no bundle directory**, and an export whose job fails stays ``running``
   (Console #334); this matters to the export and import job pages' polling (#319, #321).
+- **The resolve route's description** still says an outbox row is 404; the code resolves a
+  parked ``imported_unsettled`` row by its ``outbox_id`` (nathanpond/Epistrel#787, found by
+  #326, which follows the code).
 """
 
 import re

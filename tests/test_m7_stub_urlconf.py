@@ -22,15 +22,9 @@ ARGS: dict[str, list[str]] = {
     "stories:backfill-start": [STORY],
     "stories:backfill-cancel": [STORY],
     "stories:backfill-conflict": [STORY, "c1"],
-    "inspect:resolve-listing": [STORY, "listing-1"],
-    "inspect:resolved": [STORY],
     "engine:certifications": [],
 }
-PATHS = {
-    "inspect:resolve-listing": (
-        f"/stories/{STORY}/inspect/effects/reconciliation/listing-1/resolve/"
-    ),
-}
+PATHS: dict[str, str] = {}
 
 
 def test_the_table_is_every_stub() -> None:
@@ -47,10 +41,19 @@ def test_every_m7_name_reverses_under_the_stub_urlconf(name: str) -> None:
         assert url == PATHS[name]
 
 
-@pytest.mark.parametrize("name", sorted(m7.NOT_YET_REGISTERED))
-def test_no_unregistered_name_reverses_under_the_real_urlconf(name: str) -> None:
-    with pytest.raises(NoReverseMatch):
-        reverse(name, args=ARGS[name])
+def test_no_unregistered_name_reverses_under_the_real_urlconf() -> None:
+    """Every E6 name is registered now (#326 was the last): the set is empty, and the two
+    names it last held reverse under the real urlconf at E11's paths."""
+    for name in m7.NOT_YET_REGISTERED:
+        with pytest.raises(NoReverseMatch):
+            reverse(name, args=ARGS[name])
+    assert not m7.NOT_YET_REGISTERED
+    assert reverse("inspect:resolve-listing", args=[STORY, "listing-1"]) == (
+        f"/stories/{STORY}/inspect/effects/reconciliation/listing-1/resolve/"
+    )
+    assert reverse("inspect:resolved", args=[STORY]) == (
+        f"/stories/{STORY}/inspect/effects/reconciliation/resolved/"
+    )
 
 
 @override_settings(ROOT_URLCONF="tests.urls_with_m7_pages")

@@ -54,12 +54,25 @@ row. Refusals return to the **form** with the values kept, by D8's re-render rul
 through D9's ``world_refusal`` ("compensate an effect") on its field or above the form (a
 ``no_listing`` linking Reconciliation), ``None`` #43's panel; 503 ``erasure_pending`` #87's held
 page.
+
+**Resolve** (#326; D8, D9, FR-EXT-22). ``inspect:resolve-listing``
+(``…/effects/reconciliation/<listing>/resolve/``, E11) is settle-now's confirmed-mode confirm page
+for a :func:`console.reconciliation.resolvable` row: ``listing`` is a consumer-applied row's
+``request_id`` or an ``imported_unsettled`` row's ``outbox_id`` (C13: trimmed, upper-cased; a
+non-ULID is :data:`console.reconciliation.MALFORMED_LISTING_ID`'s 404, no call). The resolution
+comes from the link's ``?resolution=`` (the hidden field on POST); anything but the two blocks the
+page. Its GET makes no Engine call; the confirmed POST re-checks the gate exactly as settle-now
+does (one ``get_effective_config``), then calls ``resolve_listing`` (the posted
+``expected_revision``, ``turn_timeout(None)``) and renders the result
+(``console.reconciliation.resolved_view``) on the POST response. Refusals re-render the confirm
+page through ``world_refusal`` ("resolve an effect") as settle-now's do.
+``inspect:resolved?report=<pk>`` re-renders a result from its #44 row.
 """
 
 import dataclasses
 import json
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, Literal, cast
 
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -73,8 +86,13 @@ from console.confirm import (
     render_confirm,
     safe_next,
 )
-from console.engine.client import EngineClientError, EngineError, EngineUnreachable
-from console.engine.models import ReconciliationListing, SettledNow, rejected_entries
+from console.engine.client import EngineClient, EngineClientError, EngineError, EngineUnreachable
+from console.engine.models import (
+    ListingResolved,
+    ReconciliationListing,
+    SettledNow,
+    rejected_entries,
+)
 from console.engine_access import engine_client_for
 from console.engine_errors import log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
@@ -92,12 +110,16 @@ from console.reconciliation import (
     COMPENSATE_RESULT_TITLE,
     EMPTY_TEXT,
     GATE_ID,
+    MALFORMED_LISTING_ID,
     MALFORMED_OUTBOX_ID,
     NOT_FOUND,
+    RESOLVE_RESULT_TITLE,
+    RESOLVE_VERB,
     RESULT_UNAVAILABLE,
     SCOPE_LINE,
     SECTION,
     SECTION_LABEL,
+    chosen_resolution,
     compensate_confirm,
     compensate_facts,
     compensate_url,
@@ -105,6 +127,10 @@ from console.reconciliation import (
     compensated_view,
     count_text,
     listing_row,
+    resolve_cancel_url,
+    resolve_confirm,
+    resolved_row,
+    resolved_view,
     row_url,
     section_url,
     settle_confirm,
@@ -172,18 +198,59 @@ SETTLE_VERB = "settle an effect"
 BAD_RESPONSE = "bad_response"
 CONFIG_LINK = "Config"
 CHECK_LINK = "See the check"
+IMPORT_LINK = "See the import"
 # The link label after a refusal, by code (a ``WorldRefusal.url`` or the no-listing link).
 REFUSAL_LINKS: Mapping[str, str] = {
     "module_off": CONFIG_LINK,
     "not_found": SECTION_LABEL,
     "story_paused": CHECK_LINK,
+    "story_importing": IMPORT_LINK,  # #326 (E10's import job link)
 }
 
 
-def _missing_id(request: HttpRequest, story_id: str) -> HttpResponse:
+def _missing_id(
+    request: HttpRequest, story_id: str, text: str = MALFORMED_OUTBOX_ID
+) -> HttpResponse:
     """The malformed-id page: status 404, "← Reconciliation", no Engine call."""
-    context = {"text": MALFORMED_OUTBOX_ID, "back_url": section_url(story_id)}
+    context = {"text": text, "back_url": section_url(story_id)}
     return render(request, MISSING_TEMPLATE, context, status=404)
+
+
+def _effective(
+    request: HttpRequest, client: EngineClient, story_id: str
+) -> Mapping[str, object] | HttpResponse | None:
+    """The confirmed POST's one ``get_effective_config`` read: the effective configuration,
+    ``None`` when it failed (``GATE_UNREAD``), or #87's held page."""
+    try:
+        effective: Mapping[str, object] = client.get_effective_config(story_id).effective
+    except EngineClientError as exc:
+        if is_held(exc):
+            return render_held(request, story_id, exc)
+        log_engine_error(request, exc)
+        return None
+    return effective
+
+
+def _gate_refused(
+    request: HttpRequest,
+    page: ConfirmPage,
+    story_id: str,
+    effective: Mapping[str, object] | None,
+    key: str,
+) -> HttpResponse | None:
+    """A closed ``module_gate(STATES, …)`` (or an unread config): the confirm page again with the
+    gate's reason and the posted key, nothing sent (#256's rule); ``None`` when open."""
+    gate = module_gate(STATES, effective)
+    if gate is None:
+        return None
+    config = reverse("stories:config", args=[story_id]) if effective is not None else ""
+    error_page = dataclasses.replace(
+        page,
+        error=gate.reason,
+        error_url=config,
+        error_link=CONFIG_LINK if config else "",
+    )
+    return render_confirm(request, error_page, idempotency_key=key)
 
 
 def _refused(
@@ -193,14 +260,17 @@ def _refused(
     story_id: str,
     effective: Mapping[str, object] | None,
     key: str,
+    *,
+    verb: str = SETTLE_VERB,
 ) -> HttpResponse:
-    """A refused settle-now: the confirm page again with the reason (D8's key rule, D9's text),
-    or #43's panel above it; never the result page, never a redirect."""
+    """A refused settle-now (or #326's resolve, ``verb``): the confirm page again with the reason
+    (D8's key rule, D9's text), or #43's panel above it; never the result page, never a
+    redirect."""
     log_engine_error(request, exc)
     unknown = isinstance(exc, EngineUnreachable) or (
         isinstance(exc, EngineError) and exc.code == BAD_RESPONSE
     )
-    refusal = None if unknown else world_refusal(exc, story_id, SETTLE_VERB, effective)
+    refusal = None if unknown else world_refusal(exc, story_id, verb, effective)
     if refusal is None:
         # The outcome may be unknown: keep the posted key so a resubmit replays (D8). An answered
         # 4xx D9 doesn't word (idempotency_conflict, an unknown code) is a new attempt.
@@ -246,24 +316,12 @@ def settle_now(request: HttpRequest, story_id: str, outbox_id: str) -> HttpRespo
 
     def perform(key: str) -> HttpResponse:
         client = engine_client_for(request)
-        effective: Mapping[str, object] | None
-        try:
-            effective = client.get_effective_config(story_id).effective
-        except EngineClientError as exc:
-            if is_held(exc):
-                return render_held(request, story_id, exc)
-            log_engine_error(request, exc)
-            effective = None
-        gate = module_gate(STATES, effective)
-        if gate is not None:  # a local refusal: nothing was sent, the posted key is kept
-            config = reverse("stories:config", args=[story_id]) if effective is not None else ""
-            error_page = dataclasses.replace(
-                page,
-                error=gate.reason,
-                error_url=config,
-                error_link=CONFIG_LINK if config else "",
-            )
-            return render_confirm(request, error_page, idempotency_key=key)
+        effective = _effective(request, client, story_id)
+        if isinstance(effective, HttpResponse):
+            return effective
+        refused = _gate_refused(request, page, story_id, effective, key)
+        if refused is not None:  # a local refusal: nothing was sent, the posted key is kept
+            return refused
         try:
             answer = client.settle_now(
                 story_id,
@@ -502,6 +560,96 @@ def compensated(request: HttpRequest, story_id: str) -> HttpResponse:
         Tab.EFFECTS,
         RESULT_TEMPLATE,
         _compensated_report,
+        current=SECTION,
+        gate_section=False,
+    )
+
+
+# --- resolve (#326) ------------------------------------------------------------------------------
+
+
+def _resolved_build(
+    answer: ListingResolved, row: EngineOperation | None, key: str
+) -> Callable[[InspectContext], dict[str, object]]:
+    def build(ctx: InspectContext) -> dict[str, object]:
+        return {
+            "result": resolved_view(answer, row, ctx.story_id, key),
+            "result_title": RESOLVE_RESULT_TITLE,
+        }
+
+    return build
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def resolve_listing(request: HttpRequest, story_id: str, listing: str) -> HttpResponse:
+    """``inspect:resolve-listing``: the confirm page, then
+    ``POST /stories/{id}/reconciliation/{listing}/resolve {resolution}`` and its result page
+    (#326)."""
+    listing_id = listing.strip().upper()
+    if not is_ulid(listing_id):
+        return _missing_id(request, story_id, MALFORMED_LISTING_ID)
+    data = request.POST if request.method == "POST" else request.GET
+    cancel = safe_next(request, resolve_cancel_url(story_id, listing_id, data))
+    page = resolve_confirm(story_id, listing_id, data, cancel)
+
+    def perform(key: str) -> HttpResponse:
+        resolution = chosen_resolution(request.POST)
+        if resolution is None:  # unreachable while the page is blocked; never send a guess
+            return render_confirm(request, page, idempotency_key=key)
+        client = engine_client_for(request)
+        effective = _effective(request, client, story_id)
+        if isinstance(effective, HttpResponse):
+            return effective
+        refused = _gate_refused(request, page, story_id, effective, key)
+        if refused is not None:
+            return refused
+        try:
+            answer = client.resolve_listing(
+                story_id,
+                listing_id,
+                resolution=cast(Literal["applied_elsewhere", "abandoned"], resolution),
+                expected_revision=expected_revision(request.POST),
+                idempotency_key=key,
+            )
+        except EngineClientError as exc:
+            if is_held(exc):
+                return render_held(request, story_id, exc)
+            return _refused(request, page, exc, story_id, effective, key, verb=RESOLVE_VERB)
+        pk = client.last_operation_id
+        row = EngineOperation.objects.filter(pk=pk).first() if isinstance(pk, int) else None
+        return inspect_page(
+            request,
+            story_id,
+            Tab.EFFECTS,
+            RESULT_TEMPLATE,
+            _resolved_build(answer, row, key),
+            current=SECTION,
+            gate_section=False,
+        )
+
+    return confirm_action(request, page, perform, require_confirmed=True)
+
+
+def _resolved_report(ctx: InspectContext) -> dict[str, object]:
+    found = resolved_row(ctx.request.GET.get("report"), ctx.story_id)
+    context: dict[str, object] = {"result_title": RESOLVE_RESULT_TITLE}
+    if found is None:
+        context.update(result_unavailable=RESULT_UNAVAILABLE, section_url=section_url(ctx.story_id))
+        return context
+    row, answer = found
+    context["result"] = resolved_view(answer, row, ctx.story_id, row.idempotency_key)
+    return context
+
+
+@require_safe
+def resolved(request: HttpRequest, story_id: str) -> HttpResponse:
+    """``inspect:resolved?report=<pk>``: a resolve's result page again, from the #44 row."""
+    return inspect_page(
+        request,
+        story_id,
+        Tab.EFFECTS,
+        RESULT_TEMPLATE,
+        _resolved_report,
         current=SECTION,
         gate_section=False,
     )

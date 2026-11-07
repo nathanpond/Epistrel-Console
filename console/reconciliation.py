@@ -20,10 +20,18 @@ A redacted row (Engine #211: ``value`` and everything after it omitted) shows it
 reason and since only; the value-bearing cells read "—" or :data:`REDACTED`.
 
 **Request-keyed rows** (M7, #291; Engine #661). A consumer-applied effect is listed by its
-``request_id`` with no ``outbox_id``: it is never redacted, gets no actions (settle-now and
-compensate name an outbox row), its Outbox id cell reads "—" and its anchor is
-``request-<request_id>`` (:func:`row_anchor`); a raw "Request id" is the last entry under More.
-A row with neither id has no anchor. #326 adds its Resolve action and wording.
+``request_id`` with no ``outbox_id``: it is never redacted, gets no Settle now or Compensate
+(both name an outbox row), its id cell reads "Request <code>id</code>" with
+:data:`REQUEST_NOTE` (#326) and its anchor is ``request-<request_id>`` (:func:`row_anchor`); a
+raw "Request id" is the last entry under More. A row with neither id has no anchor.
+
+**Resolve** (#326; FR-EXT-22, Engine #661 and #251). :func:`resolvable` names the rows the Engine
+resolves (a request-keyed row by its ``request_id``, an ``imported_unsettled`` row by its
+``outbox_id``); each gets "Applied elsewhere…" and "Abandoned…" to ``inspect:resolve-listing``
+(only while it resolves; greyed like the others while D1's gate is closed), and no Settle now.
+:func:`resolve_confirm` builds the confirm page, :func:`resolved_view` words the
+``ListingResolved`` answer for the shared result template (``kind`` :data:`RESOLVE_KIND`) and
+:func:`resolved_row` finds a ``?report=<pk>`` row.
 
 **Settle now** (#256; D8, D9, D11, D19). :func:`settle_confirm` builds the ``inspect:settle-now``
 confirm page (``console/confirm.py``'s confirmed mode) from the link's display-only query: the
@@ -57,6 +65,7 @@ from console.confirm import ConfirmPage
 from console.effects import outbox_url, provider_url
 from console.engine.models import (
     Compensated,
+    ListingResolved,
     ReconciliationListing,
     SettledNow,
     Story,
@@ -76,6 +85,14 @@ from console.world import (
 SECTION = "inspect:reconciliation"
 SETTLE_NOW = "inspect:settle-now"  # #256
 COMPENSATE = "inspect:compensate"  # #264
+RESOLVE_LISTING = "inspect:resolve-listing"  # #326
+APPLIED_ELSEWHERE = "applied_elsewhere"
+ABANDONED = "abandoned"
+RESOLUTIONS: tuple[str, ...] = (APPLIED_ELSEWHERE, ABANDONED)  # the Engine's two (#326)
+RESOLVE_LINK_LABELS: Mapping[str, str] = {
+    APPLIED_ELSEWHERE: "Applied elsewhere…",
+    ABANDONED: "Abandoned…",
+}
 SETTLE_NOW_LABEL = "Settle now"
 COMPENSATE_LABEL = "Compensate"
 GATE_ID = "reconciliation-actions-gate"
@@ -103,7 +120,12 @@ REASON_TEXT: dict[str, str] = {
     "late_success_after_expiry": "Confirmed after its reservation had expired",
     "outcome_conflict": "The provider reported two different outcomes",
     "reservation_expired": "The State hold waiting on it expired",
+    "imported_unsettled": (
+        "Imported from a bundle with no final outcome — never sent; mark whether it was applied"
+    ),
 }
+IMPORTED_UNSETTLED = "imported_unsettled"  # Engine #251: a parked imported outbox row
+REQUEST_NOTE = "Applied by the consumer (no outbox row)"  # #326's request-id cell
 
 # The Engine's ``_listed`` docstring (core/outbox.py), not the AC's draft line (planner, pass 2).
 SCOPE_LINE = (
@@ -261,6 +283,8 @@ class ListingRow:
     compensated_url: str | None
     actions: tuple[ActionLink, ...]
     effect_json: str
+    # #326: a request-keyed row's id cell reads "Request <code>request_id</code>" and this note.
+    request_note: str = ""
 
 
 class Outcome(Protocol):
@@ -305,13 +329,47 @@ def _reverification(listing: ReconciliationListing) -> tuple[str, str]:
     return humanised(check.reverification), check.reverification
 
 
-def _link(name: str, story_id: str, outbox_id: str, query: dict[str, str]) -> str | None:
-    """``name``'s URL with ``query``; ``None`` while it (or its args) don't resolve."""
+def _link(name: str, story_id: str, listing_id: str, query: Mapping[str, str]) -> str | None:
+    """``name``'s URL for ``listing_id`` (an outbox id, or #326's listing id) with ``query``;
+    ``None`` while it (or its args) don't resolve."""
     try:
-        url = reverse(name, args=[story_id, outbox_id])
+        url = reverse(name, args=[story_id, listing_id])
     except NoReverseMatch:
         return None
     return f"{url}?{urlencode(query)}" if query else url
+
+
+def resolvable(listing: ReconciliationListing) -> str | None:
+    """The listing id ``resolve_listing`` takes (#326), or ``None`` for a row it doesn't resolve:
+    a request-keyed row's non-blank ``request_id`` (whatever its reason: it has no outbox row,
+    so Resolve is its only action), an ``imported_unsettled`` row's ``outbox_id``. A redacted
+    row follows the same rule (the Engine decides)."""
+    if listing.outbox_id is None:
+        request_id = listing.request_id
+        return request_id if isinstance(request_id, str) and request_id.strip() else None
+    if listing.reason == IMPORTED_UNSETTLED and listing.outbox_id.strip():
+        return listing.outbox_id
+    return None
+
+
+def _resolve_actions(
+    listing: ReconciliationListing,
+    listing_id: str,
+    story_id: str,
+    story: Story | None,
+    gate: Unavailable | None,
+) -> tuple[ActionLink, ...]:
+    """#326's two links, each with its ``resolution`` and #249's query (``next`` the row's
+    anchor); none while ``inspect:resolve-listing`` doesn't resolve."""
+    anchor = f"request-{listing_id}" if listing.outbox_id is None else f"outbox-{listing.outbox_id}"
+    query = action_query(listing, story, f"{section_url(story_id)}#{anchor}")
+    links = []
+    for resolution in RESOLUTIONS:
+        url = _link(RESOLVE_LISTING, story_id, listing_id, {"resolution": resolution, **query})
+        if url is None:
+            return ()
+        links.append(ActionLink(RESOLVE_LINK_LABELS[resolution], url, gated=gate is not None))
+    return tuple(links)
 
 
 def _actions(
@@ -320,6 +378,9 @@ def _actions(
     story: Story | None,
     gate: Unavailable | None,
 ) -> tuple[ActionLink, ...]:
+    listing_id = resolvable(listing)
+    if listing_id is not None:  # #326: before the settleable check (a request row has no outbox)
+        return _resolve_actions(listing, listing_id, story_id, story, gate)
     outbox_id = listing.outbox_id
     if outbox_id is None or listing.reason not in SETTLEABLE_REASONS:
         return ()  # settle-now and compensate name an outbox row (M7: a request-keyed row has none)
@@ -378,6 +439,7 @@ def listing_row(
             if listing.effect is None or redacted
             else json.dumps(listing.effect, indent=2, ensure_ascii=False, default=str)
         ),
+        request_note=REQUEST_NOTE if listing.outbox_id is None and listing.request_id else "",
     )
 
 
@@ -742,6 +804,191 @@ def compensated_row(pk: object, story_id: str) -> tuple[EngineOperation, Compens
         return None
     try:
         answer = Compensated.from_json(row.response)
+    except Exception:
+        return None
+    return None if answer is None else (row, answer)
+
+
+# --- resolve (#326) ------------------------------------------------------------------------------
+
+RESOLVE_KIND = "resolve_listing"  # the #44 row's kind (the client method)
+RESOLVED = "inspect:resolved"
+RESOLVE_VERB = "resolve an effect"
+RESOLVE_TITLE = "Resolve effect"
+RESOLVE_RESULT_TITLE = "Resolve effect"
+RESOLUTION_FIELD = "resolution"
+RESOLUTION_TEXT: Mapping[str, str] = {
+    APPLIED_ELSEWHERE: "applied elsewhere",
+    ABANDONED: "abandoned",
+}
+RESOLVE_QUESTION = "Mark {name} as %s?"
+RESOLVE_LINES: Mapping[str, str] = {
+    APPLIED_ELSEWHERE: (
+        "The consumer applied it outside Epistrel. Nothing is sent and no outcome is recorded; "
+        "the listing closes."
+    ),
+    ABANDONED: (
+        "It will never be applied. Nothing is sent and no outcome is recorded; the listing closes."
+    ),
+}
+RESOLVE_AUDIT_LINE = "Recorded as an audit event at the next inter-turn slot."
+RESOLVE_CONFIRM_LABELS: Mapping[str, str] = {
+    APPLIED_ELSEWHERE: "Mark applied elsewhere",
+    ABANDONED: "Mark abandoned",
+}
+RESOLVE_LABEL = "Resolve"  # a blocked page's (disabled) submit
+RESOLUTION_BLOCKED = "Choose applied elsewhere or abandoned"
+MALFORMED_LISTING_ID = "Not found (that isn't a listing id)"
+OUTBOX_ID_FACT = "Outbox id"
+REQUEST_ID_FACT = "Request id"
+LISTING_ID_FACT = "Listing id"
+
+
+def chosen_resolution(data: Mapping[str, Any]) -> str | None:
+    """The ``resolution`` in ``data`` (the link's query, or the POST's hidden field): stripped,
+    and one of :data:`RESOLUTIONS` exactly; else ``None`` (the page is blocked)."""
+    value = data.get(RESOLUTION_FIELD)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if value in RESOLUTIONS else None
+
+
+def _listed_kind(listed: str | None) -> tuple[str, str | None]:
+    """(the id fact's label, the row's anchor prefix) from the display-only ``listed_reason``:
+    ``imported_unsettled`` names an outbox row, any other reason a request; absent, neither."""
+    if listed is None:
+        return LISTING_ID_FACT, None
+    if listed.strip() == IMPORTED_UNSETTLED:
+        return OUTBOX_ID_FACT, "outbox"
+    return REQUEST_ID_FACT, "request"
+
+
+def resolve_cancel_url(story_id: str, listing_id: str, data: Mapping[str, Any]) -> str:
+    """Cancel's fallback (after a safe ``next``): the row's anchor on Reconciliation
+    (``#outbox-<id>`` for ``imported_unsettled``, ``#request-<id>`` for any other present
+    ``listed_reason``), else the bare section."""
+    _, prefix = _listed_kind(_shown(data, "listed_reason"))
+    section = section_url(story_id)
+    return section if prefix is None else f"{section}#{prefix}-{listing_id}"
+
+
+def resolve_confirm(
+    story_id: str, listing_id: str, data: Mapping[str, Any], cancel_url: str
+) -> ConfirmPage:
+    """The ``inspect:resolve-listing`` confirm page for ``listing_id`` from the GET or POST
+    ``data``: the resolution (``?resolution=``, then the hidden field; anything but the two
+    blocks the page), the display-only facts and the hidden ``resolution``,
+    ``expected_revision`` (D8) and display fields."""
+    resolution = chosen_resolution(data)
+    provider = _shown(data, "provider")
+    value = _shown(data, "value")
+    listed = _shown(data, "listed_reason")
+    id_label, _ = _listed_kind(listed)
+    hidden = {key: data[key] for key in DISPLAY_FIELDS if _shown(data, key) is not None}
+    revision = data.get(EXPECTED_REVISION_FIELD)
+    if isinstance(revision, str) and revision.strip():
+        hidden[EXPECTED_REVISION_FIELD] = revision
+    if resolution is not None:
+        hidden[RESOLUTION_FIELD] = resolution
+    link = provider_url(provider) if provider is not None else None
+    return ConfirmPage(
+        title=RESOLVE_TITLE,
+        question=RESOLVE_QUESTION
+        % (RESOLUTION_TEXT[resolution] if resolution is not None else "resolved"),
+        emphasis=listing_id,
+        confirm_label=(
+            RESOLVE_CONFIRM_LABELS[resolution] if resolution is not None else RESOLVE_LABEL
+        ),
+        cancel_url=cancel_url,
+        lines=(
+            (RESOLVE_LINES[resolution], RESOLVE_AUDIT_LINE)
+            if resolution is not None
+            else (RESOLVE_AUDIT_LINE,)
+        ),
+        facts=(
+            ("Story id", story_id),
+            (id_label, listing_id),
+            (PROVIDER_FACT, provider or EMPTY),
+            ("Provider value", value or EMPTY),
+            ("Listed as", humanised(listed.strip()) if listed is not None else EMPTY),
+        ),
+        fact_urls={PROVIDER_FACT: link} if link is not None else {},
+        hidden=hidden,
+        blocked="" if resolution is not None else RESOLUTION_BLOCKED,
+    )
+
+
+def resolved_url(story_id: str, pk: int) -> str:
+    """``inspect:resolved?report=<pk>``."""
+    return f"{reverse(RESOLVED, args=[story_id])}?{urlencode({'report': pk})}"
+
+
+def resolution_text(resolution: str) -> str:
+    """ "applied elsewhere" / "abandoned"; an unknown value humanised (E23), "—" when blank."""
+    if resolution in RESOLUTION_TEXT:
+        return RESOLUTION_TEXT[resolution]
+    return humanised(resolution) if resolution.strip() else EMPTY
+
+
+def resolved_view(
+    answer: ListingResolved,
+    row: EngineOperation | None,
+    story_id: str,
+    sent_key: str = "",
+) -> SettledView:
+    """The resolve result: "Resolved: <listing id> marked <resolution>" (the id in full,
+    unlinked: the listing is gone), "Listed as: <reasons, C3-humanised>", D8's Slot, Operation
+    and revision lines, and More (the Engine's ``position``, the idempotency key)."""
+    back = section_url(story_id)
+    slot = slot_result(story_id, answer, row, back)
+    pk = _row_pk(row)
+    reasons = [humanised(r) for r in answer.reasons if isinstance(r, str) and r.strip()]
+    lines = [
+        ResultLine(f"Listed as: {', '.join(reasons) if reasons else EMPTY}", None, "listed"),
+        ResultLine(f"Slot: {slot.slot_text or EMPTY}", slot.slot_url, "slot"),
+    ]
+    if slot.operation_id is not None:
+        url = reverse("operations:detail", args=[slot.operation_pk]) if slot.operation_pk else None
+        lines.append(ResultLine(f"Operation: `{slot.operation_id}`", url, "operation"))
+    lines.append(ResultLine(slot.revision_text, None, "revision"))
+    key = answer.idempotency_key or (row.idempotency_key if row is not None else "") or sent_key
+    listing_id = answer.request_id if answer.request_id.strip() else None
+    return SettledView(
+        heading="Resolved: " if listing_id is not None else f"Resolved: {EMPTY}",
+        heading_after=f" marked {resolution_text(answer.resolution)}",
+        heading_outbox_id=listing_id,
+        heading_outbox_url=None,
+        notes=(),
+        lines=tuple(lines),
+        reasons=(),
+        more=(
+            ("Engine position", slot.engine_position or EMPTY),
+            ("Idempotency key", key or EMPTY),
+        ),
+        replayed=row is not None and row.replayed,
+        back_url=back,
+        back_label=BACK_LABEL,
+        report_url=resolved_url(story_id, pk) if pk is not None else None,
+        kind=RESOLVE_KIND,
+    )
+
+
+def resolved_row(pk: object, story_id: str) -> tuple[EngineOperation, ListingResolved] | None:
+    """The #44 row ``pk`` and its answer when it is an ``ok`` :data:`RESOLVE_KIND` of this story
+    whose stored response parses as ``ListingResolved``; else ``None``."""
+    try:
+        row = EngineOperation.objects.get(pk=int(str(pk)))
+    except EngineOperation.DoesNotExist, ValueError, TypeError:
+        return None
+    if (
+        row.kind != RESOLVE_KIND
+        or row.story_id != story_id
+        or row.outcome != EngineOperation.Outcome.OK
+    ):
+        return None
+    try:
+        answer = ListingResolved.from_json(row.response)
     except Exception:
         return None
     return None if answer is None else (row, answer)

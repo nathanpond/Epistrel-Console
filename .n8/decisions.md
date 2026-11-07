@@ -3875,3 +3875,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #329 adds tests beyond the plan: odd `config_revision` (bool/str/float), thousands in "Last changed", "Created by —", typed-null removal, add-a-key, fill-an-empty-member, stored-null stripping, odd expiry, Silent required, the read's error panel, "the patch is diffed against the rendered snapshot" (another writer's Unit survives) and "the base is the rendered snapshot's, not the POST's re-read". Pre-fix run: `test_nothing_changed_against_rendered_revision` against the old view fails with `At index 0 diff: 'Unit: saved' != 'The Engine found nothing to change'`. Live probe on `n8-291-smoke` (127.0.0.1:18000, scratch test, not committed): after declaration `config_revision` is null and `created_by` "consumer"; a constraints write answers 2 and the read then says 2; repeating it answers 2 (nothing changed); `{"constraints": null}` answers 3 and reads `{}`.
   **Why:** pins the Discretion's edge rules and D8's base semantics against the real Engine. Cost: a few cheap tests.
   **Issue:** #329
+- **Decision:** `resolvable(listing)` returns a request-keyed row's raw `request_id` (non-blank) before looking at the reason, else an `imported_unsettled` row's non-blank `outbox_id`; `_actions` checks it before `SETTLEABLE_REASONS`, so a request-keyed `late_success_after_expiry` row gets only Resolve. A `NoReverseMatch` drops both Resolve links.
+  **Why:** the AC's first-rule-wins order; Settle now/Compensate need an outbox row. Cost if wrong: one extra action on a row the Engine then 404s.
+  **Issue:** #326
+- **Decision:** #291's `test_a_listing_without_an_outbox_id_has_no_actions` now asserts the two Resolve links on the request-keyed row (still no Settle now/Compensate), and its rendered-row test asserts the new "Request <code>id</code> <small>…</small>" cell; `urls_without_reconciliation_actions` also drops `resolve-listing`.
+  **Why:** #326 deliberately gives that row its only action; the "without" urlconf keeps meaning "no action routes".
+  **Issue:** #326
+- **Decision:** The request-id cell's note is `ListingRow.request_note` (`REQUEST_NOTE`, set only when `outbox_id` is None and `request_id` is set); the template branches on it, so a row with neither id keeps the "—" cell.
+  **Why:** keeps the wording in `console/reconciliation.py` (the artifact the story names) and the template logic-free.
+  **Issue:** #326
+- **Decision:** Settle-now's gate re-check is factored into `_effective(request, client, story_id)` (the one config read, held → #87's page, failure → `None`) plus `_gate_refused(request, page, story_id, effective, key)`; `_refused(..., verb=)` and `_missing_id(..., text)` gained keyword/default parameters. Settle-now's behaviour is unchanged (its whole test file passes untouched). The helper takes `story_id` beside the planner's four parameters (the Config link needs it).
+  **Why:** the planner's "one small helper both call"; the extra parameter avoids reading it back out of the page.
+  **Issue:** #326
+- **Decision:** `resolve_listing`'s `perform` re-validates the hidden `resolution` and re-renders (no call) if it is somehow not one of the two, although `ConfirmPage.blocked` already prevents `perform` for such a POST.
+  **Why:** Rule 2 defence in depth: never send a guessed resolution. Cost: none.
+  **Issue:** #326
+- **Decision:** The result's "Listed as" humanises each non-blank `reasons` entry (C3) and reads "—" for none; the idempotency key under More is the answer's, else the #44 row's, else the sent key; a blank `request_id` heads "Resolved: —".
+  **Why:** E23's missing-value rule; mirrors settle-now's key order with compensate's row fallback.
+  **Issue:** #326
+- **Decision:** `NOT_YET_REGISTERED` is now the empty frozenset and `INSPECT_STUBS` empty; `test_no_unregistered_name_reverses_under_the_real_urlconf` became a plain test (looping the set, asserting it empty and that both #326 names reverse at E11's paths) instead of a parametrisation that would collect as skipped over an empty set.
+  **Why:** an empty `parametrize` is a skip, and the brief forbids adding skips.
+  **Issue:** #326
+- **Decision:** The live case reuses #320/#321's import by extracting `_console_import(operator_client, url, key, content)` from `test_import_through_the_console_live` (behaviour unchanged; it passed on `n8-291-smoke`, 127.0.0.1:18000). `test_resolve_an_imported_unsettled_row_live` skipped there: the smoke story commits no effect, so the import parks no row.
+  **Why:** the test plan's "reusing #321's live-import helper"; no live fixture produces a parked row.
+  **Issue:** #326
+- **Decision:** Filed nathanpond/Epistrel#787 (the resolve route's description still says an outbox row is 404, at origin/main `ed2be26`) and added it to E18's list in `console/rewrites.py`.
+  **Why:** the planner's instruction to file it if the description still disagreed at execution.
+  **Issue:** #326

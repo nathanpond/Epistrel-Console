@@ -473,6 +473,18 @@ inspect_patterns = (
             inspect_reconciliation.compensate,
             name="compensate",
         ),
+        # #326: resolve a request-keyed or imported_unsettled listing (confirm page, then the
+        # call) and its result again; ``listing`` is the Engine's {listing} (E11).
+        path(
+            "effects/reconciliation/resolved/",
+            inspect_reconciliation.resolved,
+            name="resolved",
+        ),
+        path(
+            "effects/reconciliation/<str:listing>/resolve/",
+            inspect_reconciliation.resolve_listing,
+            name="resolve-listing",
+        ),
         # #255: the Effects trail section (every State change the story's turns committed).
         path("effects/trail/", inspect_effects_trail.effects_trail, name="effects-trail"),
         # #136: the predicate registry, a proposal's decision and its result page again.

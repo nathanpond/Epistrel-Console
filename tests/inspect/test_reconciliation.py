@@ -40,7 +40,7 @@ from console.reconciliation import (
 from console.views import inspect as views
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
-from tests.inspect.helpers import EFFECTIVE, STORY_PATH, lite_m6, structured_v3
+from tests.inspect.helpers import EFFECTIVE, STORY_PATH, full_v4, lite_m6, structured_v3
 from tests.play.helpers import error_json
 
 pytestmark = pytest.mark.django_db
@@ -440,3 +440,109 @@ def test_erasure_pending_held(operator_client: Client, engine: FakeEngine) -> No
     answer(engine, 503, error_json("erasure_pending", "held"))
     response = operator_client.get(URL)
     assert response.status_code == 503
+
+
+# --- #326: Resolve on request-keyed and imported_unsettled rows (Full v4, the M7 cast) ----------
+
+M7_STORY = "01JM7ST0000000000000000001"
+M7_URL = f"/stories/{M7_STORY}/inspect/effects/reconciliation/"
+RQ = "01JM7RQ0000000000000000001"
+XB_IMPORTED = "01JM7XB0000000000000000005"
+XB_LATE = "01JM7XB0000000000000000002"
+
+
+@pytest.fixture
+def m7_engine(engine: FakeEngine) -> FakeEngine:
+    """The fake under Full v4 and #292's M7 cast, listing ``m7/reconciliation_m7.json``: a
+    request-keyed ``reservation_expired`` row (``RQ…01``), an ``imported_unsettled`` row
+    (``XB…05``) and a ``late_success_after_expiry`` row (``XB…02``)."""
+    engine.respond("GET", EFFECTIVE, 200, json=full_v4())
+    engine.respond("GET", STORY_PATH, 200, json=engine_fixture("m7/story"))
+    engine.respond("GET", RECONCILIATION, 200, json=engine_fixture("m7/reconciliation_m7"))
+    return engine
+
+
+def m7_page(client: Client) -> str:
+    response = client.get(M7_URL)
+    assert response.status_code == 200
+    return response.content.decode()
+
+
+def request_row(html: str, request_id: str) -> str:
+    found = re.search(rf'<tr id="request-{request_id}" class="listing">(.*?)</tr>', html, re.S)
+    assert found is not None, request_id
+    return found.group(1)
+
+
+def test_resolve_links_only_where_the_engine_resolves(
+    operator_client: Client, m7_engine: FakeEngine
+) -> None:
+    html = m7_page(operator_client)
+    for row_html, listing_id, anchor, reason in (
+        (request_row(html, RQ), RQ, f"request-{RQ}", "reservation_expired"),
+        (row(html, XB_IMPORTED), XB_IMPORTED, f"outbox-{XB_IMPORTED}", "imported_unsettled"),
+    ):
+        found = links(row_html)
+        assert list(found) == ["Applied elsewhere…", "Abandoned…"]
+        for label, resolution in (
+            ("Applied elsewhere…", "applied_elsewhere"),
+            ("Abandoned…", "abandoned"),
+        ):
+            split = urlsplit(found[label])
+            assert split.path == f"{M7_URL}{listing_id}/resolve/"
+            query = parse_qs(split.query)
+            assert query["resolution"] == [resolution]
+            assert query["expected_revision"] == ["20"]
+            assert query["provider"] == ["bank"]
+            assert query["value"] == ["balance"]
+            assert query["listed_reason"] == [reason]
+            assert query["next"] == [f"{M7_URL}#{anchor}"]
+        # **Complement:** neither resolvable row carries Settle now (or Compensate).
+        assert "Settle now" not in row_html
+        assert "Compensate" not in row_html
+    # **Complement:** the settleable outbox row keeps Settle now and Compensate, and no Resolve.
+    late = row(html, XB_LATE)
+    assert set(links(late)) == {"Settle now", "Compensate"}
+    assert "Applied elsewhere" not in late
+    assert "Abandoned" not in late
+    assert "/resolve/" not in late
+
+
+def test_request_id_cell_and_imported_reason_text(
+    operator_client: Client, m7_engine: FakeEngine
+) -> None:
+    html = m7_page(operator_client)
+    assert cell(request_row(html, RQ), "outbox") == (
+        f"Request <code>{RQ}</code> <small>Applied by the consumer (no outbox row)</small>"
+    )
+    reason = cell(row(html, XB_IMPORTED), "reason")
+    assert reason == (
+        '<span title="imported_unsettled">Imported unsettled</span> <small>Imported from a bundle '
+        "with no final outcome — never sent; mark whether it was applied</small>"
+    )
+    assert REASON_TEXT["imported_unsettled"] == (
+        "Imported from a bundle with no final outcome — never sent; mark whether it was applied"
+    )
+    # **Complement:** an outbox row's id cell is unchanged (no "Request", no note).
+    assert "Request" not in cell(row(html, XB_IMPORTED), "outbox")
+    assert XB_IMPORTED in cell(row(html, XB_IMPORTED), "outbox")
+
+
+def test_resolve_links_greyed_when_states_off(
+    operator_client: Client, m7_engine: FakeEngine
+) -> None:
+    m7_engine.respond("GET", EFFECTIVE, 200, json=lite_m6())
+    html = m7_page(operator_client)
+    for row_html in (request_row(html, RQ), row(html, XB_IMPORTED)):
+        actions = cell(row_html, "actions")
+        assert links(row_html) == {}
+        assert actions.count('<span class="disabled action" aria-disabled="true" disabled') == 2
+        assert actions.count(f'aria-describedby="{GATE_ID}"') == 2
+        assert "Applied elsewhere…</span>" in actions
+        assert "Abandoned…</span>" in actions
+    assert html.count(f'id="{GATE_ID}"') == 1
+    # **Complement:** the list itself renders (all three rows), and nothing was posted.
+    assert '<div class="panel unavailable">' not in html
+    assert row_ids(html) == [XB_IMPORTED, XB_LATE]
+    assert f'id="request-{RQ}"' in html
+    assert [r for r in m7_engine.requests if r.method == "POST"] == []
