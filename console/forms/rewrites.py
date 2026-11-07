@@ -207,7 +207,8 @@ class AnswersForm(forms.Form):
     @property
     def question_rows(self) -> tuple[QuestionRow, ...]:
         """Every question, in order, with its fields and the option shown checked (the posted
-        choice on a bound form, else the recommended one)."""
+        choice on a bound form; on an unbound one its ``initial``, which defaults to the
+        recommended option: #298's refusal re-render copies the posted choices into it)."""
         rows = []
         for question in self.questions:
             if question.answered is not None:
@@ -215,7 +216,7 @@ class AnswersForm(forms.Form):
                 continue
             choice = self[choice_name(question.id)]
             value = choice.value()
-            selected = (str(value) if value else None) if self.is_bound else question.recommended_id
+            selected = str(value) if value else None
             rows.append(QuestionRow(question, choice, self[text_name(question.id)], selected))
         return tuple(rows)
 

@@ -3282,3 +3282,31 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   - `tests/timeline/test_regenerate_directed.py` reaches the panel by patching `rewrite_session_url` to `None`, and the real urlconf now redirects.
   **Why:** E24's rule: the registering story regenerates the goldens it moves. Cost if wrong: none.
   **Issue:** #297
+- **Decision:** #298's flash texts are passed to #297's `session_write_flash` with `apply_directly=False`, so an answer never gets the "Not applied directly: " prefix. The verb is "Answers recorded", and the applied text is "Answers recorded and applied: amendment {amendment} · story revision now {revision}". `MORE_QUESTIONS_TEXT`'s "{n} more question(s)" is pre-filled with `plural(n, "more question")`, because `_filled` only matches "{n} question(s)". The applied flash reads `apply.amendment_id`, a required field of `RewriteApply`, so the `result_amendment_id` fallback the story mentions is never reached and isn't coded.
+  **Why:** E21's prefix is for a ticked "Apply directly" box, and the answers form has none. Cost if wrong: one flash prefix.
+  **Issue:** #298
+- **Decision:** I factored #297's session view into `render_session_page(request, story_id, session_id, build)`, `read_session(ctx, session_id)` and `session_context(ctx, session, *, answers_form, key, notices, answer_errors)` in `console/views/rewrites.py`. The story suggested `render_session_page(request, story_id, session, …)`, but with #296's frame the session read has to happen inside `build`. The Reload link is now `rewrite_session_url` rather than `request.path`, so the POST re-render doesn't link the answers URL. `REJECTED_QUESTION` lives in `rewrite_answers.py` and is imported lazily by `session_context`, which avoids an import cycle. The partial shows it as `rejected_question_text` while the session is awaiting answers, and otherwise keeps #294's "This question couldn't be read".
+  **Why:** One render path for the GET page and every answers re-render. Cost if wrong: none (same output for #297's cases).
+  **Issue:** #298
+- **Decision:** `AnswersForm.question_rows` now reads the checked option from `choice.value()` on an unbound form too. That is the form's `initial`, which defaults to the recommended option, so the refusal and stale re-renders can carry the posted choices. Engine answer errors reach `_questions.html`/`_question.html` as an `answer_errors` context (`above`, `groups {qid: [msg]}`, `texts {qid: [msg]}`, rendered through `world_tags.get_item`). The form is not mutated.
+  **Why:** The story asks for an unbound form with `initial` copied from the POST, and errors carried in the view context. Cost if wrong: none (an unbound form without initial still checks the recommendation).
+  **Issue:** #298
+- **Decision:** Answer refusals are placed as follows:
+  - `invalid_answer`, guardrail, `erased_subject_referenced`, superseded and mapped `validation_error`s go on the form.
+  - `rewrite_session_closed`, `rewrite_apply_in_progress` and every other worded refusal are `<p class="warning">` notices above the partial.
+  - An unworded refusal, or a `validation_error` with any unmapped path, is #43's panel above the partial.
+  - An unknown outcome (transport, timeout, `bad_response`, an unworded 5xx) re-renders the bound form with the panel and the posted key, with no fresh read. The write may be in flight, and a resubmit replays.
+  - A 404 on the answer itself is the 404 page.
+  - A failed fresh read after a refusal is that read's panel (or 404), with the refusal text as a notice and a fresh key.
+  - A pre-read refusal other than 404/5xx/transport/bad_response is its `rewrite_refusal` text as a notice, with the posted key (nothing was sent).
+  **Why:** These are the story's discretion rules, with "anything else" put above the partial (it shows whether or not the form renders). Cost if wrong: where a rare refusal's sentence sits.
+  **Issue:** #298
+- **Decision:** The apply-failure prefix "Answers recorded, but applying failed: " is applied only when the pre-write session's `preview_mode == "apply_directly"` and the code is one of `rewrite_stale`, `record_in_flight`, `rewrite_apply_failed` or `story_paused`. On a preview-first session those codes go through `rewrite_refusal` as usual.
+  **Why:** Only an `apply_directly` session applies inside the answers POST. Cost if wrong: a missing prefix.
+  **Issue:** #298
+- **Decision:** These baselines moved when `stories:rewrite-answers` registered (E24 and D19), so this commit updates them:
+  - `tests/rewrites/test_rewrite_session_page.py::test_no_actions_before_s6_s7` became `test_no_actions_before_s7` (awaiting approval only), plus `test_awaiting_answers_has_only_the_answers_form_once_s6_registered`.
+  - `tests/test_rewrites.py::test_an_open_session_waits_for_answers` now expects the Answer action under the real urlconf.
+  - The name left the stub urlconf's `NOT_YET_REGISTERED`.
+  **Why:** The registering story regenerates what it moves. Cost if wrong: none.
+  **Issue:** #298

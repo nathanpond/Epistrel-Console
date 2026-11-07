@@ -151,11 +151,23 @@ def _session_forms(html: str) -> list[str]:
     return re.findall(r"<form[^>]*>", session)
 
 
-@pytest.mark.parametrize("name", ["rewrite_open", "rewrite_session"])
-def test_no_actions_before_s6_s7(operator_client: Client, engine: FakeEngine, name: str) -> None:
-    served(engine, name)
+def test_no_actions_before_s7(operator_client: Client, engine: FakeEngine) -> None:
+    served(engine, "rewrite_session")
     html = page(operator_client)
     assert _session_forms(html) == []
+    assert "session-actions" not in html
+
+
+def test_awaiting_answers_has_only_the_answers_form_once_s6_registered(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#298 registered ``stories:rewrite-answers``: under the real urlconf an awaiting-answers
+    session renders the questions form and no footer action (S7's are still unregistered)."""
+    served(engine, "rewrite_open")
+    html = page(operator_client)
+    assert _session_forms(html) == [
+        f'<form method="post" action="{SESSION_URL}answers/" class="answers">'
+    ]
     assert "session-actions" not in html
 
 

@@ -161,10 +161,11 @@ def test_an_open_session_waits_for_answers() -> None:
     assert question.options[0].label_text.endswith(" (recommended)")
     assert question.why_text.startswith("Why: Bob's line is his own sincere claim")
     assert question.answered is None
-    assert shown.actions == ()  # the real urlconf: the action names are unregistered
+    base = f"/stories/{STORY}/rewrites/{SESSION}/"
+    # The real urlconf: #298 registered Answer; Cancel (#299) is still unregistered.
+    assert shown.actions == (SessionAction("Answer", f"{base}answers/", "post"),)
     with override_settings(ROOT_URLCONF=M7_PAGES):
         linked = view("rewrite_open")
-    base = f"/stories/{STORY}/rewrites/{SESSION}/"
     assert linked.actions == (
         SessionAction("Answer", f"{base}answers/", "post"),
         SessionAction("Cancel", f"{base}cancel/", "get"),

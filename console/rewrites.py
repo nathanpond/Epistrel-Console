@@ -118,7 +118,8 @@ shared M7 stub urlconf for their linked cases.
 :func:`rejected_notice` (D15), and the empty texts :data:`NO_SESSIONS`,
 :data:`NO_SESSIONS_MATCH` and :data:`NO_MORE_SESSIONS`. E21's state-driven flash for any write
 that opens, answers or re-plans a session is :func:`session_write_flash` (#297 passes the open's
-texts; a later story passes its own verb and texts).
+texts; a later story passes its own verb and texts). #298 adds
+:func:`guardrail_answer_indexes`, every guardrail locator read as its free-text answer index.
 
 **E18 — Engine gaps, said once (convention 24's rule).**
 
@@ -1023,6 +1024,26 @@ def _guardrail(details: Mapping[str, Any]) -> WorldRefusal:
     if ANSWER_LOCATOR.match(locator):
         return WorldRefusal(text, field=locator)  # the caller maps n to ``text_<qid>``
     return WorldRefusal(text, field=LOCATOR_FIELDS.get(locator))
+
+
+def guardrail_answer_indexes(details: object) -> list[int | None]:
+    """A ``guardrail_violation``'s locators in order, each read as the ``n`` of
+    ``body.answers[n].text`` (the index among the free-text answers sent, E5), ``None`` for any
+    other or malformed locator. The answers caller (#298) maps each ``n`` to its ``text_<qid>``
+    box; an empty list means the refusal named no locator."""
+    if not isinstance(details, Mapping):
+        return []
+    violations = details.get("violations")
+    if not isinstance(violations, list):
+        return []
+    found: list[int | None] = []
+    for violation in violations:
+        if not isinstance(violation, Mapping):
+            continue
+        for locator in _locators(violation):
+            match = ANSWER_LOCATOR.match(locator)
+            found.append(int(match.group(1)) if match else None)
+    return found
 
 
 def _inactive(details: Mapping[str, Any], story_id: str) -> WorldRefusal:

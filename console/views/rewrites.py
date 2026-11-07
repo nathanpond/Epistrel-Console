@@ -36,10 +36,14 @@ partial over ``session_view(session, story_id, cast_names(story.cast))`` (raw id
 read failed), the heading "<kind> session" and the id, "← All rewrites" and "Reload". 404
 ``rewrite_session_not_found`` is E5's text in the frame with status 404; any other failure is
 #43's panel under "Rewrite session <id>". The page makes no write and doesn't poll: the footer
-shows only the actions whose URL names resolve (D19).
+shows only the actions whose URL names resolve (D19). #298 factored the page into
+:func:`render_session_page` (the frame, the links and the 404), :func:`read_session` (the one
+``get_rewrite`` and its failure context) and :func:`session_context` (E3's view, the answers
+form while ``awaiting_answers``, the key, and the answers POST's notices and errors), which
+``console/views/rewrite_answers.py`` re-renders through.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from django.contrib import messages
@@ -49,7 +53,7 @@ from django.views.decorators.http import require_http_methods, require_safe
 from console.canon import cast_names
 from console.confirm import posted_idempotency_key
 from console.engine.client import EngineClientError, EngineError
-from console.engine.models import RewriteList
+from console.engine.models import RewriteList, RewriteSession
 from console.engine_errors import log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.forms.rewrites import AnswersForm, NewRewriteForm, RewriteFilterForm
@@ -74,7 +78,7 @@ from console.rewrites import (
     session_view,
     session_write_flash,
 )
-from console.views.story_pages import StoryPageContext, story_page
+from console.views.story_pages import StoryBuild, StoryPageContext, story_page
 
 INDEX_TEMPLATE = "console/rewrites/index.html"
 SESSION_TEMPLATE = "console/rewrites/session.html"
@@ -254,40 +258,88 @@ def rewrites(request: HttpRequest, story_id: str) -> HttpResponse:
 # --- the session page ----------------------------------------------------------------------------
 
 
-@require_safe
-def rewrite(request: HttpRequest, story_id: str, session_id: str) -> HttpResponse:
-    """``stories:rewrite``: one rewrite session through E3's partial (#297). No write."""
+def session_context(
+    ctx: StoryPageContext,
+    session: RewriteSession,
+    *,
+    answers_form: AnswersForm | None = None,
+    key: str | None = None,
+    notices: Sequence[str] = (),
+    answer_errors: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The session page's context for ``session``: E3's view, the answers form (an unbound
+    ``AnswersForm`` while ``awaiting_answers`` unless the caller passes its own; none in any
+    other state), the key (fresh unless given), and #298's notices and answer errors."""
+    from console.views.rewrite_answers import REJECTED_QUESTION  # it imports this module
+
+    names = cast_names(ctx.story.cast if ctx.story is not None else None)
+    view = session_view(session, ctx.story_id, names)
+    awaiting = view.state == AWAITING_ANSWERS
+    if awaiting and answers_form is None:
+        answers_form = AnswersForm(view.questions)
+    return {
+        "session_view": view,
+        "answers_form": answers_form if awaiting else None,
+        "idempotency_key": key or new_ulid(),
+        "base_revision": session.base_revision,
+        "session_notices": tuple(notices),
+        "answer_errors": answer_errors,
+        "rejected_question_text": REJECTED_QUESTION if awaiting else "",
+    }
+
+
+def read_session(
+    ctx: StoryPageContext, session_id: str
+) -> RewriteSession | tuple[EngineClientError, dict[str, Any]]:
+    """One ``get_rewrite``: the session, or the failure and the context showing it (404
+    ``rewrite_session_not_found`` as E5's text, anything else #43's panel). A held or importing
+    answer is raised for its middleware."""
+    try:
+        return ctx.client.get_rewrite(ctx.story_id, session_id)
+    except EngineClientError as exc:
+        if _passed_on(exc):
+            raise
+        log_engine_error(ctx.request, exc)
+        if isinstance(exc, EngineError) and exc.code == NOT_FOUND_CODE:
+            return exc, {"session_not_found": NOT_FOUND_TEXT}
+        return exc, {"session_error": panel_for(exc)}
+
+
+def render_session_page(
+    request: HttpRequest, story_id: str, session_id: str, build: StoryBuild
+) -> HttpResponse:
+    """The session page through #296's frame, Rewrite current: ``build``'s context over the
+    page's links; a context carrying ``session_not_found`` answers 404 (#297). Shared by the
+    session page and #298's answers POST."""
     not_found: list[bool] = []
 
-    def build(ctx: StoryPageContext) -> dict[str, Any]:
-        context: dict[str, Any] = {
+    def framed(ctx: StoryPageContext) -> Mapping[str, Any] | HttpResponse:
+        built = build(ctx)
+        if isinstance(built, HttpResponse):
+            return built
+        if built.get("session_not_found"):
+            not_found.append(True)
+        return {
             "session_id": session_id,
             "rewrites_url": rewrites_url(story_id),
-            "session_reload_url": request.path,
+            "session_reload_url": rewrite_session_url(story_id, session_id) or request.path,
+            **built,
         }
-        try:
-            session = ctx.client.get_rewrite(story_id, session_id)
-        except EngineClientError as exc:
-            if _passed_on(exc):
-                raise
-            log_engine_error(request, exc)
-            if isinstance(exc, EngineError) and exc.code == NOT_FOUND_CODE:
-                not_found.append(True)
-                context["session_not_found"] = NOT_FOUND_TEXT
-            else:
-                context["session_error"] = panel_for(exc)
-            return context
-        names = cast_names(ctx.story.cast if ctx.story is not None else None)
-        view = session_view(session, story_id, names)
-        context.update(
-            session_view=view,
-            answers_form=AnswersForm(view.questions) if view.state == AWAITING_ANSWERS else None,
-            idempotency_key=new_ulid(),
-            base_revision=session.base_revision,
-        )
-        return context
 
-    response = story_page(request, story_id, SESSION_TEMPLATE, build, current=CURRENT)
+    response = story_page(request, story_id, SESSION_TEMPLATE, framed, current=CURRENT)
     if not_found:
         response.status_code = 404
     return response
+
+
+@require_safe
+def rewrite(request: HttpRequest, story_id: str, session_id: str) -> HttpResponse:
+    """``stories:rewrite``: one rewrite session through E3's partial (#297). No write."""
+
+    def build(ctx: StoryPageContext) -> dict[str, Any]:
+        read = read_session(ctx, session_id)
+        if isinstance(read, tuple):
+            return read[1]
+        return session_context(ctx, read)
+
+    return render_session_page(request, story_id, session_id, build)

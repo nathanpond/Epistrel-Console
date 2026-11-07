@@ -54,6 +54,7 @@ from console.views import (
     providers,
     rating_suggestion,
     ratings,
+    rewrite_answers,
     rewrites,
     status,
     stories,
@@ -106,6 +107,12 @@ story_patterns = (
             "<str:story_id>/rewrites/<ulid:session_id>/",
             rewrites.rewrite,
             name="rewrite",
+        ),
+        # #298: the session's questions form posts here (POST only).
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/answers/",
+            rewrite_answers.answers,
+            name="rewrite-answers",
         ),
         # #195: one turn's perception trace, reconstructed per character.
         path(
