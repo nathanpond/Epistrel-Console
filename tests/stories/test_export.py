@@ -124,7 +124,8 @@ def test_get_makes_no_engine_write(client: Client, engine: FakeEngine) -> None:
     assert response.status_code == 200
     assert calls(engine) == [("GET", STORY_READ), ("GET", CONFIG_READ)]
     html = text(response)
-    assert export_views.SNAPSHOT_LINE in html
+    before, _, after = export_views.SNAPSHOT_LINE.partition("an import")
+    assert f'{before}<a class="import-link" href="/engine/import/">an import</a>{after}' in html
     assert '<button type="submit">Export now</button>' in html
     assert "No exports from this Console yet." in html
     assert export_views.NOT_LISTED_NOTE in html
@@ -134,14 +135,16 @@ def test_get_makes_no_engine_write(client: Client, engine: FakeEngine) -> None:
 
 
 def test_the_snapshot_line_links_an_import_only_while_registered(
-    client: Client, engine: FakeEngine
+    client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """#320 registered ``engine:import``, so the real urlconf links it; the D19 half stands in
+    for an unregistered name."""
+    before, _, after = export_views.SNAPSHOT_LINE.partition("an import")
+    linked = text(client.get(URL))
+    assert f'{before}<a class="import-link" href="/engine/import/">an import</a>{after}' in linked
+    monkeypatch.setattr(export_views, "_reversed", lambda name, *args: None)
     html = text(client.get(URL))
     assert 'class="snapshot-line">' + export_views.SNAPSHOT_LINE + "</p>" in html  # D19: plain
-    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
-        linked = text(client.get(URL))
-    before, _, after = export_views.SNAPSHOT_LINE.partition("an import")
-    assert f'{before}<a class="import-link" href="/engine/import/">an import</a>{after}' in linked
 
 
 def test_recent_exports_from_the_log(client: Client, engine: FakeEngine) -> None:

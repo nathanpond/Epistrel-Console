@@ -26,7 +26,6 @@ ARGS: dict[str, list[str]] = {
     "inspect:outbox": [STORY],
     "inspect:resolve-listing": [STORY, "listing-1"],
     "inspect:resolved": [STORY],
-    "engine:import": [],
     "engine:import-job": [ULID],
     "engine:certifications": [],
 }

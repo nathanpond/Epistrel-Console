@@ -6,9 +6,11 @@ Run by ci.yml's engine-smoke job against the Engine ``edge`` image; locally, see
 
 import re
 import time
+from typing import Any
 from uuid import uuid4
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 
 from console.engine.client import ENGINE_PROFILES_PAGE, EngineClient, EngineError
@@ -905,4 +907,66 @@ def test_export_through_the_console_live(url: str, key: str, operator_client: Cl
         assert len(body) == job.size
         assert url not in download["Content-Disposition"]
     finally:
+        _delete_when_idle(client, story)
+
+
+IMPORT_ENDED = frozenset({"ready", "refused", "failed"})
+IMPORT_STARTED = re.compile(r"Import started: job <code>([0-9A-Z]{26})</code>")
+
+
+@pytest.mark.engine_auth
+def test_import_through_the_console_live(
+    url: str, key: str, operator_client: Client, settings: Any, tmp_path: Any
+) -> None:
+    """#320 (E24): export the smoke's story (#319's helper), then import its bundle through the
+    Engine panel's Import page with "Forward only"; when the Engine warns, post "Import anyway".
+    The Engine answers 202 (before #321 the page shows "Import started: job …"); the job is
+    polled through ``import_status`` once a second (120 s cap) until it ends. **Complement:**
+    both stories are deleted in a ``finally``."""
+    settings.DATA_DIR = tmp_path
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    created: list[str] = []
+    try:
+        job_id = _export_ready(client, story)
+        with client.open_export_bundle(job_id) as bundle:
+            assert bundle.status == 200
+            content = b"".join(bundle.iter_bytes())
+        upload = SimpleUploadedFile("smoke.epistrel.tgz", content, content_type="application/gzip")
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            page = operator_client.post(
+                "/engine/import/",
+                {"file": upload, "upgrade_mode": "forward_only", "idempotency_key": new_ulid()},
+            )
+            assert page.status_code == 200, page.content.decode()
+            html = page.content.decode()
+            if "confirm_token" in html:  # the impact warned: confirm it
+                token = re.search(r'name="confirm_token" value="([^"]+)"', html)
+                assert token is not None
+                page = operator_client.post(
+                    "/engine/import/",
+                    {"confirm_token": token.group(1), "idempotency_key": new_ulid()},
+                )
+                html = page.content.decode()
+            if page.status_code == 303:  # #321 registered the job page
+                found = re.search(r"/engine/import/([0-9A-Z]{26})/", page["Location"])
+            else:
+                found = IMPORT_STARTED.search(html)
+            assert found is not None, html
+        import_job = found.group(1)
+        deadline = time.monotonic() + 120.0
+        while True:
+            job = client.import_status(import_job)
+            if job.story_id:
+                created.append(job.story_id)
+            if job.status in IMPORT_ENDED:
+                break
+            assert time.monotonic() < deadline, f"import still {job.status} after 120 s"
+            time.sleep(1.0)
+        assert job.status == "ready", (job.status, job.error)
+        assert job.story_id is not None
+        assert job.story_id != story  # always a new story
+    finally:
+        for made in dict.fromkeys(created):
+            _delete_when_idle(client, made)
         _delete_when_idle(client, story)

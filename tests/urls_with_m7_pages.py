@@ -13,8 +13,8 @@ keeps working as owners land.
 (the linked cases of its footer and amendment links render the real page here). #302's
 ``stories:amendments``/``stories:amendment`` stubs went the same way, as did #313's
 ``engine:certification`` and ``engine:certification-run`` and #315's
-``engine:certification-invalidate`` and ``engine:certification-import``, and #319's three
-``stories:export*`` stubs.
+``engine:certification-invalidate`` and ``engine:certification-import``, #319's three
+``stories:export*`` stubs and #320's ``engine:import``.
 
 **The frames (#296).** ``stories:rewrites`` renders through
 :func:`console.views.story_pages.story_page` and ``engine:certifications`` through
@@ -99,7 +99,6 @@ INSPECT_STUBS = [
     path("effects/reconciliation/resolved/", stub, name="resolved"),  # #326
 ]
 ENGINE_STUBS = [
-    path("import/", stub, name="import"),  # #320
     path("import/<ulid:job_id>/", stub, name="import-job"),  # #321
     # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
     # list under this urlconf only (#313's real detail and run pages are served here).
@@ -130,7 +129,6 @@ STUB_NAMES = frozenset(
 # PR that registers them; the complement test asserts only these.
 NOT_YET_REGISTERED = frozenset(
     {
-        "engine:import",
         "engine:import-job",
         "inspect:outbox",
         "inspect:resolve-listing",

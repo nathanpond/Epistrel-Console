@@ -3706,3 +3706,36 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #322 live check on the shared `n8-291-smoke` stack (127.0.0.1:18000): an untouched form over the live settings patches `{}`, `rewrite_max_open_sessions` 5 → 3 patches exactly that (config revision 43 → 44), 0 is a local field error, then restored to 5 (revision 45). Stack left running.
   **Why:** confirms the live Engine's values round-trip through the form. Cost if wrong: none.
   **Issue:** #322
+- **Decision:** A confirm whose spool is gone, and an expired or tampered confirm token, both flash (`IMPORT_SPOOL_EXPIRED` / `EXPIRED_TEXT`, `messages.error`) and answer 303 to `engine:import`. Neither renders the form in place. An expired token that still names a spool deletes that spool (it is read again with no age check, only to find the name).
+  **Why:** The AC asks for zero Engine calls, and rendering the form needs the three choice reads. The redirect's GET makes those reads, and it also runs the sweep. Cost if wrong: one extra round trip.
+  **Issue:** #320
+- **Decision:** An unknown outcome at the confirm (a timeout, transport failure or `bad_response`) still deletes the spool, as the AC's "whatever the answer" says. It then re-renders the form with #43's panel, the token's metadata as initial values and the posted key kept. E21's "same confirm page, same token" doesn't apply, because a resubmitted token would find no file. A refusal at the confirm stage re-renders the same way, with a fresh key and no keep box.
+  **Why:** The story's specific AC outranks E21's general rule. Keeping the key means re-choosing the file and resubmitting replays a 202 the Engine may already have answered. Cost if wrong: the operator chooses the file again.
+  **Issue:** #320
+- **Decision:** When either profile read fails (`?preset=true` or the full list), the profile field degrades to its blank choice alone with "The profiles could not be read". There is no partial list from whichever read succeeded. Profile choices come from the first page of each read (`limit=50`), with no cursor following.
+  **Why:** The AC says "a failed … profiles read degrades its field to … alone". A half-read list would hide profiles without saying so. One page matches the AC's three named reads. Cost if wrong: a deployment with more than 50 custom profiles doesn't offer the oldest ones (blank still works).
+  **Issue:** #320
+- **Decision:** Wording calls the story left open:
+  - The 413 value goes inside the limit's parenthesis: "accepts (`<limit>` (2.0 KB)) — nothing was created". The limit `<code>` is the settings link.
+  - The 413 is placed on `file`.
+  - A `corrupt_bundle` with no reason reads "the Engine gave no reason".
+  - `CORRUPT_REASON_TEXT` has my own short lower-case clauses, with `unreadable_archive` = the Demo's "the archive couldn't be read" and `erasure_race` as the story wrote it.
+  - A list-valued `details.supported` is ", "-joined.
+  - The confirm's facts list File, Owner, Name, Content rating, Engine profile and "Earlier turns" (E14's field label), with the size through `filesizeformat`.
+  - The held line above the report is my own: "The Engine held this import: …".
+  - Recent imports show the full job id. The outcome goes through the `humanised` filter with the raw value in `title`, as #319's recent exports do.
+  **Why:** The story fixes only the texts it quotes, and these are the smallest readable choices.
+  **Issue:** #320
+- **Decision:** Refusals render in the template, on the field `FormRefusal.field` names (`<span class="refusal">` inside that field's `div.field`), not through `form.add_error`. This lets a refusal carry markup (the settings link, an entry's `<code>`) and a "Closest: …" note. The fields render as `<div class="field">`, because the radios are `<div>`s. With a kept spool, `file` renders without `required`, so the browser lets the operator submit with no new file.
+  **Why:** `add_error` would escape the links. Cost if wrong: a refusal isn't inside Django's `errorlist`.
+  **Issue:** #320
+- **Decision:** Rule 3: the Engine's `POST /admin/stories/import` schema doesn't declare its 413 `bundle_too_large`. I filed nathanpond/Epistrel#786 (filing upstream was allowed this time) and added the line to E18's gap list in `console/rewrites.py`. The tests serve the 413 through `respond_undeclared`.
+  **Why:** The fake refuses an undeclared status through `respond()`. This is E18's "said once" rule.
+  **Issue:** #320
+- **Decision:** Registering `engine:import` moved these goldens:
+  - the real-urlconf Engine nav, which now reads Import a bundle · Certifications · Eval runs: `test_providers.REGISTERED_ENGINE_NAV`, `test_health_detail.test_the_page_links_the_re_embed_run` and `test_nav.test_engine_links_show_only_the_registered_rows_under_the_real_urlconf`;
+  - #319's snapshot line, which now links "an import" under the real urlconf (`test_export.test_get_makes_no_engine_write`). `test_the_snapshot_line_links_an_import_only_while_registered` keeps a D19 plain half by patching `exports._reversed` to `None`.
+
+  The `engine:import` stub, its `NOT_YET_REGISTERED` name and its `test_m7_stub_urlconf.ARGS` row are gone. The live case `test_import_through_the_console_live` exported, imported (202) and deleted both stories on `n8-291-smoke` at 127.0.0.1:18000, which was left running.
+  **Why:** This is E24's regenerate-in-the-registering-story rule.
+  **Issue:** #320

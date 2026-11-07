@@ -24,6 +24,7 @@ from console.views import (
     exports,
     feedback,
     history,
+    imports,
     inspect,
     inspect_beliefs,
     inspect_canon,
@@ -605,6 +606,8 @@ engine_patterns = (
         # #316: the Engine's eval runs (committed reports and certification runs) and one run.
         path("evals/", eval_runs.eval_runs, name="eval-runs"),
         path("evals/<str:run_id>/", eval_runs.eval_run, name="eval-run"),
+        # #320: import a bundle as a new story (form, impact confirm, refusals).
+        path("import/", imports.import_page, name="import"),
     ],
     "engine",
 )

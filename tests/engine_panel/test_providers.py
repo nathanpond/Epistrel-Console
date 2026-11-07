@@ -385,6 +385,7 @@ ENGINE_NAV = (
 # The registered M7 Engine rows (#313: Certifications, #316: Eval runs); #320 adds its own.
 REGISTERED_ENGINE_NAV = (
     ' · <span class="engine-pages" role="navigation" aria-label="Engine pages">'
+    '<a href="/engine/import/">Import a bundle</a> · '
     '<a href="/engine/certifications/">Certifications</a> · '
     '<a href="/engine/evals/">Eval runs</a></span>'
 )
@@ -397,7 +398,7 @@ def home_link_line(html: str) -> str:
 
 def test_engine_home_links(operator_client: Client, engine: FakeEngine) -> None:
     """E11 (#296): the link line is main's plus the registered M7 Engine rows after Providers
-    (#313 regenerated it: Certifications)."""
+    (#313 regenerated it: Certifications; #316 Eval runs; #320 Import a bundle)."""
     engine.respond("GET", "/stories", 200, json=engine_fixture("list_stories"))
     html = operator_client.get("/engine/").content.decode()
     providers = '<a href="/engine/providers/">Providers</a>'

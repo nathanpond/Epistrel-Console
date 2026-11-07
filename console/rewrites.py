@@ -141,6 +141,8 @@ texts; a later story passes its own verb and texts). #298 adds
   as #43's panel until the Engine fixes it; the live test is ``xfail(strict=True)`` on #783.
 - **The export bundle route** declares no 409/410 in its schema (Console #333; the tests serve
   the 410 undeclared).
+- **The import route** declares no 413 ``bundle_too_large`` in its schema
+  (nathanpond/Epistrel#786, found by #320; the tests serve it undeclared).
 - **The edge image sets no bundle directory**, and an export whose job fails stays ``running``
   (Console #334); this matters to the export and import job pages' polling (#319, #321).
 """
