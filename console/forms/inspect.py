@@ -1076,8 +1076,6 @@ class DivergencesForm(forms.Form):
             value = bound.get(name)
             if isinstance(value, str):
                 bound[name] = value.strip().upper()
-        kind = bound.get("kind")
-        bound["kind"] = (kind.strip().lower() if isinstance(kind, str) else "") or FIRST_ORDER
         self.cast = cast
         self.cast_ids: tuple[str, ...] = tuple(c.id for c in cast or ())
         options: list[tuple[str, str]] = [("", ANY_SPEAKER)]
