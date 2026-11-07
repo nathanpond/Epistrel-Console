@@ -38,7 +38,8 @@ page, #298's answers, #299's apply/cancel and stale, #305's line edit, #300's ro
   in ``title``), ``kind_text`` from :data:`KIND_TEXT`, the instruction verbatim (or "—"), the
   pipeline humanised, ``expires_at`` through ``engine_time`` plus ``expires_text`` ("expires in
   Nm", "expires in Hh Mm", "expires in <1m"; empty once past or closed), the stale count as
-  :data:`STALE_COUNT_TEXT` when > 0, ``last_error`` as ``(code, message, more)``, and the result
+  :data:`STALE_COUNT_TEXT` when > 0, ``last_error`` as ``(code, detail, more)`` (a message-less
+  error's detail is its humanised ``reasons``, else empty and the code shows alone), and the result
   and target amendments linked through :func:`amendment_url` (plain ``<code>`` while
   unregistered; the target labelled "Undoes" / "Redoes" by kind). ``held_render`` reads "Held
   reply (shown once applied)" with the reply quoted and "N model call(s) to replay".
@@ -909,11 +910,19 @@ def _report_more(report: Mapping[str, Any] | None) -> tuple[str, str] | None:
 
 
 def _last_error(error: Mapping[str, Any] | None) -> tuple[str, str, str] | None:
+    """``(code, detail, more)``: the humanised code ("—" for none); the detail is the Engine's
+    ``message``, else (#350) its ``reasons`` read as E5's stale sentence reads them (each kind
+    C3-humanised, de-duplicated, "; "-joined), else "" (the partial then shows the code alone,
+    never "<code>: —"); the raw JSON for More."""
     if error is None:
         return None
     code = _text(error.get("code"))
     message = _text(error.get("message"))
-    return (humanised(code) if code else EMPTY, message or EMPTY, more_json(error))
+    if message is None:
+        reasons = error.get("reasons")
+        kinds = _stale_kinds(reasons) if isinstance(reasons, list) else []
+        message = "; ".join(kind for kind, _ in kinds)
+    return (humanised(code) if code else EMPTY, message, more_json(error))
 
 
 def _actions(session: RewriteSession, story_id: str) -> tuple[SessionAction, ...]:

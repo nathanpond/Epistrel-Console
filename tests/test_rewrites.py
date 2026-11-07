@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import pytest
+from django.template.loader import render_to_string
 from django.test import override_settings
 
 from console.engine.client import EngineError, EngineUnreachable
@@ -308,6 +309,54 @@ def test_the_stale_count_and_last_error() -> None:
     assert shown.last_error is not None
     assert shown.last_error[:2] == ("Model timeout", "The planner timed out")
     assert '"model_timeout"' in shown.last_error[2]
+
+
+def state_html(shown: Any) -> str:
+    return render_to_string("console/rewrites/_state.html", {"view": shown})
+
+
+STALE_ERROR_REASONS = [
+    {"kind": "record_changed", "refs": [{"table": "events", "id": "01JM7EV0000000000000000001"}]},
+    {"kind": "state_changed", "refs": []},
+    {"kind": "record_changed", "refs": []},
+]
+
+
+def test_a_message_less_last_error_reads_its_reasons() -> None:
+    """#350: the Engine's stale apply stores ``{code, reasons, at}`` with no message; the line
+    reads the reasons as E5 does (humanised, de-duplicated, Engine order), never ": —"."""
+    error = {"code": "rewrite_stale", "reasons": STALE_ERROR_REASONS, "at": "2026-11-07"}
+    shown = view("rewrite_open", last_error=error)
+    assert shown.last_error is not None
+    assert shown.last_error[:2] == ("Rewrite stale", "Record changed; State changed")
+    assert '"record_changed"' in shown.last_error[2]
+    html = state_html(shown)
+    assert '<p class="warning">Rewrite stale: Record changed; State changed</p>' in html
+    assert "Rewrite stale: —" not in html
+
+
+def test_a_message_less_last_error_without_reasons_reads_the_code_alone() -> None:
+    """#350's complement: no message and no reasons is the humanised code, with no dash."""
+    for error in (
+        {"code": "rewrite_stale"},
+        {"code": "rewrite_stale", "reasons": []},
+        {"code": "rewrite_stale", "reasons": "not a list"},
+    ):
+        shown = view("rewrite_open", last_error=error)
+        assert shown.last_error is not None
+        assert shown.last_error[:2] == ("Rewrite stale", "")
+        html = state_html(shown)
+        assert '<p class="warning">Rewrite stale</p>' in html
+        assert "Rewrite stale:" not in html
+
+
+def test_a_last_error_with_a_message_is_unchanged() -> None:
+    """#350: a message wins over reasons, and renders "<code>: <message>" as before."""
+    error = {"code": "provider_timeout", "message": "the model timed out", "reasons": ["x"]}
+    shown = view("rewrite_open", last_error=error)
+    assert shown.last_error is not None
+    assert shown.last_error[:2] == ("Provider timeout", "the model timed out")
+    assert '<p class="warning">Provider timeout: the model timed out</p>' in state_html(shown)
 
 
 def test_the_modes_read_back() -> None:
