@@ -121,6 +121,7 @@ from console.inspect import (
 )
 from console.models import EngineOperation
 from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
+from console.nav import story_links
 from console.notices import (
     NoticeCards,
     notice_cards,
@@ -1298,6 +1299,7 @@ class PlayPage:
         return {
             "config_badge": self.config_badge,
             "pause_banner": self.pause_banner,
+            "page_links": story_links(self.story.id, None),  # E11 (#296): no Engine read
             "rating_url": reverse("stories:rating", args=[self.story.id]),
             "timeline": self.header,
             "fork_banner": self.fork_banner,

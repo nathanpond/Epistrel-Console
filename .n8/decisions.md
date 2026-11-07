@@ -3211,3 +3211,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** `UpgradeModeForm` exposes `.mode()` and pre-selects `initial_mode`. Its `form=` attribute is set on the field's widget per instance. `upgrade_mode_text` shows a non-string value with `str()`. `preset_order` is generic over anything with `id`/`name`/`preset` (`Profiled`), and sorts unknown presets by `(name, id)`.
   **Why:** E13/E14. Cost if wrong: none.
   **Issue:** #295
+- **Decision:** `story_page` re-raises a held 503 or importing 409 from the effective-config read too, not only the story read. Neither frame read nor `build` catches them, so `HeldStoryMiddleware`/`ImportingStoryMiddleware` render them (no double log: the frame doesn't log a re-raised error). A 404 story read renders the page's own template with `story_not_found=True`, status 404, no story link line and no nav; the header line and `<h2>` label stay.
+  **Why:** AC (held/importing "reach" the middlewares) plus the discretion's 404 rule. Hiding the Play/History/… links on not-found avoids links to a missing story. Cost if wrong: one template condition.
+  **Issue:** #296
+- **Decision:** `page_label` precedence: the `label=` keyword, else the marked nav row's label (through `PAGE_PARENT`), else the URL name humanised (`console.views.story_pages.page_label`). The `<h2>` label also renders on Engine-panel pages (`engine/page_base.html`), which the AC names only for story pages. The story header's status is `console.forms.stories.status_label(story.status)` precomputed as `status_text`, with the raw value in `title`.
+  **Why:** E11 sim refinements (detail pages pass `label=` though they mark a list row). The Engine `<h2>` keeps the two frames alike. Cost if wrong: a template line.
+  **Issue:** #296
+- **Decision:** `engine_page`'s held dict reuses `console.held._ledger_url` (imported, not copied), `held_text` and `retry_seconds`. `_held.html` gets `delete_url=""`. Retry is the full path on GET/HEAD, else `request.path`.
+  **Why:** Discretion (the `render_held` logic, storyless, D17). Cost if wrong: none.
+  **Issue:** #296
+- **Decision:** In `tests/golden.py::normalise_html`, a whitespace run between tags collapses to nothing (`>\s+<` → `><`). The CSRF placeholder covers both the `csrfmiddlewaretoken` input and `base.html`'s `X-CSRFToken` hx-header. The idempotency placeholder replaces only a ULID-shaped value of an `idempotency_key` input, so a ULID elsewhere is kept.
+  **Why:** E24. The narrowest rule that makes two renders equal. Cost if wrong: later goldens may need a placeholder widened.
+  **Issue:** #296
+- **Decision:** `tests/urls_with_m7_pages.py`'s frame stubs render `page_base.html` directly, with no test child template. `recording_build` appends each context to `BUILT` and calls `BUILD[0]` when a test set one (a one-element list), else returns `{}`. `tests/test_story_pages.py`'s autouse fixture clears both. The Demo's Play-page stub check lives in `tests/play/test_play_page.py` (the complement), not in `test_story_pages.py`. There `-k nav` covers the frame's link line and the Engine home.
+  **Why:** Discretion (a module-level recording build). No templates dir for tests exists. Cost if wrong: none.
+  **Issue:** #296
+- **Decision:** The pause-banner test's story read uses `pause.progress {done, total}`, not `{chunks_done, chunks_total}`. The recorded `StoryPauseProgressBody` rejects the chunk-only shape under `FakeEngine.respond`'s validation. The banner text is the same ("(2/7 chunks)") through `chunk_counts`' fallback.
+  **Why:** The fake validates against the recording. Cost if wrong: none (E10's suspected `pause.progress` mismatch is #295's note).
+  **Issue:** #296

@@ -53,6 +53,7 @@ from console.forms.deployment import DeploymentSettingsForm, profile_default_row
 from console.forms.stories import IMPORTING_STATUS
 from console.ids import new_ulid
 from console.models import EngineOperation
+from console.nav import engine_links
 from console.operation_log import REBUILD_KIND, queued_job_id, queued_job_text
 from console.world import ENGINE_NOTHING_CHANGED, nothing_changed
 
@@ -190,6 +191,7 @@ def engine_home(request: HttpRequest) -> HttpResponse:
         "stories": stories,
         "stories_error": stories_error,
         "story_names": signing.dumps(names, salt=NAMES_SALT, compress=True),
+        "engine_page_links": engine_links(None),  # E11 (#296): no Engine read
     }
     return render(request, "console/engine/home.html", context)
 

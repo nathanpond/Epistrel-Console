@@ -251,7 +251,8 @@ inspect_patterns = (
         # EFFECTS_SECTIONS): World's States world/states/ (#242), Proposed States
         # world/states/proposals/ (#266), Clock world/clock/ (#243), Scheduled events
         # world/scheduled-events/ (#244), External values world/external-values/ (#248); Effects'
-        # Reconciliation effects/reconciliation/ (#249) and Effects trail effects/trail/ (#255).
+        # Reconciliation effects/reconciliation/ (#249), Outbox effects/outbox/ (#325, E12) and
+        # Effects trail effects/trail/ (#255).
         # Per-State pages live under the singular world/state/<name>/… (#242, #251, #265), so the
         # fixed world/states/new/ (#261) and world/states/proposals/ never shadow a State named
         # "new" or "proposals".

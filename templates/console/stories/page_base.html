@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% comment %}
+E11's story-page frame (#296, console/views/story_pages.py story_page). A page extends this and
+fills {% block story_page %}. The header line (id, status, timeline revision), the link line with
+the story nav, the page label, then #43's panel (page_error: an error escaping build) or the page
+block. Convention 10's not-found line (story_not_found) replaces the link line and the block. The
+pause banner (pause_banner) is base.html's, above the header.
+{% endcomment %}
+{% block title %}{{ page_label }} · {{ story_name }}{% endblock %}
+{% block heading %}{{ story_name }}{% endblock %}
+{% block content %}
+<p class="story-header"><code>{{ story_id }}</code>{% if story %} · <span class="status" title="{{ story.status }}">{{ status_text }}</span> · Timeline revision {{ story.timeline_revision }}{% endif %}</p>
+{% if story_error %}{% include "console/_engine_error.html" with engine_error=story_error %}{% endif %}
+{% if not story_not_found %}<p class="story-links"><a href="{% url 'stories:detail' story_id %}">Play</a> · <a class="history-link" href="{% url 'stories:history' story_id %}">History</a> · <a class="inspect-link" href="{% url 'inspect:overview' story_id %}">Inspect</a> · <a class="settings-link" href="{% url 'stories:settings' story_id %}">Settings</a> · <a class="config-tab" href="{% url 'stories:config' story_id %}">Config</a>{% include "console/stories/_page_nav.html" with nav_label="Story pages" %}</p>{% endif %}
+<h2>{{ page_label }}</h2>
+{% if story_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
+{% elif page_error %}{% include "console/_engine_error.html" with engine_error=page_error %}
+{% else %}{% block story_page %}{% endblock %}{% endif %}
+{% endblock %}

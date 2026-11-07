@@ -11,22 +11,54 @@ keeps working as owners land.
 **Page stories add a stub here, and never create another stub urlconf.** #292's test-local
 ``stories:rewrite`` stub is folded in.
 
+**The frames (#296).** ``stories:rewrites`` renders through
+:func:`console.views.story_pages.story_page` and ``engine:certifications`` through
+:func:`~console.views.story_pages.engine_page`, both with :func:`recording_build`: it appends its
+context to :data:`BUILT` and answers :data:`BUILD`'s callable when a test set one, else ``{}``
+(``tests/test_story_pages.py``'s autouse fixture clears both). Every other stub answers "stub".
+
 **E6's ``NOT_YET_REGISTERED`` rule.** The complement test ("under the real urlconf none of
 these reverses") asserts only the names in :data:`NOT_YET_REGISTERED`. Each owner removes its
 own names from that set in the PR that registers them, so a parallel story's CI never goes red
 for a name it doesn't own.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from django.http import HttpRequest, HttpResponse
 from django.urls import URLPattern, URLResolver, include, path
 
+from console.views.story_pages import (
+    EnginePageContext,
+    StoryPageContext,
+    engine_page,
+    story_page,
+)
 from epistrel_console import urls as real
+
+STORY_PAGE_TEMPLATE = "console/stories/page_base.html"
+ENGINE_PAGE_TEMPLATE = "console/engine/page_base.html"
+Built = Callable[[Any], Mapping[str, Any] | HttpResponse]
+BUILT: list[StoryPageContext | EnginePageContext] = []
+BUILD: list[Built] = []  # at most one: the test's build behind recording_build
 
 
 def stub(request: HttpRequest, **kwargs: str) -> HttpResponse:
     return HttpResponse("stub")
+
+
+def recording_build(ctx: StoryPageContext | EnginePageContext) -> Mapping[str, Any] | HttpResponse:
+    BUILT.append(ctx)
+    return BUILD[0](ctx) if BUILD else {}
+
+
+def rewrites_frame(request: HttpRequest, story_id: str) -> HttpResponse:
+    return story_page(request, story_id, STORY_PAGE_TEMPLATE, recording_build)
+
+
+def certifications_frame(request: HttpRequest) -> HttpResponse:
+    return engine_page(request, ENGINE_PAGE_TEMPLATE, recording_build)
 
 
 def _rebuilt(
@@ -39,7 +71,7 @@ def _rebuilt(
 
 S = "<str:story_id>/"
 STORY_STUBS = [
-    path(f"{S}rewrites/", stub, name="rewrites"),  # #297
+    path(f"{S}rewrites/", rewrites_frame, name="rewrites"),  # #297 (#296's frame)
     path(f"{S}rewrites/<ulid:session_id>/", stub, name="rewrite"),  # #297 (#292's stub)
     path(f"{S}rewrites/<ulid:session_id>/answers/", stub, name="rewrite-answers"),  # #298
     path(f"{S}rewrites/<ulid:session_id>/apply/", stub, name="rewrite-apply"),  # #299
@@ -71,7 +103,7 @@ INSPECT_STUBS = [
 ENGINE_STUBS = [
     path("import/", stub, name="import"),  # #320
     path("import/<ulid:job_id>/", stub, name="import-job"),  # #321
-    path("certifications/", stub, name="certifications"),  # #313
+    path("certifications/", certifications_frame, name="certifications"),  # #313 (#296's frame)
     path("certifications/<str:certification_id>/", stub, name="certification"),  # #313
     path(
         "certifications/<str:certification_id>/invalidate/",

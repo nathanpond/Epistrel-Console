@@ -72,6 +72,7 @@ from console.history import (
     turn_label,
 )
 from console.inspect import is_structured_pipeline
+from console.nav import story_links
 from console.notices import notice_cards, overridden_notices
 from console.operation_log import note_engine_record
 from console.perception import perception_url, turn_links_perception
@@ -587,5 +588,6 @@ def history(request: HttpRequest, story_id: str) -> HttpResponse:
         "archived_note": ARCHIVED_NOTE if story.status == "archived" else "",
         "paused_note": PAUSED_NOTE if is_paused(story) else "",
         "pause_banner": pause_banner(story),  # #80
+        "page_links": story_links(story.id, None),  # E11 (#296): no Engine read
     }
     return render(request, PAGE_TEMPLATE, context)

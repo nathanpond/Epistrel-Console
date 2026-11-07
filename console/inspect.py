@@ -1032,6 +1032,9 @@ WORLD_SECTIONS: tuple[Section, ...] = (
 )
 EFFECTS_SECTIONS: tuple[Section, ...] = (
     ("inspect:reconciliation", "Reconciliation", None, None),  # #249
+    # E12 (#296): ungated (the Engine serves the outbox read under every configuration); #325
+    # registers its URL, and D3's rule leaves the row out until then.
+    ("inspect:outbox", "Outbox", None, None),  # #325
     ("inspect:effects-trail", "Effects trail", STATES, WORLD_ON),  # #255
 )
 TAB_SECTIONS: Mapping[Tab, tuple[Section, ...]] = {

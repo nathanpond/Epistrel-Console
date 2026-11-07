@@ -130,10 +130,30 @@ def test_section_registries_are_d3s_table() -> None:
     )
     assert EFFECTS_SECTIONS == (
         ("inspect:reconciliation", "Reconciliation", None, None),
+        ("inspect:outbox", "Outbox", None, None),  # E12 (#296; #325 registers it)
         ("inspect:effects-trail", "Effects trail", "states", "on"),
     )
     with pytest.raises(KeyError):
         sections(Tab.KNOWLEDGE, STORY, None, None)
+
+
+def test_effects_sections_order(operator_client: Client, engine: FakeEngine) -> None:
+    """E12 (#296): with ``inspect:outbox`` stubbed, Reconciliation, Outbox, Effects trail.
+    **Complement:** under the real urlconf the Effects sub-navigation is unchanged
+    (Reconciliation, Effects trail) and the landing still redirects to Reconciliation."""
+    effective = structured_v3()["effective"]
+    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
+        stubbed = sections(Tab.EFFECTS, STORY, None, effective)
+    assert [link.label for link in stubbed] == ["Reconciliation", "Outbox", "Effects trail"]
+    assert stubbed[1].url == f"{EFFECTS}outbox/"
+    assert stubbed[1].unavailable is None  # ungated
+    with override_settings(ROOT_URLCONF="epistrel_console.urls"):
+        real = sections(Tab.EFFECTS, STORY, None, effective)
+        answer_config(engine, structured_v3())
+        landing = operator_client.get(EFFECTS)
+    assert [link.label for link in real] == ["Reconciliation", "Effects trail"]
+    assert landing.status_code == 302
+    assert landing["Location"] == f"{EFFECTS}reconciliation/"
 
 
 # --- the landing ----------------------------------------------------------------------------------
