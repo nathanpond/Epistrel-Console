@@ -38,6 +38,50 @@ FP_BEFORE = "a" * 64
 FP_AFTER = "b" * 64
 
 
+FULL_FLOORS = [
+    "NFR-QUAL-2.false_contradiction",
+    "NFR-QUAL-2.false_support",
+    "NFR-QUAL-4.recall",
+    "NFR-QUAL-5.valid_after_retry",
+    "NFR-QUAL-9.within_range",
+    "smoke.turn_completed",
+]
+PRESET_QUALITY: dict[str, dict[str, Any]] = {
+    "00000000000000000000PRF001": {
+        "fingerprint": "sha256:" + "1" * 64,
+        "status": "uncertified",
+        "floors_met": [],
+    },
+    "00000000000000000000PRF002": {
+        "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+        "status": "certified",
+        "floors_met": FULL_FLOORS,
+    },
+    "00000000000000000000PRF003": {
+        "fingerprint": "sha256:" + "3" * 64,
+        "status": "uncertified",
+        "floors_met": [],
+    },
+    "00000000000000000000PRF004": {
+        "fingerprint": "sha256:f7f66a6e7930" + "2" * 52,
+        "status": "stale",
+        "floors_met": [],
+    },
+}
+"""The presets' ``quality`` as the single-profile read carries it. The list read leaves it out
+on the live Engine (#339: ``m7/presets.json`` has the live shape); :func:`with_quality` adds it
+back for the badge tests, the shape a list that fills ``quality`` would answer."""
+
+
+def with_quality(page: dict[str, Any]) -> dict[str, Any]:
+    """A copy of a profile list page with each preset's :data:`PRESET_QUALITY` filled in."""
+    found = copy.deepcopy(page)
+    for item in found["items"]:
+        if item.get("id") in PRESET_QUALITY:
+            item["quality"] = copy.deepcopy(PRESET_QUALITY[item["id"]])
+    return found
+
+
 def schema_body() -> dict[str, Any]:
     body: dict[str, Any] = json.loads(SCHEMA_FIXTURE.read_text(encoding="utf-8"))
     return body

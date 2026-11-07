@@ -51,12 +51,7 @@
       },
       "created_at": "2026-10-01T09:00:00Z",
       "updated_at": "2026-11-01T09:00:00Z",
-      "deleted_at": null,
-      "quality": {
-        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-        "status": "uncertified",
-        "floors_met": []
-      }
+      "deleted_at": null
     },
     {
       "id": "00000000000000000000PRF002",
@@ -145,19 +140,7 @@
       },
       "created_at": "2026-10-01T09:00:00Z",
       "updated_at": "2026-11-01T09:00:00Z",
-      "deleted_at": null,
-      "quality": {
-        "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
-        "status": "certified",
-        "floors_met": [
-          "NFR-QUAL-2.false_contradiction",
-          "NFR-QUAL-2.false_support",
-          "NFR-QUAL-4.recall",
-          "NFR-QUAL-5.valid_after_retry",
-          "NFR-QUAL-9.within_range",
-          "smoke.turn_completed"
-        ]
-      }
+      "deleted_at": null
     },
     {
       "id": "00000000000000000000PRF003",
@@ -241,12 +224,7 @@
       },
       "created_at": "2026-10-01T09:00:00Z",
       "updated_at": "2026-11-01T09:00:00Z",
-      "deleted_at": null,
-      "quality": {
-        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
-        "status": "uncertified",
-        "floors_met": []
-      }
+      "deleted_at": null
     },
     {
       "id": "00000000000000000000PRF004",
@@ -353,12 +331,7 @@
       },
       "created_at": "2026-10-01T09:00:00Z",
       "updated_at": "2026-11-01T09:00:00Z",
-      "deleted_at": null,
-      "quality": {
-        "fingerprint": "sha256:f7f66a6e79302222222222222222222222222222222222222222222222222222",
-        "status": "stale",
-        "floors_met": []
-      }
+      "deleted_at": null
     }
   ],
   "next_cursor": null

@@ -44,6 +44,7 @@ from tests.profile_helpers import (
     other_profile,
     profile,
     schema_body,
+    with_quality,
 )
 from tests.ratings.helpers import error, hidden, text
 from tests.test_story_config import form_data
@@ -217,6 +218,8 @@ def test_picker_lists_presets_first(operator_client: Client, engine: FakeEngine)
 
 
 def test_preset_table_rows(operator_client: Client, engine: FakeEngine) -> None:
+    # The badges once the list fills ``quality`` (#339: the live list doesn't yet).
+    engine.respond("GET", LIST, 200, json=with_quality(presets_answer()), query={"preset": "true"})
     html = operator_client.get(CONFIG).content.decode()
     rows = preset_rows(html)
     assert list(rows) == [LITE_ID, STANDARD_ID, FULL_ID, MAX_ID]
@@ -241,6 +244,25 @@ def test_preset_table_rows(operator_client: Client, engine: FakeEngine) -> None:
     assert not [
         r for r in engine.requests if re.fullmatch(r"/engine-profiles/[^/]+/guarantees", r.url.path)
     ]
+
+
+def test_preset_table_without_quality_reads_a_dash(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#339: the live preset list carries no ``quality``: each row's Quality cell reads "—",
+    the rest of the row renders, and no profile is read one by one."""
+    response = operator_client.get(CONFIG)
+    assert response.status_code == 200
+    rows = preset_rows(response.content.decode())
+    assert list(rows) == [LITE_ID, STANDARD_ID, FULL_ID, MAX_ID]
+    for preset_id, row in rows.items():
+        cells = re.findall(r"<td>(.*?)</td>", row, re.S)
+        assert cells[2] == "—", preset_id
+        assert '<span class="quality' not in row
+        assert f'<a href="/profiles/{preset_id}/#guarantees">Guarantees</a>' in row
+    # No preset is read one by one (Lite, the current profile, has its usual version read).
+    others = {f"/engine-profiles/{p}" for p in (STANDARD_ID, FULL_ID, MAX_ID)}
+    assert not [r for r in engine.requests if r.url.path in others]
 
 
 def test_a_preset_button_previews_that_preset(operator_client: Client, engine: FakeEngine) -> None:
