@@ -3385,3 +3385,18 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Live check on `n8-291-smoke` (127.0.0.1:18000), with no writes applied: `POST /stories/{id}/backfill` on a turn-less story answers 409 `nothing_to_backfill`; an unknown capability answers 422 `validation_error` with `errors[0].field = "body.capabilities"`; resolving on a story with no backfill answers 404 `backfill_not_found`. Nothing ran mid-backfill (Engine #783 is still open).
   **Why:** Confirms the refusal shapes the views map. Cost if wrong: none.
   **Issue:** #309
+- **Decision:** The Direct tab's local-invalid re-render keeps the posted idempotency key (D8, as the Ingest tab and #297's New rewrite do), not E21's "fresh key after a local-validation failure". An answered refusal mints a fresh key. An unknown outcome (transport, timeout, `bad_response`, an unworded 5xx) keeps the posted key.
+  **Why:** The story says "the key follows D8's re-render rule", and nothing is sent either way. Cost if wrong: none (no write happens).
+  **Issue:** #300
+- **Decision:** `DirectOutcome`'s More is one JSON block: `directive_id`, `idempotency_key`, the `applied` lists (every id, the Lite `author_fact` with its id and position), the routed session id, and for an unknown disposition or a routed answer with no session, the raw answer as #44 recorded it (else `model_json(answer)`). The ids are not split into one More per line. A refusal link label reuses #297's `REFUSAL_LINKS` ("Rewrite" / "Config"). The standing hint is the sentence followed by " · Settings" (the link).
+  **Why:** E23's More is one `<pre>`, and the AC asks only that the ids be under More. Cost if wrong: cosmetic.
+  **Issue:** #300
+- **Decision:** The Direct tab's hidden `transcript_player_view` has its own id (`direct-transcript-player-view`), and `_transcript.html` gets no out-of-band update for it. A player-view toggle made while the Direct tab is open is carried by the tab links only after the next transcript render. `_transcript.html` and its goldens are unchanged.
+  **Why:** This keeps the change inside the story's 8 files and leaves the transcript partial's tests untouched. The value is display-only and never sent with a direction. Cost if wrong: a stale player view after switching tabs, which a reload fixes.
+  **Issue:** #300
+- **Decision:** E24's "Turn and Ingest render byte for byte as before" compares each tab's partial (everything after the tab `</nav>`) against main's HTMX render, captured before the change into `tests/play/golden/turn_tab.html` / `ingest_tab.html`. The signed snapshot value and the ULID-shaped input values (the keys and the ingest row's event id) are normalised on top of `normalise_html`. `tests/play/test_transcript_player_view.py::test_tab_links_keep_transcript_player_view` now counts 3 tab links, not 2: this is the tab nav's legitimate change. `tests/play/helpers.snapshot` gains `pipeline=` for the Lite labels. `stories:direct` left `NOT_YET_REGISTERED`, so that guard's parametrisation lost one case: the suite counts 8612, which is 8569 + 44 − 1.
+  **Why:** The snapshot is signed with the per-environment SECRET_KEY, and the event ids are minted per render. Cost if wrong: none.
+  **Issue:** #300
+- **Decision:** The Demo was not run against a live Engine. Every AC is covered by the fake-Engine suite, against the recorded schema's `POST /stories/{id}/directives` (200/202/409/422/423).
+  **Why:** No live test is in the story's test plan, and the fixtures are schema-validated. Cost if wrong: a live-only shape mismatch, which #300's verify would catch.
+  **Issue:** #300

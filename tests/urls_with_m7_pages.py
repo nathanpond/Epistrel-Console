@@ -166,7 +166,6 @@ NOT_YET_REGISTERED = frozenset(
         "stories:amendment-undo",
         "stories:amendments",
         "stories:certify",
-        "stories:direct",
         "stories:export",
         "stories:export-download",
         "stories:export-job",

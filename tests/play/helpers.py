@@ -2,6 +2,7 @@
 turn POST as the page's HTMX form sends it."""
 
 import copy
+import dataclasses
 import json
 from typing import Any
 
@@ -66,14 +67,19 @@ def snapshot(
     story: dict[str, Any] | None = None,
     turn_deadline: float | None = 45.0,
     effective: dict[str, Any] | None = None,
+    pipeline: str | None = None,
 ) -> str:
     """The play page's signed snapshot; ``effective`` (an effective-config body, e.g.
-    ``structured_v3()``) fills its gate fields (#260)."""
+    ``structured_v3()``) fills its gate fields (#260); ``pipeline`` overrides its pipeline
+    (#300's Lite labels)."""
     parsed = Story.from_json(story or story_json())
     assert parsed is not None
     config = EffectiveConfig.from_json(effective) if effective is not None else None
     assert effective is None or config is not None
-    return PlayStory.of(parsed, turn_deadline, config=config).signed()
+    play = PlayStory.of(parsed, turn_deadline, config=config)
+    if pipeline is not None:
+        play = dataclasses.replace(play, pipeline=pipeline)
+    return play.signed()
 
 
 def turn_data(**fields: Any) -> dict[str, Any]:

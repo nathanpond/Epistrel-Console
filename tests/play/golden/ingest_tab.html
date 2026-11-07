@@ -1,0 +1,169 @@
+
+<div id="play-form-area">
+  <nav class="tabs">
+    <a href="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=turn" hx-get="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=turn" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]">Turn</a>
+    <a href="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=ingest" hx-get="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]" aria-current="page">Ingest</a>
+  </nav>
+  
+<div id="ingest">
+  <h2>Ingest events</h2>
+  <p class="muted">Record player turns, narration, State changes and external outcomes without generating a reply. Each event keeps its client event id; resending an id with the same content changes nothing.</p>
+  
+  
+  
+  <form method="post" action="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/ingest/" class="ingest-form"
+        hx-post="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/ingest/" hx-target="#ingest" hx-swap="outerHTML"
+        hx-disable="this" hx-sync="this:drop" hx-config="timeout:695s">
+    <input type="hidden" name="csrfmiddlewaretoken" value="WHf8ADjGuoV9MzYTmUqdVPU6d3kZTlz4mXWAhyzsLdAtFbVRFnlXQIFoCfT6c8f2">
+    <input type="hidden" name="idempotency_key" value="01M6T8XHPJNXA83ER9V5T3WG74">
+    <input type="hidden" name="snapshot" value=".eJx9j9tKA0EMht8l14NsTx72zl6JUlEpipZlSWdSDExnlmymIqXvbpZ6uLKX-f6PJP8eOEAN1eh2Pn67fJ09Tl7O764Wo_vpw8VTtRw_g4OEWzLnBmWdixjoFbX0htAr78iIx16hXq3-XTS5NmuBguBUCjXuhDo3dZnXnMBtMPbUNA4CbbBEbXdMH13mZNfAv9s-ryT1yataJLWBMERO1mM6O6scCKVAYh1SidFBxx0d4--ZxFOnnNMPGTrTn4-iPMS_RHIc4v1hULN8tlt7l4_p4Qvh83Fy:1xPZJi:TRpEy73YK3q-nI09w0htveGxJvV1SaBXA2sCkhXSJ64">
+    <input type="hidden" name="output_viewpoint" value="default">
+    <input type="hidden" name="transcript_player_view" id="ingest-transcript-player-view" value="">
+    <input type="hidden" name="ingest-TOTAL_FORMS" value="1" id="id_ingest-TOTAL_FORMS"><input type="hidden" name="ingest-INITIAL_FORMS" value="1" id="id_ingest-INITIAL_FORMS"><input type="hidden" name="ingest-MIN_NUM_FORMS" value="1" id="id_ingest-MIN_NUM_FORMS"><input type="hidden" name="ingest-MAX_NUM_FORMS" value="50" id="id_ingest-MAX_NUM_FORMS">
+    
+    <fieldset>
+      
+      <fieldset class="event" id="ingest-row-0">
+        <legend>Event 1</legend>
+        
+        
+        <div class="field field-kind">
+          <label for="id_ingest-0-kind">Kind:</label> <select name="ingest-0-kind" id="id_ingest-0-kind">
+  <option value="player_turn" selected>Player turn</option>
+
+  <option value="narration">Narration</option>
+
+  <option value="state_change">State change</option>
+
+  <option value="outcome">Outcome</option>
+
+</select> <small class="gate-reason">Couldn&#x27;t read this story&#x27;s configuration — reload</small>
+          
+        </div>
+        
+        <div class="field field-client_event_id">
+          <label for="id_ingest-0-client_event_id">Client event id:</label> <input type="text" name="ingest-0-client_event_id" value="01M6T8XHPJNXA83ER9V5T3WG73" maxlength="255" id="id_ingest-0-client_event_id">
+          
+        </div>
+        
+        
+        <fieldset class="kind-fields">
+          <legend>Player turn</legend>
+          
+          <div class="field field-actor_character_id">
+            <label for="id_ingest-0-actor_character_id">Actor (player turn only):</label> <select name="ingest-0-actor_character_id" id="id_ingest-0-actor_character_id">
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3A" selected>Mara</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+
+</select>
+            
+          </div>
+          
+          <div class="field field-say">
+            <label for="id_ingest-0-say">Say (player turn only):</label> <textarea name="ingest-0-say" cols="40" rows="2" maxlength="8000" id="id_ingest-0-say">
+</textarea>
+            
+          </div>
+          
+          <div class="field field-do">
+            <label for="id_ingest-0-do">Do (player turn only):</label> <textarea name="ingest-0-do" cols="40" rows="1" maxlength="8000" id="id_ingest-0-do">
+</textarea>
+            
+          </div>
+          
+        </fieldset>
+        
+        <fieldset class="kind-fields">
+          <legend>Narration</legend>
+          
+          <div class="field field-text">
+            <label for="id_ingest-0-text">Text (narration only):</label> <textarea name="ingest-0-text" cols="40" rows="2" maxlength="8000" id="id_ingest-0-text">
+</textarea>
+            
+          </div>
+          
+        </fieldset>
+        
+        <fieldset class="kind-fields">
+          <legend>State change</legend>
+          
+          <div class="field field-state">
+            <label for="id_ingest-0-state">State (state change only):</label> <input type="text" name="ingest-0-state" maxlength="80" id="id_ingest-0-state">
+            
+          </div>
+          
+          <div class="field field-scope_key">
+            <label for="id_ingest-0-scope_key">Character (state change only):</label> <select name="ingest-0-scope_key" id="id_ingest-0-scope_key">
+  <option value="" selected>— (a story State)</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3A">Mara</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+
+</select>
+            
+          </div>
+          
+          <div class="field field-value">
+            <label for="id_ingest-0-value">Value (state change only):</label> <input type="text" name="ingest-0-value" aria-describedby="id_ingest-0-value_helptext" id="id_ingest-0-value"> <small class="help">Numbers and true/false are sent as such; put text in double quotes to send &quot;12&quot; or &quot;true&quot; as text.</small>
+            
+          </div>
+          
+          <div class="field field-delta">
+            <label for="id_ingest-0-delta">Delta (state change only):</label> <input type="text" name="ingest-0-delta" id="id_ingest-0-delta">
+            
+          </div>
+          
+          <div class="field field-reason">
+            <label for="id_ingest-0-reason">Reason (state change only):</label> <input type="text" name="ingest-0-reason" maxlength="200" id="id_ingest-0-reason">
+            
+          </div>
+          
+        </fieldset>
+        
+        <fieldset class="kind-fields">
+          <legend>Outcome</legend>
+          
+          <div class="field field-effect_id">
+            <label for="id_ingest-0-effect_id">Effect id (outcome only):</label> <input type="text" name="ingest-0-effect_id" id="id_ingest-0-effect_id">
+            
+          </div>
+          
+          <div class="field field-outbox_id">
+            <label for="id_ingest-0-outbox_id">Outbox id (outcome only):</label> <input type="text" name="ingest-0-outbox_id" id="id_ingest-0-outbox_id">
+            
+          </div>
+          
+          <div class="field field-outcome">
+            <label for="id_ingest-0-outcome">Outcome (outcome only):</label> <select name="ingest-0-outcome" id="id_ingest-0-outcome">
+  <option value="" selected>—</option>
+
+  <option value="confirmed">Confirmed</option>
+
+  <option value="failed">Failed</option>
+
+  <option value="unknown">Unknown</option>
+
+</select>
+            
+          </div>
+          
+          <div class="field field-resulting_values">
+            <label for="id_ingest-0-resulting_values">Resulting values (outcome only):</label> <textarea name="ingest-0-resulting_values" cols="40" rows="2" spellcheck="false" aria-describedby="id_ingest-0-resulting_values_helptext" id="id_ingest-0-resulting_values">
+</textarea> <small class="help">A JSON object, e.g. {&quot;balance&quot;: 4500}</small>
+            
+          </div>
+          
+        </fieldset>
+        
+        
+      </fieldset>
+      
+      <p><button type="submit" name="add" value="1" formnovalidate>Add row</button></p>
+      <button type="submit">Ingest</button> <span class="htmx-indicator">Ingesting…</span>
+    </fieldset>
+  </form>
+</div>
+
+</div>
