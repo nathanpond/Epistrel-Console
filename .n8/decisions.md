@@ -3955,3 +3955,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The live smoke stack `n8-291-smoke` (Engine edge 5cb073b on 127.0.0.1:18000) served every live check of the run and was torn down at the end.
   **Why:** Port 8000 belongs to the owner's own Engine dev stack, which wasn't touched.
   **Issue:** #291
+- **Decision (Rule 1, PR gate):** `.github/scripts/engine-up.sh` now passes `EPISTREL_BUNDLE_DIR=/var/lib/epistrel/bundles` to the CI Engine. PR #338's `engine-smoke` failed 4 export/import live tests ("export still running after 60 s"; the Engine logged `PermissionError` on `story_export`). #292 had fixed the same gap in `docker-compose.yml` only, and CI starts the Engine through this script instead. The script already drops settings an image doesn't know, so release smokes on older Engines are unaffected. A plain `docker run` of the edge image as uid 10001 creates and writes that directory.
+  **Why:** The M7 live smokes (#319–#321, #326) need a writable bundle directory; the Engine gap is #334.
+  **Issue:** #319, #334

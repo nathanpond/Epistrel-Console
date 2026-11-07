@@ -34,6 +34,9 @@ ENGINE_SETTINGS=(
   # The Engine's deterministic test model adapter, so the smoke can play a turn (#48) without
   # model credentials. Released Engines without the setting drop it (their smoke plays none).
   "EPISTREL_MODEL_ADAPTER=stub"
+  # A writable bundle directory, so the M7 export smoke can write its bundle: the edge image sets
+  # none and every export job fails with PermissionError (#334; docker-compose.yml sets the same).
+  "EPISTREL_BUNDLE_DIR=/var/lib/epistrel/bundles"
 )
 PROBE='from epistrel.config import ENV_PREFIX, Settings
 print("\n".join(ENV_PREFIX + name.upper() for name in Settings.model_fields))'
