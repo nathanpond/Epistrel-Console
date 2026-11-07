@@ -2,7 +2,8 @@
 {% comment %}
 The impact step of a story configuration change (#85): the change, the shared impact report, then
 Apply (or "Apply anyway" once the Engine held it) through #64's two-stage partial; disabled while
-the story is archived.
+the story is archived. #307: when the report needs a backfill, the "Earlier turns" radios (E14's
+UpgradeModeForm) sit above it and join its form through form_id (form="config-confirm").
 {% endcomment %}
 {% block title %}{{ preview.heading }} — Epistrel Console{% endblock %}
 {% block heading %}{{ preview.heading }}{% endblock %}
@@ -15,6 +16,12 @@ the story is archived.
 {% if archived_note %}
 <p class="apply-disabled"><button type="button" disabled title="{{ archived_note }}">{{ apply_label }}</button> {{ archived_note }} <a class="button" href="{{ cancel_url }}">Cancel</a></p>
 {% else %}
-{% include "console/_two_stage.html" with token=token confirm_url=apply_url confirm_label=apply_label cancel_url=cancel_url idempotency_key=idempotency_key %}
+{% if upgrade_form %}<fieldset class="upgrade-mode">
+  <legend>{{ upgrade_form.upgrade_mode.label }}</legend>
+  {{ upgrade_form.upgrade_mode.errors }}{{ upgrade_form.upgrade_mode }}
+  <p class="muted upgrade-help">{{ upgrade_form.upgrade_mode.help_text }}</p>
+  {% if backfill_line %}<p class="backfill-line">{{ backfill_line }}</p>{% endif %}
+</fieldset>
+{% endif %}{% include "console/_two_stage.html" with token=token confirm_url=apply_url confirm_label=apply_label cancel_url=cancel_url idempotency_key=idempotency_key form_id=confirm_form_id %}
 {% endif %}
 {% endblock %}

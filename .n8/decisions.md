@@ -3229,3 +3229,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The pause-banner test's story read uses `pause.progress {done, total}`, not `{chunks_done, chunks_total}`. The recorded `StoryPauseProgressBody` rejects the chunk-only shape under `FakeEngine.respond`'s validation. The banner text is the same ("(2/7 chunks)") through `chunk_counts`' fallback.
   **Why:** The fake validates against the recording. Cost if wrong: none (E10's suspected `pause.progress` mismatch is #295's note).
   **Issue:** #296
+- **Decision:** `ProfileSelect` gains `found` (the profiles the list read gave), set by `profile_select`, whose options are otherwise unchanged (the option building moved into `_profile_options`). `with_presets` needs the raw rows to group the full list's `preset: true` rows when the preset read fails and to rebuild "Other profiles" without the preset ids.
+  **Why:** AC says `profile_select` is unchanged and a pure `with_presets` does the grouping after the fan-out. The options alone don't carry `preset`. Cost if wrong: none (same options, one extra field).
+  **Issue:** #307
+- **Decision:** The preset table uses only the preset read's items with `preset: true` and no `deleted_at` (defensive). A deleted current preset stays first in "Other profiles" as "<name> · deleted (current)".
+  **Why:** Discretion: the read should only return live presets; a fake or an older Engine that answers more mustn't put customs in the ladder. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** A preview that needs a backfill always counts as warned (`ignore_warnings: true`, "Apply anyway"), even when the report's `warnings` list is empty.
+  **Why:** The Engine's two-stage rule (`core/profiles/impact.py`) treats a needed backfill as a warning kind, so a confirm without `ignore_warnings` would just be held again. #292's `m7/impact_preview_backfill.json` has `warnings: []`, and the test plan expects `ignore_warnings: true`. Cost if wrong: none (the Engine ignores the flag when nothing warns).
+  **Issue:** #307
+- **Decision:** A set `write.backfill` is the "backfill started" outcome whatever `applied` says. #292's `m7/assign_backfill_started.json` has `applied: true` with a `result`, but the Engine documents the 202 as `applied: false, result: null`. Both shapes are tested (the second inline). The fixture was left alone, since the story edits no fixture table.
+  **Why:** Read the Engine's contract and still pass the fixture. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** `BACKFILL_STARTED` = "Backfill started — the story is paused{ while it re-derives turns a–b}; the new configuration applies when it completes". With no known range, the whole " while it re-derives …" clause is dropped. A one-turn span reads "turn 3". The flash is `<text> · <Follow the backfill> — idempotency key <code>K</code>` (E21 tail last), with K the write's echoed key, else the posted one.
+  **Why:** AC ("the turns clause is dropped") read literally would leave "re-derives;" dangling. Cost if wrong: wording only.
+  **Issue:** #307
+- **Decision:** The forward-only gap sentence is joined to the applied flash with ". " (or a single space when that flash already ends in "."), has no trailing period and no key tail. It reads the story's own `affected_stories` entry in `write.impact`.
+  **Why:** E21 sim2 (an appended sentence gets no tail). NO_CHANGE and the applied text end without a period. Cost if wrong: wording only.
+  **Issue:** #307
+- **Decision:** The signed report is serialised by a local `model_json` (each field under its `json_name`, recursively), not `dataclasses.asdict`. A round-trip test covers three m7 impacts, one with `certifications_lost`.
+  **Why:** `asdict` writes `CertificationLost.from_status`/`to_status`, which `from_json` (reading `from`/`to`) rejects, so the re-render would fail on any report that lost a certification. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** A missing or invalid mode re-render whose signed report can't be rebuilt is treated as an expired token (`EXPIRED_TEXT`, redirect to Config, no write). The upgrade-mode errors are Django's defaults ("This field is required.", "Select a valid choice. …"), since #295's field sets none.
+  **Why:** E8's one-URL rule, plus defensive handling of a tampered or old token. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** The preset table and its hidden default submit sit inside the assign form. The bottom Preview button and the select/id input render only when the full list read worked. If both reads fail, no form renders: both notices show. The live edge's presets carry `quality: null`, so their Quality cells read "—". This was checked against `n8-291-smoke` on 127.0.0.1:18000.
+  **Why:** AC: the form renders whenever presets exist. Cost if wrong: none.
+  **Issue:** #307

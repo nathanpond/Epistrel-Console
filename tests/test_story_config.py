@@ -276,9 +276,16 @@ def test_a_failed_effective_config_read_is_the_page_panel(
 def test_the_assign_select_lists_profiles_with_the_current_disabled(
     operator_client: Client, engine: FakeEngine
 ) -> None:
+    """#307 moved the preset (Lite) into the "Presets" optgroup, labelled by ``preset_label``."""
     html = operator_client.get(CONFIG).content.decode()
-    assert f'<option value="{LITE}" disabled>Lite · v2 · {LITE[:6]} (current)</option>' in html
-    assert f'<option value="{OTHER}">Lite-short · v3 · {OTHER[:6]}</option>' in html
+    assert (
+        f'<optgroup label="Presets"><option value="{LITE}" disabled>Lite (preset) · v2 (current)'
+        "</option></optgroup>"
+    ) in html
+    assert (
+        f'<optgroup label="Other profiles"><option value="{OTHER}">Lite-short · v3 · '
+        f"{OTHER[:6]}</option></optgroup>"
+    ) in html
 
 
 def test_a_deleted_current_profile_is_listed_first(

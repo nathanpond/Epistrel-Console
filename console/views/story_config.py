@@ -22,6 +22,22 @@
   with ``ignore_warnings`` = the preview warned. A fresh ``applied: false`` shows the impact
   again with "Apply anyway". Applied: back to Config with the new fingerprint flashed.
 
+#307 (E13, E14):
+
+- Config also reads ``GET /engine-profiles?preset=true`` (one page) beside the full list;
+  :func:`with_presets` puts the presets first (``preset_order``): the preset table (version,
+  ``_quality.html`` badge, a "Guarantees" link to the profile page's ``#guarantees``, a one-click
+  Preview button posting ``profile_id``) and the "Presets" optgroup, then "Other profiles". The
+  select and the id input post ``profile_choice``; a failed preset read is
+  :data:`PRESETS_UNAVAILABLE` with the full list's presets grouped first instead.
+- A preview whose report needs a backfill (:func:`needs_upgrade_mode`) signs ``upgrade_choice``
+  and the report itself into ``base`` and asks "Earlier turns" (``UpgradeModeForm``, joined to the
+  confirm form by ``form="config-confirm"``); the confirm sends the chosen ``upgrade_mode``, and a
+  missing or invalid one re-renders the signed preview with no Engine call.
+- A write that started a backfill (``write.backfill``, the 202) flashes :data:`BACKFILL_STARTED`
+  and goes to the Backfill page (Config while it is unregistered); an applied write whose
+  impact names a ``forward_only_gap`` appends :func:`gap_sentence` to the applied flash.
+
 The form page's facts (the overrides as loaded and their revision, the profile version's
 settings, the deployment defaults, the schema digest) travel signed, so an invalid form, an
 unchanged one and a stale schema make no Engine call.
@@ -29,9 +45,10 @@ unchanged one and a stale schema make no Engine call.
 
 import json
 import re
-from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
-from typing import Any, Final, Literal
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
+from datetime import datetime
+from typing import Any, Final, Literal, cast
 
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse, QueryDict
@@ -43,6 +60,7 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 
 from console import twostage
 from console.canon import utc_text
+from console.certification import QualityLine, quality_line
 from console.confirm import posted_idempotency_key
 from console.engine.choices import PROFILES_MAX, error_text
 from console.engine.client import (
@@ -52,8 +70,10 @@ from console.engine.client import (
     EngineError,
 )
 from console.engine.models import (
+    AffectedStory,
     EffectiveConfig,
     EngineProfile,
+    ForwardOnlyGap,
     GuaranteeTable,
     ImpactReport,
     ProfileRef,
@@ -62,6 +82,8 @@ from console.engine.models import (
     ProfileVersion,
     Story,
     StoryProfileWrite,
+    TurnSpan,
+    json_name,
 )
 from console.engine.pool import fan_out
 from console.engine_access import engine_client_for
@@ -74,12 +96,14 @@ from console.forms.profile_schema_form import (
     undelivered_text,
 )
 from console.forms.story_overrides import OverridesForm
+from console.forms.upgrades import DEFAULT_UPGRADE_MODE, UpgradeModeForm
 from console.guarantees import CONFIG_SCOPE
 from console.guarantees import section as guarantees_section
 from console.ids import new_ulid
-from console.impact import quality_class, short_fingerprint
+from console.impact import backfill_text, quality_class, short_fingerprint
 from console.profile_schema import get_profile_schema_cached
 from console.story_config import badge_for, config_layers, config_url
+from console.upgrades import backfill_url, preset_label, preset_order
 from console.views.profiles import detail_url
 from console.views.story_settings import Refusal, refusal_for
 from console.wording import write_refusal
@@ -89,6 +113,9 @@ OVERRIDES_KIND = "story_overrides"
 PROFILE_KIND = "story_profile"
 SNAPSHOT_FIELD = "snapshot"
 PROFILE_FIELD = "profile_id"
+CHOICE_FIELD = (
+    "profile_choice"  # #307: the select's / id input's name (the buttons post profile_id)
+)
 INVALID_PROFILE = "invalid_profile"
 PROFILE_DELETED = "profile_deleted"
 REVISION_CONFLICT = "revision_conflict"
@@ -102,6 +129,8 @@ STORY_CHANGED = "The story changed — reload"
 DELETED_PICK = "That profile was deleted — pick another"
 PICK_ONE = "Pick a profile"
 PROFILES_UNAVAILABLE = "Profiles unavailable — reload"
+PRESETS_UNAVAILABLE = "Presets unavailable — reload"  # #307
+NO_PRESETS = "No presets"
 TOO_MANY = "Too many to list — enter the id"
 ARCHIVED_APPLY = "Archived — unarchive to apply"
 ARCHIVED_REFUSED = "This story is archived — unarchive it to change its configuration"
@@ -111,6 +140,18 @@ KEPT = (
     "history for the modules this version adds"
 )
 CANT_RUN = "This story's overrides can't run on {profile}"
+
+# #307: the upgrade mode's outcomes.
+UpgradeMode = Literal["backfill", "forward_only"]
+BACKFILL_STARTED = (
+    "Backfill started — the story is paused{rederives}; the new configuration applies when it "
+    "completes"
+)
+FOLLOW_BACKFILL = "Follow the backfill"
+FORWARD_ONLY_GAP = (
+    "Turns through {through} keep a coverage gap for: {capabilities} — fill it from the {page}"
+)
+BACKFILL_PAGE = "Backfill page"
 
 # #63: the Profile version section.
 VERSION_KIND = "story_version"
@@ -139,13 +180,54 @@ class ProfileOption:
 
 
 @dataclass(frozen=True)
+class PresetRow:
+    """One preset in the Config page's preset table (#307, E13): its id, ``preset_label``, its
+    latest version, its quality badge (``None``: "—"), its guarantee table's URL and whether
+    the story runs it (no Preview button then)."""
+
+    id: str
+    label: str
+    version: int
+    quality: QualityLine | None
+    guarantees_url: str
+    current: bool
+
+
+@dataclass(frozen=True)
 class ProfileSelect:
     """The assign select's options, or why there is none: ``error`` (the list read failed) or
-    ``too_many`` (a free-text id input instead)."""
+    ``too_many`` (a free-text id input instead). ``found`` is every profile the list read gave
+    (the fallback grouping's input). #307: ``presets`` (the preset table, from its own read) and
+    ``preset_options`` (the "Presets" optgroup) with ``presets_error`` when that read failed;
+    ``options`` is then the "Other profiles" optgroup."""
 
     options: tuple[ProfileOption, ...] = ()
     error: str = ""
     too_many: bool = False
+    found: tuple[EngineProfile, ...] = ()
+    presets: tuple[PresetRow, ...] = ()
+    preset_options: tuple[ProfileOption, ...] = ()
+    presets_error: str = ""
+
+
+def _profile_options(
+    found: Sequence[EngineProfile], current_id: str, skip: Collection[str] = ()
+) -> tuple[ProfileOption, ...]:
+    """Today's options: a deleted current profile first, then every non-deleted profile not in
+    ``skip``, in the list's order."""
+    options: list[ProfileOption] = []
+    current = next((p for p in found if p.id == current_id), None)
+    if current is not None and current.deleted_at is not None:
+        options.append(ProfileOption(current.id, f"{current.name} · deleted (current)", True))
+    for profile in found:
+        if profile.deleted_at is not None or profile.id in skip:
+            continue
+        label = f"{profile.name} · v{profile.current_version} · {profile.id[:6]}"
+        is_current = profile.id == current_id
+        options.append(
+            ProfileOption(profile.id, f"{label} (current)" if is_current else label, is_current)
+        )
+    return tuple(options)
 
 
 def profile_select(client: EngineClient, current_id: str) -> ProfileSelect:
@@ -167,19 +249,56 @@ def profile_select(client: EngineClient, current_id: str) -> ProfileSelect:
                 break
     except EngineClientError:
         return ProfileSelect(error=PROFILES_UNAVAILABLE)
-    options: list[ProfileOption] = []
-    current = next((p for p in found if p.id == current_id), None)
-    if current is not None and current.deleted_at is not None:
-        options.append(ProfileOption(current.id, f"{current.name} · deleted (current)", True))
-    for profile in found:
-        if profile.deleted_at is not None:
-            continue
-        label = f"{profile.name} · v{profile.current_version} · {profile.id[:6]}"
-        is_current = profile.id == current_id
-        options.append(
-            ProfileOption(profile.id, f"{label} (current)" if is_current else label, is_current)
-        )
-    return ProfileSelect(tuple(options))
+    return ProfileSelect(_profile_options(found, current_id), found=tuple(found))
+
+
+def preset_row(profile: EngineProfile, current_id: str) -> PresetRow:
+    return PresetRow(
+        profile.id,
+        preset_label(profile),
+        profile.current_version,
+        quality_line(profile.quality) if profile.quality is not None else None,
+        reverse("profiles:detail", args=[profile.id]) + "#guarantees",
+        profile.id == current_id,
+    )
+
+
+def _preset_option(profile: EngineProfile, current_id: str) -> ProfileOption:
+    label = f"{preset_label(profile)} · v{profile.current_version}"
+    is_current = profile.id == current_id
+    return ProfileOption(profile.id, f"{label} (current)" if is_current else label, is_current)
+
+
+def with_presets(select: ProfileSelect, presets: object, current_id: str) -> ProfileSelect:
+    """#307 (E13): the select with the presets first. ``presets`` is the ``?preset=true`` read's
+    answer (``(items, cursor)``) or its failure. Read: the preset rows in :func:`preset_order`
+    (non-deleted ``preset: true`` items only) form the table and the "Presets" optgroup. Failed:
+    :data:`PRESETS_UNAVAILABLE`, and the full list's ``preset: true`` rows are grouped first
+    instead. "Other profiles" leaves out every preset id either read named."""
+    error = ""
+    read: list[EngineProfile] = []
+    if isinstance(presets, tuple) and presets and isinstance(presets[0], list):
+        read = [
+            p
+            for p in presets[0]
+            if isinstance(p, EngineProfile) and p.preset is True and p.deleted_at is None
+        ]
+    else:
+        error = PRESETS_UNAVAILABLE
+    listed = [p for p in select.found if p.preset is True and p.deleted_at is None]
+    grouped = preset_order(read if not error else listed)
+    rows = tuple(preset_row(p, current_id) for p in grouped) if not error else ()
+    skip = {p.id for p in read} | {p.id for p in select.found if p.preset is True}
+    options = select.options
+    if select.found:
+        options = _profile_options(select.found, current_id, skip)
+    return replace(
+        select,
+        options=options,
+        presets=rows,
+        preset_options=tuple(_preset_option(p, current_id) for p in grouped),
+        presets_error=error,
+    )
 
 
 def _reads(reads: Mapping[str, Callable[[], Any]]) -> dict[str, Any]:
@@ -215,6 +334,9 @@ def _load(
     }
     if select:
         reads["profiles"] = lambda: profile_select(client, config.profile.id)
+        reads["presets"] = lambda: client.list_engine_profiles(  # #307: one page, cursor ignored
+            preset=True, limit=ENGINE_PROFILES_PAGE
+        )
         reads["guarantees"] = lambda: client.get_story_guarantees(story_id)
         if not config.profile.deleted:  # #63: a deleted profile offers no version form
             reads["versions"] = lambda: client.list_engine_profile_versions(config.profile.id)
@@ -246,7 +368,7 @@ def _load(
     chosen = results["profiles"]
     if not isinstance(chosen, ProfileSelect):
         chosen = ProfileSelect(error=PROFILES_UNAVAILABLE)
-    return loaded, chosen
+    return loaded, with_presets(chosen, results["presets"], config.profile.id)
 
 
 def _story_name(story: Story | None, story_id: str) -> str:
@@ -393,6 +515,7 @@ def _config_page(
         "profile_error": loaded.profile_error,
         "select": select,
         "too_many_text": TOO_MANY,
+        "no_presets_text": NO_PRESETS,
         "assign": assign or AssignState(),
         "assign_url": reverse("stories:config-profile", args=[story_id]),
         "pin_text": pin_text(config.profile, latest),
@@ -435,6 +558,63 @@ def upgrade_unavailable(impact: ImpactReport) -> bool:
     return any(story.upgrade_unavailable for story in impact.affected_stories)
 
 
+def needs_upgrade_mode(impact: ImpactReport) -> bool:
+    """#307 (E14): whether the confirm step asks backfill-or-forward-only: any affected story's
+    ``backfill.needed`` (exactly when the Engine reads ``upgrade_mode``)."""
+    return any(story.backfill.needed for story in impact.affected_stories)
+
+
+def story_entry(impact: ImpactReport, story_id: str) -> AffectedStory | None:
+    """The story's own ``affected_stories`` entry (``story_id`` match), else the first."""
+    stories = impact.affected_stories
+    return next((s for s in stories if s.story_id == story_id), stories[0] if stories else None)
+
+
+def turns_text(span: TurnSpan | None) -> str:
+    """ "turns 1\u20133", "turn 3" for a one-turn span, "" with no span."""
+    if span is None:
+        return ""
+    if span.from_turn == span.to_turn:
+        return f"turn {span.from_turn}"
+    return f"turns {span.from_turn}–{span.to_turn}"  # noqa: RUF001
+
+
+def backfill_line(impact: ImpactReport, story_id: str) -> str:
+    """The line under the upgrade-mode radios: "<backfill_text> · turns a\u2013b" (the turns
+    left out when the Engine gave no range)."""
+    entry = story_entry(impact, story_id)
+    if entry is None:
+        return ""
+    turns = turns_text(entry.backfill.range)
+    text = backfill_text(entry.backfill)
+    return f"{text} · {turns}" if turns else text
+
+
+def model_json(value: Any) -> Any:
+    """A parsed model back as the JSON it was read from (each field under its ``json_name``), so
+    ``Model.from_json`` rebuilds it; lists and dicts recursively, anything else as is."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return {json_name(f): model_json(getattr(value, f.name)) for f in fields(value)}
+    if isinstance(value, list):
+        return [model_json(item) for item in value]
+    if isinstance(value, dict):
+        return {key: model_json(item) for key, item in value.items()}
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+SIGNED_PREVIEW_KEYS: Final = ("impact", "heading", "lines", "patch_text", "again")
+"""What a choice-bearing preview signs into ``base`` so a missing or invalid mode re-renders it
+with no Engine call (E8's one-URL rule)."""
+DERIVED_KEYS: Final = ("warned", "fingerprint_before", "upgrade_choice", *SIGNED_PREVIEW_KEYS)
+"""``base`` keys :func:`_preview_page` derives from its report; a held re-render drops them."""
+
+
+def _kept(base: Mapping[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in base.items() if k not in DERIVED_KEYS}
+
+
 @dataclass(frozen=True)
 class Preview:
     """What the preview page needs besides the impact: the write to sign and how to label it."""
@@ -450,14 +630,44 @@ class Preview:
     again: bool = False  # a fresh ``applied: false`` on Apply: "Apply anyway"
 
 
-def _preview_page(request: HttpRequest, preview: Preview, impact: ImpactReport) -> HttpResponse:
-    warned = bool(impact.warnings) or preview.again
+CONFIRM_FORM_ID = "config-confirm"
+
+
+def _upgrade_form(data: Any = None, initial: str = DEFAULT_UPGRADE_MODE) -> UpgradeModeForm:
+    return UpgradeModeForm(data, form_id=CONFIRM_FORM_ID, initial_mode=initial)
+
+
+def _preview_page(
+    request: HttpRequest,
+    preview: Preview,
+    impact: ImpactReport,
+    *,
+    upgrade_form: UpgradeModeForm | None = None,
+    key: str = "",
+) -> HttpResponse:
+    """The impact step. #307: when :func:`needs_upgrade_mode`, ``upgrade_choice`` and the
+    preview itself are signed into ``base`` and (unless archived, E21) the upgrade-mode radios
+    join the confirm form; ``upgrade_form`` is a bound one to re-show (its posted value and
+    errors), ``key`` the posted key to keep."""
+    upgrade_choice = needs_upgrade_mode(impact)
+    # A needed backfill is one of the Engine's warning kinds (FR-PROF-7), so its confirm always
+    # sends ``ignore_warnings`` even when a report's ``warnings`` came back empty.
+    warned = bool(impact.warnings) or preview.again or upgrade_choice
     base = {
         **preview.base,
         "warned": warned,
         "fingerprint_before": impact.fingerprint_before,
         "upgrade_unavailable": upgrade_unavailable(impact),
+        "upgrade_choice": upgrade_choice,
     }
+    if upgrade_choice:
+        base.update(
+            impact=model_json(impact),
+            heading=preview.heading,
+            lines=list(preview.lines),
+            patch_text=preview.patch_text,
+            again=preview.again,
+        )
     token = twostage.sign(preview.kind, preview.story_id, preview.body, base)
     apply_name = (
         "config-overrides-apply" if preview.kind == OVERRIDES_KIND else "config-profile-apply"
@@ -467,6 +677,9 @@ def _preview_page(request: HttpRequest, preview: Preview, impact: ImpactReport) 
         if preview.kind == OVERRIDES_KIND
         else config_url(preview.story_id)
     )
+    shown_form = None
+    if upgrade_choice and not preview.archived:
+        shown_form = upgrade_form if upgrade_form is not None else _upgrade_form()
     context = {
         "story_id": preview.story_id,
         "preview": preview,
@@ -478,10 +691,51 @@ def _preview_page(request: HttpRequest, preview: Preview, impact: ImpactReport) 
         "cancel_url": back,
         "config_url": config_url(preview.story_id),
         "guarantees_href": config_url(preview.story_id),  # #57: lost guarantees link their rows
-        "idempotency_key": new_ulid(),  # the confirming POST's own key (#64 convention 3)
+        "idempotency_key": key or new_ulid(),  # the confirming POST's own key (#64 convention 3)
         "archived_note": ARCHIVED_APPLY if preview.archived else "",
+        "upgrade_form": shown_form,
+        "confirm_form_id": CONFIRM_FORM_ID if shown_form is not None else "",
+        "backfill_line": backfill_line(impact, preview.story_id) if shown_form else "",
     }
     return render(request, "console/stories/config_preview.html", context)
+
+
+def _chosen_mode(
+    request: HttpRequest, client: EngineClient, payload: twostage.Payload, key: str
+) -> tuple[UpgradeMode | None, HttpResponse | None]:
+    """A confirm's ``upgrade_mode`` (#307): ``(None, None)`` when the preview offered no choice;
+    ``(mode, None)`` when it did and the POST carries a valid one; else ``(None, page)``, the
+    same preview re-rendered from the token with the field's error and the posted key, and no
+    Engine write. A token whose signed report can't be rebuilt is treated as expired."""
+    base: dict[str, Any] = payload.base
+    if base.get("upgrade_choice") is not True:
+        return None, None
+    form = _upgrade_form(request.POST)
+    if form.is_valid():
+        return cast(UpgradeMode, form.mode()), None
+    impact = ImpactReport.from_json(base.get("impact"))
+    if impact is None:
+        messages.error(request, twostage.EXPIRED_TEXT)
+        return None, redirect(config_url(payload.target_id))
+    lines = base.get("lines")
+    preview = Preview(
+        payload.kind,
+        payload.target_id,
+        payload.body,
+        _kept(base),
+        str(base.get("heading") or ""),
+        lines=tuple(str(line) for line in lines) if isinstance(lines, list) else (),
+        patch_text=str(base.get("patch_text") or ""),
+        archived=_archived(client, payload.target_id),
+        again=base.get("again") is True,
+    )
+    return None, _preview_page(request, preview, impact, upgrade_form=form, key=key)
+
+
+def _posted_mode(request: HttpRequest) -> str:
+    """The posted mode when it is a valid one (a held re-render's initial), else backfill."""
+    form = _upgrade_form(request.POST)
+    return form.mode() if form.is_valid() else DEFAULT_UPGRADE_MODE
 
 
 def _archived(client: EngineClient, story_id: str) -> bool:
@@ -721,21 +975,46 @@ def _flash_applied(
     base: Mapping[str, Any],
     *,
     version_change: bool = False,
+    story_id: str = "",
 ) -> None:
     """After an applied write: kept (``upgrade_unavailable`` and the fingerprint unchanged),
     no change, or the new fingerprint (after a version change, the new pin first), then the
     impact's guarantees gained and lost (#63). ``pinned`` joins the no-change comparison only
-    when ``base`` carries it (a version change's base does)."""
+    when ``base`` carries it (a version change's base does). #307: a ``forward_only_gap`` on the
+    story's impact entry appends :func:`gap_sentence` to whichever of these it is."""
+    level, text = _applied_text(write, base, version_change=version_change)
+    entry = story_entry(write.impact, story_id)
+    gap = gap_sentence(entry.forward_only_gap, story_id) if entry is not None else None
+    if gap is not None:
+        text = format_html("{}{} {}", text, "" if str(text).endswith(".") else ".", gap)
+    level(request, text)
+
+
+def gap_sentence(gap: ForwardOnlyGap | None, story_id: str) -> SafeString | None:
+    """ "Turns through 3 keep a coverage gap for: <code>episodic</code> — fill it from the
+    Backfill page" ("Backfill page" linked through ``backfill_url``, plain text while
+    unregistered, D19); ``None`` with no gap, ``through_turn`` < 1 or no capabilities."""
+    if gap is None or gap.through_turn < 1 or not gap.capabilities:
+        return None
+    url = backfill_url(story_id)
+    page = format_html('<a href="{}">{}</a>', url, BACKFILL_PAGE) if url else BACKFILL_PAGE
+    capabilities = format_html_join(", ", "<code>{}</code>", ((c,) for c in gap.capabilities))
+    return format_html(
+        FORWARD_ONLY_GAP, through=gap.through_turn, capabilities=capabilities, page=page
+    )
+
+
+def _applied_text(
+    write: StoryProfileWrite, base: Mapping[str, Any], *, version_change: bool
+) -> tuple[Callable[[HttpRequest, str], None], str]:
     result = write.result
     if result is None:
-        messages.info(request, NO_CHANGE)
-        return
+        return messages.info, NO_CHANGE
     kept = upgrade_unavailable(write.impact) and result.fingerprint == (
         write.impact.fingerprint_before
     )
     if kept:
-        messages.warning(request, KEPT)
-        return
+        return messages.warning, KEPT
     unchanged = (
         result.overrides.revision == base.get("revision")
         and result.profile.id == base.get("profile_id")
@@ -743,8 +1022,7 @@ def _flash_applied(
         and ("pinned" not in base or result.profile.pinned == base["pinned"])
     )
     if unchanged:
-        messages.info(request, NO_CHANGE)
-        return
+        return messages.info, NO_CHANGE
     text = format_html(
         'Applied — fingerprint <code title="{}">{}</code>; takes effect from the next turn',
         result.fingerprint,
@@ -763,7 +1041,7 @@ def _flash_applied(
     for label, ids in (("gained", impact.guarantees_gained), ("lost", impact.guarantees_lost)):
         if ids:
             text = format_html("{} Guarantees {}: {}.", text, label, _guarantee_ids(ids))
-    messages.success(request, text)
+    return messages.success, text
 
 
 def _unsigned_write(request: HttpRequest, kind: str, story_id: str) -> twostage.Payload | None:
@@ -790,6 +1068,9 @@ def overrides_apply(request: HttpRequest, story_id: str) -> HttpResponse:
     revision = base.get("revision")
     client = engine_client_for(request)
     key = posted_idempotency_key(request)
+    mode, page = _chosen_mode(request, client, payload, key)
+    if page is not None:
+        return page
     try:
         write = client.patch_profile_overrides(
             story_id,
@@ -797,24 +1078,71 @@ def overrides_apply(request: HttpRequest, story_id: str) -> HttpResponse:
             expected_revision=revision if isinstance(revision, int) else None,
             ignore_warnings=base.get("warned") is True,
             idempotency_key=key,
+            upgrade_mode=mode,
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
         return _apply_refused(request, client, story_id, base, exc, key)
+    if write.backfill is not None:  # the 202: a backfill started, not a held change
+        return _backfill_started(request, story_id, write, base, key)
     if not write.applied:
         preview = Preview(
             OVERRIDES_KIND,
             story_id,
             payload.body,
-            {k: v for k, v in base.items() if k not in ("warned", "fingerprint_before")},
+            _kept(base),
             "Preview: change this story's overrides",
             patch_text=json.dumps(payload.body, indent=2, ensure_ascii=False),
             archived=_archived(client, story_id),
             again=True,
         )
-        return _preview_page(request, preview, write.impact)
-    _flash_applied(request, write, base)
+        return _held_again(request, preview, write.impact)
+    _flash_applied(request, write, base, story_id=story_id)
     return redirect(config_url(story_id))
+
+
+def _held_again(request: HttpRequest, preview: Preview, impact: ImpactReport) -> HttpResponse:
+    """A fresh ``applied: false`` on Apply: the new report with "Apply anyway", the radios (if
+    any) pre-set to the posted valid mode."""
+    form = _upgrade_form(initial=_posted_mode(request))
+    return _preview_page(request, preview, impact, upgrade_form=form)
+
+
+def _backfill_started(
+    request: HttpRequest,
+    story_id: str,
+    write: StoryProfileWrite,
+    base: Mapping[str, Any],
+    key: str,
+) -> HttpResponse:
+    """#307: a confirmed write that started a backfill (the 202): :data:`BACKFILL_STARTED`,
+    " · Follow the backfill" (plain text while ``stories:backfill`` is unregistered, D19) and
+    E21's key tail; then the Backfill page, else Config."""
+    entry = story_entry(write.impact, story_id)
+    span = entry.backfill.range if entry is not None else None
+    if span is None:
+        span = _signed_span(base, story_id)
+    turns = turns_text(span)
+    text = BACKFILL_STARTED.format(rederives=f" while it re-derives {turns}" if turns else "")
+    url = backfill_url(story_id)
+    follow = format_html('<a href="{}">{}</a>', url, FOLLOW_BACKFILL) if url else FOLLOW_BACKFILL
+    messages.success(
+        request,
+        format_html(
+            "{} · {} — idempotency key <code>{}</code>",
+            text,
+            follow,
+            write.idempotency_key or key,
+        ),
+    )
+    return redirect(url or config_url(story_id))
+
+
+def _signed_span(base: Mapping[str, Any], story_id: str) -> TurnSpan | None:
+    """The backfill range the preview's report carried (signed in ``base``)."""
+    impact = ImpactReport.from_json(base.get("impact"))
+    entry = story_entry(impact, story_id) if impact is not None else None
+    return entry.backfill.range if entry is not None else None
 
 
 def _apply_refused(
@@ -849,7 +1177,10 @@ def profile_preview(request: HttpRequest, story_id: str) -> HttpResponse:
     """The assign select's preview: ``impact-preview {profile_id}`` beside a read of the profile
     (its name and latest version for the page)."""
     client = engine_client_for(request)
-    chosen = request.POST.get(PROFILE_FIELD, "").strip()
+    chosen = (
+        request.POST.get(PROFILE_FIELD, "").strip()  # a preset row's Preview button (#307)
+        or request.POST.get(CHOICE_FIELD, "").strip()  # the select or the id input
+    )
     if not chosen:
         return _config_page(request, client, story_id, AssignState(error=PICK_ONE))
     try:  # recorded (#44), so in the request's own thread: the pool only reads
@@ -941,6 +1272,9 @@ def profile_apply(request: HttpRequest, story_id: str) -> HttpResponse:
     client = engine_client_for(request)
     key = posted_idempotency_key(request)
     name = str(base.get("name") or chosen)
+    mode, page = _chosen_mode(request, client, payload, key)
+    if page is not None:
+        return page
     try:
         write = client.assign_engine_profile(
             story_id,
@@ -948,6 +1282,7 @@ def profile_apply(request: HttpRequest, story_id: str) -> HttpResponse:
             ignore_warnings=base.get("warned") is True,
             idempotency_key=key,
             version=version,
+            upgrade_mode=mode,
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
@@ -955,8 +1290,10 @@ def profile_apply(request: HttpRequest, story_id: str) -> HttpResponse:
             state = _version_refused(exc, story_id, version, name, base.get("latest"))
             return _config_page(request, client, story_id, version=state)
         return _config_page(request, client, story_id, _assign_refused(exc, chosen, key, name))
+    if write.backfill is not None:  # the 202: a backfill started, not a held change
+        return _backfill_started(request, story_id, write, base, key)
     if not write.applied:
-        kept = {k: v for k, v in base.items() if k not in ("warned", "fingerprint_before")}
+        kept = _kept(base)
         if version is not None:
             preview = _version_preview(client, story_id, payload.body, kept, version)
         else:
@@ -969,8 +1306,8 @@ def profile_apply(request: HttpRequest, story_id: str) -> HttpResponse:
                 archived=_archived(client, story_id),
                 again=True,
             )
-        return _preview_page(request, preview, write.impact)
-    _flash_applied(request, write, base, version_change=version is not None)
+        return _held_again(request, preview, write.impact)
+    _flash_applied(request, write, base, version_change=version is not None, story_id=story_id)
     return redirect(config_url(story_id))
 
 
@@ -1109,9 +1446,11 @@ def version_change(request: HttpRequest, story_id: str) -> HttpResponse:
         state = _version_refused(exc, story_id, version, name, base.get("latest"))
         return _config_page(request, client, story_id, version=state)
     body = {"profile_id": profile_id, VERSION_FIELD: version}
+    if write.backfill is not None:  # #307's guard: a first stage that started a backfill
+        return _backfill_started(request, story_id, write, base, key)
     if not write.applied:
         return _preview_page(
             request, _version_preview(client, story_id, body, dict(base), version), write.impact
         )
-    _flash_applied(request, write, base, version_change=True)
+    _flash_applied(request, write, base, version_change=True, story_id=story_id)
     return redirect(config_url(story_id))
