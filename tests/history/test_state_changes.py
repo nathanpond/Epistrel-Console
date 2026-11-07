@@ -33,7 +33,11 @@ ALICE = "01JM6CH0000000000000000002"
 OP4 = "01JM6QP0000000000000000004"
 PREDICATES = "/stories/{story_id}/predicates"
 EFFECTIVE = "/stories/{story_id}/effective-config"
-GOLDEN = Path(__file__).parent / "golden" / "m5_items.html"
+# Main's M5 render, before #305's "Edit this line…" (kept as the D19 baseline that
+# tests/history/test_line_edit_link.py compares under a urlconf without ``stories:line-edit``),
+# and the same render under the real urlconf once #305 registered the name (E24).
+GOLDEN_MAIN = Path(__file__).parent / "golden" / "m5_items.html"
+GOLDEN = Path(__file__).parent / "golden" / "m5_items_linked.html"
 STUB_URLS = "tests.urls_with_engine_operation"
 WITHOUT_ENGINE_OPERATION = "tests.urls_without_engine_operation"
 OUTBOX = "01JM6BX0000000000000000021"

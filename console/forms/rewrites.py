@@ -53,6 +53,12 @@ plus E4's modes; :meth:`NewRewriteForm.body` is ``{"instruction", **modes()}``.
 :class:`RewriteFilterForm` is E22's state filter: one checkbox per ``STATE_TEXT`` state in its
 order, none ticked meaning every state; :meth:`RewriteFilterForm.states` gives the ticked ones
 de-duplicated in that order.
+
+**#305 — the line edit.** :class:`LineEditForm` is ``new_text`` (kept verbatim: only
+``\r\n``/``\r`` become ``\n``; whitespace-only is blank; at most :data:`LINE_MAX` characters;
+unchanged from the hidden ``original`` is :data:`LINE_UNCHANGED`, checked only when the page read
+the line) plus E4's modes and the hidden target. :func:`line_target` parses the target from a
+query or the POST, :class:`LineTarget` carries it.
 """
 
 from __future__ import annotations
@@ -64,6 +70,7 @@ from typing import TYPE_CHECKING, Any
 from django import forms
 
 from console.engine.client import EngineClientError, EngineError
+from console.ids import is_ulid
 
 if TYPE_CHECKING:
     from console.rewrites import QuestionView
@@ -279,3 +286,115 @@ class RewriteFilterForm(forms.Form):
         """The ticked states (a valid form), de-duplicated, in the choices' order."""
         ticked = set(self.cleaned_data.get("state") or ())
         return tuple(value for value, _ in _state_choices() if value in ticked)
+
+
+# --- #305: the line-edit form -------------------------------------------------------------------
+
+LINE_MAX = 8000  # the Engine's ``line_edit.new_text`` max_length (pydantic, ``len()``)
+LINE_REQUIRED = "Write the line's new text"
+LINE_TOO_LONG = "At most 8,000 characters"
+LINE_UNCHANGED = "That's the line as recorded — change it first"
+LINE_LABEL = "New text"
+PLAN_EDIT = "Plan the edit"
+
+
+def normalised_line(text: str) -> str:
+    """``\\r\\n`` and ``\\r`` read as ``\\n`` (what a browser posts for a textarea's newlines);
+    nothing else in the line changes."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+@dataclass(frozen=True)
+class LineTarget:
+    """The line a line edit names: by ``event_id`` (the history item's ``message_id``), else by
+    ``turn`` and an optional ``beat``. In id mode ``turn`` rides along only to read the line's
+    current text (``None`` when it was missing or malformed)."""
+
+    event_id: str | None
+    turn: int | None
+    beat: int | None = None
+
+
+def _whole(value: object, minimum: int) -> tuple[bool, int | None]:
+    """A posted whole number ≥ ``minimum``: ``(True, n)``; ``(True, None)`` when blank;
+    ``(False, None)`` when malformed."""
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        return True, None
+    if not text.isascii() or not text.isdigit() or int(text) < minimum:
+        return False, None
+    return True, int(text)
+
+
+def line_target(params: Mapping[str, Any]) -> LineTarget | None:
+    """The target in ``params`` (a GET query or the POST's hidden fields), or ``None`` when it
+    names no line: ``event_id`` (trimmed, upper-cased, C13) must be a ULID, and a malformed one
+    refuses even beside a valid ``turn``; without it, ``turn`` (≥ 1) is required and ``beat``
+    (≥ 0) optional, either malformed refusing (``beat`` alone too). With a good ``event_id``, a
+    bad ``turn`` is dropped (id mode, no read)."""
+    raw_id = str(params.get("event_id") or "").strip().upper()
+    _, turn = _whole(params.get("turn"), 1)
+    if raw_id:
+        return LineTarget(raw_id, turn) if is_ulid(raw_id) else None
+    beat_ok, beat = _whole(params.get("beat"), 0)
+    if turn is None or not beat_ok:
+        return None
+    return LineTarget(None, turn, beat)
+
+
+class LineEditForm(RewriteModesForm):
+    """#305's line edit: ``new_text`` (a textarea, required, kept verbatim, at most
+    :data:`LINE_MAX` characters after :func:`normalised_line`, no HTML ``maxlength``, C10), the
+    hidden target and ``original`` (the text the page read, compared only when it was read), and
+    E4's modes. :meth:`body` is ``{"line_edit": {event_id | turn[, beat], new_text}, **modes()}``
+    for the ``target`` the view parsed (never both an id and a turn, never an instruction)."""
+
+    new_text = forms.CharField(
+        label=LINE_LABEL,
+        required=False,
+        strip=False,
+        widget=forms.Textarea(attrs={"rows": 4}),
+    )
+    event_id = forms.CharField(required=False, widget=forms.HiddenInput)
+    turn = forms.CharField(required=False, widget=forms.HiddenInput)
+    beat = forms.CharField(required=False, widget=forms.HiddenInput)
+    next = forms.CharField(required=False, widget=forms.HiddenInput)
+    original = forms.CharField(required=False, strip=False, widget=forms.HiddenInput)
+
+    field_order = ("new_text", "resolution", "apply_directly")
+
+    def __init__(
+        self,
+        data: Mapping[str, Any] | None = None,
+        *,
+        target: LineTarget | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(data, **kwargs)
+        self.target = target
+
+    def clean_new_text(self) -> str:
+        text = normalised_line(self.cleaned_data.get("new_text") or "")
+        if not text.strip():
+            raise forms.ValidationError(LINE_REQUIRED)
+        if len(text) > LINE_MAX:
+            raise forms.ValidationError(LINE_TOO_LONG)
+        original = normalised_line(self.data.get("original") or "") if self.data else ""
+        if original and text == original:
+            raise forms.ValidationError(LINE_UNCHANGED)
+        return text
+
+    def body(self) -> dict[str, Any]:
+        """``POST …/rewrites``'s body (a valid form with a target)."""
+        target = self.target
+        if target is None:
+            raise ValueError("a line edit's body needs its target")
+        line: dict[str, Any]
+        if target.event_id:
+            line = {"event_id": target.event_id}
+        else:
+            line = {"turn": target.turn}
+            if target.beat is not None:
+                line["beat"] = target.beat
+        line["new_text"] = self.cleaned_data["new_text"]
+        return {"line_edit": line, **self.modes()}

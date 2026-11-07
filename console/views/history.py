@@ -39,6 +39,11 @@ paging). A refusal of the checkpoint (404 ``checkpoint_not_found``, 409 ``checkp
 (:attr:`Controls.checkpoint_error`); 403 ``omniscient_required`` and 422 ``invalid_view`` are
 Console bugs, worded and logged; anything else is #43's panel, as on main. The View select
 re-renders the controls over HTMX like the viewpoint select.
+
+M7 (#305): each editable row of the corrected, active-chain view carries "Edit this line…"
+(:func:`console.history.line_edit_url`, ``next`` this page's full path), built from the history
+read already made: no extra Engine read. A ``?variant=`` chain view and the as-recorded view
+offer none.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -66,6 +71,7 @@ from console.held import is_held
 from console.history import (
     AS_RECORDED_CONTROLS_NOTE,
     AS_RECORDED_NOTE,
+    AS_RECORDED_VIEW,
     CHECKPOINT_INCOMPLETE,
     CHECKPOINT_NOT_FOUND,
     INVALID_VIEW_TEXT,
@@ -369,6 +375,8 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         actor_filtered=bool(query["actor_character_id"]),
         omniscient=history.output_viewpoint == cast_helpers.OMNISCIENT,
         story_id=story.id,
+        chain=query["variant"] or None,  # #305: a dormant chain's lines offer no Edit link
+        next_url=request.get_full_path(),
     )
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     variant = query["variant"] or ""
@@ -741,6 +749,9 @@ def _as_recorded_page(
         actor_filtered=False,
         omniscient=True,
         story_id=story.id,
+        chain=variant or None,
+        view=AS_RECORDED_VIEW,  # #305: read-only, so no "Edit this line…" on any row
+        next_url=request.get_full_path(),
     )
     erasures = erasure_rows(history.erasure_markers)
     back_url, back_turn = _back_url(request, story.id, checkpoint)

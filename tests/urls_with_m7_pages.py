@@ -84,7 +84,6 @@ STORY_STUBS = [
     path(f"{S}rewrites/<ulid:session_id>/answers/", stub, name="rewrite-answers"),  # #298
     path(f"{S}rewrites/<ulid:session_id>/apply/", stub, name="rewrite-apply"),  # #299
     path(f"{S}rewrites/<ulid:session_id>/cancel/", stub, name="rewrite-cancel"),  # #299
-    path(f"{S}history/line/", stub, name="line-edit"),  # #305
     path(f"{S}direct/", stub, name="direct"),  # #300
     path(f"{S}backfill/", stub, name="backfill"),  # #308
     path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
@@ -156,7 +155,6 @@ NOT_YET_REGISTERED = frozenset(
         "stories:export",
         "stories:export-download",
         "stories:export-job",
-        "stories:line-edit",
         "stories:operations-list",
         "stories:prune",
         "stories:prune-confirm",

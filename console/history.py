@@ -27,6 +27,10 @@ M7 (#304): the history **as originally recorded** (``view=as_recorded``, FR-STOR
 reader :func:`parse_boundary` (D7's ``N`` / ``N+k``), :func:`checkpoint_text`,
 :func:`erasure_rows` and :func:`derived_rows` (``derived`` raw, E15; E23's rules). E2's
 ``AS_RECORDED_LINE`` and ``OMNISCIENT_REQUIRED_TEXT`` stay in :mod:`console.rewrites` (E1).
+
+M7 (#305): :func:`line_edit_url` builds a row's "Edit this line…" link (``Row.edit_url``) into
+the line-edit page (``stories:line-edit``, D19), which :func:`turn_groups` sets when its caller
+passes ``next_url``.
 """
 
 import json
@@ -37,7 +41,7 @@ from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils.text import slugify
 
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
@@ -55,6 +59,7 @@ from console.engine.models import (
     Verdict,
     beat_entries,
 )
+from console.ids import is_ulid
 from console.inspect import retrieval_url
 from console.models import EngineOperation
 from console.notices import NoticeCards
@@ -339,6 +344,8 @@ class Row:
     # the raw entries that didn't parse.
     beat_changes: tuple[StateChangeRow, ...] = ()
     beat_changes_unparsed: tuple[Any, ...] = ()
+    # #305: "Edit this line…" (``stories:line-edit``), set by :func:`line_edit_url`.
+    edit_url: str | None = None
 
     @property
     def beat_effects_summary(self) -> str:
@@ -406,6 +413,42 @@ def is_reply(item: HistoryItem) -> bool:
     return item.kind == REPLY_KIND or item.channel in REPLY_CHANNELS
 
 
+LINE_EDIT_NAME = "stories:line-edit"
+AS_RECORDED_VIEW = "as_recorded"
+
+
+def line_edit_url(
+    story_id: str,
+    item: HistoryItem,
+    *,
+    chain: str | None,
+    view: str | None = None,
+    next_url: str = "",
+) -> str | None:
+    """#305: the row's "Edit this line…" link, ``stories:line-edit?event_id=<message_id>&turn=
+    <turn>&next=<next_url>``. ``None`` (no link) while the name is unregistered (D19), on a
+    dormant chain's view (``chain`` set: the Engine answers ``record_inactive``), on #304's
+    as-recorded view (``view == "as_recorded"``), for an audit record or erasure marker, a
+    redacted or quarantined item, a ``message_id`` that isn't a ULID, and the setup (turn
+    ``None`` or 0). The caller passes ``None`` itself for a ``same_message`` row."""
+    if chain or view == AS_RECORDED_VIEW:
+        return None
+    if item.channel == AUDIT_CHANNEL or item.kind in (REJECTED_KIND, MARKER_KIND):
+        return None
+    if item.redacted or item.quarantined or not item.turn:
+        return None
+    if not is_ulid(item.message_id) or not story_id:
+        return None
+    try:
+        base = reverse(LINE_EDIT_NAME, args=[story_id])
+    except NoReverseMatch:
+        return None
+    query = {"event_id": item.message_id, "turn": str(item.turn)}
+    if next_url:
+        query["next"] = next_url
+    return f"{base}?{urlencode(query)}"
+
+
 def turn_groups(
     history: History,
     items: Sequence[HistoryItem],
@@ -416,6 +459,9 @@ def turn_groups(
     actor_filtered: bool,
     omniscient: bool = False,
     story_id: str = "",
+    chain: str | None = None,
+    view: str | None = None,
+    next_url: str | None = None,
 ) -> list[TurnGroup]:
     """The page's turns in ascending order. Audit records render under their turn only for
     turns on this page (an erasure marker with no turn under turn 0, which only the oldest page
@@ -425,7 +471,11 @@ def turn_groups(
 
     #254: each group gets its ``TurnSummary``'s State changes (the first summary of a
     ``(turn, variant)`` wins) and ``incomplete``; with ``omniscient``, each row its beat's
-    changes. ``labels`` name the scopes (C4); ``story_id`` builds the outbox links (D11)."""
+    changes. ``labels`` name the scopes (C4); ``story_id`` builds the outbox links (D11).
+
+    #305: with ``next_url`` given (the History view passes its own URL), each row's
+    "Edit this line…" link comes from :func:`line_edit_url` (``chain`` and ``view`` gate it);
+    a ``same_message`` row never carries one. Every other caller leaves it out: no link."""
     from console.renders import is_reaction, render_order_line  # console.renders imports us
     from console.turn_world import state_change_rows  # console.turn_world → console.world
 
@@ -478,6 +528,11 @@ def turn_groups(
             ),
             beat_changes=beat_changes,
             beat_changes_unparsed=beat_unparsed,
+            edit_url=(
+                None
+                if same or next_url is None
+                else line_edit_url(story_id, item, chain=chain, view=view, next_url=next_url)
+            ),
         )
         owner = group(item.turn or 0, item.variant)
         if item.kind == REPLY_KIND and not any(r.item.kind == REPLY_KIND for r in owner.rows):

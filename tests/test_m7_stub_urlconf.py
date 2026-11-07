@@ -17,7 +17,6 @@ ARGS: dict[str, list[str]] = {
     "stories:rewrite-answers": [STORY, ULID],
     "stories:rewrite-apply": [STORY, ULID],
     "stories:rewrite-cancel": [STORY, ULID],
-    "stories:line-edit": [STORY],
     "stories:direct": [STORY],
     "stories:backfill": [STORY],
     "stories:backfill-start": [STORY],
@@ -42,7 +41,6 @@ ARGS: dict[str, list[str]] = {
     "engine:eval-run": ["run-1"],
 }
 PATHS = {
-    "stories:line-edit": f"/stories/{STORY}/history/line/",
     "stories:operations-list": f"/stories/{STORY}/operations/",
     "inspect:resolve-listing": (
         f"/stories/{STORY}/inspect/effects/reconciliation/listing-1/resolve/"

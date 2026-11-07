@@ -41,6 +41,7 @@ from console.views import (
     inspect_state_proposals,
     inspect_state_set,
     inspect_states,
+    line_edit,
     media,
     media_picker,
     media_proxy,
@@ -110,6 +111,8 @@ story_patterns = (
             name="override-notice",
         ),
         path("<str:story_id>/history/", history.history, name="history"),
+        # #305 (E11): edit one recorded line from History (a line-edit rewrite session).
+        path("<str:story_id>/history/line/", line_edit.line_edit, name="line-edit"),
         # #297 (E11): the story's Rewrite page and one rewrite session (``<ulid:…>``).
         path("<str:story_id>/rewrites/", rewrites.rewrites, name="rewrites"),
         path(
