@@ -489,6 +489,57 @@ def test_an_expired_token_deletes_its_spool(
     assert spools(settings) == []
 
 
+def page_confirm(html: str) -> dict[str, str]:
+    """What the impact page's own two-stage form posts: its token and its confirm key."""
+    match = re.search(r'<form[^>]*class="two-stage".*?</form>', html, re.S)
+    assert match, "no two-stage form"
+    form = match.group(0)
+    return {
+        twostage.CONFIRM_FIELD: hidden(form, twostage.CONFIRM_FIELD),
+        "idempotency_key": hidden(form, "idempotency_key"),
+    }
+
+
+def tampered(data: dict[str, str]) -> dict[str, str]:
+    token = data[twostage.CONFIRM_FIELD]
+    return {**data, twostage.CONFIRM_FIELD: token[:-3] + ("aaa" if token[-3:] != "aaa" else "bbb")}
+
+
+def test_a_tampered_token_deletes_its_spool(
+    client: Client, engine: FakeEngine, settings: Any
+) -> None:
+    """#345 (#320 AC 3): a tampered token → EXPIRED_TEXT, zero calls, and the spool deleted.
+    The name comes from the session's record for the page's confirm key, not the token."""
+    html = first_stage(client, engine)
+    assert len(spools(settings)) == 1
+    before = len(engine.requests)
+    response = client.post(URL, tampered(page_confirm(html)))
+    assert response.status_code == 303
+    assert response["Location"] == URL
+    assert flashes(response) == [twostage.EXPIRED_TEXT]
+    assert len(engine.requests) == before  # zero calls
+    assert spools(settings) == []
+
+
+def test_a_tampered_token_deletes_only_its_own_pages_spool(
+    client: Client, engine: FakeEngine, settings: Any
+) -> None:
+    """#345's complement: another impact page's spool stays, and a key this session never
+    rendered deletes nothing."""
+    first = first_stage(client, engine)
+    [first_spool] = spools(settings)
+    second = first_stage(client, engine)
+    [second_spool] = [n for n in spools(settings) if n != first_spool]
+    response = client.post(URL, {**tampered(page_confirm(first)), "idempotency_key": KEY})
+    assert flashes(response) == [twostage.EXPIRED_TEXT]
+    assert spools(settings) == sorted([first_spool, second_spool])  # an unknown key: nothing
+    client.post(URL, tampered(page_confirm(first)))
+    assert spools(settings) == [second_spool]
+    engine.respond("POST", IMPORT, 202, json=m7("import_started"))
+    assert client.post(URL, page_confirm(second)).status_code == 303  # still confirmable
+    assert spools(settings) == []
+
+
 def test_a_missing_spool_asks_for_the_file_again(
     client: Client, engine: FakeEngine, settings: Any
 ) -> None:
