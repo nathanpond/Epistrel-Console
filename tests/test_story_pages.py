@@ -285,7 +285,7 @@ def test_the_story_nav_shows_backfill_under_the_real_urlconf(
     operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#308 registered ``stories:backfill``: under the real urlconf its page's nav holds the
-    registered rows (#297's Rewrite too), Backfill marked current."""
+    registered rows (#297's Rewrite and #302's Amendments too), Backfill marked current."""
     from console.views import backfill as backfill_views
 
     patched = vars(story_pages)["engine_client_for"]  # the fixture's fake-wired client
@@ -299,7 +299,7 @@ def test_the_story_nav_shows_backfill_under_the_real_urlconf(
     assert (
         f'<a class="config-tab" href="{S}config/">Config</a> · <span class="story-pages" '
         'role="navigation" aria-label="Story pages">'
-        f'<a href="{S}rewrites/">Rewrite</a> · '
+        f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}amendments/">Amendments</a> · '
         f'<a href="{S}backfill/" aria-current="page">Backfill</a></span></p>'
     ) in html
 

@@ -29,6 +29,7 @@ from tests.rewrites.helpers import (
     ONE_ROUTE,
     SESSION,
     SESSION_URL,
+    STORY,
     STORY_READ,
     answer_raw,
     calls,
@@ -371,7 +372,9 @@ def test_answered_redirects_with_the_flash(operator_client: Client, engine: Fake
     response = post(operator_client, {f"choice_{Q1}": "o1"})
     assert response.status_code == 303
     assert last_flash(response) == (
-        f"Answers recorded and applied: amendment <code>{amendment}</code> · story revision "
+        f"Answers recorded and applied: amendment "
+        f'<a href="/stories/{STORY}/amendments/{amendment}/"><code>{amendment}</code></a>'
+        " · story revision "
         f"now 21{tail}"
     )
 

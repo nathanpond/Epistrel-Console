@@ -52,6 +52,7 @@ __all__ = ["engine"]  # the fixture, re-exported for pytest
 
 INSTRUCTION = "Bobby actually went to UCLA."
 KEY = "01JM7KY0000000000000000009"
+AMENDMENT = "01JM7AM0000000000000000003"
 OPEN = ("POST", LIST)
 
 
@@ -349,7 +350,8 @@ def test_open_with_threshold_and_apply_directly(
     body = sent_body(engine)
     assert (body["preview"], body["resolution_mode"]) == ("apply_directly", {"threshold": "high"})
     assert flashes(response) == [
-        "Applied directly: amendment <code>01JM7AM0000000000000000003</code> · story revision "
+        f'Applied directly: amendment <a href="/stories/{STORY}/amendments/{AMENDMENT}/">'
+        f"<code>{AMENDMENT}</code></a> · story revision "
         f"now 21 — idempotency key <code>{KEY}</code>"
     ]
 

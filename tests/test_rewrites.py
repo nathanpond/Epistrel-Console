@@ -223,7 +223,8 @@ def test_an_applied_session_has_no_actions_and_links_its_amendment() -> None:
     assert shown.state_text == "Applied"
     assert shown.actions == ()
     assert shown.result_amendment_id == "01JM7AM0000000000000000003"
-    assert shown.result_amendment_url is None
+    # #302 registered ``stories:amendment``: linked under the real urlconf too.
+    assert shown.result_amendment_url == f"/stories/{STORY}/amendments/01JM7AM0000000000000000003/"
     assert shown.report_more is not None
     assert shown.report_more[0] == "1 resolution"  # ``applied`` is a map, not a list
     assert '"resolutions"' in shown.report_more[1]
@@ -709,9 +710,11 @@ def test_url_helpers_refuse_blank_or_non_string_ids(bad: Any) -> None:
         assert amendment_url(STORY, bad) is None
 
 
-def test_url_helpers_are_none_while_unregistered() -> None:
-    assert amendments_url(STORY) is None
-    assert amendment_url(STORY, AMENDMENT) is None
+def test_the_amendment_helpers_link_under_the_real_urlconf() -> None:
+    """#302 registered ``stories:amendments`` and ``stories:amendment`` (they were ``None``
+    while unregistered, D19)."""
+    assert amendments_url(STORY) == f"/stories/{STORY}/amendments/"
+    assert amendment_url(STORY, AMENDMENT) == f"/stories/{STORY}/amendments/{AMENDMENT}/"
 
 
 def test_the_rewrite_page_helpers_link_under_the_real_urlconf() -> None:

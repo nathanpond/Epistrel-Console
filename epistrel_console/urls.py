@@ -9,6 +9,7 @@ from console.ids import UlidConverter
 from console.states import StateNameConverter
 from console.views import (
     acting,
+    amendments,
     backfill,
     catalog_characters,
     catalog_lifecycle,
@@ -130,6 +131,13 @@ story_patterns = (
             "<str:story_id>/rewrites/<ulid:session_id>/cancel/",
             rewrite_apply.cancel,
             name="rewrite-cancel",
+        ),
+        # #302 (E11): the story's amendments and one amendment (``<ulid:…>``).
+        path("<str:story_id>/amendments/", amendments.amendments, name="amendments"),
+        path(
+            "<str:story_id>/amendments/<ulid:amendment_id>/",
+            amendments.amendment,
+            name="amendment",
         ),
         # #195: one turn's perception trace, reconstructed per character.
         path(

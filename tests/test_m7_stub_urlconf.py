@@ -19,8 +19,6 @@ ARGS: dict[str, list[str]] = {
     "stories:rewrite-cancel": [STORY, ULID],
     "stories:line-edit": [STORY],
     "stories:direct": [STORY],
-    "stories:amendments": [STORY],
-    "stories:amendment": [STORY, ULID],
     "stories:amendment-undo": [STORY, ULID],
     "stories:amendment-redo": [STORY, ULID],
     "stories:backfill": [STORY],

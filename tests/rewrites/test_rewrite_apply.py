@@ -198,7 +198,8 @@ def test_applied_redirects_with_amendment_and_revision(
     assert response["Location"] == SESSION_URL
     (flash,) = flashes(response)
     assert flash == (
-        f"Applied: amendment <code>{AMENDMENT}</code> · story revision now 21"
+        f'Applied: amendment <a href="/stories/{STORY}/amendments/{AMENDMENT}/">'
+        f"<code>{AMENDMENT}</code></a> · story revision now 21"  # #302 registered the page
         " — idempotency key <code>01JM7KY0000000000000000001</code>"
     )
     # Under the stub urlconf the amendment is linked (E6). (The stub urlconf shadows the apply
@@ -216,7 +217,7 @@ def test_the_applied_session_page(operator_client: Client, engine: FakeEngine) -
     served(engine, session_body("rewrite_session_applied"))
     html = page(operator_client.get(SESSION_URL))
     assert ">Applied</span>" in html
-    assert f'<dd><code title="{AMENDMENT}">…00000003</code></dd>' in html
+    assert f'amendments/{AMENDMENT}/"><code title="{AMENDMENT}">…00000003</code></a></dd>' in html
     assert "<h3>Report</h3>" in html
     assert "<form" not in session_part(html)
 

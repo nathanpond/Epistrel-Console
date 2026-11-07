@@ -1,0 +1,4 @@
+{% load inspect_tags %}{% comment %}
+#302: an edge's target (console.amendments.TargetCell): its humanised kind (raw in title) and
+its id shown short; "—" for either half when missing. Context: target. No trailing newline.
+{% endcomment %}{% if target.kind_raw %}<span title="{{ target.kind_raw }}">{{ target.kind_text }}</span>{% else %}—{% endif %} {{ target.id|engine_id }}

@@ -84,18 +84,27 @@ def test_every_page_parent_is_in_e11s_tables() -> None:
 
 
 def test_rewrite_link_once_registered() -> None:
-    """#297 registered ``stories:rewrites`` and #308 ``stories:backfill`` (E24: this replaces
-    #296's "empty under the real urlconf" baseline): the real urlconf's nav holds those rows,
-    marked current from a sub-page through ``PAGE_PARENT``."""
+    """#297 registered ``stories:rewrites``, #302 ``stories:amendments`` and #308
+    ``stories:backfill`` (E24: this replaces #296's "empty under the real urlconf" baseline):
+    the real urlconf's nav holds those rows, marked current from a sub-page through
+    ``PAGE_PARENT``."""
     rewrite = NavLink("stories:rewrites", "Rewrite", f"{S}rewrites/", False)
+    amendments = NavLink("stories:amendments", "Amendments", f"{S}amendments/", False)
     backfill = NavLink("stories:backfill", "Backfill", f"{S}backfill/", False)
-    assert story_links(STORY, None) == [rewrite, backfill]
+    assert story_links(STORY, None) == [rewrite, amendments, backfill]
     assert story_links(STORY, "stories:rewrite") == [
         NavLink("stories:rewrites", "Rewrite", f"{S}rewrites/", True),
+        amendments,
+        backfill,
+    ]
+    assert story_links(STORY, "stories:amendment") == [
+        rewrite,
+        NavLink("stories:amendments", "Amendments", f"{S}amendments/", True),
         backfill,
     ]
     assert story_links(STORY, "stories:backfill-cancel") == [
         rewrite,
+        amendments,
         NavLink("stories:backfill", "Backfill", f"{S}backfill/", True),
     ]
 

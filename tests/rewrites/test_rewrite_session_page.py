@@ -12,6 +12,7 @@ import pytest
 from django.test import Client, override_settings
 from django.utils.html import escape
 
+from console import rewrites
 from console.rewrites import (
     NOT_FOUND_TEXT,
     OMNISCIENT_LINE,
@@ -134,14 +135,20 @@ def test_lite_session_shows_reach(operator_client: Client, engine: FakeEngine) -
     assert REACH_TRUNCATED_TEXT in html
 
 
-def test_applied_session_links_its_amendment(operator_client: Client, engine: FakeEngine) -> None:
+def test_applied_session_links_its_amendment(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     served(engine, "rewrite_session_applied")
     amendment = "01JM7AM0000000000000000003"
     with override_settings(ROOT_URLCONF=M7_PAGES):
         html = page(operator_client)
     link = f'<a href="{S}amendments/{amendment}/"><code title="{amendment}">…00000003</code></a>'
     assert link in html
-    # **Complement:** under the real urlconf (before #302) it is plain ``<code>``.
+    # #302 registered ``stories:amendment``: the real urlconf links it too.
+    assert link in page(operator_client)
+    # **Complement:** while unregistered (D19, ``amendment_url`` answering ``None``) it is
+    # plain ``<code>``.
+    monkeypatch.setattr(rewrites, "amendment_url", lambda *a: None)
     html = page(operator_client)
     assert f'<dd><code title="{amendment}">…00000003</code></dd>' in html
     assert f"amendments/{amendment}/" not in html

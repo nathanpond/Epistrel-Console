@@ -10,7 +10,8 @@ keeps working as owners land.
 
 **Page stories add a stub here, and never create another stub urlconf.** #292's test-local
 ``stories:rewrite`` stub was folded in, then dropped once #297 registered the real session page
-(the linked cases of its footer and amendment links render the real page here).
+(the linked cases of its footer and amendment links render the real page here). #302's
+``stories:amendments``/``stories:amendment`` stubs went the same way.
 
 **The frames (#296).** ``stories:rewrites`` renders through
 :func:`console.views.story_pages.story_page` and ``engine:certifications`` through
@@ -82,8 +83,6 @@ STORY_STUBS = [
     path(f"{S}rewrites/<ulid:session_id>/cancel/", stub, name="rewrite-cancel"),  # #299
     path(f"{S}history/line/", stub, name="line-edit"),  # #305
     path(f"{S}direct/", stub, name="direct"),  # #300
-    path(f"{S}amendments/", stub, name="amendments"),  # #302
-    path(f"{S}amendments/<ulid:amendment_id>/", stub, name="amendment"),  # #302
     path(f"{S}amendments/<ulid:amendment_id>/undo/", stub, name="amendment-undo"),  # #303
     path(f"{S}amendments/<ulid:amendment_id>/redo/", stub, name="amendment-redo"),  # #303
     path(f"{S}backfill/", stub, name="backfill"),  # #308
@@ -159,10 +158,8 @@ NOT_YET_REGISTERED = frozenset(
         "inspect:resolve-listing",
         "inspect:resolved",
         "profiles:certify",
-        "stories:amendment",
         "stories:amendment-redo",
         "stories:amendment-undo",
-        "stories:amendments",
         "stories:certify",
         "stories:export",
         "stories:export-download",
