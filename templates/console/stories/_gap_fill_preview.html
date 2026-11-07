@@ -1,0 +1,21 @@
+{% comment %}
+The gap-fill preview and the resume confirm (#309; E8), inside _gap_fill.html. Context: gap
+(views.backfill.GapBlock: preview (GapFillPreviewView: needed, capabilities, turns, estimate
+through console.impact.backfill_text), resume_line and subjects ((text, code) parts per open
+conflict, as #308 renders a subject), token, confirm_key, confirm_label, hidden, action_url,
+page_url, muted), pauses_line, nothing_to_fill and back_text. Without a token (a needed: false
+preview, or the muted summary after a refusal) there is no Start / Finish now button.
+{% endcomment %}{% if gap.resume %}<p class="resume-line">{{ gap.resume_line }}</p>
+{% if gap.subjects %}<ul class="resume-subjects">
+  {% for parts in gap.subjects %}<li>{% for text, code in parts %}{% if code %}<code>{{ text }}</code>{% else %}{{ text }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</li>
+  {% endfor %}</ul>
+{% endif %}{% elif gap.preview %}{% if gap.preview.needed %}<div class="gap-fill-preview">
+  <p class="preview-capabilities">{{ gap.preview.capabilities }}</p>
+  <p class="preview-turns">{{ gap.preview.turns }}</p>
+  <p class="preview-estimate">{{ gap.preview.estimate }}</p>
+  <p class="preview-pauses">{{ pauses_line }}</p>
+</div>
+{% else %}<p class="nothing-to-fill">{{ nothing_to_fill }}</p>
+{% if not gap.muted %}<p><a href="{{ gap.page_url }}#gap-fill">{{ back_text }}</a></p>
+{% endif %}{% endif %}{% endif %}{% if gap.token and not gap.muted %}{% include "console/_two_stage.html" with token=gap.token confirm_url=gap.action_url confirm_label=gap.confirm_label cancel_url=gap.page_url idempotency_key=gap.confirm_key hidden=gap.hidden %}
+{% endif %}

@@ -1,13 +1,15 @@
 {% comment %}
-A backfill's conflicts, read-only (#308; #309 adds the resolve controls per conflict once
-stories:backfill-conflict resolves, D19). Context: conflicts (ConflictRow tuple: parsed in the
-Engine's order, then the rejected entries) and backfill (BackfillView: showing_text,
-rejected_count).
-{% endcomment %}{% load console_format principals %}{% if backfill.rejected_count %}<p class="notice rejected">{{ backfill.rejected_count|count }} conflict{{ backfill.rejected_count|pluralize }} couldn't be read</p>
+A backfill's conflicts (#308). Context: conflicts (ConflictRow tuple: parsed in the Engine's
+order, then the rejected entries) and backfill (BackfillView: showing_text, rejected_count).
+#309 (once stories:backfill-conflict resolves, D19): resolve_forms (conflict id → ResolveBlock,
+open conflicts only: form, key, action_url, error, error_url, panel), resolvable (a rejected
+entry then reads unresolvable_text), resolve_label and accept_label.
+{% endcomment %}{% load console_format principals world_tags %}{% if backfill.rejected_count %}<p class="notice rejected">{{ backfill.rejected_count|count }} conflict{{ backfill.rejected_count|pluralize }} couldn't be read</p>
 {% endif %}{% if backfill.showing_text %}<p class="showing">{{ backfill.showing_text }}</p>
 {% endif %}{% for conflict in conflicts %}{% if conflict.bad %}<section class="conflict conflict-bad" id="{{ conflict.anchor }}">
   <p>This conflict couldn't be read</p>
-  <details><summary>More</summary><pre>{{ conflict.more }}</pre></details>
+  {% if resolvable %}<p class="note">{{ unresolvable_text }}</p>
+  {% endif %}  <details><summary>More</summary><pre>{{ conflict.more }}</pre></details>
 </section>
 {% else %}<section class="conflict" id="{{ conflict.anchor }}">
   <h4 class="conflict-subject">{% if conflict.subject_parts %}{% for text, code in conflict.subject_parts %}{% if code %}<code>{{ text }}</code>{% else %}{{ text }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}{% else %}<code>{{ conflict.subject }}</code>{% endif %} <span class="badge conflict-status conflict-{{ conflict.status_raw }}"{% if conflict.status_title %} title="{{ conflict.status_title }}"{% endif %}>{{ conflict.status }}</span></h4>
@@ -27,6 +29,7 @@ rejected_count).
   </table>
   {% if conflict.resolved %}<p class="conflict-resolved">Resolved by {{ conflict.resolved_by|principal_link }} · {{ conflict.resolved_at|engine_time }}: {{ conflict.resolved }}</p>{% endif %}
   {% if conflict.more %}<details><summary>More</summary><pre>{{ conflict.more }}</pre></details>{% endif %}
+  {% with resolve=resolve_forms|get_item:conflict.id %}{% if resolve %}{% include "console/stories/_conflict_resolve.html" %}{% endif %}{% endwith %}
 </section>
 {% endif %}{% empty %}<p class="no-conflicts">None</p>
 {% endfor %}

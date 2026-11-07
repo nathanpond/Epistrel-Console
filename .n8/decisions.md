@@ -3358,3 +3358,30 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The fixture `m7/rewrite_session.json` has base revision 20, so the tests use 20 and the stale re-read 21, not the test plan's 7 and 8. The stub urlconf shadows the real apply route, so the linked-amendment flash is checked by calling `applied_flash` directly. The Demo was not run against a live Engine. The fake-Engine suite covers every AC.
   **Why:** The fixture is the source of truth, and the stub urlconf's design means a POST under it can't reach the real view. Cost if wrong: none.
   **Issue:** #299
+- **Decision:** #309's fixtures follow the Engine (C15): the m7 conflict subjects are `{entity_id, predicate}` (`backfill_paused`, `backfill_resume_preview`, `backfill_conflict_resolved`); the resolved conflict's `resolution` is `{choice: {statement_id}, via: "choose", by}`; `backfill_conflict_resolved.backfill` is `{status, conflicts_open}` (`ResolvedBody.of`); `backfill_resume_preview.backfill` is `{status}`; `backfill_started` says `applied: false` on its 202 (`GapFillBody`). `$SCRATCH/gen_m7.py` is updated to match; the JSON was edited in place, since the generator no longer runs on its own.
+  **Why:** `api/routes/backfill.py` and `core/backfill/conflicts.py` at the checked-out Engine. Cost if wrong: fixture-only.
+  **Issue:** #309
+- **Decision:** The views branch on the answer's shape, not on the posted `mode`: `started` (the 202) first, then `conflicts_open` with `applied` false (the resume confirm), then `applied` (a resume that finished, flashed at once), else the gap-fill preview. A `mode=start` post on a paused story renders the resume confirm, and a `mode=resume` post on an unpaused one renders a gap-fill preview under `backfill-start`.
+  **Why:** The story's E8 rule ("never on `applied`") and its planner notes. The Engine's own gap-fill 202 says `applied: false`. Cost if wrong: one confirm page.
+  **Issue:** #309
+- **Decision:** The gap-fill first stage doesn't check the ticked capabilities against the configuration. The form widens its choices to whatever was posted, and the Engine's 422 `validation_error` at `body.capabilities` lands on the checkboxes. The signed body is `{"ignore_warnings": true, "capabilities"?: […]}` (resume: `{"ignore_warnings": true}`). The confirm sends exactly that, so a box changed after the preview is ignored.
+  **Why:** There's no extra configuration read before the write. The Engine is the authority, and live it answers `validation_error` with `errors[].field = body.capabilities`. Cost if wrong: one Engine round-trip per bad box.
+  **Issue:** #309
+- **Decision:** Plurals follow E23: "Backfill finished — 2 conflicts made uncertain" and "Finishing now makes the 2 open conflicts uncertain…", not the story's literal "conflict(s)". A resume flash without `conflicts_made_uncertain` reads "Backfill finished".
+  **Why:** E23 says every "(s)" is C11 pluralisation and tests assert the pluralised forms. Cost if wrong: wording.
+  **Issue:** #309
+- **Decision:** The local "Pick a statement…" error shows above the form (non-field). The Engine's `invalid_resolution` goes on `value` when a value was typed (and the post wasn't the accept submit), else on the radios. `validation_error` maps `body.value` to `value` and `body.choose`/`body.accept_recommendation` to the radios. Anything else, or a partial mapping, also gets #43's panel. A malformed conflict id is `engine_error_page.html` with `MALFORMED_CONFLICT_ID` at 404 (no Engine call). If the pre-write `get_backfill(open, 200)` fails (other than held), local validation is skipped and the Engine decides.
+  **Why:** The story's AC and planner notes; the Engine's `InvalidResolution` carries `details.field`. Cost if wrong: where a message sits.
+  **Issue:** #309
+- **Decision:** Two more templates than the planned eight files: `_gap_fill.html` (the `#gap-fill` section: the form, "Finish now…", refusals) and `_conflict_resolve.html` (one conflict's form, included from `_backfill_conflicts.html`). `_gap_fill_preview.html` holds only the preview and the resume confirm. The radios are rendered by hand from `ConflictResolveForm.radio_rows`, because E23's `title` on a cut value can't go on Django's RadioSelect label.
+  **Why:** Each partial stays readable, and the section is shared by the no-backfill and backfill branches. Cost if wrong: none.
+  **Issue:** #309
+- **Decision:** Added `console.upgrades.gap_fill_url(story_id)` (`backfill_url` + `#gap-fill`) and pointed #307's `gap_sentence` at it. Its test now expects `…/backfill/#gap-fill`, and `unregistered_backfill` also patches `gap_fill_url`. #330 and #332's "fill it from the Backfill page" links should use it.
+  **Why:** AC "Gap-fill entry points". Cost if wrong: an anchor.
+  **Issue:** #309
+- **Decision:** `test_no_resolve_controls_before_s16b` became `test_no_resolve_controls_while_unregistered` (D19: `conflict_url` monkeypatched to `None`). Its complement `test_open_conflicts_get_resolve_controls_once_registered` runs under the real urlconf. `stories:backfill-start` and `stories:backfill-conflict` are out of `NOT_YET_REGISTERED`.
+  **Why:** #308's note for #309. Cost if wrong: none.
+  **Issue:** #309
+- **Decision:** Live check on `n8-291-smoke` (127.0.0.1:18000), with no writes applied: `POST /stories/{id}/backfill` on a turn-less story answers 409 `nothing_to_backfill`; an unknown capability answers 422 `validation_error` with `errors[0].field = "body.capabilities"`; resolving on a story with no backfill answers 404 `backfill_not_found`. Nothing ran mid-backfill (Engine #783 is still open).
+  **Why:** Confirms the refusal shapes the views map. Cost if wrong: none.
+  **Issue:** #309

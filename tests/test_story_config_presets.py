@@ -560,6 +560,7 @@ def unregistered_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
     """D19's unregistered case: ``stories:backfill`` registered since #308, so these tests stand
     in for a build without it by making ``backfill_url`` answer ``None``."""
     monkeypatch.setattr(story_config, "backfill_url", lambda story_id: None)
+    monkeypatch.setattr(story_config, "gap_fill_url", lambda story_id: None)  # #309
 
 
 def test_backfill_202_before_the_backfill_page_lands_on_config(
@@ -602,7 +603,7 @@ def test_forward_only_flash_names_the_gap(operator_client: Client, engine: FakeE
     [flash] = flashes(confirm(operator_client, html, upgrade_mode="forward_only"))  # #308: real
     assert flash.endswith(
         ". Turns through 3 keep a coverage gap for: <code>episodic</code> — fill it from the "
-        f'<a href="{BACKFILL_PAGE}">Backfill page</a>'
+        f'<a href="{BACKFILL_PAGE}#gap-fill">Backfill page</a>'  # #309: the form's anchor
     )
     assert flash.startswith("Applied — fingerprint")
     assert "idempotency key" not in flash

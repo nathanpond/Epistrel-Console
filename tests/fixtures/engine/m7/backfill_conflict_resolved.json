@@ -5,9 +5,8 @@
     "id": "01JM7CF0000000000000000001",
     "status": "resolved",
     "subject": {
-      "kind": "attribute",
       "entity_id": "01JM7CH0000000000000000003",
-      "attribute": "age"
+      "predicate": "age"
     },
     "statements": [
       {
@@ -33,18 +32,17 @@
     ],
     "recommended": null,
     "resolution": {
-      "choose": "01JM7SM0000000000000000002"
+      "choice": {
+        "statement_id": "01JM7SM0000000000000000002"
+      },
+      "via": "choose",
+      "by": "console:nate"
     },
     "resolved_by": "console:nate",
     "resolved_at": "2026-11-05T11:03:00Z"
   },
   "backfill": {
-    "id": "01JM7BF0000000000000000001",
     "status": "paused_for_conflicts",
-    "conflicts": {
-      "open": 1,
-      "resolved": 1,
-      "uncertain": 0
-    }
+    "conflicts_open": 1
   }
 }

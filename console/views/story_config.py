@@ -103,7 +103,7 @@ from console.ids import new_ulid
 from console.impact import backfill_text, quality_class, short_fingerprint
 from console.profile_schema import get_profile_schema_cached
 from console.story_config import badge_for, config_layers, config_url
-from console.upgrades import backfill_url, preset_label, preset_order
+from console.upgrades import backfill_url, gap_fill_url, preset_label, preset_order
 from console.views.profiles import detail_url
 from console.views.story_settings import Refusal, refusal_for
 from console.wording import write_refusal
@@ -992,11 +992,12 @@ def _flash_applied(
 
 def gap_sentence(gap: ForwardOnlyGap | None, story_id: str) -> SafeString | None:
     """ "Turns through 3 keep a coverage gap for: <code>episodic</code> — fill it from the
-    Backfill page" ("Backfill page" linked through ``backfill_url``, plain text while
-    unregistered, D19); ``None`` with no gap, ``through_turn`` < 1 or no capabilities."""
+    Backfill page" ("Backfill page" linked through ``gap_fill_url``, #309's ``#gap-fill``;
+    plain text while unregistered, D19); ``None`` with no gap, ``through_turn`` < 1 or no
+    capabilities."""
     if gap is None or gap.through_turn < 1 or not gap.capabilities:
         return None
-    url = backfill_url(story_id)
+    url = gap_fill_url(story_id)
     page = format_html('<a href="{}">{}</a>', url, BACKFILL_PAGE) if url else BACKFILL_PAGE
     capabilities = format_html_join(", ", "<code>{}</code>", ((c,) for c in gap.capabilities))
     return format_html(

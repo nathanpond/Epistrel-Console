@@ -228,6 +228,13 @@ story_patterns = (
         # #308: the story's Backfill page (?banner=1, ?partial=1) and its cancel confirm.
         path("<str:story_id>/backfill/", backfill.backfill_page, name="backfill"),
         path("<str:story_id>/backfill/cancel/", backfill.backfill_cancel, name="backfill-cancel"),
+        # #309: start a gap fill or finish a paused one (one URL, ``mode``), resolve a conflict.
+        path("<str:story_id>/backfill/start/", backfill.backfill_start, name="backfill-start"),
+        path(
+            "<str:story_id>/backfill/conflicts/<str:conflict_id>/",
+            backfill.backfill_conflict,
+            name="backfill-conflict",
+        ),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),

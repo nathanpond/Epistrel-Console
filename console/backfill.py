@@ -19,7 +19,8 @@ the raw renderers ``console.raw`` (E23). #309 (resolve, resume, gap fill) import
   Finished ("—" when null), and the conflict counts "<open> open · <resolved> resolved ·
   <uncertain> uncertain".
 - **Status** (E7): ``job_state("backfill", status, progress={**progress, "conflicts_open": n})``.
-- **Conflicts** (read-only; #309 adds the resolve controls, D19): each parsed
+- **Conflicts** (#309 adds a resolve form to each open one once ``stories:backfill-conflict``
+  resolves, D19; ``console/forms/backfill.py``): each parsed
   :class:`~console.engine.models.BackfillConflict` in the Engine's order is a
   :class:`ConflictRow` (subject, status badge, one :class:`StatementRow` per statement with the
   recommendation marked, the resolution once resolved), then one "This conflict couldn't be
@@ -37,6 +38,13 @@ the raw renderers ``console.raw`` (E23). #309 (resolve, resume, gap fill) import
   reads "Waiting on this backfill: <humanised kind and capabilities>" when the object carries
   them, else "a configuration change", raw in More. A completed **upgrade** reads "The new
   configuration now applies", linked to Config (a gap fill or resummarize holds no change).
+
+**#309's wording** (resolve, finish now, gap fill): the flashes :func:`resolved_text`
+(:data:`RESOLVED_TEXT` / :data:`LAST_RESOLVED_TEXT`), :func:`finished_text` and
+:data:`GAP_FILL_STARTED`; :func:`resume_line`; the refusal lines; and the gap-fill preview
+(:func:`gap_fill_preview`: "Capabilities: …", :func:`turns_text`, the estimate through
+``console.impact.backfill_text``, unchanged). :func:`subject_summary` stores a subject's parts
+in a signed ``base``.
 """
 
 from collections.abc import Mapping, Sequence
@@ -47,14 +55,18 @@ from urllib.parse import urlencode
 from django.urls import NoReverseMatch, reverse
 
 from console.engine.models import (
+    Backfill,
     BackfillConflict,
+    BackfillEstimate,
     ConflictStatement,
+    GapFillPreview,
     StoryBackfill,
     rejected_entries,
 )
+from console.impact import backfill_text
 from console.inspect import history_turn_url, short_id
 from console.jobs import JobKind, JobState, job_state
-from console.raw import EMPTY, compact_json, more_json, plural
+from console.raw import CELL_LIMIT, EMPTY, compact_json, more_json, plural
 from console.wording import humanised
 from console.world import state_value_text
 
@@ -117,6 +129,46 @@ CANCEL_VERB = "cancel the backfill"
 BACKFILL_PARAM = "backfill"
 STATUS_PARAM = "status"
 
+# --- #309: resolve, finish now, gap fill ----------------------------------------------------------
+RESOLVED_TEXT = "Conflict resolved — {open} still open"
+RESOLVED_BARE = "Conflict resolved"
+RESOLVED_NOW = " — the backfill is now {status}"
+LAST_RESOLVED_TEXT = (
+    "That was the last open conflict — the backfill completed and the story resumed"
+)
+CONFLICT_CLOSED_TEXT = "This conflict was already settled — reload"
+NOT_AWAITING_TEXT = "The backfill isn't waiting on conflicts any more — reload"
+CONFLICT_NOT_FOUND_TEXT = "No such conflict for this story's backfill"
+MALFORMED_CONFLICT_ID = "No such conflict — the id in the address isn't an Engine id"
+UNRESOLVABLE_ENTRY_TEXT = "Can't be resolved here: unreadable entry"
+RESOLVE_VERB = "resolve a backfill conflict"
+RESUME_LINE = (
+    "Finishing now makes the {conflicts} uncertain: the story carries each forward as an open "
+    "question instead of a settled fact"
+)
+FINISHED_TEXT = "Backfill finished — {conflicts} made uncertain"
+FINISHED_BARE = "Backfill finished"
+GAP_FILL_STARTED = "Gap fill started — follow it below"
+NOTHING_TO_FILL = "Nothing to fill — every capability covers this story's turns"
+IN_PROGRESS_TEXT = "A backfill is already running — follow it below"
+PAUSES_LINE = (
+    "The story pauses while it runs; nothing is regenerated, only re-derived from the transcript"
+)
+CAPABILITIES_UNREAD = "The capability list couldn't be read"
+ANSWER_UNREADABLE = "The Engine's answer couldn't be read — reload the page"
+GAP_FILL_HEADING = "Fill coverage gaps…"
+GAP_FILL_HELP = "Tick none to fill every capability that has a gap"
+FINISH_HEADING = "Finish the backfill"
+FINISH_NOW_LINK = "Finish now…"
+FINISH_NOW_LABEL = "Finish now"
+PREVIEW_LABEL = "Preview"
+START_LABEL = "Start the gap fill"
+BACK_TEXT = "Back"
+GAP_FILL_VERB = "fill coverage gaps"
+RESUME_VERB = "finish the backfill"
+CAPABILITIES_NONE = "none"
+PAUSED_FOR_CONFLICTS = "paused_for_conflicts"
+
 
 def _int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
@@ -158,6 +210,19 @@ def cancel_url(story_id: str, backfill_id: str, status: str) -> str | None:
 
 def config_url(story_id: str) -> str | None:
     return _reversed("stories:config", story_id)
+
+
+def start_url(story_id: str) -> str | None:
+    """``stories:backfill-start`` (#309), ``None`` while unregistered (D19)."""
+    return _reversed("stories:backfill-start", story_id)
+
+
+def conflict_url(story_id: str, conflict_id: str) -> str | None:
+    """``stories:backfill-conflict`` (#309), ``None`` while unregistered (D19)."""
+    try:
+        return reverse("stories:backfill-conflict", args=[story_id, conflict_id])
+    except NoReverseMatch:
+        return None
 
 
 # --- conflicts ------------------------------------------------------------------------------------
@@ -567,3 +632,89 @@ def status_fact(status: str) -> str:
     if not status:
         return EMPTY
     return job_state(JobKind.BACKFILL, status).text.split(" (", 1)[0].split(":", 1)[0]
+
+
+# --- #309: the flashes and the gap-fill preview ---------------------------------------------------
+
+
+def resolved_text(backfill: Mapping[str, Any]) -> tuple[str, bool]:
+    """The resolve flash's text and whether it completed the backfill: ``completed`` →
+    :data:`LAST_RESOLVED_TEXT`; else :data:`RESOLVED_TEXT` (no count clause without an int
+    ``conflicts_open``), plus " — the backfill is now <E7 status>" for a status other than
+    ``paused_for_conflicts``."""
+    status = backfill.get("status")
+    if status == COMPLETED:
+        return LAST_RESOLVED_TEXT, True
+    left = _int(backfill.get("conflicts_open"))
+    text = RESOLVED_TEXT.format(open=f"{left:,}") if left is not None else RESOLVED_BARE
+    if isinstance(status, str) and status and status != PAUSED_FOR_CONFLICTS:
+        text += RESOLVED_NOW.format(status=status_fact(status))
+    return text, False
+
+
+def finished_text(made_uncertain: object) -> str:
+    """ "Backfill finished — <n> conflict(s) made uncertain" (C11), or the bare text."""
+    n = _int(made_uncertain)
+    if n is None:
+        return FINISHED_BARE
+    return FINISHED_TEXT.format(conflicts=plural(n, "conflict"))
+
+
+def resume_line(conflicts_open: int) -> str:
+    return RESUME_LINE.format(conflicts=plural(conflicts_open, "open conflict"))
+
+
+def turns_text(from_turn: object, to_turn: object) -> str:
+    """ "Turns <from>\u2013<to>", "Turn <n>" when the bounds are equal, "—" for a missing
+    bound."""
+    low, high = _int(from_turn), _int(to_turn)
+    if low is not None and low == high:
+        return f"Turn {low:,}"
+    shown = [f"{n:,}" if n is not None else EMPTY for n in (low, high)]
+    return f"Turns {shown[0]}–{shown[1]}"  # noqa: RUF001
+
+
+def capabilities_line(capabilities: object) -> str:
+    """ "Capabilities: a, b" (raw ids, E23), "Capabilities: none" for an empty list."""
+    named = (
+        [c for c in capabilities if isinstance(c, str)] if isinstance(capabilities, list) else []
+    )
+    return f"Capabilities: {', '.join(named) if named else CAPABILITIES_NONE}"
+
+
+@dataclass(frozen=True)
+class GapFillPreviewView:
+    """The gap-fill preview's lines (``_gap_fill_preview.html``)."""
+
+    needed: bool
+    capabilities: str
+    turns: str
+    estimate: str
+
+
+def gap_fill_preview(preview: GapFillPreview) -> GapFillPreviewView:
+    """The preview through ``console.impact.backfill_text`` (its wording unchanged)."""
+    estimate = preview.estimate
+    found = Backfill(
+        needed=preview.needed,
+        estimate=BackfillEstimate(
+            model_calls=estimate.model_calls,
+            tokens=estimate.tokens,
+            duration_s=estimate.duration_s,
+        ),
+    )
+    return GapFillPreviewView(
+        needed=preview.needed,
+        capabilities=capabilities_line(preview.capabilities),
+        turns=turns_text(preview.range.from_turn, preview.range.to_turn),
+        estimate=backfill_text(found),
+    )
+
+
+def subject_summary(subject: object, names: Mapping[str, str]) -> list[list[Any]]:
+    """A conflict subject as JSON-able ``[[text, code], …]`` (#308's parts; one compact-JSON
+    code part when it has none), for a signed ``base``."""
+    parts = subject_parts(subject, names)
+    if parts:
+        return [[text, code] for text, code in parts]
+    return [[compact_json(subject, CELL_LIMIT), True]]

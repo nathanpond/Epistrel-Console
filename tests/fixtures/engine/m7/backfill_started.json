@@ -1,6 +1,6 @@
 {
   "timeline_revision": 20,
-  "applied": true,
+  "applied": false,
   "idempotency_key": "01JM7KY0000000000000000001",
   "backfill": null,
   "started": {

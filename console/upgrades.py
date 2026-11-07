@@ -86,6 +86,17 @@ def backfill_url(story_id: str) -> str | None:
         return None
 
 
+GAP_FILL_ANCHOR = "gap-fill"
+
+
+def gap_fill_url(story_id: str) -> str | None:
+    """The Backfill page's "Fill coverage gaps…" form (``#gap-fill``, #309): where every "fill
+    it from the Backfill page" link lands (#307's flash, #330's turn report, #332's Retrieval
+    explainer); ``None`` as :func:`backfill_url`."""
+    url = backfill_url(story_id)
+    return f"{url}#{GAP_FILL_ANCHOR}" if url is not None else None
+
+
 # --- presets (E13) --------------------------------------------------------------------------------
 
 

@@ -21,6 +21,7 @@ from console.backfill import (
 )
 from console.engine.models import StoryBackfill
 from console.job_poll import RETRYING_TEXT
+from console.views import backfill as backfill_views
 from tests.backfill.helpers import (
     BACKFILL_PATH,
     BACKFILL_READ,
@@ -306,11 +307,27 @@ def test_bad_conflict_entry_is_one_row(operator_client: Client, engine: FakeEngi
     assert "<q>I&#x27;m fifty this winter.</q>" in html
 
 
-def test_no_resolve_controls_before_s16b(operator_client: Client, engine: FakeEngine) -> None:
+def test_no_resolve_controls_while_unregistered(
+    operator_client: Client, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D19: with ``stories:backfill-conflict`` unregistered (#309 registers it; this stands in
+    for a build without it) a conflict section holds no form."""
+    monkeypatch.setattr(backfill_views, "conflict_url", lambda story_id, conflict_id: None)
     answer(engine, m7("backfill_paused"))
     html = html_of(operator_client)
     for section in _sections(html).values():
         assert "<form" not in section
+
+
+def test_open_conflicts_get_resolve_controls_once_registered(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """The complement under the real urlconf (#309): each open conflict's section holds one
+    resolve form."""
+    answer(engine, m7("backfill_paused"))
+    html = html_of(operator_client)
+    for section in _sections(html).values():
+        assert section.count("<form") == 1
 
 
 def test_a_resolved_conflict_reads_its_resolution(

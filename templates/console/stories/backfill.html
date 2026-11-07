@@ -4,11 +4,14 @@ The story's Backfill page (#308, console/views/backfill.py, console/backfill.py)
 #296 frame: no_backfill (NO_BACKFILL when the story never had one), backfill (BackfillView), the
 polled block's job_poll_context (console/_job_poll.html around _backfill_body.html), pending
 (PendingChange or None), everything (?conflicts=all), the toggle links and omniscient_note.
+#309: gap (views.backfill.GapBlock or None: the #gap-fill section, also on the no-backfill
+branch), resolve_forms / resolvable / conflicts_error / conflicts_panel (the conflict list's
+resolve forms, _backfill_conflicts.html) and the section's wording keys.
 {% endcomment %}
 {% load console_format principals %}
 {% block story_page %}
 {% if no_backfill %}<p class="no-backfill">{{ no_backfill }}</p>
-{% else %}<div class="backfill-facts">
+{% else %}<div class="backfill-facts" id="backfill-status">
   <p class="backfill-kind">Kind: <span{% if backfill.kind_title %} title="{{ backfill.kind_title }}"{% endif %}>{{ backfill.kind }}</span></p>
   <p class="backfill-capabilities">Capabilities: {% for capability in backfill.capabilities %}<code>{{ capability }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
   <p class="backfill-range">Turns {% if backfill.from_url %}<a href="{{ backfill.from_url }}">{{ backfill.from_turn|count }}</a>{% else %}—{% endif %}–{% if backfill.to_url %}<a href="{{ backfill.to_url }}">{{ backfill.to_turn|count }}</a>{% else %}—{% endif %}</p>
@@ -20,10 +23,13 @@ polled block's job_poll_context (console/_job_poll.html around _backfill_body.ht
 {% include "console/_job_poll.html" %}
 {% endif %}{% if pending %}<p class="pending-backfill">{{ pending.text }}</p>
 <details><summary>More</summary><pre>{{ pending.more }}</pre></details>
-{% endif %}{% if not no_backfill %}<section class="backfill-conflicts">
+{% endif %}{% if gap %}{% include "console/stories/_gap_fill.html" %}
+{% endif %}{% if not no_backfill %}<section class="backfill-conflicts" id="conflicts">
   <h3>Conflicts</h3>
   <p class="note">{{ omniscient_note }}</p>
   <p class="conflict-toggle">{% if everything %}<a href="{{ show_open_url }}">{{ show_open_text }}</a>{% else %}<a href="{{ show_all_url }}">{{ show_all_text }}</a>{% endif %}</p>
-  {% include "console/stories/_backfill_conflicts.html" with conflicts=backfill.conflicts %}
+  {% if conflicts_error %}<p class="warning conflicts-error">{{ conflicts_error }}</p>
+  {% endif %}{% if conflicts_panel %}{% include "console/_engine_error.html" with engine_error=conflicts_panel %}
+  {% endif %}{% include "console/stories/_backfill_conflicts.html" with conflicts=backfill.conflicts %}
 </section>
 {% endif %}{% endblock %}

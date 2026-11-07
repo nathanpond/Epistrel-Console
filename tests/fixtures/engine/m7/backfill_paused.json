@@ -32,9 +32,8 @@
       "id": "01JM7CF0000000000000000001",
       "status": "open",
       "subject": {
-        "kind": "attribute",
         "entity_id": "01JM7CH0000000000000000003",
-        "attribute": "age"
+        "predicate": "age"
       },
       "statements": [
         {
@@ -70,9 +69,8 @@
       "id": "01JM7CF0000000000000000002",
       "status": "open",
       "subject": {
-        "kind": "attribute",
         "entity_id": "01JM7CH0000000000000000002",
-        "attribute": "home"
+        "predicate": "home"
       },
       "statements": [
         {

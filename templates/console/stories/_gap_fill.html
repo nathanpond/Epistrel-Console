@@ -1,0 +1,30 @@
+{% comment %}
+The Backfill page's #gap-fill section (#309; E8, E21). Context: gap (views.backfill.GapBlock:
+mode start | resume, action_url, page_url, form (GapFillForm), key, capabilities_note, error,
+error_url, panel, preview, resume_line, subjects, token, confirm_key, muted, confirming) and the
+page's wording keys (gap_fill_heading, finish_heading, gap_fill_help, finish_now_text,
+preview_label). A preview or the resume confirm (_gap_fill_preview.html) takes the form's place;
+after a confirm-stage refusal the previewed summary stays above the plain form, muted.
+{% endcomment %}<section class="gap-fill" id="gap-fill">
+  <h3>{% if gap.resume %}{{ finish_heading }}{% else %}{{ gap_fill_heading }}{% endif %}</h3>
+  {% if gap.error %}<p class="warning gap-fill-error">{{ gap.error }}{% if gap.error_url %} <a href="{{ gap.error_url }}">Details</a>{% endif %}</p>
+  {% endif %}{% if gap.panel %}{% include "console/_engine_error.html" with engine_error=gap.panel %}
+  {% endif %}{% if gap.confirming %}{% include "console/stories/_gap_fill_preview.html" %}
+  {% else %}{% if gap.muted %}<div class="muted previewed">{% include "console/stories/_gap_fill_preview.html" %}</div>
+  {% endif %}<form method="post" action="{{ gap.action_url }}" class="gap-fill-form">{% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ gap.key }}">
+    <input type="hidden" name="mode" value="{{ gap.mode }}">
+    {% if gap.form.non_field_errors %}{{ gap.form.non_field_errors }}{% endif %}
+    {% if gap.resume %}<button type="submit">{{ finish_now_text }}</button>
+    {% else %}<fieldset class="capabilities">
+      <legend>Capabilities</legend>
+      {% for box in gap.form.capabilities %}<label for="{{ box.id_for_label }}">{{ box.tag }} <code>{{ box.choice_label }}</code></label>
+      {% endfor %}{% if gap.capabilities_note %}<p class="note">{{ gap.capabilities_note }}</p>
+      {% endif %}<p class="help">{{ gap_fill_help }}</p>
+      {{ gap.form.capabilities.errors }}
+    </fieldset>
+    <button type="submit">{{ preview_label }}</button>
+    {% endif %}
+  </form>
+  {% endif %}
+</section>
