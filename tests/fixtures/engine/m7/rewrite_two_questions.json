@@ -1,7 +1,7 @@
 {
   "id": "01JM7RW0000000000000000005",
   "story_id": "01JM7ST0000000000000000001",
-  "kind": "instruction",
+  "kind": "rewrite",
   "state": "awaiting_answers",
   "instruction": "Bob never forged the ledger; he only copied it",
   "resolution_mode": "synchronous",

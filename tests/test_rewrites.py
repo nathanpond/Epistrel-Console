@@ -52,6 +52,7 @@ from console.rewrites import (
     amendment_url,
     amendments_url,
     expires_text,
+    kind_text,
     radius_rows,
     rewrite_refusal,
     rewrite_session_url,
@@ -110,15 +111,32 @@ def test_the_state_and_kind_tables() -> None:
     }
     assert frozenset({"applied", "cancelled", "expired", "abandoned"}) == TERMINAL_STATES
     assert frozenset({"awaiting_answers", "awaiting_approval"}) == OPEN_STATES
+    # #346: keyed on the Engine's SESSION_KINDS (core/tables/rewrites.py at origin/main).
     assert KIND_TEXT == {
-        "instruction": "Rewrite",
-        "line_edit": "Line edit",
-        "directive": "Directive",
-        "directed_resolution": "Directed regenerate",
+        "rewrite": "Rewrite",
         "undo": "Undo",
         "redo": "Redo",
+        "directed_resolution": "Directed regenerate",
+        "support_check": "Support check",
         "entity_merge": "Entity merge",
+        "directive": "Directive",
     }
+
+
+def test_a_rewrite_with_no_instruction_is_a_line_edit() -> None:
+    """#346: the Engine stores a line edit as ``kind: rewrite`` with a null instruction (its
+    request takes exactly one of the two), so that alone reads "Line edit"."""
+    assert view("rewrite_line_edit").kind_text == "Line edit"
+    assert kind_text("rewrite", None) == "Line edit"
+    assert kind_text("rewrite", "") == "Line edit"
+    # Complement: a rewrite with an instruction, and any other kind without one, never do.
+    assert view("rewrite_open").kind_text == "Rewrite"
+    assert kind_text("rewrite", "Bob copied it") == "Rewrite"
+    assert kind_text("undo", None) == "Undo"
+    assert kind_text("support_check", None) == "Support check"
+    assert kind_text("entity_merge", None) == "Entity merge"
+    assert kind_text("later_kind", None) == "Later kind"
+    assert kind_text(None, None) == "—"
 
 
 def test_the_sentences_are_exact() -> None:
@@ -168,7 +186,7 @@ def test_an_open_session_waits_for_answers() -> None:
     # The real urlconf: #298 registered Answer, #299 Cancel (its link carries the facts).
     cancel = f"{base}cancel/?" + urlencode(
         {
-            "kind": "instruction",
+            "kind": "rewrite",
             "state": "awaiting_answers",
             "instruction": "Bob never forged the ledger; he only copied it",
         }

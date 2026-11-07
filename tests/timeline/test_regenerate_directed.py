@@ -330,7 +330,7 @@ def test_back_to_the_story_only_for_a_directed_session(
     operator_client: Client, framed: FakeEngine
 ) -> None:
     other = session_read()
-    other["kind"] = "instruction"
+    other["kind"] = "rewrite"
     framed.respond("GET", "/stories/{story_id}/rewrites/{session_id}", 200, json=other)
     page = operator_client.get(SESSION_PAGE).content.decode()
     assert "← All rewrites" in page

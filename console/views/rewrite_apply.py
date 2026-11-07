@@ -292,7 +292,7 @@ def cancel_page(request: HttpRequest, story_id: str, session_id: str) -> Confirm
         lines=(CANCEL_LINE,),
         facts=(
             ("Session", session_id),
-            ("Kind", kind_text(query.get("kind"))),
+            ("Kind", kind_text(query.get("kind"), instruction)),
             ("Instruction", instruction or EMPTY),
             ("State", state_text(query.get("state"))),
         ),

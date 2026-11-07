@@ -88,6 +88,16 @@ def test_the_heading_links_title_and_current_nav(
     assert 'name="viewpoint"' not in html
 
 
+def test_a_line_edit_session_reads_line_edit(operator_client: Client, engine: FakeEngine) -> None:
+    """#346 (#297 Demo step 3, #305 Demo): the Engine's line edit is ``kind: rewrite`` with a
+    null instruction; the state line reads "Line edit". Complement: an instruction's reads
+    "Rewrite"."""
+    served(engine, "rewrite_session", kind="rewrite", instruction=None)
+    assert "Ready to apply</span> · Line edit" in page(operator_client)
+    served(engine, "rewrite_session")
+    assert "Ready to apply</span> · Rewrite" in page(operator_client)
+
+
 def test_awaiting_answers_shows_the_question_and_pending_preview(
     operator_client: Client, engine: FakeEngine
 ) -> None:
@@ -165,7 +175,7 @@ INSTRUCTION = "Bob never forged the ledger; he only copied it"
 
 def cancel_link(state: str) -> str:
     """E3's Cancel link (#299): the confirm page, carrying the display facts."""
-    query = urlencode({"kind": "instruction", "state": state, "instruction": INSTRUCTION})
+    query = urlencode({"kind": "rewrite", "state": state, "instruction": INSTRUCTION})
     return f'<a href="{escape(f"{SESSION_URL}cancel/?{query}")}" class="session-action">Cancel</a>'
 
 

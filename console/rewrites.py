@@ -35,7 +35,8 @@ page, #298's answers, #299's apply/cancel and stale, #305's line edit, #300's ro
 ``RewriteSessionWritten.session``) and C4's cast names:
 
 - **State**: ``state_text`` from :data:`STATE_TEXT` (an unknown state humanised, the raw value
-  in ``title``), ``kind_text`` from :data:`KIND_TEXT`, the instruction verbatim (or "—"), the
+  in ``title``), ``kind_text`` from :data:`KIND_TEXT` (a ``rewrite`` with no instruction reads
+  "Line edit", #346), the instruction verbatim (or "—"), the
   pipeline humanised, ``expires_at`` through ``engine_time`` plus ``expires_text`` ("expires in
   Nm", "expires in Hh Mm", "expires in <1m"; empty once past or closed), the stale count as
   :data:`STALE_COUNT_TEXT` when > 0, ``last_error`` as ``(code, detail, more)`` (a message-less
@@ -215,14 +216,19 @@ AWAITING_ANSWERS = "awaiting_answers"
 AWAITING_APPROVAL = "awaiting_approval"
 
 KIND_TEXT = {
-    "instruction": "Rewrite",
-    "line_edit": "Line edit",
-    "directive": "Directive",
-    "directed_resolution": "Directed regenerate",
+    "rewrite": "Rewrite",
     "undo": "Undo",
     "redo": "Redo",
+    "directed_resolution": "Directed regenerate",
+    "support_check": "Support check",
     "entity_merge": "Entity merge",
+    "directive": "Directive",
 }
+"""E3's session kinds, keyed on the Engine's ``SESSION_KINDS`` (the ``kind`` CHECK of
+``core/tables/rewrites.py`` at origin/main; #346). A line edit is ``kind: rewrite`` too: see
+:func:`kind_text`."""
+REWRITE_KIND = "rewrite"
+LINE_EDIT_TEXT = "Line edit"
 TARGET_LABELS = {"undo": "Undoes", "redo": "Redoes"}
 TARGET_LABEL = "Target amendment"
 
@@ -428,7 +434,14 @@ def state_text(state: object) -> str:
     return _enum(state, STATE_TEXT)
 
 
-def kind_text(kind: object) -> str:
+def kind_text(kind: object, instruction: object) -> str:
+    """E3's kind text: :data:`KIND_TEXT`, an unknown kind humanised, "—" for none. The Engine
+    stores a line edit as ``kind: rewrite`` and echoes no ``line_edit`` (#346), but its
+    ``RewriteRequest`` takes exactly one of ``instruction`` and ``line_edit``, and every other
+    ``rewrite`` session it opens carries an instruction. So a ``rewrite`` whose ``instruction``
+    is null (or empty: the Cancel link leaves a blank one out) reads :data:`LINE_EDIT_TEXT`."""
+    if _text(kind) == REWRITE_KIND and _text(instruction) is None:
+        return LINE_EDIT_TEXT
     return _enum(kind, KIND_TEXT)
 
 
@@ -965,7 +978,7 @@ def session_view(
         id=session.id,
         state=session.state,
         state_text=state_text(session.state),
-        kind_text=kind_text(session.kind),
+        kind_text=kind_text(session.kind, session.instruction),
         instruction=session.instruction or EMPTY,
         pipeline_text=_enum(session.pipeline, {}),
         resolution_text=resolution_mode_text(session.resolution_mode),
@@ -1240,7 +1253,7 @@ def rewrite_rows(page: RewriteList, story_id: str) -> tuple[RewriteRow, ...]:
         RewriteRow(
             state=summary.state,
             state_text=state_text(summary.state),
-            kind_text=kind_text(summary.kind),
+            kind_text=kind_text(summary.kind, summary.instruction),
             instruction=summary.instruction or EMPTY,
             questions_text=_questions_text(summary),
             opened_text=engine_time(summary.created_at),

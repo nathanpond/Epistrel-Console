@@ -1,7 +1,7 @@
 """The line-edit page (#305): its target, the one omniscient history read that shows the line,
 the form's validation and body, the opened session's redirect and the refusals. The cast is
 #292's ``m7/story.json`` (Mara the player, Alice, Bob); the opened session is
-``m7/rewrite_line_edit.json`` (``kind: line_edit``, ``awaiting_approval``)."""
+``m7/rewrite_line_edit.json`` (``kind: rewrite`` with no instruction, ``awaiting_approval``)."""
 
 import copy
 import json
