@@ -128,7 +128,8 @@ def test_running_polls_every_5s(operator_client: Client, engine: FakeEngine) -> 
     )
     assert '<strong class="job-status-text">Running</strong>' in html
     assert f"Job <code>{RUN}</code>" in html
-    assert '<dd class="kind"><span title="profile">Profile</span></dd>' in html
+    kind = '<span title="certification">Requested certification</span>'
+    assert f'<dd class="kind">{kind}</dd>' in html
     assert '<p class="suites">Suites: <code>quality</code>, <code>smoke</code></p>' in html
     assert '<p class="seeds">Seeds: 3</p>' in html
     assert '<p class="sample">Sample: every case</p>' in html
@@ -162,6 +163,25 @@ def test_completed_links_the_certification(operator_client: Client, engine: Fake
     assert "floors_passed" in html
     assert "Overall:" not in html
     assert "Outcome:" not in html
+
+
+@pytest.mark.parametrize(
+    ("body", "kind"),
+    [
+        (run, '<span title="certification">Requested certification</span>'),
+        (canary, '<span title="canary">Canary check</span>'),
+        # **Complement:** a kind the Engine doesn't store today is humanised, raw in ``title``.
+        (lambda: run(kind="nightly_check"), '<span title="nightly_check">Nightly check</span>'),
+    ],
+    ids=["certification", "canary", "unknown"],
+)
+def test_the_kind_text(operator_client: Client, engine: FakeEngine, body: Any, kind: str) -> None:
+    """#348: the run page's Kind reads the Engine's ``kind`` (``certification`` or ``canary``,
+    ``core/tables/certifications.py``) through ``KIND_TEXT``."""
+    answer = body()
+    engine.respond("GET", ROUTE, 200, json=answer)
+    html = operator_client.get(f"/engine/certification-runs/{answer['id']}/").content.decode()
+    assert f'<dd class="kind">{kind}</dd>' in html
 
 
 def test_no_certification_recorded(operator_client: Client, engine: FakeEngine) -> None:
