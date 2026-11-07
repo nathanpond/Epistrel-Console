@@ -3694,3 +3694,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** Registering the three routes moved the nav goldens, which now read Rewrite · Amendments · Backfill · Export. The goldens are `REGISTERED_NAV` in the play and history tests, `test_nav.test_rewrite_link_once_registered` (plus the export-job/download parent asserts), `inspect/test_shell` and `test_story_pages.test_the_story_nav_shows_backfill_under_the_real_urlconf`. `test_portability_helpers`'s "export urls are None" lines moved to a registered-case test. The live export smoke `test_export_through_the_console_live` ran against `n8-291-smoke` on 127.0.0.1:18000, and the stack was left running.
   **Why:** This is E24's regenerate-in-the-registering-story rule.
   **Issue:** #319
+- **Decision:** #322's 13 fixture keys are inserted in table order just before `config_revision` (not after `idempotency_key`) in both `get_deployment_settings.json` and `update_admin_settings.json`, so the settings stay together ahead of the response trailer.
+  **Why:** JSON key order means nothing to the parser; reads better. Cost if wrong: none.
+  **Issue:** #322
+- **Decision:** #322 help texts follow the planner's wording rule: the table's meaning without FR/#/E refs, Engine refusal codes as plain words ("refused with rewrite_session_limit past it", "refused with author_fact_limit past it"), "derives chains" without backticks, "(reported truncated past it)" / "past it the rest is reported unsearched (truncated)".
+  **Why:** Claude's Discretion text. Cost if wrong: copy edit.
+  **Issue:** #322
+- **Decision:** `test_the_m7_deployment_settings_are_recorded_and_not_yet_on_the_form` (#291's complement) keeps its name and now asserts 10 names; #323 removes it with the set. `test_m7_rewrite_sections_render` and the bounds test take their 13 names from the two new `SECTIONS` entries (`M7_REWRITE_SETTINGS`); the out-of-bounds cases are generated from the fields' own `min_value`/`max_value` (26 cases), with the margin's cases fixed at -0.01/1.01.
+  **Why:** the story's test shapes; no second source of the bounds in the tests beyond the schema-pinning test. Cost if wrong: none.
+  **Issue:** #322
+- **Decision:** #322 live check on the shared `n8-291-smoke` stack (127.0.0.1:18000): an untouched form over the live settings patches `{}`, `rewrite_max_open_sessions` 5 → 3 patches exactly that (config revision 43 → 44), 0 is a local field error, then restored to 5 (revision 45). Stack left running.
+  **Why:** confirms the live Engine's values round-trip through the form. Cost if wrong: none.
+  **Issue:** #322

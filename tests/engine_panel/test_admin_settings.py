@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
+from django import forms
 from django.test import Client
 
 from console.engine_api_check import RECORDED
@@ -70,8 +71,8 @@ def _field_html(html: str, name: str) -> str:
 # --- the form ---------------------------------------------------------------------------------
 
 
-# #291: M7's 23 deployment settings, recorded but not yet on the form (test-only). #322 shrinks
-# this set and #323 empties it.
+# #291: M7's deployment settings recorded but not yet on the form (test-only). #322 took the 13
+# rewrite, direction and Lite reach settings; #323 empties it.
 M7_NOT_YET_EDITABLE = {
     "bundle_export_ttl_hours",
     "bundle_max_entries",
@@ -82,27 +83,14 @@ M7_NOT_YET_EDITABLE = {
     "certification_canary_sample_size",
     "certification_canary_seeds",
     "certification_recertify_interval_s",
-    "dependency_search_max_depth",
-    "dependency_search_max_results",
-    "directive_steer_ttl_minutes",
-    "lite_author_facts_max",
-    "lite_reach_chunk_messages",
-    "lite_reach_chunk_tokens",
-    "lite_reach_deadline_seconds",
-    "lite_reach_max_calls",
-    "lite_reach_parallelism",
     "model_tiers",
-    "rewrite_ambiguity_margin",
-    "rewrite_max_open_sessions",
-    "rewrite_session_ttl_minutes",
-    "rewrite_stale_retries",
 }
 
 
 def test_the_m7_deployment_settings_are_recorded_and_not_yet_on_the_form() -> None:
     """**Complement:** every exempt name is a recorded ``SettingsPatch`` property (a typo can't
     silently exempt nothing) and none has a form field yet."""
-    assert len(M7_NOT_YET_EDITABLE) == 23
+    assert len(M7_NOT_YET_EDITABLE) == 10
     assert set(SCHEMAS["SettingsPatch"]["properties"]) >= M7_NOT_YET_EDITABLE
     assert not M7_NOT_YET_EDITABLE & set(DeploymentSettingsForm.base_fields)
 
@@ -139,6 +127,53 @@ def test_help_texts_show_the_schema_defaults() -> None:
         if name in DEFAULTS:
             assert DEFAULTS[name] == default, name
     assert set(stated) - {"profile_defaults"} <= set(DEFAULTS)
+
+
+# #322: the two Engine M7 sections, their 13 settings in table order.
+M7_REWRITE_SECTIONS = ("History rewrites and directions", "Lite rewrites and author facts")
+M7_REWRITE_SETTINGS = tuple(
+    name for title, names in SECTIONS if title in M7_REWRITE_SECTIONS for name in names
+)
+M7_UNITS = {
+    "rewrite_ambiguity_margin": "",
+    "rewrite_max_open_sessions": "sessions",
+    "rewrite_session_ttl_minutes": "minutes",
+    "rewrite_stale_retries": "retries",
+    "directive_steer_ttl_minutes": "minutes",
+    "dependency_search_max_depth": "levels",
+    "dependency_search_max_results": "results",
+    "lite_author_facts_max": "facts",
+    "lite_reach_chunk_messages": "lines",
+    "lite_reach_chunk_tokens": "tokens",
+    "lite_reach_max_calls": "calls",
+    "lite_reach_parallelism": "chunks",
+    "lite_reach_deadline_seconds": "s",
+}
+
+
+def test_m7_rewrite_settings_bounds_match_the_schema() -> None:
+    body_props = SCHEMAS["SettingsBody"]["properties"]
+    assert len(M7_REWRITE_SETTINGS) == 13
+    for name in M7_REWRITE_SETTINGS:
+        field = DeploymentSettingsForm.base_fields[name]
+        assert isinstance(field, forms.IntegerField | forms.FloatField), name
+        prop = body_props[name]
+        assert (field.min_value, field.max_value) == (prop["minimum"], prop["maximum"]), name
+        assert DEFAULTS[name] == prop["default"], name
+        assert field.required, name  # none of the 13 is nullable: no Clear
+        assert name not in NULLABLE
+
+
+def test_existing_help_texts_are_unchanged() -> None:
+    """``extra`` defaults to "", so the fields before #322 keep main's help byte for byte."""
+    expected = {
+        "minor_age_threshold": "Default: 18.",
+        "turn_queue_max": "Default: 5.",
+        "max_characters_at_start_ceiling": "Default: unset.",
+        "uncertain_below": "Default: 0.5.",
+    }
+    for name, text in expected.items():
+        assert DeploymentSettingsForm.base_fields[name].help_text == text, name
 
 
 def test_provider_host_pattern_matches_the_schema() -> None:
@@ -186,6 +221,38 @@ def test_the_page_shows_every_setting_in_sections(
     # The M2 engine dials are not offered.
     for dial in ("lite_window_messages", "lite_summary_max_tokens", "max_model_calls_per_turn"):
         assert f'name="{dial}"' not in html
+
+
+def test_m7_rewrite_sections_render(operator_client: Client, engine: FakeEngine) -> None:
+    answer_settings(engine)
+    html = operator_client.get(URL).content.decode()
+
+    titles = [title for title, _ in SECTIONS]
+    at = titles.index("Verification and gates")
+    assert titles[at + 1 : at + 4] == [*M7_REWRITE_SECTIONS, "Retention"]
+    assert 'id="settings-history-rewrites-and-directions"' in html
+    assert 'id="settings-lite-rewrites-and-author-facts"' in html
+    legends = [html.index(f"<legend>{title}</legend>") for title in titles[at : at + 4]]
+    assert legends == sorted(legends)
+    positions = [html.index(f'<div class="field field-{name}">') for name in M7_REWRITE_SETTINGS]
+    assert positions == sorted(positions)
+    assert legends[1] < positions[0]
+    assert positions[-1] < legends[3]
+    assert legends[2] < html.index('<div class="field field-lite_author_facts_max">')
+    for name, unit in M7_UNITS.items():
+        field = _field_html(html, name)
+        assert f"Default: {DEFAULTS[name]}." in field, name
+        if unit:
+            assert f'<span class="unit">{unit}</span>' in field, name
+        else:
+            assert '<span class="unit">' not in field, name
+        assert f'name="{CLEAR_PREFIX}{name}"' not in html
+    assert (
+        "Open rewrite sessions one story may hold (refused with rewrite_session_limit past it). "
+        "Default: 5."
+    ) in _field_html(html, "rewrite_max_open_sessions")
+    assert "Default: 0.15." in _field_html(html, "rewrite_ambiguity_margin")
+    assert 'max="1"' in _field_html(html, "rewrite_ambiguity_margin")
 
 
 def test_a_retired_default_rating_is_labelled(operator_client: Client, engine: FakeEngine) -> None:
@@ -257,6 +324,32 @@ def test_no_change_sends_no_write(operator_client: Client, engine: FakeEngine) -
     assert engine.requests == []  # no write, and no read either (the snapshot is signed)
     answer_settings(engine)
     assert "No changes — nothing was sent." in operator_client.get(URL).content.decode()
+
+
+def test_changing_one_rewrite_setting_sends_only_it(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    data = _load(operator_client, engine)
+    assert data["rewrite_max_open_sessions"] == "5"
+    _saved(engine, rewrite_max_open_sessions=3)
+    data["rewrite_max_open_sessions"] = "3"
+
+    response = operator_client.post(URL, data)
+
+    assert response.status_code == 302
+    [put] = _puts(engine)
+    assert body(put) == {"rewrite_max_open_sessions": 3}
+
+
+def test_the_margin_compares_by_value(operator_client: Client, engine: FakeEngine) -> None:
+    data = _load(operator_client, engine)
+    assert data["rewrite_ambiguity_margin"] == "0.15"
+    data["rewrite_ambiguity_margin"] = "0.150"
+
+    response = operator_client.post(URL, data)
+
+    assert response.status_code == 302
+    assert engine.requests == []
 
 
 @pytest.mark.parametrize(
@@ -512,10 +605,17 @@ def test_host_refusal_without_an_index_shows_the_message(
     assert "bad age" in _field_html(html, "minor_age_threshold")  # others keep their placement
 
 
-def test_engine_accepts_with_no_change(operator_client: Client, engine: FakeEngine) -> None:
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("minor_age_threshold", "21"), ("rewrite_max_open_sessions", "3")],
+    ids=["minor_age_threshold", "rewrite_max_open_sessions"],
+)
+def test_engine_accepts_with_no_change(
+    operator_client: Client, engine: FakeEngine, name: str, value: str
+) -> None:
     """D8: an answer at the page's own config revision changed nothing."""
     data = _load(operator_client, engine)  # read at config revision 0
-    data["minor_age_threshold"] = "21"
+    data[name] = value
     _saved(engine, config_revision=0)
 
     response = operator_client.post(URL, data)
@@ -584,6 +684,42 @@ def test_out_of_range_values_make_no_call(operator_client: Client, engine: FakeE
     html = operator_client.post(URL, data).content.decode()
 
     assert "less than or equal to 120" in _field_html(html, "minor_age_threshold")
+    assert engine.requests == []
+
+
+def _out_of_bounds() -> list[Any]:
+    """Each #322 field's min - 1 and max + 1 (the margin: -0.01 and 1.01), with the Django
+    message stem and the limit as the field helper received it."""
+    cases = []
+    for name in M7_REWRITE_SETTINGS:
+        field = DeploymentSettingsForm.base_fields[name]
+        assert isinstance(field, forms.IntegerField | forms.FloatField)
+        lo, hi = field.min_value, field.max_value
+        assert isinstance(lo, int), name
+        assert isinstance(hi, int), name
+        if isinstance(field, forms.FloatField):  # the margin
+            below, above = "-0.01", "1.01"
+        else:
+            below, above = str(lo - 1), str(hi + 1)
+        cases.append(pytest.param(name, below, f"greater than or equal to {lo}", id=f"{name}-low"))
+        cases.append(pytest.param(name, above, f"less than or equal to {hi}", id=f"{name}-high"))
+    return cases
+
+
+@pytest.mark.parametrize(("name", "value", "message"), _out_of_bounds())
+def test_out_of_bounds_is_refused_locally(
+    operator_client: Client, engine: FakeEngine, name: str, value: str, message: str
+) -> None:
+    data = _load(operator_client, engine)
+    data[name] = value
+
+    html = operator_client.post(URL, data).content.decode()
+
+    field = _field_html(html, name)
+    assert f"Ensure this value is {message}." in field
+    # C10: the browser knows the bounds too.
+    assert re.search(r'\bmin="', field)
+    assert re.search(r'\bmax="', field)
     assert engine.requests == []
 
 
@@ -696,6 +832,23 @@ def test_a_concurrent_change_is_mentioned(operator_client: Client, engine: FakeE
             ),
             "turn_queue_max",
             "Input should be greater than or equal to 1",
+        ),
+        (
+            422,
+            error(
+                "validation_error",
+                "Input should be less than or equal to 500",
+                field="body.lite_reach_max_calls",
+                errors=[
+                    {
+                        "field": "body.lite_reach_max_calls",
+                        "message": "Input should be less than or equal to 500",
+                        "type": "less_than_equal",
+                    }
+                ],
+            ),
+            "lite_reach_max_calls",
+            "Input should be less than or equal to 500",
         ),
         (
             409,

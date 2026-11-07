@@ -10,6 +10,10 @@ one entry per line and sent whole when changed (``provider_allowed_hosts`` is co
 of lowercased entries, #241). Only the three nullable settings
 (:data:`NULLABLE`) have a "Clear" checkbox (``clear_<name>``), which sends ``null`` to unset them;
 no other setting can send ``null`` and there is no reset-to-default.
+
+Engine M7 adds two families (#322): history rewrites, directions and the dependency search
+("History rewrites and directions"), and the Lite reach and author facts ("Lite rewrites and
+author facts"). None of them is nullable.
 """
 
 import re
@@ -72,24 +76,33 @@ def _shown(value: Any) -> str:
 
 
 def _int(
-    name: str, lo: int, hi: int, default: int | None, unit: str = "", *, required: bool = True
+    name: str,
+    lo: int,
+    hi: int,
+    default: int | None,
+    unit: str = "",
+    *,
+    required: bool = True,
+    extra: str = "",
 ) -> forms.IntegerField:
     DEFAULTS[name] = default
     if unit:
         UNITS[name] = unit
     return forms.IntegerField(
-        required=required, min_value=lo, max_value=hi, help_text=_help(default)
+        required=required, min_value=lo, max_value=hi, help_text=_help(default, extra)
     )
 
 
-def _number(name: str, lo: float, hi: float, default: float, unit: str = "") -> forms.FloatField:
+def _number(
+    name: str, lo: float, hi: float, default: float, unit: str = "", *, extra: str = ""
+) -> forms.FloatField:
     DEFAULTS[name] = default
     if unit:
         UNITS[name] = unit
     return forms.FloatField(
         min_value=lo,
         max_value=hi,
-        help_text=_help(default),
+        help_text=_help(default, extra),
         widget=forms.NumberInput(attrs={"step": "any"}),
     )
 
@@ -347,6 +360,29 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        "History rewrites and directions",
+        (
+            "rewrite_ambiguity_margin",
+            "rewrite_max_open_sessions",
+            "rewrite_session_ttl_minutes",
+            "rewrite_stale_retries",
+            "directive_steer_ttl_minutes",
+            "dependency_search_max_depth",
+            "dependency_search_max_results",
+        ),
+    ),
+    (
+        "Lite rewrites and author facts",
+        (
+            "lite_author_facts_max",
+            "lite_reach_chunk_messages",
+            "lite_reach_chunk_tokens",
+            "lite_reach_max_calls",
+            "lite_reach_parallelism",
+            "lite_reach_deadline_seconds",
+        ),
+    ),
+    (
         "Retention",
         (
             "audit_retention_days",
@@ -487,6 +523,114 @@ class DeploymentSettingsForm(forms.Form):
     gate_promotion_min_agreement = _number("gate_promotion_min_agreement", 0, 1, 0.98)
     rating_check_model_calls_per_record = _int(
         "rating_check_model_calls_per_record", 0, 100, 2, "calls"
+    )
+    # History rewrites and directions
+    rewrite_ambiguity_margin = _number(
+        "rewrite_ambiguity_margin",
+        0,
+        1,
+        0.15,
+        extra="Two entity candidates whose scores are this close are asked about, not guessed.",
+    )
+    rewrite_max_open_sessions = _int(
+        "rewrite_max_open_sessions",
+        1,
+        100,
+        5,
+        "sessions",
+        extra="Open rewrite sessions one story may hold (refused with rewrite_session_limit "
+        "past it).",
+    )
+    rewrite_session_ttl_minutes = _int(
+        "rewrite_session_ttl_minutes",
+        10,
+        43200,
+        1440,
+        "minutes",
+        extra="An idle session expires after this.",
+    )
+    rewrite_stale_retries = _int(
+        "rewrite_stale_retries",
+        0,
+        10,
+        2,
+        "retries",
+        extra="How often an apply-directly rewrite whose plan went stale re-plans and retries.",
+    )
+    directive_steer_ttl_minutes = _int(
+        "directive_steer_ttl_minutes",
+        10,
+        43200,
+        1440,
+        "minutes",
+        extra='An unused "steer the next reply" direction is dropped after this.',
+    )
+    dependency_search_max_depth = _int(
+        "dependency_search_max_depth",
+        1,
+        10,
+        3,
+        "levels",
+        extra="How deep one dependency search follows derives chains.",
+    )
+    dependency_search_max_results = _int(
+        "dependency_search_max_results",
+        1,
+        100000,
+        500,
+        "results",
+        extra="The most dependents one search answers (reported truncated past it).",
+    )
+    # Lite rewrites and author facts
+    lite_author_facts_max = _int(
+        "lite_author_facts_max",
+        1,
+        1000,
+        50,
+        "facts",
+        extra="The most active lasting author facts a Lite story holds (refused with "
+        "author_fact_limit past it).",
+    )
+    lite_reach_chunk_messages = _int(
+        "lite_reach_chunk_messages",
+        1,
+        500,
+        60,
+        "lines",
+        extra="Transcript lines one Lite reach call reads.",
+    )
+    lite_reach_chunk_tokens = _int(
+        "lite_reach_chunk_tokens",
+        500,
+        200000,
+        12000,
+        "tokens",
+        extra="A reach chunk closes early past this estimate.",
+    )
+    lite_reach_max_calls = _int(
+        "lite_reach_max_calls",
+        2,
+        500,
+        24,
+        "calls",
+        extra="The most reach calls one pass makes; past it the rest is reported unsearched "
+        "(truncated).",
+    )
+    lite_reach_parallelism = _int(
+        "lite_reach_parallelism",
+        1,
+        32,
+        4,
+        "chunks",
+        extra="Chunks one reach pass searches at once.",
+    )
+    lite_reach_deadline_seconds = _int(
+        "lite_reach_deadline_seconds",
+        5,
+        3600,
+        120,
+        "s",
+        extra="A whole reach pass's deadline.",
     )
     # Retention
     audit_retention_days = _int("audit_retention_days", 1, 3650, 90, "days")

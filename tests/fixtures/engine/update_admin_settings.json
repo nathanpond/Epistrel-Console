@@ -170,6 +170,19 @@
         "bank.example",
         "127.0.0.1:8099"
     ],
+    "rewrite_ambiguity_margin": 0.15,
+    "rewrite_max_open_sessions": 5,
+    "rewrite_session_ttl_minutes": 1440,
+    "rewrite_stale_retries": 2,
+    "directive_steer_ttl_minutes": 1440,
+    "dependency_search_max_depth": 3,
+    "dependency_search_max_results": 500,
+    "lite_author_facts_max": 50,
+    "lite_reach_chunk_messages": 60,
+    "lite_reach_chunk_tokens": 12000,
+    "lite_reach_max_calls": 24,
+    "lite_reach_parallelism": 4,
+    "lite_reach_deadline_seconds": 120,
     "config_revision": 1,
     "idempotency_key": "01JB2Z8Y5Q3W6K9M1N4P7R0KEY"
 }
