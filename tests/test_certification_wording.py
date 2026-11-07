@@ -99,6 +99,7 @@ def test_stale_says_why(reason: str | None, text: str) -> None:
     line = quality_line(QualityStatus(status="stale", invalidated_reason=reason))
     assert line.text == text
     assert line.css_class == "quality-stale"
+    assert line.title == (f"stale ({reason})" if reason else "stale")  # #312: raw status and reason
 
 
 def test_an_unknown_status_is_humanised_without_a_class() -> None:

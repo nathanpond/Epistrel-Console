@@ -5,6 +5,8 @@ configuration it ran under (short fingerprint, quality status, profile id@versio
 Warnings row when the report has warnings: `warning_lines` (the play inspector's, labelled) or,
 when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
 #234: the Model calls table's Stage column (`ModelCall.stage`, raw: a plain string, "—" when absent).
+#312 (E13): the Quality status is console/_quality.html over `report.quality_status|quality_line`, and
+the Fingerprint links "Certifications for this configuration" (engine:certifications?fingerprint=).
 {% endcomment %}
 {% load console_format impact inspect_tags %}
 <section class="turn-report">
@@ -42,8 +44,8 @@ when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
       {% else %}; no violations{% endif %}
       {% else %}—{% endif %}
     </dd>
-    <dt>Fingerprint</dt><dd class="turn-fingerprint">{% if report.fingerprint %}<code title="{{ report.fingerprint }}">{{ report.fingerprint|short_fp }}</code>{% else %}—{% endif %}</dd>
-    <dt>Quality status</dt><dd class="turn-quality">{% if report.quality_status %}<span class="quality {{ report.quality_status.status|quality_class }}">{{ report.quality_status.status }}</span>{% else %}—{% endif %}</dd>
+    <dt>Fingerprint</dt><dd class="turn-fingerprint">{% if report.fingerprint %}<code title="{{ report.fingerprint }}">{{ report.fingerprint|short_fp }}</code> · {% url 'engine:certifications' as certs_url %}{% if certs_url %}<a class="certifications-link" href="{{ certs_url }}?fingerprint={{ report.fingerprint|urlencode:'' }}">Certifications for this configuration</a>{% else %}Certifications for this configuration{% endif %}{% else %}—{% endif %}</dd>
+    <dt>Quality status</dt><dd class="turn-quality">{% include "console/_quality.html" with quality=report.quality_status|quality_line %}</dd>
     <dt>Engine profile</dt><dd class="turn-profile">{% if report.profile %}<a href="{% url 'profiles:detail' report.profile.id %}?version={{ report.profile.version }}"><code>{{ report.profile.id }}@{{ report.profile.version }}</code></a>{% else %}—{% endif %}</dd>
     <dt>Config revision</dt><dd class="turn-config-revision">{{ report.config_revision|default_if_none:"—" }}</dd>
   </dl>

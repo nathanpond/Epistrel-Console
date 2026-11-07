@@ -3448,3 +3448,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The "renders as on main" complement compares the impact `<section>` against a golden captured from the pre-change code, `tests/fixtures/profile_edit_m6/impact_behavioural.html`, using `normalise_html`, with the signed and CSRF token values masked.
   **Why:** E24's region golden.
   **Issue:** #311
+- **Decision:** #312's "raw status and reason in `title`" is met in `console.certification.quality_line`: a `QualityStatus` that is `stale` with an `invalidated_reason` gets `title="stale (canary)"`; every other status (and a bare stale string or `FloorsMet`) keeps the raw status as before. This refines E13's "title is the raw status" (#295) in the one shared function, so the Overview, Config and the turn report read it identically.
+  **Why:** the story's AC is more specific than E13 and no other story keys on the stale title (impact goldens carry bare "stale" strings, unchanged). Cost if wrong: one title format.
+  **Issue:** #312
+- **Decision:** The profile list's stale row wraps the whole `_quality.html` include (badge, plus any floors line) in the `certifications-link` anchor; the cell is `<td class="quality-cell">`. Config's quality `<dd>` keeps no class (only the badge markup moved); Config passes `quality_line(config.quality_status)` directly (the model field is required) and `certifications_url` is `None` for a blank fingerprint.
+  **Why:** the story says the link wraps the badge's "Stale" text with no extra text; a `FloorsMet` stale row normally has no floors. Cost if wrong: markup only.
+  **Issue:** #312
+- **Decision:** The turn-report "absent quality" cases use `quality_status: null` (the recorded schema requires the key, nullable for pre-fingerprint replays), not a missing key; a report with a fingerprint but null quality still shows the certifications link.
+  **Why:** the fake Engine validates responses against the recording; the template treats both alike. Cost if wrong: none.
+  **Issue:** #312
+- **Decision:** The story header's compact config chip (`stories/_config_badge.html`) keeps its plain quality text, as the story's discretion says; the badge appears on Config, turn reports and the profile list.
+  **Why:** planner's call, recorded so "everywhere" stays honest in the PR body. Cost if wrong: one more place to switch later.
+  **Issue:** #312

@@ -200,8 +200,10 @@ def test_config_shows_profile_fingerprint_quality_and_revision(
     html = operator_client.get(CONFIG).content.decode()
     shown = text(html)
     assert f'<a href="/profiles/{LITE}/?version=2">Lite</a> v2 — follows latest' in html
-    assert f'<dd class="fingerprint"><code>{FP_NOW}</code></dd>' in html
-    assert '<span class="quality ">uncertified</span>' in html
+    # #312: the link is plain text while engine:certifications is unregistered.
+    link = "Certifications for this configuration"
+    assert f'<dd class="fingerprint"><code>{FP_NOW}</code> · {link}</dd>' in html
+    assert '<dd><span class="quality" title="uncertified">Uncertified</span></dd>' in html  # #312
     assert "Overrides revision 3 — Edit overrides" in shown
     assert "rolling_summary , pins , polish" in shown
 
@@ -789,7 +791,7 @@ def test_the_turn_report_shows_the_configuration_it_ran_under(
     html = text(post_turn(operator_client))
     body = respond_json()
     assert f"Fingerprint {body['fingerprint'][7:19]}" in html
-    assert "Quality status uncertified" in html
+    assert "Quality status Uncertified" in html  # #312: E13's badge
     assert f"Engine profile {LITE}@1" in html
     assert "Config revision 0" in html
 

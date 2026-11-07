@@ -17,6 +17,10 @@ shown, read on the same pool; its failure stays inside the section.
 The owner and relations panel is #79's. #84 adds Edit (hidden on a deleted profile; "Edit latest
 (vM)" on a past version), Copy (at the version viewed) and Delete (disabled for the deployment
 default); its views are ``console.views.profile_edit``.
+
+#312 (E13): the list's Quality column is ``_quality.html`` over ``quality_line(profile.quality)``
+(the list's own ``GET /engine-profiles`` carries it; "—" when absent). A stale row's badge links
+the profile's certifications (``certifications_url(profile_id=…)``, plain while unregistered).
 """
 
 from collections.abc import Callable
@@ -30,6 +34,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_safe
 
+from console.certification import STALE, QualityLine, certifications_url, quality_line
 from console.engine.client import EngineClient, EngineClientError
 from console.engine.models import (
     DeploymentSettings,
@@ -87,9 +92,30 @@ def _positive(raw: str | None) -> int | None:
 
 @dataclass(frozen=True)
 class ProfileRow:
+    """One list row; ``quality`` is ``None`` when the Engine sent none, and only a stale row has a
+    ``certifications_url`` (#312)."""
+
     profile: EngineProfile
     url: str
     is_default: bool
+    quality: QualityLine | None = None
+    certifications_url: str | None = None
+
+
+def profile_row(profile: EngineProfile, default_id: str | None) -> ProfileRow:
+    """``profile`` as a list row, with its quality badge (#312)."""
+    quality = profile.quality
+    return ProfileRow(
+        profile,
+        detail_url(profile.id),
+        profile.id == default_id,
+        quality=quality_line(quality) if quality is not None else None,
+        certifications_url=(
+            certifications_url(profile_id=profile.id)
+            if quality is not None and quality.status == STALE
+            else None
+        ),
+    )
 
 
 def _deleted_default_note(client: EngineClient, default_id: str, request: HttpRequest) -> str:
@@ -125,7 +151,7 @@ def profile_list(request: HttpRequest) -> HttpResponse:
             except EngineClientError as exc:
                 log_engine_error(request, exc)
                 default_warning = DEFAULT_UNREAD
-            rows = [ProfileRow(p, detail_url(p.id), p.id == default_id) for p in items]
+            rows = [profile_row(p, default_id) for p in items]
             if default_id and not form.show_deleted and not any(r.is_default for r in rows):
                 deleted_default = _deleted_default_note(client, default_id, request)
             if next_cursor:

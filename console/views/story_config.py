@@ -38,6 +38,12 @@
   and goes to the Backfill page (Config while it is unregistered); an applied write whose
   impact names a ``forward_only_gap`` appends :func:`gap_sentence` to the applied flash.
 
+#312 (E13): Config's "Quality status" is ``_quality.html`` over
+``quality_line(config.quality_status)`` (context ``quality``), and the Fingerprint line links
+"Certifications for this configuration" (context ``certifications_url``:
+``certifications_url(fingerprint=…)``, ``None`` while ``engine:certifications`` is unregistered or
+for a blank fingerprint).
+
 The form page's facts (the overrides as loaded and their revision, the profile version's
 settings, the deployment defaults, the schema digest) travel signed, so an invalid form, an
 unchanged one and a stale schema make no Engine call.
@@ -60,7 +66,7 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 
 from console import twostage
 from console.canon import utc_text
-from console.certification import QualityLine, quality_line
+from console.certification import QualityLine, certifications_url, quality_line
 from console.confirm import posted_idempotency_key
 from console.engine.choices import PROFILES_MAX, error_text
 from console.engine.client import (
@@ -100,7 +106,7 @@ from console.forms.upgrades import DEFAULT_UPGRADE_MODE, UpgradeModeForm
 from console.guarantees import CONFIG_SCOPE
 from console.guarantees import section as guarantees_section
 from console.ids import new_ulid
-from console.impact import backfill_text, quality_class, short_fingerprint, turns_text
+from console.impact import backfill_text, short_fingerprint, turns_text
 from console.profile_schema import get_profile_schema_cached
 from console.story_config import badge_for, config_layers, config_url
 from console.upgrades import backfill_url, gap_fill_url, preset_label, preset_order
@@ -508,7 +514,10 @@ def _config_page(
         "story_name": _story_name(loaded.story, story_id),
         "config": config,
         "badge": badge_for(config),
-        "quality_class": quality_class(config.quality_status.status),
+        "quality": quality_line(config.quality_status),
+        "certifications_url": (
+            certifications_url(fingerprint=config.fingerprint) if config.fingerprint else None
+        ),
         "layers": config_layers(config, profile_settings, loaded.schema),
         "profile": loaded.profile,
         "profile_url": detail_url(config.profile.id, config.profile.version),

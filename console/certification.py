@@ -16,7 +16,8 @@ or a bare status string (the impact report's per-row ``quality_after``):
   ``invalidated_reason``, "Stale" alone; an unknown reason humanised;
 - any other status humanised, with no class.
 
-``QualityLine.title`` is the raw status; ``css_class`` is ``console.impact.quality_class``'s
+``QualityLine.title`` is the raw status, plus the raw reason in parentheses when a ``stale``
+status carries one ("stale (canary)", #312); ``css_class`` is ``console.impact.quality_class``'s
 modifier ("" for uncertified), and ``templates/console/_quality.html`` always prepends
 ``quality``. The floors line (:func:`floors_text`) shows whenever either list is non-empty, for
 any status; ``intervention_types_*`` aren't shown. The one template-side adapter is the
@@ -104,11 +105,12 @@ def quality_line(status: QualityStatus | FloorsMet | str) -> QualityLine:
             floors_text(status.floors_met, ()),
         )
     value = status.status
+    reason = status.invalidated_reason
     certification_id = status.certification_id or ""
     return QualityLine(
-        _status_text(value, status.invalidated_reason),
+        _status_text(value, reason),
         quality_class(value),
-        value,
+        f"{value} ({reason})" if value == STALE and reason else value,
         certification_url(certification_id),
         floors_text(status.floors_passed, status.failed_floors),
         certification_id,
