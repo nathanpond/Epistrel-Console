@@ -4,7 +4,9 @@ meant for #80's rating checks and #86's erasures).
 A job page renders ``console/_job_poll.html`` around the job's own partial. While the job is
 not terminal the wrapper carries ``hx-get=<poll_url> hx-trigger="every 2s"`` and swaps itself
 (``outerHTML``); the terminal render has no ``hx-trigger``, so polling stops there. There is no
-cutoff, and a "Refresh" link reloads the page without JavaScript.
+cutoff, and a "Refresh" link reloads the page without JavaScript. M7's job pages (E7, #295,
+``console.jobs``) pass ``trigger=SLOW_POLL_TRIGGER`` ("every 5s") for backfills and
+certification runs; every other caller keeps the default.
 
 A failed poll is classified by :func:`poll_failure`: no answer (unreachable, timeout) or a 503
 keeps polling with :data:`RETRYING_TEXT`; a 404 is the job's own "not found" text; anything
@@ -25,6 +27,11 @@ from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.models import EngineOperation
 
 POLL_TRIGGER = "every 2s"
+# E7 (#295): backfills and certification runs (minutes to hours) poll at a fixed 5 s; the
+# polled partial is the job page's own URL with ``?partial=1``. Defined here, beside
+# ``POLL_TRIGGER``, so ``console.story_pause`` can import them; ``console.jobs`` re-exports both.
+SLOW_POLL_TRIGGER = "every 5s"
+PARTIAL_PARAM = "partial"
 POLL_TEMPLATE = "console/_job_poll.html"
 RETRYING_TEXT = "Engine unavailable — retrying"
 RETRY_STATUSES = frozenset({503})
@@ -59,14 +66,17 @@ def poll_context(
     body_template: str,
     polling: bool,
     retrying: bool = False,
+    trigger: str = POLL_TRIGGER,
 ) -> dict[str, Any]:
-    """The context ``console/_job_poll.html`` takes (merge the job's own context into it)."""
+    """The context ``console/_job_poll.html`` takes (merge the job's own context into it).
+    ``trigger`` is the fixed interval (E7: :data:`SLOW_POLL_TRIGGER` for long jobs); it never
+    grows or shrinks."""
     return {
         "poll_url": poll_url,
         "refresh_url": refresh_url,
         "body_template": body_template,
         "polling": polling,
-        "poll_trigger": POLL_TRIGGER,
+        "poll_trigger": trigger,
         "retrying": retrying,
         "retrying_text": RETRYING_TEXT,
     }

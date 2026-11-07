@@ -2,8 +2,12 @@
 {% comment %}
 A story's effective configuration (#85, console/views/story_config.py): the profile it runs on,
 each setting's three layers with the effective one highlighted, capabilities, fingerprint and
-quality status; the assign-profile select; the Profile version select (#63); a link to the
+quality status; the assign-profile select with the presets first and their table (#307: quality badge,
+Guarantees link, one-click Preview); the Profile version select (#63); a link to the
 overrides form; the story's guarantee table (#57, console/_guarantees.html).
+#312 (E13): the Quality status is console/_quality.html (context quality), and the Fingerprint links
+"Certifications for this configuration" (context certifications_url; plain text while unregistered).
+#314: the Quality status line ends " · Request a certification run…" (stories:certify).
 {% endcomment %}
 {% block title %}Config — {{ story_name }} — Epistrel Console{% endblock %}
 {% block heading %}Config — {{ story_name }}{% endblock %}
@@ -14,8 +18,8 @@ overrides form; the story's guarantee table (#57, console/_guarantees.html).
   <dt>Engine profile</dt>
   <dd class="profile"><a href="{{ profile_url }}">{% if profile %}{{ profile.name }}{% else %}<code>{{ config.profile.id }}</code>{% endif %}</a> v{{ config.profile.version }} — {{ pin_text }}{% if config.profile.deleted %} <span class="badge deleted">deleted</span>{% endif %}</dd>
   <dt>Overrides revision</dt><dd class="overrides-revision">{% if config.overrides.revision == 0 %}0 (no overrides){% else %}{{ config.overrides.revision }}{% endif %} — <a class="overrides-link" href="{{ overrides_url }}">Edit overrides</a></dd>
-  <dt>Fingerprint</dt><dd class="fingerprint"><code>{{ config.fingerprint }}</code></dd>
-  <dt>Quality status</dt><dd><span class="quality {{ quality_class }}">{{ config.quality_status.status }}</span></dd>
+  <dt>Fingerprint</dt><dd class="fingerprint"><code>{{ config.fingerprint }}</code>{% if config.fingerprint %} · {% if certifications_url %}<a class="certifications-link" href="{{ certifications_url }}">Certifications for this configuration</a>{% else %}Certifications for this configuration{% endif %}{% endif %}</dd>
+  <dt>Quality status</dt><dd>{% include "console/_quality.html" with quality=quality %} · <a class="certify-link" href="{% url 'stories:certify' story_id %}">Request a certification run…</a></dd>
   <dt>Capabilities</dt><dd class="capabilities">{% for c in config.capabilities %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
 </dl>
 
@@ -24,20 +28,35 @@ overrides form; the story's guarantee table (#57, console/_guarantees.html).
   {% if assign.refusal %}{% include "console/settings/_refusal.html" with refusal=assign.refusal %}{% endif %}
   {% if assign.error %}<p class="errorlist assign-error" role="alert">{{ assign.error }}</p>{% endif %}
   {% if assign.lines %}<ul class="overrides-lines">{% for line in assign.lines %}<li><code>{{ line }}</code></li>{% endfor %}</ul>{% endif %}
-  {% if select.error %}<p class="warning profiles-unavailable">{{ select.error }}</p>
-  {% else %}
+  {% if select.presets or not select.error %}
   <form method="post" action="{{ assign_url }}" class="assign-form">{% csrf_token %}
-    {% if select.too_many %}
-    <label for="assign-profile-id">Profile id</label> <input type="text" id="assign-profile-id" name="profile_id" value="{{ assign.chosen }}"> <small class="muted">{{ too_many_text }}</small>
+    <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true"></button>
+    {% if select.presets_error %}<p class="warning presets-unavailable">{{ select.presets_error }}</p>
+    {% elif select.presets %}
+    <table class="presets">
+      <thead><tr><th>Preset</th><th>Version</th><th>Quality</th><th>Guarantees</th><th></th></tr></thead>
+      <tbody>
+      {% for row in select.presets %}<tr id="preset-{{ row.id }}"><td>{{ row.label }}</td><td>v{{ row.version }}</td><td>{% if row.quality %}{% include "console/_quality.html" with quality=row.quality %}{% else %}—{% endif %}</td><td><a href="{{ row.guarantees_url }}">Guarantees</a></td><td>{% if row.current %}(current){% else %}<button type="submit" name="profile_id" value="{{ row.id }}">Preview</button>{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% else %}<p class="muted no-presets">{{ no_presets_text }}</p>
+    {% endif %}
+    {% if select.error %}<p class="warning profiles-unavailable">{{ select.error }}</p>
+    {% elif select.too_many %}
+    <label for="assign-profile-id">Profile id</label> <input type="text" id="assign-profile-id" name="profile_choice" value="{{ assign.chosen }}"> <small class="muted">{{ too_many_text }}</small>
+    <button type="submit">Preview</button>
     {% else %}
     <label for="assign-profile-id">Profile</label>
-    <select id="assign-profile-id" name="profile_id">
+    <select id="assign-profile-id" name="profile_choice">
       <option value="">— pick a profile —</option>
-      {% for option in select.options %}<option value="{{ option.id }}"{% if option.disabled %} disabled{% endif %}{% if option.id == assign.chosen %} selected{% endif %}>{{ option.label }}</option>{% endfor %}
+      {% if select.preset_options %}<optgroup label="Presets">{% for option in select.preset_options %}<option value="{{ option.id }}"{% if option.disabled %} disabled{% endif %}{% if option.id == assign.chosen %} selected{% endif %}>{{ option.label }}</option>{% endfor %}</optgroup>{% endif %}
+      {% if select.options %}<optgroup label="Other profiles">{% for option in select.options %}<option value="{{ option.id }}"{% if option.disabled %} disabled{% endif %}{% if option.id == assign.chosen %} selected{% endif %}>{{ option.label }}</option>{% endfor %}</optgroup>{% endif %}
     </select>
-    {% endif %}
     <button type="submit">Preview</button>
+    {% endif %}
   </form>
+  {% else %}<p class="warning profiles-unavailable">{{ select.error }}</p>{% if select.presets_error %}
+  <p class="warning presets-unavailable">{{ select.presets_error }}</p>{% endif %}
   {% endif %}
 </section>
 

@@ -1,14 +1,17 @@
 """A story's settings page forms (#54): settings, one story policy, pinned memories and custom
 instructions. Each section has its own form and its own write.
 
-- :class:`StorySettingsForm` edits the fourteen settable ``StorySettingsPatch`` fields as a
+- :class:`StorySettingsForm` edits the seventeen settable ``StorySettingsPatch`` fields as a
   merge patch (#43): the original values travel in the page's signed snapshot,
   :meth:`~StorySettingsForm.patch` holds only the fields whose value changed, and each field's
   "reset to default" checkbox (``reset_<name>``) sends ``null``. Bounds are the recorded
   schema's ranges; everything else is the Engine's 422. Engine M5's six (#197) are selects
   built with C7 (:mod:`console.story_settings`): the three nullable ones offer
   "Engine default (…)" first, and a stored value outside the choices is kept as one more.
-  Engine M6's co-author knowledge (#233) is a required select like player authority.
+  Engine M6's co-author knowledge (#233) is a required select like player authority. Engine
+  M7's (#318) backfill conflict policy and ambiguous retcon timing are required selects too;
+  its prune policy is a :class:`PrunePolicyField`, a days input that sends
+  ``{"older_than_days": n}`` (blank: ``null``, off), compared as JSON.
 - :class:`StoryPolicyForm` is #47's :class:`~console.forms.policy.PolicyContentForm` with the
   story's rule types (``entity_list`` included), a scope (the story or one character) and an
   ``effect`` (``deny``, or ``allow`` so the Engine's ``cannot_relax`` is reachable); its
@@ -36,13 +39,20 @@ from console.forms.policy import (
     PolicyContentForm,
     policy_initial,
 )
+from console.raw import CELL_LIMIT, compact_json, plural
 from console.story_settings import (
+    BACKFILL_CONFLICT_HELP,
     BOOLEAN_SELECT,
     CO_AUTHOR_KNOWLEDGE_HELP,
     LABELS,
     MULTI_CHARACTER,
     NULLABLE,
     PINNED_ITEM_MAX,
+    PRUNE_DAYS,
+    PRUNE_MAX_DAYS,
+    PRUNE_MIN_DAYS,
+    PRUNE_POLICY_HELP,
+    RETCON_TIMING_HELP,
     SETTABLE,
     SETTING_CHOICES,
     Marker,
@@ -51,6 +61,7 @@ from console.story_settings import (
     kept_choices,
     marker,
     null_default_text,
+    policy_days,
     same_value,
     select_bool,
     tie_break_label,
@@ -58,6 +69,7 @@ from console.story_settings import (
 from console.wording import humanised
 
 RESET_PREFIX = "reset_"
+PRUNE_POLICY = "prune_policy"
 NO_OVERRIDE = ""
 QUEUE_NOTE = "Used only when turn concurrency is queue. 1 to 50."
 
@@ -81,8 +93,38 @@ class SettingRow:
     marker: Marker
 
 
+class PrunePolicyField(forms.IntegerField):
+    """``prune_policy`` as a day count (#318): blank cleans to ``None`` (``null``, off), a number
+    to ``{"older_than_days": n}``. Its bounds are the recorded ``PrunePolicy.older_than_days``."""
+
+    MIN_DAYS = PRUNE_MIN_DAYS
+    MAX_DAYS = PRUNE_MAX_DAYS
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("required", False)
+        super().__init__(min_value=self.MIN_DAYS, max_value=self.MAX_DAYS, **kwargs)
+
+    def clean(self, value: Any) -> dict[str, int] | None:
+        days = super().clean(value)
+        return None if days is None else {PRUNE_DAYS: days}
+
+
+def prune_policy_baseline(stored: object) -> dict[str, int] | None:
+    """What an untouched prune policy input cleans to: the stored policy when well formed
+    (:func:`~console.story_settings.policy_days`), else ``None`` (blank)."""
+    days = policy_days(stored)
+    return None if days is None else {PRUNE_DAYS: days}
+
+
+def prune_policy_text(value: Mapping[str, Any] | None) -> str:
+    """The flash's value: "older than 30 days" ("1 day", E23), or "off" for ``null``."""
+    if value is None:
+        return "off"
+    return f"older than {plural(value[PRUNE_DAYS], 'day')}"
+
+
 class StorySettingsForm(forms.Form):
-    """The fourteen settable story settings. ``original`` is ``settings`` as read; ``cast`` the
+    """The seventeen settable story settings. ``original`` is ``settings`` as read; ``cast`` the
     viewpoint options; ``deployment`` ``GET /admin/settings`` (``None``: unread) for markers."""
 
     turn_concurrency = forms.ChoiceField(
@@ -120,6 +162,10 @@ class StorySettingsForm(forms.Form):
     sequence_order = forms.ChoiceField(required=False)
     simultaneous_tie_break = forms.ChoiceField(required=False)
     reactive_interjections = forms.TypedChoiceField(choices=BOOLEAN_SELECT, coerce=select_bool)
+    # Engine M7 (#318): the read fills the two enums in, so they are required as above.
+    prune_policy = PrunePolicyField(help_text=PRUNE_POLICY_HELP)
+    backfill_conflict_policy = forms.ChoiceField(help_text=BACKFILL_CONFLICT_HELP)
+    ambiguous_retcon_timing = forms.ChoiceField(help_text=RETCON_TIMING_HELP)
 
     def __init__(
         self,
@@ -137,7 +183,16 @@ class StorySettingsForm(forms.Form):
         stored_bool = self.original["reactive_interjections"]
         if isinstance(stored_bool, bool):
             initial["reactive_interjections"] = "true" if stored_bool else "false"
+        stored_policy = self.original[PRUNE_POLICY]
+        days = policy_days(stored_policy)
+        initial[PRUNE_POLICY] = "" if days is None else days
         super().__init__(data, initial=initial)
+        if stored_policy is not None and days is None:
+            # An odd stored policy renders blank; say what it holds (E23's compact JSON).
+            self.fields[PRUNE_POLICY].help_text = (
+                f"{PRUNE_POLICY_HELP} (stored: {compact_json(stored_policy, CELL_LIMIT)}; "
+                "saving a value or Reset replaces it)"
+            )
         for name in SETTABLE:
             self.fields[name].label = LABELS[name]
             self.fields[RESET_PREFIX + name] = forms.BooleanField(
@@ -156,8 +211,16 @@ class StorySettingsForm(forms.Form):
         self._m5_choices()
 
     def _m5_choices(self) -> None:
-        """C7: each M5 and M6 select's choices, a stored value they lack kept as one more."""
-        for name in ("player_authority", "co_author_knowledge", "player_view", *MULTI_CHARACTER):
+        """C7: each M5, M6 and M7 select's choices, a stored value they lack kept as one more."""
+        selects = (
+            "player_authority",
+            "co_author_knowledge",
+            "player_view",
+            *MULTI_CHARACTER,
+            "backfill_conflict_policy",
+            "ambiguous_retcon_timing",
+        )
+        for name in selects:
             field = self.fields[name]
             assert isinstance(field, forms.ChoiceField)  # noqa: S101 - declared above
             label = tie_break_label if name == "simultaneous_tie_break" else humanised
@@ -188,17 +251,20 @@ class StorySettingsForm(forms.Form):
 
     def patch(self) -> dict[str, Any]:
         """The merge patch: each setting whose value changed (``null`` for a reset), in page
-        order; empty when nothing changed. Call after ``is_valid()``."""
+        order; empty when nothing changed. Call after ``is_valid()``. The prune policy compares with
+        what its input rendered (C9): an odd stored policy renders blank, so a blank sends
+        nothing."""
         body: dict[str, Any] = {}
         for name in SETTABLE:
             if name not in self.cleaned_data:
                 continue
             value = self.cleaned_data[name]
             original = self.original[name]
+            baseline = prune_policy_baseline(original) if name == PRUNE_POLICY else original
             if self.cleaned_data.get(RESET_PREFIX + name):
                 if original is not None:
                     body[name] = None
-            elif not same_value(value, original):
+            elif not same_value(value, baseline):
                 body[name] = value
         return body
 
@@ -211,6 +277,8 @@ class StorySettingsForm(forms.Form):
         ]
 
     def _shown(self, name: str, value: Any) -> str:
+        if name == PRUNE_POLICY:
+            return prune_policy_text(value)
         if value is None:
             return "default"
         if isinstance(value, bool):
@@ -224,7 +292,10 @@ class StorySettingsForm(forms.Form):
 
 
 # Engine paths a settings 422 names that the form shows elsewhere.
-SETTINGS_ERROR_PATHS = {"viewpoint_unresolved": "default_output_viewpoint"}
+SETTINGS_ERROR_PATHS = {
+    "viewpoint_unresolved": "default_output_viewpoint",
+    "prune_policy.older_than_days": PRUNE_POLICY,
+}
 
 
 # --- one story policy -----------------------------------------------------------------------------

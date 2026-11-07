@@ -99,6 +99,16 @@ def humanised_filter(value: Any) -> str:
     return humanised(str(value))
 
 
+@register.filter(name="status_label")
+def status_label_filter(value: Any) -> str:
+    """A story status in the one wording (#293, ``console.forms.stories.STATUS_LABELS``):
+    ``paused`` → "Paused", ``later_status`` → "Later status", ``None`` or blank → "—". The
+    template puts the raw value in ``title``."""
+    from console.forms.stories import status_label
+
+    return status_label(None if value is None else str(value))
+
+
 @register.filter
 def engine_label(value: Any) -> str:
     """A stored ``EngineOperation.engine_label`` as shown (#257): "Staged turn" (D13), another
@@ -161,3 +171,39 @@ def new_idempotency_key() -> str:
     """A fresh ULID per call (#43's per-render key, #135 convention 8), for a page that renders
     several write forms (#143's memory row buttons): ``{% new_idempotency_key as key %}``."""
     return new_ulid()
+
+
+OUTBOX_VARIANT = "outbox"
+
+
+@register.simple_tag
+def omniscient_line(variant: str = "") -> str:
+    """E2's :data:`console.rewrites.OMNISCIENT_LINE` (#294), for ``_omniscient.html``; the
+    ``"outbox"`` variant is the Outbox section's ``OUTBOX_OMNISCIENT_LINE`` (#325)."""
+    from console.rewrites import OMNISCIENT_LINE, OUTBOX_OMNISCIENT_LINE
+
+    return OUTBOX_OMNISCIENT_LINE if variant == OUTBOX_VARIANT else OMNISCIENT_LINE
+
+
+@register.filter
+def probe_count(calls: Any) -> int:
+    """#330 (Engine ADR-180): how many of a turn report's model calls are refunded
+    response-format probes, ``probe is True`` only (a raw call with a missing or non-bool
+    ``probe`` isn't one), so the "Model calls" heading's count less this equals "used"."""
+    if not isinstance(calls, list | tuple):
+        return 0
+    count = 0
+    for call in calls:
+        probe = call.get("probe") if isinstance(call, dict) else getattr(call, "probe", None)
+        count += probe is True
+    return count
+
+
+@register.filter
+def gap_unread(count: Any) -> str:
+    """#330: ``console.turn_reports.GAP_UNREAD`` for ``count`` skipped gap entries ("" for 0)."""
+    from console.turn_reports import unread_gap_text
+
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        return ""
+    return unread_gap_text(count)

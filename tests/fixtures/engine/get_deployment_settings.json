@@ -154,7 +154,8 @@
         "pipeline": "lite",
         "commitment": {
             "enabled": false,
-            "salience": "rules"
+            "salience": "rules",
+            "salience_bias": "balanced"
         },
         "verification": {
             "level": "off",
@@ -163,12 +164,38 @@
             "safe_disposition": "repair",
             "implication_max_depth": 3,
             "contradiction_checking": false,
-            "entailment_min_confidence": 0.6
+            "entailment_min_confidence": 0.6,
+            "shape_tightening": "on"
         }
     },
     "provider_allowed_hosts": [
         "bank.example",
         "127.0.0.1:8099"
     ],
+    "rewrite_ambiguity_margin": 0.15,
+    "rewrite_max_open_sessions": 5,
+    "rewrite_session_ttl_minutes": 1440,
+    "rewrite_stale_retries": 2,
+    "directive_steer_ttl_minutes": 1440,
+    "dependency_search_max_depth": 3,
+    "dependency_search_max_results": 500,
+    "lite_author_facts_max": 50,
+    "lite_reach_chunk_messages": 60,
+    "lite_reach_chunk_tokens": 12000,
+    "lite_reach_max_calls": 24,
+    "lite_reach_parallelism": 4,
+    "lite_reach_deadline_seconds": 120,
+    "bundle_export_ttl_hours": 24,
+    "bundle_max_uncompressed_bytes": 4294967296,
+    "bundle_max_entries": 100000,
+    "bundle_max_entry_bytes": 1073741824,
+    "certification_canary_enabled": false,
+    "certification_canary_interval_s": 604800,
+    "certification_canary_sample_size": 50,
+    "certification_canary_seeds": 1,
+    "certification_recertify_interval_s": null,
+    "model_tiers": {
+        "strongest": null
+    },
     "config_revision": 0
 }

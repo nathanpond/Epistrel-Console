@@ -1,0 +1,38 @@
+{% load inspect_tags world_tags %}{# The Direct tab (#300). Context: dv (console.directives.DirectView). The form posts to stories:direct; with HTMX the answer replaces this element. output_viewpoint is the Turn tab's viewpoint, carried display-only (the tab links include it) and never sent to the Engine: a direction is omniscient (E2). A routed direction's session renders read-only through E3's partial (no actions, no answers form). #}
+<div id="direct">
+  <h2>Direct the story</h2>
+  <p class="muted direct-viewpoint">{{ dv.viewpoint_line }}</p>
+  {% if dv.note %}<p class="warning">{{ dv.note }}</p>{% endif %}
+  {% with outcome=dv.outcome %}{% if outcome %}<div class="direct-outcome">
+    <p class="read-as"{% if outcome.read_as_title %} title="{{ outcome.read_as_title }}"{% endif %}>{{ outcome.read_as_text }}</p>
+    <p class="direct-headline"{% if outcome.headline_title %} title="{{ outcome.headline_title }}"{% endif %}>{{ outcome.headline }}</p>
+    {% if outcome.lines %}<ul class="direct-applied">{% for line in outcome.lines %}<li>{{ line.text }}{% for id, url in line.links %} {% if url %}<a href="{{ url }}">{{ id|outbox_id }}</a>{% else %}{{ id|outbox_id }}{% endif %}{% endfor %}</li>{% endfor %}</ul>{% endif %}
+    {% for hint in outcome.hint_lines %}<p class="direct-hint"{% if hint.title %} title="{{ hint.title }}"{% endif %}>{{ hint.text }}{% if hint.url %} · <a href="{{ hint.url }}">Settings</a>{% endif %}</p>{% endfor %}
+    {% if outcome.session_url %}<p><a href="{{ outcome.session_url }}" class="direct-session">{{ outcome.open_session_text }}</a></p>{% endif %}
+    {% if outcome.session_view %}{% include "console/rewrites/_session.html" with view=outcome.session_view answers_form=None apply_hidden=None %}{% endif %}
+    <details><summary>More</summary><pre>{{ outcome.more }}</pre></details>
+  </div>{% endif %}{% endwith %}
+  {% if dv.panel %}{% include "console/_engine_error.html" with engine_error=dv.panel %}{% endif %}
+  {% if dv.refusal %}<p class="errorlist direct-refusal" role="alert">{{ dv.refusal.text|code_spans }}{% if dv.refusal.url %} <a href="{{ dv.refusal.url }}">{{ dv.refusal_link }}</a>{% endif %}</p>{% endif %}
+  <form method="post" action="{% url 'stories:direct' dv.story_id %}" class="direct-form"
+        hx-post="{% url 'stories:direct' dv.story_id %}" hx-target="#direct" hx-swap="outerHTML"
+        hx-disable="this" hx-sync="this:drop" hx-config="timeout:{{ dv.timeout_s }}s">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ dv.idempotency_key }}">
+    <input type="hidden" name="snapshot" value="{{ dv.snapshot }}">
+    <input type="hidden" name="output_viewpoint" value="{{ dv.viewpoint }}">
+    <input type="hidden" name="transcript_player_view" id="direct-transcript-player-view" value="{{ dv.transcript_player_view }}">
+    {{ dv.form.non_field_errors }}
+    <fieldset{% if dv.disabled %} disabled{% endif %}>
+      <div class="field field-text">{{ dv.form.text.label_tag }}<br>{{ dv.form.text }}{% if dv.form.text.errors %}<ul class="errorlist">{% for error in dv.form.text.errors %}<li>{{ error|code_spans }}</li>{% endfor %}</ul>{% endif %}
+        <p><small class="muted">{{ dv.form.text.help_text }}</small></p>
+      </div>
+      <div class="field field-kind">{{ dv.form.kind.label_tag }} {{ dv.form.kind }}{{ dv.form.kind.errors }}</div>
+      <fieldset class="direct-modes">
+        <legend>If this changes the past (a rewrite session opens)</legend>
+        {% include "console/rewrites/_modes.html" with form=dv.form %}
+      </fieldset>
+      <button type="submit">Direct</button> <span class="htmx-indicator">Directing…</span>
+    </fieldset>
+  </form>
+</div>

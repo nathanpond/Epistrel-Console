@@ -128,6 +128,7 @@ from console.views.inspect import (
     inspect_page,
 )
 from console.views.inspect_memory import refusal_text
+from console.views.inspect_merge import entity_merge_url
 
 CANON_TEMPLATE = "console/inspect/canon.html"
 LINEAGE_TEMPLATE = "console/inspect/canon_lineage.html"
@@ -163,6 +164,7 @@ def _canon(ctx: InspectContext) -> dict[str, Any]:
             ctx.story_id,
             {n: _normalised(ctx.request.GET, n) for n in ("subject", "predicate")},
         ),
+        "merge_url": entity_merge_url(ctx.story_id),  # #306
     }
     if not form.is_valid():
         return context

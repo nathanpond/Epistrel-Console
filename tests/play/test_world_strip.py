@@ -16,7 +16,12 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils.html import escape
 
-from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, OUTBOX_LIST_NOTICE
+from console.effects import (
+    INCOMPLETE_TEXT,
+    INCOMPLETE_TITLE,
+    OUTBOX_LIST_NOTICE,
+    OUTBOX_SECTION_NOTICE,
+)
 from console.engine.models import EffectiveConfig, RespondResponse, Story, TurnClock
 from console.inspect import short_id
 from console.models import EngineOperation
@@ -53,7 +58,9 @@ EFFECTIVE = "/stories/{story_id}/effective-config"
 PLAY = f"/stories/{STORY}/"
 TURN_URL = f"/stories/{STORY}/turn/"
 RECONCILIATION = f"/stories/{STORY}/inspect/effects/reconciliation/"
-NOTICE_START = OUTBOX_LIST_NOTICE.partition("{link}")[0]
+NOTICE_START = OUTBOX_SECTION_NOTICE.partition("{link}")[0]  # E17: #325 registered it
+# D11's old notice: a urlconf without ``inspect:outbox`` (D19's fallback).
+UNLINKED_NOTICE_START = OUTBOX_LIST_NOTICE.partition("{link}")[0]
 ROWS = (
     '<tr><td>gold</td><td>—</td><td>\u22125 (120 → 115)</td><td title="committed">Committed</td>'
     "<td></td><td>paid for the lantern</td><td></td>"
@@ -271,7 +278,8 @@ def assert_full_strip(strip: str, *, linked: bool, names: bool = True) -> None:
         )
     else:
         assert '<p class="reconcile">2 effects to reconcile</p>' in strip
-    assert f'<p class="notice">{NOTICE_START}' in strip
+    notice = NOTICE_START if linked else UNLINKED_NOTICE_START
+    assert f'<p class="notice">{notice}' in strip
     order = [
         strip.index(marker)
         for marker in (
@@ -280,7 +288,7 @@ def assert_full_strip(strip: str, *, linked: bool, names: bool = True) -> None:
             "Settled since the last turn",
             "External effects that stay listed",
             "effects to reconcile",
-            NOTICE_START,
+            notice,
         )
     ]
     assert order == sorted(order)

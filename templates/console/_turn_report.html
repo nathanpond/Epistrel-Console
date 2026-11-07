@@ -5,6 +5,12 @@ configuration it ran under (short fingerprint, quality status, profile id@versio
 Warnings row when the report has warnings: `warning_lines` (the play inspector's, labelled) or,
 when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
 #234: the Model calls table's Stage column (`ModelCall.stage`, raw: a plain string, "—" when absent).
+#312 (E13): the Quality status is console/_quality.html over `report.quality_status|quality_line`, and
+the Fingerprint links "Certifications for this configuration" (engine:certifications?fingerprint=).
+#330 (FR-PROF-8, Engine ADR-180): a Coverage gaps row after Warnings when `coverage_gaps` (GapLines,
+console.turn_reports.coverage_gap_lines) is non-empty or `coverage_gaps_unread` (skipped entries) is
+above zero; a model call with `probe` true is marked `class="probe"`, "<outcome> · probe (refunded)",
+and the heading counts the refunded probes (`probe_count`), so "Model calls" less them is "used".
 {% endcomment %}
 {% load console_format impact inspect_tags %}
 <section class="turn-report">
@@ -33,6 +39,13 @@ when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
       <ul>{% if warning_lines %}{% for line in warning_lines %}<li>{{ line.before }}{% if line.memory_id %}{% if line.url %}<a class="warning-memory" href="{{ line.url }}">{{ line.memory_id|engine_id }}</a>{% else %}{{ line.memory_id|engine_id }}{% endif %}{% endif %}{{ line.after }}</li>{% endfor %}{% else %}{% for line in report.warnings|turn_warnings %}<li>{{ line.before }}{% if line.memory_id %}{% if line.url %}<a class="warning-memory" href="{{ line.url }}">{{ line.memory_id|engine_id }}</a>{% else %}{{ line.memory_id|engine_id }}{% endif %}{% endif %}{{ line.after }}</li>{% endfor %}{% endif %}</ul>
     </dd>
     {% endif %}
+    {% if coverage_gaps or coverage_gaps_unread %}
+    <dt>Coverage gaps</dt>
+    <dd class="turn-coverage-gaps">
+      {% if coverage_gaps %}<ul class="coverage-gaps">{% for line in coverage_gaps %}<li>{{ line.text }}{% if line.url %} — <a class="gap-fill" href="{{ line.url }}">Fill the gap</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+      {% if coverage_gaps_unread %}<p class="muted">{{ coverage_gaps_unread|gap_unread }}</p>{% endif %}
+    </dd>
+    {% endif %}
     <dt>Guardrail</dt>
     <dd>
       {% if report.guardrail %}
@@ -42,20 +55,20 @@ when not given, `report.warnings|turn_warnings` (short ids, no Retrieval link).
       {% else %}; no violations{% endif %}
       {% else %}—{% endif %}
     </dd>
-    <dt>Fingerprint</dt><dd class="turn-fingerprint">{% if report.fingerprint %}<code title="{{ report.fingerprint }}">{{ report.fingerprint|short_fp }}</code>{% else %}—{% endif %}</dd>
-    <dt>Quality status</dt><dd class="turn-quality">{% if report.quality_status %}<span class="quality {{ report.quality_status.status|quality_class }}">{{ report.quality_status.status }}</span>{% else %}—{% endif %}</dd>
+    <dt>Fingerprint</dt><dd class="turn-fingerprint">{% if report.fingerprint %}<code title="{{ report.fingerprint }}">{{ report.fingerprint|short_fp }}</code> · {% url 'engine:certifications' as certs_url %}{% if certs_url %}<a class="certifications-link" href="{{ certs_url }}?fingerprint={{ report.fingerprint|urlencode:'' }}">Certifications for this configuration</a>{% else %}Certifications for this configuration{% endif %}{% else %}—{% endif %}</dd>
+    <dt>Quality status</dt><dd class="turn-quality">{% include "console/_quality.html" with quality=report.quality_status|quality_line %}</dd>
     <dt>Engine profile</dt><dd class="turn-profile">{% if report.profile %}<a href="{% url 'profiles:detail' report.profile.id %}?version={{ report.profile.version }}"><code>{{ report.profile.id }}@{{ report.profile.version }}</code></a>{% else %}—{% endif %}</dd>
     <dt>Config revision</dt><dd class="turn-config-revision">{{ report.config_revision|default_if_none:"—" }}</dd>
   </dl>
   {% if report.capabilities %}<details class="more"><summary>More</summary><dl><dt>Capabilities</dt><dd class="turn-capabilities">{% for c in report.capabilities %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</dd></dl></details>{% endif %}
-  <h4>Model calls ({{ report.model_calls|length }})</h4>
+  <h4>Model calls ({{ report.model_calls|length }}){% with probes=report.model_calls|probe_count %}{% if probes %} · {{ probes }} probe{{ probes|pluralize }} refunded{% endif %}{% endwith %}</h4>
   {% if report.model_calls %}
   <table class="model-calls">
     <thead><tr><th>Purpose</th><th>Stage</th><th>Model</th><th>Attempt</th><th>Outcome</th><th>Latency</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th><th>Finish</th><th>Request id</th></tr></thead>
     <tbody>
       {% for call in report.model_calls %}
-      <tr>
-        <td>{{ call.purpose }}</td><td class="call-stage">{% if call.stage %}<code>{{ call.stage }}</code>{% else %}—{% endif %}</td><td><code>{{ call.model }}</code></td><td>{{ call.attempt }}</td><td>{{ call.outcome }}</td>
+      <tr{% if call.probe is True %} class="probe"{% endif %}>
+        <td>{{ call.purpose }}</td><td class="call-stage">{% if call.stage %}<code>{{ call.stage }}</code>{% else %}—{% endif %}</td><td><code>{{ call.model }}</code></td><td>{{ call.attempt }}</td>{% if call.probe is True %}<td title="A response-format probe the endpoint rejected: sent, decided nothing, refunded to the turn budget">{{ call.outcome }} · probe (refunded)</td>{% else %}<td>{{ call.outcome }}</td>{% endif %}
         <td>{{ call.latency_ms }} ms</td><td>{{ call.tokens_in }}</td><td>{{ call.tokens_out }}</td>
         <td>{{ call.cost|default_if_none:"" }}</td><td>{{ call.finish_reason|default_if_none:"—" }}</td>
         <td>{% if call.request_id %}<code>{{ call.request_id }}</code>{% endif %}</td>

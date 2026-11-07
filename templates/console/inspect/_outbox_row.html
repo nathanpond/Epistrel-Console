@@ -1,0 +1,28 @@
+{% load console_format world_tags %}{% comment %}
+One outbox row (#325): a console.outbox.OutboxRowView as row, one <tr id="outbox-<outbox_id>">
+(#249's anchor form, so the same fragment works on either page). Columns: Outbox id (full, D11),
+Provider (linked through D19's provider_url), Provider value, Status (humanised, raw in title; an
+imported_unsettled row adds IMPORTED_UNSETTLED_TITLE linking its Reconciliation row), Effect
+(REDACTED for a redacted row), Declared at (C1, linked to History), Timeline (the membership),
+Waits on it, Compensation (#outbox-<id> on this page, else Reconciliation, else plain), Attempts
+and times (one line each), Latest outcome and More (the effect, the raw status, membership and
+position). Context: row.
+{% endcomment %}<tr id="{{ row.anchor }}" class="outbox-row">
+  <td class="outbox">{{ row.outbox_id|outbox_id }}</td>
+  <td class="provider">{% if row.provider_url %}<a class="provider-link" href="{{ row.provider_url }}"><code>{{ row.provider }}</code></a>{% else %}<code>{{ row.provider }}</code>{% endif %}</td>
+  <td class="value">{% if row.value %}<code>{{ row.value }}</code>{% else %}—{% endif %}</td>
+  <td class="status"><span title="{{ row.status }}">{{ row.status_text }}</span>{% if row.imported_text %} <small class="imported-unsettled">{% if row.imported_url %}<a href="{{ row.imported_url }}">{{ row.imported_text }}</a>{% else %}{{ row.imported_text }}{% endif %}</small>{% endif %}</td>
+  <td class="effect">{% if row.redacted %}<span class="redacted">{{ row.effect_text }}</span>{% else %}{{ row.effect_text }}{% endif %}</td>
+  <td class="declared-at">{% if row.position_url %}<a href="{{ row.position_url }}">{{ row.position_text }}</a>{% else %}{{ row.position_text }}{% endif %}</td>
+  <td class="timeline"><span title="{{ row.membership }}">{{ row.membership_text }}</span></td>
+  <td class="contingent">{{ row.contingent_text|default:"—" }}</td>
+  <td class="compensation">{% for link in row.compensation %}{{ link.label }} {% if link.url %}<a href="{{ link.url }}">{{ link.outbox_id|outbox_id }}</a>{% else %}{{ link.outbox_id|outbox_id }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+  <td class="attempts">{% if row.attempts_text %}{{ row.attempts_text }}<br>{% endif %}created {{ row.created_at|engine_time }}{% if row.claimed_at %}<br>claimed {{ row.claimed_at|engine_time }}{% endif %}{% if row.sent_at %}<br>sent {{ row.sent_at|engine_time }}{% endif %}</td>
+  <td class="outcome">{% if row.outcome %}<span title="{{ row.outcome.title }}">{{ row.outcome.kind }} · via {{ row.outcome.via }} · {{ row.outcome.received_at|engine_time }}</span>{% else %}—{% endif %}</td>
+  <td class="more"><details><summary>More</summary><dl>
+    {% if row.effect_json %}<dt>Effect</dt><dd><pre class="raw-effect">{{ row.effect_json }}</pre></dd>{% endif %}
+    <dt>Status</dt><dd><code>{{ row.status }}</code></dd>
+    <dt>Timeline</dt><dd><code>{{ row.membership }}</code></dd>
+    <dt>Position</dt><dd><pre class="raw-position">{{ row.position_json }}</pre></dd>
+  </dl></details></td>
+</tr>

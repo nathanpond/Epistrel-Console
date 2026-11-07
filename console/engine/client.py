@@ -23,7 +23,11 @@ import httpx
 from django.conf import settings
 
 from console.engine.models import (
+    AmendmentDetail,
+    AmendmentPage,
     AnalysisQueued,
+    BackfillCancelled,
+    BackfillConflictResolved,
     Beliefs,
     BeliefWritten,
     CatalogCharacter,
@@ -34,6 +38,12 @@ from console.engine.models import (
     CatalogScope,
     CatalogVersion,
     CatalogVersionList,
+    Certification,
+    CertificationImported,
+    CertificationInvalidated,
+    CertificationPage,
+    CertificationRun,
+    CertificationRunRequested,
     CharacterPublished,
     CharacterWeighted,
     ClockAdvanced,
@@ -49,6 +59,8 @@ from console.engine.models import (
     CustomInstructions,
     CustomInstructionsWritten,
     DeploymentSettings,
+    DirectedPending,
+    Directive,
     Divergences,
     EffectiveConfig,
     EngineProfile,
@@ -58,6 +70,10 @@ from console.engine.models import (
     ErasureResult,
     ErasureStatus,
     EscalationYield,
+    EvalRun,
+    EvalRunPage,
+    ExportJob,
+    ExportStarted,
     Exposures,
     ExternalFacts,
     ExtractionShadow,
@@ -65,14 +81,19 @@ from console.engine.models import (
     FactListBody,
     FactWritten,
     ForkResult,
+    GapFill,
     GuaranteeTable,
     HealthResponse,
     HealthResult,
     History,
     HotSetBody,
     ImpactReport,
+    ImportImpact,
+    ImportJob,
+    ImportStarted,
     IngestResponse,
     Ledger,
+    ListingResolved,
     ListingStatus,
     MediaAsset,
     MediaKind,
@@ -90,6 +111,7 @@ from console.engine.models import (
     OffboardingPlan,
     OffboardingQueued,
     OperationRecord,
+    Outbox,
     OwnerTransfer,
     ParticipationSet,
     Persona,
@@ -119,6 +141,8 @@ from console.engine.models import (
     ProviderDetail,
     ProviderList,
     ProviderMutation,
+    Pruned,
+    PruneRuns,
     QueuedTurn,
     RatingApplied,
     RatingCheck,
@@ -138,6 +162,10 @@ from console.engine.models import (
     Relations,
     RespondResponse,
     RetrievalBody,
+    RewriteApplied,
+    RewriteList,
+    RewriteSession,
+    RewriteSessionWritten,
     Scenario,
     ScenarioCard,
     ScenarioDraft,
@@ -150,14 +178,18 @@ from console.engine.models import (
     ScheduledEventWritten,
     SettledNow,
     StateDeclared,
+    StateDefinition,
     StateDefinitionWritten,
     StateProposals,
     StateView,
     StateWritten,
     Story,
+    StoryBackfill,
+    StoryCertificationRunRequested,
     StoryCharacterAdded,
     StoryCreated,
     StoryList,
+    StoryOperations,
     StoryProfileWrite,
     StoryScope,
     StorySettings,
@@ -219,6 +251,8 @@ MEDIA_RESPONSE_HEADERS = (
     "ETag",
     "Accept-Ranges",
 )
+# The answer headers an export bundle's download keeps (#292; #319's view passes them on).
+BUNDLE_RESPONSE_HEADERS = ("Content-Type", "Content-Length", "Content-Disposition")
 # Routes the Engine serves without auth (Engine #44): never sent the service key.
 EXEMPT_PATHS = frozenset({"/health", "/metrics", "/openapi.json", "/docs", "/redoc"})
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -290,9 +324,10 @@ class EngineNotConfigured(EngineClientError):
 
 @dataclass(frozen=True)
 class StreamedContent:
-    """A media answer being streamed (:meth:`EngineClient.open_media_content`): its status, the
-    answer headers in :data:`MEDIA_RESPONSE_HEADERS` (as sent), and the body, read in chunks
-    with :meth:`iter_bytes` or whole (an error envelope) with :meth:`error`."""
+    """A streamed answer (:meth:`EngineClient.open_media_content`,
+    :meth:`EngineClient.open_export_bundle`): its status, the kept headers (as sent:
+    :data:`MEDIA_RESPONSE_HEADERS` or :data:`BUNDLE_RESPONSE_HEADERS`), and the body, read in
+    chunks with :meth:`iter_bytes` or whole (an error envelope) with :meth:`error`."""
 
     status: int
     headers: Mapping[str, str]
@@ -694,6 +729,39 @@ def provider_registration_about(arguments: Mapping[str, Any]) -> RecordedAbout:
     registration = arguments.get("registration")
     name = registration.get("name") if isinstance(registration, Mapping) else None
     return _provider_about(name)
+
+
+# --- M7 recording (#292) ---------------------------------------------------------------------
+
+CERTIFICATION_ENTITY = "certification"  # not a registry type: the log shows the id in <code>
+
+
+def _certification(certification_id: object) -> RecordedAbout:
+    found = certification_id if isinstance(certification_id, str) and certification_id else None
+    return RecordedAbout(CERTIFICATION_ENTITY, found, None)
+
+
+def certification_about(arguments: Mapping[str, Any]) -> RecordedAbout:
+    """A certification write's row (invalidate): the ``certification_id`` argument's record."""
+    return _certification(arguments.get("certification_id"))
+
+
+def certification_import_about(arguments: Mapping[str, Any]) -> RecordedAbout:
+    """An import's row: the record's ``certification_id`` (``None`` when missing or not a
+    string)."""
+    record = arguments.get("record")
+    return _certification(record.get("certification_id") if isinstance(record, Mapping) else None)
+
+
+def import_record(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """``import_story``'s request as the operation log stores it: the metadata, and the file's
+    name, size and type, never the bytes (#70's :func:`upload_record` rule)."""
+    metadata = arguments.get("metadata")
+    file = arguments.get("file")
+    return {
+        "metadata": dict(metadata) if isinstance(metadata, Mapping) else None,
+        "file": file.described() if isinstance(file, UploadPart) else None,
+    }
 
 
 class EngineClient:
@@ -1223,7 +1291,7 @@ class EngineClient:
         self, patch: Mapping[str, Any], *, idempotency_key: str
     ) -> DeploymentSettings:
         """``PUT /admin/settings`` with a ``SettingsPatch`` body (#50): merge semantics, only the
-        keys sent change (a list replaces the stored list; ``null`` unsets the three nullable
+        keys sent change (a list replaces the stored list; ``null`` unsets the four nullable
         settings). Answers every setting at the new ``config_revision``."""
         response = self._request(
             "PUT",
@@ -1515,6 +1583,7 @@ class EngineClient:
         as_of: int | None = None,
         limit: int = 100,
         after: str | None = None,
+        kind: Literal["first_order", "nested", "speech_act"] | None = None,
     ) -> Beliefs:
         """``GET /stories/{id}/inspect/beliefs`` (FR-EPI-6, FR-EPI-3, FR-PROP-7): a page of what
         ``character`` believes, by proposition id (``limit`` 1 to 500, ``after`` continues), only
@@ -1523,7 +1592,8 @@ class EngineClient:
         convention 1). A ``None`` filter is left out (``as_of=0`` is sent); an empty ``after`` is
         left out; ids and the cursor are passed through as given. 409 ``module_off`` when the
         story keeps no character partitions; 422 for a character outside the cast; the player's
-        character answers an empty page."""
+        character answers an empty page. M7: ``kind`` (``first_order`` is the Engine's default,
+        or ``nested`` / ``speech_act``) only when given (#327)."""
         params: dict[str, str] = {
             "viewpoint": OMNISCIENT_VIEWPOINT,
             "character": character,
@@ -1535,6 +1605,8 @@ class EngineClient:
             params["as_of"] = str(as_of)
         if after:
             params["after"] = after
+        if kind is not None:
+            params["kind"] = kind
         response = self._request("GET", f"{_story_path(story_id)}/inspect/beliefs", params=params)
         return _parse(response, Beliefs)
 
@@ -1598,11 +1670,10 @@ class EngineClient:
         return _parse(self._request("GET", path, params=params), Exposures)
 
     # --- States (M6) ------------------------------------------------------------------------------
-    # D18: the Engine reads ``?viewpoint=`` on ``GET …/states``, ``GET …/states/{name}`` and
-    # ``GET …/scheduled-events`` through its request context, so its OpenAPI doesn't declare it
-    # there (Engine bug nathanpond/Epistrel#682). The client sends it anyway (D4: ``omniscient``
-    # unless given, never the story's default); the fake Engine doesn't check query names, and
-    # ``test_the_three_viewpoint_reads_are_undeclared`` pins the omission.
+    # D18: ``?viewpoint=`` on ``GET …/states``, ``GET …/states/{name}`` and
+    # ``GET …/scheduled-events`` is declared since Engine M7 (nathanpond/Epistrel#682). The client
+    # always sends it (D4: ``omniscient`` unless given, never the story's default), and
+    # ``test_the_three_viewpoint_reads_are_declared`` pins the declaration.
     #
     # D8: the timeline-moving slot writes (set, declare, approve, advance, the three scheduled-
     # event writes, settle now, compensate) send ``X-Epistrel-Expected-Revision`` when given and
@@ -1614,8 +1685,8 @@ class EngineClient:
     def get_states(self, story_id: str, *, viewpoint: str = OMNISCIENT_VIEWPOINT) -> StoryStates:
         """``GET /stories/{id}/states`` (FR-STATE-9, FR-STORE-31): the States ``viewpoint`` may
         read (``omniscient`` or ``character:<id>``; a character is never given a ``hidden``
-        State) and the world clock. ``viewpoint`` is always sent, though the recorded schema
-        doesn't declare it here (D18); ``actor_character_id`` is never sent. 409 ``module_off``
+        State) and the world clock. ``viewpoint`` is always sent (declared since Engine M7, #682);
+        ``actor_character_id`` is never sent. 409 ``module_off``
         (``states``) while States are off; 422 ``viewpoint_unresolved``."""
         params = {"viewpoint": viewpoint}
         path = f"{_story_path(story_id)}/states"
@@ -1631,7 +1702,7 @@ class EngineClient:
         as_of: str | None = None,
     ) -> StateView:
         """``GET /stories/{id}/states/{name}`` (FR-STATE-9): one State for ``viewpoint`` (always
-        sent, undeclared in the recorded schema, D18), folded through ``as_of`` when given: the
+        sent; declared since Engine M7, #682), folded through ``as_of`` when given: the
         D7 boundary ``N`` or ``N+k``, sent as given (httpx encodes ``+`` as ``%2B``); ``None``
         leaves it out (the story as it stands). 404 for a State declared after ``as_of``, an
         unknown name, ``world_clock`` or a ``hidden`` State read for a character; 409
@@ -1843,8 +1914,8 @@ class EngineClient:
     ) -> ScheduledEvents:
         """``GET /stories/{id}/scheduled-events`` (FR-CLOCK-9): the events ``viewpoint`` holds
         (``omniscient``: every canon event; a character: the canon events it takes part in and
-        its own belief-only schedules). ``viewpoint`` is always sent, though the recorded
-        schema doesn't declare it here (D18). Never gated; 422 ``viewpoint_unresolved``."""
+        its own belief-only schedules). ``viewpoint`` is always sent (declared since Engine M7,
+        #682). Never gated; 422 ``viewpoint_unresolved``."""
         params = {"viewpoint": viewpoint}
         path = f"{_story_path(story_id)}/scheduled-events"
         return _parse(self._request("GET", path, params=params), ScheduledEvents)
@@ -2122,6 +2193,808 @@ class EngineClient:
         if expected_revision is not None:
             headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
         return self._request(method, path, json=body, headers=headers, timeout=turn_timeout(None))
+
+    # --- history rewrites (M7) --------------------------------------------------------------------
+    # E2: the rewrite, amendment, merge, directive and outbox routes refuse any viewpoint but
+    # the omniscient one, so these methods take no ``viewpoint`` and always send
+    # ``viewpoint=omniscient``. E19: the session writes send no expected revision (apply guards
+    # with its body's ``base_revision``) and wait the turn timeout (they run the model parser and
+    # planner, or commit behind a running turn); cancel waits ``MUTATION_TIMEOUT_S``.
+
+    def _omniscient_write(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None,
+        *,
+        idempotency_key: str,
+        timeout: float,
+        expected_revision: int | None = None,
+    ) -> EngineResponse:
+        """An E2 write: ``viewpoint=omniscient``, ``X-Epistrel-Expected-Revision`` only when
+        given."""
+        headers = {"Idempotency-Key": idempotency_key}
+        if expected_revision is not None:
+            headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
+        return self._request(
+            method, path, params=_omniscient(), json=body, headers=headers, timeout=timeout
+        )
+
+    @operation("POST", "/stories/{story_id}/rewrites", response_model=RewriteSessionWritten)
+    def open_rewrite(
+        self, story_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> RewriteSessionWritten:
+        """``POST /stories/{id}/rewrites`` (FR-REWRITE-1,2,7): open a rewrite session (201).
+        ``body`` is a ``RewriteRequest`` (``instruction`` xor ``line_edit {event_id | turn[,
+        beat], new_text}``, ``preview``, ``resolution_mode``), sent as given. Always
+        omniscient. 409 ``story_paused``, ``rewrite_session_limit``, ``module_off``
+        (``lite_rewrites``); 422 ``rewrite_unparseable``, ``rewrite_noop``,
+        ``guardrail_violation``; 403 ``omniscient_required``."""
+        response = self._omniscient_write(
+            "POST",
+            f"{_story_path(story_id)}/rewrites",
+            dict(body),
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, RewriteSessionWritten)
+
+    @operation("GET", "/stories/{story_id}/rewrites", response_model=RewriteList)
+    def list_rewrites(
+        self,
+        story_id: str,
+        *,
+        states: Sequence[str] = (),
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> RewriteList:
+        """``GET /stories/{id}/rewrites``: a page of the story's rewrite sessions, newest first,
+        only those in ``states`` when given (``state`` repeated, once per entry). ``limit`` (at
+        most 50) is passed through; an empty ``cursor`` is left out. Always omniscient."""
+        params = [("viewpoint", OMNISCIENT_VIEWPOINT), *(("state", s) for s in states)]
+        if cursor:
+            params.append(("cursor", cursor))
+        if limit is not None:
+            params.append(("limit", str(limit)))
+        path = f"{_story_path(story_id)}/rewrites"
+        return _parse(self._request("GET", path, params=params), RewriteList)
+
+    @operation("GET", "/stories/{story_id}/rewrites/{session_id}", response_model=RewriteSession)
+    def get_rewrite(self, story_id: str, session_id: str) -> RewriteSession:
+        """``GET /stories/{id}/rewrites/{sid}``: one session, its questions and preview. Always
+        omniscient. 404 ``rewrite_session_not_found``."""
+        path = _rewrite_path(story_id, session_id)
+        return _parse(self._request("GET", path, params=_omniscient()), RewriteSession)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/rewrites/{session_id}/answers",
+        response_model=RewriteSessionWritten,
+    )
+    def answer_rewrite(
+        self,
+        story_id: str,
+        session_id: str,
+        answers: Sequence[Mapping[str, Any]],
+        *,
+        idempotency_key: str,
+    ) -> RewriteSessionWritten:
+        """``POST /stories/{id}/rewrites/{sid}/answers {answers}``: answer the session's
+        questions (each an ``AnswerItem``, sent as given); the plan is recomputed. Always
+        omniscient. 422 ``invalid_answer``; 409 ``rewrite_session_closed``."""
+        response = self._omniscient_write(
+            "POST",
+            _rewrite_path(story_id, session_id, "answers"),
+            {"answers": [dict(a) for a in answers]},
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, RewriteSessionWritten)
+
+    @operation(
+        "POST", "/stories/{story_id}/rewrites/{session_id}/apply", response_model=RewriteApplied
+    )
+    def apply_rewrite(
+        self,
+        story_id: str,
+        session_id: str,
+        *,
+        base_revision: int | None,
+        idempotency_key: str,
+    ) -> RewriteApplied:
+        """``POST /stories/{id}/rewrites/{sid}/apply {base_revision}`` (FR-REWRITE-6): apply the
+        plan as one amendment. ``base_revision`` (the preview's) is always sent; ``None`` sends
+        ``null`` and the Engine answers 422 ``base_revision_required``. No expected revision
+        (E19). Always omniscient. 409 ``rewrite_stale`` (:class:`RewriteStaleDetails`),
+        ``rewrite_session_closed``, ``rewrite_apply_in_progress``,
+        ``rewrite_questions_pending``, ``record_in_flight``, ``erased_subject_referenced``,
+        ``story_paused``; 503 ``rewrite_apply_failed``."""
+        response = self._omniscient_write(
+            "POST",
+            _rewrite_path(story_id, session_id, "apply"),
+            {"base_revision": base_revision},
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, RewriteApplied)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/rewrites/{session_id}/cancel",
+        response_model=RewriteSessionWritten,
+    )
+    def cancel_rewrite(
+        self, story_id: str, session_id: str, *, idempotency_key: str
+    ) -> RewriteSessionWritten:
+        """``POST /stories/{id}/rewrites/{sid}/cancel`` (no body): close the session unapplied.
+        Always omniscient. 409 ``rewrite_session_closed``."""
+        response = self._omniscient_write(
+            "POST",
+            _rewrite_path(story_id, session_id, "cancel"),
+            None,
+            idempotency_key=idempotency_key,
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, RewriteSessionWritten)
+
+    # --- directives (M7) --------------------------------------------------------------------------
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/directives",
+        response_model=Directive,
+        status_models={202: Directive},
+        ended=True,
+    )
+    def apply_directive(
+        self,
+        story_id: str,
+        body: Mapping[str, Any],
+        *,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> Directive:
+        """``POST /stories/{id}/directives`` (FR-DIRECT-1,2,6): an author's direction. ``body``
+        is a ``DirectiveRequest`` (``text``, ``kind?``, ``preview``, ``resolution_mode``), sent
+        as given. 200 (``steer_queued`` or ``applied``), or 202 ``routed_to_rewrite`` with its
+        ``rewrite_session`` (no job follows: recorded ``ok``, E19). Expected revision only when
+        given; the turn timeout. Always omniscient. 422 ``guardrail_violation``,
+        ``directive_unparseable``, ``directive_no_changes``, ``directive_split_required``,
+        ``directive_ambiguous``, ``state_constraint_violation``, ``clock_backward``; 409
+        ``story_paused``, ``revision_conflict``, ``steer_budget_exceeded``; 423
+        ``story_busy``."""
+        response = self._omniscient_write(
+            "POST",
+            f"{_story_path(story_id)}/directives",
+            dict(body),
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+            expected_revision=expected_revision,
+        )
+        return _parse(response, Directive)
+
+    # --- amendments and merge (M7) ----------------------------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/amendments", response_model=AmendmentPage)
+    def list_amendments(
+        self,
+        story_id: str,
+        *,
+        status: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> AmendmentPage:
+        """``GET /stories/{id}/amendments`` (FR-REWRITE-8): a page of the story's amendments,
+        only ``status``'s (``active``/``reverted``) when given. ``limit`` (at most 200) is
+        passed through; an empty ``cursor`` is left out. Always omniscient."""
+        params = _omniscient()
+        if status is not None:
+            params["status"] = status
+        if cursor:
+            params["cursor"] = cursor
+        if limit is not None:
+            params["limit"] = str(limit)
+        path = f"{_story_path(story_id)}/amendments"
+        return _parse(self._request("GET", path, params=params), AmendmentPage)
+
+    @operation(
+        "GET", "/stories/{story_id}/amendments/{amendment_id}", response_model=AmendmentDetail
+    )
+    def get_amendment(self, story_id: str, amendment_id: str) -> AmendmentDetail:
+        """``GET /stories/{id}/amendments/{aid}``: one amendment with its parts and dependencies.
+        Always omniscient. 404 ``amendment_not_found``."""
+        path = _amendment_path(story_id, amendment_id)
+        return _parse(self._request("GET", path, params=_omniscient()), AmendmentDetail)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/amendments/{amendment_id}/undo",
+        response_model=RewriteSessionWritten,
+    )
+    def undo_amendment(
+        self,
+        story_id: str,
+        amendment_id: str,
+        body: Mapping[str, Any],
+        *,
+        idempotency_key: str,
+    ) -> RewriteSessionWritten:
+        """``POST /stories/{id}/amendments/{aid}/undo``: open an ``undo`` session for the
+        amendment (201); ``body`` is an ``AmendmentSessionRequest`` (``preview``,
+        ``resolution_mode``), sent as given. Always omniscient. 409
+        ``amendment_already_reverted``, ``story_paused``, ``rewrite_session_limit``,
+        ``module_off``; 422 ``use_redo``."""
+        response = self._omniscient_write(
+            "POST",
+            _amendment_path(story_id, amendment_id, "undo"),
+            dict(body),
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, RewriteSessionWritten)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/amendments/{amendment_id}/redo",
+        response_model=RewriteSessionWritten,
+    )
+    def redo_amendment(
+        self,
+        story_id: str,
+        amendment_id: str,
+        body: Mapping[str, Any],
+        *,
+        idempotency_key: str,
+    ) -> RewriteSessionWritten:
+        """``POST /stories/{id}/amendments/{aid}/redo``: open a ``redo`` session for a reverted
+        amendment (201), ``body`` as :meth:`undo_amendment`'s. Always omniscient. 409
+        ``amendment_not_reverted``, ``amendment_already_redone``, ``story_paused``,
+        ``rewrite_session_limit``, ``module_off``."""
+        response = self._omniscient_write(
+            "POST",
+            _amendment_path(story_id, amendment_id, "redo"),
+            dict(body),
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, RewriteSessionWritten)
+
+    @operation("POST", "/stories/{story_id}/entities/merge", response_model=RewriteSessionWritten)
+    def merge_entities(
+        self, story_id: str, body: Mapping[str, Any], *, idempotency_key: str
+    ) -> RewriteSessionWritten:
+        """``POST /stories/{id}/entities/merge``: open an ``entity_merge`` session (201);
+        ``body`` is a ``MergeRequest`` (``entity_ids``, ``identity_proposal_id?``,
+        ``visibility``, ``preview``, ``resolution_mode``), sent as given. Always omniscient.
+        422 ``merge_invalid`` (``details.reason``); 409 ``story_paused``,
+        ``rewrite_session_limit``."""
+        response = self._omniscient_write(
+            "POST",
+            f"{_story_path(story_id)}/entities/merge",
+            dict(body),
+            idempotency_key=idempotency_key,
+            timeout=turn_timeout(None),
+        )
+        return _parse(response, RewriteSessionWritten)
+
+    # --- backfill and profile upgrades (M7) -------------------------------------------------------
+    # E19: no expected revision; ``MUTATION_TIMEOUT_S`` (``upgrade_pinned_stories``:
+    # ``PROFILE_EDIT``). A started backfill's 202 is ``queued``; its job id is
+    # ``started.job_id``.
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/backfill",
+        response_model=GapFill,
+        status_models={202: GapFill},
+    )
+    def start_backfill(
+        self,
+        story_id: str,
+        *,
+        capabilities: Sequence[str] | None = None,
+        ignore_warnings: bool,
+        idempotency_key: str,
+    ) -> GapFill:
+        """``POST /stories/{id}/backfill {ignore_warnings, capabilities?}`` (FR-PROF-9): a gap
+        fill. Without ``ignore_warnings``, 200 with the preview (or a paused backfill's resume
+        preview, ``applied`` false); with it, 202 ``started`` (or the resume's 200).
+        ``capabilities`` is sent only when not ``None``. 409 ``nothing_to_backfill``,
+        ``backfill_in_progress``, and the story-write 409/423s the schema declares; 422
+        ``validation_error``."""
+        body: dict[str, Any] = {"ignore_warnings": ignore_warnings}
+        if capabilities is not None:
+            body["capabilities"] = list(capabilities)
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/backfill",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, GapFill)
+
+    @operation("GET", "/stories/{story_id}/backfill", response_model=StoryBackfill)
+    def get_backfill(
+        self,
+        story_id: str,
+        *,
+        conflicts: Literal["open", "all"] | None = None,
+        limit: int | None = None,
+    ) -> StoryBackfill:
+        """``GET /stories/{id}/backfill``: the story's latest backfill and its conflicts (the
+        open ones, or ``all``), each filter only when given. 404 ``backfill_not_found``."""
+        params: dict[str, str] = {}
+        if conflicts is not None:
+            params["conflicts"] = conflicts
+        if limit is not None:
+            params["limit"] = str(limit)
+        path = f"{_story_path(story_id)}/backfill"
+        return _parse(self._request("GET", path, params=params or None), StoryBackfill)
+
+    @operation("DELETE", "/stories/{story_id}/backfill", response_model=BackfillCancelled)
+    def cancel_backfill(self, story_id: str, *, idempotency_key: str) -> BackfillCancelled:
+        """``DELETE /stories/{id}/backfill``: cancel the running backfill. 404
+        ``backfill_not_found``; 409 ``backfill_not_cancellable``, and the story-write
+        409/423s the schema declares."""
+        response = self._request(
+            "DELETE",
+            f"{_story_path(story_id)}/backfill",
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, BackfillCancelled)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/backfill/conflicts/{cid}",
+        response_model=BackfillConflictResolved,
+    )
+    def resolve_backfill_conflict(
+        self,
+        story_id: str,
+        conflict_id: str,
+        body: Mapping[str, Any],
+        *,
+        idempotency_key: str,
+    ) -> BackfillConflictResolved:
+        """``POST /stories/{id}/backfill/conflicts/{cid}`` (#230): resolve one conflict with
+        exactly one of ``choose`` | ``value`` | ``accept_recommendation`` (and
+        ``valid_from``/``valid_to``), sent as given. 404 ``backfill_conflict_not_found``; 409
+        ``backfill_not_awaiting_conflicts``, ``backfill_conflict_closed``, and the story-write
+        409/423s the schema declares; 422 ``invalid_resolution``."""
+        path = f"{_story_path(story_id)}/backfill/conflicts/{quote(conflict_id, safe='')}"
+        response = self._request(
+            "POST",
+            path,
+            json=dict(body),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, BackfillConflictResolved)
+
+    @operation(
+        "POST",
+        "/engine-profiles/{profile_id}/upgrade-pinned",
+        response_model=ProfileEdit,
+        entity="engine_profile",
+        entity_id="profile_id",
+    )
+    def upgrade_pinned_stories(
+        self,
+        profile_id: str,
+        *,
+        ignore_warnings: bool,
+        upgrade_mode: Literal["backfill", "forward_only"] | None = None,
+        idempotency_key: str,
+    ) -> ProfileEdit:
+        """``POST /engine-profiles/{id}/upgrade-pinned {ignore_warnings, upgrade_mode?}``: move
+        every story pinned to an older version of the profile to its latest. Two stages, as
+        :meth:`update_engine_profile` (``applied`` false: the impact report); applied, the
+        ``backfills`` it queued. ``upgrade_mode`` only when given (never ``upgradeMode``).
+        Waits :data:`PROFILE_EDIT`. 404 ``not_found``."""
+        body: dict[str, Any] = {"ignore_warnings": ignore_warnings}
+        if upgrade_mode is not None:
+            body["upgrade_mode"] = upgrade_mode
+        response = self._request(
+            "POST",
+            f"{_profile_path(profile_id)}/upgrade-pinned",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=PROFILE_EDIT,
+        )
+        return _parse(response, ProfileEdit)
+
+    # --- certification and evals (M7) -------------------------------------------------------------
+    # A run request answers its estimate (200) until resent with ``confirm``, then 202 with the
+    # queued run's job (recorded ``queued``). Certification writes are recorded on the
+    # certification (E19); no expected revision; ``MUTATION_TIMEOUT_S``.
+
+    @operation(
+        "POST",
+        "/engine-profiles/{profile_id}/certification-runs",
+        response_model=CertificationRunRequested,
+        status_models={202: CertificationRunRequested},
+        entity="engine_profile",
+        entity_id="profile_id",
+    )
+    def request_certification_run_profile(
+        self,
+        profile_id: str,
+        *,
+        confirm: bool,
+        version: int | None = None,
+        suites: Sequence[str] | None = None,
+        seeds: int | None = None,
+        sample: int | None = None,
+        idempotency_key: str,
+    ) -> CertificationRunRequested:
+        """``POST /engine-profiles/{id}/certification-runs`` (FR-PROF-16): certify a profile
+        version. ``{"confirm": confirm}`` always; ``version``, ``suites``, ``seeds`` and
+        ``sample`` only when not ``None`` (``seeds`` 1 to 5 is the Engine's check). 200 the
+        estimate, 202 the queued run. 409 ``certification_run_in_progress``; 422
+        ``validation_error``; 503 ``certification_unavailable``."""
+        body = _certification_run_body(confirm, suites, seeds, sample)
+        if version is not None:
+            body["version"] = version
+        response = self._request(
+            "POST",
+            f"{_profile_path(profile_id)}/certification-runs",
+            json=body,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CertificationRunRequested)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/certification-runs",
+        response_model=StoryCertificationRunRequested,
+        status_models={202: StoryCertificationRunRequested},
+    )
+    def request_certification_run_story(
+        self,
+        story_id: str,
+        *,
+        confirm: bool,
+        suites: Sequence[str] | None = None,
+        seeds: int | None = None,
+        sample: int | None = None,
+        idempotency_key: str,
+    ) -> StoryCertificationRunRequested:
+        """``POST /stories/{id}/certification-runs``: certify the story's effective
+        configuration, as :meth:`request_certification_run_profile` (``version`` is never
+        sent: the Engine ignores it here). 409 ``certification_run_in_progress``, and the
+        story-write 409/423s the schema declares; 422 ``validation_error``; 503
+        ``certification_unavailable``."""
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/certification-runs",
+            json=_certification_run_body(confirm, suites, seeds, sample),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, StoryCertificationRunRequested)
+
+    @operation("GET", "/certification-runs/{run_id}", response_model=CertificationRun)
+    def get_certification_run(self, run_id: str) -> CertificationRun:
+        """``GET /certification-runs/{run_id}``: one run's status, estimate and report. 404
+        ``certification_run_not_found``."""
+        path = f"/certification-runs/{quote(run_id, safe='')}"
+        return _parse(self._request("GET", path), CertificationRun)
+
+    @operation("GET", "/certifications", response_model=CertificationPage)
+    def list_certifications(
+        self,
+        *,
+        fingerprint: str | None = None,
+        profile_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> CertificationPage:
+        """``GET /certifications``: a page of certification records, only ``fingerprint``'s or
+        ``profile_id``'s when given; an empty ``cursor`` is left out."""
+        params: dict[str, str] = {}
+        if fingerprint is not None:
+            params["fingerprint"] = fingerprint
+        if profile_id is not None:
+            params["profile_id"] = profile_id
+        if cursor:
+            params["cursor"] = cursor
+        if limit is not None:
+            params["limit"] = str(limit)
+        response = self._request("GET", "/certifications", params=params or None)
+        return _parse(response, CertificationPage)
+
+    @operation("GET", "/certifications/{certification_id}", response_model=Certification)
+    def get_certification(self, certification_id: str) -> Certification:
+        """``GET /certifications/{id}``: one certification record. 404
+        ``certification_not_found``."""
+        path = f"/certifications/{quote(certification_id, safe='')}"
+        return _parse(self._request("GET", path), Certification)
+
+    @operation(
+        "POST",
+        "/admin/certifications/import",
+        response_model=CertificationImported,
+        record_about=certification_import_about,
+    )
+    def import_certification(
+        self, record: Mapping[str, Any], *, idempotency_key: str
+    ) -> CertificationImported:
+        """``POST /admin/certifications/import``: store a ``CertificationRecord`` made elsewhere
+        (sent as given). Recorded on the record's ``certification_id``. 422
+        ``invalid_certification_record``; 409 ``certification_record_conflict``."""
+        response = self._request(
+            "POST",
+            "/admin/certifications/import",
+            json=dict(record),
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CertificationImported)
+
+    @operation(
+        "POST",
+        "/admin/certifications/{certification_id}/invalidate",
+        response_model=CertificationInvalidated,
+        record_about=certification_about,
+    )
+    def invalidate_certification(
+        self,
+        certification_id: str,
+        *,
+        reason: Literal["drift", "manual"],
+        note: str,
+        idempotency_key: str,
+    ) -> CertificationInvalidated:
+        """``POST /admin/certifications/{id}/invalidate {reason, note}``: mark a certification
+        no longer valid. 404 ``certification_not_found``; 409 ``certification_not_valid``."""
+        response = self._request(
+            "POST",
+            f"/admin/certifications/{quote(certification_id, safe='')}/invalidate",
+            json={"reason": reason, "note": note},
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, CertificationInvalidated)
+
+    @operation("GET", "/admin/evals/runs", response_model=EvalRunPage)
+    def list_eval_runs(self, *, cursor: str | None = None, limit: int | None = None) -> EvalRunPage:
+        """``GET /admin/evals/runs``: a page of eval run reports (committed ones and those a
+        certification run made); an empty ``cursor`` is left out."""
+        params: dict[str, str] = {}
+        if cursor:
+            params["cursor"] = cursor
+        if limit is not None:
+            params["limit"] = str(limit)
+        return _parse(self._request("GET", "/admin/evals/runs", params=params or None), EvalRunPage)
+
+    @operation("GET", "/admin/evals/runs/{run_id}", response_model=EvalRun)
+    def get_eval_run(self, run_id: str) -> EvalRun:
+        """``GET /admin/evals/runs/{run_id}``: one eval run report. 404 ``eval_run_not_found``."""
+        path = f"/admin/evals/runs/{quote(run_id, safe='')}"
+        return _parse(self._request("GET", path), EvalRun)
+
+    # --- pruning, export and import (M7) ----------------------------------------------------------
+    # E19: ``prune_story`` sends an expected revision when given (it moves the timeline);
+    # export and import send none. The export and the import's 202 are jobs (``queued``).
+
+    @operation("POST", "/stories/{story_id}/prune", response_model=Pruned)
+    def prune_story(
+        self,
+        story_id: str,
+        *,
+        targets: Sequence[str] | None = None,
+        ignore_warnings: bool,
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> Pruned:
+        """``POST /stories/{id}/prune {ignore_warnings, targets?}`` (FR-STORE-19,32): two
+        stages; ``applied`` false holds it with the impact report. ``targets`` (chain ids) only
+        when not ``None`` (omitted: every eligible one); never the camelCase alias. Expected
+        revision only when given. 422 ``prune_target_unknown``, ``prune_target_ineligible``;
+        409 ``story_archived``, ``story_paused``, ``revision_conflict``."""
+        body: dict[str, Any] = {"ignore_warnings": ignore_warnings}
+        if targets is not None:
+            body["targets"] = list(targets)
+        headers = {"Idempotency-Key": idempotency_key}
+        if expected_revision is not None:
+            headers[EXPECTED_REVISION_HEADER] = str(expected_revision)
+        response = self._request(
+            "POST",
+            f"{_story_path(story_id)}/prune",
+            json=body,
+            headers=headers,
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        return _parse(response, Pruned)
+
+    @operation("GET", "/stories/{story_id}/prune-runs", response_model=PruneRuns)
+    def list_prune_runs(self, story_id: str) -> PruneRuns:
+        """``GET /stories/{id}/prune-runs``: the story's past prunings (manual and by policy),
+        newest first."""
+        return _parse(self._request("GET", f"{_story_path(story_id)}/prune-runs"), PruneRuns)
+
+    @operation("POST", "/admin/stories/{story_id}/export", response_model=ExportStarted)
+    def export_story(self, story_id: str, *, idempotency_key: str) -> ExportStarted:
+        """``POST /admin/stories/{id}/export`` (no body; FR-STORE-7): queue an export of the
+        story into a bundle, answered 202 :class:`ExportStarted` (recorded ``queued``); any
+        other 2xx is ``bad_response``, as :meth:`consolidate_story`'s. 404 for an unknown
+        story, and the story-write 409/423s the schema declares."""
+        response = self._request(
+            "POST",
+            f"/admin{_story_path(story_id)}/export",
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=MUTATION_TIMEOUT_S,
+        )
+        _raise_for_envelope(response)
+        if response.status_code != 202:
+            raise EngineError(
+                "bad_response",
+                f"the Engine answered {response.status_code} to an export request",
+                {},
+                response.status_code,
+            )
+        return _parse(response, ExportStarted)
+
+    @operation("GET", "/admin/stories/exports/{job_id}", response_model=ExportJob)
+    def export_status(self, job_id: str) -> ExportJob:
+        """``GET /admin/stories/exports/{job_id}``: the export job's status and, once ``ready``,
+        the bundle's manifest, size, digest and expiry. 404 ``job_not_found``."""
+        path = f"/admin/stories/exports/{quote(job_id, safe='')}"
+        return _parse(self._request("GET", path), ExportJob)
+
+    @operation("GET", "/admin/stories/exports/{job_id}/bundle")
+    def open_export_bundle(self, job_id: str) -> AbstractContextManager[StreamedContent]:
+        """``GET /admin/stories/exports/{job_id}/bundle``, streamed exactly as
+        :meth:`open_media_content` is (the same timeouts, ``Accept: */*``, never recorded),
+        forwarding no request headers and keeping :data:`BUNDLE_RESPONSE_HEADERS`. A
+        non-success is read through :meth:`StreamedContent.error`: 409 ``export_not_ready``,
+        410 ``export_expired``, 404 ``job_not_found``."""
+        path = f"/admin/stories/exports/{quote(job_id, safe='')}/bundle"
+        return self._open_stream(path, {}, BUNDLE_RESPONSE_HEADERS)
+
+    @operation(
+        "POST",
+        "/admin/stories/import",
+        response_model=ImportImpact,
+        status_models={202: ImportStarted},
+        entity="story",
+        entity_id="response:story_id",
+        record_body=import_record,
+    )
+    def import_story(
+        self, metadata: Mapping[str, Any], file: UploadPart, *, idempotency_key: str
+    ) -> ImportImpact | ImportStarted:
+        """``POST /admin/stories/import`` as ``multipart/form-data`` (FR-STORE-7, FR-ADMIN-4):
+        the ``metadata`` JSON part (an ``ImportMetadata``, sent as given), then the ``file``,
+        streamed, as :meth:`upload_media` does. 200 :class:`ImportImpact` (``applied`` false,
+        nothing created) or 202 :class:`ImportStarted` (a job, recorded ``queued``, on the new
+        story). The operation log keeps the metadata and the file's name, size and type, never
+        the bytes. Waits :data:`UPLOAD`. 413 ``bundle_too_large``; 422 ``corrupt_bundle``
+        (``details.reason``), ``unsupported_format_version``, ``rating_required``
+        (``details.bundle_rating_name``, ``candidates``), ``validation_error``."""
+        payload = json.dumps(dict(metadata), ensure_ascii=False).encode("utf-8")
+        parts: MultipartParts = [
+            ("metadata", (None, payload, "application/json")),
+            ("file", file.part()),
+        ]
+        response = self._request(
+            "POST",
+            "/admin/stories/import",
+            files=parts,
+            headers={"Idempotency-Key": idempotency_key},
+            timeout=UPLOAD,
+        )
+        if response.status_code == 202:
+            return _parse(response, ImportStarted)
+        return _parse(response, ImportImpact)
+
+    @operation("GET", "/admin/stories/imports/{job_id}", response_model=ImportJob)
+    def import_status(self, job_id: str) -> ImportJob:
+        """``GET /admin/stories/imports/{job_id}``: the import job's status, stage, progress,
+        report and error. 404 ``job_not_found``."""
+        path = f"/admin/stories/imports/{quote(job_id, safe='')}"
+        return _parse(self._request("GET", path), ImportJob)
+
+    # --- story operations, outbox and definitions (M7) --------------------------------------------
+
+    @operation("GET", "/stories/{story_id}/operations", response_model=StoryOperations)
+    def list_operations(
+        self,
+        story_id: str,
+        *,
+        label: str | None = None,
+        kind: str | None = None,
+        status: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        after_id: str | None = None,
+        limit: int | None = None,
+    ) -> StoryOperations:
+        """``GET /stories/{id}/operations`` (#681): a page of the story's operations by id
+        (``after_id`` continues), each filter only when given. ``since``/``until`` must be
+        aware (a naive datetime is a ``ValueError``, nothing sent) and go as UTC ``Z``
+        (:func:`_iso_z`). ``limit`` (at most 200) is passed through."""
+        for name, moment in (("since", since), ("until", until)):
+            if moment is not None and moment.tzinfo is None:
+                raise ValueError(f"list_operations: {name} must be an aware datetime")
+        params: dict[str, str] = {}
+        for name, value in (("label", label), ("kind", kind), ("status", status)):
+            if value is not None:
+                params[name] = value
+        if since is not None:
+            params["since"] = _iso_z(since)
+        if until is not None:
+            params["until"] = _iso_z(until)
+        if after_id:
+            params["after_id"] = after_id
+        if limit is not None:
+            params["limit"] = str(limit)
+        path = f"{_story_path(story_id)}/operations"
+        return _parse(self._request("GET", path, params=params or None), StoryOperations)
+
+    @operation("GET", "/stories/{story_id}/outbox", response_model=Outbox)
+    def list_outbox(
+        self,
+        story_id: str,
+        *,
+        status: str | None = None,
+        provider: str | None = None,
+        after_id: str | None = None,
+        limit: int | None = None,
+    ) -> Outbox:
+        """``GET /stories/{id}/outbox`` (FR-EXT-10, #679): a page of every outbox row, each
+        filter only when given. Always omniscient (E2)."""
+        params = _omniscient()
+        for name, value in (("status", status), ("provider", provider)):
+            if value is not None:
+                params[name] = value
+        if after_id:
+            params["after_id"] = after_id
+        if limit is not None:
+            params["limit"] = str(limit)
+        path = f"{_story_path(story_id)}/outbox"
+        return _parse(self._request("GET", path, params=params), Outbox)
+
+    @operation(
+        "POST",
+        "/stories/{story_id}/reconciliation/{listing}/resolve",
+        response_model=ListingResolved,
+    )
+    def resolve_listing(
+        self,
+        story_id: str,
+        listing: str,
+        *,
+        resolution: Literal["applied_elsewhere", "abandoned"],
+        expected_revision: int | None,
+        idempotency_key: str,
+    ) -> ListingResolved:
+        """``POST /stories/{id}/reconciliation/{listing}/resolve {resolution}``: settle a listing
+        by hand. ``listing`` is a consumer-applied row's ``request_id`` or an
+        ``imported_unsettled`` row's ``outbox_id``. A D8 slot write: expected revision only
+        when given, the turn timeout. 404 ``not_found`` (``reason: no_listing``); 409
+        ``module_off``."""
+        response = self._slot_write(
+            "POST",
+            _outbox_path(story_id, listing, "resolve"),
+            {"resolution": resolution},
+            expected_revision,
+            idempotency_key,
+        )
+        return _parse(response, ListingResolved)
+
+    @operation(
+        "GET", "/stories/{story_id}/states/{name}/definition", response_model=StateDefinition
+    )
+    def get_state_definition(self, story_id: str, name: str) -> StateDefinition:
+        """``GET /stories/{id}/states/{name}/definition`` (#680): a State's stored definition and
+        the configuration revision it was written at. Always ``viewpoint=omniscient``. 404 for
+        an unknown name or ``world_clock``; 409 ``module_off``."""
+        path = f"{_state_path(story_id, name)}/definition"
+        return _parse(self._request("GET", path, params=_omniscient()), StateDefinition)
 
     # --- the scene and an entity's standing profile (#58) -------------------------------------
 
@@ -2648,7 +3521,13 @@ class EngineClient:
         self.last_location = response.headers.get("Location")
         return _parse(response, ReactivationCheck)
 
-    @operation("POST", "/stories/{story_id}/regenerate", response_model=RegenerateResult)
+    @operation(
+        "POST",
+        "/stories/{story_id}/regenerate",
+        response_model=RegenerateResult,
+        status_models={202: DirectedPending},
+        ended=True,
+    )
     def regenerate(
         self,
         story_id: str,
@@ -2657,12 +3536,16 @@ class EngineClient:
         expected_revision: int | None,
         idempotency_key: str,
         timeout: float = DEFAULT_TURN_DEADLINE_S + TURN_GRACE_S,
-    ) -> RegenerateResult:
+    ) -> RegenerateResult | DirectedPending:
         """``POST /stories/{id}/regenerate``: answer the latest turn anew as its next variant
         (the old one becomes dormant). ``body`` is a ``RegenerateRequest`` (``turn``, and
         ``prompt_params`` / ``render_character_ids`` / ``output_viewpoint`` overrides; omitted
         ones reuse the recorded values). The Engine never queues it (423 ``story_busy``), so
-        there is no ``Prefer``. ``timeout``: :func:`turn_timeout`."""
+        there is no ``Prefer``. ``timeout``: :func:`turn_timeout`.
+
+        M7 (#292): a directed regenerate (a ``directive`` in the body, #301) is answered 202
+        :class:`DirectedPending`: the reply is held in a rewrite session for review. No job
+        follows, so the row is ``ok`` (``ended``, E19)."""
         response = self._timeline(
             story_id,
             "regenerate",
@@ -2671,6 +3554,8 @@ class EngineClient:
             idempotency_key=idempotency_key,
             timeout=timeout,
         )
+        if response.status_code == 202:
+            return _parse(response, DirectedPending)
         return _parse(response, RegenerateResult)
 
     @operation("POST", "/stories/{story_id}/correct", response_model=RegenerateResult)
@@ -2836,7 +3721,7 @@ class EngineClient:
         story_id: str,
         *,
         viewpoint: str | None = None,
-        as_of: int | None = None,
+        as_of: int | str | None = None,
         limit: int | None = None,
         before_turn: int | None = None,
         actor_character_id: str | None = None,
@@ -2844,6 +3729,7 @@ class EngineClient:
         include_audit: bool = False,
         include_summary: bool = False,
         player_view: Literal["character", "story"] | None = None,
+        view: Literal["as_recorded", "corrected"] | None = None,
     ) -> History:
         """``GET /stories/{id}/history``: one page (whole turns, newest page first, items
         ascending) for ``viewpoint`` (``character:<id>`` or ``omniscient``; else the story's
@@ -2851,11 +3737,20 @@ class EngineClient:
         ``variant`` (``T:V``). ``include_audit`` needs ``omniscient`` (403
         ``omniscient_required``). ``player_view`` (M5) is sent only when given, whatever the
         viewpoint (the Engine applies it to the one that resolves). A ``None`` or ``False``
-        argument is left out of the query (#52)."""
+        argument is left out of the query (#52).
+
+        M7: the Engine's ``as_of`` is a string, ``N`` or ``N+k``; it is sent as given
+        (``str(as_of)``, unchecked), and an empty or blank string is left out like ``None``.
+        ``view`` (#304) only when given: ``as_recorded`` (the history before any amendment) is
+        an omniscient-only read (E2), so it forces ``viewpoint=omniscient`` and drops
+        ``actor_character_id`` and ``player_view`` (a character viewpoint's), whatever was
+        passed; ``corrected`` is the Engine's default."""
+        if view == "as_recorded":
+            viewpoint, actor_character_id, player_view = OMNISCIENT_VIEWPOINT, None, None
         params: dict[str, str] = {}
         if viewpoint:
             params["viewpoint"] = viewpoint
-        if as_of is not None:
+        if as_of is not None and str(as_of).strip():
             params["as_of"] = str(as_of)
         if limit is not None:
             params["limit"] = str(limit)
@@ -2871,6 +3766,8 @@ class EngineClient:
             params["include_summary"] = "1"
         if player_view is not None:
             params["player_view"] = player_view
+        if view is not None:
+            params["view"] = view
         response = self._request("GET", f"{_story_path(story_id)}/history", params=params or None)
         return _parse(response, History)
 
@@ -3856,16 +4753,20 @@ class EngineClient:
         include_deleted: bool = False,
         cursor: str | None = None,
         limit: int = CATALOG_PAGE,
+        preset: bool | None = None,
     ) -> tuple[list[EngineProfile], str | None]:
         """``GET /engine-profiles``: one page of profiles (newest first) and the next cursor.
         ``owner`` narrows to that principal's; each ``relation`` is ``name:principal`` or
-        ``name:``. A blank filter is not sent."""
+        ``name:``. A blank filter is not sent. M7: ``preset`` (``true``: only the presets,
+        ``false``: none of them) only when given (#307)."""
         params: list[tuple[str, str]] = [("limit", str(limit))]
         if owner:
             params.append(("owner", owner))
         params.extend(("relation", value) for value in relation if value)
         if include_deleted:
             params.append(("include_deleted", "true"))
+        if preset is not None:
+            params.append(("preset", "true" if preset else "false"))
         if cursor:
             params.append(("cursor", cursor))
         response = self._request("GET", "/engine-profiles", params=params)
@@ -3979,17 +4880,26 @@ class EngineClient:
         settings: Mapping[str, Any],
         ignore_warnings: bool,
         idempotency_key: str,
+        upgrade_mode: Literal["backfill", "forward_only"] | None = None,
     ) -> ProfileEdit:
         """``PUT /engine-profiles/{id}``: name and settings replaced in full (#84). ``applied``
         false: the impact report warns and nothing was written; resend with
         ``ignore_warnings`` to apply. A deleted profile is 422 ``profile_deleted``; settings
         that cannot run, or would leave a following story's overrides unable to, are 422
         ``invalid_profile`` (``details.stories``). Waits :data:`PROFILE_EDIT` (the impact covers
-        up to 1,000 stories)."""
+        up to 1,000 stories). M7: ``upgrade_mode`` (``backfill`` or ``forward_only``) only when
+        given, never ``upgradeMode`` (#307)."""
+        body: dict[str, Any] = {
+            "name": name,
+            "settings": dict(settings),
+            "ignore_warnings": ignore_warnings,
+        }
+        if upgrade_mode is not None:
+            body["upgrade_mode"] = upgrade_mode
         response = self._request(
             "PUT",
             _profile_path(profile_id),
-            json={"name": name, "settings": dict(settings), "ignore_warnings": ignore_warnings},
+            json=body,
             headers={"Idempotency-Key": idempotency_key},
             timeout=PROFILE_EDIT,
         )
@@ -4094,6 +5004,7 @@ class EngineClient:
         "PATCH",
         "/stories/{story_id}/profile-overrides",
         response_model=StoryProfileWrite,
+        status_models={202: StoryProfileWrite},
     )
     def patch_profile_overrides(
         self,
@@ -4103,15 +5014,20 @@ class EngineClient:
         expected_revision: int | None,
         ignore_warnings: bool,
         idempotency_key: str,
+        upgrade_mode: Literal["backfill", "forward_only"] | None = None,
     ) -> StoryProfileWrite:
         """``PATCH /stories/{id}/profile-overrides``: a JSON merge patch over the story's
         overrides (``null`` removes one). ``expected_revision`` goes in the body (no
         ``X-Epistrel-Expected-Revision``): another revision is 409 ``revision_conflict``
         (``details.reason`` ``overrides_revision``). Two stages: ``applied`` false holds the
-        change for ``ignore_warnings``."""
+        change for ``ignore_warnings``. M7: a write that started a backfill answers 202 with the
+        same body and its ``backfill`` (any 2xx parses alike; no ``Location`` is kept, the job
+        is ``backfill.job_id``). ``upgrade_mode`` only when given (#307)."""
         body: dict[str, Any] = {"settings": dict(settings), "ignore_warnings": ignore_warnings}
         if expected_revision is not None:
             body["expected_revision"] = expected_revision
+        if upgrade_mode is not None:
+            body["upgrade_mode"] = upgrade_mode
         response = self._request(
             "PATCH",
             f"{_story_path(story_id)}/profile-overrides",
@@ -4125,6 +5041,7 @@ class EngineClient:
         "PUT",
         "/stories/{story_id}/engine-profile",
         response_model=StoryProfileWrite,
+        status_models={202: StoryProfileWrite},
     )
     def assign_engine_profile(
         self,
@@ -4134,16 +5051,20 @@ class EngineClient:
         ignore_warnings: bool,
         idempotency_key: str,
         version: int | Literal["latest"] | None = None,
+        upgrade_mode: Literal["backfill", "forward_only"] | None = None,
     ) -> StoryProfileWrite:
         """``PUT /stories/{id}/engine-profile``: run the story under ``profile_id`` at its latest
         version from the next turn, keeping the overrides. ``version`` (M5) is sent only when
         given: a number pins the story to that version, ``"latest"`` follows the latest and
         clears a pin (422 ``validation_error`` for a version the profile doesn't have). 422
         ``invalid_profile`` (``details.overrides``) or ``profile_deleted``; the story's own
-        profile is a 200 that changes nothing. Two stages, as :meth:`patch_profile_overrides`."""
+        profile is a 200 that changes nothing. Two stages, as :meth:`patch_profile_overrides`;
+        M7's 202 (a backfill started) parses alike; ``upgrade_mode`` only when given (#307)."""
         body: dict[str, Any] = {"profile_id": profile_id, "ignore_warnings": ignore_warnings}
         if version is not None:
             body["version"] = version
+        if upgrade_mode is not None:
+            body["upgrade_mode"] = upgrade_mode
         response = self._request(
             "PUT",
             f"{_story_path(story_id)}/engine-profile",
@@ -4232,10 +5153,9 @@ class EngineClient:
     # --- media content (#65's proxy) -------------------------------------------------------------
 
     @operation("GET", "/media/{media_id}/content")
-    @contextmanager
     def open_media_content(
         self, media_id: str, headers: Mapping[str, str]
-    ) -> Iterator[StreamedContent]:
+    ) -> AbstractContextManager[StreamedContent]:
         """``GET /media/{id}/content``, streamed: a context manager yielding the answer, whatever
         its status, with the body unread. Only :data:`MEDIA_REQUEST_HEADERS` of ``headers`` are
         forwarded; the service key goes as on every call. Connect 3 s, then 30 s per chunk.
@@ -4244,6 +5164,15 @@ class EngineClient:
         wanted = {name.lower() for name in MEDIA_REQUEST_HEADERS}
         forwarded = {k: v for k, v in headers.items() if k.lower() in wanted}
         path = f"/media/{quote(media_id, safe='')}/content"
+        return self._open_stream(path, forwarded, MEDIA_RESPONSE_HEADERS)
+
+    @contextmanager
+    def _open_stream(
+        self, path: str, forwarded: Mapping[str, str], kept: Sequence[str]
+    ) -> Iterator[StreamedContent]:
+        """``GET path`` streamed (#65's media proxy, #292's bundle download): ``forwarded``
+        request headers, ``Accept: */*``, connect 3 s then 30 s per chunk; the answer's
+        ``kept`` headers (as sent) and the unread body, closed when the block exits."""
         wire = self._wire_headers("GET", path, None, forwarded, accept="*/*")
         http = self._http(httpx.Timeout(MEDIA_READ_TIMEOUT_S, connect=MEDIA_CONNECT_TIMEOUT_S))
         try:
@@ -4261,12 +5190,8 @@ class EngineClient:
             except Exception as exc:
                 raise EngineUnreachable("transport error", unexpected=True) from exc
             try:
-                kept = {
-                    name: response.headers[name]
-                    for name in MEDIA_RESPONSE_HEADERS
-                    if name in response.headers
-                }
-                yield StreamedContent(response.status_code, kept, response)
+                found = {name: response.headers[name] for name in kept if name in response.headers}
+                yield StreamedContent(response.status_code, found, response)
             finally:
                 response.close()
         finally:
@@ -4491,6 +5416,37 @@ def _rating_path(rating_id: str) -> str:
 def _state_path(story_id: str, name: str) -> str:
     """``/stories/<id>/states/<name>``, both percent-encoded."""
     return f"{_story_path(story_id)}/states/{quote(name, safe='')}"
+
+
+def _omniscient() -> dict[str, str]:
+    """E2's query: ``viewpoint=omniscient``, the only viewpoint the M7 history routes take."""
+    return {"viewpoint": OMNISCIENT_VIEWPOINT}
+
+
+def _rewrite_path(story_id: str, session_id: str, action: str | None = None) -> str:
+    """``/stories/<id>/rewrites/<sid>[/<action>]``, both ids percent-encoded."""
+    path = f"{_story_path(story_id)}/rewrites/{quote(session_id, safe='')}"
+    return f"{path}/{action}" if action else path
+
+
+def _amendment_path(story_id: str, amendment_id: str, action: str | None = None) -> str:
+    """``/stories/<id>/amendments/<aid>[/<action>]``, both ids percent-encoded."""
+    path = f"{_story_path(story_id)}/amendments/{quote(amendment_id, safe='')}"
+    return f"{path}/{action}" if action else path
+
+
+def _certification_run_body(
+    confirm: bool, suites: Sequence[str] | None, seeds: int | None, sample: int | None
+) -> dict[str, Any]:
+    """A certification run request: ``confirm`` always, the rest only when not ``None``."""
+    body: dict[str, Any] = {"confirm": confirm}
+    if suites is not None:
+        body["suites"] = list(suites)
+    if seeds is not None:
+        body["seeds"] = seeds
+    if sample is not None:
+        body["sample"] = sample
+    return body
 
 
 def _proposal_path(story_id: str, proposal_id: str, action: str) -> str:

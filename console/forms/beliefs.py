@@ -61,10 +61,7 @@ HOLDER_NO_PARTITION = "That character has no partition (the player's character, 
 UNKNOWN_PREDICATE_TEXT = "That predicate isn't in this story's registry"
 POLARITY_HELP = "A chosen polarity is sent and overrides the proposition's"
 SCALAR_HELP = "Neither level nor scalar: the belief is known"
-NOT_READABLE = (
-    "Nested beliefs can't be read back yet (nathanpond/Epistrel#606): the result page is the "
-    "only place this one will show."
-)
+NESTED_READS = "A nested belief shows on Knowledge › Beliefs with Kind = Nested"  # noqa: RUF001 (#328)
 NESTED_LEGEND = "Nested: the holder thinks someone believes it"
 NESTED_LINE = "The holder thinks … believes it"
 

@@ -6,8 +6,9 @@ console/views/inspect_beliefs.py's _written: written (BeliefWritten), belief, tr
 (_character.html's label, character_id, is_player), kind_text, proposition (typed view or None)
 and raw_proposition, confidence, accessibility, held_from(_url), held_to(_url), valid_text,
 valid_at, position(_url), closed and bad_closed, antecedent, transition_confidence,
-raw_response, operation_pk, replayed, report_url, first_order, see_url and see_label,
-not_readable (nested), again_url; missing (convention 10's text) for a ?report= that isn't one.
+raw_response, operation_pk, replayed, report_url, first_order, see_url and see_label (a
+first-order write's belief row, a nested write's Kind = Nested page, #328; None for any other
+kind), again_url; missing (convention 10's text) for a ?report= that isn't one.
 {% endcomment %}
 {% block title %}Inspect · Belief written · {{ story_name }}{% endblock %}
 {% block knowledge_content %}
@@ -31,7 +32,6 @@ not_readable (nested), again_url; missing (convention 10's text) for a ?report= 
   <dt>Closed</dt><dd class="closed">{% if closed %}Closed {{ closed|length }} contradicting belief(s): {% for id in closed %}{{ id|engine_id }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}Closed none{% endif %}</dd>
   <dt>Operation</dt><dd class="operation">{% if operation_pk %}<a class="operation-link" href="{% url 'operations:detail' operation_pk %}"><code>{{ written.operation_id }}</code></a>{% else %}<code>{{ written.operation_id }}</code>{% endif %} · timeline revision {{ written.timeline_revision }}</dd>
 </dl>
-{% if not_readable %}<p class="notice not-readable">{{ not_readable }}</p>{% endif %}
 <details class="belief-written-more"><summary>More</summary><dl>
   <dt>Lineage id</dt><dd><code>{{ belief.lineage_id }}</code></dd>
   <dt>Transition antecedent</dt><dd><pre class="antecedent">{{ antecedent }}</pre></dd>

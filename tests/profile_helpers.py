@@ -29,6 +29,7 @@ VALIDATE = "/engine-profiles/{profile_id}/validate"
 COPY = "/engine-profiles/{profile_id}/copy"
 SCHEMA = "/engine-profiles/schema"
 SETTINGS = "/admin/settings"
+MODEL_CONFIG = "/admin/model-config"
 STORY = "/stories/{story_id}"
 SCHEMA_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "profile_schema.json"
 STORY_A = "01JSTORY000000000000000001"
@@ -173,6 +174,8 @@ def fake_engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeEngine]:
     for module in (profiles, profile_edit, profile_defaults, stories, engine_panel):
         monkeypatch.setattr(module, "engine_client_for", client_with_fake)
     fake.respond("GET", SETTINGS, 200, json=deployment())
+    # #323: the settings page (an ``engine_panel`` view) reads the model configuration too.
+    fake.respond("GET", MODEL_CONFIG, 200, json=engine_fixture("list_model_config"))
     fake.respond("GET", SCHEMA, 200, json=schema_body())
     fake.respond("GET", ITEM, 200, json=profile())
     with override_settings(ENGINE_URL="http://engine.test"):

@@ -49,7 +49,10 @@ there is no list of every row yet (<link>)". The link is `OUTBOX_LIST_REQUEST` (
 request the planner files, "Engine request (outbox list, nathanpond/Epistrel#679)") to its
 GitHub URL, in the same tab. Pages render it only through `outbox_list_notice_html()` (#245,
 #254, #255, #258, and any later page showing outbox rows), never by filling the constant
-themselves.
+themselves. *E17 (#295, M7):* the request was delivered by Engine M7 (`list_outbox`), so
+`outbox_list_notice_html(story_id=…)` now renders `OUTBOX_SECTION_NOTICE` = "Every outbox row is
+listed in <a>Effects \u203a Outbox</a>", linking the story's `inspect:outbox` (#325, registered);
+in a urlconf without that name it renders the old notice (D19). Every caller passes its story id.
 
 **D12 — Reconciliation count link (owner #235; `console/effects.py`).**
 `reconciliation_link(story_id, count)` returns `None` for `None` or 0, or while
@@ -140,12 +143,18 @@ EFFECT_ID_LABEL = "Effect id"
 
 # --- D11: outbox ids --------------------------------------------------------------------------
 
+# The Engine request for an outbox list: delivered by Engine M7 (``list_outbox``); kept for
+# history and for the notice shown while ``inspect:outbox`` is unregistered (E17, #295).
 OUTBOX_LIST_REQUEST = "https://github.com/nathanpond/Epistrel/issues/679"
 OUTBOX_LIST_REQUEST_LABEL = "Engine request (outbox list)"
 OUTBOX_LIST_NOTICE = (
     "Outbox rows are shown where the Engine reports them; there is no list of every row yet "
     "({link})"
 )
+
+# E17 (#295): the notice once the Effects tab's Outbox section (#325) lists every row.
+OUTBOX_SECTION_LABEL = "Effects \u203a Outbox"
+OUTBOX_SECTION_NOTICE = "Every outbox row is listed in {link}"
 
 # --- D13: incomplete and staged turns ------------------------------------------------------------
 
@@ -219,12 +228,18 @@ def effect_line(
     )
 
 
-# --- D11: the missing outbox list ---------------------------------------------------------------
+# --- D11 / E17: the outbox list ------------------------------------------------------------------
 
 
-def outbox_list_notice_html() -> SafeString:
-    """D11's notice, linking :data:`OUTBOX_LIST_REQUEST` in the same tab; the one renderer of
-    :data:`OUTBOX_LIST_NOTICE`."""
+def outbox_list_notice_html(*, story_id: str | None = None) -> SafeString:
+    """E17 (#295): :data:`OUTBOX_SECTION_NOTICE`, linking the story's ``inspect:outbox``, when
+    ``story_id`` is given and that name resolves; else D11's old notice, linking
+    :data:`OUTBOX_LIST_REQUEST` in the same tab (D19). The one renderer of both."""
+    section = _reverse("inspect:outbox", story_id) if story_id else None
+    if section is not None:
+        link = format_html('<a href="{}">{}</a>', section, OUTBOX_SECTION_LABEL)
+        before, _, after = OUTBOX_SECTION_NOTICE.partition("{link}")
+        return format_html("{}{}{}", before, link, after)
     link = format_html('<a href="{}">{}</a>', OUTBOX_LIST_REQUEST, OUTBOX_LIST_REQUEST_LABEL)
     before, _, after = OUTBOX_LIST_NOTICE.partition("{link}")
     return format_html("{}{}{}", before, link, after)

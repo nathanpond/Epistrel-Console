@@ -49,7 +49,7 @@ from console.forms.bindings import (
     bound_names_text,
     read_provider_choices,
 )
-from console.forms.stories import CREATION_ERROR_PATHS
+from console.forms.stories import CREATION_ERROR_PATHS, IMPORTING_ROW_NOTE, IMPORTING_STATUS
 from console.formset_rows import edit_rows, wants_edit
 from console.held import HELD_PARAM, HELD_STATUS
 from console.ids import is_ulid, new_ulid
@@ -87,6 +87,11 @@ class StoryRow:
         """Held by a pending erasure (#87): every read of it is 503 ``erasure_pending``."""
         return self.story.status == HELD_STATUS
 
+    @property
+    def importing(self) -> bool:
+        """Being imported (#293, FR-STORE-7): every route of it is 409 ``story_importing``."""
+        return self.story.status == IMPORTING_STATUS
+
 
 def _cast_size(client: EngineClient, request: HttpRequest, story_id: str) -> int | None:
     """``GET /stories/{id}``'s cast size; a failed read degrades to "—" for that row only."""
@@ -101,10 +106,13 @@ def _list_row(
     client: EngineClient, request: HttpRequest, story: StorySummary, here: str
 ) -> StoryRow:
     """A held story's row skips its ``GET /stories/{id}`` back-fill (it would answer 503) and
-    its actions carry ``held=1`` (the delete confirm's id-only wording)."""
+    its actions carry ``held=1`` (the delete confirm's id-only wording). An importing story's
+    skips it too (409 ``story_importing``, #293): its Cast reads "—"."""
     if story.status == HELD_STATUS:
         query = f"{confirm_query(story.name, here)}&{HELD_PARAM}=1"
         return StoryRow(story, None, query)
+    if story.status == IMPORTING_STATUS:
+        return StoryRow(story, None, confirm_query(story.name, here))
     return StoryRow(story, _cast_size(client, request, story.id), confirm_query(story.name, here))
 
 
@@ -136,6 +144,7 @@ def story_list(request: HttpRequest) -> HttpResponse:
             "empty_text": empty_text,
             "held_name": HELD_NAME,
             "held_status": HELD_STATUS_TEXT,
+            "importing_note": IMPORTING_ROW_NOTE,
         },
     )
 
@@ -188,6 +197,7 @@ def _stories_using_profile(
         "clear_query": clear.urlencode(),
         "held_name": HELD_NAME,
         "held_status": HELD_STATUS_TEXT,
+        "importing_note": IMPORTING_ROW_NOTE,
     }
     if not is_ulid(profile_id):
         context.update(rows=[], profile_invalid=INVALID_PROFILE)
@@ -282,8 +292,8 @@ def _posted_provider_choices(request: HttpRequest) -> ProviderChoices | None:
 
 def _binding_refusal(exc: EngineError, spec: dict[str, Any]) -> bool:
     """A refusal the bindings rows place (#259): a 422 ``binding_incomplete`` or
-    ``validation_error`` (whose failures may be elsewhere too), or the undeclared 404
-    ``not_found`` naming a provider the body bound."""
+    ``validation_error`` (whose failures may be elsewhere too), or the 404 ``not_found``
+    (declared since Engine M7, #682) naming a provider the body bound."""
     if exc.http_status == 422:
         return exc.code in (BINDING_INCOMPLETE, VALIDATION_ERROR)
     return binding_not_found(exc, spec)

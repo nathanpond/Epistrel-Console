@@ -29,6 +29,7 @@ from typing import Any
 from django import forms
 from django.http import QueryDict
 
+from console.beliefs import FIRST_ORDER, NESTED, SPEECH_ACT
 from console.cast import OMNISCIENT, Character, character_choices, default_actor, viewpoint_for
 from console.engine.client import EngineError
 from console.engine.models import Predicate
@@ -866,7 +867,14 @@ PROPOSITION_INVALID = (
 NOT_IN_CAST_SUFFIX = " (not in the cast)"
 UNKNOWN_CHARACTER_REASON = "unknown_character"
 # A 422 ``validation_error``'s ``details.field`` → the Beliefs filter it lands on.
+KIND_CHOICES = (
+    (FIRST_ORDER, "First-order — what they believe"),
+    (NESTED, "Nested — what they believe others believe"),
+    (SPEECH_ACT, "Speech acts — what they heard said"),
+)
+KIND_INVALID = "Choose one of the listed kinds"
 BELIEFS_FIELDS: Mapping[str, str] = {
+    "query.kind": "kind",
     "query.character": "character",
     "query.as_of": "as_of",
     "query.proposition_id": "proposition_id",
@@ -888,8 +896,19 @@ class BeliefsForm(forms.Form):
     view then makes no call.
 
     **As of turn** is parsed as Canon parses a minute (ASCII digits only), up to
-    :data:`TURN_MAX`; **Proposition id** is trimmed, upper-cased and checked with ``is_ulid``."""
+    :data:`TURN_MAX`; **Proposition id** is trimmed, upper-cased and checked with ``is_ulid``.
 
+    **Kind** (#327, first): :data:`KIND_CHOICES`, trimmed and lower-cased; blank or absent is
+    first-order, which :meth:`query` leaves out (the Engine's default, so the query is #190's);
+    any other value is :data:`KIND_INVALID`."""
+
+    kind = forms.ChoiceField(
+        required=False,
+        label="Kind",
+        choices=KIND_CHOICES,
+        initial=FIRST_ORDER,
+        error_messages={"invalid_choice": KIND_INVALID},
+    )
     character = forms.CharField(required=False, label="Character")
     as_of = forms.CharField(
         required=False,
@@ -916,6 +935,8 @@ class BeliefsForm(forms.Form):
             value = bound.get(name)
             if isinstance(value, str):
                 bound[name] = value.strip().upper()
+        kind = bound.get("kind")
+        bound["kind"] = (kind.strip().lower() if isinstance(kind, str) else "") or FIRST_ORDER
         self.cast = cast
         self.defaulted = False
         self.option_ids: tuple[str, ...] = ()
@@ -943,6 +964,9 @@ class BeliefsForm(forms.Form):
             self.fields["character"].widget = forms.Select(choices=options)
         else:
             self.fields["character"].widget = forms.TextInput(attrs={"size": 30})
+
+    def clean_kind(self) -> str:
+        return str(self.cleaned_data.get("kind") or FIRST_ORDER)
 
     def clean_character(self) -> str:
         typed = cast_id(str(self.cleaned_data.get("character") or ""), self.option_ids)
@@ -973,13 +997,17 @@ class BeliefsForm(forms.Form):
         return name in self.cleaned_data and name not in self.errors
 
     def query(self) -> dict[str, Any]:
-        """``EngineClient.inspect_beliefs``' filter arguments (valid form only; no cursor)."""
+        """``EngineClient.inspect_beliefs``' filter arguments (valid form only; no cursor);
+        ``kind`` only when it isn't first-order (#327)."""
         data = self.cleaned_data
-        return {
+        query: dict[str, Any] = {
             "character": data["character"],
             "as_of": data["as_of"],
             "proposition_id": data["proposition_id"] or None,
         }
+        if data["kind"] != FIRST_ORDER:
+            query["kind"] = data["kind"]
+        return query
 
     def apply_engine_error(self, exc: EngineError) -> bool:
         """A 422: ``unknown_character`` → :data:`console.wording.UNKNOWN_CHARACTER` beside
@@ -1048,6 +1076,8 @@ class DivergencesForm(forms.Form):
             value = bound.get(name)
             if isinstance(value, str):
                 bound[name] = value.strip().upper()
+        kind = bound.get("kind")
+        bound["kind"] = (kind.strip().lower() if isinstance(kind, str) else "") or FIRST_ORDER
         self.cast = cast
         self.cast_ids: tuple[str, ...] = tuple(c.id for c in cast or ())
         options: list[tuple[str, str]] = [("", ANY_SPEAKER)]

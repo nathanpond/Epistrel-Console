@@ -42,7 +42,7 @@
 {% endif %}
 
 {% if is_turn %}
-{% if report %}{% include "console/_turn_report.html" with report=report %}{% else %}<p>The turn report could not be read; see the response below.</p>{% endif %}
+{% if report %}{% include "console/_turn_report.html" with report=report coverage_gaps=coverage_gaps coverage_gaps_unread=coverage_gaps_unread %}{% else %}<p>The turn report could not be read; see the response below.</p>{% endif %}
 {% endif %}
 
 <h2>Request</h2>
@@ -78,7 +78,7 @@
     <dd>
       {% if fetched.result %}
       HTTP {{ fetched.result.status }}
-      {% if fetched_report %}{% include "console/_turn_report.html" with report=fetched_report %}{% else %}<pre>{{ fetched_body|pretty_json }}</pre>{% endif %}
+      {% if fetched_report %}{% include "console/_turn_report.html" with report=fetched_report coverage_gaps=fetched_gaps coverage_gaps_unread=fetched_gaps_unread %}{% else %}<pre>{{ fetched_body|pretty_json }}</pre>{% endif %}
       {% else %}not available (outside the Engine's result window){% endif %}
     </dd>
   </dl>

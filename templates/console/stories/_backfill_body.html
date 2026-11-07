@@ -1,0 +1,21 @@
+{% comment %}
+The Backfill page's polled block body (#308; E7), inside console/_job_poll.html. Context: backfill
+(BackfillView, None before a read answered), job/job_id/error (job_poll_context), no_backfill,
+held (D17's fragment: held_text, retry_url, ledger_url), poll_panel (#43's panel of a failed
+poll) and refresh_conflicts_text. Holds the status, the progress and phase, the report, "The new
+configuration now applies" and the "Cancel the backfill…" link, all from the backfill read.
+{% endcomment %}{% load console_format %}{% if held %}{% include "console/stories/_held.html" %}{% elif no_backfill %}<p class="no-backfill">{{ no_backfill }}</p>{% elif poll_panel %}{% include "console/_engine_error.html" with engine_error=poll_panel %}{% elif backfill %}{% include "console/_job_status.html" %}
+{% if job.running %}<p class="backfill-phase">Phase: <span{% if backfill.phase_title %} title="{{ backfill.phase_title }}"{% endif %}>{{ backfill.phase }}</span></p>{% endif %}
+{% if job.waiting %}<p class="refresh-conflicts"><a href="{{ refresh_url }}">{{ refresh_conflicts_text }}</a></p>{% endif %}
+{% if backfill.show_report %}<section class="backfill-report">
+  <h3>Report</h3>
+  {% if backfill.report %}<dl class="report">
+    {% for group in backfill.report %}<dt class="report-group">{{ group.heading }}</dt>
+    {% for label, value in group.rows %}<dd><span class="report-label">{{ label }}</span>: {{ value }}</dd>{% endfor %}
+    {% endfor %}
+  </dl>{% else %}<p>—</p>{% endif %}
+  {% if backfill.report_more %}<details><summary>More</summary><pre>{{ backfill.report_more }}</pre></details>{% endif %}
+</section>{% elif backfill.show_raw_report %}<details><summary>More</summary><pre>{{ backfill.report_more }}</pre></details>{% endif %}
+{% if backfill.new_config_applies %}<p class="new-config">{% if backfill.new_config_url %}<a href="{{ backfill.new_config_url }}">The new configuration now applies</a>{% else %}The new configuration now applies{% endif %}</p>{% endif %}
+{% if backfill.cancellable %}<p class="backfill-cancel"><a href="{{ backfill.cancel_url }}">Cancel the backfill…</a></p>{% endif %}
+{% endif %}

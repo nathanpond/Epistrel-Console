@@ -1,0 +1,25 @@
+{
+  "job_id": "01JM7JB0000000000000000007",
+  "status": "ready",
+  "story_id": "01JM7ST0000000000000000003",
+  "stage": "done",
+  "progress": {
+    "done": 8,
+    "total": 8
+  },
+  "report": {
+    "errors": [],
+    "warnings": [
+      {
+        "code": "imported_unsettled",
+        "outbox_id": "01JM7XB0000000000000000005"
+      }
+    ],
+    "counts": {
+      "events": 42,
+      "facts": 9,
+      "outbox": 2
+    }
+  },
+  "error": null
+}

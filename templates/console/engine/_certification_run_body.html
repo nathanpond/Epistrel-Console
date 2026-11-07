@@ -1,0 +1,40 @@
+{% comment %}
+#313: a certification run's polled block body (E7's certification_run kind), inside
+console/_job_poll.html. Context: run (CertificationRun; None before a read answered), job/job_id/
+error (job_poll_context), held (D17's fragment: held_text, retry_url, ledger_url), not_found,
+poll_panel, and the run view: kind, fingerprint, profile, story_link, suites, seeds, sample,
+estimate (EstimateLine list or None), estimate_more, requested, report (ReportSummary or None),
+recorded.
+{% endcomment %}{% load console_format %}{% if held %}{% include "console/stories/_held.html" %}{% elif not_found %}<p class="not-found">{{ not_found }}</p>{% elif poll_panel %}{% include "console/_engine_error.html" with engine_error=poll_panel %}{% elif run %}{% include "console/_job_status.html" %}
+<dl class="certification-run">
+  <dt>Kind</dt><dd class="kind">{{ kind }}</dd>
+  <dt>Fingerprint</dt><dd><code class="hash">{{ fingerprint }}</code></dd>
+  <dt>Profile</dt><dd class="profile">{{ profile }}</dd>
+  {% if story_link %}<dt>Story</dt><dd class="story">{{ story_link }}</dd>{% endif %}
+</dl>
+<p class="suites">Suites: {{ suites }}</p>
+<p class="seeds">Seeds: {{ seeds }}</p>
+<p class="sample">Sample: {{ sample }}</p>
+{% if estimate is None %}<p class="estimate">Estimate: —</p>{% else %}<dl class="estimate">
+  {% for line in estimate %}<dt>{{ line.label }}</dt><dd>{{ line.value }}</dd>{% endfor %}
+</dl>{% endif %}{% if estimate_more %}<details class="estimate-more"><summary>More</summary><pre>{{ estimate_more }}</pre></details>{% endif %}
+<p class="requested">{{ requested }}</p>
+<p class="times">Started {{ run.started_at|engine_time }} · Finished {{ run.finished_at|engine_time }}</p>
+{% if report %}<section class="run-report">
+  <h3>Report</h3>
+  {% if report.verdict %}<p class="overall">Overall: {{ report.verdict }}</p>{% endif %}
+  {% if report.outcome %}<p class="outcome">Outcome: <span title="{{ report.outcome_raw }}">{{ report.outcome }}</span></p>{% endif %}
+  {% if report.suites is not None %}<table class="report-suites">
+    <thead><tr><th>Suite</th><th>Verdict</th></tr></thead>
+    <tbody>{% for name, verdict in report.suites %}<tr><td><code>{{ name }}</code></td><td>{{ verdict }}</td></tr>{% empty %}<tr><td colspan="2">None</td></tr>{% endfor %}</tbody>
+  </table>{% endif %}
+  {% if report.missed %}<p class="missed-floors">Missed: {% for metric in report.missed %}<code>{{ metric }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% if report.metrics is not None %}<table class="report-metrics">
+    <thead><tr><th>Metric</th><th>Requirement</th><th>Value</th><th>Floor</th><th>n</th><th>Verdict</th></tr></thead>
+    <tbody>{% for row in report.metrics %}{% if row.more %}<tr class="rejected"><td colspan="6">—<details><summary>More</summary><pre>{{ row.more }}</pre></details></td></tr>{% else %}<tr{% if row.missed %} class="missed"{% endif %}><td><code>{{ row.metric }}</code></td><td>{{ row.requirement }}</td><td>{{ row.value }}</td><td>{{ row.floor }}</td><td>{{ row.n }}</td><td>{{ row.verdict }}{% if row.missed %} (missed){% endif %}</td></tr>{% endif %}{% empty %}<tr><td colspan="6">None</td></tr>{% endfor %}</tbody>
+  </table>{% endif %}
+  {% if report.more %}<details class="report-more"><summary>More</summary><pre>{{ report.more }}</pre></details>{% endif %}
+  {% if report.raw_more %}<details class="report-more"><summary>More</summary><pre>{{ report.raw_more }}</pre></details>{% endif %}
+</section>{% endif %}
+{% if recorded %}<p class="recorded-certification">{{ recorded }}</p>{% endif %}
+{% endif %}

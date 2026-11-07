@@ -1,0 +1,70 @@
+{
+  "rows": [
+    {
+      "outbox_id": "01JM7XB0000000000000000001",
+      "provider": "bank",
+      "status": "intended",
+      "position": {
+        "turn": 4,
+        "variant": 1,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "membership": "active",
+      "created_at": "2026-11-04T11:00:00Z",
+      "attempts": 0,
+      "claimed_at": null,
+      "sent_at": null,
+      "value": "balance",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -50,
+        "reason": "Mara pays the harbour fee"
+      },
+      "outcome": null,
+      "contingent": false,
+      "compensates": null,
+      "compensated_by": null,
+      "redacted": false
+    },
+    {
+      "outbox_id": "01JM7XB0000000000000000009",
+      "provider": "bank"
+    },
+    {
+      "outbox_id": "01JM7XB0000000000000000003",
+      "provider": "bank",
+      "status": "compensated",
+      "position": {
+        "turn": 2,
+        "variant": 1,
+        "slot_k": 0,
+        "beat": 2,
+        "step": 0
+      },
+      "membership": "discarded",
+      "created_at": "2026-11-03T09:00:00Z",
+      "attempts": 1,
+      "claimed_at": "2026-11-03T09:00:02Z",
+      "sent_at": "2026-11-03T09:00:03Z",
+      "value": "balance",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -30,
+        "reason": "Rope for the boat"
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-11-03T09:00:05Z",
+        "received_via": "dispatch"
+      },
+      "contingent": false,
+      "compensates": null,
+      "compensated_by": "01JM7XB0000000000000000004",
+      "redacted": false
+    }
+  ],
+  "next_after": null,
+  "output_viewpoint": "omniscient"
+}

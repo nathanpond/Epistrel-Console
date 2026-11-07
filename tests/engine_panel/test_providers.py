@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from django.test import Client
+from django.test import Client, override_settings
 from django.utils.html import escape
 
 from console.effects import provider_url
@@ -16,6 +16,7 @@ from console.engine.models import Provider, ProviderList
 from tests.engine_panel.helpers import error
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
+from tests.golden import normalise_html
 
 LIST = "/admin/external-providers"
 ONE = "/admin/external-providers/{name}"
@@ -366,6 +367,49 @@ def test_engine_home_links_providers(operator_client: Client, engine: FakeEngine
     page = operator_client.get("/engine/").content.decode()
 
     assert re.search(r'>Config changes</a> · <a href="/engine/providers/">Providers</a> · ', page)
+
+
+# Main's Engine home link line (E24: captured before #296, compared normalised).
+ENGINE_HOME_LINK_LINE = (
+    '<p><a href="/engine/settings/">Deployment settings</a> · '
+    '<a href="/engine/config-changes/">Config changes</a> · '
+    '<a href="/engine/providers/">Providers</a> · '
+    '<a href="/models/embedding/reembed/">Re-embed run</a></p>'
+)
+ENGINE_NAV = (
+    ' · <span class="engine-pages" role="navigation" aria-label="Engine pages">'
+    '<a href="/engine/import/">Import a bundle</a> · '
+    '<a href="/engine/certifications/">Certifications</a> · '
+    '<a href="/engine/evals/">Eval runs</a></span>'
+)
+# The registered M7 Engine rows (#313: Certifications, #316: Eval runs); #320 adds its own.
+REGISTERED_ENGINE_NAV = (
+    ' · <span class="engine-pages" role="navigation" aria-label="Engine pages">'
+    '<a href="/engine/import/">Import a bundle</a> · '
+    '<a href="/engine/certifications/">Certifications</a> · '
+    '<a href="/engine/evals/">Eval runs</a></span>'
+)
+
+
+def home_link_line(html: str) -> str:
+    start = html.index('<p><a href="/engine/settings/">')
+    return html[start : html.index("</p>", start) + 4]
+
+
+def test_engine_home_links(operator_client: Client, engine: FakeEngine) -> None:
+    """E11 (#296): the link line is main's plus the registered M7 Engine rows after Providers
+    (#313 regenerated it: Certifications; #316 Eval runs; #320 Import a bundle)."""
+    engine.respond("GET", "/stories", 200, json=engine_fixture("list_stories"))
+    html = operator_client.get("/engine/").content.decode()
+    providers = '<a href="/engine/providers/">Providers</a>'
+    registered = ENGINE_HOME_LINK_LINE.replace(providers, providers + REGISTERED_ENGINE_NAV)
+    assert normalise_html(home_link_line(html)) == normalise_html(registered)
+    # Complement: under the stub urlconf the Engine nav follows Providers.
+    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
+        stubbed = operator_client.get("/engine/").content.decode()
+    providers = '<a href="/engine/providers/">Providers</a>'
+    expected = ENGINE_HOME_LINK_LINE.replace(providers, providers + ENGINE_NAV)
+    assert normalise_html(home_link_line(stubbed)) == normalise_html(expected)
 
 
 def test_engine_nav_active_on_provider_pages(operator_client: Client, engine: FakeEngine) -> None:

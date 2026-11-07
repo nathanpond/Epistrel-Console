@@ -1,0 +1,18 @@
+{
+  "job_id": "01JM7JB0000000000000000006",
+  "story_id": "01JM7ST0000000000000000001",
+  "status": "ready",
+  "exported_revision": 20,
+  "manifest": {
+    "format_version": "1.0",
+    "story_id": "01JM7ST0000000000000000001",
+    "exported_revision": 20,
+    "members": {
+      "events.jsonl": 42
+    }
+  },
+  "size": 18342,
+  "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "expires_at": "2026-11-12T15:00:00Z",
+  "error": null
+}

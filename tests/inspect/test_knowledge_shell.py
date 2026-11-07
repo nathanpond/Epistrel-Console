@@ -1,10 +1,11 @@
 """The Knowledge tab's shell (#189): its partitions gate in the bar, zero knowledge reads while it
 is greyed, the landing's redirect to the first registered section, the sub-navigation, the
-nested-belief notice and the empty shell.
+empty shell, and (#327) no Knowledge section saying nested beliefs can't be read.
 
 The section tests run on ``tests.inspect.urls_knowledge_exposures_only`` (only a stub
 ``inspect:exposures``) and ``tests.inspect.urls_knowledge_no_sections`` (none)."""
 
+import json
 import re
 from collections.abc import Iterator
 from typing import Any
@@ -17,7 +18,15 @@ from console.engine.client import EngineClient
 from console.engine_access import engine_client_for
 from console.views import inspect as views
 from tests.fakes.engine import FakeEngine
-from tests.inspect.helpers import EFFECTIVE, STORY, STORY_PATH, structured_v2, with_settings
+from tests.inspect.helpers import (
+    EFFECTIVE,
+    FIXTURES,
+    STORY,
+    STORY_PATH,
+    story_cast,
+    structured_v2,
+    with_settings,
+)
 from tests.play.helpers import error_json, story_json
 
 pytestmark = pytest.mark.django_db
@@ -30,12 +39,8 @@ SHELL_READS = [f"/stories/{STORY}/effective-config", f"/stories/{STORY}"]
 KNOWLEDGE_ROUTES = ("/inspect/beliefs", "/inspect/divergences", "/inspect/exposures")
 EXPOSURES_ONLY = "tests.inspect.urls_knowledge_exposures_only"
 NO_SECTIONS = "tests.inspect.urls_knowledge_no_sections"
-NOTICE = (
-    '<p class="notice">Shows first-order beliefs. Nested beliefs aren\'t readable through the '
-    "Engine's API yet "
-    '(<a href="https://github.com/nathanpond/Epistrel/issues/606">nathanpond/Epistrel#606</a>).</p>'
-)
-NOTICE_START = '<p class="notice">Shows first-order beliefs.'
+REAL_URLCONF = "epistrel_console.urls"
+RETIRED = "aren&#x27;t readable", "aren't readable"  # #327: the #606 notice is gone
 EMPTY = '<p class="none">No Knowledge sections are available yet.</p>'
 PARTITIONS_OFF_REASON = (
     "Needs the partitions module (character_knowledge.partitions is off under this story"
@@ -131,7 +136,7 @@ def test_greyed_knowledge_tab_makes_zero_knowledge_calls(
     assert '<div class="panel unavailable">' in html
     assert paths(engine) == SHELL_READS
     assert not any(route in p for p in paths(engine) for route in KNOWLEDGE_ROUTES)
-    assert NOTICE_START not in html
+    assert not any(text in html for text in RETIRED)
     assert subnav(html) is None
 
 
@@ -170,7 +175,7 @@ def test_knowledge_with_no_sections_renders_the_shell(
     answer_config(engine, structured_v2())
     with override_settings(ROOT_URLCONF=NO_SECTIONS):
         html = page(operator_client, KNOWLEDGE)
-    assert NOTICE in html
+    assert not any(text in html for text in RETIRED)
     assert EMPTY in html
     assert subnav(html) is None
     assert "<h2>" not in html
@@ -187,8 +192,8 @@ def test_subnav_marks_the_current_section(operator_client: Client, engine: FakeE
         == f'<a class="active" aria-current="page" href="{EXPOSURES_URL}">Exposures</a>'
     )
     assert "<h2>Exposures</h2>" in html
-    assert html.index("<h2>Exposures</h2>") < html.index(NOTICE_START)
-    assert NOTICE in html
+    assert html.index("<h2>Exposures</h2>") < html.index(EMPTY)  # the stub section's content
+    assert not any(text in html for text in RETIRED)
     # The tab bar's Knowledge link is the landing itself (the redirect picks the section).
     assert f'<a class="active" aria-current="page" href="{KNOWLEDGE}">Knowledge</a>' in bar(html)
     assert paths(engine) == SHELL_READS
@@ -200,7 +205,7 @@ def test_greyed_knowledge_does_not_redirect(operator_client: Client, engine: Fak
     assert response.status_code == 200
     html = response.content.decode()
     assert '<div class="panel unavailable">' in html
-    assert NOTICE_START not in html
+    assert not any(text in html for text in RETIRED)
     assert subnav(html) is None
 
 
@@ -217,15 +222,27 @@ def test_a_section_reads_409_module_off_renders_the_panel(
     html = page(operator_client, PROBE_URL)
     assert '<div class="panel unavailable">' in html
     assert "The story's configuration changed since this page loaded" in html
-    assert NOTICE_START not in html
+    assert not any(text in html for text in RETIRED)
     assert subnav(html) is None
 
 
-def test_nested_belief_notice_links_the_engine_request(
-    operator_client: Client, engine: FakeEngine
-) -> None:
+@pytest.mark.parametrize("section", ["beliefs", "divergences", "exposures"])
+def test_no_nested_belief_notice(operator_client: Client, engine: FakeEngine, section: str) -> None:
+    """#327: nested beliefs read back on Beliefs (Kind = Nested), so no Knowledge section says
+    they can't be read."""
     answer_config(engine, structured_v2())
-    html = page(operator_client, EXPOSURES_URL)
-    link = '<a href="https://github.com/nathanpond/Epistrel/issues/606">nathanpond/Epistrel#606</a>'
-    assert link in html  # same tab: no target
-    assert html.count(NOTICE_START) == 1
+    engine.respond("GET", STORY_PATH, 200, json=story_cast())
+    for route, name in (
+        ("beliefs", "beliefs_empty"),
+        ("divergences", "divergences_page2"),
+        ("exposures", "exposures_empty"),
+    ):
+        body = json.loads((FIXTURES / f"{name}.json").read_text())
+        engine.respond("GET", f"/stories/{{story_id}}/inspect/{route}", 200, json=body)
+    predicates = json.loads((FIXTURES / "predicates_list.json").read_text())
+    engine.respond("GET", "/stories/{story_id}/predicates", 200, json=predicates)
+    with override_settings(ROOT_URLCONF=REAL_URLCONF):
+        html = page(operator_client, f"{KNOWLEDGE}{section}/")
+    assert f"<h2>{section.capitalize()}</h2>" in html
+    assert "#606" not in html
+    assert not any(text in html for text in RETIRED)

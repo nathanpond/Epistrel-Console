@@ -2,7 +2,8 @@
 "story", its config change by ``console:nate``), reset it, pin a memory, save instructions, and
 a story policy that would relax a rule refused with ``cannot_relax``. #197: player authority and
 interaction mode set, read back as "story", and reset. #233: co-author knowledge default → free
-→ "story" → reset → "default"."""
+→ "story" → reset → "default". #318: a prune policy of 30 days read back with the story's next
+run, then cleared."""
 
 import re
 from typing import Any
@@ -168,4 +169,41 @@ def test_co_author_knowledge_live(operator_client: Client) -> None:
             html = operator_client.get(page).content.decode()
             assert _marker(html, "co_author_knowledge") == "default"
     finally:
+        client.delete_story(story_id, idempotency_key=new_ulid())
+
+
+def test_prune_policy_live(operator_client: Client) -> None:
+    url, key = live_url(), live_key()
+    client = EngineClient(url, key, principal="console:smoke")
+    story_id = _create_story(client)
+    page = f"/stories/{story_id}/settings/"
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            html = operator_client.get(page).content.decode()
+            assert _marker(html, "prune_policy") == "default (off)"
+            data = form_data(html, page)
+            data["prune_policy"] = "30"
+            assert operator_client.post(page, data).status_code == 302
+
+            html = operator_client.get(page).content.decode()
+            assert "Automatic pruning: older than 30 days" in html
+            assert _marker(html, "prune_policy") == "story"
+            settings = client.get_story_settings(story_id).settings
+            assert settings["prune_policy"] == {"older_than_days": 30}
+            pruning = client.get_story(story_id).pruning
+            assert pruning is not None
+            assert pruning.next_run_at is not None
+            assert "Next run " in html
+
+            data = form_data(html, page)
+            data["prune_policy"] = ""
+            assert operator_client.post(page, data).status_code == 302
+            html = operator_client.get(page).content.decode()
+            assert "Automatic pruning: off" in html
+            assert client.get_story_settings(story_id).settings["prune_policy"] is None
+            pruning = client.get_story(story_id).pruning
+            assert pruning is not None
+            assert pruning.next_run_at is None
+    finally:
+        client.patch_story_settings(story_id, {"prune_policy": None}, idempotency_key=new_ulid())
         client.delete_story(story_id, idempotency_key=new_ulid())

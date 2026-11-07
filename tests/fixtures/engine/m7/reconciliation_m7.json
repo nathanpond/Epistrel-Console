@@ -1,0 +1,62 @@
+{
+  "listings": [
+    {
+      "outbox_id": null,
+      "request_id": "01JM7RQ0000000000000000001",
+      "provider": "bank",
+      "value": "balance",
+      "status": "consumer_applied",
+      "reason": "reservation_expired",
+      "since": "2026-11-04T13:00:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -20,
+        "reason": "Mara tips the porter"
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM7XB0000000000000000005",
+      "provider": "bank",
+      "value": "balance",
+      "status": "unknown",
+      "reason": "imported_unsettled",
+      "since": "2026-11-01T09:00:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -10,
+        "reason": "A fee from before the import"
+      },
+      "outcome": null,
+      "reverification": null,
+      "compensated_by": null
+    },
+    {
+      "outbox_id": "01JM7XB0000000000000000002",
+      "provider": "bank",
+      "value": "balance",
+      "status": "confirmed",
+      "reason": "late_success_after_expiry",
+      "since": "2026-11-04T10:00:00Z",
+      "effect": {
+        "state": "bank_balance",
+        "delta": -120,
+        "reason": "Mara buys the lantern"
+      },
+      "outcome": {
+        "kind": "confirmed",
+        "received_at": "2026-11-04T10:05:00Z",
+        "received_via": "ingest"
+      },
+      "reverification": {
+        "reverification": "failed",
+        "reasons": [
+          "precondition:ownership"
+        ]
+      },
+      "compensated_by": null
+    }
+  ]
+}

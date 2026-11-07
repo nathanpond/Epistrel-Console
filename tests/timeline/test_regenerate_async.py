@@ -1,5 +1,6 @@
 """#53: regenerate and #48's waiting/busy handling. The Engine never queues a regenerate (its
-recorded schema declares no 202 and no ``Prefer``; another running turn is 423 ``story_busy``),
+recorded schema declares no queued 202 and no ``Prefer``; M7's 202 is a directed regenerate's
+``DirectedPendingBody``; another running turn is 423 ``story_busy``),
 so the Console sends no ``Prefer: respond-async`` and shows #48's busy message instead of a
 waiting card."""
 
@@ -16,9 +17,14 @@ pytestmark = pytest.mark.django_db
 
 
 def test_the_engine_declares_no_queued_regenerate() -> None:
+    """M7 (#291) declares a 202, but it is a directed regenerate's ``DirectedPendingBody`` (a
+    rewrite session to answer), not a queued turn: still no ``Prefer``."""
     doc = json.loads(RECORDED_PATH.read_text(encoding="utf-8"))
     operation = doc["paths"]["/stories/{story_id}/regenerate"]["post"]
-    assert "202" not in operation["responses"]
+    accepted = operation["responses"].get("202", {}).get("content", {})
+    assert accepted["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/DirectedPendingBody"
+    }
     assert "Prefer" not in {p["name"] for p in operation["parameters"]}
 
 

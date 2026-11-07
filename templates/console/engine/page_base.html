@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% comment %}
+E11's Engine-panel frame (#296, console/views/story_pages.py engine_page). A page extends this and
+fills {% block engine_page %}. The link line with the Engine nav, the page label, then #87's held
+fragment (held: a 503 erasure_pending, D17's storyless rule, no Delete), #43's panel (page_error)
+or the page block.
+{% endcomment %}
+{% block title %}{{ page_label }} · Engine{% endblock %}
+{% block heading %}Engine{% endblock %}
+{% block content %}
+<p class="engine-links"><a href="{% url 'engine:home' %}">Engine home</a> · <a href="{% url 'engine:settings' %}">Deployment settings</a> · <a href="{% url 'engine:config-changes' %}">Config changes</a> · <a href="{% url 'engine:providers' %}">Providers</a>{% include "console/engine/_page_nav.html" with nav_label="Engine pages" %}</p>
+<h2>{{ page_label }}</h2>
+{% if held %}{% include "console/stories/_held.html" with held_text=held.held_text retry_url=held.retry_url ledger_url=held.ledger_url delete_url="" %}
+{% elif page_error %}{% include "console/_engine_error.html" with engine_error=page_error %}
+{% else %}{% block engine_page %}{% endblock %}{% endif %}
+{% endblock %}

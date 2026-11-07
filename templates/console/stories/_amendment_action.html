@@ -1,0 +1,6 @@
+{% load inspect_tags %}{% comment %}
+#303: an amendment's action on its own page and on the open form: the Undo…/Redo… link, or, for
+an active undo (no url, no label), USE_REDO_HINT and the undone amendment, linked through E6's
+amendment_url (plain <code> when that doesn't resolve; "—" when undoes is null). Context:
+action (an AmendmentAction), use_redo_hint, summary.
+{% endcomment %}<p class="amendment-actions">{% if action.url %}{% include "console/stories/_amendment_row_actions.html" with row=summary %}{% elif not action.label %}<span class="use-redo">{{ use_redo_hint }} {% if action.hint_url %}<a href="{{ action.hint_url }}">{{ action.hint_code|engine_id }}</a>{% elif action.hint_code %}{{ action.hint_code|engine_id }}{% else %}—{% endif %}</span>{% endif %}</p>

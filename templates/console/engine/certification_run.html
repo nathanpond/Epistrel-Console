@@ -1,0 +1,10 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#313: one certification run (engine:certification-run, console/views/certifications.py), E7's
+certification_run job page: console/_job_poll.html around _certification_run_body.html, polling
+every 5s until completed or failed. run_not_found: "No such certification run".
+{% endcomment %}
+{% block engine_page %}
+{% if run_not_found %}<p class="not-found">{{ run_not_found }}</p>
+{% else %}{% include "console/_job_poll.html" %}{% endif %}
+{% endblock %}

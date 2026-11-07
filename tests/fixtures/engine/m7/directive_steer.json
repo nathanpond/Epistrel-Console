@@ -1,0 +1,12 @@
+{
+  "timeline_revision": 20,
+  "directive_id": "01JM7DV0000000000000000001",
+  "classification": "ephemeral",
+  "disposition": "steer_queued",
+  "steer_text": "Make this scene tense",
+  "applied": null,
+  "position": null,
+  "rewrite_session": null,
+  "hints": [],
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

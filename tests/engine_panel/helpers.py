@@ -11,6 +11,7 @@ from tests.fixtures import engine_fixture
 SETTINGS = "/admin/settings"
 RATINGS = "/admin/content-ratings"
 CHANGES = "/admin/config-changes"
+MODEL_CONFIG = "/admin/model-config"
 REBUILD = "/admin/stories/{story_id}/rebuild"
 STORY = "01JB2Z8Y5Q3W6K9M1N4P7R0T2V"
 HELD_STORY = "01JB2Z8Y5Q3W6K9M1N4P7R0T2W"
@@ -23,10 +24,12 @@ def settings_body(**changes: Any) -> dict[str, Any]:
 
 
 def answer_settings(engine: FakeEngine, **changes: Any) -> dict[str, Any]:
-    """``GET /admin/settings`` (the fixture, patched) and the ratings (all four, none retired)."""
+    """``GET /admin/settings`` (the fixture, patched), the ratings (all four, none retired) and
+    the model configuration (#323: the strongest-model select's options)."""
     body = settings_body(**changes)
     engine.respond("GET", SETTINGS, 200, json=body)
     engine.respond("GET", RATINGS, 200, json=engine_fixture("list_content_ratings_all"))
+    engine.respond("GET", MODEL_CONFIG, 200, json=engine_fixture("list_model_config"))
     return body
 
 

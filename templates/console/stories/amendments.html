@@ -1,0 +1,51 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#302: the story's Amendments page (stories:amendments, console/views/amendments.py). E2's
+omniscient line (no viewpoint picker), the cursor notice, a refusal (E2's text or the Engine's
+422 message, "First page" for a refused cursor), E22's status filter, #43's panel for a failed
+read, the count line and the table (rejected entries: UNPARSED_TEXT plus one spanning row each),
+then the empty text and the paging links. The Actions column renders only when row_actions (a
+row template, convention 14) is set: #303 sets it; this story leaves it None.
+Context: filter_form, filter_url, clear_url, cursor_dropped, refusal, cursor_refused, list_read,
+list_error, rows, rejected, unparsed_text, rejected_text, count_text, empty_text, next_url,
+first_url, next_text, first_text, row_actions.
+{% endcomment %}
+{% load console_format inspect_tags principals %}
+{% block story_page %}
+{% include "console/rewrites/_omniscient.html" %}
+<section class="amendments">
+  {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+  {% if refusal %}<p class="errorlist amendment-refusal" role="alert">{{ refusal }}{% if cursor_refused and first_url %} <a href="{{ first_url }}">{{ first_text }}</a>{% endif %}</p>{% endif %}
+  <form method="get" action="{{ filter_url }}" class="amendment-filter">
+    {{ filter_form.status.label_tag }} {{ filter_form.status }}{% if filter_form.status.errors %}<ul class="errorlist">{% for error in filter_form.status.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    <button type="submit">Filter</button>{% if clear_url %} <a href="{{ clear_url }}">Clear filters</a>{% endif %}
+  </form>
+  {% if list_error %}{% include "console/_engine_error.html" with engine_error=list_error %}
+  {% elif list_read %}
+  {% if unparsed_text %}<p class="notice rejected-notice">{{ unparsed_text }}</p>{% endif %}
+  {% if count_text %}<p class="count">{{ count_text }}</p>{% endif %}
+  {% if rows %}<table class="amendments">
+    <thead><tr><th>When</th><th>Kind</th><th>Status</th><th>Author</th><th>Parts</th><th>Relations</th><th>Session</th><th>Amendment</th>{% if row_actions %}<th>Actions</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for row in rows %}<tr id="amendment-{{ row.id }}">
+      <td class="when">{{ row.tx_time|engine_time }}</td>
+      <td class="kind"><span title="{{ row.kind.raw }}">{{ row.kind.text }}</span></td>
+      <td class="status"><span class="badge status-{{ row.status.raw }}" title="{{ row.status.raw }}">{{ row.status.text }}</span></td>
+      <td class="author">{{ row.author|principal_link }}</td>
+      <td class="parts">{{ row.parts_text }}</td>
+      <td class="relations">{% include "console/stories/_amendment_relations.html" %}</td>
+      <td class="session">{% include "console/stories/_amendment_session.html" %}</td>
+      <td class="amendment">{% if row.url %}<a href="{{ row.url }}">{{ row.id|engine_id }}</a>{% else %}{{ row.id|engine_id }}{% endif %}</td>
+      {% if row_actions %}<td class="actions">{% include row_actions %}</td>{% endif %}
+    </tr>
+    {% endfor %}{% for raw in rejected %}<tr class="rejected">
+      <td colspan="8">{{ rejected_text }}<details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>{% if row_actions %}<td class="actions"></td>{% endif %}
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% elif rejected %}{% for raw in rejected %}<details class="rejected-entry"><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details>
+  {% endfor %}{% endif %}
+  {% if empty_text %}<p class="empty">{{ empty_text }}</p>{% endif %}
+  {% if next_url or first_url %}<p class="paging">{% if first_url %}<a href="{{ first_url }}">{{ first_text }}</a>{% endif %}{% if first_url and next_url %} · {% endif %}{% if next_url %}<a href="{{ next_url }}">{{ next_text }}</a>{% endif %}</p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

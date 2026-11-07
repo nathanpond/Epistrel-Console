@@ -1,0 +1,26 @@
+<section class="rewrite-preview">
+  <h3>Preview</h3>
+  {% if not view.preview %}<p class="pending">{{ view.preview_pending }}</p>{% else %}
+  <p>{{ view.preview.base_text }}{% if preview_source_note %} {{ preview_source_note }}{% endif %}</p>
+  <details><summary>More</summary><p>Plan <code class="hash">{{ view.preview.plan_hash }}</code></p></details>
+  <h4>Changes ({{ view.preview.changes|length }})</h4>
+  {% if view.preview.changes %}<table class="changes">
+    <thead><tr><th>Kind</th><th>Change</th><th></th></tr></thead>
+    <tbody>{% for row in view.preview.changes %}
+      <tr><td>{{ row.kind_text }}</td><td>{{ row.summary }}</td><td class="more"><details><summary>More</summary><pre>{{ row.more }}</pre></details></td></tr>{% endfor %}
+    </tbody>
+  </table>{% else %}<p>None</p>{% endif %}
+  {% include "console/rewrites/_radius.html" %}
+  {% if view.preview.truncated %}<p class="warning">{{ view.preview.truncated_text }}</p>{% endif %}
+  {% for heading, rows in view.preview.extras %}<h4>{{ heading }} ({{ rows|length }})</h4>
+  <table class="changes">
+    <thead><tr><th>Kind</th><th>Entry</th><th></th></tr></thead>
+    <tbody>{% for row in rows %}
+      <tr><td>{{ row.kind_text }}</td><td>{{ row.summary }}</td><td class="more"><details><summary>More</summary><pre>{{ row.more }}</pre></details></td></tr>{% endfor %}
+    </tbody>
+  </table>{% endfor %}
+  {% include "console/rewrites/_refused.html" %}
+  {% include "console/rewrites/_notifications.html" %}
+  {% include "console/rewrites/_reach.html" %}
+  {% endif %}
+</section>

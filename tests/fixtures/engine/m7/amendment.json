@@ -1,0 +1,100 @@
+{
+  "id": "01JM7AM0000000000000000001",
+  "kind": "rewrite",
+  "status": "active",
+  "author": "console:nate",
+  "tx_time": "2026-11-04T12:00:00Z",
+  "parts_count": 2,
+  "session_id": "01JM7RW0000000000000000008",
+  "reverted_by": null,
+  "undoes": null,
+  "redoes": null,
+  "parts": [
+    {
+      "id": "01JM7PT0000000000000000001",
+      "ordinal": 1,
+      "kind": "proposition",
+      "status": "active",
+      "subject_id": "01JM7CH0000000000000000001",
+      "predicate_id": "01JB2Z8Y5Q3W6K9M1N4P7R0PR2",
+      "qualifiers": {},
+      "proposition_id": "01JM7PR0000000000000000001",
+      "state_id": null,
+      "scope_key": null,
+      "valid_from_minutes": 540,
+      "valid_to_minutes": null,
+      "valid_spec": null,
+      "written_fact_id": "01JM7FA0000000000000000001",
+      "superseded_fact_ids": [
+        "01JM7FA0000000000000000009"
+      ],
+      "written_state_change_id": null,
+      "timing_uncertain": false,
+      "position_bound": null,
+      "record_table": null,
+      "record_id": null,
+      "action": null,
+      "strategy": null,
+      "patch_before": null,
+      "patch_after": null,
+      "tx_from": "2026-11-04T12:00:00Z",
+      "tx_to": null
+    },
+    {
+      "id": "01JM7PT0000000000000000002",
+      "ordinal": 2,
+      "kind": "record",
+      "status": "active",
+      "subject_id": null,
+      "predicate_id": null,
+      "qualifiers": {},
+      "proposition_id": null,
+      "state_id": null,
+      "scope_key": null,
+      "valid_from_minutes": null,
+      "valid_to_minutes": null,
+      "valid_spec": null,
+      "written_fact_id": null,
+      "superseded_fact_ids": [],
+      "written_state_change_id": null,
+      "timing_uncertain": false,
+      "position_bound": null,
+      "record_table": "transcript_messages",
+      "record_id": "01JM7EV0000000000000000002",
+      "action": "replace",
+      "strategy": "overlay",
+      "patch_before": {
+        "text": "Bob forged the ledger."
+      },
+      "patch_after": {
+        "text": "Bob copied the ledger."
+      },
+      "tx_from": "2026-11-04T12:00:00Z",
+      "tx_to": null
+    }
+  ],
+  "relies_on": [
+    {
+      "edge_type": "presupposes",
+      "part_id": "01JM7PT0000000000000000001",
+      "target": {
+        "kind": "fact",
+        "id": "01JM7FA0000000000000000005"
+      }
+    }
+  ],
+  "dependents": [
+    {
+      "edge_type": "presupposes",
+      "record": {
+        "table": "amendment_parts",
+        "id": "01JM7PT0000000000000000006"
+      },
+      "target": {
+        "kind": "fact",
+        "id": "01JM7FA0000000000000000001"
+      }
+    }
+  ],
+  "truncated": false
+}

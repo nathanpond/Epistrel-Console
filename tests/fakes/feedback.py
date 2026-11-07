@@ -98,7 +98,7 @@ class FeedbackStore:
             "rating": current["rating"] if current else None,
             "tags": current["tags"] if current else [],
             "text": current["text"] if current else None,
-            "compacted_at": None,
+            "pruned_at": None,
             "created_at": current["created_at"] if current else None,
             "updated_at": current["updated_at"] if current else None,
             "context": dict(CONTEXT) if current else None,

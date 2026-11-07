@@ -1,0 +1,72 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#302: one amendment's page (stories:amendment, console/views/amendments.py). The summary <dl>
+(the list's Kind, Status, Author, When, Parts, Relations and Session), the actions hook
+({% block amendment_actions %}, convention 14: #303's Undo…/Redo… link, or the redo hint for an
+active undo, from `action`), E2's
+omniscient line and "Back to Amendments"; then Parts, Relies on and Depends on it. A failed read
+replaces the summary and the tables: E5's not-found sentence (not_found), E2's text or the
+Engine's 422 message (refusal), or #43's panel (detail_error); "Back to Amendments" still shows.
+Context: amendment_id, amendment, action, use_redo_hint, summary, parts, relies, dependents, truncated_text, no_parts,
+no_relies, no_dependents, timing_uncertain_text, not_found, refusal, detail_error,
+amendments_url, back_text.
+{% endcomment %}
+{% load console_format inspect_tags principals %}
+{% block story_page %}
+{% if not_found %}<p class="not-found amendment-not-found">{{ not_found }}</p>
+{% elif refusal %}<p class="errorlist amendment-refusal" role="alert">{{ refusal }}</p>
+{% elif detail_error %}{% include "console/_engine_error.html" with engine_error=detail_error %}
+{% elif summary %}{% include "console/stories/_amendment_summary.html" with row=summary %}
+{% block amendment_actions %}{% if action %}{% include "console/stories/_amendment_action.html" %}{% endif %}{% endblock %}
+{% endif %}
+{% include "console/rewrites/_omniscient.html" %}
+<p class="back">{% if amendments_url %}<a href="{{ amendments_url }}">{{ back_text }}</a>{% else %}{{ back_text }}{% endif %}</p>
+{% if summary %}
+<section class="amendment-parts">
+  <h3>Parts</h3>
+  {% if parts %}<table class="amendment-parts">
+    <thead><tr><th>#</th><th>Kind</th><th>What</th><th>Status</th><th>Story-time</th><th>Wrote</th><th>More</th></tr></thead>
+    <tbody>
+    {% for part in parts %}<tr id="{{ part.anchor }}">
+      <td class="ordinal">{{ part.ordinal }}</td>
+      <td class="kind">{% if part.kind.raw %}<span title="{{ part.kind.raw }}">{{ part.kind.text }}</span>{% else %}—{% endif %}</td>
+      <td class="what">{% if part.proposition %}{% if part.subject %}{% include "console/inspect/_entity.html" with ref=part.subject %}{% else %}—{% endif %} · {% if part.predicate %}{% include "console/inspect/_predicate_ref.html" with ref=part.predicate %}{% else %}—{% endif %}{% else %}{{ part.what }}{% if part.record_id %} {{ part.record_id|engine_id }}{% endif %}{% for suffix in part.record_suffixes %} · {{ suffix }}{% endfor %}{% endif %}</td>
+      <td class="status">{% if part.status.raw %}<span class="badge status-{{ part.status.raw }}" title="{{ part.status.raw }}">{{ part.status.text }}</span>{% else %}—{% endif %}</td>
+      <td class="story-time">{{ part.story_time }}{% if part.timing_uncertain %} <span class="badge timing-uncertain">{{ timing_uncertain_text }}</span>{% endif %}</td>
+      <td class="wrote">{% if part.fact_id or part.state_change_id %}{% if part.fact_id %}<a href="{{ part.fact_url }}">{{ part.fact_id|engine_id }}</a>{% endif %}{% if part.fact_id and part.state_change_id %} · {% endif %}{% if part.state_change_id %}{{ part.state_change_id|engine_id }}{% endif %}{% else %}—{% endif %}</td>
+      <td class="more"><details><summary>More</summary><pre>{{ part.raw|pretty_json }}</pre></details></td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% else %}<p class="empty">{{ no_parts }}</p>{% endif %}
+</section>
+<section class="amendment-relies">
+  <h3>Relies on</h3>
+  {% if relies %}<table class="amendment-relies">
+    <thead><tr><th>Edge</th><th>Part</th><th>Target</th></tr></thead>
+    <tbody>
+    {% for edge in relies %}<tr id="{{ edge.anchor }}">
+      {% if edge.bad %}<td>—</td><td>—</td><td>—<details><summary>More</summary><pre>{{ edge.raw|pretty_json }}</pre></details></td>
+      {% else %}<td class="edge"><span title="{{ edge.edge_raw }}">{{ edge.edge_text }}</span></td>
+      <td class="part">{% if edge.part_id %}<span title="{{ edge.part_id }}">{{ edge.part_text }}</span>{% else %}—{% endif %}</td>
+      <td class="target">{% include "console/stories/_amendment_target.html" with target=edge.target %}</td>{% endif %}
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% else %}<p class="empty">{{ no_relies }}</p>{% endif %}
+</section>
+<section class="amendment-dependents">
+  <h3>Depends on it</h3>
+  {% if truncated_text %}<p class="warning">{{ truncated_text }}</p>{% endif %}
+  {% if dependents %}<table class="amendment-dependents">
+    <thead><tr><th>Edge</th><th>Record</th><th>Target</th></tr></thead>
+    <tbody>
+    {% for dep in dependents %}<tr id="{{ dep.anchor }}">
+      {% if dep.bad %}<td>—</td><td>—</td><td>—<details><summary>More</summary><pre>{{ dep.raw|pretty_json }}</pre></details></td>
+      {% else %}<td class="edge"><span title="{{ dep.edge_raw }}">{{ dep.edge_text }}</span></td>
+      <td class="record">{% if dep.later_part %}<span title="{{ dep.record_id|default:'' }}">{{ dep.record_text }}</span>{% else %}<span title="{{ dep.record_table }}">{{ dep.record_text }}</span>{% if dep.record_id %} {{ dep.record_id|engine_id }}{% endif %}{% endif %}</td>
+      <td class="target">{% include "console/stories/_amendment_target.html" with target=dep.target %}</td>{% endif %}
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% else %}<p class="empty">{{ no_dependents }}</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

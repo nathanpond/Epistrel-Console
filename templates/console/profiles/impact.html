@@ -1,7 +1,21 @@
 {% extends "base.html" %}
+{% comment %}
+A held profile edit's impact report (#84). #311: when the report needs a backfill (upgrade_form set),
+the partial renders without its own form (show_apply False) and this page renders the confirm form
+itself, the "Earlier turns" radios (E14's UpgradeModeForm) above its buttons, joined by
+form="profile-apply"; otherwise the partial's own "Apply anyway", as on main.
+{% endcomment %}
 {% block title %}Confirm changes to {{ facts.name }} — Engine profiles — Epistrel Console{% endblock %}
 {% block heading %}Confirm changes to {{ facts.name }}{% endblock %}
 {% block content %}
 <p>The Engine held this edit for confirmation: nothing was written. Review what it does to the stories that follow the profile, then apply it anyway or go back.</p>
 {% include "console/_impact_report.html" %}
+{% if upgrade_form %}<fieldset class="upgrade-mode">
+  <legend>{{ upgrade_form.upgrade_mode.label }}</legend>
+  <p class="backfill-count">{{ count_line }}</p>
+  {{ upgrade_form.upgrade_mode.errors }}{{ upgrade_form.upgrade_mode }}
+  <p class="muted upgrade-help">{{ upgrade_form.upgrade_mode.help_text }}</p>
+</fieldset>
+{% include "console/_two_stage.html" with token=signed_payload confirm_url=apply_url confirm_label="Apply anyway" cancel_url=cancel_url idempotency_key=idempotency_key form_id=apply_form_id %}
+{% endif %}
 {% endblock %}

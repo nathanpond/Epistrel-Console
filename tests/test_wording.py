@@ -14,6 +14,7 @@ from console.timeline import reload_message
 from console.views.play import error_inspector
 from console.wording import (
     ERASED_TEXT,
+    PRUNED_TEXT,
     UNKNOWN_CHARACTER,
     WriteRefusal,
     archived_refusal,
@@ -113,6 +114,19 @@ def test_story_archived() -> None:
     assert archived_refusal(VERB) == (
         "This story is archived — unarchive it to change a character's role."
     )
+    assert write_refusal(_error("story_archived"), STORY, VERB) == WriteRefusal(
+        archived_refusal(VERB), ""
+    )
+
+
+def test_pruned_refusal() -> None:
+    """#293: a refused restore of a pruned chain reads one plain sentence, with no URL.
+    **Complement:** ``story_archived`` is unchanged."""
+    assert PRUNED_TEXT == "That chain was pruned — its records are gone, so it can't be restored"
+    refusal = write_refusal(_error("pruned"), STORY, VERB)
+    assert refusal == WriteRefusal(PRUNED_TEXT, "")
+    assert refusal is not None
+    assert refusal.url == ""
     assert write_refusal(_error("story_archived"), STORY, VERB) == WriteRefusal(
         archived_refusal(VERB), ""
     )

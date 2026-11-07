@@ -1,0 +1,15 @@
+{
+  "job_id": "01JM7JB0000000000000000007",
+  "status": "refused",
+  "story_id": null,
+  "stage": "guardrails",
+  "progress": {
+    "done": 5,
+    "total": 8
+  },
+  "report": null,
+  "error": {
+    "code": "rating_check_failed",
+    "message": "turn 3 breaks the Teen rating"
+  }
+}

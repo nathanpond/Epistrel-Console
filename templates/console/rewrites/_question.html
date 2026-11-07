@@ -1,0 +1,17 @@
+{% load console_format principals world_tags %}<fieldset class="question" id="question-{{ question.id }}">
+  <legend>{{ question.prompt }}</legend>
+  <p>{% if question.severity %}<span class="badge{% if question.severity_raw == "high" %} severity-high{% elif question.severity_raw == "low" %} severity-low{% endif %}" title="{{ question.severity_raw }}">{{ question.severity }}</span> {% endif %}<span class="badge">{{ question.required_text }}</span></p>
+  {% if question.answered %}<p class="answer">Answer: {% if question.answered.quoted %}<q>{{ question.answered.text }}</q>{% else %}{{ question.answered.text }}{% endif %}{% if question.answered.by or question.answered.at %} — by {{ question.answered.by|principal_link }} · {{ question.answered.at|engine_time }}{% endif %}</p>{% if question.answered.more %}
+  <details><summary>More</summary><pre>{{ question.answered.more }}</pre></details>{% endif %}
+  {% else %}{% if choice.errors %}{{ choice.errors }}{% endif %}{% with group_errors=answer_errors.groups|get_item:question.id %}{% if group_errors %}
+  <ul class="errorlist">{% for message in group_errors %}<li>{{ message }}</li>{% endfor %}</ul>{% endif %}{% endwith %}
+  <ul class="options">
+    {% for option in question.options %}<li><label><input type="radio" name="choice_{{ question.id }}" value="{{ option.id }}"{% if option.id == selected %} checked{% endif %}{% if not form_on %} disabled{% endif %}> {{ option.label_text }}</label>{% if option.recommended and question.why_text %}
+      <p class="why">{{ question.why_text }}</p>{% endif %}</li>
+    {% endfor %}
+  </ul>{% if form_on %}
+  <p>{{ text.label_tag }} {{ text }}</p>
+  <p class="help">{{ text.help_text }}</p>{% if text.errors %}{{ text.errors }}{% endif %}{% with text_errors=answer_errors.texts|get_item:question.id %}{% if text_errors %}
+  <ul class="errorlist">{% for message in text_errors %}<li>{{ message }}</li>{% endfor %}</ul>{% endif %}{% endwith %}{% endif %}
+  {% endif %}
+</fieldset>

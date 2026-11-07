@@ -2,9 +2,11 @@
 
 from typing import Any
 
+import httpx
 import pytest
 from django.test import Client
 
+from console.forms.stories import IMPORTING_ROW_NOTE, STATUS_LABELS
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.stories.helpers import calls, summary
@@ -14,6 +16,8 @@ pytestmark = pytest.mark.django_db
 ACTIVE = "01JB2Z8Y5Q3W6K9M1N4P7R0A01"
 ARCHIVED = "01JB2Z8Y5Q3W6K9M1N4P7R0A02"
 PAUSED = "01JB2Z8Y5Q3W6K9M1N4P7R0A03"
+IMPORTING = "01JB2Z8Y5Q3W6K9M1N4P7R0A04"
+HELD = "01JB2Z8Y5Q3W6K9M1N4P7R0A05"
 
 
 def serve(engine: FakeEngine, *items: dict[str, Any]) -> None:
@@ -43,7 +47,7 @@ def test_row_shows_id_status_revision_rating_cast_and_play_link(
     serve(engine, summary(ACTIVE, "Harbour", "active", timeline_revision=4))
     row = row_html(operator_client.get("/stories/").content.decode(), ACTIVE)
     assert f'<a href="/stories/{ACTIVE}/">Harbour</a>' in row
-    assert '<td class="status">active</td>' in row
+    assert '<td class="status"><span title="active">Active</span></td>' in row
     assert "<td>4</td>" in row
     assert "<td>Teen</td>" in row
     assert "<td>2</td>" in row  # the cast, from GET /stories/{id}
@@ -159,3 +163,75 @@ def test_the_plain_list_sends_no_profile_filter(
     (listing,) = calls(engine, "GET", "/stories")
     assert listing.url.query == b""
     assert "Profile version" not in html
+
+
+# --- Importing stories (#293, FR-STORE-7) --------------------------------------------------------
+
+
+def test_an_importing_story_is_listed_as_importing(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    serve(
+        engine,
+        summary(IMPORTING, "Imported", "importing"),
+        summary(ACTIVE, "Harbour", "active"),
+        summary(HELD, "Kept", "blocked_by_erasure"),
+    )
+    html = operator_client.get("/stories/").content.decode()
+    row = row_html(html, IMPORTING)
+    assert '<td class="status"><span title="importing">Importing</span></td>' in row
+    assert '<button type="button" disabled>Archive</button>' in row
+    assert '<button type="button" disabled>Delete</button>' in row
+    assert f'<span class="note">{IMPORTING_ROW_NOTE}</span>' in row
+    assert IMPORTING_ROW_NOTE == "Importing — available once the import ends"
+    for absent in ("/archive/", "/delete/", "/unarchive/", "history-link"):
+        assert absent not in row, absent
+    assert f'<a href="/stories/{IMPORTING}/">Imported</a>' in row  # the name link stays
+    # Its cast isn't read (409 story_importing): only the active story's read is made.
+    assert calls(engine, "GET", f"/stories/{IMPORTING}") == []
+    assert "<td>—</td>" in row
+    # Complement: an active story keeps both links, a held one keeps Delete alone (#87).
+    active = row_html(html, ACTIVE)
+    assert f"/stories/{ACTIVE}/archive/" in active
+    assert f"/stories/{ACTIVE}/delete/" in active
+    assert "disabled" not in active
+    held = row_html(html, HELD)
+    assert f"/stories/{HELD}/delete/" in held
+    assert "Archive" not in held
+    assert IMPORTING_ROW_NOTE not in held
+
+
+def test_the_filter_offers_importing(operator_client: Client, engine: FakeEngine) -> None:
+    serve(engine)
+    html = operator_client.get("/stories/?status=importing").content.decode()
+    (listing,) = calls(engine, "GET", "/stories")
+    assert listing.url.params["status"] == "importing"
+    assert '<option value="importing" selected>Importing</option>' in html
+    assert html.index('value="blocked_by_erasure"') < html.index('value="importing"')
+    assert "No importing stories." in html
+    # Complement: an unknown status still sends none.
+    serve(engine)
+    operator_client.get("/stories/?status=bogus")
+    assert "status" not in calls(engine, "GET", "/stories")[-1].url.params
+
+
+def test_status_labels_are_the_filter_labels() -> None:
+    assert STATUS_LABELS == {
+        "active": "Active",
+        "archived": "Archived",
+        "paused": "Paused",
+        "blocked_by_erasure": "Held",
+        "importing": "Importing",
+    }
+
+
+def test_an_unknown_status_is_humanised_with_its_raw_value(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """A status a later Engine adds (an open enum, E15) is C3-humanised. The fake's schema
+    validation can't carry it, so the listing answers through ``side_effect``."""
+    serve(engine)
+    body = {"items": [summary(ACTIVE, "Harbour", "later_status")]}
+    engine.side_effect("GET", "/stories", lambda _request: httpx.Response(200, json=body))
+    row = row_html(operator_client.get("/stories/").content.decode(), ACTIVE)
+    assert '<td class="status"><span title="later_status">Later status</span></td>' in row

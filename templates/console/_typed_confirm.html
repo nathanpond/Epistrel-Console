@@ -1,0 +1,2 @@
+{# E9's typed-name input (#295, console/confirm.py), included by _confirm.html only when page.typed_name is set: no value, so the typed text is never echoed back. #}
+    <p class="typed-confirm"><label>Type {% if page.typed_label %}<strong>{{ page.typed_label }}</strong>{% else %}the story's id <strong>{{ page.typed_name }}</strong>{% endif %} to confirm <input name="typed_name" autocomplete="off"></label></p>

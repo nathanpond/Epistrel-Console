@@ -1,0 +1,44 @@
+{
+  "timeline_revision": 20,
+  "directive_id": "01JM7DV0000000000000000003",
+  "classification": "durable",
+  "disposition": "routed_to_rewrite",
+  "position": null,
+  "steer_text": null,
+  "hints": [],
+  "applied": null,
+  "rewrite_session": {
+    "id": "01JM7RW0000000000000000007",
+    "story_id": "01JM7ST0000000000000000001",
+    "kind": "directive",
+    "state": "awaiting_approval",
+    "instruction": "Bob was a clerk at the harbour office",
+    "resolution_mode": "synchronous",
+    "preview_mode": "preview_first",
+    "pipeline": "structured",
+    "principal": "console:nate",
+    "created_at": "2026-11-05T10:00:00Z",
+    "updated_at": "2026-11-05T10:01:00Z",
+    "expires_at": "2026-11-06T10:00:00Z",
+    "base_revision": 20,
+    "preview": {
+      "base_revision": 20,
+      "plan_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "changes": [
+        {
+          "key": "c1",
+          "kind": "fact",
+          "summary": "Bob was a harbour clerk"
+        }
+      ]
+    },
+    "questions": [],
+    "held_render": null,
+    "last_error": null,
+    "report": null,
+    "result_amendment_id": null,
+    "stale_count": 0,
+    "target_amendment_id": null
+  },
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

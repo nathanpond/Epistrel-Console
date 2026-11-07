@@ -36,6 +36,10 @@ services:
       # Override both together, editing this file (no interpolation).
       EPISTREL_SERVICE_CREDENTIALS: dev-only-credential-change-me-00000000  # dev-only default — override for anything but local use
       EPISTREL_CONFIG_KEY: ZXBpc3RyZWwtZGV2LW9ubHktY29uZmlnLWtleS0wMDA=  # dev-only default — override for anything but local use
+      # Export bundles (M7, #292): the image sets no bundle directory, and the Engine's default
+      # (var/bundles under the read-only /app) can't be written; /var/lib/epistrel is the
+      # image's writable data root. Bundles expire within a day, so no volume keeps them.
+      EPISTREL_BUNDLE_DIR: /var/lib/epistrel/bundles
     volumes:
       - engine-media:/var/lib/epistrel/media  # uploaded media survives recreating the container
       - engine-erasure-ledger:/var/lib/epistrel/erasure-ledger

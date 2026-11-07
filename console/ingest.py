@@ -234,7 +234,7 @@ class IngestView:
     def outbox_notice(self) -> SafeString | None:
         """D11's notice, under results naming an outbox id."""
         if any(row.from_outbox for row in self.results):
-            return outbox_list_notice_html()
+            return outbox_list_notice_html(story_id=self.story_id)
         return None
 
     @property

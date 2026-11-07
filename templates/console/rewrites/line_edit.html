@@ -1,0 +1,41 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#305: edit one recorded line (stories:line-edit, console/views/line_edit.py). E2's omniscient
+line (no viewpoint picker); then NO_LINE_TEXT alone (no_line), or: the recorded line (each
+matched item's header and its text in a quote block; SHARED_MESSAGE_NOTE for several), LINE_UNREAD
+when it couldn't be read, a turn's choice links when it holds several messages; the write's
+refusal (beat_required's choice links after it) or #43's panel; the form (New text, the hidden
+target, E4's modes, "Plan the edit"). "← Back to History" in every state.
+Context: no_line, read, line_unread, shared_note, several_text, form, idempotency_key, refusal,
+refusal_url, refusal_link, beat_choices, write_error, back_url, back_text, submit_text.
+{% endcomment %}
+{% load console_format erasure %}
+{% block story_page %}
+{% include "console/rewrites/_omniscient.html" %}
+<section class="line-edit">
+  {% if no_line %}<p class="not-found no-line">{{ no_line }}</p>
+  {% else %}
+  {% if read.items %}<div class="recorded-line">{% for line in read.items %}
+    <p class="line-header">{{ line.header }}</p>
+    <blockquote class="line-text">{{ line.text|mark_erased }}</blockquote>{% endfor %}
+    {% if shared_note %}<p class="notice shared-message">{{ shared_note }}</p>{% endif %}
+  </div>{% endif %}
+  {% if line_unread %}<p class="warning line-unread">{{ line_unread }}</p>{% endif %}
+  {% if several_text %}<p class="several-lines">{{ several_text }}</p>
+  <ul class="line-choices">{% for choice in read.choices %}<li>{% if choice.url %}<a href="{{ choice.url }}">{{ choice.text }}</a>{% else %}{{ choice.text }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+  {% if refusal %}<p class="errorlist rewrite-refusal" role="alert">{{ refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>
+  {% if beat_choices %}<ul class="beat-choices">{% for choice in beat_choices %}<li>{% if choice.url %}<a href="{{ choice.url }}">{{ choice.text }}</a>{% else %}{{ choice.text }}{% endif %}</li>{% endfor %}</ul>{% endif %}{% endif %}
+  <form method="post" class="line-edit-form">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    {{ form.event_id }}{{ form.turn }}{{ form.beat }}{{ form.next }}{{ form.original }}
+    {{ form.non_field_errors }}
+    <div class="field field-new-text">{{ form.new_text.label_tag }}<br>{{ form.new_text }}{% if form.new_text.errors %}<ul class="errorlist">{% for error in form.new_text.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</div>
+    {% include "console/rewrites/_modes.html" with form=form %}
+    <button type="submit">{{ submit_text }}</button>
+  </form>
+  {% endif %}
+</section>
+<p class="back">{% if back_url %}<a href="{{ back_url }}">{{ back_text }}</a>{% else %}{{ back_text }}{% endif %}</p>
+{% endblock %}

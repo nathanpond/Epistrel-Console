@@ -1,0 +1,365 @@
+{
+  "items": [
+    {
+      "id": "00000000000000000000PRF001",
+      "name": "Lite",
+      "owner_principal": "system",
+      "preset": true,
+      "version": 2,
+      "current_version": 2,
+      "settings": {
+        "pipeline": "lite",
+        "memory": {
+          "rolling_summary": {
+            "enabled": true,
+            "window_messages": 30,
+            "compress_threshold_tokens": 6000
+          }
+        },
+        "pins": {
+          "enabled": true,
+          "max_pinned": 50
+        },
+        "repair": {
+          "polish": {
+            "enabled": true,
+            "max_regenerations": 2
+          }
+        },
+        "budgets": {
+          "model_calls": null,
+          "deadline_ms": 45000
+        },
+        "models": {
+          "purposes": {
+            "generation": {
+              "model": null
+            },
+            "guardrail_check": {
+              "model": null
+            },
+            "lite_summary": {
+              "model": null
+            }
+          },
+          "generation": {
+            "temperature": 0.8,
+            "top_p": 0.95,
+            "response_length": "medium"
+          }
+        }
+      },
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-11-01T09:00:00Z",
+      "deleted_at": null,
+      "quality": {
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "uncertified",
+        "floors_met": []
+      }
+    },
+    {
+      "id": "00000000000000000000PRF002",
+      "name": "Full",
+      "owner_principal": "system",
+      "preset": true,
+      "version": 4,
+      "current_version": 4,
+      "settings": {
+        "pipeline": "structured",
+        "memory": {
+          "rolling_summary": {
+            "enabled": false
+          },
+          "episodic": {
+            "enabled": true,
+            "k": 40,
+            "hybrid_search": true,
+            "reranking": false
+          },
+          "consolidation": {
+            "enabled": true,
+            "cadence_turns": 20
+          }
+        },
+        "pins": {
+          "enabled": true,
+          "max_pinned": 50
+        },
+        "verification": {
+          "level": "entailment",
+          "extraction_mode": "always",
+          "entailment_gate": 1.0,
+          "contradiction_checking": true,
+          "shape_tightening": "on"
+        },
+        "commitment": {
+          "enabled": true,
+          "salience": "rules_and_model",
+          "salience_bias": "balanced"
+        },
+        "repair": {
+          "max_attempts": 1,
+          "polish": {
+            "enabled": true,
+            "max_regenerations": 2
+          }
+        },
+        "budgets": {
+          "model_calls": 16,
+          "deadline_ms": 60000
+        },
+        "models": {
+          "generation": {
+            "temperature": 0.8,
+            "top_p": 0.95,
+            "response_length": "medium"
+          }
+        },
+        "character_knowledge": {
+          "partitions": true,
+          "nested_beliefs": {
+            "enabled": true,
+            "depth": 2
+          },
+          "lazy_resolution": true,
+          "testimony": "model",
+          "max_adjudications_per_turn": 2,
+          "max_lazy_resolutions_per_turn": 20
+        },
+        "perception": {
+          "level": "full"
+        },
+        "multi_character": {
+          "renders": "per_character",
+          "interjection_max_words": 6
+        },
+        "clock": {
+          "level": "on",
+          "time_claims": true,
+          "scheduled_stops": true
+        },
+        "states": {
+          "level": "on"
+        }
+      },
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-11-01T09:00:00Z",
+      "deleted_at": null,
+      "quality": {
+        "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+        "status": "certified",
+        "floors_met": [
+          "NFR-QUAL-2.false_contradiction",
+          "NFR-QUAL-2.false_support",
+          "NFR-QUAL-4.recall",
+          "NFR-QUAL-5.valid_after_retry",
+          "NFR-QUAL-9.within_range",
+          "smoke.turn_completed"
+        ]
+      }
+    },
+    {
+      "id": "00000000000000000000PRF003",
+      "name": "Standard",
+      "owner_principal": "system",
+      "preset": true,
+      "version": 1,
+      "current_version": 1,
+      "settings": {
+        "pipeline": "structured",
+        "memory": {
+          "rolling_summary": {
+            "enabled": false
+          },
+          "episodic": {
+            "enabled": true,
+            "k": 40,
+            "hybrid_search": true,
+            "reranking": false
+          },
+          "consolidation": {
+            "enabled": true,
+            "cadence_turns": 20
+          }
+        },
+        "pins": {
+          "enabled": true,
+          "max_pinned": 50
+        },
+        "character_knowledge": {
+          "partitions": true,
+          "nested_beliefs": {
+            "enabled": false
+          },
+          "lazy_resolution": true,
+          "testimony": "defaulted"
+        },
+        "perception": {
+          "level": "co_location"
+        },
+        "verification": {
+          "level": "extraction",
+          "extraction_mode": "gated",
+          "entailment_gate": 1.0,
+          "contradiction_checking": true,
+          "shape_tightening": "on"
+        },
+        "commitment": {
+          "enabled": true,
+          "salience": "rules",
+          "salience_bias": "balanced"
+        },
+        "clock": {
+          "level": "on",
+          "time_claims": false,
+          "scheduled_stops": true
+        },
+        "states": {
+          "level": "off"
+        },
+        "multi_character": {
+          "renders": "per_character"
+        },
+        "repair": {
+          "max_attempts": 1,
+          "polish": {
+            "enabled": false
+          }
+        },
+        "budgets": {
+          "model_calls": 8,
+          "deadline_ms": 45000
+        },
+        "models": {
+          "generation": {
+            "temperature": 0.8,
+            "top_p": 0.95,
+            "response_length": "medium"
+          }
+        }
+      },
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-11-01T09:00:00Z",
+      "deleted_at": null,
+      "quality": {
+        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "status": "uncertified",
+        "floors_met": []
+      }
+    },
+    {
+      "id": "00000000000000000000PRF004",
+      "name": "Max",
+      "owner_principal": "system",
+      "preset": true,
+      "version": 1,
+      "current_version": 1,
+      "settings": {
+        "pipeline": "structured",
+        "memory": {
+          "rolling_summary": {
+            "enabled": false
+          },
+          "episodic": {
+            "enabled": true,
+            "k": 40,
+            "hybrid_search": true,
+            "reranking": false
+          },
+          "consolidation": {
+            "enabled": true,
+            "cadence_turns": 10
+          }
+        },
+        "pins": {
+          "enabled": true,
+          "max_pinned": 50
+        },
+        "verification": {
+          "level": "entailment",
+          "extraction_mode": "always",
+          "entailment_gate": 1.0,
+          "contradiction_checking": true,
+          "shape_tightening": "off",
+          "entailment_min_confidence": 0.7
+        },
+        "commitment": {
+          "enabled": true,
+          "salience": "rules_and_model",
+          "salience_bias": "recall"
+        },
+        "repair": {
+          "max_attempts": 3,
+          "polish": {
+            "enabled": true,
+            "max_regenerations": 2
+          }
+        },
+        "budgets": {
+          "model_calls": 24,
+          "deadline_ms": 120000
+        },
+        "models": {
+          "generation": {
+            "temperature": 0.8,
+            "top_p": 0.95,
+            "response_length": "medium"
+          },
+          "purposes": {
+            "entailment": {
+              "model": "@strongest"
+            },
+            "extraction_backstop": {
+              "model": "@strongest"
+            },
+            "belief_adjudication": {
+              "model": "@strongest"
+            },
+            "salience_detection": {
+              "model": "@strongest"
+            },
+            "time_estimation": {
+              "model": "@strongest"
+            }
+          }
+        },
+        "character_knowledge": {
+          "partitions": true,
+          "nested_beliefs": {
+            "enabled": true,
+            "depth": 2
+          },
+          "lazy_resolution": true,
+          "testimony": "model",
+          "max_adjudications_per_turn": 2,
+          "max_lazy_resolutions_per_turn": 20
+        },
+        "perception": {
+          "level": "full"
+        },
+        "multi_character": {
+          "renders": "per_character",
+          "interjection_max_words": 6
+        },
+        "clock": {
+          "level": "on",
+          "time_claims": true,
+          "scheduled_stops": true
+        },
+        "states": {
+          "level": "on"
+        }
+      },
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-11-01T09:00:00Z",
+      "deleted_at": null,
+      "quality": {
+        "fingerprint": "sha256:f7f66a6e79302222222222222222222222222222222222222222222222222222",
+        "status": "stale",
+        "floors_met": []
+      }
+    }
+  ],
+  "next_cursor": null
+}

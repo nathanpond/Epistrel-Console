@@ -1,0 +1,87 @@
+{
+  "timeline_revision": 20,
+  "applied": false,
+  "impact": {
+    "to_delete": {
+      "discarded_tails": [
+        {
+          "id": "01JM7CN0000000000000000011",
+          "kind": "discarded_tail",
+          "from": {
+            "turn": 3,
+            "variant": 1
+          },
+          "to": {
+            "turn": 4,
+            "variant": 1
+          },
+          "operations": 2,
+          "flipped_at": "2026-11-04T16:00:00Z"
+        }
+      ],
+      "dormant_continuations": [
+        {
+          "id": "01JM7CN0000000000000000012",
+          "kind": "dormant_continuation",
+          "from": {
+            "turn": 4,
+            "variant": 2
+          },
+          "to": {
+            "turn": 4,
+            "variant": 2
+          },
+          "operations": 1,
+          "flipped_at": "2026-11-04T17:00:00Z"
+        }
+      ]
+    },
+    "lost_operations": [
+      {
+        "operation": "untruncate",
+        "target": "01JM7CN0000000000000000011"
+      },
+      {
+        "operation": "swap",
+        "target": "01JM7CN0000000000000000012"
+      },
+      {
+        "operation": "promote",
+        "target": "01JM7CN0000000000000000012"
+      }
+    ],
+    "retained": {
+      "audit_events": 4,
+      "outbox_rows": 1,
+      "feedback_marked": 2
+    },
+    "excluded": [
+      {
+        "target": "01JM7CN0000000000000000013",
+        "reason": "amendment_dependency",
+        "amendment_ids": [
+          "01JM7AM0000000000000000001"
+        ],
+        "settling_change_ids": []
+      }
+    ],
+    "suggestions": [
+      {
+        "code": "promote_before_pruning",
+        "target": "01JM7CN0000000000000000012",
+        "request": {
+          "method": "POST",
+          "path": "/stories/01JM7ST0000000000000000001/fork",
+          "body": {
+            "variant_chain": {
+              "turn": 4,
+              "variant": 2
+            }
+          }
+        }
+      }
+    ]
+  },
+  "result": null,
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

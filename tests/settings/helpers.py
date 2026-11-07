@@ -25,8 +25,8 @@ ADMIN_SETTINGS = "/admin/settings"
 POLICY = "/admin/policies/{policy_id}"
 
 
-# The Engine's filled read of the six M5 settings (#197) and M6's co-author knowledge (#233),
-# added where a recorded fixture lacks them.
+# The Engine's filled read of the six M5 settings (#197), M6's co-author knowledge (#233) and
+# M7's three (#318), added where a recorded fixture lacks them.
 M5_READ_DEFAULTS: dict[str, Any] = {
     "player_authority": "own_character",
     "co_author_knowledge": "confirm",
@@ -35,6 +35,9 @@ M5_READ_DEFAULTS: dict[str, Any] = {
     "sequence_order": None,
     "simultaneous_tie_break": None,
     "reactive_interjections": False,
+    "prune_policy": None,
+    "backfill_conflict_policy": "last_mention",
+    "ambiguous_retcon_timing": "include_if_possible",
 }
 
 

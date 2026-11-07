@@ -1,0 +1,57 @@
+{% extends "console/inspect/base.html" %}
+{% load console_format inspect_tags %}
+{% comment %}
+#306: Merge entities (inspect:entity-merge, console/views/inspect_merge.py), in the Canon tab.
+E2's omniscient line (no viewpoint picker), the intro, then the picker (console.forms.merge):
+the write's refusal or #43's panel above it, the scene and ?entity= notices, one row per
+candidate (checkbox, label, engine_id, survivor radio) then the typed ids' radios, the
+"other ids" textarea, E4's modes, the key and "Plan the merge".
+Context: form, scene_unavailable, entity_id_invalid, no_candidates, title, intro, submit_text,
+back_url, back_text, form_url, idempotency_key, write_refusal, refusal_url, refusal_link,
+write_error.
+{% endcomment %}
+{% block title %}Inspect · Merge entities · {{ story_name }}{% endblock %}
+{% block tab_content %}
+<p class="canon-back"><a href="{{ back_url }}">{{ back_text }}</a></p>
+<h2>{{ title }}</h2>
+<p class="muted merge-intro">{{ intro }}</p>
+{% include "console/rewrites/_omniscient.html" %}
+{% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+{% if write_refusal %}<p class="errorlist rewrite-refusal" role="alert">{{ write_refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+<form method="post" action="{{ form_url }}" class="entity-merge-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {{ form.non_field_errors }}
+  <fieldset class="merge-entities">
+    <legend>Entities to merge</legend>
+    {% if scene_unavailable %}<p class="notice scene-unavailable">{{ scene_unavailable }}</p>{% endif %}
+    {% if entity_id_invalid %}<p class="errorlist entity-id-invalid" role="alert">{{ entity_id_invalid }}</p>{% endif %}
+    {{ form.entity_ids.errors }}
+    {{ form.survivor.errors }}
+    {% if no_candidates and not form.typed %}<p class="muted no-candidates">{{ no_candidates }}</p>
+    {% else %}
+    <table class="merge-picker">
+      <thead><tr><th>Merge</th><th>Entity</th><th>{{ form.survivor.label }}</th></tr></thead>
+      <tbody>
+      {% for row in form.rows %}<tr class="candidate {{ row.candidate.source }}">
+        <td>{% if not row.typed %}<input type="checkbox" name="entity_ids" value="{{ row.candidate.id }}" id="merge-{{ row.candidate.id }}"{% if row.ticked %} checked{% endif %}>{% endif %}</td>
+        <td>{% if row.typed %}<span title="{{ row.candidate.id }}">{{ row.candidate.label }}</span>{% else %}<label for="merge-{{ row.candidate.id }}">{{ row.candidate.label }}</label> {{ row.candidate.id|engine_id }}{% endif %}</td>
+        <td><input type="radio" name="survivor" value="{{ row.candidate.id }}" aria-label="{{ form.survivor.label }}: {{ row.candidate.label }}"{% if row.survives %} checked{% endif %}></td>
+      </tr>
+      {% endfor %}</tbody>
+    </table>
+    {% if no_candidates %}<p class="muted no-candidates">{{ no_candidates }}</p>{% endif %}
+    {% endif %}
+    <p class="muted survivor-help">{{ form.survivor.help_text }}</p>
+  </fieldset>
+  <fieldset class="merge-other">
+    <legend>{{ form.other_ids.label }}</legend>
+    {{ form.other_ids }}{{ form.other_ids.errors }}
+  </fieldset>
+  <fieldset class="merge-modes">
+    <legend>Modes</legend>
+    {% include "console/rewrites/_modes.html" with form=form %}
+  </fieldset>
+  <button type="submit">{{ submit_text }}</button>
+</form>
+{% endblock %}

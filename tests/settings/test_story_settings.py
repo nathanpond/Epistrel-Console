@@ -1,25 +1,33 @@
-"""A story's settings (#54, #197, #233): markers, the merge-patch form, resets, errors and the
-budget, Engine M5's player authority, player view and multi-character settings, and Engine M6's
-co-author knowledge."""
+"""A story's settings (#54, #197, #233, #318): markers, the merge-patch form, resets, errors and
+the budget, Engine M5's player authority, player view and multi-character settings, Engine M6's
+co-author knowledge, and Engine M7's prune policy, backfill conflict policy and ambiguous retcon
+timing with the story's pruning facts."""
 
 import html as markup
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from django.core import signing
 from django.test import Client
 
+from console.forms.story_settings import PrunePolicyField
 from console.models import EngineOperation
 from console.story_settings import (
+    BACKFILL_CONFLICT_HELP,
     CO_AUTHOR_KNOWLEDGE_HELP,
     CONSTANT_DEFAULTS,
     DEPLOYMENT_DEFAULTS,
     NULLABLE,
     POLICIES,
+    PRUNE_POLICY_HELP,
+    RETCON_TIMING_HELP,
     SETTABLE,
     SETTING_CHOICES,
     SUPERSEDED,
 )
+from console.views.story_settings import SNAPSHOT_SALT, Snapshot
 from tests.fakes.engine import FakeEngine, recorded_schema
 from tests.settings.helpers import (
     ADMIN_SETTINGS,
@@ -448,8 +456,8 @@ def test_new_settings_rows_render_with_default_markers(
 
     rows = re.findall(r'<tr class="setting setting-(\w+)">', html)
     assert rows == list(SETTABLE)
-    assert len(rows) == 14
-    assert rows[-7:] == ["player_authority", "co_author_knowledge", *M5_KEYS[1:]]
+    assert len(rows) == 17
+    assert rows[-10:-3] == ["player_authority", "co_author_knowledge", *M5_KEYS[1:]]
     assert _marker(html, "player_authority") == "default"
     assert _marker(html, "player_view") == "default"
     assert _marker(html, "interaction_mode") == "default (sequential)"
@@ -872,3 +880,326 @@ def test_co_author_knowledge_choices_match_the_schema() -> None:
     assert values == enum
     assert CONSTANT_DEFAULTS["co_author_knowledge"] == "confirm"
     assert CONSTANT_DEFAULTS["co_author_knowledge"] in enum
+
+
+# --- #318: Engine M7's prune policy, backfill conflict policy and ambiguous retcon timing --------
+
+PRUNE_URL = f"/stories/{STORY}/prune/"
+PRUNED_AT = "2026-11-01T03:00:00Z"
+NEXT_RUN = "2026-11-08T03:00:00Z"
+
+
+def _days_input(html: str) -> str:
+    match = re.search(r'<input type="number" name="prune_policy"[^>]*>', html)
+    assert match is not None
+    return match.group(0)
+
+
+def _pruning(**facts: Any) -> dict[str, Any]:
+    return {"policy": None, "last_prune_at": None, "next_run_at": None, **facts}
+
+
+def test_prune_policy_row_and_marker(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+
+    assert _marker(html, "prune_policy") == "default (off)"
+    assert 'value="' not in _days_input(html)
+    assert ">Automatic pruning (days)</label>" in html
+    assert PRUNE_POLICY_HELP in markup.unescape(_row(html, "prune_policy"))
+    assert 'name="reset_prune_policy"' not in html
+
+    engine.reset()
+    stored = settings_json(prune_policy={"older_than_days": 30})
+    html = _page(operator_client, engine, settings=stored)
+    assert _marker(html, "prune_policy") == "story"
+    assert 'value="30"' in _days_input(html)
+    assert 'name="reset_prune_policy"' in html
+
+
+def test_setting_a_prune_policy_sends_an_object(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, prune_policy="30")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"prune_policy": {"older_than_days": 30}}
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Automatic pruning: older than 30 days)"
+    )
+    # E23: one day is singular.
+    engine.reset()
+    html = _page(operator_client, engine)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+    _post(operator_client, html, prune_policy="1")
+    assert "(Automatic pruning: older than 1 day)" in _flash(operator_client)
+
+
+def test_clearing_a_prune_policy_sends_null(operator_client: Client, engine: FakeEngine) -> None:
+    stored = settings_json(prune_policy={"older_than_days": 30})
+    html = _page(operator_client, engine, settings=stored)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, prune_policy="")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"prune_policy": None}
+    assert _flash(operator_client).startswith("Saved — config revision 4 (Automatic pruning: off)")
+
+    # Reset reads "off" too.
+    engine.reset()
+    html = _page(operator_client, engine, settings=stored)
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+    _post(operator_client, html, reset_prune_policy="on")
+    [patch] = writes(engine)
+    assert body(patch) == {"prune_policy": None}
+    assert "(Automatic pruning: off)" in _flash(operator_client)
+
+
+def test_a_blank_prune_policy_over_null_sends_nothing(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement: blank over ``null`` sends no patch and makes no ``PATCH`` call."""
+    html = _page(operator_client, engine)
+
+    response = _post(operator_client, html, prune_policy="")
+
+    assert response.status_code == 302
+    assert writes(engine) == []
+    assert "No changes — nothing was sent." in operator_client.get(URL).content.decode()
+
+
+def test_prune_policy_bounds(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+    field = _days_input(html)
+    assert 'min="1"' in field
+    assert 'max="3650"' in field
+
+    for value, message in (
+        ("0", "Ensure this value is greater than or equal to 1."),
+        ("3651", "Ensure this value is less than or equal to 3650."),
+    ):
+        engine.requests.clear()
+        response = _post(operator_client, html, prune_policy=value)
+        assert response.status_code == 200
+        assert message in _row(response.content.decode(), "prune_policy")
+        assert engine.requests == []
+
+
+def test_an_odd_stored_policy_is_not_resent(operator_client: Client, engine: FakeEngine) -> None:
+    odd = {"older_than_days": 30, "extra": 1}
+    html = _page(operator_client, engine, settings=settings_json(prune_policy=odd))
+
+    assert 'value="' not in _days_input(html)
+    row = markup.unescape(_row(html, "prune_policy"))
+    assert '(stored: {"extra":1,"older_than_days":30}; saving a value or Reset replaces it)' in row
+    assert "errorlist" not in row
+    # Its marker reads "story", so Reset is offered.
+    assert _marker(html, "prune_policy") == "story"
+
+    response = _post(operator_client, html)
+
+    assert response.status_code == 302
+    assert writes(engine) == []
+
+
+def test_a_non_int_or_out_of_range_stored_policy_takes_the_odd_path(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    for odd in ({"older_than_days": True}, {"older_than_days": 0}, {"older_than_days": "30"}):
+        engine.reset()
+        html = _page(operator_client, engine, settings=settings_json(prune_policy=odd))
+        assert 'value="' not in _days_input(html), odd
+        assert "(stored: " in _row(html, "prune_policy")
+        assert _post(operator_client, html).status_code == 302
+        assert writes(engine) == []
+
+
+def test_backfill_conflict_policy_change_and_reset(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    html = _page(operator_client, engine)
+    assert _marker(html, "backfill_conflict_policy") == "default"
+    assert _selected(html, "backfill_conflict_policy") == "last_mention"
+    assert [label for _, label in _options(html, "backfill_conflict_policy")] == [
+        "Latest statement wins",
+        "Earliest statement wins",
+        "Ask me (the story stays paused until I resolve them)",
+    ]
+    assert BACKFILL_CONFLICT_HELP in markup.unescape(_row(html, "backfill_conflict_policy"))
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, backfill_conflict_policy="ask")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"backfill_conflict_policy": "ask"}
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Backfill conflicts: Ask me (the story stays paused until I "
+        "resolve them))"
+    )
+
+    engine.reset()
+    html = _page(operator_client, engine, settings=settings_json(backfill_conflict_policy="ask"))
+    assert _marker(html, "backfill_conflict_policy") == "story"
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+    _post(operator_client, html, reset_backfill_conflict_policy="on")
+    [patch] = writes(engine)
+    assert body(patch) == {"backfill_conflict_policy": None}
+    assert "(Backfill conflicts: default)" in _flash(operator_client)
+
+
+def test_ambiguous_retcon_timing_change(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+    assert _marker(html, "ambiguous_retcon_timing") == "default"
+    assert _options(html, "ambiguous_retcon_timing") == [
+        ("include_if_possible", "Include it wherever it might apply (marked timing uncertain)"),
+        ("ask_author", "Ask me when the rewrite is planned"),
+    ]
+    assert RETCON_TIMING_HELP in markup.unescape(_row(html, "ambiguous_retcon_timing"))
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, ambiguous_retcon_timing="ask_author")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"ambiguous_retcon_timing": "ask_author"}
+    assert _flash(operator_client).startswith(
+        "Saved — config revision 4 (Ambiguous retcon timing: Ask me when the rewrite is planned)"
+    )
+
+
+def test_ambiguous_retcon_timing_unknown_value_is_kept(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    stored = settings_json(ambiguous_retcon_timing="later_value")
+    html = _page(operator_client, engine, settings=stored)
+
+    assert _options(html, "ambiguous_retcon_timing")[-1] == ("later_value", "Later value")
+    assert _selected(html, "ambiguous_retcon_timing") == "later_value"
+    assert _marker(html, "ambiguous_retcon_timing") == "story"
+    engine.respond("PATCH", SETTINGS, 200, json=written_json())
+
+    _post(operator_client, html, regenerate_retry_budget="1")
+
+    [patch] = writes(engine)
+    assert body(patch) == {"regenerate_retry_budget": 1}
+
+
+def test_prune_policy_error_lands_on_the_field(operator_client: Client, engine: FakeEngine) -> None:
+    html = _page(operator_client, engine)
+    for path in ("body.prune_policy.older_than_days", "prune_policy.older_than_days"):
+        engine.respond(
+            "PATCH",
+            SETTINGS,
+            422,
+            json=error("validation_error", "too many days for this story", field=path),
+        )
+
+        page = _post(operator_client, html, prune_policy="30").content.decode()
+
+        assert "too many days for this story" in _row(page, "prune_policy"), path
+
+
+def test_pruning_facts_and_link(operator_client: Client, engine: FakeEngine) -> None:
+    pruned = story_json(pruning=_pruning(last_prune_at=PRUNED_AT, next_run_at=NEXT_RUN))
+    html = _page(operator_client, engine, story=pruned)
+
+    row = _row(html, "prune_policy")
+    facts = re.search(r'<small class="pruning-facts">(.*?)</small>', row, re.S)
+    assert facts is not None
+    text = re.sub(r"<[^>]+>", "", facts.group(1))
+    assert text == "Last pruned 2026-11-01 03:00:00 UTC · Next run 2026-11-08 03:00:00 UTC"
+    # #317 has registered stories:prune, so the real urlconf links it.
+    assert f'<a class="prune-now" href="{PRUNE_URL}">Prune now…</a>' in row
+
+    # Never pruned, no next run.
+    engine.reset()
+    html = _page(operator_client, engine, story=story_json(pruning=_pruning()))
+    facts = re.search(r'<small class="pruning-facts">(.*?)</small>', _row(html, "prune_policy"))
+    assert facts is not None
+    assert facts.group(1) == "Never pruned"
+
+
+def test_the_prune_link_is_left_out_until_the_page_registers(
+    operator_client: Client, engine: FakeEngine, monkeypatch: Any
+) -> None:
+    """The guarded ``{% url … as %}`` (E11, D19): with ``stories:prune`` unresolvable, as before
+    #317, the row renders without "Prune now…"."""
+    import django.urls
+
+    real_reverse = django.urls.reverse
+
+    def without_prune(viewname: Any, *args: Any, **kwargs: Any) -> str:
+        if viewname == "stories:prune":
+            raise django.urls.NoReverseMatch(viewname)
+        return real_reverse(viewname, *args, **kwargs)
+
+    monkeypatch.setattr(django.urls, "reverse", without_prune)
+    pruned = story_json(pruning=_pruning(last_prune_at=PRUNED_AT))
+    html = _page(operator_client, engine, story=pruned)
+
+    row = _row(html, "prune_policy")
+    assert "Last pruned" in row
+    assert "Prune now" not in row
+
+
+def test_no_pruning_facts_on_an_older_engine(operator_client: Client, engine: FakeEngine) -> None:
+    """Complement: ``pruning: None`` → no facts line, and the page makes exactly main's reads."""
+    html = _page(operator_client, engine, story=story_json(pruning=None))
+
+    assert "pruning-facts" not in html
+    assert [(r.method, r.url.path) for r in engine.requests] == [
+        ("GET", f"/stories/{STORY}"),
+        ("GET", f"/stories/{STORY}/settings"),
+        ("GET", "/admin/settings"),
+        ("GET", f"/stories/{STORY}/pinned-memories"),
+        ("GET", f"/stories/{STORY}/custom-instructions"),
+        ("GET", f"/stories/{STORY}/config-changes"),
+    ]
+
+
+def test_a_rerender_keeps_the_pruning_facts_without_a_read(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    pruned = story_json(pruning=_pruning(last_prune_at=PRUNED_AT, next_run_at=NEXT_RUN))
+    html = _page(operator_client, engine, story=pruned)
+    engine.requests.clear()
+
+    response = _post(operator_client, html, prune_policy="0")
+
+    page = response.content.decode()
+    assert response.status_code == 200
+    assert engine.requests == []
+    assert "Last pruned" in _row(page, "prune_policy")
+    assert "Next run" in _row(page, "prune_policy")
+
+
+def test_an_old_snapshot_without_pruning_still_unsigns() -> None:
+    snap = Snapshot(STORY, "Harbour", "active", [], {}, None)
+    raw = asdict(snap)
+    del raw["pruning"]
+    token = signing.dumps(raw, salt=SNAPSHOT_SALT, compress=True)
+    found = Snapshot.unsigned(token, STORY)
+    assert found is not None
+    assert found.pruning is None
+
+
+def test_m7_setting_choices_match_the_schema() -> None:
+    schemas = recorded_schema()["components"]["schemas"]
+    patch = schemas["StorySettingsPatch"]["properties"]
+    creation = schemas["CreationSettings"]["properties"]
+    for name in ("backfill_conflict_policy", "ambiguous_retcon_timing"):
+        values = [value for value, _ in SETTING_CHOICES[name]]
+        [enum] = [branch["enum"] for branch in patch[name]["anyOf"] if "enum" in branch]
+        assert values == enum, name
+        assert values == creation[name]["enum"], name
+        assert CONSTANT_DEFAULTS[name] == creation[name]["default"], name
+    assert CONSTANT_DEFAULTS["backfill_conflict_policy"] == "last_mention"
+    assert CONSTANT_DEFAULTS["ambiguous_retcon_timing"] == "include_if_possible"
+    days = schemas["PrunePolicy"]["properties"]["older_than_days"]
+    assert (
+        days["minimum"],
+        days["maximum"],
+    ) == (PrunePolicyField.MIN_DAYS, PrunePolicyField.MAX_DAYS)
+    assert {"$ref": "#/components/schemas/PrunePolicy"} in patch["prune_policy"]["anyOf"]

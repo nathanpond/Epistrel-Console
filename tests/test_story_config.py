@@ -200,8 +200,17 @@ def test_config_shows_profile_fingerprint_quality_and_revision(
     html = operator_client.get(CONFIG).content.decode()
     shown = text(html)
     assert f'<a href="/profiles/{LITE}/?version=2">Lite</a> v2 — follows latest' in html
-    assert f'<dd class="fingerprint"><code>{FP_NOW}</code></dd>' in html
-    assert '<span class="quality ">uncertified</span>' in html
+    # #312: the link to the fingerprint's certifications (#313 registered engine:certifications).
+    link = (
+        f'<a class="certifications-link" href="/engine/certifications/?fingerprint='
+        f'{FP_NOW.replace(":", "%3A")}">Certifications for this configuration</a>'
+    )
+    assert f'<dd class="fingerprint"><code>{FP_NOW}</code> · {link}</dd>' in html
+    assert (  # #312, then #314's link
+        '<dd><span class="quality" title="uncertified">Uncertified</span> · '
+        f'<a class="certify-link" href="/stories/{STORY}/certify/">'
+        "Request a certification run…</a></dd>"
+    ) in html
     assert "Overrides revision 3 — Edit overrides" in shown
     assert "rolling_summary , pins , polish" in shown
 
@@ -276,9 +285,16 @@ def test_a_failed_effective_config_read_is_the_page_panel(
 def test_the_assign_select_lists_profiles_with_the_current_disabled(
     operator_client: Client, engine: FakeEngine
 ) -> None:
+    """#307 moved the preset (Lite) into the "Presets" optgroup, labelled by ``preset_label``."""
     html = operator_client.get(CONFIG).content.decode()
-    assert f'<option value="{LITE}" disabled>Lite · v2 · {LITE[:6]} (current)</option>' in html
-    assert f'<option value="{OTHER}">Lite-short · v3 · {OTHER[:6]}</option>' in html
+    assert (
+        f'<optgroup label="Presets"><option value="{LITE}" disabled>Lite (preset) · v2 (current)'
+        "</option></optgroup>"
+    ) in html
+    assert (
+        f'<optgroup label="Other profiles"><option value="{OTHER}">Lite-short · v3 · '
+        f"{OTHER[:6]}</option></optgroup>"
+    ) in html
 
 
 def test_a_deleted_current_profile_is_listed_first(
@@ -782,7 +798,7 @@ def test_the_turn_report_shows_the_configuration_it_ran_under(
     html = text(post_turn(operator_client))
     body = respond_json()
     assert f"Fingerprint {body['fingerprint'][7:19]}" in html
-    assert "Quality status uncertified" in html
+    assert "Quality status Uncertified" in html  # #312: E13's badge
     assert f"Engine profile {LITE}@1" in html
     assert "Config revision 0" in html
 

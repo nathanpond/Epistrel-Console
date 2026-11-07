@@ -1,0 +1,297 @@
+
+<div id="play-form-area">
+  <nav class="tabs">
+    <a href="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=turn" hx-get="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=turn" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]" aria-current="page">Turn</a>
+    <a href="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=ingest" hx-get="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]">Ingest</a>
+  </nav>
+  
+<div id="turn-form">
+  <h2>Play a turn</h2>
+  
+  <form method="post" action="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/turn/" class="turn-form"
+        hx-post="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/turn/" hx-target="#inspector" hx-swap="innerHTML"
+        hx-disable="this" hx-sync="this:drop" hx-config="timeout:645s">
+    <input type="hidden" name="csrfmiddlewaretoken" value="laWsedCFAGqZN7mKeIT2WmZMh2Fk5bYuLqDUV8SrRv5jGJjIxbOMRfK4GeeroYEs">
+    <input type="hidden" name="idempotency_key" value="01M6T8XHNWREM8N2JRG14VWMR2">
+    <input type="hidden" name="snapshot" value=".eJx9j9tKA0EMht8l14NsTx72zl6JUlEpipZlSWdSDExnlmymIqXvbpZ6uLKX-f6PJP8eOEAN1eh2Pn67fJ09Tl7O764Wo_vpw8VTtRw_g4OEWzLnBmWdixjoFbX0htAr78iIx16hXq3-XTS5NmuBguBUCjXuhDo3dZnXnMBtMPbUNA4CbbBEbXdMH13mZNfAv9s-ryT1yataJLWBMERO1mM6O6scCKVAYh1SidFBxx0d4--ZxFOnnNMPGTrTn4-iPMS_RHIc4v1hULN8tlt7l4_p4Qvh83Fy:1xPZJi:TRpEy73YK3q-nI09w0htveGxJvV1SaBXA2sCkhXSJ64">
+    <input type="hidden" name="transcript_player_view" id="turn-transcript-player-view" value="">
+    
+    <fieldset>
+      
+      <div class="field field-actor">
+        <label for="id_actor">Actor:</label>
+        <select name="actor" id="id_actor">
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3A" selected>Mara</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+
+</select>
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-say">
+        <label for="id_say">Say:</label>
+        <textarea name="say" cols="40" rows="3" maxlength="8000" id="id_say">
+</textarea>
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-whisper_to">
+        <label for="id_whisper_to">Whisper to:</label>
+        <select name="whisper_to" size="3" disabled aria-describedby="gate-whisper-to" title="Couldn&#x27;t read this story&#x27;s configuration — reload" id="id_whisper_to" multiple>
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3A">Mara</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+
+</select>
+        <small class="gate-reason" id="gate-whisper-to">Couldn&#x27;t read this story&#x27;s configuration — reload</small>
+        
+        
+      </div>
+      
+      
+      <div class="field field-do">
+        <label for="id_do">Do:</label>
+        <textarea name="do" cols="40" rows="2" maxlength="8000" id="id_do">
+</textarea>
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-output_viewpoint">
+        <label for="id_output_viewpoint">Output viewpoint:</label>
+        
+        <select name="output_viewpoint" id="id_output_viewpoint" hx-get="/stories/01JB2Z8Y5Q3W6K9M1N4P7R0T2V/transcript/" hx-target="#transcript" hx-swap="outerHTML" hx-include="[name=snapshot], #turn-form [name=transcript_player_view]">
+          <option value="default" selected>Story default (Mara)</option><option value="character:01JB2Z8Y5Q3W6K9M1N4P7R0T3A">Mara</option><option value="character:01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+        </select>
+        
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-player_view">
+        <label for="id_player_view">Player view:</label>
+        <select name="player_view" disabled aria-describedby="gate-player-view" title="Couldn&#x27;t read this story&#x27;s configuration — reload" id="id_player_view">
+  <option value="" selected>Story setting (couldn&#x27;t read)</option>
+
+  <option value="character">Character (audience-filtered)</option>
+
+  <option value="story">Story (every beat)</option>
+
+</select>
+        <small class="gate-reason" id="gate-player-view">Couldn&#x27;t read this story&#x27;s configuration — reload</small>
+        
+        
+      </div>
+      
+      
+      <div class="field field-render_character_ids">
+        <label for="id_render_character_ids">Render characters:</label>
+        <select name="render_character_ids" size="3" aria-describedby="id_render_character_ids_helptext" id="id_render_character_ids" multiple>
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3A">Mara</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+
+</select>
+        
+        <small>blank = everyone except the actor</small>
+        
+      </div>
+      
+
+<fieldset class="multi-character" disabled aria-describedby="gate-multi-character" title="Couldn&#x27;t read this story&#x27;s configuration — reload">
+  <legend>Multi-character</legend>
+  
+  <small class="gate-reason" id="gate-multi-character">Couldn&#x27;t read this story&#x27;s configuration — reload</small>
+  
+  <div class="field field-interaction_mode">
+    <label for="id_interaction_mode">Interaction mode:</label> <select name="interaction_mode" id="id_interaction_mode">
+  <option value="" selected>Story setting (couldn&#x27;t read)</option>
+
+  <option value="sequential">Sequential</option>
+
+  <option value="simultaneous">Simultaneous</option>
+
+</select>
+    
+  </div>
+  
+  <div class="field field-sequence_order">
+    <label for="id_sequence_order">Sequence order:</label> <select name="sequence_order" id="id_sequence_order">
+  <option value="" selected>Story setting (couldn&#x27;t read)</option>
+
+  <option value="request">Request order</option>
+
+  <option value="director">Director</option>
+
+</select>
+    
+  </div>
+  
+  <div class="field field-simultaneous_tie_break">
+    <label for="id_simultaneous_tie_break">Tie-break:</label> <select name="simultaneous_tie_break" id="id_simultaneous_tie_break">
+  <option value="" selected>Story setting (couldn&#x27;t read)</option>
+
+  <option value="request_order">Request order</option>
+
+  <option value="director">Director</option>
+
+</select>
+    
+  </div>
+  
+  <div class="field field-reactive_interjections">
+    <label for="id_reactive_interjections">Reactive interjections:</label> <select name="reactive_interjections" id="id_reactive_interjections">
+  <option value="" selected>Story setting (couldn&#x27;t read)</option>
+
+  <option value="on">On</option>
+
+  <option value="off">Off</option>
+
+</select>
+    
+  </div>
+  
+  
+  <table class="multi-character-cast">
+    <thead><tr><th>Character</th><th>Render order</th><th>Role this turn</th></tr></thead>
+    <tbody>
+      
+      <tr><td>Tobin</td><td><select name="order_01JB2Z8Y5Q3W6K9M1N4P7R0T3B" aria-label="Render order: Tobin" id="id_order_01JB2Z8Y5Q3W6K9M1N4P7R0T3B">
+  <option value="" selected>—</option>
+
+  <option value="1">1</option>
+
+  <option value="2">2</option>
+
+  <option value="3">3</option>
+
+  <option value="4">4</option>
+
+  <option value="5">5</option>
+
+  <option value="6">6</option>
+
+</select></td><td><select name="role_01JB2Z8Y5Q3W6K9M1N4P7R0T3B" aria-label="Role this turn: Tobin" id="id_role_01JB2Z8Y5Q3W6K9M1N4P7R0T3B">
+  <option value="" selected>Stored: —</option>
+
+  <option value="primary">Primary</option>
+
+  <option value="reactive">Reactive</option>
+
+  <option value="silent">Silent</option>
+
+</select></td></tr>
+      
+    </tbody>
+  </table>
+  
+</fieldset>
+
+
+      
+      <div class="field field-length">
+        <label for="id_length">Length:</label>
+        <select name="length" id="id_length">
+  <option value="" selected>Engine default</option>
+
+  <option value="short">short</option>
+
+  <option value="medium">medium</option>
+
+  <option value="long">long</option>
+
+  <option value="custom">number (below)</option>
+
+</select>
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-length_custom">
+        <label for="id_length_custom">Length (number):</label>
+        <input type="number" name="length_custom" id="id_length_custom">
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-temperature">
+        <label for="id_temperature">Temperature:</label>
+        <input type="number" name="temperature" step="any" id="id_temperature">
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-top_p">
+        <label for="id_top_p">top_p:</label>
+        <input type="number" name="top_p" step="any" id="id_top_p">
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-characters_present">
+        <label for="id_characters_present">Characters present:</label>
+        <select name="characters_present" size="3" id="id_characters_present" multiple>
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3A">Mara</option>
+
+  <option value="01JB2Z8Y5Q3W6K9M1N4P7R0T3B">Tobin</option>
+
+</select>
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-recent_messages">
+        <label for="id_recent_messages">Recent messages:</label>
+        <textarea name="recent_messages" cols="40" rows="3" aria-describedby="id_recent_messages_helptext" id="id_recent_messages">
+</textarea>
+        
+        <small>Up to 20 lines, each `Name: text`.</small>
+        
+      </div>
+      
+      
+      <div class="field field-max_calls">
+        <label for="id_max_calls">Max calls:</label>
+        <input type="number" name="max_calls" id="id_max_calls">
+        
+        
+        
+      </div>
+      
+      
+      <div class="field field-deadline_s">
+        <label for="id_deadline_s">Deadline (seconds):</label>
+        <input type="number" name="deadline_s" step="any" id="id_deadline_s">
+        
+        
+        
+      </div>
+      
+      
+      <button type="submit">Send</button> <span class="htmx-indicator">Running…</span>
+    </fieldset>
+  </form>
+</div>
+
+</div>

@@ -5,10 +5,11 @@ the error panel with the controls intact."""
 import re
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
+from tests.golden import normalise_html
 from tests.history.helpers import (
     HISTORY,
     MARA,
@@ -299,3 +300,59 @@ def test_character_viewpoint_shows_no_classification(
     assert "(corrected)" not in html
     assert "<dt>classification</dt>" not in html
     assert "omniscient reads only" not in html
+
+
+# --- E11's story nav in the link line (#296) ------------------------------------------------------
+
+S = f"/stories/{STORY}/"
+# Main's link line (E24: captured before #296, compared normalised).
+HISTORY_LINK_LINE = (
+    f'<p><a href="{S}">Play</a> · <a class="inspect-link" href="{S}inspect/">Inspect</a> · '
+    f'<a href="{S}settings/">Settings</a> · <a class="config-tab" href="{S}config/">Config</a> · '
+    f'<a href="/stories/">All stories</a> · <code>{STORY}</code></p>'
+)
+STORY_NAV = (
+    ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
+    f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}amendments/">Amendments</a> · '
+    f'<a href="{S}backfill/">Backfill</a> · <a href="{S}export/">Export</a> · '
+    f'<a href="{S}operations/">Operations</a></span>'
+)
+
+
+def history_link_line(html: str) -> str:
+    start = html.index(f'<p><a href="{S}">Play</a>')
+    return html[start : html.index("</p>", start) + 4]
+
+
+# The nav once #297 registered ``stories:rewrites``, #302 ``stories:amendments``, #308
+# ``stories:backfill`` and #319 ``stories:export`` (E24: the registering story regenerates).
+REGISTERED_NAV = (
+    ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
+    f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}amendments/">Amendments</a> · '
+    f'<a href="{S}backfill/">Backfill</a> · <a href="{S}export/">Export</a> · '
+    f'<a href="{S}operations/">Operations</a></span>'
+)
+
+
+def test_the_link_line_shows_only_the_registered_m7_pages(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Main's link line plus the registered nav rows (Rewrite #297, Amendments #302, Backfill
+    #308, Export #319, Operations #324) after Config."""
+    answer(engine)
+    html = page(operator_client)
+    config = f'<a class="config-tab" href="{S}config/">Config</a>'
+    expected = HISTORY_LINK_LINE.replace(config, config + REGISTERED_NAV)
+    assert normalise_html(history_link_line(html)) == normalise_html(expected)
+
+
+def test_the_link_line_shows_the_story_nav_after_config(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """**Complement:** under the stub urlconf the nav appears right after Config."""
+    answer(engine)
+    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
+        html = page(operator_client)
+    config = f'<a class="config-tab" href="{S}config/">Config</a>'
+    expected = HISTORY_LINK_LINE.replace(config, config + STORY_NAV)
+    assert normalise_html(history_link_line(html)) == normalise_html(expected)

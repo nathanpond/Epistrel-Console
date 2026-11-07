@@ -1,0 +1,25 @@
+{% extends frame|default:"console/stories/page_base.html" %}
+{% comment %}
+#314: request a certification run (console/views/certify.py), for a profile (frame
+console/profiles/certify_base.html) or a story (#296's console/stories/page_base.html). The form
+(its only submit is "Estimate"), then the estimate (console/_certification_estimate.html) and
+"Start the run" (console/_two_stage.html, when token is set). Context: form, form_url,
+idempotency_key, intro_text, estimate_label, refusal (text, url, links), engine_error,
+versions_warnings, estimate, estimate_note, token, confirm_url, confirm_label, cancel_url,
+confirm_key.
+{% endcomment %}
+{% block story_page %}
+{% for warning in versions_warnings %}<p class="warning versions-warning">{{ warning }}</p>{% endfor %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if refusal %}<p class="refusal" role="alert">{% if refusal.url %}<a href="{{ refusal.url }}">{{ refusal.text }}</a>{% else %}{{ refusal.text }}{% endif %}{% for label, url in refusal.links %} · <a class="refusal-link" href="{{ url }}">{{ label }}</a>{% endfor %}</p>{% endif %}
+<p class="certify-intro">{{ intro_text }}</p>
+<form method="post" action="{{ form_url }}" class="certify-form">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {{ form.non_field_errors }}
+  {% for field in form %}<p class="field field-{{ field.name }}">{{ field.errors }}{{ field.label_tag }} {{ field }}<br><small class="muted help">{{ field.help_text }}</small></p>
+  {% endfor %}<p><button type="submit">{{ estimate_label }}</button></p>
+</form>
+{% if estimate %}{% include "console/_certification_estimate.html" %}
+{% if estimate_note %}<p class="muted reestimate">{{ estimate_note }}</p>{% endif %}
+{% if token %}{% include "console/_two_stage.html" with idempotency_key=confirm_key %}{% endif %}{% endif %}
+{% endblock %}

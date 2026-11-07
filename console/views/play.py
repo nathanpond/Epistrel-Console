@@ -21,8 +21,15 @@ the tab link swaps only the form area). The ingest tab posts its event rows to
 :func:`ingest` (``POST <id>/ingest/``), which answers the tab again (the results table above the
 same rows, or the refusal placed on them) plus the transcript re-fetched out-of-band at the turn
 form's viewpoint. Its add/remove-row buttons post to the same endpoint (``console.formset_rows``).
+
+#300 adds a third tab, "Direct" (``?tab=direct``, ``DIRECT_TAB``; any other ``tab`` value means
+Turn): the author's direction (``console.directives``), posted to
+``console.views.directives.direct`` (``POST <id>/direct/``), which answers the tab alone to HTMX and
+the whole page, Direct chosen, otherwise. Every render builds its ``dv`` (a ``DirectView``), as it
+builds ``iv``; only the Direct tab renders it.
 """
 
+import math
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
@@ -43,6 +50,7 @@ from console.cast_panel import CastPanel, cast_panel
 from console.composition import Composition, composition
 from console.confirm import confirm_query, posted_idempotency_key, safe_next
 from console.creation_report import has_creation_report
+from console.directives import DirectOutcome, DirectView
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
 from console.engine.client import (
     DEFAULT_TURN_DEADLINE_S,
@@ -69,6 +77,7 @@ from console.engine_access import complete_queued, engine_client_for, note_engin
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors
 from console.feedback import FeedbackWidget, collapsed, first_parts
+from console.forms.directives import DirectForm
 from console.forms.history import PLAYER_VIEW_CHOICES
 from console.forms.ingest import (
     EVENTS_MAX,
@@ -121,6 +130,7 @@ from console.inspect import (
 )
 from console.models import EngineOperation
 from console.multi_turn import RELOAD, SCENARIO_MODE, STORY_MULTI_KEYS, MultiGate, gate
+from console.nav import story_links
 from console.notices import (
     NoticeCards,
     notice_cards,
@@ -151,12 +161,17 @@ from console.timeline import ARCHIVED_NOTE as TIMELINE_ARCHIVED
 from console.timeline import PAUSED_NOTE as TIMELINE_PAUSED
 from console.timeline import Basis, Link, TurnControls, turn_controls
 from console.turn_reports import (
+    GapLine,
     ViolationRow,
+    coverage_gap_lines,
     input_gate_text,
+    stored_gaps,
     stored_turn_report,
+    unread_gap_count,
     violation_rows,
 )
 from console.turn_world import TurnWorld, turn_world
+from console.views.inspect import ChecksLine, amendment_checks_line
 from console.views.ownership import OwnershipPanel, ownership_context
 from console.wording import busy_notice, humanised
 
@@ -176,7 +191,8 @@ PLACED_CODES = frozenset(
 )
 FORM_ALIASES = {**ERROR_PATHS, "minimum_required": "max_calls"}
 INGEST_KIND = "ingest"  # the operation-log kind of an ingest batch (the client method's name)
-TURN_TAB, INGEST_TAB = "turn", "ingest"
+TURN_TAB, INGEST_TAB, DIRECT_TAB = "turn", "ingest", "direct"
+TABS = frozenset({TURN_TAB, INGEST_TAB, DIRECT_TAB})  # any other ``tab`` value means Turn
 # #196: the transcript's display-only player view (#62's choices); carried on the turn and ingest
 # POSTs as ``transcript_player_view``, never the turn body's own ``player_view`` (#200).
 PLAYER_VIEWS = frozenset({"character", "story"})
@@ -758,6 +774,10 @@ class Inspector:
     world: TurnWorld | None = None
     # #185: the turn's co-author notices (:func:`_with_notices`); ``None``: no section.
     notices: NoticeCards | None = None
+    # #330: the answer's coverage gaps as lines, and how many entries couldn't be read
+    # (:func:`_with_gaps`); a refusal, error, queued or held inspector has none.
+    coverage_gaps: tuple[GapLine, ...] = ()
+    coverage_gaps_unread: int = 0
 
     @property
     def engine_url(self) -> str:
@@ -869,6 +889,19 @@ def _with_warnings(found: Inspector, labels: Mapping[str, str], story_id: str) -
     if found.report is None:
         return found
     return replace(found, warnings=warning_lines(found.report.warnings, labels, story_id))
+
+
+def _with_gaps(found: Inspector, answer: object, story_id: str) -> Inspector:
+    """#330: an inspector carrying a report gets the turn answer's ``coverage_gaps`` (the raw
+    or recorded 2xx answer's top-level field) as lines linked to ``story_id``'s gap fill, and
+    the count of entries that couldn't be read."""
+    if found.report is None:
+        return found
+    return replace(
+        found,
+        coverage_gaps=tuple(coverage_gap_lines(stored_gaps(answer), story_id)),
+        coverage_gaps_unread=unread_gap_count(answer),
+    )
 
 
 def _with_history_link(story_id: str, found: Inspector) -> Inspector:
@@ -1088,6 +1121,7 @@ def result_inspector(
     found = _with_world(found, raw, labels or {})
     found = _with_notices(found, raw, labels or {}, overridden)
     found = _with_warnings(found, labels or {}, story_id)
+    found = _with_gaps(found, raw, story_id)
     return _with_history_link(story_id, found)
 
 
@@ -1151,6 +1185,7 @@ def row_inspector(
         found = _with_composition(found, row.response, labels or {})
         found = _with_world(found, row.response, labels or {})
         found = _with_notices(found, row.response, labels or {}, overridden)
+        found = _with_gaps(found, row.response, found.story_id)
     found = _with_warnings(found, labels or {}, found.story_id)
     return _with_history_link(row.story_id, found)
 
@@ -1293,16 +1328,21 @@ class PlayPage:
     ownership: OwnershipPanel | None = None  # #79: owner and relations
     pause_banner: PauseBanner | None = None  # #80: a check pauses the story
     config_badge: ConfigBadge | None = None  # #85: fingerprint and quality status
+    direct_view: DirectView | None = None  # #300: the Direct tab
+    checks: ChecksLine | None = None  # #331: pending amendment support checks
 
     def context(self, request: HttpRequest) -> dict[str, Any]:
         return {
+            "checks": self.checks,
             "config_badge": self.config_badge,
             "pause_banner": self.pause_banner,
+            "page_links": story_links(self.story.id, None),  # E11 (#296): no Engine read
             "rating_url": reverse("stories:rating", args=[self.story.id]),
             "timeline": self.header,
             "fork_banner": self.fork_banner,
             "tab": self.tab,
             "iv": self.ingest_view,
+            "dv": self.direct_view,
             "story": self.story,
             "cast": self.story.cast,
             "cast_panel": self.cast_panel,
@@ -1431,6 +1471,7 @@ def _page(
     player_view: str | None = None,
     operation: str = "",
     origin: str = "",
+    direct_view: DirectView | None = None,
 ) -> HttpResponse:
     """The full play page. ``operation`` (with its ``origin``) selects the inspector's turn,
     built after the story read so it names the characters (#201, C4)."""
@@ -1472,7 +1513,7 @@ def _page(
         ),
         restored,
         status_note,
-        INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
+        _tab(tab),
         _timeline_header(story, play),
         _fork_banner(request, story_id),
         cast_panel(
@@ -1486,6 +1527,9 @@ def _page(
         _ownership(request, story),
         pause_banner(story),
         badge_or_unavailable(story_id, config),
+        direct_view
+        or _direct_view(play, str(form_viewpoint or ""), transcript_player_view=requested),
+        amendment_checks_line(story, story_id),  # from the story read above (no new read)
     )
     return render(request, "console/play/play.html", page.context(request))
 
@@ -1513,8 +1557,8 @@ def _ownership(request: HttpRequest, story: Story) -> OwnershipPanel:
 def play(request: HttpRequest, story_id: str) -> HttpResponse:
     """The play view. ``?viewpoint=`` picks the transcript's viewpoint, ``?operation=`` the
     inspector's turn (the no-JavaScript forms of the HTMX controls), ``?turn=N`` the turn whose
-    report the inspector shows (after a regenerate, #53), ``?tab=ingest`` the form area's tab.
-    An HTMX request with ``?tab=`` (a tab link) gets the form area alone."""
+    report the inspector shows (after a regenerate, #53), ``?tab=ingest`` or ``?tab=direct`` the
+    form area's tab. An HTMX request with ``?tab=`` (a tab link) gets the form area alone."""
     tab = request.GET.get("tab", TURN_TAB)
     if "tab" in request.GET and is_htmx(request):
         return _form_area(request, story_id, tab)
@@ -1539,7 +1583,7 @@ def _form_area(request: HttpRequest, story_id: str, tab: str) -> HttpResponse:
     form = _form(play_story, initial=_initial(play_story, viewpoint))
     waiting = bool(_restored_cards(play_story))
     context = {
-        "tab": INGEST_TAB if tab == INGEST_TAB else TURN_TAB,
+        "tab": _tab(tab),
         "fv": _form_view(play_story, form, waiting=waiting, transcript_player_view=kept),
         "iv": _ingest_view(
             play_story,
@@ -1547,6 +1591,7 @@ def _form_area(request: HttpRequest, story_id: str, tab: str) -> HttpResponse:
             viewpoint,
             transcript_player_view=kept,
         ),
+        "dv": _direct_view(play_story, viewpoint, transcript_player_view=kept),
     }
     return render(request, "console/play/_form_area.html", context)
 
@@ -1791,6 +1836,41 @@ def _ingest_view(
         viewpoint,
         FormView.timeout_s + EVENTS_MAX,
         **{"states_gate": states_gate(play_story), **archived, **changes},
+    )
+
+
+def _tab(tab: str) -> str:
+    return tab if tab in TABS else TURN_TAB
+
+
+def _direct_view(
+    play_story: PlayStory,
+    viewpoint: str,
+    *,
+    form: DirectForm | None = None,
+    key: str | None = None,
+    outcome: DirectOutcome | None = None,
+    transcript_player_view: str = "",
+    **changes: Any,
+) -> DirectView:
+    """The Direct tab (#300): a fresh form and key unless given (D8: the posted key, kept after an
+    unknown outcome), Lite's kind labels on a Lite story, disabled while archived or paused (the
+    paused note first, as ``PlayStory.timeline_note`` orders them)."""
+    gated: dict[str, Any] = {}
+    if play_story.paused:
+        gated = {"disabled": True, "note": TURN_NOTE}
+    elif play_story.archived:
+        gated = {"disabled": True, "note": INGEST_ARCHIVED_NOTE}
+    return DirectView(
+        play_story.id,
+        form if form is not None else DirectForm(pipeline=play_story.pipeline),
+        play_story.signed(),
+        viewpoint,
+        transcript_player_view,
+        key or new_ulid(),
+        math.ceil(turn_timeout(None)),
+        outcome,
+        **{**gated, **changes},
     )
 
 

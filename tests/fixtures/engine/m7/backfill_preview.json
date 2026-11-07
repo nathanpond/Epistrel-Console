@@ -1,0 +1,25 @@
+{
+  "timeline_revision": 20,
+  "applied": false,
+  "idempotency_key": "01JM7KY0000000000000000001",
+  "backfill": {
+    "needed": true,
+    "estimate": {
+      "model_calls": 12,
+      "tokens": 18000,
+      "duration_s": 40.0
+    },
+    "range": {
+      "from_turn": 1,
+      "to_turn": 3
+    },
+    "capabilities": [
+      "episodic",
+      "commitment"
+    ]
+  },
+  "started": null,
+  "conflicts": null,
+  "conflicts_open": null,
+  "conflicts_made_uncertain": null
+}

@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 ARCHIVED_NOTE = "Archived — unarchive to change the timeline"
 PAUSED_NOTE = "Paused while the check runs"  # #80: every control, Fork included
 CHECK_FLAG = "1"  # ``&check=1``: the swap target's ``requires_check`` (the confirm page warns)
+# A chain a prune discarded (FR-STORE-19, ADR-175, #293): only its operations remain, as markers.
+# The Engine refuses Swap, Fork and ``history?variant=`` on it with 409 ``pruned``.
+PRUNED_MEMBERSHIP = "pruned"
+PRUNED_CHAIN_NOTE = "Its records were pruned; only its operations remain as markers"
 
 
 class Chain(Protocol):
@@ -141,11 +145,12 @@ def turn_controls(
     snapshot: str = "",
 ) -> TurnControls:
     """Turn ``turn``'s controls: Rewind below the head, Regenerate on the head's reply, Swap for
-    every non-active chain diverging at this turn, Fork always (turn 0 included)."""
+    every non-active chain diverging at this turn but a pruned one (#293), Fork always (turn 0
+    included)."""
     swaps = tuple(
         basis.swap(c.turn, c.variant, requires_check=c.requires_check)
         for c in chains
-        if c.turn == turn and c.membership != "active"
+        if c.turn == turn and c.membership not in ("active", PRUNED_MEMBERSHIP)
     )
     return TurnControls(
         turn=turn,
@@ -238,7 +243,7 @@ class EditEffects:
         """D11's outbox-list notice, through its one renderer."""
         from console.effects import outbox_list_notice_html
 
-        return outbox_list_notice_html()
+        return outbox_list_notice_html(story_id=self.story_id)
 
     @property
     def sections(self) -> tuple[EffectSection, ...]:

@@ -56,6 +56,22 @@ def test_false_and_none_are_left_out(client: EngineClient, fake_engine: FakeEngi
     assert history.audit_entries is None
 
 
+def test_as_of_is_sent_as_given(client: EngineClient, fake_engine: FakeEngine) -> None:
+    """#291: M7's ``as_of`` is a string (``N`` or ``N+k``): a string is sent unchanged and an int
+    as its digits. **Complement:** ``None`` (and a blank string) sends none."""
+    fake_engine.respond("GET", HISTORY, 200, json=engine_fixture("get_history"))
+    client.get_history(STORY, as_of="12+1")
+    client.get_history(STORY, as_of=3)
+    client.get_history(STORY, as_of=None)
+    client.get_history(STORY, as_of="  ")
+    plus, digits, none, blank = fake_engine.requests
+    assert b"as_of=12%2B1" in plus.url.query
+    assert plus.url.params["as_of"] == "12+1"
+    assert dict(digits.url.params) == {"as_of": "3"}
+    assert none.url.query == b""
+    assert blank.url.query == b""
+
+
 def test_list_variants(client: EngineClient, fake_engine: FakeEngine) -> None:
     fake_engine.respond("GET", VARIANTS, 200, json=engine_fixture("list_variants"))
     chains = client.list_variants(STORY)

@@ -1,0 +1,16 @@
+{% if view.questions or view.rejected_questions %}<section class="rewrite-questions">
+  <h3>Questions</h3>
+  {% if answers_form and view.awaiting_answers and view.answer_url %}<form method="post" action="{{ view.answer_url }}" class="answers">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    {{ answers_form.non_field_errors }}{% if answer_errors.above %}
+    <ul class="errorlist nonfield">{% for message in answer_errors.above %}<li>{{ message }}</li>{% endfor %}</ul>{% endif %}
+    {% for row in answers_form.question_rows %}{% include "console/rewrites/_question.html" with question=row.question selected=row.selected choice=row.choice text=row.text form_on=True %}{% endfor %}
+    <button type="submit">Submit answers</button>
+    <button type="submit" name="accept_all" value="1">Accept every recommendation</button>
+  </form>{% else %}{% for question in view.questions %}{% include "console/rewrites/_question.html" with selected=question.recommended_id choice=None text=None form_on=False %}{% endfor %}{% endif %}
+  {% for raw in view.rejected_questions %}<div class="question rejected">
+    <p>{{ rejected_question_text|default:view.rejected_text }}</p>
+    <details><summary>More</summary><pre>{{ raw }}</pre></details>
+  </div>{% endfor %}
+</section>{% endif %}

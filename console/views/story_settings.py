@@ -2,13 +2,15 @@
 
 One page with sections, each read separately so a failed read degrades only its section (#43):
 
-- **Settings**: the fourteen settable story settings with their "story" / "default" markers
+- **Settings**: the seventeen settable story settings with their "story" / "default" markers
   (:mod:`console.story_settings`; the multi-character ones name what ``null`` means), a
   reset-to-default per field, and old keys the read still returns under "Other settings". Save
   sends a merge patch of the changed fields only and flashes each change as "<Name>: <value>".
   The six engine dials that moved to engine-profile overrides are a note linking to the story's
   Config page (M3 #85); a static note says where the M5 settings apply (#197; no
-  effective-config read).
+  effective-config read). Under the automatic pruning row, the story's pruning facts from the
+  page's story read (``Story.pruning``: last pruned, next run; #318) and a "Prune now…" link to
+  the Prune page (#317) when that URL resolves.
 - **Budget**: ``guardrail_calls`` and ``effective_budget`` as the Engine sends them.
 - **Effective policies** and **inactive policies**, read-only.
 - **Story policies**: the story- and character-scoped ones, an add / edit form (one
@@ -121,7 +123,9 @@ SECTIONS = {
 @dataclass(frozen=True)
 class Snapshot:
     """What every section form posts back, signed: the story, its cast, its settings as read
-    (``None`` when that read failed) and the deployment's defaults and caps (``None``: unread)."""
+    (``None`` when that read failed), the deployment's defaults and caps (``None``: unread) and
+    the story's pruning facts (``last_prune_at``, ``next_run_at``; ``None`` when the story read
+    has no ``pruning``, or the token predates #318), so a re-render still shows them."""
 
     story_id: str
     name: str
@@ -129,6 +133,7 @@ class Snapshot:
     cast: list[CastMember]
     settings: dict[str, Any] | None
     deployment: dict[str, Any] | None
+    pruning: dict[str, str | None] | None = None
 
     @classmethod
     def of(
@@ -140,6 +145,12 @@ class Snapshot:
         dep = None
         if deployment is not None:
             dep = {key: getattr(deployment, key) for key in DEPLOYMENT_KEYS}
+        pruning = None
+        if story.pruning is not None:
+            pruning = {
+                "last_prune_at": story.pruning.last_prune_at,
+                "next_run_at": story.pruning.next_run_at,
+            }
         return cls(
             story.id,
             story.name or "",
@@ -147,6 +158,7 @@ class Snapshot:
             members(story.cast),
             dict(settings.settings) if settings is not None else None,
             dep,
+            pruning,
         )
 
     def signed(self) -> str:
@@ -169,6 +181,7 @@ class Snapshot:
                 cast,
                 raw["settings"],
                 raw["deployment"],
+                _pruning(raw.get("pruning")),
             )
         except KeyError, TypeError:
             return None
@@ -192,6 +205,17 @@ class Snapshot:
     @property
     def max_instructions(self) -> int:
         return self.cap("max_custom_instructions_chars", FALLBACK_MAX_INSTRUCTIONS)
+
+
+def _pruning(raw: object) -> dict[str, str | None] | None:
+    """A signed snapshot's pruning facts; anything but a mapping is ``None``."""
+    if not isinstance(raw, Mapping):
+        return None
+    return {key: _text_or_none(raw.get(key)) for key in ("last_prune_at", "next_run_at")}
+
+
+def _text_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def _read_snapshot(
@@ -378,6 +402,7 @@ def _settings_context(
         "superseded": SUPERSEDED,
         "config_url": config_url(snap.story_id),
         "settings_key": new_ulid(),
+        "pruning": snap.pruning,
     }
 
 

@@ -5,7 +5,8 @@ of any operation id, whether or not this Console made the call, with its label a
 (a staged turn's five, D13)."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_args
+from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.db.models import QuerySet
@@ -17,14 +18,14 @@ from django.utils.html import format_html
 from django.utils.safestring import SafeString
 from django.views.decorators.http import require_safe
 
+from console.certification import eval_runs_url
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, STAGED_LABEL, stage_revision_text
 from console.engine.client import EngineClient, EngineClientError, EngineError
-from console.engine.models import OperationRecord, StorySummary
+from console.engine.models import OperationLabel, OperationRecord, StorySummary
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.evals import (
     BLANK_HINT,
-    EVAL_RUNS_ISSUE,
     NO_SAMPLES,
     SAMPLE_LIMIT,
     SHAPE_TITLE,
@@ -56,7 +57,15 @@ from console.operation_log import (
 from console.reactivation import OP_NAMES, OP_PARAM
 from console.redaction import redact
 from console.story_pause import check_url
-from console.turn_reports import input_gate_text, stored_turn_report, violation_rows
+from console.turn_reports import (
+    GapLine,
+    coverage_gap_lines,
+    input_gate_text,
+    stored_gaps,
+    stored_turn_report,
+    unread_gap_count,
+    violation_rows,
+)
 from console.wording import humanised
 
 PAGE_SIZE = 50
@@ -64,8 +73,23 @@ EMPTY = "—"
 LABEL_NOTE = (
     "Known only for operations whose Engine record this Console has read (Fetch from Engine, "
     "the Engine record page, a queued turn's poll, an opened History page or eval-hooks block). "
-    "The Engine has no list of operations to filter by."
+    "A story's Operations page lists every operation of that story with the Engine's own label."
 )
+STORY_OPERATIONS_TEXT = "Operations of this story on the Engine"
+ENGINE_LABELS = frozenset(get_args(OperationLabel))
+
+
+def story_operations_url(story: str, label: str = "") -> str | None:
+    """#324: the story's Operations page (``stories:operations-list``) for a log filtered to one
+    story, ``label`` carried when it is one of the Engine's labels; ``None`` for a story filter
+    that isn't a ULID, or while the page is unregistered (D19)."""
+    if not is_ulid(story):
+        return None
+    try:
+        url = reverse("stories:operations-list", args=[story])
+    except NoReverseMatch:
+        return None
+    return f"{url}?{urlencode({'label': label})}" if label in ENGINE_LABELS else url
 
 
 @dataclass(frozen=True)
@@ -155,6 +179,8 @@ def operation_list(request: HttpRequest) -> HttpResponse:
         "policies": _seen_policies(),
         "labels": [(value, engine_label_text(value)) for value in _distinct("engine_label")],
         "label_note": LABEL_NOTE,
+        "story_operations_url": story_operations_url(filters.story, filters.label),
+        "story_operations_text": STORY_OPERATIONS_TEXT,
     }
     return render(request, "console/operations.html", context)
 
@@ -268,6 +294,12 @@ def fetch_offered(row: EngineOperation) -> bool:
     return row.kind not in NO_FETCH_KINDS
 
 
+def turn_gaps(answer: object, story_id: str) -> tuple[list[GapLine], int]:
+    """#330: a 2xx turn answer's Coverage gaps lines (linked into ``story_id``'s gap fill; a
+    blank id gives no link, D19) and its unread-entry count, for ``_turn_report.html``."""
+    return coverage_gap_lines(stored_gaps(answer), story_id), unread_gap_count(answer)
+
+
 @require_safe
 def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     row = get_object_or_404(EngineOperation, pk=pk)
@@ -283,6 +315,10 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "fetch_offered": fetch_offered(row),
         "trace_url": trace_url(row),
     }
+    if not row.error_code:  # #330: only a 2xx turn answer's top-level gaps
+        context["coverage_gaps"], context["coverage_gaps_unread"] = turn_gaps(
+            row.response, row.story_id
+        )
     if request.GET.get("fetch") == "1" and row.engine_operation_id and context["fetch_offered"]:
         fetched: OperationRecord | None = None
         fetch_error: ErrorPanel | None = None
@@ -306,6 +342,15 @@ def operation_detail(request: HttpRequest, pk: int) -> HttpResponse:
             fetched_body=result_body,
             fetched_report=stored_turn_report(result_body),
         )
+        if (
+            fetched is not None
+            and fetched.result is not None
+            and 200 <= fetched.result.status < 300
+        ):
+            # #330: the record's own gaps, passed to its include explicitly (never the row's).
+            context["fetched_gaps"], context["fetched_gaps_unread"] = turn_gaps(
+                result_body, row.story_id
+            )
     return render(request, "console/operation_detail.html", context)
 
 
@@ -479,6 +524,6 @@ def evals(request: HttpRequest) -> HttpResponse:
         "no_samples": NO_SAMPLES,
         "shape_title": SHAPE_TITLE,
         "stories_unavailable": STORIES_UNAVAILABLE,
-        "eval_runs_issue": EVAL_RUNS_ISSUE,
+        "eval_runs_url": eval_runs_url(),
     }
     return render(request, "console/operations_evals.html", context)

@@ -20,13 +20,13 @@ and the three read-only settings, display-only). A POST:
 - ``op=save`` validates; an invalid form re-renders (no call, the posted key kept); an empty
   patch flashes "No changes — nothing was sent." (no call); otherwise one ``update_clock`` with
   the page's idempotency key (no expected revision: a configuration write, D8), then
-  POST-redirect-GET to the section with "<members>: saved — Configuration revision now <n>", or
-  D8's ``ENGINE_NOTHING_CHANGED`` when the answer's ``config_revision`` equals the shell's.
+  POST-redirect-GET to the section with "<members>: saved — Configuration revision now <n>",
+  always.
 
-The shell's effective-config read carries no ``config_revision`` at the recorded schema (the
-Engine's ``EffectiveConfig`` has none), so the base revision is unknown and the usual saved flash
-shows (D8's "base revision unknown" rule); :func:`base_revision` reads it should the Engine add
-it.
+D8's "nothing to change" rule: the clock read carries no configuration revision, so D8's
+comparison doesn't apply (#270). D8 as amended by #329 drops it for the clock settings, and a
+successful save always flashes the saved line, never ``ENGINE_NOTHING_CHANGED``. The Console's
+own "untouched sends nothing" check (C9) stays first.
 
 A refusal re-renders the form with every input and row kept. D8's key rule: a fresh key after an
 answered refusal, the posted one after an unknown outcome (transport error, ``bad_response``).
@@ -103,12 +103,10 @@ from console.views.inspect import TEMPLATE_KEY, InspectContext, inspect_page
 from console.wording import humanised
 from console.world import (
     CLOCK_EXTERNAL_TEXT,
-    ENGINE_NOTHING_CHANGED,
     EXPECTED_REVISION_FIELD,
     clock_change_text,
     config_revision_text,
     expected_revision,
-    nothing_changed,
     offset_text,
     slot_result,
     world_refusal,
@@ -233,12 +231,6 @@ class ClockSnapshot:
         if not isinstance(settings, dict) or any(m not in settings for m in SNAPSHOT_MEMBERS):
             return None
         return cls(story_id, settings)
-
-
-def base_revision(ctx: InspectContext) -> Any:
-    """The shell's effective-config ``config_revision`` (D8's base), ``None`` while the Engine's
-    ``EffectiveConfig`` carries none."""
-    return getattr(ctx.config, "config_revision", None)
 
 
 def _page(
@@ -373,12 +365,10 @@ def _settings(ctx: InspectContext) -> dict[str, Any] | HttpResponse:
         answer = ctx.client.update_clock(ctx.story_id, patch, idempotency_key=key)
     except EngineClientError as exc:
         return _refused(ctx, exc, snap, form, key)
-    if nothing_changed(answer.config_revision, base_revision(ctx)):
-        messages.info(request, ENGINE_NOTHING_CHANGED)  # D8
-    else:
-        messages.success(
-            request, f"{saved_text(patch)}: saved — {config_revision_text(answer.config_revision)}"
-        )
+    # D8 (amended by #329): no base to compare against, so the saved flash always shows.
+    messages.success(
+        request, f"{saved_text(patch)}: saved — {config_revision_text(answer.config_revision)}"
+    )
     return redirect(clock_url(ctx.story_id))
 
 

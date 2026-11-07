@@ -1,0 +1,185 @@
+{
+  "id": "01JM7RW0000000000000000003",
+  "story_id": "01JM7ST0000000000000000001",
+  "kind": "instruction",
+  "state": "applied",
+  "instruction": "Bob never forged the ledger; he only copied it",
+  "resolution_mode": "synchronous",
+  "preview_mode": "preview_first",
+  "pipeline": "structured",
+  "principal": "console:nate",
+  "created_at": "2026-11-05T10:00:00Z",
+  "updated_at": "2026-11-05T10:01:00Z",
+  "expires_at": "2026-11-06T10:00:00Z",
+  "base_revision": 20,
+  "preview": {
+    "base_revision": 20,
+    "plan_hash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "changes": [
+      {
+        "key": "c1",
+        "kind": "fact",
+        "summary": "Bob copied the ledger (was: forged it)",
+        "subject_id": "01JM7CH0000000000000000003",
+        "fact_id": "01JM7FA0000000000000000001",
+        "old": "forged",
+        "new": "copied"
+      },
+      {
+        "key": "c2",
+        "kind": "belief",
+        "summary": "Alice believes Bob copied the ledger",
+        "holder_id": "01JM7CH0000000000000000002",
+        "fact_id": "01JM7FA0000000000000000002"
+      }
+    ],
+    "blast_radius": {
+      "incidental": [
+        {
+          "record": {
+            "table": "events",
+            "id": "01JM7EV0000000000000000003"
+          },
+          "edge_type": "mentions",
+          "edges": [
+            "01JM7DE0000000000000000001"
+          ],
+          "change_key": "c1",
+          "target": {
+            "kind": "fact",
+            "id": "01JM7FA0000000000000000001"
+          },
+          "action": "fix",
+          "position": [
+            3,
+            0,
+            0,
+            1,
+            0
+          ],
+          "excerpt": "Mara eyes the forged ledger."
+        }
+      ],
+      "cascaded": [
+        {
+          "record": {
+            "table": "state_changes",
+            "id": "01JM7SC0000000000000000001"
+          },
+          "edge_type": null,
+          "edges": [],
+          "change_key": "c1",
+          "target": {
+            "kind": "state",
+            "id": "01JM7SD0000000000000000001"
+          },
+          "action": "re_evaluate",
+          "position": null,
+          "severity": "low"
+        }
+      ],
+      "irreducible": [
+        {
+          "record": {
+            "table": "amendment_parts",
+            "id": "01JM7AM0000000000000000001"
+          },
+          "edge_type": "presupposes",
+          "edges": [
+            "01JM7DE0000000000000000002"
+          ],
+          "change_key": "c1",
+          "target": {
+            "kind": "fact",
+            "id": "01JM7FA0000000000000000001"
+          },
+          "action": "fix",
+          "position": null,
+          "excerpt": "Bob confesses the forgery",
+          "conflict_id": "01JM7CN0000000000000000001",
+          "reason": "dependent_amendment",
+          "severity": "high",
+          "options": [
+            "rewrite",
+            "drop",
+            "keep",
+            "cascade_undo"
+          ],
+          "before_excerpt": "Bob confesses the forgery"
+        }
+      ]
+    },
+    "blast_radius_truncated": true,
+    "relabels": [
+      {
+        "record": {
+          "table": "utterances",
+          "id": "01JM7YT0000000000000000001"
+        },
+        "edge_type": "asserts",
+        "edges": [
+          "01JM7DE0000000000000000003"
+        ],
+        "change_key": "c1",
+        "target": {
+          "kind": "fact",
+          "id": "01JM7FA0000000000000000001"
+        },
+        "action": "relabel",
+        "position": [
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        "from": "sincere",
+        "to": "deception"
+      }
+    ],
+    "refused_changes": [
+      {
+        "index": 3,
+        "reason": "external_owned",
+        "change": {
+          "kind": "state",
+          "state": "bank_balance"
+        }
+      }
+    ],
+    "notifications": [
+      {
+        "kind": "external_effect",
+        "outbox_id": "01JM7XB0000000000000000001",
+        "text": "The bank was already told about the forged ledger"
+      }
+    ],
+    "timing_uncertain": [],
+    "suggested_ports": [],
+    "new_entities": [],
+    "reach": null
+  },
+  "questions": [],
+  "held_render": null,
+  "last_error": null,
+  "report": {
+    "resolutions": [
+      {
+        "conflict_id": "01JM7CN0000000000000000001",
+        "option": "keep"
+      }
+    ],
+    "applied": {
+      "facts": [
+        "01JM7FA0000000000000000001"
+      ],
+      "beliefs": [
+        "01JM7FA0000000000000000002"
+      ]
+    },
+    "notifications": []
+  },
+  "result_amendment_id": "01JM7AM0000000000000000003",
+  "stale_count": 0,
+  "target_amendment_id": null
+}

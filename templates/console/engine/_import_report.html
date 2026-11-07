@@ -1,0 +1,42 @@
+{% comment %}
+#321: an import job's polled block body (E7's import kind), inside console/_job_poll.html: #295's
+_job_status.html, then the stage line, the ready link and notes, the error ("No story was
+created", the error text and message, the guardrail violations, details in More), the validation
+report and "Try again". Context: import_job (ImportJob; None before a read answered),
+job/job_id/error (job_poll_context; error is None here), stage_text, stage_count, ready,
+ready_html, notes, no_story_text, failed_view (console.imports_status.ErrorView), report
+(ImportReport), try_again_url/try_again, held (D17's fragment), not_found and poll_panel.
+{% endcomment %}{% if held %}{% include "console/stories/_held.html" %}{% elif not_found %}<p class="not-found">{{ not_found }}</p>{% elif poll_panel %}{% include "console/_engine_error.html" with engine_error=poll_panel %}{% elif import_job %}{% include "console/_job_status.html" %}
+{% if stage_count %}<p class="import-stage">{{ stage_count }}</p>{% endif %}
+{% if ready %}<p class="import-ready">{{ ready_html }}</p>
+{% for note in notes %}<p class="notice import-note">{{ note }}</p>
+{% endfor %}{% endif %}
+{% if failed_view %}<div class="import-error">
+  <p class="warning no-story">{{ no_story_text }}</p>
+  {% if failed_view.no_details %}<p class="error-text">{{ failed_view.text }}</p>
+  {% else %}<p class="warning error-code"><strong title="{{ failed_view.code }}">{{ failed_view.code_text }}</strong></p>
+  {% if failed_view.text %}<p class="error-text">{{ failed_view.text }}</p>{% endif %}
+  {% if failed_view.reason_text %}<p class="error-reason">{{ failed_view.reason_text }}</p>{% endif %}
+  <p class="error-message">{{ failed_view.message }}</p>{% endif %}
+  {% with table=failed_view.violations %}{% if table %}<table class="violations">
+    <caption>{{ table.caption }}</caption>
+    <thead><tr><th>Policy</th><th>Position</th>{% if table.has_excerpt %}<th>Excerpt</th>{% endif %}<th>More</th></tr></thead>
+    <tbody>{% for row in table.rows %}<tr class="violation"><td class="policy">{{ row.policy }}</td><td class="position">{{ row.position }}</td>{% if table.has_excerpt %}<td class="excerpt">{% if row.excerpt %}<q>{{ row.excerpt }}</q>{% else %}—{% endif %}</td>{% endif %}<td><details><summary>More</summary><pre>{{ row.more }}</pre></details></td></tr>
+    {% endfor %}</tbody>
+  </table>{% endif %}{% endwith %}
+  {% if failed_view.more %}<details class="error-details"><summary>More</summary><pre>{{ failed_view.more }}</pre></details>{% endif %}
+</div>{% endif %}
+{% if report %}<section class="import-report">
+  <h3>Validation report</h3>
+  {% if report.unreadable %}<table class="report-unreadable"><tr class="report-unreadable"><td>{{ report.unreadable_text }}</td><td><details><summary>More</summary><pre>{{ report.more }}</pre></details></td></tr></table>
+  {% else %}<h4 class="report-errors">Errors ({{ report.errors|length }})</h4>
+  {% if report.errors %}<table class="report-errors">{% for entry in report.errors %}<tr class="report-error"><td class="code">{{ entry.code }}</td><td class="message">{{ entry.message }}</td><td><details><summary>More</summary><pre>{{ entry.more }}</pre></details></td></tr>{% endfor %}</table>{% else %}<p class="none report-errors">None</p>{% endif %}
+  <h4 class="report-warnings">Warnings ({{ report.warnings|length }})</h4>
+  {% if report.warnings %}<table class="report-warnings">{% for entry in report.warnings %}<tr class="report-warning"><td class="code">{{ entry.code }}</td><td class="message">{{ entry.message }}</td><td><details><summary>More</summary><pre>{{ entry.more }}</pre></details></td></tr>{% endfor %}</table>{% else %}<p class="none report-warnings">None</p>{% endif %}
+  <h4 class="report-counts">Counts</h4>
+  {% if report.counts %}<table class="report-counts">{% for key, n in report.counts %}<tr class="report-count"><th scope="row">{{ key }}</th><td>{{ n }}</td></tr>{% endfor %}</table>{% else %}<p class="none report-counts">None</p>{% endif %}
+  {% if report.outbox %}<p class="report-outbox"><strong>Outbox</strong>: {{ report.outbox }}</p>{% endif %}
+  {% for label, more in report.others %}<div class="report-other"><strong>{{ label }}</strong> <details><summary>More</summary><pre>{{ more }}</pre></details></div>
+  {% endfor %}{% endif %}
+</section>{% endif %}
+{% if try_again_url %}<p class="try-again"><a href="{{ try_again_url }}">{{ try_again }}</a></p>{% endif %}{% endif %}

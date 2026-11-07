@@ -4,7 +4,10 @@ The Knowledge tab's Beliefs section (#190): the GET filters (names = the Engine'
 Apply carries no cursor), then one page of GET /stories/{id}/inspect/beliefs
 (viewpoint=omniscient, limit=100) for one character: the header and count lines, the notices,
 #191's canon notices and summary line, the rows (_belief_row.html, Engine order; #191's Canon
-column) and the paging links, then the Identities section. #194: "Direct a belief…" under the header line (direct_url),
+column) and the paging links, then the Identities section. #327: the Kind select (first;
+first-order, nested, speech_act); a nested or speech-act page (kind) has its own columns (Believed
+held by / Said by, Depth), notice (kind_notice, class "notice <kind_class>") and nested_off note,
+and no Canon column, Actions or Identities. #194: "Direct a belief…" under the header line (direct_url),
 and each row's Change… (actions = _belief_actions.html, actions_holder).
 The filters and their errors stay above every error (convention 10); an invalid filter makes no
 beliefs call. Context from console/views/inspect_beliefs.py, wording from console/beliefs.py.
@@ -14,6 +17,7 @@ beliefs call. Context from console/views/inspect_beliefs.py, wording from consol
 {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
 {% if form.non_field_errors %}<div class="errors" role="alert">{{ form.non_field_errors }}{% if after_refused %} <a class="first-page" href="?{{ first_query }}">First page</a>{% endif %}</div>{% endif %}
 <form method="get" action="{{ filter_url }}" class="beliefs-form">
+  <div class="field field-kind">{{ form.kind.label_tag }} {{ form.kind }}{{ form.kind.errors }}</div>
   <div class="field field-character">{{ form.character.label_tag }} {{ form.character }}{{ form.character.errors }}</div>
   <div class="field field-as_of">{{ form.as_of.label_tag }} {{ form.as_of }} <small class="muted">{{ form.as_of.help_text }}</small>{{ form.as_of.errors }}</div>
   <div class="field field-proposition_id">{{ form.proposition_id.label_tag }} {{ form.proposition_id }} <small class="muted">{{ form.proposition_id.help_text }}</small>{{ form.proposition_id.errors }}</div>
@@ -22,18 +26,19 @@ beliefs call. Context from console/views/inspect_beliefs.py, wording from consol
 
 {% if prompt %}<p class="none beliefs-prompt">{{ prompt }}</p>{% endif %}
 {% if header %}<h3 class="beliefs-header">{{ header }}</h3>{% endif %}
+{% if nested_off %}<p class="notice nested-off">{{ nested_off|code_spans }}</p>{% endif %}
 <p class="direct-belief"><a href="{{ direct_url }}">Direct a belief…</a></p>
 {% if omniscient_required %}<p class="omniscient-required">{{ omniscient_required }}</p>
 {% elif beliefs_not_found %}<p class="not-found">Not found (it may have been deleted or truncated)</p>
 {% elif beliefs_error %}{% include "console/_engine_error.html" with engine_error=beliefs_error %}
 {% elif beliefs %}
 <p class="beliefs-count">{{ count }}</p>
-<p class="notice first-order">{{ first_order }}</p>
+<p class="notice {{ kind_class }}">{{ kind_notice }}</p>
 {% for notice in canon_notices %}<p class="notice canon-notice">{{ notice|code_spans }}</p>
 {% endfor %}{% if canon_summary %}<p class="canon-summary">{{ canon_summary }}</p>{% endif %}
 {% if rows %}
 <table class="beliefs">
-  <thead><tr><th>Proposition</th><th>Confidence</th><th title="How the character came to hold it: the kind of the belief transition that produced it">How</th><th>Holds since</th><th>Until</th><th>About story-time</th>{% if marks is not None %}<th>Canon</th>{% endif %}{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
+  <thead><tr><th>Proposition</th><th>Confidence</th>{% if kind == "nested" %}<th title="{{ holder_title }}">Believed held by</th><th title="{{ depth_title }}">Depth</th>{% elif kind == "speech_act" %}<th title="{{ speaker_title }}">Said by</th><th title="{{ depth_title }}">Depth</th>{% endif %}<th title="How the character came to hold it: the kind of the belief transition that produced it">How</th><th>Holds since</th><th>Until</th><th>About story-time</th>{% if marks is not None %}<th>Canon</th>{% endif %}{% if actions %}<th>Actions</th>{% endif %}<th>More</th></tr></thead>
   <tbody>
   {% for row in rows %}{% include "console/inspect/_belief_row.html" %}
   {% endfor %}

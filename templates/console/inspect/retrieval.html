@@ -3,7 +3,8 @@
 {% comment %}
 The Retrieval tab (#141): the GET form, then what one GET /stories/{id}/retrieve read returns for
 the question (viewpoint=omniscient). Rows come from console/retrieval.py. The form stays above every
-error; the results are the degradation warnings, Resolution, Candidates, then #152's Canon,
+error; the results are the degradation warnings, #332's Coverage gaps in this window
+(console.retrieval.gap_lines, #330's lines; shown even under skipped: episodic), Resolution, Candidates, then #152's Canon,
 Profiles, Context and Run facts (_retrieval_context.html; none of them under skipped: episodic)
 and "More". explain_banner is #142's reconstruction banner slot, between the form and the results.
 {% endcomment %}
@@ -37,6 +38,14 @@ and "More". explain_banner is #142's reconstruction banner slot, between the for
   · participants {% for p in participants %}{% include "console/inspect/_character.html" with label=p.label character_id=p.id is_player=p.is_player %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</p>
 {% for d in placed.run.degradations %}<p class="notice warn degradation" title="{{ d.cause }}">{% if d.url %}<a href="{{ d.url }}">{{ d.text }}</a>{% else %}{{ d.text }}{% endif %}</p>
 {% endfor %}{% if episodic_off %}{% include "console/inspect/_unavailable.html" with unavailable=episodic_off inline=True %}{% endif %}
+{% with g=coverage_gaps %}{% if g.lines or g.unread %}
+<section class="coverage-gaps">
+  <h2>Coverage gaps in this window</h2>
+  {% if g.lines %}<ul class="coverage-gaps">{% for line in g.lines %}<li>{{ line.text }}{% if line.url %} — <a class="gap-fill" href="{{ line.url }}">Fill the gap</a>{% endif %}</li>{% endfor %}</ul>
+  <p class="gap-note muted">{{ g.note }}</p>{% endif %}
+  {% if g.unread %}<p class="muted">{{ g.unread|gap_unread }}</p>{% endif %}
+</section>
+{% endif %}{% endwith %}
 
 <section class="retrieval-resolution">
   <h2>Resolution</h2>

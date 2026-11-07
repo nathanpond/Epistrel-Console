@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -16,9 +17,12 @@ from console.engine.client import (
 )
 from console.engine.models import (
     Adjudication,
+    BackfillStarted,
     ClockValue,
     CouldHaveKnownFlag,
+    CoverageGap,
     DeferredCharacter,
+    DeploymentSettings,
     EscalationDeferred,
     ForkResult,
     HealthChecks,
@@ -29,27 +33,34 @@ from console.engine.models import (
     Ledger,
     LocationAdjacency,
     MaterializedEntry,
+    MessageFeedback,
+    ModelTiers,
     NestedSeed,
     Notice,
     OmniscientStoryCharacter,
     OperationRecord,
     Participation,
     Proposition,
+    QualityStatus,
     Reconcile,
     ReconciliationCount,
     RegenerateResult,
     ReplyMessage,
     RequiredEffect,
     RespondResponse,
+    RetrievalBody,
     Seed,
     StartingState,
     StateEffect,
+    Story,
     StoryList,
+    StoryProfileWrite,
     StorySettingsDefaults,
     TruncateResult,
     TurnClock,
     TurnRole,
     UtteranceLabels,
+    Variants,
     WorkersCheck,
     rejected_entries,
 )
@@ -1137,3 +1148,211 @@ def test_scenario_states_stay_raw() -> None:
     assert starting.states[0] == state
     assert starting.clock == clock
     assert starting.scheduled_events[0] == event
+
+
+# --- #291: the M7 recording's changed models --------------------------------------------------
+
+STORY_ID = "01JB2Z8Y5Q3W6K9M1N4P7R0T2V"
+GAP = {"capability": "rolling_summary", "from_turn": 1, "to_turn": 4}
+BAD_GAP = {"capability": "rolling_summary", "from_turn": "one", "to_turn": 4}
+
+
+def test_an_importing_story_parses(fake_engine: FakeEngine) -> None:
+    """M7's ``importing`` status: a ``Story`` and a ``StoryList`` item read it (open enums).
+    **Complement:** a status the Console doesn't know yet parses as its string, and a
+    non-string fails the item."""
+    listed = engine_fixture("list_stories")
+    listed["items"][0]["status"] = "importing"
+    story = engine_fixture("get_story")
+    story["status"] = "importing"
+    fake_engine.respond("GET", "/stories", 200, json=listed)
+    fake_engine.respond("GET", "/stories/{story_id}", 200, json=story)
+    engine = client(fake_engine)
+    assert engine.list_stories()[0].status == "importing"
+    assert engine.get_story(story["id"]).status == "importing"
+    assert Story.from_json({**story, "status": "later_status"}) is not None
+    assert StoryList.from_json({"items": [{**listed["items"][0], "status": "later_status"}]})
+    assert Story.from_json({**story, "status": 7}) is None
+
+
+def test_a_pruned_chain_parses(fake_engine: FakeEngine) -> None:
+    body = engine_fixture("list_variants")
+    body["items"][1]["membership"] = "pruned"
+    fake_engine.respond("GET", "/stories/{story_id}/variants", 200, json=body)
+    chains = client(fake_engine).list_variants(STORY_ID)
+    assert [c.membership for c in chains] == ["active", "pruned"]
+    assert Variants.from_json(body) is not None
+
+
+FEEDBACK_BODY: dict[str, Any] = {
+    "story_id": STORY_ID,
+    "message_id": "01JB2Z8Y5Q3W6K9M1N4P7R0MS1",
+    "turn": 3,
+    "variant": 1,
+    "principal": "console:nate",
+    "rating": 4,
+    "tags": [],
+    "text": None,
+    "pruned_at": "2026-11-01T09:00:00Z",
+    "created_at": "2026-10-31T09:00:00Z",
+    "updated_at": "2026-10-31T09:00:00Z",
+    "context": None,
+    "history": [],
+}
+
+
+def test_feedback_reads_pruned_at(fake_engine: FakeEngine) -> None:
+    """**Complement:** an M6 body (``compacted_at``, no ``pruned_at``) misses a required member."""
+    fake_engine.respond(
+        "GET", "/stories/{story_id}/messages/{message_id}/feedback", 200, json=FEEDBACK_BODY
+    )
+    feedback = client(fake_engine).get_message_feedback(STORY_ID, FEEDBACK_BODY["message_id"])
+    assert feedback.pruned_at == "2026-11-01T09:00:00Z"
+    old = {k: v for k, v in FEEDBACK_BODY.items() if k != "pruned_at"}
+    assert MessageFeedback.from_json({**old, "compacted_at": None}) is None
+
+
+def test_a_request_keyed_listing_parses(fake_engine: FakeEngine) -> None:
+    """Engine #661: a consumer-applied effect, keyed by its request id, has no outbox id.
+    **Complement:** a redacted outbox row still parses."""
+    keyed = {
+        "outbox_id": None,
+        "request_id": "req-7",
+        "provider": "bank",
+        "status": "unknown",
+        "reason": "imported_unsettled",
+        "since": "2026-10-31T18:05:00Z",
+    }
+    redacted = engine_fixture("m6/reconciliation")["listings"][3]
+    fake_engine.respond(
+        "GET", "/stories/{story_id}/reconciliation", 200, json={"listings": [keyed, redacted]}
+    )
+    first, second = client(fake_engine).get_reconciliation(STORY_ID).listings
+    assert (first.outbox_id, first.request_id, first.reason) == (
+        None,
+        "req-7",
+        "imported_unsettled",
+    )
+    assert (second.outbox_id, second.request_id, second.value) == (
+        redacted["outbox_id"],
+        None,
+        None,
+    )
+
+
+def _retrieval(**changes: Any) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads(
+        (Path(__file__).parents[1] / "fixtures" / "inspect" / "retrieval.json").read_text()
+    )
+    body.update(changes)
+    return body
+
+
+def test_retrieval_coverage_gaps_are_lenient(fake_engine: FakeEngine) -> None:
+    """One good and one malformed gap: the good one typed, the raw list kept; a non-list reads as
+    ``[]`` with the raw value kept. **Complement:** the read never fails on a bad gap."""
+    fake_engine.respond(
+        "GET", "/stories/{story_id}/retrieve", 200, json=_retrieval(coverage_gaps=[GAP])
+    )
+    read = client(fake_engine).retrieve(STORY_ID, q="lantern")
+    assert read.coverage_gaps == [CoverageGap("rolling_summary", 1, 4)]
+    mixed = RetrievalBody.from_json(_retrieval(coverage_gaps=[GAP, BAD_GAP]))
+    assert mixed is not None
+    assert mixed.coverage_gaps == [CoverageGap("rolling_summary", 1, 4)]
+    assert mixed.unparsed == {"coverage_gaps": [GAP, BAD_GAP]}
+    odd = RetrievalBody.from_json(_retrieval(coverage_gaps={"capability": "x"}))
+    assert odd is not None
+    assert odd.coverage_gaps == []
+    assert odd.unparsed == {"coverage_gaps": {"capability": "x"}}
+    assert RetrievalBody.from_json(_retrieval(coverage_gaps=[BAD_GAP])) is not None
+
+
+def test_turn_coverage_gaps_are_lenient() -> None:
+    """**Complement:** an absent field reads as ``[]``."""
+    turn = RespondResponse.from_json(_respond(coverage_gaps=[GAP, BAD_GAP]))
+    assert turn is not None
+    assert turn.coverage_gaps == [CoverageGap("rolling_summary", 1, 4)]
+    assert turn.unparsed == {"coverage_gaps": [GAP, BAD_GAP]}
+    regenerated = RegenerateResult.from_json(_respond(coverage_gaps=[BAD_GAP], previous_variant=1))
+    assert regenerated is not None
+    assert regenerated.coverage_gaps == []
+    plain = _respond()
+    plain.pop("coverage_gaps", None)
+    absent = RespondResponse.from_json(plain)
+    assert absent is not None
+    assert absent.coverage_gaps == []
+
+
+def test_quality_status_carries_its_certification() -> None:
+    """**Complement:** the M6 body ``{status: "uncertified"}`` still parses, every new field
+    ``None``."""
+    certified = QualityStatus.from_json(
+        {
+            "status": "certified",
+            "certification_id": "01JM7CE0000000000000000001",
+            "floors_passed": ["coherence"],
+            "invalidated_reason": None,
+        }
+    )
+    assert certified is not None
+    assert certified.certification_id == "01JM7CE0000000000000000001"
+    assert certified.floors_passed == ["coherence"]
+    assert certified.invalidated_reason is None
+    stale = QualityStatus.from_json({"status": "stale", "invalidated_reason": "canary"})
+    assert stale is not None
+    assert stale.invalidated_reason == "canary"
+    m6 = QualityStatus.from_json({"status": "uncertified"})
+    assert m6 == QualityStatus("uncertified")
+    assert m6.certification_id is None
+    assert m6.failed_floors is None
+    assert m6.intervention_types_covered is None
+    assert m6.intervention_types_insufficient is None
+
+
+def test_settings_parse_the_m7_settings(fake_engine: FakeEngine) -> None:
+    """**Complement:** a body without the 23 settings reads the schema's defaults."""
+    body = {**engine_fixture("get_deployment_settings"), "model_tiers": {"strongest": "gpt-x"}}
+    body["rewrite_stale_retries"] = 3
+    fake_engine.respond("GET", "/admin/settings", 200, json=body)
+    settings = client(fake_engine).get_deployment_settings()
+    assert settings.model_tiers == ModelTiers("gpt-x")
+    assert settings.rewrite_stale_retries == 3
+    bare = DeploymentSettings.from_json(engine_fixture("get_deployment_settings"))
+    assert bare is not None
+    assert bare.model_tiers == ModelTiers(None)
+    assert (bare.bundle_export_ttl_hours, bare.bundle_max_uncompressed_bytes) == (24, 4294967296)
+    assert (bare.certification_canary_enabled, bare.certification_recertify_interval_s) == (
+        False,
+        None,
+    )
+    assert (bare.rewrite_ambiguity_margin, bare.lite_reach_parallelism) == (0.15, 4)
+
+
+def acting(fake: FakeEngine) -> EngineClient:
+    """A client with a requesting principal (the writes need one)."""
+    return EngineClient(URL, KEY, transport=fake.transport, principal="console:nate")
+
+
+def test_profile_writes_parse_their_202(fake_engine: FakeEngine) -> None:
+    """A write that started a backfill answers 202 with the same body and its ``backfill``."""
+    from tests.fakes.story_config import effective_config
+    from tests.profile_helpers import edit_body, impact
+
+    backfill = {"id": "01JM7BF0000000000000000001", "job_id": "01JM7JB0000000000000000001"}
+    body = {
+        **edit_body(True, effective_config(story_id=STORY_ID), impact()),
+        "timeline_revision": 5,
+        "backfill": {**backfill, "status": "queued"},
+    }
+    fake_engine.respond("PUT", "/stories/{story_id}/engine-profile", 202, json=body)
+    fake_engine.respond("PATCH", "/stories/{story_id}/profile-overrides", 202, json=body)
+    engine = acting(fake_engine)
+    assigned = engine.assign_engine_profile(
+        STORY_ID, "00000000000000000000PRF001", ignore_warnings=False, idempotency_key="a"
+    )
+    patched = engine.patch_profile_overrides(
+        STORY_ID, {}, expected_revision=None, ignore_warnings=False, idempotency_key="b"
+    )
+    for written in (assigned, patched):
+        assert isinstance(written, StoryProfileWrite)
+        assert written.backfill == BackfillStarted(backfill["id"], backfill["job_id"], "queued")

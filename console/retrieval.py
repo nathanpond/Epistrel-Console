@@ -56,6 +56,13 @@ from console.inspect import (
 from console.ledger import FactLink, fact_link
 from console.predicates import row_url
 from console.scene import entity_url
+from console.turn_reports import (
+    GAPS_FIELD,
+    GapLine,
+    coverage_gap_lines,
+    stored_gaps,
+    unread_gap_count,
+)
 from console.wording import humanised as humanised  # moved (#187); old import kept
 
 EMPTY = "—"
@@ -859,4 +866,45 @@ def placed(story_id: str, body: RetrievalBody, names: Names, keep: Mapping[str, 
         context=context_view(story_id, body, keep),
         run=run_facts(story_id, body, keep),
         unparsed=body.unparsed,
+    )
+
+
+# --- coverage gaps (#332, FR-PROF-8) ------------------------------------------------------------
+
+GAP_NOTE = (
+    "Retrieval found nothing here because there is nothing stored for these turns, not because "
+    "it missed it"
+)
+
+
+@dataclass(frozen=True)
+class GapSection:
+    """The explainer's "Coverage gaps in this window" section: #330's :class:`GapLine`\\ s and
+    how many ``coverage_gaps`` entries couldn't be read. The section shows when either is set."""
+
+    lines: tuple[GapLine, ...]
+    unread: int
+
+    @property
+    def note(self) -> str:
+        """:data:`GAP_NOTE` under the lines; "" when there are none (only unread entries)."""
+        return GAP_NOTE if self.lines else ""
+
+
+def gap_lines(story_id: str, body: RetrievalBody) -> GapSection:
+    """The answer's ``coverage_gaps`` through #330's helpers, unchanged (no wording or parsing of
+    its own): one raw list, ``body.unparsed["coverage_gaps"]`` when the lenient read lost an entry
+    (or the value wasn't a list), else the typed gaps re-serialised, so an entry is either a line
+    or an unread entry, never both. In the Engine's order, #330's de-duplication only."""
+    if GAPS_FIELD in body.unparsed:
+        raw: object = body.unparsed[GAPS_FIELD]
+    else:
+        raw = [
+            {"capability": g.capability, "from_turn": g.from_turn, "to_turn": g.to_turn}
+            for g in body.coverage_gaps
+        ]
+    answer = {GAPS_FIELD: raw}
+    return GapSection(
+        lines=tuple(coverage_gap_lines(stored_gaps(answer), story_id)),
+        unread=unread_gap_count(answer),
     )

@@ -84,21 +84,35 @@ def _unreachable(media_id: str, exc: EngineUnreachable, as_image: bool) -> HttpR
     return _failure(media_id, 502, UNREACHABLE, as_image)
 
 
-class _Body:
+class StreamedBody:
     """The streamed body: the Engine's chunks; the Engine response closes when the last chunk
     is sent or Django closes the response, whichever comes first. A stream cut short after the
     status went out can only end early (logged)."""
 
-    def __init__(self, content: StreamedContent, stack: ExitStack, media_id: str) -> None:
+    def __init__(
+        self,
+        content: StreamedContent,
+        stack: ExitStack,
+        media_id: str,
+        *,
+        logger: logging.Logger = log,
+        what: str = "media",
+    ) -> None:
+        # #319's bundle download passes ``logger=console.exports`` and ``what="export"``, with
+        # the job id in place of the media id.
         self._content = content
         self._stack = stack
         self._media_id = media_id
+        self._log = logger
+        self._what = what
 
     def __iter__(self) -> Iterator[bytes]:
         try:
             yield from self._content.iter_bytes()
         except EngineUnreachable as exc:
-            log.warning("media %s: stream cut short (%s)", self._media_id, exc.reason)
+            self._log.warning(
+                "%s %s: stream cut short (%s)", self._what, self._media_id, exc.reason
+            )
         finally:
             self.close()
 
@@ -155,7 +169,7 @@ def media_content(request: HttpRequest, media_id: str) -> HttpResponse | Streami
         not_modified["Cache-Control"] = CACHE_CONTROL
         _secured(not_modified)
         return not_modified
-    response = StreamingHttpResponse(_Body(content, stack, media_id), status=content.status)
+    response = StreamingHttpResponse(StreamedBody(content, stack, media_id), status=content.status)
     for name, value in content.headers.items():
         response[name] = value
     if "Content-Type" not in content.headers:

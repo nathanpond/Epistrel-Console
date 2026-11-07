@@ -237,9 +237,11 @@ class FakeEngine:
         self, method: str, path: str, status: int, json: object | None = None
     ) -> None:
         """Answer ``method path`` (a declared operation) with a status its schema does **not**
-        declare, unvalidated: only for an Engine gap D18 records (``POST /stories``' 404
-        ``not_found`` for an unregistered provider in ``provider_bindings``, #259). Refused for
-        a declared status, which :meth:`respond` answers."""
+        declare, unvalidated, for an Engine gap D18 would record. The one it first served,
+        ``POST /stories``' 404 ``not_found`` (#259), is declared since Engine M7 (#682) (#291's
+        complement test still calls it); #292 uses it for the export bundle's 410
+        ``export_expired``, which the route documents but its schema doesn't declare. Refused
+        for a declared status, which :meth:`respond` answers."""
         method = method.upper()
         responses = self._declared(method, path).get("responses", {})
         if self._response_key(responses, status) is not None:

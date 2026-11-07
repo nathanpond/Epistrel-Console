@@ -1,0 +1,53 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#316: one eval run (engine:eval-run, console/views/eval_runs.py): the header facts, the Metrics
+table (or OLD_REPORT for a report from before Engine #532), the Suites and Requirements tables
+(raw, E15) and "Back to eval runs". not_found: "No such eval run". Context: not_found, run, date,
+source, preset, model, fingerprint, certifications_url, certifications_text, host, seeds,
+sample_size, verdict, metrics (MetricRow list or None), old_report, suites, requirements
+(RawTable), none_text, back_url, back_text.
+{% endcomment %}
+{% block engine_page %}
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% else %}
+<section class="eval-run-facts">
+  <dl class="facts">
+    <dt>Date</dt><dd class="date">{{ date }}</dd>
+    <dt>Source</dt><dd class="source">{{ source }}</dd>
+    <dt>Preset</dt><dd class="preset">{{ preset }}</dd>
+    <dt>Model</dt><dd class="model">{{ model }}</dd>
+    <dt>Fingerprint</dt><dd class="fingerprint">{% if fingerprint %}<code class="hash">{{ fingerprint }}</code>{% if certifications_url %} · <a class="certifications-link" href="{{ certifications_url }}">{{ certifications_text }}</a>{% endif %}{% else %}—{% endif %}</dd>
+    <dt>Host</dt><dd class="host">{{ host }}</dd>
+    <dt>Seeds</dt><dd class="seeds">{{ seeds }}</dd>
+    <dt>Sample size</dt><dd class="sample-size">{{ sample_size }}</dd>
+    <dt>Verdict</dt><dd class="verdict">{{ verdict }}</dd>
+  </dl>
+</section>
+<section class="eval-metrics">
+  <h3>Metrics</h3>
+  {% if metrics is None %}<p class="old-report">{{ old_report }}</p>
+  {% elif metrics %}<table class="eval-metrics">
+    <thead><tr><th>Metric</th><th>Requirement</th><th>Value</th><th>Floor</th><th>Sample size</th><th>Verdict</th></tr></thead>
+    <tbody>
+    {% for row in metrics %}<tr>
+      <td class="metric">{{ row.metric }}</td>
+      <td class="requirement">{% if row.requirement %}<code>{{ row.requirement }}</code>{% else %}—{% endif %}</td>
+      <td class="value">{{ row.value }}</td>
+      <td class="floor">{{ row.floor }}</td>
+      <td class="n">{{ row.n }}</td>
+      <td class="verdict">{{ row.verdict }}</td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% else %}<p class="empty">{{ none_text }}</p>{% endif %}
+</section>
+<section class="eval-suites">
+  <h3>Suites</h3>
+  {% include "console/engine/_eval_raw_table.html" with table=suites key_label="Suite" value_label="Verdict" code_keys=False %}
+</section>
+<section class="eval-requirements">
+  <h3>Requirements</h3>
+  {% include "console/engine/_eval_raw_table.html" with table=requirements key_label="Requirement" value_label="Verdict" code_keys=True %}
+</section>
+{% endif %}
+<p class="back"><a class="back-to-eval-runs" href="{{ back_url }}">{{ back_text }}</a></p>
+{% endblock %}

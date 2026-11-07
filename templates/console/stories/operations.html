@@ -1,0 +1,50 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#324: a story's Operations page (stories:operations-list, console/views/story_operations.py).
+The scope line with the count and the cross-link to this Console's own log, the cursor notice,
+the refusals above the filters ("First page" for a refused after_id), E22's filters (each
+field's errors beside it), #43's panel for a failed read, then the table (rejected entries:
+UNPARSED_TEXT plus one spanning row each), the empty text and the paging links.
+Context: filter_form, filter_url, clear_url, cursor_dropped, scope_text, count_text, log_url,
+log_link_text, refusals, cursor_refused, list_read, list_error, rows, rejected, unparsed_text,
+rejected_text, empty_text, next_url, first_url, next_text, first_text.
+{% endcomment %}
+{% load console_format inspect_tags principals %}
+{% block story_page %}
+<section class="story-operations">
+  <p class="scope">{{ scope_text }}{% if count_text %} · <span class="count">{{ count_text }}</span>{% endif %}</p>
+  <p class="cross-links"><a class="console-log-link" href="{{ log_url }}">{{ log_link_text }}</a></p>
+  {% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+  {% for refusal in refusals %}<p class="errorlist operations-refusal" role="alert">{{ refusal }}{% if cursor_refused and first_url %} <a href="{{ first_url }}">{{ first_text }}</a>{% endif %}</p>
+  {% endfor %}<form method="get" action="{{ filter_url }}" class="operations-filter">
+    {% for field in filter_form %}<span class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</span>
+    {% endfor %}<button type="submit">Filter</button>{% if clear_url %} <a href="{{ clear_url }}">Clear filters</a>{% endif %}
+  </form>
+  {% if list_error %}{% include "console/_engine_error.html" with engine_error=list_error %}
+  {% elif list_read %}
+  {% if unparsed_text %}<p class="notice rejected-notice">{{ unparsed_text }}</p>{% endif %}
+  {% if rows %}<table class="operations">
+    <thead><tr><th>Operation</th><th>Kind</th><th>Label</th><th>Status</th><th>Turn</th><th>Principal</th><th>Started</th><th>Committed</th><th>Console log</th></tr></thead>
+    <tbody>
+    {% for row in rows %}<tr id="op-{{ row.operation_id }}">
+      <td class="operation">{% if row.operation_url %}<a href="{{ row.operation_url }}">{{ row.operation_id|engine_id }}</a>{% else %}{{ row.operation_id|engine_id }}{% endif %}</td>
+      <td class="kind"><span title="{{ row.kind }}">{{ row.kind_text }}</span></td>
+      <td class="label">{% if row.label %}<span title="{{ row.label }}">{{ row.label_text }}</span>{% else %}{{ row.label_text }}{% endif %}</td>
+      <td class="status"><span class="badge badge-{{ row.status }}" title="{{ row.status }}">{{ row.status_text }}</span></td>
+      <td class="turn">{% if row.turn_url %}<a href="{{ row.turn_url }}">{{ row.turn_text }}</a>{% else %}—{% endif %}</td>
+      <td class="principal">{{ row.principal|principal_link }}</td>
+      <td class="started">{{ row.started_at|engine_time }}</td>
+      <td class="committed">{{ row.committed_at|engine_time }}</td>
+      <td class="console-log">{% if row.log_url %}<a href="{{ row.log_url }}">#{{ row.log_pk }}</a>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}{% for raw in rejected %}<tr class="rejected">
+      <td colspan="9">{{ rejected_text }}<details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>
+    </tr>
+    {% endfor %}</tbody>
+  </table>{% elif rejected %}{% for raw in rejected %}<details class="rejected-entry"><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details>
+  {% endfor %}{% endif %}
+  {% if empty_text %}<p class="empty">{{ empty_text }}</p>{% endif %}
+  {% if next_url or first_url %}<p class="paging">{% if first_url %}<a href="{{ first_url }}">{{ first_text }}</a>{% endif %}{% if first_url and next_url %} · {% endif %}{% if next_url %}<a href="{{ next_url }}">{{ next_text }}</a>{% endif %}</p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

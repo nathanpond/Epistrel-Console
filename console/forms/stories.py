@@ -22,7 +22,30 @@ STATUS_CHOICES = [
     ("archived", "Archived"),
     ("paused", "Paused"),
     ("blocked_by_erasure", "Held"),  # held until a pending erasure is re-applied (#87)
+    ("importing", "Importing"),  # an imported story while its import job runs (#293, E10)
 ]
+
+# The one wording for a story status (#293): the filter's labels. The story list's status cell
+# and the play header's ``dd.status`` render through it (the ``status_label`` filter).
+STATUS_LABELS: dict[str, str] = dict(STATUS_CHOICES[1:])
+IMPORTING_STATUS = "importing"
+# An importing story's row note beside its disabled Archive and Delete (#293; #295 may re-export
+# it from ``console.portability``, the source of truth stays here).
+IMPORTING_ROW_NOTE = "Importing — available once the import ends"
+NO_STATUS = "—"
+
+
+def status_label(status: str | None) -> str:
+    """A story status as text: a known value's filter label ("Held" for ``blocked_by_erasure``),
+    any other value C3-humanised (``later_status`` → "Later status"); missing or blank → "—"
+    (E23). The template puts the raw value in ``title``."""
+    if not status:
+        return NO_STATUS
+    if status in STATUS_LABELS:
+        return STATUS_LABELS[status]
+    from console.wording import humanised
+
+    return humanised(status)
 
 
 class StoryFilterForm(forms.Form):
@@ -37,7 +60,7 @@ class StoryFilterForm(forms.Form):
 
     def status_label(self, status: str) -> str:
         """The filter option's label for ``status`` ("Held" for ``blocked_by_erasure``)."""
-        return dict(STATUS_CHOICES).get(status, status)
+        return status_label(status)
 
 
 # --- New story (#45): POST /stories with a blank story's StorySpec ----------------------------

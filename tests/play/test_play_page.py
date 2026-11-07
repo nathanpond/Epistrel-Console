@@ -3,13 +3,15 @@ waiting cards and per-section degradation."""
 
 from typing import Any
 
+import httpx
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 
 from console.models import EngineOperation
 from tests.fakes.engine import FakeEngine
 from tests.fakes.ownership import answer_one_relation
+from tests.golden import normalise_html
 from tests.play.helpers import (
     HTMX,
     MARA,
@@ -20,6 +22,7 @@ from tests.play.helpers import (
     calls,
     error_json,
     snapshot,
+    story_json,
 )
 
 pytestmark = pytest.mark.django_db
@@ -217,3 +220,90 @@ def test_transcript_at_a_character_viewpoint_shows_no_classification(
     assert "beat-classification" not in html
     assert "(corrected)" not in html
     assert "<dt>classification</dt>" not in html
+
+
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [("paused", "Paused"), ("archived", "Archived"), ("later_status", "Later status")],
+)
+def test_the_status_reads_through_the_labels(
+    operator_client: Client, engine: FakeEngine, status: str, label: str
+) -> None:
+    """#293: ``dd.status`` reads through ``STATUS_LABELS`` (the one status wording), the raw value
+    in ``title``. A status a later Engine adds (open enum, E15) can't pass the fake's schema
+    validation, so the story read answers through ``side_effect``."""
+    answer_page(engine)
+    body = story_json(status=status)
+    engine.side_effect(
+        "GET", "/stories/{story_id}", lambda _request: httpx.Response(200, json=body)
+    )
+    html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    assert f'<dd class="status"><span title="{status}">{label}</span></dd>' in html
+
+
+# --- E11's story nav in the link line (#296) ------------------------------------------------------
+
+S = f"/stories/{STORY}/"
+NEXT = f"?name=Harbour&amp;next=%2Fstories%2F{STORY}%2F"
+# Main's link line (E24: captured before #296, compared normalised).
+PLAY_LINK_LINE = (
+    "<p>\n"
+    '<span class="actions">\n  \n'
+    f'  <a class="button" href="{S}archive/{NEXT}">Archive</a>\n  \n'
+    f'  <a class="button" href="{S}delete/{NEXT}">Delete</a>\n'
+    "</span>\n"
+    f' <a class="button" href="/engine/rebuild/{STORY}/{NEXT}">Rebuild projections</a>'
+    f' <a class="history-link" href="{S}history/">History</a>'
+    f' <a class="inspect-link" href="{S}inspect/">Inspect</a>'
+    f' <a class="settings-link" href="{S}settings/">Settings</a>'
+    f' <a class="config-tab" href="{S}config/">Config</a>'
+    f' <a class="providers-link" href="{S}providers/">Providers</a>'
+    ' <a href="/stories/">All stories</a></p>'
+)
+STORY_NAV = (
+    ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
+    f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}amendments/">Amendments</a> · '
+    f'<a href="{S}backfill/">Backfill</a> · <a href="{S}export/">Export</a> · '
+    f'<a href="{S}operations/">Operations</a></span>'
+)
+
+
+def play_link_line(html: str) -> str:
+    at = html.index('class="history-link"')
+    return html[html.rindex("<p>", 0, at) : html.index("</p>", at) + 4]
+
+
+# The nav once #297 registered ``stories:rewrites``, #302 ``stories:amendments``, #308
+# ``stories:backfill`` and #319 ``stories:export`` (E24: the registering story regenerates).
+REGISTERED_NAV = (
+    ' · <span class="story-pages" role="navigation" aria-label="Story pages">'
+    f'<a href="{S}rewrites/">Rewrite</a> · <a href="{S}amendments/">Amendments</a> · '
+    f'<a href="{S}backfill/">Backfill</a> · <a href="{S}export/">Export</a> · '
+    f'<a href="{S}operations/">Operations</a></span>'
+)
+
+
+def test_the_link_line_shows_only_the_registered_m7_pages(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Main's link line plus the registered nav rows (Rewrite #297, Amendments #302, Backfill
+    #308, Export #319, Operations #324) after History."""
+    answer_page(engine)
+    html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    history = f'<a class="history-link" href="{S}history/">History</a>'
+    expected = PLAY_LINK_LINE.replace(history, history + REGISTERED_NAV)
+    assert normalise_html(play_link_line(html)) == normalise_html(expected)
+
+
+def test_the_link_line_shows_the_story_nav_after_history(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """**Complement:** under the stub urlconf the nav appears right after History."""
+    answer_page(engine)
+    with override_settings(ROOT_URLCONF="tests.urls_with_m7_pages"):
+        html = operator_client.get(f"/stories/{STORY}/").content.decode()
+    history = f'<a class="history-link" href="{S}history/">History</a>'
+    expected = PLAY_LINK_LINE.replace(history, history + STORY_NAV)
+    assert normalise_html(play_link_line(html)) == normalise_html(expected)
+    assert f'History</a>{STORY_NAV} <a class="inspect-link"' in html
+    assert "aria-current" not in STORY_NAV

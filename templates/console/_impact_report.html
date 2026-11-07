@@ -9,9 +9,11 @@ An ImpactReport (#109; #75 owns the partial, #84 extends it; #85 reuses it). Con
   #64's two-stage "Apply anyway" form; False/absent = read-only).
 Order: the warnings that hold the change, the budget warnings (#234, `_budget_warnings.html`:
 `impact.budget_warnings`, which never hold it), unmet recommendations, guarantees gained and lost, then
-the per-story table (when affected_stories is non-empty) and the top-level block (when it is empty, or
+#310 (E8): Certifications lost (only when impact.certifications_lost is non-empty), then
+the per-story table (when affected_stories is non-empty; its Mode and Gap columns and the Backfill
+cell's turn range read #291's M7 members) and the top-level block (when it is empty, or
 always in "story" mode, #85): fingerprint before -> after, capabilities and quality status after.
-{% endcomment %}{% load console_format impact %}<section class="impact">
+{% endcomment %}{% load console_format impact inspect_tags %}<section class="impact">
   <h3>Impact report</h3>
   <h4>Warnings</h4>
   {% if impact.warnings %}<ul class="impact-warnings">{% for w in impact.warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% else %}<p>—</p>{% endif %}
@@ -23,18 +25,22 @@ always in "story" mode, #85): fingerprint before -> after, capabilities and qual
     <dt>Guarantees lost</dt><dd class="guarantees-lost">{% for g in impact.guarantees_lost %}{% if guarantees_href %}<a href="{{ guarantees_href }}#g-{{ g }}" target="_blank" rel="noopener" title="Opens this row of the guarantee table in a new tab"><code>{{ g }}</code></a>{% else %}<code>{{ g }}</code>{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if mode == "profile" and impact.guarantees_lost %}<br><small class="muted guarantees-lost-note">Lost by at least one following story; a story with its own overrides can differ from this profile's table</small>{% endif %}</dd>
     <dt>Stories affected</dt><dd class="affected-count">{{ impact.affected_count }}</dd>
   </dl>
+  {% certifications_lost impact story_labels as lost %}{% if lost %}<h4>Certifications lost</h4>
+  <ul class="certifications-lost">{% for c in lost %}<li>{% if c.story_id %}{% if c.url %}<a href="{{ c.url }}">{% endif %}{% if c.name %}{{ c.name }} {% endif %}<code>{{ c.story_id }}</code>{% if c.url %}</a>{% endif %}{% if c.note %} <small class="muted">({{ c.note }})</small>{% endif %}{% else %}this profile's own configuration{% endif %}: <span class="status-before" title="{{ c.before.raw }}">{{ c.before.text }}</span> → <span class="status-after" title="{{ c.after.raw }}">{{ c.after.text }}</span> · certification {% if c.certification_url %}<a class="certification-link" href="{{ c.certification_url }}">{{ c.certification_id|engine_id }}</a>{% else %}{{ c.certification_id|engine_id }}{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% if impact.affected_stories %}
   {% impact_rows impact story_labels as rows %}
   <table class="affected-stories">
-    <thead><tr><th>Story</th><th>Gained</th><th>Lost</th><th>Backfill</th><th>Upgrade</th><th>Fingerprint before → after</th><th>Quality after</th></tr></thead>
+    <thead><tr><th>Story</th><th>Gained</th><th>Lost</th><th>Backfill</th><th>Mode</th><th>Gap</th><th>Upgrade</th><th>Fingerprint before → after</th><th>Quality after</th></tr></thead>
     <tbody>{% for row in rows %}<tr id="impact-{{ row.story_id }}"{% if row.upgrade_unavailable %} class="upgrade-unavailable"{% endif %}>
       <td>{% if row.url %}<a href="{{ row.url }}">{% endif %}{% if row.name %}{{ row.name }} {% endif %}<code>{{ row.story_id }}</code>{% if row.url %}</a>{% endif %}{% if row.note %} <small class="muted">({{ row.note }})</small>{% endif %}</td>
       <td>{% for c in row.gained %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
       <td>{% for c in row.lost %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
       <td class="backfill">{{ row.backfill }}</td>
+      <td class="mode">{{ row.mode_cell }}</td>
+      <td class="gap">{{ row.gap_cell }}</td>
       <td class="upgrade">{% if row.upgrade_unavailable %}<strong>Unavailable</strong> — {{ upgrade_unavailable_text|default:"This story has history the Engine can't backfill — it keeps its current configuration" }}{% else %}—{% endif %}</td>
       <td class="fingerprints">{% if row.fingerprint_before %}<code title="{{ row.fingerprint_before }}">{{ row.before_short }}</code>{% else %}—{% endif %} → {% if row.fingerprint_after %}<code title="{{ row.fingerprint_after }}">{{ row.after_short }}</code>{% else %}—{% endif %}</td>
-      <td>{{ row.quality_after|humanise|default:"—" }}</td>
+      <td>{% include "console/_quality.html" with quality=row.quality_after|quality_line %}</td>
     </tr>{% endfor %}</tbody>
   </table>
   {% impact_more impact as more %}{% if more %}<p class="impact-more">…and {{ more }} more (the Engine lists the first 1,000)</p>{% endif %}
@@ -44,7 +50,7 @@ always in "story" mode, #85): fingerprint before -> after, capabilities and qual
   <dl class="impact-top">
     <dt>Fingerprint before → after</dt><dd class="fingerprints">{% if impact.fingerprint_before %}<code title="{{ impact.fingerprint_before }}">{{ impact.fingerprint_before|short_fp }}</code>{% else %}—{% endif %} → {% if impact.fingerprint_after %}<code title="{{ impact.fingerprint_after }}">{{ impact.fingerprint_after|short_fp }}</code>{% else %}—{% endif %}</dd>
     <dt>Capabilities after</dt><dd class="capabilities-after">{% if impact.capabilities_after is not None %}{% for c in impact.capabilities_after %}<code>{{ c }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}{% else %}—{% endif %}</dd>
-    <dt>Quality status after</dt><dd class="quality-after">{% if impact.quality_status_after %}{{ impact.quality_status_after.status|humanise }}{% else %}—{% endif %}</dd>
+    <dt>Quality status after</dt><dd class="quality-after">{% include "console/_quality.html" with quality=impact.quality_status_after|quality_line %}</dd>
   </dl>
   {% endif %}
   {% if show_apply %}{% include "console/_two_stage.html" with token=signed_payload confirm_url=apply_url confirm_label="Apply anyway" cancel_url=cancel_url idempotency_key=idempotency_key %}{% endif %}

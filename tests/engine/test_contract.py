@@ -15,15 +15,25 @@ from console.engine.models import (
     Adjudication,
     AffectedStory,
     AgeCondition,
+    AmendmentChecks,
+    AmendmentDetail,
+    AmendmentPage,
+    AmendmentSummary,
     AnalysisQueued,
     AuthoredBelief,
     AuthorPosition,
     Backfill,
+    BackfillCancelled,
+    BackfillConflict,
+    BackfillConflictResolved,
     BackfillEstimate,
+    BackfillProgress,
+    BackfillStarted,
     BeliefItem,
     Beliefs,
     BeliefTransition,
     BeliefWritten,
+    BlastRadius,
     Bound,
     CardImage,
     CardImages,
@@ -39,6 +49,14 @@ from console.engine.models import (
     CatalogSource,
     CatalogVersion,
     CatalogVersionList,
+    Certification,
+    CertificationImported,
+    CertificationInvalidated,
+    CertificationLost,
+    CertificationPage,
+    CertificationRun,
+    CertificationRunRequested,
+    ChainMembership,
     ChainRef,
     CharacterDefinition,
     CharacterImage,
@@ -61,12 +79,15 @@ from console.engine.models import (
     ConfigChange,
     ConfigChanges,
     ConfigSources,
+    ConflictCounts,
+    ConflictStatement,
     ConsolidationProvenance,
     ContentRating,
     ContentRatingList,
     ContentRatingMutation,
     ContentRatingSummary,
     CouldHaveKnownFlag,
+    CoverageGap,
     CreatedCharacter,
     CreationCounts,
     CreationReport,
@@ -78,6 +99,9 @@ from console.engine.models import (
     DeferredItem,
     DegradationStep,
     DeploymentSettings,
+    DirectedPending,
+    Directive,
+    DirectiveApplied,
     Disposition,
     Dispositions,
     DivergenceItem,
@@ -100,7 +124,13 @@ from console.engine.models import (
     ErasureResult,
     EscalationDeferred,
     EscalationYield,
+    Estimate,
+    EvalMetric,
+    EvalRun,
+    EvalRunPage,
     EvaluatedRating,
+    ExportJob,
+    ExportStarted,
     ExposureItem,
     Exposures,
     ExternalFact,
@@ -111,9 +141,14 @@ from console.engine.models import (
     FactListBody,
     FeedbackContext,
     FeedbackHistoryEntry,
+    FloorResult,
+    FloorsMet,
     ForkCharacter,
     ForkedFrom,
     ForkResult,
+    ForwardOnlyGap,
+    GapFill,
+    GapFillPreview,
     GuaranteeRequiredModule,
     GuaranteeStatus,
     GuaranteeTable,
@@ -121,6 +156,7 @@ from console.engine.models import (
     GuardrailViolation,
     HealthChecks,
     HealthResponse,
+    HeldRender,
     HiddenFact,
     History,
     HistoryItem,
@@ -131,6 +167,9 @@ from console.engine.models import (
     IdentityItem,
     ImpactReport,
     Implication,
+    ImportImpact,
+    ImportJob,
+    ImportStarted,
     InactiveItem,
     InspectPosition,
     Instant,
@@ -143,6 +182,7 @@ from console.engine.models import (
     LikesDislikes,
     ListedMemory,
     ListingOutcome,
+    ListingResolved,
     ListingStatus,
     Location,
     LocationAdjacency,
@@ -164,6 +204,7 @@ from console.engine.models import (
     ModelConfigMutation,
     ModeledAt,
     ModelIdentity,
+    ModelTiers,
     NarrativePosition,
     NestedSeed,
     Notice,
@@ -179,6 +220,10 @@ from console.engine.models import (
     OperationLabel,
     OperationRecord,
     OperationStage,
+    OperationSummary,
+    Outbox,
+    OutboxPosition,
+    OutboxRow,
     OutcomeCounts,
     OverridesRef,
     OwnedItem,
@@ -215,6 +260,7 @@ from console.engine.models import (
     ProfileVersionRef,
     ProfileWarning,
     ProfileWritten,
+    PromotedDraft,
     Promotion,
     Proposal,
     ProposalApproved,
@@ -228,7 +274,18 @@ from console.engine.models import (
     ProviderDetail,
     ProviderList,
     ProviderMutation,
+    Pruned,
+    PruneExcluded,
+    PruneImpact,
+    PrunePosition,
+    PruneResult,
+    PruneRun,
+    PruneRuns,
+    PruneTarget,
     QualityStatus,
+    QualityStatusValue,
+    QuestionOption,
+    QueuedBackfill,
     QueuedTurn,
     RatingApplied,
     RatingCheck,
@@ -240,6 +297,7 @@ from console.engine.models import (
     RebuildQueued,
     RebuildResult,
     Recommendation,
+    Recommended,
     Reconcile,
     Reconciliation,
     ReconciliationCount,
@@ -266,9 +324,18 @@ from console.engine.models import (
     RetrievalBody,
     RetrievedMemoryBody,
     Reverification,
+    RewriteApplied,
+    RewriteApply,
+    RewriteList,
+    RewritePreview,
+    RewriteQuestion,
+    RewriteSession,
+    RewriteSessionWritten,
+    RewriteSummary,
     RoleCharacter,
     RoleEligibility,
     RoleRelationship,
+    RunEstimate,
     Scenario,
     ScenarioAnchor,
     ScenarioCard,
@@ -302,6 +369,7 @@ from console.engine.models import (
     StartingState,
     StateConstraints,
     StateDeclared,
+    StateDefinition,
     StateDefinitionWritten,
     StateEffect,
     StateProposal,
@@ -310,14 +378,18 @@ from console.engine.models import (
     StateWritten,
     StoredResult,
     Story,
+    StoryBackfill,
+    StoryCertificationRunRequested,
     StoryCharacter,
     StoryCharacterAdded,
     StoryCreated,
     StoryList,
+    StoryOperations,
     StoryPause,
     StoryPauseProgress,
     StoryProfileRef,
     StoryProfileWrite,
+    StoryPruning,
     StoryRating,
     StoryReembed,
     StorySettings,
@@ -325,6 +397,7 @@ from console.engine.models import (
     StorySettingsWrite,
     StoryState,
     StoryStates,
+    StoryStatus,
     StoryStatusChange,
     StorySummary,
     SubjectRef,
@@ -337,8 +410,10 @@ from console.engine.models import (
     TurnClock,
     TurnGuardrail,
     TurnMessage,
+    TurnRange,
     TurnReport,
     TurnRole,
+    TurnSpan,
     TurnSummary,
     TurnWarning,
     TypedLiteral,
@@ -373,13 +448,17 @@ REVISIONS = ("config_revision", "timeline_revision")
 NULLABLE_INT = {"anyOf": [{"type": "integer"}, {"type": "null"}]}
 EFFECTIVE_DOCUMENTS = ("deployment_defaults", "effective")
 OWNERSHIP_BODIES = ("OwnerBody", "StoryOwnerBody", "RelationBody", "StoryRelationBody")
+CORE_BACKFILL = "epistrel__core__backfill__Backfill"
+CONFLICT_REF = {"$ref": "#/components/schemas/Conflict"}
 
 
 def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     """``doc`` with the Engine's ``EntryLocation`` widened by ``ElementLocation``'s ``media_id``:
     the one Console class parses both (#64), so a model holding a ``ValidationReport`` (a
     publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
-    any object (#78). The owner and relation bodies carry both revisions, optional (#79)."""
+    any object (#78). The owner and relation bodies carry both revisions, optional (#79).
+    ``DepictedSubject`` gains ``SubjectRef``'s optional ``story`` (#291). ``StoryPauseProgressBody``
+    is read leniently (#295)."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -396,6 +475,26 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
         body = schemas[name]
         body["properties"].update(dict.fromkeys(REVISIONS, NULLABLE_INT))
         body["required"] = [r for r in body["required"] if r not in REVISIONS]
+    # #291: one ``SubjectRef`` model reads ``DepictedSubject`` too; M7 gave ``SubjectRef`` an
+    # optional ``story`` that ``DepictedSubject`` lacks, so it is widened by that one member.
+    schemas["DepictedSubject"]["properties"]["story"] = schemas["SubjectRef"]["properties"]["story"]
+    # #292: a backfill's conflict_list items are typed as any JSON, though the Engine fills
+    # it with Conflict objects; the model reads them entry by entry as Conflict (E15).
+    schemas[CORE_BACKFILL]["properties"]["conflict_list"]["items"] = CONFLICT_REF
+    # #295 (E10): a story read's ``pause.progress`` is read leniently: a backfill's pause carries
+    # its own progress (nathanpond/Epistrel#783), so ``done``/``total`` are optional and the
+    # backfill's ``chunks_done``/``chunks_total``/``phase`` are optional members too.
+    progress = schemas["StoryPauseProgressBody"]
+    progress["properties"].update(
+        {
+            "done": NULLABLE_INT,
+            "total": NULLABLE_INT,
+            "chunks_done": NULLABLE_INT,
+            "chunks_total": NULLABLE_INT,
+            "phase": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        }
+    )
+    progress["required"] = []
     return widened
 
 
@@ -626,7 +725,7 @@ def test_the_widening_only_adds_media_id() -> None:
         (MemberCastCard, "MemberCastCard"),
         (ImpactReport, "ImpactReport"),
         (AffectedStory, "AffectedStory"),
-        (Backfill, "Backfill"),
+        (Backfill, "epistrel__core__profiles__impact__Backfill"),  # M7 renamed it (E15)
         (BackfillEstimate, "BackfillEstimate"),
         (UnmetRecommendation, "UnmetRecommendation"),
         # #76: the principal lookup's pages.
@@ -830,6 +929,81 @@ def test_the_widening_only_adds_media_id() -> None:
         (ScenarioClock, "ScenarioClock"),
         (ScenarioAnchor, "ScenarioAnchor"),
         (ScenarioScheduledEvent, "ScenarioScheduledEvent"),
+        # M7 (#291): the nested components M7's changed components reference.
+        (CoverageGap, "CoverageGap"),
+        (FloorsMet, "FloorsMet"),
+        (CertificationLost, "CertificationLost"),
+        (ForwardOnlyGap, "ForwardOnlyGap"),
+        (TurnSpan, "TurnSpan"),
+        (QueuedBackfill, "Queued"),
+        (BackfillStarted, "BackfillStartedBody"),
+        (PromotedDraft, "PromotedDraftBody"),
+        (AmendmentChecks, "AmendmentChecksBody"),
+        (StoryPruning, "PruningBody"),
+        (ModelTiers, "ModelTiers"),
+        (DirectedPending, "DirectedPendingBody"),
+        # #292: the M7 operations' answers (E15's names; a prefixed name's row names its
+        # component).
+        (HeldRender, "HeldRender"),
+        (QuestionOption, "QuestionOption"),
+        (RewriteQuestion, "RewriteQuestion"),
+        (BlastRadius, "BlastRadius"),
+        (RewritePreview, "epistrel__orchestrator__rewrite__api__Preview"),
+        (RewriteSession, "RewriteSession"),
+        (RewriteApply, "Applied"),
+        (RewriteSessionWritten, "RewriteSessionBody"),
+        (RewriteSummary, "RewriteSummary"),
+        (RewriteList, "RewriteList"),
+        (RewriteApplied, "AppliedBody"),
+        (DirectiveApplied, "DirectiveApplied"),
+        (Directive, "DirectiveBody"),
+        (AmendmentSummary, "AmendmentSummary"),
+        (AmendmentPage, "AmendmentPage"),
+        (AmendmentDetail, "AmendmentDetail"),
+        (TurnRange, "TurnRange"),
+        (Estimate, "Estimate"),
+        (BackfillProgress, "Progress"),
+        (ConflictCounts, "ConflictCounts"),
+        (Recommended, "Recommended"),
+        (ConflictStatement, "Statement"),
+        (BackfillConflict, "Conflict"),
+        (StoryBackfill, "epistrel__core__backfill__Backfill"),
+        (GapFillPreview, "epistrel__core__backfill__Preview"),
+        (GapFill, "GapFillBody"),
+        (BackfillCancelled, "BackfillCancelledBody"),
+        (BackfillConflictResolved, "epistrel__api__routes__backfill__ResolvedBody"),
+        (RunEstimate, "RunEstimate"),
+        (CertificationRunRequested, "CertificationRunBody"),
+        (StoryCertificationRunRequested, "StoryCertificationRunBody"),
+        (CertificationRun, "CertificationRun"),
+        (FloorResult, "FloorResult"),
+        (Certification, "Certification"),
+        (CertificationPage, "CertificationPage"),
+        (CertificationImported, "CertificationImportedBody"),
+        (CertificationInvalidated, "CertificationInvalidatedBody"),
+        (EvalMetric, "EvalMetric"),
+        (EvalRun, "EvalRun"),
+        (EvalRunPage, "EvalRunPage"),
+        (PrunePosition, "Position"),
+        (PruneTarget, "PruneTarget"),
+        (PruneExcluded, "Excluded"),
+        (PruneImpact, "PruneImpact"),
+        (PruneResult, "PruneResult"),
+        (Pruned, "PruneBody"),
+        (PruneRun, "PruneRun"),
+        (PruneRuns, "PruneRuns"),
+        (ExportStarted, "ExportStartedBody"),
+        (ExportJob, "ExportJob"),
+        (ImportImpact, "ImportImpactBody"),
+        (ImportStarted, "ImportStartedBody"),
+        (ImportJob, "ImportJob"),
+        (OperationSummary, "OperationSummaryBody"),
+        (StoryOperations, "OperationsBody"),
+        (OutboxPosition, "OutboxPosition"),
+        (OutboxRow, "OutboxRow"),
+        (Outbox, "OutboxBody"),
+        (ListingResolved, "epistrel__api__routes__reconciliation__ResolvedBody"),
+        (StateDefinition, "StateDefinitionBody"),
     ],
 )
 def test_models_match_their_components(model: type, component: str) -> None:
@@ -1304,6 +1478,10 @@ def test_open_enum_reads_a_const() -> None:
         tx_from: str
         provenance_kind: str | None = dc_field(metadata={OPEN_ENUM: True})
         kind: str = dc_field(metadata={OPEN_ENUM: True})
+        attributed_holder_id: str | None = None  # M7 (#291)
+        attributed_level: str | None = None
+        depth: int | None = None
+        speaker_character_id: str | None = None
 
     problems = compare_model(DOC, Plain, {"$ref": "#/components/schemas/BeliefItemBody"}, "P")
     assert problems == ["P.kind: an open enum's schema is not a string enum"]
@@ -1522,16 +1700,118 @@ def test_the_m6_operations_are_registered(name: str) -> None:
         assert OPERATIONS[name].response_model is not None
 
 
+M7_OPERATIONS = (
+    "POST /stories/{story_id}/rewrites",
+    "GET /stories/{story_id}/rewrites",
+    "GET /stories/{story_id}/rewrites/{session_id}",
+    "POST /stories/{story_id}/rewrites/{session_id}/answers",
+    "POST /stories/{story_id}/rewrites/{session_id}/apply",
+    "POST /stories/{story_id}/rewrites/{session_id}/cancel",
+    "POST /stories/{story_id}/directives",
+    "GET /stories/{story_id}/amendments",
+    "GET /stories/{story_id}/amendments/{amendment_id}",
+    "POST /stories/{story_id}/amendments/{amendment_id}/undo",
+    "POST /stories/{story_id}/amendments/{amendment_id}/redo",
+    "POST /stories/{story_id}/entities/merge",
+    "POST /stories/{story_id}/backfill",
+    "GET /stories/{story_id}/backfill",
+    "DELETE /stories/{story_id}/backfill",
+    "POST /stories/{story_id}/backfill/conflicts/{cid}",
+    "POST /engine-profiles/{profile_id}/upgrade-pinned",
+    "POST /engine-profiles/{profile_id}/certification-runs",
+    "POST /stories/{story_id}/certification-runs",
+    "GET /certification-runs/{run_id}",
+    "GET /certifications",
+    "GET /certifications/{certification_id}",
+    "POST /admin/certifications/import",
+    "POST /admin/certifications/{certification_id}/invalidate",
+    "GET /admin/evals/runs",
+    "GET /admin/evals/runs/{run_id}",
+    "POST /stories/{story_id}/prune",
+    "GET /stories/{story_id}/prune-runs",
+    "POST /admin/stories/{story_id}/export",
+    "GET /admin/stories/exports/{job_id}",
+    "GET /admin/stories/exports/{job_id}/bundle",
+    "POST /admin/stories/import",
+    "GET /admin/stories/imports/{job_id}",
+    "GET /stories/{story_id}/operations",
+    "GET /stories/{story_id}/outbox",
+    "POST /stories/{story_id}/reconciliation/{listing}/resolve",
+    "GET /stories/{story_id}/states/{name}/definition",
+)
+MAIN_M6 = MAIN_OPERATIONS | frozenset(M6_OPERATIONS)
+
+
+@pytest.mark.parametrize("name", M7_OPERATIONS)
+def test_the_m7_operations_are_registered(name: str) -> None:
+    """#292 (E20): the 37 M7 operations are registered, each with a response model but the
+    streamed bundle, so test_registered_operations_match_the_recorded_schema checks each."""
+    assert name in OPERATIONS
+    if name != "GET /admin/stories/exports/{job_id}/bundle":
+        assert OPERATIONS[name].response_model is not None
+    else:
+        assert OPERATIONS[name].response_model is None
+
+
 def test_every_registered_route_is_new_or_main() -> None:
-    """**Complement:** against main's set, exactly the 30 M6 operations are added and none is
-    removed (``list_stories``' registration is unchanged)."""
-    assert len(MAIN_OPERATIONS) == 163
-    assert set(OPERATIONS) - MAIN_OPERATIONS == set(M6_OPERATIONS)
-    assert MAIN_OPERATIONS - set(OPERATIONS) == set()
-    assert len(M6_OPERATIONS) == 30
+    """E20 **complement:** against main's set plus M6's, exactly the 37 M7 operations are added
+    and none is removed; the single-binding read is still unregistered, and list_stories'
+    registration is unchanged."""
+    assert len(MAIN_M6) == 193
+    assert set(OPERATIONS) - MAIN_M6 == set(M7_OPERATIONS)
+    assert MAIN_M6 - set(OPERATIONS) == set()
+    assert len(M7_OPERATIONS) == 37
+    assert len(set(M7_OPERATIONS)) == 37
     assert "GET /stories/{story_id}/providers/{name}/binding" not in OPERATIONS
     stories = OPERATIONS["GET /stories"]
     assert (stories.method, stories.path, stories.response_model) == ("GET", "/stories", StoryList)
+
+
+CHANGED_REGISTRATIONS: dict[str, tuple[type, tuple[tuple[int, type], ...]]] = {
+    "POST /stories/{story_id}/regenerate": (RegenerateResult, ((202, DirectedPending),)),
+    "PUT /stories/{story_id}/engine-profile": (StoryProfileWrite, ((202, StoryProfileWrite),)),
+    "PATCH /stories/{story_id}/profile-overrides": (
+        StoryProfileWrite,
+        ((202, StoryProfileWrite),),
+    ),
+    "POST /admin/stories/import": (ImportImpact, ((202, ImportStarted),)),
+    "POST /stories/{story_id}/backfill": (GapFill, ((202, GapFill),)),
+    "POST /stories/{story_id}/directives": (Directive, ((202, Directive),)),
+    "POST /engine-profiles/{profile_id}/certification-runs": (
+        CertificationRunRequested,
+        ((202, CertificationRunRequested),),
+    ),
+    "POST /stories/{story_id}/certification-runs": (
+        StoryCertificationRunRequested,
+        ((202, StoryCertificationRunRequested),),
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(CHANGED_REGISTRATIONS))
+def test_changed_registrations_carry_their_202s(name: str) -> None:
+    """E20: the registrations whose 202 answers another model (or the same one) name it, and
+    the directed 202s (no job follows) are ended."""
+    model, others = CHANGED_REGISTRATIONS[name]
+    op = OPERATIONS[name]
+    assert (op.response_model, op.status_models) == (model, others)
+    ended = name in {"POST /stories/{story_id}/regenerate", "POST /stories/{story_id}/directives"}
+    assert op.ended is ended
+
+
+def test_the_backfill_widening_only_types_conflict_list() -> None:
+    """The widened backfill component differs from the recorded one by conflict_list's
+    items alone, and the backfill read does not match the recorded one without it."""
+    recorded = DOC["components"]["schemas"][CORE_BACKFILL]["properties"]
+    widened = WIDENED["components"]["schemas"][CORE_BACKFILL]["properties"]
+    assert recorded["conflict_list"]["items"] == {}
+    assert widened["conflict_list"]["items"] == CONFLICT_REF
+    assert {k: v for k, v in widened.items() if k != "conflict_list"} == {
+        k: v for k, v in recorded.items() if k != "conflict_list"
+    }
+    problems = check_operation(DOC, OPERATIONS["GET /stories/{story_id}/backfill"])
+    assert problems
+    assert all("conflict_list" in p for p in problems)
 
 
 VIEWPOINT_READS = (
@@ -1542,13 +1822,35 @@ VIEWPOINT_READS = (
 
 
 @pytest.mark.parametrize("path", VIEWPOINT_READS)
-def test_the_three_viewpoint_reads_are_undeclared(path: str) -> None:
-    """Engine bug nathanpond/Epistrel#682 (D18): the recorded schema omits ``?viewpoint=`` on
-    the three reads the client sends it on. When the Engine declares it this fails: update the
+def test_the_three_viewpoint_reads_are_declared(path: str) -> None:
+    """Engine bug nathanpond/Epistrel#682 (D18) is fixed in Engine M7: the recorded schema now
+    declares ``?viewpoint=`` on the three reads the client sends it on. #293 updates the
     ``get_states``/``get_state``/``list_scheduled_events`` docstrings and D18's code comment in
-    ``console/engine/client.py``. **Complement:** a read that declares it
-    (``inspect/external-facts``) is seen."""
+    ``console/engine/client.py``. **Complement:** ``inspect/external-facts`` still declares
+    it."""
     query = [p["name"] for p in DOC["paths"][path]["get"].get("parameters", [])]
-    assert "viewpoint" not in query
+    assert "viewpoint" in query
     declared = DOC["paths"]["/stories/{story_id}/inspect/external-facts"]["get"]["parameters"]
     assert "viewpoint" in [p["name"] for p in declared]
+
+
+def test_status_enums_are_open() -> None:
+    """#291 (#183's rule, E15): the story status and chain membership fields are open enums, and
+    their alias Literals (and the quality status one) are pinned to the recorded enums."""
+    from console.engine.models import OPEN_ENUM
+
+    schemas = DOC["components"]["schemas"]
+    assert set(typing.get_args(StoryStatus)) == set(schemas["StoryStatus"]["enum"])
+    assert set(typing.get_args(ChainMembership)) == set(schemas["Membership"]["enum"])
+    assert set(typing.get_args(QualityStatusValue)) == set(schemas["QualityStatusValue"]["enum"])
+    assert "importing" in typing.get_args(StoryStatus)
+    assert "pruned" in typing.get_args(ChainMembership)
+    for model, name in (
+        (Story, "status"),
+        (StorySummary, "status"),
+        (StoryStatusChange, "status"),
+        (VariantChain, "membership"),
+        (FloorsMet, "status"),
+    ):
+        (f,) = [f for f in fields(model) if f.name == name]
+        assert f.metadata.get(OPEN_ENUM), (model.__name__, name)

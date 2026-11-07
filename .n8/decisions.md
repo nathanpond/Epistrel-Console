@@ -3049,3 +3049,918 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
   **Issue:** #281
 - **Blocker:** PR #283 is not merged. Its required `gate` is red only because `engine-smoke` fails against Engine `edge`: Engine M7 (Epistrel 640b5ef, 2026-11-03) replaced the profile set, so the live smoke finds no `Structured` profile (it sees `Max, Standard, Full, Lite`). This PR doesn't cause it; `main`'s daily drift job has failed since 2026-11-03 (#282). Not fixed here: following Engine M7's profiles is Console M7 work, and repointing the smoke is a CI-policy call (#36). Owner options are on #283: (1) admin-override merge, recommended; (2) pin `engine-smoke` to the M6 image digest; (3) update the smoke for M7's profile names via `/n8-replan M7`. #276–#281 are labelled `blocked` + `needs-owner-action`.
   **Issue:** PR #283, #282
+
+## /n8-verify M6 (re-verify) — 2026-11-06
+
+- **Decision:** M6 re-verified at 922f7ad (PR #283) and closed, with epics #21 and #22. The six fix bugs (#276–#281) were checked by independent verifiers with mutation checks. The full suite passed with 7583 tests. The owner walked a live-Engine outcome walk against the local M6 Engine image (b8fd182, stub model): 10/10 steps passed.
+  **Why:** The first verification deferred live UAT to the re-verify. The coverage finding (reservations view-only) was waived by the owner on PR #283: "Waive: view-only is right".
+  **Issue:** PR #283, #21, #22
+- **Decision:** PR #283 merged through a temporary admin bypass of the `main-pr-required` ruleset. The owner chose option 1 and ran the bypass themselves, because the classifier blocked the agent's ruleset edit. The ruleset was restored right after (`bypass_actors: []`).
+  **Why:** `gate` was red only because Engine `edge` had moved to Engine M7, whose profiles are renamed (`Structured` → Full), not because of the PR (#282).
+  **Issue:** PR #283, #282
+
+## /n8-plan M7 — 2026-11-07
+
+- **Decision:** M7 is planned as 42 stories, #291–#332, under epics #23, #24 and #25, with 88 blocked-by edges. The cross-story conventions E1–E24 are posted as comments on #294.
+  **Why:** The owner answered round one ("all reccs good") and round two ("go": every default accepted). Each story was checked twice by a fresh executor simulation. The coverage check ran in a fresh agent and found no missing items; its fixes were applied.
+  **Issue:** #291–#332
+- **Decision:** Scope renamed to match Engine M7. "Compaction" is pruning (Engine ADR-175). "Snapshot/restore" is bundle export and import as a new story (Engine docs/OPERATIONS.md). Whole-deployment backup and restore are CLI-only, so the Console can't drive them.
+  **Why:** The Engine renamed and reshaped these; the epic AC predates that.
+  **Issue:** #25, #317, #319, #320, #321
+- **Decision:** Triage. #282 is absorbed by #291/#293; #272 by #307 (and #323); #270 by #329; #273 by #312/#313/#314/#310. #18's open AC is delivered by #316. #271 moves to M9.
+  **Why:** Owner-approved at round one and round two.
+  **Issue:** #282, #272, #270, #273, #18, #271
+- **Decision:** Filed Engine issues nathanpond/Epistrel#776 (canary-run list; `CANARY_LIST_REQUEST`), #777 (show a resolved imported row on the outbox), and #778–#780 (three docs mismatches). The suspected backfill `pause.progress` 500 is filed only if #295's live check reproduces it.
+  **Why:** Gaps found while planning. Canary results per fingerprint are only partly deliverable until #776 lands (owner accepted, R2-Q19).
+  **Issue:** #313, #295
+- **Decision:** This state commit rides on branch `n8/plan-m7-state`. `/n8-exec M7` merges it into the milestone branch first, instead of opening a separate state PR.
+  **Why:** Every PR's required `gate` is red until #291/#293 land (Engine edge is M7). A separate state PR would need another bypass. The owner accepted folding at the gate.
+  **Issue:** #291
+
+## /n8-exec M7 — 2026-11-06
+
+- **Decision (orchestration):** Each M7 story is implemented by a fresh subagent, one at a time on `milestone/m7-history-portability`, in dependency order. Each works from a shared brief plus a running list of what earlier stories built. After every story the orchestrator re-runs the gates (ruff, ruff format, mypy, and the full suite in 8 parallel file shards) and checks the commit, the push, the ticked boxes and the completion comment before starting the next.
+  **Why:** The precedent from M2–M6. The 42 story bodies total ~830 KB, too much for one context. The serial suite now takes more than 10 minutes, so sharding keeps the per-story gate practical. It covers the same files and markers as `uv run pytest`.
+  **Issue:** #291–#332
+- **Decision:** `n8/plan-m7-state` (8499fe8, the M6 re-verify and M7 plan entries) was fast-forwarded into the milestone branch before #291, as the plan's exec note on #291 says, instead of opening a separate state PR.
+  **Why:** Owner-accepted at planning: every PR's `gate` is red until #291/#293 land.
+  **Issue:** #291
+- **Decision:** Recorded `console/engine/openapi.json` from the pulled `ghcr.io/nathanpond/epistrel:edge`, revision `5cb073bbf2b895c241627faeaa2b6acf0543a638` (one commit past `95e57a5`, decisions-only; `git merge-base --is-ancestor` passes), digest `sha256:b824484e37171a02d7d83361bb12d9c2eb76c239dc805ad0092a0d5e1bd0f3af`. The recording equals Engine `95e57a5:docs/openapi.json` in content (248 operations, 704 components), so nothing drifted past the story's list. Deviation from the AC's command: the smoke compose ran as project `n8-291-smoke` with a scratch override publishing the engine on `127.0.0.1:18000` (port 8000 is the owner's Engine dev stack), and `engine_schema --write/--check` used `--url http://127.0.0.1:18000`. The stack is left running for #292/#293.
+  **Why:** The brief forbids touching port 8000. Same image and compose otherwise, so the recording is identical; cost if wrong: none (the check passed against the same image).
+  **Issue:** #291
+- **Decision (Rule 3):** `SubjectRef` gains `story` (AC), but the same model also reads `DepictedSubject` (contract row `(SubjectRef, "DepictedSubject")`), which has no `story`. The contract test's `_widened` adds `SubjectRef`'s optional `story` to `DepictedSubject` (as #64 widens `EntryLocation`), instead of splitting the model. `SubjectRef.to_json` sends `story` only when set (never for a depicted subject or today's erasure form).
+  **Why:** Splitting would touch the media forms/views for no behaviour change. Cost if wrong: a depicted subject with a `story` key would parse; harmless.
+  **Issue:** #291
+- **Decision (Rule 3):** A 105th failure the story didn't list, `tests/timeline/test_regenerate_async.py::test_the_engine_declares_no_queued_regenerate`, asserted regenerate declares no 202. It now asserts the 202 is `DirectedPendingBody` (a directed regenerate, not a queued turn) and still no `Prefer`.
+  **Why:** M7 declares the 202; the test's intent (no queued regenerate, no `Prefer`) still holds.
+  **Issue:** #291
+- **Decision:** `QualityStatus.status` stays closed, now spelled `QualityStatusValue` (the same three values); only `FloorsMet.status` and `CertificationLost`'s `from`/`to` are open (as the AC lists). `RetrievalBody.unparsed` is now `dict[str, Any]`, so a non-list `coverage_gaps` keeps its raw value (other sections keep their behaviour).
+  **Why:** The AC opens only the fields it names; the enum didn't grow. Cost if wrong: a new quality status would fail answers, as on main.
+  **Issue:** #291
+- **Decision:** The test plan's complement "an outbox-keyed `unconfirmed` row keeps both actions" can't hold: `unconfirmed` isn't in `SETTLEABLE_REASONS`, so such a row has no actions on main either. The test uses the settleable `late_success_after_expiry` for both the request-keyed row (no actions) and the outbox row (both actions), and checks `reverse` never sees `None`.
+  **Why:** It still proves the `None` guard, not the reason gate. Changing the settleable set is out of scope (#326).
+  **Issue:** #291
+- **Decision:** Discretion calls, as the story's Discretion section says: the 23 deployment settings are appended after M6's fields (not interleaved alphabetically); `ReconciliationListing.outbox_id`/`request_id` follow the required fields; `get_history(as_of="")` or a blank string sends no `as_of`; the new guard-set complement tests are `test_the_m7_story_settings_are_exempt_only_until_s23` and `test_the_m7_deployment_settings_are_recorded_and_not_yet_on_the_form`. The live smoke `test_live_engine_api_matches_the_recording` XPASSes against `127.0.0.1:18000`. The only open drift-check issue is #282 (the milestone PR's `Closes #282`).
+  **Why:** Recorded for the PR body and for #292/#293.
+  **Issue:** #291
+- **Decision:** All 37 M7 operations are typed in the story's section order after `# --- reconciliation (M6)` (session writes share `_omniscient_write`; `resolve_listing` reuses `_slot_write`). `open_media_content` and `open_export_bundle` share a private `_open_stream(path, forwarded, kept)`; both now return the context manager directly (the `@contextmanager` moved onto `_open_stream`), with callers unchanged.
+  **Why:** The story's Discretion section. Cost if wrong: none (the media proxy tests pass unchanged).
+  **Issue:** #292
+- **Decision (Rule 3):** `StoryBackfill.conflict_list` is typed `list[BackfillConflict]` (lenient, E15), but the recorded schema types its items as `{}`. The contract test's `_widened` sets those items to `$ref: Conflict`, and `test_the_backfill_widening_only_types_conflict_list` pins that this is the only change. The Engine fills the list with `Conflict` objects (`core/backfill/__init__.py`'s `listing`).
+  **Why:** A raw `list[Any]` couldn't give typed entries or `rejected_entries`. Cost if wrong: a non-`Conflict` entry lands in `unparsed`, never failing the read.
+  **Issue:** #292
+- **Decision:** `ImportJob.progress` is `Any = None`, not `dict[str, Any] | None`. The schema's `progress` is a non-nullable `dict[integer]` with no default, so an `| None` type fails the contract row. Raw (E15) and `None` when absent, as the AC wants. Likewise `PruneImpact.to_delete` stays raw `dict[str, Any]`, with a typed `targets()` view returning `PruneTarget` lists (E15 lists `to_delete` as raw).
+  **Why:** Satisfies both E15 and the contract. Cost if wrong: none (#321 reads progress defensively).
+  **Issue:** #292
+- **Decision:** The seventh lenient page is `PruneRuns`, so `prune_runs_bad_item.json` was added. The fixture list names six `*_bad_item` files, but the test plan says seven, and E15 lists `PruneRuns.prune_runs` as lenient. `answer_rewrite`'s round trip serves `rewrite_open.json` (any `RewriteSessionBody`). `effective_config_full_v4.json` is computed from Engine `95e57a5`'s `profiles.py` (`_merged(profile_defaults(), full_settings())`; deployment defaults gain M7's two dials), with Structured v3's capability list, fingerprint `sha256:4710ae26…` (the seeded Full certification's), and `floors_passed` equal to `m7/certification.json`'s six passed floors.
+  **Why:** Matches the test plan's count and E16's source. Cost if wrong: a fixture value differs from a live Full story (pages only render them).
+  **Issue:** #292
+- **Decision:** E16's id check for `m7/` skips by name: `options` (option ids `o1`…), `recommended_option_id`/`answer_option_id`, a floor's `metric_id`, `models` (model names under `id`), and, in the eval fixtures only, `run_id` and `metrics` (a metric's `id` is its name). It also checks the amendment links `undoes`/`redoes`/`reverted_by`. Six id-less answers (estimates, the eval reports, the State definition) are listed in `M7_ID_LESS`, as M6 did.
+  **Why:** These are Engine values that aren't ULIDs. Cost if wrong: a mistyped option id would go unchecked.
+  **Issue:** #292
+- **Decision:** `get_history(view="as_recorded")` forces `viewpoint=omniscient` and drops `actor_character_id` and `player_view`. `list_rewrites` drops an empty cursor, and `list_operations`/`list_outbox` drop an empty `after_id` (treated as a cursor). The operation-log job-id fallback (`started.job_id`) also applies to the replayed-202 check, so a replayed backfill start records `ok` like other replayed jobs.
+  **Why:** Discretion and E19. Cost if wrong: a replayed backfill 202 would be a second `queued` row.
+  **Issue:** #292
+- **Decision:** Regenerate's directed fallback renders a new `console/timeline/directed_pending.html`: #43's `_engine_error.html` panel (headed by the exact sentence), then the session id in `<code>` and a Back-to-Play link, at 200 with no flash. `stories:rewrite` is reversed inline under `NoReverseMatch` (TODO for #294's `rewrite_session_url`). The linked case uses the test-local urlconf `tests/timeline/urls_with_rewrite_stub.py` (E24), for #294 to fold into `tests/urls_with_m7_pages.py`.
+  **Why:** The panel template takes no `<code>`/link, so it's included rather than extended. Cost if wrong: #301 replaces it.
+  **Issue:** #292
+- **Decision (Rule 3):** `docker-compose.yml`'s engine service sets `EPISTREL_BUNDLE_DIR: /var/lib/epistrel/bundles`, with no volume. The edge image sets none, so the Engine's default (`/app/var/bundles`, root-owned) failed every export with `PermissionError`, and `test_m7_portability_live` (this story's live AC) couldn't pass. The `n8-291-smoke` engine container was recreated with it (same image; port `127.0.0.1:18000`). The live M7 case passes there. The remaining live failures (`test_m5_knowledge_reads_live`, `test_m6_world_live`, `test_two_primary_sequential_turn_live`: no profile named `Structured`) are pre-existing and #293's job. Engine-side follow-ups are filed as #334 (bundle dir, and an export status that stays `running` after its job fails) and #333 (the bundle route's schema omits 409/410; the test serves the 410 via `respond_undeclared`).
+  **Why:** An env line on an existing service, needed for the AC. It isn't new infrastructure. Cost if wrong: exports land in the container's filesystem and vanish when it's recreated (bundles expire in a day anyway).
+  **Issue:** #292
+- **Decision:** `STATUS_LABELS = dict(STATUS_CHOICES[1:])`, with a `status_label()` function in `console/forms/stories.py` (it imports `console.wording.humanised` lazily: the forms package loads under `console.engine_access`). The template filter `status_label` sits in `console_format`, and `list.html` now loads `console_format`. The importing row note reaches `_actions.html` as an `importing_note` context variable from both list views (the play page can't render an importing story). The importing branch wraps the old branches so a non-importing story's markup is byte-identical.
+  **Why:** There's one source for the wording and no literal copy in the template. Cost if wrong: none.
+  **Issue:** #293
+- **Decision:** Existing exact-markup assertions were moved to the new status span: `tests/stories/test_list.py` (`Active`) and `tests/test_story_rating.py` (`Paused`). The live smoke's archived assertion was updated too, as the AC says. `PRESET_IDS` in the live smoke is now `set(PRESET_NAMES)`, and #292's `FULL_PRESET` is replaced by `FULL_PROFILE_ID`.
+  **Why:** The AC changes the markup. Cost if wrong: none.
+  **Issue:** #293
+- **Decision:** The two tests with values outside the recorded enum serve the story or listing through `FakeEngine.side_effect`, which doesn't validate the body. These are the play page's `later_status` case and an extra list-row `later_status` case. `respond` refuses a `status` outside the recorded `StoryStatus` enum.
+  **Why:** It's the only way to exercise E15's open enum through a page. Cost if wrong: none (it's test-only).
+  **Issue:** #293
+- **Decision:** A pruned chain's row has no view, Swap or Fork, and no re-check badge. The `?variant=<pruned>` path takes the pruned branch only on a 409 `pruned` from the history read, and keeps the error panel for any other refusal. `_refused`'s `pruned` branch passes `TIMELINE_VERB` = "change the timeline" and sets `inspector=None`. `console/forms/bindings.py`'s "D18's undeclared 404" wording is left alone: `binding_not_found` may serve routes other than `POST /stories`, and the AC names only the listed files.
+  **Why:** Discretion items, as the story gives them. Cost if wrong: one stale docstring in bindings.py.
+  **Issue:** #293
+- **Decision:** The live smoke ran against `n8-291-smoke` on `127.0.0.1:18000` (left running): `-m engine_live tests/engine_live/`, 25 passed and 1 xpassed. `test_m7_presets_live`, `test_m5_knowledge_reads_live`, `test_m6_world_live` and `test_two_primary_sequential_turn_live` pass on Full. The pre-fix check for `test_no_source_calls_the_viewpoint_reads_undeclared` ran the scan over `git archive HEAD console`, which flagged 5 lines. Flaky test #335 was filed (signed-snapshot timestamp); it isn't fixed here.
+  **Why:** Evidence. #335 is outside this story's scope.
+  **Issue:** #293
+- **Decision:** `ChangeRow.more`, `RadiusRow.more` and `rejected_questions` hold the raw entry as compact JSON (uncut), as the AC says, not E23's pretty More JSON. `report_more` and `last_error`'s third member use `more_json` (full pretty JSON). The partial renders each in `<pre>` under More.
+  **Why:** The AC's "the raw entry as compact JSON in `more`" is more specific than E23's general More rule. Cost if wrong: a long entry reads on one line under More; switching to `more_json` is a one-line change in `console/rewrites.py`.
+  **Issue:** #294
+- **Decision:** `AnswersForm.answers()` checks `accept_all` before text. With "Accept every recommendation", a question that has a recommendation sends `accept_recommended` even if its text box has text. Questions without a recommendation go by text, then radio, as for "Submit answers". The form also exposes `question_rows` (each question with its bound fields and the checked option) and `text_question_ids()` (the order the Engine's `body.answers[n].text` locator counts in) for #298.
+  **Why:** The Discretion ties `accept_all` to the questions with a recommendation, and the button's label promises that. Cost if wrong: a typed answer is dropped when the author also clicks Accept all; #298 can swap the two branches.
+  **Issue:** #294
+- **Decision:** Fields beyond E3's lists are trailing and defaulted, so the listed positional order still holds: `RadiusRow.severity_raw`, `QuestionView.severity_raw`, `AnsweredView.quoted`/`more`. `SessionView` also gains `id`, `expires_at`, `result_amendment_id` and `target_amendment_id`, plus properties (`answer_url`, `footer_actions`, `awaiting_answers`) and ClassVar texts so the templates hold no wording. `ReachView(text, truncated_text)` and `HeldView(message_text, calls_text)` are the reach and held views. Each question renders through one more include, `templates/console/rewrites/_question.html`, so the form and read-only layouts share markup. Read-only options render as `disabled` radios.
+  **Why:** The badge class and raw `title` (E23) need the raw severity, and the partial must not call helpers. Cost if wrong: none (additive).
+  **Issue:** #294
+- **Decision:** Low-cost wording fallbacks the E-list doesn't cover:
+  - `record_inactive` without `membership` drops the parenthesis.
+  - `author_fact_limit` without `max` reads "keeps the most lasting author facts".
+  - `merge_invalid` with an unknown reason gives the Engine's message on `entity_ids`.
+  - `guardrail_violation` with no policy names drops the parenthesis.
+  - `rewrite_session_closed` humanises an unknown state.
+  - `resolution_mode_text` gives compact JSON for any unknown value, a bare string included (the AC's rule, not C3 humanising).
+  - `last_error`'s code is humanised.
+  - `expires_text` reads "" for an unreadable timestamp.
+  **Why:** E23's "never raise, read '—' or leave out" rule. Cost if wrong: a sentence's wording on a rare path.
+  **Issue:** #294
+- **Decision:** `radius_rows` reads only the Engine's `record: {table, id}` shape, as the Discretion says. #292's `m7/rewrite_session.json` gives radius entries a top-level `record_id`/`table`, so their record cells read "—" (filed as #336, not fixed here). `radius_rows` sorts the conflicts itself when `bucket == "irreducible"`: High, then Low, then anything else, stable. It takes a keyword `entity_names` for #306's merge.
+  **Why:** The fixture's shape isn't the Engine's, and the AC fixes the reader. Cost if wrong: none at runtime against the real Engine.
+  **Issue:** #294
+- **Decision:** `tests/urls_with_m7_pages.py` mounts its stubs at E11's paths with `<ulid:…>` for session, amendment and job ids, and `<str:…>` elsewhere. `NOT_YET_REGISTERED` is an explicit literal of all 37 stub names (owners trim it), and `STUB_NAMES` is derived from the stub lists. #292's `tests/timeline/urls_with_rewrite_stub.py` is deleted, and `test_regenerate_directed.py` now uses the shared file. `console/views/timeline.py`'s private `_rewrite_session_url` (TODO(#294)) is replaced by `console.rewrites.rewrite_session_url`. E18 gains #333 and #334, and names `CANARY_LIST_REQUEST` (nathanpond/Epistrel#776, defined by #295) by citation, through `CANARY_LIST_REQUEST_URL`.
+  **Why:** #292's notes, and E6/E11. Cost if wrong: a page story adjusts one stub path.
+  **Issue:** #294
+- **Decision:** The PR-body copy of E1–E23 is staged in the scratchpad (`pr-conventions-294.md`) for the milestone PR, since story agents don't open PRs. The docstring half of that AC is in `console/rewrites.py`, `console/forms/rewrites.py` and `console/raw.py`.
+  **Why:** The brief forbids opening a PR. Cost if wrong: the orchestrator must paste it into the milestone PR body.
+  **Issue:** #294
+- **Decision:** `SLOW_POLL_TRIGGER` and `PARTIAL_PARAM` are defined in `console/job_poll.py` (beside `POLL_TRIGGER`) and re-exported by `console/jobs.py`, not defined in `jobs.py` as E1's table lists. `console/upgrades.py` imports `wording.humanised` function-locally, and `wording.write_refusal` imports `portability.importing_refusal` function-locally.
+  **Why:** `story_pause` needs the slow trigger, and `wording → story_pause → upgrades → wording` would be an import cycle. Both names import from `console.jobs` as E1 says. Cost if wrong: none (the same objects either way).
+  **Issue:** #295
+- **Decision:** `JobState` carries E7's eight fields, plus trailing `status` (the raw value always) and `stage` (an import's humanised stage while running). It also has the properties `running`, `succeeded`, `polling` and `indeterminate`, and `text_with_stage(stage_text)`. `stage_text` is a plain string the caller looks up for the current stage, and the template applies it through the new `{% load jobs %}` filters (`job_text`, `job_error`) in `console/templatetags/jobs.py`. `job_error` shows a bare-string error (a certification run's exception name) verbatim, not humanised, and `settle_error_code` implements E7's settle rule.
+  **Why:** The template can't call helpers with arguments. "Timeouterror" misreads an exception name. Cost if wrong: #321 passes a mapping instead of a string, which is a one-line change in the filter.
+  **Issue:** #295
+- **Decision:** `ReportEntry` is a `NamedTuple(code, message, more)`, so it compares equal to the AC's tuple. A missing message reads "—". `#292`'s `import_job_ready.json` warning has no `message`, and its `outbox_id` goes to `more`. `counts` are sorted naturally by raw key (E23), with ties broken by the key.
+  **Why:** The AC calls each entry a tuple, and E23 covers missing values. Cost if wrong: none.
+  **Issue:** #295
+- **Decision:** `typed_name_for(page, name, story_id) -> ConfirmPage` sets `typed_name`/`typed_label` (the stripped name, or the id with `typed_label=""`). `confirm_action` checks the name only where it would otherwise perform: after `blocked`, and after the confirmed/key checks in confirmed mode. A mismatch re-renders with the posted key (in plain mode, `posted_idempotency_key`'s fallback when it is malformed).
+  **Why:** Discretion's typed-confirm paragraph. A helper returning the page avoids `**dict` typing at #317's call site. Cost if wrong: #317 calls `dataclasses.replace` itself.
+  **Issue:** #295
+- **Decision:** `render_importing` (the middleware's page) lives in `console/portability.py`, which E1 gives "E10's importing wording and middleware helper". `ImportingStoryMiddleware` is listed right after `HeldStoryMiddleware`, so Django's reverse-order `process_exception` sees it first. `importing.html` uses `<title>Story importing</title>`, with no " — Epistrel Console" suffix, as the Discretion words it. The demo's `/stories/<id>/` and the play view already let `get_story`'s 409 escape, so no view needed changing. No broad audit was made of views that word an `EngineError` inline.
+  **Why:** AC/Discretion. Cost if wrong: a page that catches every `EngineError` itself shows its own panel for an importing story. #296's frame covers the M7 pages.
+  **Issue:** #295
+- **Decision:** `PauseBanner` gains a `backfill` property and a `not_found_text` property. The banner template now reads `{{ pause_banner.not_found_text }}`, which yields main's exact "No such check…" text for the rating causes (golden-tested). For the backfill causes, `polling` is "the Backfill URL resolves and the last read didn't fail". Rating causes with a missing `done`/`total` (now possible in the lenient model) read as 0, as main's ints did.
+  **Why:** AC (cause-aware failure texts, byte-for-byte rating banners). Cost if wrong: none for the rating paths.
+  **Issue:** #295
+- **Decision:** `StoryPauseProgress` (#291's model) now has `done`/`total` optional, plus optional `chunks_done`, `chunks_total` and `phase`. The contract guard widens `StoryPauseProgressBody` to match (`tests/engine/test_contract.py::_widened`, a #295 block).
+  **Why:** AC (corrected at sim routing): a strict model fails the whole `Story` read. Cost if wrong: none (lenient read).
+  **Issue:** #295
+- **Decision:** Deviation from plan in the live check. The live test pins Full **v1**, not v3. On the edge (`5cb073b`), Full v3 → v4 gains no data-producing capability, so assigning v4 starts no backfill (verified: `backfill: null`, `needed: false`). v1 → v4 starts one. The test polls every 0.25 s (120 s cap), not E24's once a second, because the stub backfill runs for seconds. It reproduced: `GET /stories/{id}` → 500 (`ValidationError` at `api/routes/stories.py:457`). Filed **nathanpond/Epistrel#783**. The test is `xfail(strict=True)` on it, and E18 (`console/rewrites.py`) records it. The live suite on `127.0.0.1:18000` (stack `n8-291-smoke`, left running): 25 passed, 1 xfailed, 1 xpassed.
+  **Why:** The AC's v3 precondition can't produce a backfill on this edge, and a skip would hide the bug. Cost if wrong: if a later Full v4 makes v3 → v4 backfill, v1 still works.
+  **Issue:** #295
+- **Decision:** `quality_line` links a `certification_id` for any status that carries one (not only `certified`), and `QualityLine` gains a trailing `certification_id` so `_quality.html` can show the short id unlinked (`engine_id`) while `engine:certification` is unregistered. `quality_line` also takes a bare status string. The filter maps `None`/`""` → `None`. `floors_text` with only failed floors reads "Floors failed: c".
+  **Why:** Discretion (Overview: an unlinked short id). A stale status's certification is still worth reaching. Cost if wrong: a stale badge shows an id link it needn't.
+  **Issue:** #295
+- **Decision:** Visible markup changes from the `_quality.html` switch:
+  - The Overview header's `<span title="uncertified">Uncertified</span>` gains `class="quality"`.
+  - `_impact_report.html`'s "Quality after" cell and summary `dd` now read "Uncertified" (capitalised, as a badge `<span class="quality" title="uncertified">`). Main read the lowercase raw "uncertified" there.
+  - Two existing assertions moved: `tests/inspect/test_overview.py::test_header_line_profile_fingerprint_quality_and_config` and `tests/test_profiles_edit.py::test_applied_false_renders_the_impact_page`.
+  Config (`config.html`, `_config_badge.html`) and `_turn_report.html` are left for #307/#312, per the AC's list.
+  **Why:** E13: one wording ("Uncertified") everywhere. On the Overview the visible text is byte for byte unchanged. Cost if wrong: the impact report's lowercase text returns with a one-line template change.
+  **Issue:** #295
+- **Decision:** `tests/test_job_poll.py` and `tests/test_story_pause.py` didn't exist on the branch (the test plan calls the first "existing"). Both are new. `poll_context`'s existing callers are proven unchanged by the default-trigger case and the untouched offboarding/rating suites. The rating and reactivation banner goldens were captured from the pre-change render before editing (E24).
+  **Why:** Test plan. Cost if wrong: none.
+  **Issue:** #295
+- **Decision:** `UpgradeModeForm` exposes `.mode()` and pre-selects `initial_mode`. Its `form=` attribute is set on the field's widget per instance. `upgrade_mode_text` shows a non-string value with `str()`. `preset_order` is generic over anything with `id`/`name`/`preset` (`Profiled`), and sorts unknown presets by `(name, id)`.
+  **Why:** E13/E14. Cost if wrong: none.
+  **Issue:** #295
+- **Decision:** `story_page` re-raises a held 503 or importing 409 from the effective-config read too, not only the story read. Neither frame read nor `build` catches them, so `HeldStoryMiddleware`/`ImportingStoryMiddleware` render them (no double log: the frame doesn't log a re-raised error). A 404 story read renders the page's own template with `story_not_found=True`, status 404, no story link line and no nav; the header line and `<h2>` label stay.
+  **Why:** AC (held/importing "reach" the middlewares) plus the discretion's 404 rule. Hiding the Play/History/… links on not-found avoids links to a missing story. Cost if wrong: one template condition.
+  **Issue:** #296
+- **Decision:** `page_label` precedence: the `label=` keyword, else the marked nav row's label (through `PAGE_PARENT`), else the URL name humanised (`console.views.story_pages.page_label`). The `<h2>` label also renders on Engine-panel pages (`engine/page_base.html`), which the AC names only for story pages. The story header's status is `console.forms.stories.status_label(story.status)` precomputed as `status_text`, with the raw value in `title`.
+  **Why:** E11 sim refinements (detail pages pass `label=` though they mark a list row). The Engine `<h2>` keeps the two frames alike. Cost if wrong: a template line.
+  **Issue:** #296
+- **Decision:** `engine_page`'s held dict reuses `console.held._ledger_url` (imported, not copied), `held_text` and `retry_seconds`. `_held.html` gets `delete_url=""`. Retry is the full path on GET/HEAD, else `request.path`.
+  **Why:** Discretion (the `render_held` logic, storyless, D17). Cost if wrong: none.
+  **Issue:** #296
+- **Decision:** In `tests/golden.py::normalise_html`, a whitespace run between tags collapses to nothing (`>\s+<` → `><`). The CSRF placeholder covers both the `csrfmiddlewaretoken` input and `base.html`'s `X-CSRFToken` hx-header. The idempotency placeholder replaces only a ULID-shaped value of an `idempotency_key` input, so a ULID elsewhere is kept.
+  **Why:** E24. The narrowest rule that makes two renders equal. Cost if wrong: later goldens may need a placeholder widened.
+  **Issue:** #296
+- **Decision:** `tests/urls_with_m7_pages.py`'s frame stubs render `page_base.html` directly, with no test child template. `recording_build` appends each context to `BUILT` and calls `BUILD[0]` when a test set one (a one-element list), else returns `{}`. `tests/test_story_pages.py`'s autouse fixture clears both. The Demo's Play-page stub check lives in `tests/play/test_play_page.py` (the complement), not in `test_story_pages.py`. There `-k nav` covers the frame's link line and the Engine home.
+  **Why:** Discretion (a module-level recording build). No templates dir for tests exists. Cost if wrong: none.
+  **Issue:** #296
+- **Decision:** The pause-banner test's story read uses `pause.progress {done, total}`, not `{chunks_done, chunks_total}`. The recorded `StoryPauseProgressBody` rejects the chunk-only shape under `FakeEngine.respond`'s validation. The banner text is the same ("(2/7 chunks)") through `chunk_counts`' fallback.
+  **Why:** The fake validates against the recording. Cost if wrong: none (E10's suspected `pause.progress` mismatch is #295's note).
+  **Issue:** #296
+- **Decision:** `ProfileSelect` gains `found` (the profiles the list read gave), set by `profile_select`, whose options are otherwise unchanged (the option building moved into `_profile_options`). `with_presets` needs the raw rows to group the full list's `preset: true` rows when the preset read fails and to rebuild "Other profiles" without the preset ids.
+  **Why:** AC says `profile_select` is unchanged and a pure `with_presets` does the grouping after the fan-out. The options alone don't carry `preset`. Cost if wrong: none (same options, one extra field).
+  **Issue:** #307
+- **Decision:** The preset table uses only the preset read's items with `preset: true` and no `deleted_at` (defensive). A deleted current preset stays first in "Other profiles" as "<name> · deleted (current)".
+  **Why:** Discretion: the read should only return live presets; a fake or an older Engine that answers more mustn't put customs in the ladder. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** A preview that needs a backfill always counts as warned (`ignore_warnings: true`, "Apply anyway"), even when the report's `warnings` list is empty.
+  **Why:** The Engine's two-stage rule (`core/profiles/impact.py`) treats a needed backfill as a warning kind, so a confirm without `ignore_warnings` would just be held again. #292's `m7/impact_preview_backfill.json` has `warnings: []`, and the test plan expects `ignore_warnings: true`. Cost if wrong: none (the Engine ignores the flag when nothing warns).
+  **Issue:** #307
+- **Decision:** A set `write.backfill` is the "backfill started" outcome whatever `applied` says. #292's `m7/assign_backfill_started.json` has `applied: true` with a `result`, but the Engine documents the 202 as `applied: false, result: null`. Both shapes are tested (the second inline). The fixture was left alone, since the story edits no fixture table.
+  **Why:** Read the Engine's contract and still pass the fixture. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** `BACKFILL_STARTED` = "Backfill started — the story is paused{ while it re-derives turns a–b}; the new configuration applies when it completes". With no known range, the whole " while it re-derives …" clause is dropped. A one-turn span reads "turn 3". The flash is `<text> · <Follow the backfill> — idempotency key <code>K</code>` (E21 tail last), with K the write's echoed key, else the posted one.
+  **Why:** AC ("the turns clause is dropped") read literally would leave "re-derives;" dangling. Cost if wrong: wording only.
+  **Issue:** #307
+- **Decision:** The forward-only gap sentence is joined to the applied flash with ". " (or a single space when that flash already ends in "."), has no trailing period and no key tail. It reads the story's own `affected_stories` entry in `write.impact`.
+  **Why:** E21 sim2 (an appended sentence gets no tail). NO_CHANGE and the applied text end without a period. Cost if wrong: wording only.
+  **Issue:** #307
+- **Decision:** The signed report is serialised by a local `model_json` (each field under its `json_name`, recursively), not `dataclasses.asdict`. A round-trip test covers three m7 impacts, one with `certifications_lost`.
+  **Why:** `asdict` writes `CertificationLost.from_status`/`to_status`, which `from_json` (reading `from`/`to`) rejects, so the re-render would fail on any report that lost a certification. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** A missing or invalid mode re-render whose signed report can't be rebuilt is treated as an expired token (`EXPIRED_TEXT`, redirect to Config, no write). The upgrade-mode errors are Django's defaults ("This field is required.", "Select a valid choice. …"), since #295's field sets none.
+  **Why:** E8's one-URL rule, plus defensive handling of a tampered or old token. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** The preset table and its hidden default submit sit inside the assign form. The bottom Preview button and the select/id input render only when the full list read worked. If both reads fail, no form renders: both notices show. The live edge's presets carry `quality: null`, so their Quality cells read "—". This was checked against `n8-291-smoke` on 127.0.0.1:18000.
+  **Why:** AC: the form renders whenever presets exist. Cost if wrong: none.
+  **Issue:** #307
+- **Decision:** An invalid New rewrite form re-renders with the **posted** idempotency key, not a fresh one.
+  **Why:** The story's AC says "the posted key kept"; E21 says a local-validation failure mints a fresh key. The story's more specific text wins. No write happened, so either key is safe. Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** The open's D8 key rule: the posted key is kept for no answer (`EngineUnreachable`, a timeout), for `bad_response`, and for a 5xx that `rewrite_refusal` doesn't word. A fresh key follows every answered refusal, including the worded 503 `rewrite_reach_failed`, an unworded 4xx (#43's panel) and a placed `validation_error`.
+  **Why:** E21 and the test plan ("each mints a fresh key", including reach-failed). An unworded 5xx may have written. Cost if wrong: a resubmit after an unworded 5xx replays instead of retrying.
+  **Issue:** #297
+- **Decision:** `tests/urls_with_m7_pages.py` keeps its `stories:rewrites` frame stub (#296's probe for `tests/test_story_pages.py`) and drops only the `stories:rewrite` stub. Under that urlconf, `/stories/<id>/rewrites/` is the probe, while the session page is the real view, so its linked cases (amendment link, footer actions) render the real page. Both names leave `NOT_YET_REGISTERED`, and `stories:rewrite` leaves `test_m7_stub_urlconf.ARGS`/`PATHS`.
+  **Why:** `_rebuilt` drops a real pattern whose name a stub has, so a kept `stories:rewrite` stub would hide the real page from the linked tests. Moving the frame probe would mean rewriting #296's frame tests. Cost if wrong: a later story that wants the real Rewrite page under the stub urlconf must move the probe first.
+  **Issue:** #297
+- **Decision:** E21's state-driven session flash is a shared helper, `console.rewrites.session_write_flash(written, story_id, key, *, apply_directly, verb=, planned=, questions=, applied=)`, which returns a `SafeString` (flashed with `extra_tags="safe"`). #297 passes the open's texts. Every open flash, including `awaiting_answers`, is `messages.success`. "Story revision now" is `apply.timeline_revision`, falling back to the top-level revision.
+  **Why:** #298, #301, #303, #305 and #306 need the same state logic with their own verbs (E1: no story redefines it). Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** The session page's 404 (`rewrite_session_not_found`) renders E5's `NOT_FOUND_TEXT` inside the frame. The view sets `status_code = 404` on `story_page`'s response, from a flag the build closure sets. `story_page` itself is unchanged.
+  **Why:** The frame has no status hook, and a `build` returning its own `HttpResponse` would lose the frame's context. Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** Rule 1: #292's `m7/rewrite_session.json`, `rewrite_session_applied.json` and `rewrite_applied.json` blast-radius and relabel entries now use the Engine's shape, checked against `src/epistrel/orchestrator/rewrite/plan.py` at Engine origin/main `ed2be26`. Each entry has `record {table, id}`, `edge_type`, `edges`, `change_key`, `target {kind, id}`, `action` and `position`. The incidental entry has a 5-list `[3,0,0,1,0]`; the others have `null`. The conflict adds `conflict_id`, `reason`, `severity`, `options` and `before_excerpt`. The cascaded row is a `state_changes` `re_evaluate` (the Engine's severity-bearing cascaded entry), replacing the made-up `facts` row with `summary`. Notifications are unchanged (preview notifications are `[]` in `plan.py`, and E3's reader handles both shapes). The change went through `$SCRATCH/gen_m7.py` (regenerated into a temp copy; only these 3 files differ).
+  **Why:** Fixes #336 (the session page's record column read "—" over them). Shown pre-fix: `test_awaiting_approval_shows_the_preview` fails on "Amendment parts …00000001" against the old fixtures. Cost if wrong: none (the E20 table rows are unchanged).
+  **Issue:** #297, #336
+- **Decision:** These real-urlconf baselines moved when `stories:rewrites`/`stories:rewrite` registered (E24), so this PR regenerates them:
+  - The Play and History link-line goldens now expect Rewrite's nav row (renamed `test_the_link_line_shows_only_the_registered_m7_pages`).
+  - `tests/test_nav.py`'s empty-nav test became `test_rewrite_link_once_registered`.
+  - `tests/inspect/test_shell.py::test_the_play_page_links_inspect_after_history` now has the nav row between History and Inspect.
+  - `tests/test_rewrites.py`: the session limit links the Rewrite page under the real urlconf, and the two helpers resolve there (new test).
+  - `tests/timeline/test_regenerate_directed.py` reaches the panel by patching `rewrite_session_url` to `None`, and the real urlconf now redirects.
+  **Why:** E24's rule: the registering story regenerates the goldens it moves. Cost if wrong: none.
+  **Issue:** #297
+- **Decision:** #298's flash texts are passed to #297's `session_write_flash` with `apply_directly=False`, so an answer never gets the "Not applied directly: " prefix. The verb is "Answers recorded", and the applied text is "Answers recorded and applied: amendment {amendment} · story revision now {revision}". `MORE_QUESTIONS_TEXT`'s "{n} more question(s)" is pre-filled with `plural(n, "more question")`, because `_filled` only matches "{n} question(s)". The applied flash reads `apply.amendment_id`, a required field of `RewriteApply`, so the `result_amendment_id` fallback the story mentions is never reached and isn't coded.
+  **Why:** E21's prefix is for a ticked "Apply directly" box, and the answers form has none. Cost if wrong: one flash prefix.
+  **Issue:** #298
+- **Decision:** I factored #297's session view into `render_session_page(request, story_id, session_id, build)`, `read_session(ctx, session_id)` and `session_context(ctx, session, *, answers_form, key, notices, answer_errors)` in `console/views/rewrites.py`. The story suggested `render_session_page(request, story_id, session, …)`, but with #296's frame the session read has to happen inside `build`. The Reload link is now `rewrite_session_url` rather than `request.path`, so the POST re-render doesn't link the answers URL. `REJECTED_QUESTION` lives in `rewrite_answers.py` and is imported lazily by `session_context`, which avoids an import cycle. The partial shows it as `rejected_question_text` while the session is awaiting answers, and otherwise keeps #294's "This question couldn't be read".
+  **Why:** One render path for the GET page and every answers re-render. Cost if wrong: none (same output for #297's cases).
+  **Issue:** #298
+- **Decision:** `AnswersForm.question_rows` now reads the checked option from `choice.value()` on an unbound form too. That is the form's `initial`, which defaults to the recommended option, so the refusal and stale re-renders can carry the posted choices. Engine answer errors reach `_questions.html`/`_question.html` as an `answer_errors` context (`above`, `groups {qid: [msg]}`, `texts {qid: [msg]}`, rendered through `world_tags.get_item`). The form is not mutated.
+  **Why:** The story asks for an unbound form with `initial` copied from the POST, and errors carried in the view context. Cost if wrong: none (an unbound form without initial still checks the recommendation).
+  **Issue:** #298
+- **Decision:** Answer refusals are placed as follows:
+  - `invalid_answer`, guardrail, `erased_subject_referenced`, superseded and mapped `validation_error`s go on the form.
+  - `rewrite_session_closed`, `rewrite_apply_in_progress` and every other worded refusal are `<p class="warning">` notices above the partial.
+  - An unworded refusal, or a `validation_error` with any unmapped path, is #43's panel above the partial.
+  - An unknown outcome (transport, timeout, `bad_response`, an unworded 5xx) re-renders the bound form with the panel and the posted key, with no fresh read. The write may be in flight, and a resubmit replays.
+  - A 404 on the answer itself is the 404 page.
+  - A failed fresh read after a refusal is that read's panel (or 404), with the refusal text as a notice and a fresh key.
+  - A pre-read refusal other than 404/5xx/transport/bad_response is its `rewrite_refusal` text as a notice, with the posted key (nothing was sent).
+  **Why:** These are the story's discretion rules, with "anything else" put above the partial (it shows whether or not the form renders). Cost if wrong: where a rare refusal's sentence sits.
+  **Issue:** #298
+- **Decision:** The apply-failure prefix "Answers recorded, but applying failed: " is applied only when the pre-write session's `preview_mode == "apply_directly"` and the code is one of `rewrite_stale`, `record_in_flight`, `rewrite_apply_failed` or `story_paused`. On a preview-first session those codes go through `rewrite_refusal` as usual.
+  **Why:** Only an `apply_directly` session applies inside the answers POST. Cost if wrong: a missing prefix.
+  **Issue:** #298
+- **Decision:** These baselines moved when `stories:rewrite-answers` registered (E24 and D19), so this commit updates them:
+  - `tests/rewrites/test_rewrite_session_page.py::test_no_actions_before_s6_s7` became `test_no_actions_before_s7` (awaiting approval only), plus `test_awaiting_answers_has_only_the_answers_form_once_s6_registered`.
+  - `tests/test_rewrites.py::test_an_open_session_waits_for_answers` now expects the Answer action under the real urlconf.
+  - The name left the stub urlconf's `NOT_YET_REGISTERED`.
+  **Why:** The registering story regenerates what it moves. Cost if wrong: none.
+  **Issue:** #298
+- **Decision:** The Backfill page reads `pending_backfill` from #296's frame config read (`ctx.config`). It does not make a second `get_effective_config` fanned out beside the backfill read, so `build` makes the one backfill read.
+  **Why:** #296's `story_page` already reads the effective config on every story page "for `pending_backfill`" (its docstring). A second read would double the call. Same outcome: a failed config read leaves the line out. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** Rule 1 (C15): aligned the m7 backfill fixtures with the Engine source (`core/backfill`, `core/pause.backfill_progress`, `reconcile.merge_report`). `backfill_extracting` status `running` → `extracting` (`running` isn't an Engine backfill status). `progress.phase` now equals the status in all four. `backfill_completed` is now `kind: upgrade` with the Engine's report shape: top-level tally ints, `policy`, `conflicts {total, by_resolution}`, `materialization {counts, by_outcome, conflicts}`. Scratch `gen_m7.py` updated to match.
+  **Why:** A `running` status would poll as an unknown status. The old report shape doesn't occur. Cost if wrong: fixture only.
+  **Issue:** #308
+- **Decision:** In the report `<dl>`, "Counts" falls back to the report's top-level int members when there is no `counts` object. Each group lists its int members plus one level of nested int maps ("By resolution · Last mention", "Counts · Episodic").
+  **Why:** The Engine's real backfill report has no `counts` key: its tally sits at the top level. The literal AC would show only `materialization.conflicts` and the conflict total. Cost if wrong: extra rows.
+  **Issue:** #308
+- **Decision:** "The new configuration now applies" shows only for a completed backfill of `kind: upgrade`, not for every completed one. The report shows only for `completed`. A cancelled backfill is terminal but not a success, so its report goes raw under More.
+  **Why:** The Engine applies a held configuration only for an upgrade ("applies the held configuration (an upgrade's)"). A gap fill or resummarize holds no change, so the sentence would be false there. Cost if wrong: one line missing on a non-upgrade.
+  **Issue:** #308
+- **Decision:** A failed backfill's `error` shows once, in `_job_status.html`'s error block (`<p class="warning">`). The facts' own `<p class="warning">` shows only when `error` is set and the status isn't failed.
+  **Why:** E7 puts the error block in the status block, so rendering both would print it twice. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** The conflict subject also renders the Engine's real members: `entity_id` as a C4 cast name (else short id) and `predicate` in `<code>`, beside the AC's `kind`/`key`. A resolution reads the Engine's `{choice: {statement_id|value}, via, by}`, the fixture's `{choose}`, or an automatic one's `{policy}`. `via` is humanised ("Choose Turn 3 “…”").
+  **Why:** `core/backfill/reconcile` writes `subject = {entity_id, predicate}`, so with kind/key only every live conflict would show compact JSON. Cost if wrong: display only.
+  **Issue:** #308
+- **Decision:** `?banner=1` on a failed story read that retries (unreachable/503) rebuilds the banner from the query's `cause` (backfill causes only, else `backfill`) with `retrying=True` and no counts, and keeps polling.
+  **Why:** The planner's poll_failure rule, without a story body to rebuild from. Cost if wrong: one retry render.
+  **Issue:** #308
+- **Decision:** The real-urlconf goldens that move now that `stories:backfill` is registered: `tests/play/test_play_page.py` and `tests/history/test_history_view.py` (`test_the_link_line_is_unchanged_without_m7_pages` → `test_the_link_line_shows_the_registered_pages` with `REAL_NAV`), `tests/test_nav.py` (real-urlconf story links = the Backfill row), `tests/inspect/test_shell.py::test_the_play_page_links_inspect_after_history`, and `tests/test_story_pause.py` / `tests/test_story_config_presets.py`. Each D19 "while unregistered" test there now monkeypatches `backfill_url` to `None`, and its linked twin runs under the real urlconf.
+  **Why:** E24: the registering story regenerates them. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** Live check on `n8-291-smoke` (127.0.0.1:18000): a fresh story's `GET`/`DELETE /stories/{id}/backfill` answer 404 `backfill_not_found`, and `pending_backfill` is absent. Nothing ran mid-backfill (Engine #783).
+  **Why:** Confirms the not-found branch the page and the cancel rely on. Cost if wrong: none.
+  **Issue:** #308
+- **Decision:** #299 reuses #298's `render_session_page(request, story_id, session_id, build)` as the session page's one render entry point, rather than the planner's sketched `render_session_page(request, story_id, session, *, notice=None, extra=None)`. Apply builds its context through `read_session` and `session_context`, which gains `stale=`, `display_only=` and `preview_source_note=`.
+  **Why:** #298 had already landed the shared entry point with this shape, and both answers and apply re-render through it. Cost if wrong: none. The single entry point the AC asks for exists.
+  **Issue:** #299
+- **Decision:** The Apply form renders only from the page context `apply_hidden` (`base_revision` = the *preview's* base, `plan_hash`, `plan_short`), which `session_context` sets while the session is `awaiting_approval` with a preview and Apply resolves. E3's `_actions` also drops Apply when there is no preview. The old `base_revision` context key (the session's base) is gone. The button reads `APPLY_LABEL` "Apply this plan", while `SessionAction.label` stays "Apply". A page that includes the partial without `apply_hidden` (a synthetic session, or another story's page) renders no Apply form.
+  **Why:** The AC names the preview's base and "no Apply form" for a refusal-read preview. Gating on one context value keeps an unverified base from ever being posted. Cost if wrong: a later page that wants Apply must pass `apply_hidden`, which it gets for free through `session_context`.
+  **Issue:** #299
+- **Decision:** E3's Cancel action is now `rewrite_cancel_url(story_id, session_id, kind=, state=, instruction=)` (`console/rewrites.py`). It carries the display query, leaves blanks out, and cuts the instruction at `CANCEL_INSTRUCTION_LIMIT = 200` with "…". This changed the Cancel hrefs that `tests/test_rewrite_partial.py`, `tests/test_rewrites.py` and `tests/rewrites/test_rewrite_session_page.py` assert. Those baselines were regenerated as the registering story's (E24): `test_no_actions_before_s7` became `test_apply_and_cancel_once_s7_registered`, and the awaiting-answers and stub-urlconf tests now expect Cancel with its query. The two names left `NOT_YET_REGISTERED`.
+  **Why:** The story's discretion names the helper. Cost if wrong: none.
+  **Issue:** #299
+- **Decision:** On a refusal, the display-only session is built with the `RewriteSession` dataclass constructor, not `model_construct`. It has placeholders `""`/`None` (rendered "—"), the URL's ids, the refusal's `base_revision`/`preview`, and `new_questions` as its questions (read-only, with no answers form). Its `stale_count` is 0, and the notice shows the refusal's stale count instead, so the count appears exactly once.
+  **Why:** The Console's models are frozen dataclasses with no `model_construct`. Cost if wrong: none.
+  **Issue:** #299
+- **Decision:** On a refused apply, `story_importing` and `story_paused` are worded in place above the partial through `rewrite_refusal` → C5/E10. They are not handed to the importing middleware, so a paused story's backfill link is dropped from the notice, which is plain text. Only `erasure_pending` (held) is raised for #87's middleware. On the cancel confirm, an unworded refusal or unknown outcome is `error=` set to `panel_for(exc).headline` (it already names the status and code). The posted key is kept only on an unknown outcome, and the re-rendered confirm keeps `confirmed=1`.
+  **Why:** The AC puts these sentences above the partial and on the confirm page. Cost if wrong: one missing link on a paused-story apply.
+  **Issue:** #299
+- **Decision:** 404 `rewrite_session_not_found` on apply renders 200 with E5's sentence and #43's panel, and makes no re-read. A `base_revision` that fails `[0-9]{1,18}` re-renders from one read with a fresh key (E21's local-validation rule). A stale render's refs are listed under More as "<kind>: <humanised table> <code>id</code>", with the raw reasons and carried answers beneath as JSON.
+  **Why:** These are the story's discretion rules, with E21's key rule. Cost if wrong: cosmetic.
+  **Issue:** #299
+- **Decision:** The fixture `m7/rewrite_session.json` has base revision 20, so the tests use 20 and the stale re-read 21, not the test plan's 7 and 8. The stub urlconf shadows the real apply route, so the linked-amendment flash is checked by calling `applied_flash` directly. The Demo was not run against a live Engine. The fake-Engine suite covers every AC.
+  **Why:** The fixture is the source of truth, and the stub urlconf's design means a POST under it can't reach the real view. Cost if wrong: none.
+  **Issue:** #299
+- **Decision:** #309's fixtures follow the Engine (C15): the m7 conflict subjects are `{entity_id, predicate}` (`backfill_paused`, `backfill_resume_preview`, `backfill_conflict_resolved`); the resolved conflict's `resolution` is `{choice: {statement_id}, via: "choose", by}`; `backfill_conflict_resolved.backfill` is `{status, conflicts_open}` (`ResolvedBody.of`); `backfill_resume_preview.backfill` is `{status}`; `backfill_started` says `applied: false` on its 202 (`GapFillBody`). `$SCRATCH/gen_m7.py` is updated to match; the JSON was edited in place, since the generator no longer runs on its own.
+  **Why:** `api/routes/backfill.py` and `core/backfill/conflicts.py` at the checked-out Engine. Cost if wrong: fixture-only.
+  **Issue:** #309
+- **Decision:** The views branch on the answer's shape, not on the posted `mode`: `started` (the 202) first, then `conflicts_open` with `applied` false (the resume confirm), then `applied` (a resume that finished, flashed at once), else the gap-fill preview. A `mode=start` post on a paused story renders the resume confirm, and a `mode=resume` post on an unpaused one renders a gap-fill preview under `backfill-start`.
+  **Why:** The story's E8 rule ("never on `applied`") and its planner notes. The Engine's own gap-fill 202 says `applied: false`. Cost if wrong: one confirm page.
+  **Issue:** #309
+- **Decision:** The gap-fill first stage doesn't check the ticked capabilities against the configuration. The form widens its choices to whatever was posted, and the Engine's 422 `validation_error` at `body.capabilities` lands on the checkboxes. The signed body is `{"ignore_warnings": true, "capabilities"?: […]}` (resume: `{"ignore_warnings": true}`). The confirm sends exactly that, so a box changed after the preview is ignored.
+  **Why:** There's no extra configuration read before the write. The Engine is the authority, and live it answers `validation_error` with `errors[].field = body.capabilities`. Cost if wrong: one Engine round-trip per bad box.
+  **Issue:** #309
+- **Decision:** Plurals follow E23: "Backfill finished — 2 conflicts made uncertain" and "Finishing now makes the 2 open conflicts uncertain…", not the story's literal "conflict(s)". A resume flash without `conflicts_made_uncertain` reads "Backfill finished".
+  **Why:** E23 says every "(s)" is C11 pluralisation and tests assert the pluralised forms. Cost if wrong: wording.
+  **Issue:** #309
+- **Decision:** The local "Pick a statement…" error shows above the form (non-field). The Engine's `invalid_resolution` goes on `value` when a value was typed (and the post wasn't the accept submit), else on the radios. `validation_error` maps `body.value` to `value` and `body.choose`/`body.accept_recommendation` to the radios. Anything else, or a partial mapping, also gets #43's panel. A malformed conflict id is `engine_error_page.html` with `MALFORMED_CONFLICT_ID` at 404 (no Engine call). If the pre-write `get_backfill(open, 200)` fails (other than held), local validation is skipped and the Engine decides.
+  **Why:** The story's AC and planner notes; the Engine's `InvalidResolution` carries `details.field`. Cost if wrong: where a message sits.
+  **Issue:** #309
+- **Decision:** Two more templates than the planned eight files: `_gap_fill.html` (the `#gap-fill` section: the form, "Finish now…", refusals) and `_conflict_resolve.html` (one conflict's form, included from `_backfill_conflicts.html`). `_gap_fill_preview.html` holds only the preview and the resume confirm. The radios are rendered by hand from `ConflictResolveForm.radio_rows`, because E23's `title` on a cut value can't go on Django's RadioSelect label.
+  **Why:** Each partial stays readable, and the section is shared by the no-backfill and backfill branches. Cost if wrong: none.
+  **Issue:** #309
+- **Decision:** Added `console.upgrades.gap_fill_url(story_id)` (`backfill_url` + `#gap-fill`) and pointed #307's `gap_sentence` at it. Its test now expects `…/backfill/#gap-fill`, and `unregistered_backfill` also patches `gap_fill_url`. #330 and #332's "fill it from the Backfill page" links should use it.
+  **Why:** AC "Gap-fill entry points". Cost if wrong: an anchor.
+  **Issue:** #309
+- **Decision:** `test_no_resolve_controls_before_s16b` became `test_no_resolve_controls_while_unregistered` (D19: `conflict_url` monkeypatched to `None`). Its complement `test_open_conflicts_get_resolve_controls_once_registered` runs under the real urlconf. `stories:backfill-start` and `stories:backfill-conflict` are out of `NOT_YET_REGISTERED`.
+  **Why:** #308's note for #309. Cost if wrong: none.
+  **Issue:** #309
+- **Decision:** Live check on `n8-291-smoke` (127.0.0.1:18000), with no writes applied: `POST /stories/{id}/backfill` on a turn-less story answers 409 `nothing_to_backfill`; an unknown capability answers 422 `validation_error` with `errors[0].field = "body.capabilities"`; resolving on a story with no backfill answers 404 `backfill_not_found`. Nothing ran mid-backfill (Engine #783 is still open).
+  **Why:** Confirms the refusal shapes the views map. Cost if wrong: none.
+  **Issue:** #309
+- **Decision:** The Direct tab's local-invalid re-render keeps the posted idempotency key (D8, as the Ingest tab and #297's New rewrite do), not E21's "fresh key after a local-validation failure". An answered refusal mints a fresh key. An unknown outcome (transport, timeout, `bad_response`, an unworded 5xx) keeps the posted key.
+  **Why:** The story says "the key follows D8's re-render rule", and nothing is sent either way. Cost if wrong: none (no write happens).
+  **Issue:** #300
+- **Decision:** `DirectOutcome`'s More is one JSON block: `directive_id`, `idempotency_key`, the `applied` lists (every id, the Lite `author_fact` with its id and position), the routed session id, and for an unknown disposition or a routed answer with no session, the raw answer as #44 recorded it (else `model_json(answer)`). The ids are not split into one More per line. A refusal link label reuses #297's `REFUSAL_LINKS` ("Rewrite" / "Config"). The standing hint is the sentence followed by " · Settings" (the link).
+  **Why:** E23's More is one `<pre>`, and the AC asks only that the ids be under More. Cost if wrong: cosmetic.
+  **Issue:** #300
+- **Decision:** The Direct tab's hidden `transcript_player_view` has its own id (`direct-transcript-player-view`), and `_transcript.html` gets no out-of-band update for it. A player-view toggle made while the Direct tab is open is carried by the tab links only after the next transcript render. `_transcript.html` and its goldens are unchanged.
+  **Why:** This keeps the change inside the story's 8 files and leaves the transcript partial's tests untouched. The value is display-only and never sent with a direction. Cost if wrong: a stale player view after switching tabs, which a reload fixes.
+  **Issue:** #300
+- **Decision:** E24's "Turn and Ingest render byte for byte as before" compares each tab's partial (everything after the tab `</nav>`) against main's HTMX render, captured before the change into `tests/play/golden/turn_tab.html` / `ingest_tab.html`. The signed snapshot value and the ULID-shaped input values (the keys and the ingest row's event id) are normalised on top of `normalise_html`. `tests/play/test_transcript_player_view.py::test_tab_links_keep_transcript_player_view` now counts 3 tab links, not 2: this is the tab nav's legitimate change. `tests/play/helpers.snapshot` gains `pipeline=` for the Lite labels. `stories:direct` left `NOT_YET_REGISTERED`, so that guard's parametrisation lost one case: the suite counts 8612, which is 8569 + 44 − 1.
+  **Why:** The snapshot is signed with the per-environment SECRET_KEY, and the event ids are minted per render. Cost if wrong: none.
+  **Issue:** #300
+- **Decision:** The Demo was not run against a live Engine. Every AC is covered by the fake-Engine suite, against the recorded schema's `POST /stories/{id}/directives` (200/202/409/422/423).
+  **Why:** No live test is in the story's test plan, and the fixtures are schema-validated. Cost if wrong: a live-only shape mismatch, which #300's verify would catch.
+  **Issue:** #300
+- **Decision:** The result of an upgrade (applied at the first stage or on confirm) renders in place at 200 on `upgrade_pinned.html`, as the story says, not E21's 303 PRG. Per E21's sim2 refinement for in-place results, it gets no flash and ends with a muted "Idempotency key <code>K</code>" line, using the key that was sent.
+  **Why:** The story's more specific text wins over E21's default. Cost if wrong: a reload re-POSTs the confirm, and the same key makes it a replay.
+  **Issue:** #310
+- **Decision:** The confirm token's `base` is `{name, current_version, report}`, where `report` is #307's `model_json(impact)`. A confirm that fails with anything other than `not_found`/`profile_deleted` re-renders the same confirm under #43's panel from the token, with no read and no label call. It keeps the same token, and keeps the key on an unknown outcome (E21, E8's "report signed into base" rule). `model_json` is imported from `console.views.story_config`.
+  **Why:** E21 requires the same confirm page on an unknown outcome, and the story requires that no second call is made. Cost if wrong: a larger token (it is compressed).
+  **Issue:** #310
+- **Decision:** On an invalid mode, the first-stage POST still reads `get_engine_profile` for the heading and version line (an allowed page read, E24), and sends no upgrade. The tests assert no `POST …/upgrade-pinned`. The route's profile id is trimmed and upper-cased before `is_ulid` (C13). A failing id gets the 404 `engine_error_page` reading "No such profile — the id in the address isn't an Engine id", with no call. A GET whose profile read answers 404 reads "No such profile" (404). Any other read failure shows #43's panel in-page.
+  **Why:** Following the backfill page's precedent avoids signing page facts into the form. Cost if wrong: one extra read on an invalid post.
+  **Issue:** #310
+- **Decision:** Moved #307's `turns_text(TurnSpan)` from `console/views/story_config.py` to `console/impact.py`. `story_config` imports it from there, so it can be shared with the Backfill cell's " (turns a–b)" suffix (`backfill_cell`). It now formats with E23's `{:,}`. `console.impact._story_url` became the public `story_url`.
+  **Why:** That suggestion was in #307's progress note. The partial needs the same wording, and a copy would drift. Cost if wrong: none (#307's tests are unchanged).
+  **Issue:** #310
+- **Decision:** `profiles:upgrade-pinned` is out of `NOT_YET_REGISTERED`. Its stub is also removed from `tests/urls_with_m7_pages.py` and `test_m7_stub_urlconf.ARGS`, because stubs shadow real patterns there. This follows #297's precedent for `stories:rewrite`, so the confirm POST works under the M7 urlconf (`test_backfill_link_d19`). The "before #308" complement monkeypatches `backfill_url` to `None`, because #308 is registered.
+  **Why:** The stub urlconf mechanics. Cost if wrong: none.
+  **Issue:** #310
+- **Decision:** `test_confirm_resends_and_lists_backfills` adds the impact fixture's second pinned story to `upgrade_pinned_applied` in the test, to match the plan's "Upgraded 2 pinned stories to v4". The fixture itself lists one story, and it stays unchanged. The `impact_m6` goldens are 7 cases (#84's held edit with and without labels, no followers, budget + gained, #85's override in story mode with and without labels, and the held report in story mode). They were rendered from the unedited partial by a scratch capture script. The comparison strips exactly one `<th>Mode</th><th>Gap</th>` and one "—" cell pair per row. Certification ids are kept out of the M6 cases, so #313 registering `engine:certification` doesn't move these goldens.
+  **Why:** The test plan and E24. Cost if wrong: none.
+  **Issue:** #310
+- **Decision:** A `CertificationLost` entry reads "<story>: <from> → <to> · certification <id>". The story is labelled and linked as in the per-story table, or reads "this profile's own configuration". Statuses use E13's `QUALITY_TEXT`, and an unknown one is humanised with the raw value in `title` (E23). The id goes through `engine_id`, linked via `certification_url` (D19). Queued-backfill rows show the status through `job_state("backfill", …).text`, sorted by `queue_position` with nulls last.
+  **Why:** Claude's Discretion. Cost if wrong: wording.
+  **Issue:** #310
+- **Decision:** #301's directed-regenerate refusals. The directive codes go through `rewrite_refusal(exc, story_id, "regenerate", None)` and `form.add_error("directive", …)`. A `guardrail_violation` is placed only when the refusal's field is `directive` (locator `body.directive…`); otherwise it gets #53's `_refused` page. `directive_ambiguous` also appends #300's `ambiguous_suffix` (" (could be: …)") when the Engine names candidates. E5's own directed-path codes (`DIRECTED_REFUSALS` in `console/views/timeline.py`: session limit, `module_off`, `record_in_flight`, `rewrite_noop`, `rewrite_apply_failed`, …) become the refused page's notice. Their links are labelled "Rewrites", "Config", or else "Details", and a link whose URL doesn't resolve is left out. Every other code is #53's page, unchanged (C5's fallthrough codes such as `story_busy` are deliberately not re-routed). A `module_off` naming no module the Console knows (`LITE_REWRITES` or a `console.inspect.SETTINGS` key) reads `DIRECTIVE_UNAVAILABLE` with no Config link.
+  **Why:** The story leaves the label and the unlisted codes to discretion. "Rewrites" comes from the story text, not `REFUSAL_LINKS`' "Rewrite". Cost if wrong: one link label or one notice.
+  **Issue:** #301
+- **Decision:** The Lite note (`LITE_NUDGE_NOTE`) shows whenever a 200's turn warnings hold `lite_no_reconciliation`, direction or not. `DIRECTED_DONE` and the Apply-directly note (" — any conflicting history was amended directly") show only with a direction. The 202 flash goes through `_flash(level=messages.WARNING)`. The 202 redirect is 303 (E21), while the 200 keeps #53's 302. #292's test, which expected 302 for the session redirect, now expects 303, and it lives in `tests/timeline/test_regenerate_directed.py` (where #292 put it), not under `tests/play/` as the test plan says.
+  **Why:** These follow the story's planner notes. Cost if wrong: one flash suffix or one status code.
+  **Issue:** #301
+- **Decision:** `RegenerateForm` subclasses `(TimelineForm, RewriteModesForm)` and redeclares `resolution` with `required=False`, where `clean_resolution` maps blank to `synchronous`. A tampered `resolution` is still "Select a valid choice", with no call. A tampered `apply_directly` can't be an error: Django's `BooleanField` reads any non-false string as ticked, as in every E4 form. The Parameters loop now iterates `form.param_fields`, which is `PARAMS` in order, instead of `visible_fields`. "← Back to the story" comes from a new `back_to_story_url` key in `console/views/rewrites.py::session_context`, set only for `kind == "directed_resolution"`.
+  **Why:** E4's form is shared, so changing BooleanField semantics there is out of scope. Cost if wrong: none (cosmetic).
+  **Issue:** #301
+- **Decision:** The tests use `m7/directed_pending.json` as recorded, with `previous_variant {turn: 4, variant: 1}`, and override it to `{turn: 2, variant: 1}` in `test_held_202_lands_on_the_session` to match the test plan. E3's calls line renders pluralised as "3 model calls to replay" (E23's `_filled`), not the literal "call(s)". The Demo was not run against a live Engine. The body shape was checked against the recorded `RegenerateRequest` / `RegenerateDirective` schema and the Engine source (`engine.py` gates `body.directive.text`, and `lite_no_reconciliation` is a `TurnWarning` kind).
+  **Why:** No live test is in the test plan, and the held 202 isn't reproducible under the stub. Cost if wrong: a live-only mismatch, which verify would catch.
+  **Issue:** #301
+- **Decision:** A profile edit's "Apply anyway" offers the upgrade mode only when a listed story has `backfill.needed` **and** `upgrade_unavailable` false (the count line's rows), not on `backfill.needed` alone as the story's discretion note says.
+  **Why:** The AC requires `tests/test_profiles_edit.py` to pass unchanged; its M6-era `held()` report has a story with `backfill.needed` and `upgrade_unavailable` both true, and posts "Apply anyway" with no mode. Asking for the mode there would re-render the page instead of applying. The Engine's M7 `impact.py` always sends `upgrade_unavailable: false`, so live behaviour is the same either way. If that's wrong, a report that only lists unavailable stories would apply without asking (no mode is sent, so the Engine uses its default, `backfill`).
+  **Issue:** #311
+- **Decision:** The applied flash sorts `edit.backfills` by `queue_position` (nulls last, ties kept in the Engine's order), the same rule as #310's `queued_rows`. It is built inline because `profile_upgrade` imports `profile_edit`, so importing back would be circular. A queued story whose label read fails reads as its id.
+  **Why:** "In queue order" is defined by the queue position. The Engine already lists them in that order, so sorting is only a safeguard.
+  **Issue:** #311
+- **Decision:** The test plan's complement "under the real urlconf they are plain text" no longer holds, because #308 registered `stories:backfill`. The real urlconf now links each story too (asserted). The D19 plain-text case is tested by patching `profile_edit.backfill_url` to `None`.
+  **Why:** The story was planned before #308 landed. D19's fallback is still exercised.
+  **Issue:** #311
+- **Decision:** A linked backfills flash is a `SafeString` flashed with `extra_tags="safe"` (#297's rule). Main's warnings suffix, on an edit applied at the first stage, is escaped into it with `format_html`. The count line reads "N following stor(y|ies) gain(s) …" and sits at the top of the fieldset, above the radios and the field's errors.
+  **Why:** E21's flash rule and the story's verb-agreement note. The template position is discretion.
+  **Issue:** #311
+- **Decision:** The "renders as on main" complement compares the impact `<section>` against a golden captured from the pre-change code, `tests/fixtures/profile_edit_m6/impact_behavioural.html`, using `normalise_html`, with the signed and CSRF token values masked.
+  **Why:** E24's region golden.
+  **Issue:** #311
+- **Decision:** #312's "raw status and reason in `title`" is met in `console.certification.quality_line`: a `QualityStatus` that is `stale` with an `invalidated_reason` gets `title="stale (canary)"`; every other status (and a bare stale string or `FloorsMet`) keeps the raw status as before. This refines E13's "title is the raw status" (#295) in the one shared function, so the Overview, Config and the turn report read it identically.
+  **Why:** the story's AC is more specific than E13 and no other story keys on the stale title (impact goldens carry bare "stale" strings, unchanged). Cost if wrong: one title format.
+  **Issue:** #312
+- **Decision:** The profile list's stale row wraps the whole `_quality.html` include (badge, plus any floors line) in the `certifications-link` anchor; the cell is `<td class="quality-cell">`. Config's quality `<dd>` keeps no class (only the badge markup moved); Config passes `quality_line(config.quality_status)` directly (the model field is required) and `certifications_url` is `None` for a blank fingerprint.
+  **Why:** the story says the link wraps the badge's "Stale" text with no extra text; a `FloorsMet` stale row normally has no floors. Cost if wrong: markup only.
+  **Issue:** #312
+- **Decision:** The turn-report "absent quality" cases use `quality_status: null` (the recorded schema requires the key, nullable for pre-fingerprint replays), not a missing key; a report with a fingerprint but null quality still shows the certifications link.
+  **Why:** the fake Engine validates responses against the recording; the template treats both alike. Cost if wrong: none.
+  **Issue:** #312
+- **Decision:** The story header's compact config chip (`stories/_config_badge.html`) keeps its plain quality text, as the story's discretion says; the badge appears on Config, turn reports and the profile list.
+  **Why:** planner's call, recorded so "everywhere" stays honest in the PR body. Cost if wrong: one more place to switch later.
+  **Issue:** #312
+- **Decision:** Rule 1: #292's `m7/amendments.json`, `amendments_bad_item.json` and `amendment.json` were not Engine-shaped (kind `instruction`, parts `{kind: fact, record_id, summary}`, edges `{amendment_id, part_id, edge}`). They now follow `core/amendments/read.py` at origin/main: kinds `rewrite`/`undo`, newest `tx_time` first, `PART_COLUMNS` parts (a `proposition` part on Mara with predicate `holds` from the inspect registry fixture, and a `record` part on `transcript_messages`), `relies_on` `{edge_type, part_id, target {kind, id}}` and `dependents` `{edge_type, record {table, id}, target}`. The Engine's record parts always carry both `action` and `strategy` (its CHECK), so the record part reads "Transcript messages …00000002 · Replace · Overlay" rather than the test plan's loose "· Fix".
+  **Why:** The page renders the Engine's members; fixtures in another shape would test nothing real. No other test read these fixtures. Cost if wrong: a fixture edit.
+  **Issue:** #302
+- **Decision:** `UNPARSED_TEXT` is the story's fixed "Some amendments couldn't be read", not E22's counted "N amendments couldn't be read". A proposition's subject uses `console.cast.character_labels` ("Mara"), not `cast_names` ("Mara (player)"), to match the AC's "cast labels" and the test plan's "Mara · <predicate>". The omniscient line shows on the detail page on every branch, including the error branches, and "Back to Amendments" always shows.
+  **Why:** The story's specific text wins over the E convention. Cost if wrong: one wording or label change.
+  **Issue:** #302
+- **Decision:** A part or edge that isn't a JSON object can't reach the page. `AmendmentDetail.from_json` rejects it, so the page shows #43's `bad_response` panel. The page test covers the malformed cases that do parse: an `ordinal` that is a string or a bool, and an edge with no `edge_type`. A unit test covers the helpers' never-raise path for non-object entries. The test plan's "a 500 → #43's panel" uses a 503 `database_unavailable`, because the fake Engine refuses an undeclared 500. The omniscient-refusal log is `log_engine_error`'s single WARNING record; the test plan says "ERROR", but the AC names `log_engine_error`, which logs at WARNING.
+  **Why:** These follow the client's strict model, the schema-validating fake, and the existing logger. Cost if wrong: none (test-only).
+  **Issue:** #302
+- **Decision:** `stories:rewrite` was already registered (#297), so `test_relations_plain_while_unregistered` stands in for D19 by monkeypatching `console.amendments.rewrite_session_url`/`amendment_url` to `None`. Registering `stories:amendment` turned E6's `amendment_url` into a link everywhere, as the AC expects. The real-urlconf assertions that pinned it as plain `<code>` were updated: `tests/test_rewrites.py`, the applied flashes in `tests/rewrites/test_rewrite_answers.py`, `test_rewrite_apply.py` and `test_rewrites_page.py`, and the session page (whose complement now monkeypatches `console.rewrites.amendment_url`). The two `#302` stubs and their `NOT_YET_REGISTERED`/`ARGS` rows are gone. The nav goldens now read Rewrite · Amendments · Backfill: `REGISTERED_NAV` in the play and history tests, `test_nav.test_rewrite_link_once_registered`, `inspect/test_shell` and `test_story_pages`.
+  **Why:** E24 says the registering story regenerates the goldens its URL moves. Cost if wrong: none.
+  **Issue:** #302
+- **Decision:** There are three small shared partials beyond the story's two templates: `stories/_amendment_relations.html`, `_amendment_session.html` and `_amendment_target.html`. The list and the detail summary render Relations and Session the same way through them. The Actions hook is `row_actions` (a row template name; `None` here), and the detail page's hook is `{% block amendment_actions %}` under the summary `<dl>`. Bad cursor, bad status and refused-cursor notices sit above the filter form.
+  **Why:** One code path per cell. Cost if wrong: cosmetic.
+  **Issue:** #302
+- **Decision:** `AmendmentRow` gained an `action` field (set by `amendment_row` through `amendment_action`), so the list's `row_actions` template and the detail's summary read `row.action` directly; the planned "attach `action=` in both builds" became one field. The detail context also carries `action` for `{% block amendment_actions %}`, which is filled in place in `amendment.html` (no child template).
+  **Why:** One code path; a row template can't call a function. Cost if wrong: none (internal shape).
+  **Issue:** #303
+- **Decision:** One extra partial beyond the planned 8 files: `stories/_amendment_action.html` renders the Undo…/Redo… link or, for an active undo, `USE_REDO_HINT` and the `undoes` id (linked; plain `<code>` when `amendment_url` doesn't resolve; "—" when `undoes` is null, read as the AC's "plain `<code>` when `undoes` is null" having nothing to show). The amendment page and the ineligible open form share it; `_amendment_row_actions.html` renders only a link with a url.
+  **Why:** The hint shows on two pages; the row stays link-only. Cost if wrong: cosmetic.
+  **Issue:** #303
+- **Decision:** `AmendmentAction` is `(label, url, hint_url, hint_code)`, with an active undo as `label=""`, `url=None`. The Undo/Redo URLs come from `console.amendments.undo_url`/`redo_url` (D19, `None` while unregistered). On the open form, an ineligible amendment's sentence is followed by `_amendment_action.html` (Redo… on the undo page, Undo… on the redo page, the hint for an undo), then "Back to the amendment".
+  **Why:** As the story's Discretion sets out. Cost if wrong: cosmetic.
+  **Issue:** #303
+- **Decision:** A GET whose `get_amendment` read fails with `omniscient_required`/`viewpoint_unresolved` shows E2's `OMNISCIENT_REQUIRED_TEXT` (reusing #302's `_refusal`), not #43's panel. Every other non-404 failure is the panel, with no form.
+  **Why:** E2 says a viewpoint refusal reaching a page is worded as a Console bug; this matches #302's detail page. Cost if wrong: cosmetic.
+  **Issue:** #303
+- **Decision:** A 2xx `bad_response` from the write (checked by `http_status`) is the `OPENED_UNREADABLE` warning flash (with E21's key tail, the posted key) and a 303 to `rewrites_url`, else the amendment page. A non-2xx `bad_response` and any transport error or timeout re-render with #43's panel and the posted key (D8). An answered refusal re-renders with a fresh key. `idempotency_conflict` (no `rewrite_refusal` wording) is the panel with a fresh key. A `validation_error` goes through `apply_engine_errors` with #297's `ALIASES`. The refusal links reuse #297's `REFUSAL_LINKS`/`DEFAULT_LINK`.
+  **Why:** The AC distinguishes a 2xx that doesn't parse (redirect) from an unreadable non-2xx (panel, posted key). Cost if wrong: one flash.
+  **Issue:** #303
+- **Decision:** The POST's `<title>` and "Amendment <short id>" come from the URL's id (no read). Both views are `require_http_methods(["GET","HEAD","POST"])` over one `_open_session`. The client method is picked by name from `SessionSpec.method`. The test plan's `caplog` logger is `console.engine` (the actual name of `console.engine_errors.log`), not `console.engine_errors`.
+  **Why:** The story names the module, not the logger. Cost if wrong: none (test-only).
+  **Issue:** #303
+- **Decision:** Registering the two routes filled #302's hooks, so `tests/stories/test_amendments.py`'s `test_no_actions_column_by_default` and `test_the_actions_block_is_empty_by_default` became `test_the_actions_column_is_303s` and `test_the_actions_block_holds_only_303s_action`. `test_relations_plain_while_unregistered` also monkeypatches `undo_url`/`redo_url` to `None`. The two `#303` stubs and their `NOT_YET_REGISTERED`/`ARGS` rows are gone.
+  **Why:** E6/E24: the registering story updates what its URL moves. Cost if wrong: none.
+  **Issue:** #303
+- **Decision:** `tests/urls_with_m7_pages.py` keeps #296's `engine:certifications` frame probe after #313 registers the real list (as #297 kept `stories:rewrites`); only the `engine:certification` and `engine:certification-run` stubs are dropped, so the real detail and run pages serve under the stub urlconf (needed for the D19 Invalidate link test) and `tests/test_story_pages.py` keeps its probe unchanged.
+  **Why:** the stub urlconf drops real patterns of a stub's name, so renaming the probe would churn #296's frame tests for no gain. Cost if wrong: list-page tests must use the real urlconf (they do).
+  **Issue:** #313
+- **Decision:** A canary run's page shows no "Recorded certification" / `NO_CERTIFICATION` line; requested runs show it on any terminal state (completed with an id → the link; completed without one, or failed → `NO_CERTIFICATION`).
+  **Why:** the Engine's canary records no certification by design (`_canary_finish`); "no floor passed, or the run failed" would misstate a canary that held. Cost if wrong: one template condition.
+  **Issue:** #313
+- **Decision:** Run kinds map `certification` → "Requested certification" and `canary` → "Canary check" (the Engine's `ck_certification_runs_kind` values at origin/main); #292's fixtures carry `kind: "profile"`, which renders humanised ("Profile") with the raw value in `title`.
+  **Why:** the AC names `certification`/`canary`; the fixture value is a test artefact left as is (E16). Cost if wrong: a text map entry.
+  **Issue:** #313
+- **Decision:** Floors tables type each raw entry with `FloorResult.from_json` on its own (not `Certification.floors_view()`, which drops untypable entries), so an untypable floor is one "This floor couldn't be read" row with its JSON under More and still counts in the heading. Intervention types (cell and lists) are humanised with the raw value in `title` (E23 enums). The run facts read "Judge calibrated: Yes", "Seeds: 3", "Model tier: Other" as lines; sample sizes and host are `<dl>`s in the Engine's key order.
+  **Why:** the AC requires the untypable row; E23's enum rule. Cost if wrong: cosmetic.
+  **Issue:** #313
+- **Decision:** The run page's report summary: `suites` and `metrics` tables, "Overall: <verdict>", "Missed: …" and the outcome line read the Engine's `summary()` keys (`verdict`, `suites`, `metrics`, `missed_floors`, `outcome`); every other key (e.g. #292's fixture `floors_passed`/`report_path`, the Engine's `run_id`/`date`/`requirements`) goes under one More. A malformed metric entry is one "—" row with its JSON under More.
+  **Why:** the story's discretion; nothing the Console doesn't know is lost. Cost if wrong: none.
+  **Issue:** #313
+- **Decision:** The run's `?partial=1` held answer (503 `erasure_pending`) is a 200 poll block with D17's fragment (no Delete, Retry → the full run page) and no `hx-trigger`; the three full pages answer 503 with the fragment inside the Engine frame through #296's `engine_page`. A malformed run id answers #43's 404 page on the partial too.
+  **Why:** E7's failure order (htmx doesn't swap a 5xx); mirrors #308's backfill partial. Cost if wrong: status code only.
+  **Issue:** #313
+- **Decision:** Registering `engine:certifications`/`engine:certification` moved these real-urlconf asserts (E24, regenerated here): `tests/engine_panel/test_providers.py::test_engine_home_links` and `tests/engine_panel/test_health_detail.py::test_the_page_links_the_re_embed_run` (the Engine nav now shows Certifications), `tests/test_nav.py` (renamed `test_engine_links_show_only_the_registered_rows_under_the_real_urlconf`), `tests/test_story_config.py::test_config_shows_profile_fingerprint_quality_and_revision`, `tests/test_quality_everywhere.py` (`test_config_badge`, `test_turn_report_badge`), and the D19 plain halves of `test_certification_wording.py`, `test_impact_report_m7.py::test_certification_ids_are_plain_before_their_page`, `test_quality_everywhere.py::test_config_links_under_the_m7_urlconf`/`test_profile_list_quality_column`, which now go through a new `tests/certification_helpers.unregistered_certification_pages(monkeypatch)` stand-in.
+  **Why:** E24's rule: the registering story regenerates the goldens its URL changes. Cost if wrong: none (behaviour is the registered one).
+  **Issue:** #313
+- **Decision:** Live check against the smoke stack `n8-291-smoke` on `127.0.0.1:18000` (left running): the list rendered the edge's 3 real certifications, a detail page ("Valid since …", Passed (13) / Failed (4) / Insufficient evidence (0)), the `profile_id` filter (lower-case input upper-cased), and an unknown run's "No such certification run" (404).
+  **Why:** confirms the pages parse the Engine's real records, not only the fixtures. Cost if wrong: none.
+  **Issue:** #313
+- **Decision:** `HistoryForm.checkpoint` (D7's `BoundaryField`) is added in `__init__`, not declared on the class: `console.forms.world` imports `console.forms.inspect`, which imports `console.forms.history.as_of_options`, so a module-level import cycles. The field order is irrelevant (the template renders fields by name).
+  **Why:** Avoids moving D7's field or touching `console/forms/inspect.py`. Cost if wrong: none.
+  **Issue:** #304
+- **Decision:** On the as-recorded view `clean()` drops the errors of every control the view ignores — `viewpoint` and `actor_character_id` too (an invalid character there no longer blocks the read), beyond the story's named `as_of`/`before_turn`/`limit` — and sets them as the AC says. The hidden inputs that carry disabled controls (`HistoryForm.carried`) only carry a valid choice, so a bad value is dropped on the way back.
+  **Why:** The as-recorded read forces omniscient (E2), so a stale character value must not refuse it. Cost if wrong: an invalid value silently ignored on a view that ignores it anyway.
+  **Issue:** #304
+- **Decision:** The HTMX View switch pre-fills Checkpoint from a valid `as_of` (and `as_of` from a checkpoint's turn going back) only on the HTMX re-render (`views.history.switched_view`), never on a full GET, so a submitted as-recorded page still ignores `as_of` and the corrected page still ignores `checkpoint`, as the AC says.
+  **Why:** Keeps the corrected query byte for byte and the AC's "as_of is ignored" literal. Cost if wrong: a non-JS switch doesn't carry the turn over.
+  **Issue:** #304
+- **Decision:** 503 `erasure_pending` and 409 `story_importing` from the as-recorded history read are re-raised to their middleware (#87's held page, E10's importing page), as the AC says; main's corrected `_page` is left as it was (it panels them).
+  **Why:** The AC names the middleware for this view only; the corrected view must stay main's. Cost if wrong: none.
+  **Issue:** #304
+- **Decision:** The `query.as_of` validation message is read from the Engine's `details.errors[*].field` (what `InvalidRequest.from_errors` sends: `field`/`message`), with a `loc` list ending in `as_of` accepted as well (the story's wording). Any other `validation_error` is #43's panel.
+  **Why:** The Engine's envelope uses `field`, not `loc`. Cost if wrong: the panel instead of the inline message.
+  **Issue:** #304
+- **Decision:** The corrected-controls golden is three HTMX fragment captures from main (`tests/history/golden/controls_{default,omniscient,character}.html`), compared with the View select's `<div class="field field-view">` stripped (E24). The as-recorded controls are a separate `{% if form.as_recorded %}` branch of `_controls.html`, so main's markup stays untouched. Erasure markers render their full `erasure_id` in `<code>` (the AC's wording) and `at` through `engine_time`; the derived entries' More is E23's `<details><summary>More</summary>` with one `pretty_json` `<pre>` per entry.
+  **Why:** The AC names `<code>` for the id; E24 for the golden. Cost if wrong: cosmetic.
+  **Issue:** #304
+- **Decision:** One template `console/certify.html` serves both subjects by extending a context variable (`{% extends frame|default:"console/stories/page_base.html" %}`): the story frame is #296's `page_base.html`, the profile frame a new `console/profiles/certify_base.html` (extends `base.html`, title "Request a certification run · <name>", "Back to the profile", a 404 profile read's "No such profile" at 404 and a failed read's #43 panel with no form). Both frames define `{% block story_page %}`, so the form block is written once.
+  **Why:** the AC names one template for both GETs while the story page must use #296's frame and the profile page the profile pages' base (as #310's). Cost if wrong: a template split, no behaviour change.
+  **Issue:** #314
+- **Decision:** `CertifyForm` takes an extra keyword `latest` (the profile's `current_version`) beside the story's `versions`, so "Latest (v<n>)" still names the version when the versions read failed; `seeds`/`sample` are `CharField`s on `NumberInput(step=1)` parsed as ASCII digits, so "2.5", "ten" and a blank seeds all read the AC's exact messages (an `IntegerField` would show Django's own).
+  **Why:** the AC's exact error texts and C10's no-min/max rule. Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** An estimate answer carrying a `run_id` is rendered as #43's `bad_response` panel with the posted key kept (a resubmit replays rather than queuing a second run), and no Start. A confirm that answers 2xx without `run_id`, and any unknown confirm outcome, re-renders the same confirm (same token, same key) under the panel (E21). An answered confirm-stage refusal re-renders the form bound from the signed body (suites joined with ", "), the estimate from `base` with `REESTIMATE_TEXT` and no Start, with a fresh key.
+  **Why:** the story's discretion and E21's unknown-outcome rule. Cost if wrong: one extra click to re-estimate.
+  **Issue:** #314
+- **Decision:** An expired/forged/other-kind/other-subject token answers a 303 to the bare certify GET with `EXPIRED_TEXT` before any read (the story route checks it before `story_page`, so zero calls means none, E24); a signed body must carry `confirm: true` to be accepted.
+  **Why:** E8/E24's "zero calls". Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** `certification_run_in_progress` reads `IN_PROGRESS_TEXT` as a link to `certifications_url(fingerprint=…)` (details, then the signed `base`), followed by " · The run in progress" (`certification_run_url(details.run_id)`) when the run id is known. `story_busy` (423) is C5's `busy_notice` plus " · retry after <n> s"; `story_importing` is caught on the form (E10's `importing_refusal` text and job link), not left to `ImportingStoryMiddleware`; a held story (503 `erasure_pending`) still goes to the middleware.
+  **Why:** the AC places every refusal on the form at 200. Cost if wrong: wording only.
+  **Issue:** #314
+- **Decision:** `console.impact.duration_text` gained the "Xh Ym" branch at ≥ 3,600 s (7,800 s → "2h 10m", 7,200 s → "2h 0m"). It moved one existing assert: `tests/engine_panel/test_certification_run.py` (#313's run page Duration "90m 0s" → "1h 30m"). Adding " · Request a certification run…" to Config's Quality `<dd>` moved `tests/test_quality_everywhere.py::test_config_badge[uncertified]` and `tests/test_story_config.py::test_config_shows_profile_fingerprint_quality_and_revision` (both assert the whole `<dd>`).
+  **Why:** the story's discretion (Demo wording) and E24's rule that the changing story updates the asserts. Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** Registered `profiles:certify` / `stories:certify`; their stubs, `NOT_YET_REGISTERED` names and `test_m7_stub_urlconf.ARGS`/`PATHS` rows are gone (`PROFILE_STUBS` is now empty).
+  **Why:** E6/E11. Cost if wrong: none.
+  **Issue:** #314
+- **Decision:** Live check on `n8-291-smoke` (`127.0.0.1:18000`, left running): the edge answers the Full estimate with `model_calls: 0` — the image ships no eval sets (`DEFAULT_SETS_DIR` resolves under the venv and the Dockerfile copies no `evals/`), so every suite counts 0 cases. Filed Console #337 (needs-triage; the agent was not permitted to file on nathanpond/Epistrel, so it asks for the upstream issue). `test_certification_estimate_live` (the AC's `model_calls > 0`) is `xfail(strict=True)` on #337; its complement runs separately as `test_certification_estimate_queues_nothing_live` and passes (no `run_id`/`job_id`, the fingerprint's certification ids unchanged).
+  **Why:** a strict xfail on a documented Engine gap, as #295 did for Epistrel#783, keeps the complement verified. Cost if wrong: the xfail turns into an XPASS failure once the edge is fixed, prompting its removal.
+  **Issue:** #314
+- **Decision:** `line_edit_url(story_id, item, *, chain, view=None, next_url="")` lives in `console/history.py` and reverses `stories:line-edit` itself (D19 via `NoReverseMatch`) rather than importing `console.rewrites`'s `_reversed`; `turn_groups` gains keyword-only `chain`/`view`/`next_url` (default `None`: no link), and both History builders pass them (the as-recorded builder with `view="as_recorded"`, so #304's gate is exercised by the same function, not only the template).
+  **Why:** `console.history` is imported by modules `console.rewrites` depends on; keeping the reverse local avoids an import cycle. Every other caller (Play's transcript) renders no link. Cost if wrong: none.
+  **Issue:** #305
+- **Decision:** An audit or erasure-marker row is recognised by `channel == "audit"` or `kind` in (`guardrail_output_rejected`, `erasure_marker`); every other non-redacted, non-quarantined row with a ULID `message_id` and turn ≥ 1 on the active corrected view gets the link (no kind filter; the Engine's `line_not_editable` covers structured beats, per the planner).
+  **Why:** The AC's list, nothing more. Cost if wrong: a link that leads to a worded refusal.
+  **Issue:** #305
+- **Decision:** Goldens (E24): `tests/history/golden/m5_items.html` is kept as main's render and is now the D19 baseline compared under the new `tests/urls_without_line_edit.py`; the real-urlconf M5 render moved to the new `m5_items_linked.html` (`test_m5_page_unchanged` compares that). `tests/fixtures/inspect/golden/lite_history_items.html` is regenerated in place (it gains four links: not on the redacted or quarantined items, nor the `do` of the say + do message).
+  **Why:** The story's complement needs main's golden to stay; the regenerated ones move only by the link. Cost if wrong: none.
+  **Issue:** #305
+- **Decision:** Target parsing is `console.forms.rewrites.line_target` (with `LineTarget`), shared by the GET query and the POST's hidden fields. The form is built with the parsed target (`LineEditForm(data, target=)`); the hidden `event_id`/`turn`/`beat`/`next`/`original` are plain carriers. `beat_required`'s choice with no `speaker_kind` reads "Beat <b>" with no parentheses. By turn with no beat over several messages, the choices' text is "Beat <b> (<actor label>)" from the read (the read has no speaker kind).
+  **Why:** One parser for both methods keeps the POST's target equal to what the page showed. Cost if wrong: cosmetic.
+  **Issue:** #305
+- **Decision:** Any `rewrite_refusal` result that names a field and carries no link goes on `new_text` (covers `rewrite_noop`'s `instruction` field and the guardrail's `new_text`); a guardrail with no locator stays above the form (E5). `record_inactive`'s link is labelled "Variants" (added to a local copy of #297's `REFUSAL_LINKS`). An Engine `validation_error` at `body.line_edit[.new_text]` maps to `new_text`. A 2xx `bad_response` is #43's panel with the posted key kept (unknown outcome), as #297's page does.
+  **Why:** The AC's "any other field it returns is also placed on new_text"; E21. Cost if wrong: a sentence above the form instead of beside the box.
+  **Issue:** #305
+- **Decision:** The newline-joined say + do prefill was checked against the Engine source rather than a live story: `PlayerInput.text` is "``say`` and ``do`` joined with a newline" (`core/events/types.py`) and `transcript_messages.text` is that `beat.text` (`core/projections/transcript.py::message_row`), and `line_edit_change` compares `new_text` to it. No live stack was started for this story.
+  **Why:** The source states it outright; a live run would add nothing. Cost if wrong: an unchanged say + do edit reaches the Engine's `rewrite_noop` instead of the local check.
+  **Issue:** #305
+- **Decision:** #306's flash is its own `merge_flash` in `console/views/inspect_merge.py`, not #297's `session_write_flash`: `MERGE_APPLIED` "Merge applied — rewrite session <short id>" has no `{amendment}` slot (which `session_write_flash`'s applied branch splits on), and every variant shows the session's short id in `<code title=full>`, which `session_write_flash` would escape. It follows E21's state rule, "Not applied directly: " prefix and key tail (the answer's key, else the posted one) exactly.
+  **Why:** The AC's texts name the session, not the amendment. Cost if wrong: one more flash builder to keep in step with E21.
+  **Issue:** #306
+- **Decision:** A local invalid merge keeps the **posted** key (the story's AC, as #303 does), not E21's fresh key; the AC is the more specific text. `idempotency_conflict` (409, answered) re-renders #43's panel with a fresh key; a 5xx, transport error or non-2xx `bad_response` keeps the posted key.
+  **Why:** D8's "local invalid input" rule as the story cites it. Cost if wrong: a resubmit after a local error replays instead of minting a key, which is harmless since nothing was written.
+  **Issue:** #306
+- **Decision:** On a re-render after a POST (local error or refusal), the candidates are rebuilt with every valid posted tick as a kept id (planner: "the re-render rebuilds candidates from kept_ids"), so the ticked entities move to the top of the list, still labelled from the scene or cast when found there. A posted tick that isn't a ULID is Django's `invalid_choice` on `entity_ids` worded `ENTITY_ID_INVALID`; the ≥2/≤10 bounds count the remaining valid ticks.
+  **Why:** The form posts to the bare path, so the ticks are the only record of what the page offered. Cost if wrong: cosmetic row order.
+  **Issue:** #306
+- **Decision:** The picker is one table inside `<fieldset class="merge-entities">` (columns Merge / Entity / "Survives (keeps its id)", one row per candidate, then the typed ids' radio-only rows "<short id> (typed)" with the full id in `title`); `entity_ids` and `survivor` errors, `SCENE_UNAVAILABLE` and the `?entity=` notice sit above it in that fieldset, `SURVIVOR_HELP` below. `other_ids` and E4's modes have their own fieldsets. `other_ids` isn't stripped, so "Line n" counts physical lines.
+  **Why:** The planner asked for both "one row per candidate with its radio in the same row" and a fieldset per field; one shared fieldset keeps the radio beside its entity. Cost if wrong: layout only.
+  **Issue:** #306
+- **Decision:** `entity_merge_url(story_id, entity_id=None)` (D19) lives in `console/views/inspect_merge.py`; `inspect_canon._canon` passes `merge_url` (rendered after "New fact" as `a.button.merge-entities`) and `inspect_scene._entity` passes `merge_url` only once the profile read answered. Held, `story_importing` and `erasure_pending` on the scene read or the write are raised to their middleware/held page; any other scene failure gives `SCENE_UNAVAILABLE` (logged). No live stack was used.
+  **Why:** E11/E21 and the story's planner notes. Cost if wrong: none expected.
+  **Issue:** #306
+- **Decision:** Registered `engine:certification-import` (`certification-import/`) and `engine:certification-invalidate` (`certifications/<id>/invalidate/`) in `console/views/certification_admin.py`; their stubs, `NOT_YET_REGISTERED` names and `test_m7_stub_urlconf.ARGS`/`PATHS` rows are gone. `test_invalidate_link_d19`'s real-urlconf half now asserts the link; the plain D19 case is pinned by `test_link_absent_while_unregistered` (a stand-in `reverse` in `console.views.certifications`).
+  **Why:** E6/E11/D19, as #313 and #314 did. Cost if wrong: none.
+  **Issue:** #315
+- **Decision:** The import's `invalid_certification_record` / `certification_record_conflict` refusals render as one `div.refusal` above the form (the headline, then a `ul.refusal-lines` with one line per `details.errors[]` entry), not as Django non-field errors; local checks and `validation_error` lines stay on the form's own error lists. A `loc` given as a list is "."-joined, a string (what the Engine sends: `parse_record` already joins it) is shown as is.
+  **Why:** the AC's "one non-field error above the form … plus one line per entry beneath it" reads as one refusal with sub-lines; a flat errorlist would make the lines peers of the headline. Cost if wrong: a template change.
+  **Issue:** #315
+- **Decision:** Import refusal texts: the reason text is `details.reason`'s mapped text (`report_hash`, `report_missing`), the Engine's message for `schema`, an unknown reason humanised, and the message alone when no reason is named. The conflict's id is the short id (`engine_id`, full id in `title`) linked through `certification_url`, falling back to the record's own id.
+  **Why:** AC + Discretion; E23 for the short id. Live-checked on `n8-291-smoke` (`127.0.0.1:18000`, left running): extra field → `reason: schema` with `errors: [{loc: "zzz", type: "extra_forbidden"}]`, tampered report → `reason: report_hash`, same record → `stored: false`, other content under the id → 409 with `details.certification_id`. Cost if wrong: wording.
+  **Issue:** #315
+- **Decision:** The import form's file errors go on `record_file` (FileField's own "empty" message replaced by "The file is empty"; a whitespace-only file reads the same). Once a file decodes, its text replaces the bound `record` value and the textarea's BoundField help reads "Loaded from <name>" (a BoundField copies its field's help at creation, so both are set). The required-members and `schema_version` errors always land on `record`.
+  **Why:** Discretion ("Local-check errors attach to the field that supplied the record (on a re-rendered upload, the textarea)"). Cost if wrong: an error shows under the other input.
+  **Issue:** #315
+- **Decision:** A pasted record over 2 MiB is refused by a `RecordBoxField(JsonBoxField)` before parsing (UTF-8 bytes). The test raises `DATA_UPLOAD_MAX_MEMORY_SIZE` for that one case, since a >2 MiB textarea plus a multibyte payload can exceed Django's 2.5 MB cap first (settings unchanged).
+  **Why:** Discretion keeps settings unchanged; the local cap is still what an operator hits for 2–2.5 MB. Cost if wrong: above 2.5 MB Django's own 400 shows instead of the field error.
+  **Issue:** #315
+- **Decision:** Invalidate: a confirmed POST whose `InvalidateFields` is invalid re-renders with the same key (the story's Discretion, over E21's fresh-key-after-local-failure); answered refusals (`certification_not_valid`, `certification_not_found`, other codes) mint a fresh key; an unknown outcome keeps the key under #43's panel. A non-`stale` `details.status` is humanised lower-case mid-sentence ("This certification is revoked — …"). A `validation_error` at `body.reason`/`body.note` lands on that field; anything else is the panel. The success flash's reason text is `INVALIDATED_REASON_TEXT` (lower-case words, e.g. "the model changed under the same version"). A 503 `erasure_pending` on the confirm page renders as #43's panel (the page has no Engine frame for D17's held fragment).
+  **Why:** AC + Discretion; E21 for `validation_error`. Cost if wrong: an erasure hold shows as a panel, not the held fragment, on this one page.
+  **Issue:** #315
+- **Decision:** The success redirect after an invalidation is always the certification page (`engine:certification`), not `next`; `next` only drives Cancel. The display-only Fingerprint/Profile facts render inside the confirm page's usual `<code>` value cells ("—" when absent).
+  **Why:** AC ("a 303 to engine:certification"); reusing `_confirm.html` unchanged. Cost if wrong: none.
+  **Issue:** #315
+- **Decision:** Rule 3: `EvalRun.suites`/`requirements` widened from `dict[str, Any]` to `Any` (default `{}`), as E15 lists them raw. A non-dict value used to make the whole run unparseable (`bad_response`), so the AC's "a non-dict shows as `pretty_json` in More" couldn't be met.
+  **Why:** E15 says eval `suites`/`requirements` are raw. Cost if wrong: none for well-formed reports (still dicts).
+  **Issue:** #316
+- **Decision:** `console.certification.eval_runs_url()` (E6's home for M7 URL helpers) is the reverse-or-`None` helper the Eval reports page uses for "Per-run results: Eval runs". The line keeps class `eval-runs` but drops `muted`.
+  **Why:** The AC asks for a reverse-or-`None` helper; E6 keeps them together. Cost if wrong: none.
+  **Issue:** #316
+- **Decision:** Eval runs list: E22's count line ("N eval runs on this page") and D15's rejected notice plus spanning rows (colspan 10) are applied, though the AC names only the rejected row. An empty cursor page reads "No more eval runs after this one" with "First page". A blank cursor is no cursor (no notice); one over 200 characters or with a `Cc` character is dropped with `CURSOR_DROPPED`. Any failed list read (no filter form here) is #43's panel through the frame.
+  **Why:** E22 applies to every M7 list. Cost if wrong: an extra line.
+  **Issue:** #316
+- **Decision:** Run page: known source/preset values carry their raw value in `title` too (as #313's `_enum` does). An empty `seeds` list reads "None" (E23), `null` reads "—". The metric id is plain text and the requirement is in `<code>` ("—" with no `<code>` when null). A string in Suites/Requirements is a verdict badge, and a blank string is "—". A non-404 detail failure is #43's panel in the frame. A 404 `eval_run_not_found` is status 404 and still shows "Back to eval runs". The guard's own 404 (overlong/control id) says "No such eval run — the id in the address isn't an eval run id". The run id is never trimmed or case-folded (it is a path stem).
+  **Why:** Discretion + E23; #313's precedent for the 404 status. Cost if wrong: cosmetic.
+  **Issue:** #316
+- **Decision:** `test_fingerprint_link_d19` checks "linked" under both the real urlconf and `tests/urls_with_m7_pages.py`, and "plain text" with `tests/certification_helpers.unregistered_certification_pages`. The test plan's "plain under the real urlconf before #313" can't hold now that #313 has landed. `test_certification_wording.test_the_url_helpers_are_none_while_unregistered`'s `eval_run_url` half now asserts the real path, and its unregistered half monkeypatches the two #316 names.
+  **Why:** #313 landed first. Cost if wrong: none.
+  **Issue:** #316
+- **Decision:** The verdict badges get four rules in `base.html` (`.verdict-badge` plus pass/fail/other: borders and weight only, so the text carries the meaning). The raw Suites/Requirements tables share one partial, `templates/console/engine/_eval_raw_table.html` (one file over the planned count). The live edge on :18000 serves 0 eval runs (`list_eval_runs` returns an empty page), so the live check covered only the empty state.
+  **Why:** Discretion. Cost if wrong: none.
+  **Issue:** #316
+- **Decision:** Aligned the `m7/prune_impact.json`, `prune_applied.json`, `prune_runs.json` and `prune_runs_bad_item.json` fixtures with the Engine's shapes in `core/prune.py`: `lost_operations[]` carry `target` (untruncate/swap per target, promote per dormant one), `suggestions[]` are `{code: promote_before_pruning, target, request{method, path, body.variant_chain}}`, `retained` gains `feedback_marked`, the policy run's `policy` is `{older_than_days: 30}`, and a run's `impact` is the full report (it was `{deleted}`). No new file, so `M7_FIXTURES` is unchanged.
+  **Why:** #292's shapes (`kind`, no `target`, `keep_days`) aren't what the Engine sends, so the range lookups and "By policy (older than 30 days)" couldn't be tested. If wrong, only fixtures move. `$SCRATCH/gen_m7.py` still has the old shapes.
+  **Issue:** #317
+- **Decision:** A `story_importing` refusal of the dry run or the apply is re-raised to `ImportingStoryMiddleware` (#295's importing page, 409), the same as a held story. It is not shown as a refusal line.
+  **Why:** The AC lists `story_importing` as "(#295's middleware page)". The frame's story read would raise it anyway on a re-render.
+  **Issue:** #317
+- **Decision:** The narrow form's `report_token` is signed with its own salt (`console.pruning.report`, max age `twostage.MAX_AGE_S`), not as a `twostage` kind, so it can never be posted as a confirm token. A token past its age shows "Tick at least one target" on the bare page. A tampered token, one for another story, or one that no longer parses as `Pruned` gives `EXPIRED_TEXT` and a redirect. None of them makes an Engine call.
+  **Why:** The planner line splits expired from invalid, and `twostage.unsign` folds both into one exception. If this is wrong, only the re-render path differs.
+  **Issue:** #317
+- **Decision:** An unknown outcome on the dry run (timeout, transport, `bad_response`) re-renders the Prune page with #43's panel, and the dry-run form keeps the posted key (E21). An unknown outcome on the apply re-renders the typed-name confirm under the panel, with the same token, key and `confirmed=1`. A dry run that answers `applied: true` goes straight to the result (E8's applied-at-once rule).
+  **Why:** These follow E21 and E8. The story doesn't spell them out for the dry run.
+  **Issue:** #317
+- **Decision:** Wording fallbacks:
+  - an unknown `lost_operations.operation` reads "<Humanised op>: <range or id>";
+  - an unknown `retained` key reads "<Humanised key> <n>";
+  - a target refusal humanises `details.reason` (the Engine's mid-plan `moved` reads "(Moved)");
+  - the confirm fact is ("Dry run at revision", "<n>");
+  - with nothing to prune, the narrow form is left out too (there is nothing to tick).
+  **Why:** E23's humanise rule, applied where the AC says only "humanised".
+  **Issue:** #317
+- **Decision:** `impact_view`'s `names` stays (`{"story_name": story.name}` from the frame's read). The token's `base["story_name"]` needs the raw name (`None` when unnamed, for E9's id fallback), and the frame's `story_name` is already the id-substituted one. "Busy · retry after <n> s" reuses `console.views.certify.busy_text` instead of a copy. History's Prune link goes through E6's `prune_url`.
+  **Why:** The planner asked for `names` to be dropped if it proved redundant. It isn't.
+  **Issue:** #317
+- **Decision:** Tests:
+  - Expiry tests monkeypatch `time.time` past `twostage.MAX_AGE_S`, as `tests/test_m3_shared.py` does. They don't use `freezegun`, which the test plan names but which isn't a dependency (adding it would be a library change).
+  - `amendment_ids` as plain `<code>` is tested by monkeypatching `console.pruning.amendment_url` to `None`. #302 already registered `stories:amendment`, so ids link under the real urlconf too.
+  - The plan's "3 operation(s)" is the confirm page's total. The fixture's two targets carry 2 and 1.
+  - `tests/test_portability_helpers.py`'s "prune_url is None" line moved to a registered-case test.
+  **Why:** These keep the plan's intent without a new dependency.
+  **Issue:** #317
+- **Decision:** #317 landed before this story, so `stories:prune` already resolves under the real urlconf. `test_pruning_facts_and_link` asserts "Prune now…" there. The "before #317" case (`test_the_prune_link_is_left_out_until_the_page_registers`) monkeypatches `django.urls.reverse` to raise `NoReverseMatch` for that name. The link is still the AC's guarded `{% url 'stories:prune' … as prune_link %}`, not E6's `prune_url`.
+  **Why:** The planned "no link under the real urlconf" assertion would be false now. This test keeps the guard's coverage without adding another stub urlconf, which E24 rules out. Cost if wrong: none (test-only).
+  **Issue:** #318
+- **Decision:** `#294` has landed, so the flash's day count and the odd-policy suffix use `console.raw.plural` and `compact_json(…, CELL_LIMIT)` and don't format inline. The recorded bounds are named once, in `console/story_settings.py` (`PRUNE_MIN_DAYS`/`PRUNE_MAX_DAYS`/`PRUNE_DAYS`). `policy_days` uses them, and `PrunePolicyField.MIN_DAYS`/`MAX_DAYS` point to them.
+  **Why:** E23's refinement allows inline formatting only for a story that lands before #294. Keeping one set of bounds means the guard pins the field and the well-formed test together.
+  **Issue:** #318
+- **Decision:** The pruning facts and the "Prune now…" link are a small partial, `templates/console/settings/_pruning_facts.html`, included in the Value cell when `row.name == "prune_policy"`. That makes 9 files, not the planned 8. Rule 2 adds: a re-render after an invalid POST shows the facts from the signed `Snapshot.pruning`, and an older token without `pruning` still unsigns as `None`; both are tested. The odd-path test also covers a stored bool, 0 and `"30"`. The plan's `…_cover_the_seven_…` choices test is renamed `…_cover_the_nine_…`.
+  **Why:** The partial keeps the row loop readable. The extra tests pin the planner's snapshot and well-formed rules.
+  **Issue:** #318
+- **Decision:** The `engine_live` case `test_prune_policy_live` ran against #291's `n8-291-smoke` stack on `127.0.0.1:18000`, which stays up. The stack's `GET /stories/{id}` returns `pruning.next_run_at` once a policy is set and `null` after it is cleared.
+  **Why:** E24 requires the live case. The stack is shared.
+  **Issue:** #318
+- **Decision:** The ready `?partial=1` render reads the story once more (`get_story`) to name the file (`bundle_filename`), because the partial skips the frame and the ready state is usually reached by a poll. If that read fails, the "saves as" part is left out and Download stays. Every other partial render makes only the `export_status` read.
+  **Why:** The planner's note says the partial makes only the status read, but then the most common path to "Ready" would show no filename (the AC's Download line names it). The read happens once, on the terminal render. If this is wrong, the cost is one extra read per finished export.
+  **Issue:** #319
+- **Decision:** The export error renders as its own lines in `templates/console/stories/_export_job_body.html`. These are the code humanised, `EXPORT_ERROR_TEXT[code]`, the humanised `reason` and the raw error under More. The view passes `error=None` to `_job_status.html` so its generic block (code plus `message`) stays silent. That leaves `_job_status.html` unchanged. Facts show only on `ready`, not on `expired`. An expired job with an `error` adds the humanised code line. "Export again" shows on failed and expired.
+  **Why:** The Engine's export `error` has no `message`, and the AC orders different lines. Changing the shared template would affect #321's import page.
+  **Issue:** #319
+- **Decision:** Several smaller calls:
+  - Recent exports show the full job id in `<code>`, linked. The AC says "the job id", and the job block shows the full id too.
+  - Outcomes go through the `humanised` filter ("Queued"/"Ok"/"Error"), with the raw value in `title`.
+  - Any 404 on `export_status` counts as "no such export", the way `poll_failure` treats a 404.
+  - The download's HEAD answers an empty `StreamingHttpResponse`, so CommonMiddleware adds no `Content-Length`.
+  - An unreachable or timed-out stream is #43's panel inside the job page's frame at 502/504. So is an unreachable story or status read.
+  - `media_proxy._Body` is now the public `StreamedBody`, with keyword `logger`/`what` (defaults unchanged). The download logs "export <job id>: stream cut short" to `console.exports`.
+  **Why:** These are the story's discretion notes applied. The `logger`/`what` keywords are the smallest change that lets the download reuse `StreamedBody` and log to `console.exports` as the planner asked.
+  **Issue:** #319
+- **Decision:** Registering the three routes moved the nav goldens, which now read Rewrite · Amendments · Backfill · Export. The goldens are `REGISTERED_NAV` in the play and history tests, `test_nav.test_rewrite_link_once_registered` (plus the export-job/download parent asserts), `inspect/test_shell` and `test_story_pages.test_the_story_nav_shows_backfill_under_the_real_urlconf`. `test_portability_helpers`'s "export urls are None" lines moved to a registered-case test. The live export smoke `test_export_through_the_console_live` ran against `n8-291-smoke` on 127.0.0.1:18000, and the stack was left running.
+  **Why:** This is E24's regenerate-in-the-registering-story rule.
+  **Issue:** #319
+- **Decision:** #322's 13 fixture keys are inserted in table order just before `config_revision` (not after `idempotency_key`) in both `get_deployment_settings.json` and `update_admin_settings.json`, so the settings stay together ahead of the response trailer.
+  **Why:** JSON key order means nothing to the parser; reads better. Cost if wrong: none.
+  **Issue:** #322
+- **Decision:** #322 help texts follow the planner's wording rule: the table's meaning without FR/#/E refs, Engine refusal codes as plain words ("refused with rewrite_session_limit past it", "refused with author_fact_limit past it"), "derives chains" without backticks, "(reported truncated past it)" / "past it the rest is reported unsearched (truncated)".
+  **Why:** Claude's Discretion text. Cost if wrong: copy edit.
+  **Issue:** #322
+- **Decision:** `test_the_m7_deployment_settings_are_recorded_and_not_yet_on_the_form` (#291's complement) keeps its name and now asserts 10 names; #323 removes it with the set. `test_m7_rewrite_sections_render` and the bounds test take their 13 names from the two new `SECTIONS` entries (`M7_REWRITE_SETTINGS`); the out-of-bounds cases are generated from the fields' own `min_value`/`max_value` (26 cases), with the margin's cases fixed at -0.01/1.01.
+  **Why:** the story's test shapes; no second source of the bounds in the tests beyond the schema-pinning test. Cost if wrong: none.
+  **Issue:** #322
+- **Decision:** #322 live check on the shared `n8-291-smoke` stack (127.0.0.1:18000): an untouched form over the live settings patches `{}`, `rewrite_max_open_sessions` 5 → 3 patches exactly that (config revision 43 → 44), 0 is a local field error, then restored to 5 (revision 45). Stack left running.
+  **Why:** confirms the live Engine's values round-trip through the form. Cost if wrong: none.
+  **Issue:** #322
+- **Decision:** A confirm whose spool is gone, and an expired or tampered confirm token, both flash (`IMPORT_SPOOL_EXPIRED` / `EXPIRED_TEXT`, `messages.error`) and answer 303 to `engine:import`. Neither renders the form in place. An expired token that still names a spool deletes that spool (it is read again with no age check, only to find the name).
+  **Why:** The AC asks for zero Engine calls, and rendering the form needs the three choice reads. The redirect's GET makes those reads, and it also runs the sweep. Cost if wrong: one extra round trip.
+  **Issue:** #320
+- **Decision:** An unknown outcome at the confirm (a timeout, transport failure or `bad_response`) still deletes the spool, as the AC's "whatever the answer" says. It then re-renders the form with #43's panel, the token's metadata as initial values and the posted key kept. E21's "same confirm page, same token" doesn't apply, because a resubmitted token would find no file. A refusal at the confirm stage re-renders the same way, with a fresh key and no keep box.
+  **Why:** The story's specific AC outranks E21's general rule. Keeping the key means re-choosing the file and resubmitting replays a 202 the Engine may already have answered. Cost if wrong: the operator chooses the file again.
+  **Issue:** #320
+- **Decision:** When either profile read fails (`?preset=true` or the full list), the profile field degrades to its blank choice alone with "The profiles could not be read". There is no partial list from whichever read succeeded. Profile choices come from the first page of each read (`limit=50`), with no cursor following.
+  **Why:** The AC says "a failed … profiles read degrades its field to … alone". A half-read list would hide profiles without saying so. One page matches the AC's three named reads. Cost if wrong: a deployment with more than 50 custom profiles doesn't offer the oldest ones (blank still works).
+  **Issue:** #320
+- **Decision:** Wording calls the story left open:
+  - The 413 value goes inside the limit's parenthesis: "accepts (`<limit>` (2.0 KB)) — nothing was created". The limit `<code>` is the settings link.
+  - The 413 is placed on `file`.
+  - A `corrupt_bundle` with no reason reads "the Engine gave no reason".
+  - `CORRUPT_REASON_TEXT` has my own short lower-case clauses, with `unreadable_archive` = the Demo's "the archive couldn't be read" and `erasure_race` as the story wrote it.
+  - A list-valued `details.supported` is ", "-joined.
+  - The confirm's facts list File, Owner, Name, Content rating, Engine profile and "Earlier turns" (E14's field label), with the size through `filesizeformat`.
+  - The held line above the report is my own: "The Engine held this import: …".
+  - Recent imports show the full job id. The outcome goes through the `humanised` filter with the raw value in `title`, as #319's recent exports do.
+  **Why:** The story fixes only the texts it quotes, and these are the smallest readable choices.
+  **Issue:** #320
+- **Decision:** Refusals render in the template, on the field `FormRefusal.field` names (`<span class="refusal">` inside that field's `div.field`), not through `form.add_error`. This lets a refusal carry markup (the settings link, an entry's `<code>`) and a "Closest: …" note. The fields render as `<div class="field">`, because the radios are `<div>`s. With a kept spool, `file` renders without `required`, so the browser lets the operator submit with no new file.
+  **Why:** `add_error` would escape the links. Cost if wrong: a refusal isn't inside Django's `errorlist`.
+  **Issue:** #320
+- **Decision:** Rule 3: the Engine's `POST /admin/stories/import` schema doesn't declare its 413 `bundle_too_large`. I filed nathanpond/Epistrel#786 (filing upstream was allowed this time) and added the line to E18's gap list in `console/rewrites.py`. The tests serve the 413 through `respond_undeclared`.
+  **Why:** The fake refuses an undeclared status through `respond()`. This is E18's "said once" rule.
+  **Issue:** #320
+- **Decision:** Registering `engine:import` moved these goldens:
+  - the real-urlconf Engine nav, which now reads Import a bundle · Certifications · Eval runs: `test_providers.REGISTERED_ENGINE_NAV`, `test_health_detail.test_the_page_links_the_re_embed_run` and `test_nav.test_engine_links_show_only_the_registered_rows_under_the_real_urlconf`;
+  - #319's snapshot line, which now links "an import" under the real urlconf (`test_export.test_get_makes_no_engine_write`). `test_the_snapshot_line_links_an_import_only_while_registered` keeps a D19 plain half by patching `exports._reversed` to `None`.
+
+  The `engine:import` stub, its `NOT_YET_REGISTERED` name and its `test_m7_stub_urlconf.ARGS` row are gone. The live case `test_import_through_the_console_live` exported, imported (202) and deleted both stories on `n8-291-smoke` at 127.0.0.1:18000, which was left running.
+  **Why:** This is E24's regenerate-in-the-registering-story rule.
+  **Issue:** #320
+- **Decision:** #323's three sections ("Story bundles", "Certification", "Model tiers") sit immediately after #322's two and before "Retention" (not at the end of `SECTIONS`); #322's `test_m7_rewrite_sections_render` now expects "Story bundles" after its two and "Retention" three further on.
+  **Why:** "after #322's two" read literally, and it keeps the M7 families together. Cost if wrong: a reorder of one tuple and one assertion.
+  **Issue:** #323
+- **Decision:** `DeploymentSettingsForm` takes `models: Sequence[tuple[str, str]] | None` (the strongest-model select's options, built by `engine_panel.model_tier_options`), not `Sequence[str]` as the discretion text said; `SettingsPage.models` holds the sorted ids (the snapshot) and `SettingsPage.model_options` builds the options on GET and POST alike.
+  **Why:** "mirroring ratings" — `ratings` is already the options list, and building options in the view keeps the form from importing the view. Cost if wrong: a signature change.
+  **Issue:** #323
+- **Decision:** The Clear label's `title` is rendered from each Clear checkbox's help text, so the three older nullable settings' Clear labels also gain a `title` ("Send null: unset public base url." etc.), not only `certification_recertify_interval_s`'s.
+  **Why:** one template rule, no special case; additive markup only. Cost if wrong: a template condition.
+  **Issue:** #323
+- **Decision:** Help texts: `certification_canary_sample_size`, `certification_canary_seeds`, `bundle_max_entries` and `bundle_max_entry_bytes` carry only "Default: …" (no meaning sentence); the read-only note is "The model configuration could not be read; shown read-only." (with a period, as the ratings note); days use `console.raw.plural` (#294 has landed) rather than an inline plural; the two en-dash ranges carry `# noqa: RUF001` as `console/rewrites.py` does.
+  **Why:** the AC names no other texts; E23's one set of helpers. Cost if wrong: copy edit.
+  **Issue:** #323
+- **Decision:** A stored `model_tiers` of `null` can't be served by the fake (the recorded `SettingsBody` types it an object), so the "missing or null counts as unset" case is a form-level test (`test_a_missing_or_null_model_tier_counts_as_unset`, absent / `None` / `{}`) rather than a page test. The 422 placement accepts both `body.model_tiers.strongest` and `body.model_tiers` (parametrised) and shares a new `_without(exc, pattern)` with the host placement (refactor of `_place_host_errors`' tail, behaviour unchanged).
+  **Why:** the C15 fake validates answers against the recording. Cost if wrong: none.
+  **Issue:** #323
+- **Decision:** `tests/fixtures/profile_schema_m7.json` was taken from the live `n8-291-smoke` Engine's `GET /engine-profiles/schema` (image 5cb073b), not by running the schema builder from a worktree of 95e57a5: `git diff 95e57a5 5cb073b -- src/epistrel/core/profiles/ src/epistrel/api/routes/engine_profiles.py` is empty, so the output is 95e57a5's. `purposes` copied from `profile_schema.json`.
+  **Why:** same bytes, no Engine dependency install. Cost if wrong: regenerate one fixture.
+  **Issue:** #323
+- **Decision:** #323 live check on `n8-291-smoke` (127.0.0.1:18000): a made-up strongest id is refused 422 `unknown_model` at `body.model_tiers.strongest`; the re-certification interval set to 172800 then Cleared through the Console form is accepted as `null` (so Clear stays). The live model configuration lists no model, so the set-strongest half skips by design; it was also run once with `rating_suggestion`'s model temporarily set to `smoke-strongest` (set → read back → restored to null), then that purpose's own row was deleted (back to inherit). Canary left disabled. Final live state: `model_tiers.strongest` null, recertify null, config revision 51. Stack left running.
+  **Why:** confirms the Engine accepts null for the fourth nullable setting and the field's refusal path. Cost if wrong: none.
+  **Issue:** #323
+- **Decision:** Rule 1 (docs): `EngineClient.update_admin_settings`' docstring now says "the four nullable settings", and `ModelTiers`' docstring now states the Engine's meaning ("the model id a profile's "@strongest" routes resolve to"), replacing #291's "a certification or a hard rewrite escalates to", which the recorded `ModelTiers` description contradicts.
+  **Why:** both were wrong once #323 lands. Cost if wrong: none (docstrings only).
+  **Issue:** #323
+- **Decision:** The import job page's body template is #321's `_import_report.html`. It is `job_poll_context`'s `body_template`: it holds the held, not-found and panel branches, includes #295's `_job_status.html` (passed `error=None`), then renders the stage line, the ready link and notes, the error with its violations, the report and "Try again". The two-template budget is kept, and neither `_job_status.html` nor `console/jobs.py` is edited.
+  **Why:** The import's error needs `IMPORT_ERROR_TEXT`, the violations and the "No story was created" line in a fixed order, which the generic error block can't give. #319's export page does the same. Cost if wrong: one more template if a later story wants the import block without the poll branches.
+  **Issue:** #321
+- **Decision:** The status line comes from E7's `job_state`, so a running job with a usable total keeps E7's count parenthesis: "Importing — Checking the history against the rating (3/9)". "Stage 5 of 10" is its own line (`p.import-stage`). The stage is passed to `job_state` only when `shows_stage` holds (status `running`, stage a non-blank string other than `queued`). Otherwise the progress is withheld, so a `queued` or missing stage reads plain "Importing" with an indeterminate bar. A `queued` status keeps E7's no-bar rule.
+  **Why:** The AC calls for E7's texts plus a stage count, with no count for a stageless run. Cost if wrong: wording only.
+  **Issue:** #321
+- **Decision:** `ImportJob.report` and `.error` stay typed `dict | None` (#292, matching the Engine schema's `object | null`). A non-object report or bare-string error from the Engine is therefore #43's `bad_response` panel, not the lenient row. The lenient renderings ("The report couldn't be read", "The Engine gave no error details" for a string) live in `console/imports_status.py` and are tested by rendering the view's block context directly. A null error, or one with no code, does reach the page and is tested through it.
+  **Why:** Loosening a client model is a contract change outside this story. The schema forbids those shapes, so only a non-conforming Engine would send them. Cost if wrong: such an Engine shows a panel instead of the row.
+  **Issue:** #321
+- **Decision:** `REPORT_UNREADABLE_TEXT` = "The report couldn't be read" is #321's own, in `console/imports_status.py`, as the AC words it. `import_report_rows` handles a non-object report before calling #295's `report_rows`, whose own row reads "The validation report couldn't be read". Each error and warning row's More holds the raw entry, not `ReportEntry.more` (the entry minus code and message).
+  **Why:** The AC quotes this text and asks for "the raw entry in More". Cost if wrong: wording only.
+  **Issue:** #321
+- **Decision:** Wording and shapes the story left open:
+  - The ready line is one link, `<a class="import-story">Imported as <name> — open it</a>`. A null `story_id` reads "Imported as —".
+  - Each note is one `p.notice.import-note`, whose whole text is the link.
+  - The parked note pluralises as "1 external effect was parked …" / "2 external effects were parked …".
+  - The Outbox line reads "<n> staged turn(s) closed, <n> effect(s) parked, <n> reservation timer(s)". A missing slot reads "— staged turns closed"; a non-int slot is shown raw with the plural noun.
+  - A rating check's `details.reason` is its own `p.error-reason` line, not appended to the code text, because the reason text is a capitalised sentence.
+  - Violation positions: a 5-int list goes through C1 in full; a shorter `[turn, variant, …]` list shows its turn and variant only; a map with a null beat shows "turn N" (" · vV" when the variant isn't 0).
+  - The report section is headed "Validation report" (h3), and Errors/Warnings/Counts are h4s.
+  **Why:** These are the smallest readable choices consistent with E23 and C1. Cost if wrong: wording only.
+  **Issue:** #321
+- **Decision:** On the full page, a failed job read other than 404 or `erasure_pending` is #43's panel inside the frame (raised from `build`). M3's `poll_failure` (retrying on unreachable or 503) applies to the `?partial=1` poll only, as on #313's and #319's job pages.
+  **Why:** A first render has nothing yet to keep polling, and the frame's panel offers Retry. Cost if wrong: an unreachable Engine on first load shows the panel, not "retrying".
+  **Issue:** #321
+- **Decision:** Registering `engine:import-job` removed its stub, its `NOT_YET_REGISTERED` name and its `test_m7_stub_urlconf.ARGS` row. These tests flipped to the linked case:
+  - `test_import.test_rating_fix_reuses_the_spool` now expects a 303 to the job page.
+  - `test_recent_imports_from_the_log`'s job cell is now a link.
+  - `test_importing.test_the_play_page_of_an_importing_story` and `test_write_refusal_words_story_importing` now expect the job link.
+  - `test_portability_helpers` asserts the real reverse.
+  
+  `test_before_s25b_the_result_block_shows` keeps covering the D19 branch by monkeypatching `console.views.imports.import_job_url` to `None`. The live `test_import_through_the_console_live` now accepts a first-stage 303. It then polls the Console job page every 2 s (120 s cap) until "Imported" and opens the story link. It passed on `n8-291-smoke` (127.0.0.1:18000), and both of its stories were deleted.
+  **Why:** E24 says the registering story regenerates these, and D19 says the unregistered branch stays covered. Cost if wrong: none.
+  **Issue:** #321
+- **Decision:** #324 keeps `OPERATION_KINDS`/`OPERATION_STATUSES` in `console/forms/story_operations.py` (#292 defined no alias for them in `console/engine/models.py`); `OPERATION_LABELS` is `typing.get_args(OperationLabel)`. A test pins all three against the recorded `list_operations` query-parameter enums.
+  **Why:** the story's stated fallback; E15 keeps the summary's `kind`/`status` plain `str`. Cost if wrong: move two tuples.
+  **Issue:** #324
+- **Decision:** #324's 422 placement reads `details.errors[*].field` (the Engine's actual shape, `InvalidRequest`) or a `loc` list joined with ".", falling back to `details.field`; a `query.<filter>` goes to that field via `form.add_error`, `query.after_id` above the filters with "First page" (keeping every filter), anything else above the filters. A non-`validation_error` 422 shows its message above the filters.
+  **Why:** E21's refinement and the Engine's `InvalidRequest` docstring. Cost if wrong: a message lands above the filters instead of beside a field.
+  **Issue:** #324
+- **Decision:** #324: any 404 from `list_operations` renders the frame's not-found line (status 404, no nav) through the build's context and a status flag (#297's closure pattern); the "500 → #43's panel" test uses `respond_undeclared` (the route declares no 500).
+  **Why:** the AC's "404 → the frame's not-found page"; the fake refuses an undeclared status through `respond`. Cost if wrong: none.
+  **Issue:** #324
+- **Decision:** #324: the unparsed notice is the story's `UNPARSED_TEXT` "Some operations couldn't be read" (as #302's Amendments), not E22's counted "N operations couldn't be read"; the count line counts parsed rows only and sits on the scope line ("<SCOPE_TEXT> · N operations on this page[, matching filters]"). Paging links and "Clear filters" are rebuilt from the typed (valid) filter values, so Since/Until echo as typed; stray parameters are dropped. The Label cell shows the raw label in `title` whenever the Engine sent one (a staged turn with a null label reads "Staged turn" untitled, as #250's page does). A turn number uses `{:,}` (E23).
+  **Why:** the story's more specific text wins over E22's generic notice; the rest are discretion calls within E22/E23. Cost if wrong: a wording change.
+  **Issue:** #324
+- **Decision:** #324: `test_label_note_is_shown` (#257) drops its assertion of the old sentence ("The Engine has no list of operations to filter by.") — the note's rewrite is this story's AC, and `test_label_note_points_to_story_operations` asserts its absence. The log page links the story's Operations only for a ULID story filter, `label` carried only when it is one of the six Engine labels, inside the same `p.filter-note`; under the real urlconf the story nav now reads Rewrite · Amendments · Backfill · Export · Operations (goldens in play/history `REGISTERED_NAV`, `test_nav`, `inspect/test_shell`, `test_story_pages` moved).
+  **Why:** E24's "a golden a newly registered URL changes is regenerated in the registering story". Cost if wrong: none.
+  **Issue:** #324
+- **Decision:** The first-order golden for `beliefs_page1.json` is a file, `tests/inspect/golden/beliefs_page1_table.html` (the whole `<table class="beliefs">`, captured from the pre-change render), not the inline string the story names.
+  **Why:** The table is about 22 KB (11 rows with Canon, Actions and More); E24 allows a golden under `tests/<area>/golden/`, and it is compared through `normalise_html`. Cost if wrong: none.
+  **Issue:** #327
+- **Decision:** `BeliefRow`'s nested level is `holder_level` (the humanised level, `None` without a holder or level), not the planner's `holder_title`. The `<span title>` takes the raw value from `belief.attributed_level`, as the Confidence cell does with `current_level`.
+  **Why:** The cell needs the humanised text, and the raw value is already on the row's `belief`. Cost if wrong: a field rename.
+  **Issue:** #327
+- **Decision:** An absent or blank `kind` is bound as `first_order` in `BeliefsForm.__init__`, so the select shows First-order as selected. `clean_kind` still maps "" to first-order. Paging writes back the URL's own `kind` (trimmed, lower-cased) only when the URL had one, so an absent kind never appears in Next/First and an explicit `kind=first_order` is kept. The column-header `title`s are view context (`holder_title`, `speaker_title`, `depth_title` from `console/beliefs.py` constants). Depth uses `{:,}` (E23).
+  **Why:** A bound Django form ignores `initial`, and the Demo has Kind reading "First-order". Cost if wrong: none; the Engine query is unchanged either way.
+  **Issue:** #327
+- **Decision:** These existing tests were adapted to the retired #606 notice and the new Kind select. `test_beliefs.test_first_order_notice_shown` now looks for "nested" after the beliefs form's `</form>`, because the select now contains "Nested". In `test_knowledge_shell`, the `NOTICE`/`NOTICE_START` asserts became "aren't readable" absent, and the subnav ordering is re-anchored on the stub section's content (`EMPTY`). `test_no_nested_belief_notice` runs on the real urlconf for Beliefs, Divergences and Exposures.
+  **Why:** The story's test plan asks for these changes. The first-order assertion itself is unchanged. Cost if wrong: none.
+  **Issue:** #327
+- **Decision:** #328's "See" link and label come from one helper, `_see` in `console/views/inspect_beliefs.py`: first-order keeps main's URL and label, `nested` adds `kind=nested` with "See <holder>'s nested beliefs", any other kind returns (None, None), so `see_label` is None whenever `see_url` is.
+  **Why:** the story asks for both together; one helper keeps them in step. Cost if wrong: nil (context-only).
+  **Issue:** #328
+- **Decision:** `NESTED_READS` contains "›", so its line (and the test's literal) carries `# noqa: RUF001`, as `imports_status.PARKED_NOTE` does.
+  **Why:** the story quotes the text exactly; the noqa is the repo's precedent for typographic characters.
+  **Issue:** #328
+- **Decision:** #328 adds `test_nested_written_link_opens_the_nested_page` beyond the test plan: it follows the nested link and checks #327's page renders with `kind == "nested"`.
+  **Why:** it pins the key link (written page → Kind = Nested) end to end, not just the query string. Cost: one cheap test.
+  **Issue:** #328
+- **Decision:** the no-#606 scan (`test_no_606_sentence_left`) also asserts `knowledge.html` still contains "#606", so the exemption fails loudly once #327's comment no longer needs it; #327's comment already says "delivered", so no flag was needed. `console/engine/openapi.json` mentions #606 but is outside the scan (`*.py`/`*.html` only, as planned).
+  **Why:** an exemption with nothing to exempt is a silent gap. Cost if wrong: a future edit of that comment fails this test and must drop the last assert.
+  **Issue:** #328
+- **Decision:** `OUTBOX_OMNISCIENT_LINE` is defined in `console/rewrites.py` beside E2's other lines, and `_omniscient.html` takes a `variant` (`{% include … with variant="outbox" %}`) through an optional argument on the `omniscient_line` tag. No earlier story had defined the constant.
+  **Why:** E1/E2 give the wording to #294's module, and the AC names "_omniscient.html's Outbox variant". Every other include is unchanged (no variant, same line). Cost if wrong: one import to move.
+  **Issue:** #325
+- **Decision:** `OutboxFilterForm.status` is a `CharField(max_length=64)` with a `Select` widget whose choices are "Any", the eight documented statuses and the kept requested value. It is not a `ChoiceField`.
+  **Why:** C7's kept choice must be sent as given, and a value over 64 characters must be a field error with no read. A CharField gives both without a custom `invalid_choice`. Cost if wrong: a later status shows as a kept option until it is added to `OUTBOX_STATUSES`.
+  **Issue:** #325
+- **Decision:** A redacted row's "Attempts and times" cell shows only "created …". It does not show a "—" line for attempts.
+  **Why:** The discretion text says both "Attempts … read '—'" and "'created …' still shows". A "—" line above the time read oddly, so the attempts line is left out. Cost if wrong: one template line.
+  **Issue:** #325
+- **Decision:** A 422 `validation_error` naming `query.status` or `query.provider` (`details.errors[*].field` or `loc`, else `details.field`) goes beside that field. Any unmapped failure (`query.after_id`, `query.limit`) is #43's panel. Every error is logged, and the filter form stays rendered on every error.
+  **Why:** This is E21 plus the story's sim2 note. The path reader is a local copy of #324's `_failure_paths`, kept private because #324's version is tied to its own form. Cost if wrong: small duplication.
+  **Issue:** #325
+- **Decision (Rule 3):** `tests/inspect/urls_world_stub_sections.STUBBED` now drops `outbox` too, so `test_effects_shell_without_sections` (and `urls_world_no_sections`) keep an Effects tab with no sections. Also added `tests/urls_without_outbox.py` (D19's unregistered fallback for the notice and the strip's unlinked case). The real-urlconf asserts on D11's old text were repointed to `OUTBOX_SECTION_NOTICE` in `test_effects_trail`, `test_state_changes`, `test_ingest_world`, `test_world_strip`, `test_reactivation_check` and `test_edit_effects`, and `test_effects_sections_order`'s real half now reads Reconciliation, Outbox, Effects trail. `test_effects.py::test_outbox_list_notice` still pins the no-story-id fallback.
+  **Why:** Registering `inspect:outbox` flips E17's notice everywhere (as #295 planned). Cost if wrong: none (tests only).
+  **Issue:** #325
+- **Decision:** `outcome_cell` is now the public name in `console/reconciliation.py`, typed to a small `Outcome` Protocol, and `_outcome = outcome_cell` is kept. `console/outbox.py` imports `REDACTED`, `effect_text` and `outcome_cell` from there; the view imports `NOT_FOUND` from there.
+  **Why:** The story's discretion asks for a minimal diff, and #326 edits the same file after this story. Cost if wrong: none.
+  **Issue:** #325
+- **Decision:** The live check was query-shape only: on `n8-291-smoke` (127.0.0.1:18000), `GET /stories/{id}/outbox?viewpoint=omniscient[&status&provider&after_id]&limit=50` answered 200 `{rows: [], next_after: null}`, and without `viewpoint` it answered 422 `viewpoint_unresolved`. No live pytest was added (the AC asks for none). The stack is left running.
+  **Why:** It confirms the client's query is accepted by the edge. Cost if wrong: none.
+  **Issue:** #325
+- **Decision:** #329's snapshot check lets `visibility` be a string **or `null`** (the story's Discretion says "`visibility` and `unit` are `str`", but also that a missing/null visibility snapshots as `null`).
+  **Why:** a strict `str` check would make a stored definition without a visibility fail its own snapshot forever (SNAPSHOT_INVALID on every save). Cost if wrong: nil; a tampered `null` only diffs against the select's first choice, as the Discretion accepts.
+  **Issue:** #329
+- **Decision:** `StateDefinition.config_revision` stays typed `int | None` (#292's model). A non-int one fails the typed read (#43's panel, no form) rather than reading as null; the page's own helpers (`last_changed_text`, `sign_definition_snapshot`) still treat anything but an int as null, and are tested directly.
+  **Why:** loosening #292's model to `Any` to honour an Engine body that breaks its own schema trades typing for a case that can't happen. Cost if wrong: such a body shows the read panel instead of "Unchanged since it was declared".
+  **Issue:** #329
+- **Decision:** the normalisation (`console.forms.states.definition_members`) is one function used for both the snapshot and the cleaned form, so pre-fill, diff base and the form side can't drift. A typed `null` key in a box is stripped before the diff, so `{"max": null}` on a stored `max` is a removal (`{"max": null}` sent) and on an absent key is nothing.
+  **Why:** the story's "normalised the same way" and "Null-valued keys typed into a box are stripped recursively". Cost if wrong: nil (tested both ways).
+  **Issue:** #329
+- **Decision:** the fixture variant (`definition_body` in `tests/inspect/test_state_definition.py`) overrides #292's `m7/state_definition.json` inline: `created_by` "author" (the fixture's "console:nate" isn't one of the Engine's `StateCreatedBy` values genesis/consumer/author/proposal), visibility "player_visible" (the fixture's "public" is unknown; kept as the unknown-visibility variant), unit "gold" and the Demo's constraints. Not filed: the fixture's `definition` is free-form and #292's own tests don't depend on these values.
+  **Why:** the story's Demo and refusal tests need a realistic `gold`. Cost if wrong: nil.
+  **Issue:** #329
+- **Decision:** `console/world.py`'s E17 #680 line now says `STATE_DEFINITION_REQUEST` "stays for history; no page cites it since #329" (the constant stays in `console/world.py`, E17's; only `console/states.py`'s re-export goes). D8's cite line reads "#265/#329, #246, #241 and #247" (#243 dropped: the clock no longer compares).
+  **Why:** the old line said "Until #329 lands"; the amended D8 drops the clock's comparison. Cost if wrong: docstring only.
+  **Issue:** #329
+- **Decision:** #329 adds tests beyond the plan: odd `config_revision` (bool/str/float), thousands in "Last changed", "Created by —", typed-null removal, add-a-key, fill-an-empty-member, stored-null stripping, odd expiry, Silent required, the read's error panel, "the patch is diffed against the rendered snapshot" (another writer's Unit survives) and "the base is the rendered snapshot's, not the POST's re-read". Pre-fix run: `test_nothing_changed_against_rendered_revision` against the old view fails with `At index 0 diff: 'Unit: saved' != 'The Engine found nothing to change'`. Live probe on `n8-291-smoke` (127.0.0.1:18000, scratch test, not committed): after declaration `config_revision` is null and `created_by` "consumer"; a constraints write answers 2 and the read then says 2; repeating it answers 2 (nothing changed); `{"constraints": null}` answers 3 and reads `{}`.
+  **Why:** pins the Discretion's edge rules and D8's base semantics against the real Engine. Cost: a few cheap tests.
+  **Issue:** #329
+- **Decision:** `resolvable(listing)` returns a request-keyed row's raw `request_id` (non-blank) before looking at the reason, else an `imported_unsettled` row's non-blank `outbox_id`; `_actions` checks it before `SETTLEABLE_REASONS`, so a request-keyed `late_success_after_expiry` row gets only Resolve. A `NoReverseMatch` drops both Resolve links.
+  **Why:** the AC's first-rule-wins order; Settle now/Compensate need an outbox row. Cost if wrong: one extra action on a row the Engine then 404s.
+  **Issue:** #326
+- **Decision:** #291's `test_a_listing_without_an_outbox_id_has_no_actions` now asserts the two Resolve links on the request-keyed row (still no Settle now/Compensate), and its rendered-row test asserts the new "Request <code>id</code> <small>…</small>" cell; `urls_without_reconciliation_actions` also drops `resolve-listing`.
+  **Why:** #326 deliberately gives that row its only action; the "without" urlconf keeps meaning "no action routes".
+  **Issue:** #326
+- **Decision:** The request-id cell's note is `ListingRow.request_note` (`REQUEST_NOTE`, set only when `outbox_id` is None and `request_id` is set); the template branches on it, so a row with neither id keeps the "—" cell.
+  **Why:** keeps the wording in `console/reconciliation.py` (the artifact the story names) and the template logic-free.
+  **Issue:** #326
+- **Decision:** Settle-now's gate re-check is factored into `_effective(request, client, story_id)` (the one config read, held → #87's page, failure → `None`) plus `_gate_refused(request, page, story_id, effective, key)`; `_refused(..., verb=)` and `_missing_id(..., text)` gained keyword/default parameters. Settle-now's behaviour is unchanged (its whole test file passes untouched). The helper takes `story_id` beside the planner's four parameters (the Config link needs it).
+  **Why:** the planner's "one small helper both call"; the extra parameter avoids reading it back out of the page.
+  **Issue:** #326
+- **Decision:** `resolve_listing`'s `perform` re-validates the hidden `resolution` and re-renders (no call) if it is somehow not one of the two, although `ConfirmPage.blocked` already prevents `perform` for such a POST.
+  **Why:** Rule 2 defence in depth: never send a guessed resolution. Cost: none.
+  **Issue:** #326
+- **Decision:** The result's "Listed as" humanises each non-blank `reasons` entry (C3) and reads "—" for none; the idempotency key under More is the answer's, else the #44 row's, else the sent key; a blank `request_id` heads "Resolved: —".
+  **Why:** E23's missing-value rule; mirrors settle-now's key order with compensate's row fallback.
+  **Issue:** #326
+- **Decision:** `NOT_YET_REGISTERED` is now the empty frozenset and `INSPECT_STUBS` empty; `test_no_unregistered_name_reverses_under_the_real_urlconf` became a plain test (looping the set, asserting it empty and that both #326 names reverse at E11's paths) instead of a parametrisation that would collect as skipped over an empty set.
+  **Why:** an empty `parametrize` is a skip, and the brief forbids adding skips.
+  **Issue:** #326
+- **Decision:** The live case reuses #320/#321's import by extracting `_console_import(operator_client, url, key, content)` from `test_import_through_the_console_live` (behaviour unchanged; it passed on `n8-291-smoke`, 127.0.0.1:18000). `test_resolve_an_imported_unsettled_row_live` skipped there: the smoke story commits no effect, so the import parks no row.
+  **Why:** the test plan's "reusing #321's live-import helper"; no live fixture produces a parked row.
+  **Issue:** #326
+- **Decision:** Filed nathanpond/Epistrel#787 (the resolve route's description still says an outbox row is 404, at origin/main `ed2be26`) and added it to E18's list in `console/rewrites.py`.
+  **Why:** the planner's instruction to file it if the description still disagreed at execution.
+  **Issue:** #326
+- **Decision:** `GapLine.url` is `console.upgrades.gap_fill_url(story_id) or ""` (#309's helper, which is `backfill_url` + `#gap-fill`), not a second `backfill_url + "#gap-fill"` built in `console/turn_reports.py`.
+  **Why:** #309's note names `gap_fill_url` as the helper for #330/#332's links (E1 import rule); same URL, one definition.
+  **Issue:** #330
+- **Decision:** `stored_gaps`/`unread_gap_count` read the raw answer's top-level `coverage_gaps` with their own strict entry check (non-blank string capability; non-bool ints ≥ 0, so a negative turn is malformed; `to_turn ≥ from_turn`), not `RespondResponse.coverage_gaps`. The live answer goes through `_answer_mapping` (asdict plus `unparsed`, which restores the raw list when an entry was dropped), so live and stored count unread entries the same way.
+  **Why:** the story's discretion ("one path counts malformed entries on the raw/recorded answer"). A negative turn is read as malformed because "any int ≥ 0 is accepted" implies the bound. If that's wrong, a negative-turn gap is hidden and counted unread instead of shown.
+  **Issue:** #330
+- **Decision:** The pluralised unread note reaches the template through a second small `console_format` filter, `gap_unread` (it wraps `console.turn_reports.unread_gap_text`, built from `GAP_UNREAD` and `console.raw.plural`), next to `probe_count`. The probe heading pluralises with Django's `pluralize` ("1 probe refunded", "2 probes refunded").
+  **Why:** the AC passes the count (`coverage_gaps_unread`) as an int, so the template needs a filter to word it. `probe_count` is already in `console_format`.
+  **Issue:** #330
+- **Decision:** Gaps are applied in `result_inspector` (respond, polled turn) and in `row_inspector` for a 2xx, non-violation row. That covers the stored regenerate, the #53 swap and the transcript selection, which all read logged rows. `error_inspector` (including model_unavailable's report) and the queued/held inspectors get none. Operation detail reads `row.response` only when `row.error_code` is blank, and the `?fetch=1` record only for a 2xx `result.status`. Its include gets `fetched_gaps`/`fetched_gaps_unread` explicitly, so the row's gaps never leak into it.
+  **Why:** the story's discretion (only a 2xx answer's top-level field; no leak between the two includes).
+  **Issue:** #330
+- **Decision:** The no-gap/no-probe golden `tests/turn_report/golden/turn_reports_main.json` covers the 9 fixtures whose answer (or an operation's `result.body`) parses to a `TurnReport` through `turn_report_json`. That includes `ingest.json`, `put_custom_instructions.json` and `put_pinned_memories.json`, which carry a `model_calls` list. It was captured on the lane tip (`955b23e`) before any edit, and the test asserts the fixture set equals the golden's keys. The en dashes are written as `–` escapes, not with `noqa: RUF001`.
+  **Why:** the story's "by glob" rule (E24). The escape keeps ruff clean without a suppression.
+  **Issue:** #330
+- **Decision:** No live `engine_live` case for #330. The `n8-291-smoke` edge's stub model never rejects `response_format`, and the smoke stories are never upgraded forward-only after turns, so Demos 1 and 4 can't be produced there. The fake Engine (schema-validating) carries both fields in the tests.
+  **Why:** the test plan names no live case; a faked live run would prove nothing.
+  **Issue:** #330
+- **Decision:** #331: Overview/Play read the story without a viewpoint, so the Engine sends only {count}; a later story adds an omniscient read to link the session. Until then the line shows the count with the omniscient suffix and no "Answer them" link in real use (R2-Q34's default); the link renders only when a read carries `session_id`.
+  **Why:** the story keeps main's reads unchanged (no new Engine read, AC "Unchanged otherwise"); cost if wrong: one added omniscient read later.
+  **Issue:** #331
+- **Decision:** #331: `CHECKS_TEXT`'s "{count}"/"{checks}" are filled by splitting `console.raw.plural(n, "check")` ("2 checks" → "2", "checks"), so the number keeps E23's `{:,}` and the noun its C11 plural; "Answer them" carries `class="answer-checks"` for tests; the omniscient suffix is a plain string constant (no placeholders).
+  **Why:** reuses the one E23 helper rather than formatting inline; the class is an addition the story didn't forbid; cost if wrong: cosmetic.
+  **Issue:** #331
+- **Decision:** #331: the line markup is attached to the preceding line in both templates (`…</p>{% if checks %}` on the Overview, `{% block content %}{% if checks %}` on Play) so the no-checks renders stay byte-identical, not merely equal after normalisation. Goldens `tests/inspect/golden/amendment_checks_{overview,play}_main.html` were captured from the pre-change code (E24) with the field absent; the test additionally masks Django signed-value timestamps/signatures (`:TS:SIG`) because the Play page's signed snapshot and cast forms change with the clock.
+  **Why:** a timestamp in a signed value is not page content; cost if wrong: a golden that hides a real change inside a signature (none possible: signatures follow their payload).
+  **Issue:** #331
+- **Decision:** #331: the "no `stories:rewrite`" complement uses a test-module urlconf (real patterns less `stories:rewrite`, #330's `WITHOUT_BACKFILL` pattern), since `stories:rewrite` is registered for real since #297; the linked case is asserted under both `tests/urls_with_m7_pages.py` and the real urlconf. No live Engine used (smoke stack n8-291-smoke on 127.0.0.1:18000 left running, untouched).
+  **Why:** D19's complement needs a urlconf where the name doesn't resolve; cost if wrong: none.
+  **Issue:** #331
+- **Decision:** #332's `GAP_NOTE` reaches the template as `GapSection.note` (a property: `GAP_NOTE` when there are lines, else ""), so `_ask` adds exactly one `coverage_gaps=` context key as the AC says, rather than a second key for the note.
+  **Why:** the AC limits the view to one key and the template can't read module constants; cost if wrong: none (a property on the story's own dataclass).
+  **Issue:** #332
+- **Decision:** #332 re-serialises the typed `RetrievalBody.coverage_gaps` to plain dicts (no `unparsed["coverage_gaps"]`) before running #330's `stored_gaps`/`unread_gap_count` on one raw list, per the planner's one-malformation rule; the `{"coverage_gaps": raw}` mapping is the wrap that matches #330's shipped signatures (they take an answer mapping, not a list).
+  **Why:** the helpers are imported unchanged (E1); an entry is a line or an unread entry, never both. Cost if wrong: none visible.
+  **Issue:** #332
+- **Decision:** #332's malformed-entry tests answer the retrieve read through `FakeEngine.side_effect` (unvalidated body, declared 200), because `respond` validates against the schema and rejects `from_turn: "x"`. The "no-link" complement uses a new `tests/inspect/urls_without_backfill.py` (as the story names) rather than #330's test-module urlconf. Added two tests beyond the plan: a non-list `coverage_gaps` shows the section with only the unread note (no `GAP_NOTE`), and gaps are kept when `skipped: ["episodic"]`.
+  **Why:** the test plan's malformed entry is off-schema by design; the extra tests pin the planner's "lines or unread" and "even when episodic was skipped" rules. Cost if wrong: none.
+  **Issue:** #332
+- **Decision:** #332's golden `tests/inspect/golden/retrieval_no_gaps.html` was captured from the milestone tip (5b8e13f) before editing, for `ask()`'s fixed question under the real urlconf; the no-gap test ran green against the pre-change code (stash), and the six gap tests failed there (pre-fix first). #330's `test_retrieval_explainer_not_touched` is deleted (its imports pruned).
+  **Why:** E24's golden rule; the story's Test plan. **Any later change to the Retrieval page's no-gap output must regenerate this golden.**
+  **Issue:** #332
+- **Decision (orchestration):** From #297 on, stories ran in two parallel lanes, each in its own git worktree (`Epistrel-Console-laneA`/`-laneB`). Lane A took rewrite/history, portability and beliefs; lane B took profiles/certification, settings and effects. Before publishing, each lane rebased onto the milestone tip, re-ran every gate on the rebased tree, and pushed fast-forward only. The orchestrator re-ran the gates on the merged tip after each push. Dependency order was kept: a story started only after its blockers had landed on the tip. #330→#331→#332 ran alone at the end.
+  **Why:** About 36 page stories at roughly 15–25 minutes each. Two lanes halved the wall-clock time. The rebase-then-regate rule keeps the shared branch green after every push (every merged tip passed: 7613 → 9646 tests, 0 failures).
+  **Issue:** #297–#332
+- **Decision (deviation):** #294's "the PR body carries E1–E23 in full" can't be met literally. The text is about 77 KB, and GitHub caps a PR body at 65,536 characters. The PR body links to the full E1–E23 text, posted as PR comments (in two parts), and the M7 milestone description already carries it. #294's first box is ticked on that basis.
+  **Why:** It is a platform limit. Comments on the PR are still the PR's own record.
+  **Issue:** #294
+- **Blocker:** #314's live AC (estimate `model_calls > 0`, or a 503) fails on the edge because the image ships no eval sets, so every estimate is 0 calls (#337). The story agent's attempt to file the matching Engine issue on nathanpond/Epistrel was refused by the permission system, and the orchestrator didn't file it in its place. #314 is labelled `blocked` + `needs-owner-action`, and the milestone PR doesn't close it. Its code is merged.
+  **Issue:** #314, #337
+- **Decision:** The live smoke stack `n8-291-smoke` (Engine edge 5cb073b on 127.0.0.1:18000) served every live check of the run and was torn down at the end.
+  **Why:** Port 8000 belongs to the owner's own Engine dev stack, which wasn't touched.
+  **Issue:** #291
+- **Decision (Rule 1, PR gate):** `.github/scripts/engine-up.sh` now passes `EPISTREL_BUNDLE_DIR=/var/lib/epistrel/bundles` to the CI Engine. PR #338's `engine-smoke` failed 4 export/import live tests ("export still running after 60 s"; the Engine logged `PermissionError` on `story_export`). #292 had fixed the same gap in `docker-compose.yml` only, and CI starts the Engine through this script instead. The script already drops settings an image doesn't know, so release smokes on older Engines are unaffected. A plain `docker run` of the edge image as uid 10001 creates and writes that directory.
+  **Why:** The M7 live smokes (#319–#321, #326) need a writable bundle directory; the Engine gap is #334.
+  **Issue:** #319, #334
+- **Decision (Rule 1, PR gate, fix 2 of 3):** The bundle-dir fix (409bacf) broke two guard tests that pin the CI Engine's environment to five variables (`test_engine_up_script.py::test_edge_gets_all_five`, `test_workflows.py::test_engine_may_get_only_these_five_variables`). Both now name six, adding `EPISTREL_BUNDLE_DIR`. The edge probe list gains it, and a released Engine without it is asserted to get "not passed". The orchestrator had pushed 409bacf without re-running the suite; the gates were re-run before this fix.
+  **Why:** The guards exist so any new Engine variable is a deliberate, reviewed choice; this one is (#334).
+  **Issue:** #319, #334
+- **Decision (deviation):** CI's `test` job was allowed past the skill's 30-minute pending budget, since a full serial run now takes about 22–35 minutes (28 min at M6's 7.6k tests; 22 min 20 s for 9.6k here).
+  **Why:** The budget exists to catch hung runs; this job's run time is known.
+  **Issue:** PR #338

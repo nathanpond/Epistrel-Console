@@ -1,0 +1,232 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harbour Ledger — Epistrel Console</title><script src="/static/console/htmx.min.js" defer></script><style>
+    body { font-family: system-ui, sans-serif; margin: 0 2rem 2rem; max-width: 72rem; }
+    nav.shell { display: flex; gap: 1rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #ccc; flex-wrap: wrap; }
+    nav.shell .brand { font-weight: 700; text-decoration: none; color: inherit; }
+    nav.shell a.active { font-weight: 700; text-decoration: underline; }
+    nav.shell .spacer { flex: 1; }
+    nav.shell form { display: inline; margin: 0; }
+    .badge { padding: 0.15rem 0.5rem; border-radius: 0.3rem; border: 1px solid currentColor; text-decoration: none; }
+    .state-healthy { color: #1a7f37; }
+    .state-degraded { color: #9a6700; }
+    .state-unhealthy { color: #bc4c00; }
+    .state-unreachable { color: #cf222e; }
+    ul.messages { list-style: none; padding: 0.5rem 0.8rem; background: #f6f8fa; border: 1px solid #d0d7de; }
+    ul.messages .error { color: #cf222e; }
+    .engine-error { border: 2px solid #cf222e; padding: 0.5rem 1rem; margin: 1rem 0; background: #fff5f5; }
+    .errorlist { color: #cf222e; }
+    pre { background: #f6f8fa; padding: 0.4rem; overflow-x: auto; }
+    dt { font-weight: 600; }
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #d0d7de; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+    a.button { padding: 0.1rem 0.5rem; border: 1px solid #8c959f; border-radius: 0.3rem; text-decoration: none; color: inherit; background: #f6f8fa; }
+    button.danger { color: #fff; background: #cf222e; border: 1px solid #a40e26; }
+    .default-submit { position: absolute; left: -10000px; }
+    fieldset.character { margin: 0.8rem 0; }
+    fieldset.character textarea { width: 40rem; max-width: 100%; }
+    textarea.monospace { font-family: ui-monospace, monospace; }
+    .report-note { display: block; color: #cf222e; }
+    small.source { color: #57606a; white-space: nowrap; }
+    small.gate-reason { display: block; color: #57606a; margin: 0.2rem 0; }
+    .seeded { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; }
+    .warning { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
+    .media-grid { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-start; }
+    figure.media-shown { margin: 0.4rem 0; }
+    figure.media-large img { max-width: 320px; height: auto; }
+    figure.media-small img { width: 120px; height: auto; }
+    figure.media-shown video { max-width: 640px; }
+    .slot-row { margin: 0.4rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #d0d7de; }
+    .slot-row.slot-removed { opacity: 0.6; }
+    .slot-error { display: block; }
+    .picker { border: 1px solid #8c959f; padding: 0.4rem 0.8rem; margin: 0.4rem 0; background: #f6f8fa; }
+    .picker-tiles { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .picker-tiles .in-use { color: #9a6700; }
+    .policy-form .field { margin: 0.8rem 0; }
+    .policy-form textarea { width: 40rem; max-width: 100%; }
+    .play { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+    .play-right { position: sticky; top: 0.5rem; max-height: 95vh; overflow-y: auto; border-left: 1px solid #d0d7de; padding-left: 1rem; }
+    ol.transcript { list-style: none; padding: 0; max-height: 28rem; overflow-y: auto; border: 1px solid #d0d7de; }
+    ol.transcript li { padding: 0.25rem 0.5rem; border-bottom: 1px solid #eaeef2; }
+    ol.transcript .channel { font-size: 0.8em; color: #57606a; }
+    ol.transcript li.channel-message { background: #f6f8fa; }
+    .turn-form .field { margin: 0.4rem 0; }
+    .turn-form textarea { width: 100%; }
+    .turn-form fieldset { border: 1px solid #d0d7de; }
+    .waiting-card { border: 2px solid #9a6700; padding: 0.4rem 0.8rem; margin: 0.5rem 0; background: #fff8c5; }
+    li.turn-controls { list-style: none; font-size: 0.85em; margin: 0.2rem 0 0.6rem; }
+    .fork-banner { border: 1px solid #8c959f; padding: 0.4rem 0.8rem; margin-bottom: 0.8rem; }
+    blockquote.reply { border-left: 4px solid #8c959f; margin: 0.5rem 0; padding: 0.2rem 0.8rem; }
+    table.model-calls { font-size: 0.85em; }
+    .degraded { background: #fff3cd; font-weight: 700; }
+    .muted { color: #57606a; }
+    tr.row-muted td { color: #57606a; }
+    section.notices article.notice-card { border-left: 4px solid #8250df; padding: 0.3rem 0.8rem; margin: 0.4rem 0; background: #fbefff; }
+    section.notices .notice-actions form { display: inline; }
+    section.notices span.disabled { padding: 0.1rem 0.5rem; color: #8c959f; cursor: default; }
+    .notice-overridden { color: #57606a; }
+    .caveats { border-left: 3px solid #d0d7de; padding-left: 0.75em; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    tr.revision th { background: #f6f8fa; }
+    .settings-form .field { margin: 0.5rem 0; }
+    nav.tabs { margin: 1rem 0 0.5rem; border-bottom: 1px solid #d0d7de; }
+    nav.tabs a { display: inline-block; padding: 0.3rem 0.9rem; }
+    nav.tabs span.disabled { display: inline-block; padding: 0.3rem 0.9rem; color: #8c959f; cursor: default; }
+    nav.tabs a[aria-current="page"], nav.tabs span[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
+    nav.subtabs { margin: 0.25rem 0 0.5rem; border-bottom: 1px solid #d0d7de; font-size: 0.9em; }
+    nav.subtabs a { display: inline-block; padding: 0.2rem 0.7rem; }
+    nav.subtabs span.disabled { display: inline-block; padding: 0.2rem 0.7rem; color: #8c959f; cursor: default; }
+    nav.subtabs a[aria-current="page"], nav.subtabs span[aria-current="page"] { border: 1px solid #d0d7de; border-bottom-color: #fff; margin-bottom: -1px; background: #fff; font-weight: 700; }
+    .ingest-form fieldset.event { border: 1px solid #d0d7de; margin: 0.5rem 0; }
+    .ingest-form .field { margin: 0.3rem 0; }
+    .ingest-form textarea { width: 100%; }
+    .settings-form textarea { width: 32rem; max-width: 100%; }
+    .history-controls .field { display: inline-block; margin: 0.3rem 1rem 0.3rem 0; vertical-align: top; }
+    .history-controls input[type=number] { width: 6rem; }
+    table.history tr.channel-think td, table.history tr.channel-latent td { color: #57606a; font-style: italic; }
+    table.history .badge-channel { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; }
+    .fidelity-envelope, .fidelity-envelope td { color: #57606a; font-style: italic; }
+    .fidelity-none, .fidelity-none td { color: #57606a; }
+    /* #62/#228: only the text is struck: a trace row's .beat-text (its labels and trace stay readable), a span.text, or a plain Text cell */
+    .fidelity-none .beat-text, .fidelity-none span.text, .fidelity-none td.text:not(:has(.beat-text)) { text-decoration: line-through; }
+    .fidelity-unavailable { font-style: italic; color: #57606a; }
+    li.reaction, tr.reaction td.text { padding-left: 1.5em; }
+    .badge-fidelity { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; }
+    table.history tr.turn-header th { background: #f6f8fa; text-align: left; }
+    .audit-record { border-left: 4px solid #cf222e; padding: 0.2rem 0.8rem; margin: 0.3rem 0; background: #fff5f5; }
+    .badge-recheck { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; }
+    td.marker-story { font-weight: 700; }
+    td.marker-unknown { color: #9a6700; }
+    .refusal { border: 2px solid #cf222e; padding: 0.4rem 0.8rem; margin: 0.5rem 0; background: #fff5f5; }
+    ol.pinned-items li { margin: 0.4rem 0; }
+    ol.pinned-items textarea { width: 40rem; max-width: 100%; vertical-align: top; }
+    section > h2 small.revision { font-weight: 400; color: #57606a; }
+    nav.shell .nav-group-label { color: #57606a; }
+    nav.shell .nav-group.active .nav-group-label { font-weight: 700; color: inherit; }
+    nav.shell details.acting { position: relative; }
+    nav.shell details.acting summary { cursor: pointer; }
+    nav.shell details.acting form.acting-form { display: block; position: absolute; right: 0; z-index: 10; background: #fff; border: 1px solid #d0d7de; padding: 0.6rem; min-width: 20rem; }
+    nav.shell details.acting form.acting-form label { display: block; margin: 0.3rem 0; }
+    .banner { padding: 0.4rem 0.8rem; margin: 0.5rem 0; }
+    .banner-warning { background: #ffd8a8; border: 1px solid #d9822b; }
+    .residue { padding: 0.1rem 0.5rem; border-radius: 0.3rem; font-weight: 600; }
+    .residue-clean { color: #fff; background: #1a7f37; }
+    .residue-left { color: #fff; background: #cf222e; }
+    .residue-unscanned { color: #fff; background: #6e7781; }
+    mark.erased { background: #e5e5e5; color: #555; font-family: monospace; }
+    .badge-erased { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #6e7781; border-radius: 0.3rem; background: #e5e5e5; color: #555; }
+    .badge-held { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; color: #7d4e00; }
+    .badge-pending { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; }
+    .erasure-marker { font-style: italic; }
+    .banner form { display: inline; margin-left: 0.6rem; }
+    .report .entry { margin: 0.3rem 0; }
+    .report .location { color: #57606a; font-size: 0.9em; }
+    .tag { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; white-space: nowrap; }
+    .tag-strong { color: #0a3069; border-color: #0969da; background: #ddf4ff; font-weight: 700; }
+    table.profile-settings td pre, table.other-settings td pre { margin: 0; }
+    table.profile-settings td.depth-1 { padding-left: 1.7rem; }
+    table.profile-settings td.depth-2 { padding-left: 2.9rem; }
+    table.profile-settings td.depth-3 { padding-left: 4.1rem; }
+    table.profile-settings td.depth-4 { padding-left: 5.3rem; }
+    table.profile-settings td.depth-5 { padding-left: 6.5rem; }
+    table.profile-settings td.depth-6 { padding-left: 7.7rem; }
+    table.profile-settings td.depth-7 { padding-left: 8.9rem; }
+    table.profile-settings td.depth-8 { padding-left: 10.1rem; }
+    tr.deleted td, table.profile-versions tr.viewed td { background: #f6f8fa; }
+    .quality { font-size: 0.85em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; background: #f6f8fa; }
+    .quality-certified { color: #116329; border-color: #1a7f37; background: #dafbe1; }
+    .quality-stale { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    .verdict-badge { font-size: 0.85em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; } /* #316: the text carries the meaning */
+    .verdict-pass { border-color: #1a7f37; font-weight: 600; }
+    .verdict-fail { border-color: #cf222e; border-width: 2px; font-weight: 600; }
+    .verdict-other { border-style: dashed; }
+    table.effective-config td.effective { background: #fff8c5; font-weight: 600; }
+    table.effective-config td pre { margin: 0; }
+    tr.quarantined td { background: #ffebe9; }
+    table.scheduled-events tr:target td { background: #fff8c5; }
+    .badge.quarantined { font-size: 0.8em; padding: 0 0.3rem; color: #a40e26; border-color: #cf222e; background: #ffebe9; }
+    .badge.layer-core, .badge.layer-author, .badge.layer-auto, .badge.layer-other { font-size: 0.8em; padding: 0 0.3rem; }
+    .badge.layer-core { color: #57606a; border-color: #8c959f; background: #f6f8fa; }
+    .badge.layer-author { color: #0a3069; border-color: #0969da; background: #ddf4ff; }
+    .badge.layer-auto { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    tr.proposal-row > td { background: #fffbea; padding-left: 2rem; }
+    .badge.state-open, .badge.state-resolved, .badge.state-expired, .badge.state-other { font-size: 0.8em; padding: 0 0.3rem; }
+    .badge.state-open { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    .badge.state-resolved { color: #116329; border-color: #1a7f37; background: #dafbe1; }
+    .badge.state-expired { color: #57606a; border-color: #8c959f; background: #f6f8fa; }
+    .badge.negated { font-size: 0.8em; padding: 0 0.3rem; color: #a40e26; border-color: #cf222e; }
+    /* M6 (#239): an unset State value, an incomplete staged turn's badge (it always carries its
+       text label, convention 20), a full outbox id, a world-clock value. */
+    span.undefined { color: #57606a; font-style: italic; }
+    .badge.incomplete { font-size: 0.8em; padding: 0 0.4rem; border: 1px solid #9a6700; border-radius: 0.3rem; background: #fff8c5; }
+    code.outbox-id { user-select: all; }
+    code.bound-id { white-space: pre-wrap; }
+    span.clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr.ledger-entries > td { background: #f6f8fa; padding-left: 2rem; }
+    table.ledger td.proposition span.line { display: block; }
+    tr.fact-superseded td { color: #8c959f; }
+    tr.fact-superseded td.proposition { text-decoration: line-through; }
+    table.canon-facts td.more dl { margin: 0; }
+    table.lineage td.more dl { margin: 0; }
+    table.lineage th.track-head, table.lineage td.track { width: 240px; min-width: 240px; }
+    table.lineage div.track { position: relative; width: 240px; height: 1rem; background: #f6f8fa; }
+    table.lineage span.bar { position: absolute; top: 0; bottom: 0; box-sizing: border-box; font-size: 0.75em; line-height: 1rem; overflow: hidden; }
+    table.lineage span.bar span.open-start { position: absolute; left: 2px; }
+    table.lineage span.bar span.open-end { position: absolute; right: 2px; }
+    span.bar-current { background: #0969da; color: #fff; }
+    span.bar-closure_undone { background: #0969da; color: #fff; outline: 2px dashed #0a3069; outline-offset: -2px; }
+    span.bar-superseded { background: #8c959f; color: #fff; }
+    span.bar-unconfirmed { background: transparent; border: 1px solid #8c959f; color: #57606a; }
+    tr.this-version td { background: #fff8c5; }
+    p.proposal-actions form { display: inline; }
+    mark.mention { background: #ddf4ff; border-bottom: 2px solid #0969da; }
+    sup.mention-number { color: #0969da; font-size: 0.7em; }
+    .arm { font-size: 0.8em; padding: 0 0.3rem; border: 1px solid #8c959f; border-radius: 0.3rem; white-space: nowrap; }
+    .arm-vector { color: #0a3069; border-color: #0969da; background: #ddf4ff; }
+    .arm-lexical { color: #116329; border-color: #1a7f37; background: #dafbe1; }
+    .arm-alias { color: #6639ba; border-color: #8250df; background: #fbefff; }
+    .arm-occasion { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    .arm-assessment { color: #953800; border-color: #bc4c00; background: #fff1e5; }
+    table.retrieved td.memory-text { white-space: normal; min-width: 20rem; }
+    table.retrieved td.actions form { display: inline; } /* #143: the row's Pin and Unpin */
+    ul.cast form.inline { display: inline; margin-left: 0.4rem; } /* #61: the row's role form and weight button */
+    table.canon-facts td.actions form, table.lineage td.actions form { display: inline; } /* #146 */
+    form.fact-form fieldset { margin: 0.6rem 0; } form.fact-form div.field { margin: 0.3rem 0; }
+    form.fact-form div.object-choice { margin: 0.2rem 0; }
+    pre.memory-text, div.confirm dd code { white-space: pre-wrap; } /* #144: copyable spans */
+    p.notice { border-left: 4px solid #d0d7de; padding: 0.3rem 0.8rem; } /* #189 */
+    .canon-contradicts { font-weight: bold; } /* #191: the label carries the meaning, no colour */
+    .canon-agrees { font-weight: normal; }
+    .testimony { font-weight: bold; } /* #190/#227: testimony stands out by weight, not colour */
+    /* #152: what a retrieval placed */
+    p.notice.warn { border-left: 4px solid #9a6700; padding: 0.3rem 0.8rem; background: #fff8c5; }
+    table.context-items td.number, table.context-dropped td.number, table.retrieval-timings td.number { text-align: right; }
+    table.retrieval-timings tr.total th, table.retrieval-timings tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    table.retrieval-canon span.chip { padding: 0 0.3rem; border: 1px solid #d0d7de; border-radius: 3px; background: #f6f8fa; }
+    strong.over-budget { color: #cf222e; }
+    /* E11 (#296): the M7 page nav rows inside the story and Engine link lines */
+    .story-pages, .engine-pages { display: inline; }
+    .story-pages a[aria-current="page"], .engine-pages a[aria-current="page"] { font-weight: 700; }
+    footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
+    /* #139: a turn's eval hooks and read set */
+    details.turn-trace { margin: 0.8rem 0; }
+    details.turn-trace > summary { cursor: pointer; font-weight: 600; }
+    div.turn-trace-content td.number { text-align: right; }
+    table.yield-clusters td.number, table.miss-categories td.number, table.shadow-samples td.number { text-align: right; }
+    table.yield-clusters tr.total th, table.yield-clusters tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    table.shadow-samples tr.failed td { color: #8c959f; }
+    table.reembed-stories tr.failed td.status, table.reembed-stories tr.failed td.error code { color: #cf222e; }
+    .config-error { border-color: #9a6700; background: #fff8c5; }
+    p.config-fix { color: #7d4e00; margin: 0.3rem 0; }
+    div.turn-trace-content tr.total th, div.turn-trace-content tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
+    dl.verdict-legend { display: grid; grid-template-columns: max-content 1fr; gap: 0.1rem 0.8rem; font-size: 0.9em; }
+    dl.verdict-legend dd { margin: 0; }
+    span.beat-text { white-space: pre-line; }
+    span.beat-text mark { background: #fff8c5; border-bottom: 2px solid #bf8700; }
+    span.beat-label { font-size: 0.85em; padding: 0 0.3rem; border: 1px solid #d0d7de; border-radius: 3px; background: #f6f8fa; }
+    span.beat-visibility { font-size: 0.85em; color: #57606a; }
+    details.beat-trace { margin: 0.3rem 0; font-size: 0.9em; }
+    details.beat-trace > summary { cursor: pointer; color: #57606a; }
+    details.beat-trace code.raw-proposition { white-space: pre-wrap; }
+  </style></head><body hx-headers:inherited='{"X-CSRFToken": "CSRF"}'><nav class="shell"><a class="brand" href="/">Epistrel Console</a><a href="/stories/" class="active">Stories</a><a href="/models/">Models</a><a href="/guardrails/ratings/">Guardrails</a><a href="/engine/">Engine</a><span class="nav-group"><span class="nav-group-label">Catalog:</span><a href="/catalog/characters/">Characters</a><a href="/catalog/scenarios/">Scenarios</a><a href="/personas/">Personas</a><a href="/media/">Media</a></span><a href="/profiles/">Profiles</a><a href="/principals/">Principals</a><a href="/offboarding/">Offboarding</a><a href="/erasure/">Erasure</a><a href="/operations/">Operations</a><a href="/admin/">Admin</a><span class="spacer"></span><a class="badge state-unreachable" href="/" title="Engine status">Engine: Unreachable — not configured</a><details class="acting"><summary>Acting as: <code>console:nate</code></summary><form method="post" action="/acting-as/" class="acting-form"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="next" value="/stories/01JM7ST0000000000000000001/"><label>Principal
+      <select name="principal"><option value="console:nate" selected>console:nate (me)</option></select></label><label>or other <input type="text" name="other" maxlength="300" autocomplete="off" spellcheck="false"></label><button type="submit">Act as</button></form></details><span class="operator">nate</span><form method="post" action="/accounts/logout/"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><button type="submit">Log out</button></form></nav><header><h1>Harbour Ledger</h1></header><main><dl class="story-header"><dt>Id</dt><dd><code>01JM7ST0000000000000000001</code></dd><dt>Status</dt><dd class="status"><span title="active">Active</span></dd><dt>Timeline revision</dt><dd>20</dd><dt>Configuration</dt><dd><span id="story-config"><a class="config-link" href="/stories/01JM7ST0000000000000000001/config/"><code class="fingerprint" title="sha256:3f9a1c0b7d2e4444444444444444444444444444444444444444444444444444">3f9a1c0b7d2e</code><span class="quality ">uncertified</span></a></span></dd><dt>Content rating</dt><dd><a class="rating-link" href="/stories/01JM7ST0000000000000000001/rating/">Teen</a></dd><dt>Cast</dt><dd><ul class="cast"><li id="cast-01JM7CH0000000000000000001">Mara (player) <a class="button danger erase" href="/erasure/new/?kind=character&amp;subject=01JM7CH0000000000000000001&amp;scope=story&amp;story=01JM7ST0000000000000000001">Erase…</a></li><li id="cast-01JM7CH0000000000000000002">Alice · <span class="cast-role">Reactive</span> · <span class="cast-weight" title="Major: full partition and hot-memory budget">Major</span><form method="post" action="/stories/01JM7ST0000000000000000001/characters/01JM7CH0000000000000000002/participation/" class="cast-role-form inline"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="idempotency_key" value="IDEMPOTENCY-KEY"><input type="hidden" name="shown" value="eyJzdG9yeV9pZCI6IjAxSk03U1QwMDAwMDAwMDAwMDAwMDAwMDAxIiwiY2lkIjoiMDFKTTdDSDAwMDAwMDAwMDAwMDAwMDAwMDIiLCJuYW1lIjoiQWxpY2UiLCJyb2xlIjoicmVhY3RpdmUiLCJmaXhlZCI6ZmFsc2V9:1xPdkR:ui2h4oXTBmtSI4LRZPkIcVEC56aVhR_w3sSoXK2ypmA" id="cast-01JM7CH0000000000000000002-shown"><select name="role" id="cast-01JM7CH0000000000000000002-role"><option value="primary">Primary</option><option value="reactive" selected>Reactive</option><option value="silent">Silent</option></select><input type="checkbox" name="fixed" title="The engine never escalates or lowers a fixed role" id="cast-01JM7CH0000000000000000002-fixed"><label for="cast-01JM7CH0000000000000000002-fixed">Fixed</label><button type="submit" class="set-role">Set role</button></form><form method="post" action="/stories/01JM7ST0000000000000000001/characters/01JM7CH0000000000000000002/weight/" class="cast-weight-form inline"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="idempotency_key" value="IDEMPOTENCY-KEY"><input type="hidden" name="shown" value="eyJzdG9yeV9pZCI6IjAxSk03U1QwMDAwMDAwMDAwMDAwMDAwMDAxIiwiY2lkIjoiMDFKTTdDSDAwMDAwMDAwMDAwMDAwMDAwMDIiLCJuYW1lIjoiQWxpY2UiLCJyb2xlIjoicmVhY3RpdmUiLCJmaXhlZCI6ZmFsc2V9:1xPdkR:ui2h4oXTBmtSI4LRZPkIcVEC56aVhR_w3sSoXK2ypmA"><input type="hidden" name="weight" value="minor"><button type="submit" class="set-weight" title="Minor: sparse partition, scaled hot-memory budget, rendered only when named">Make minor</button></form><a class="button promote" href="/stories/01JM7ST0000000000000000001/characters/01JM7CH0000000000000000002/promote/">Promote to catalog</a><a class="button danger erase" href="/erasure/new/?kind=character&amp;subject=01JM7CH0000000000000000002&amp;scope=story&amp;story=01JM7ST0000000000000000001">Erase…</a></li><li id="cast-01JM7CH0000000000000000003">Bob · <span class="cast-role">Reactive</span> · <span class="cast-weight" title="Major: full partition and hot-memory budget">Major</span><form method="post" action="/stories/01JM7ST0000000000000000001/characters/01JM7CH0000000000000000003/participation/" class="cast-role-form inline"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="idempotency_key" value="IDEMPOTENCY-KEY"><input type="hidden" name="shown" value="eyJzdG9yeV9pZCI6IjAxSk03U1QwMDAwMDAwMDAwMDAwMDAwMDAxIiwiY2lkIjoiMDFKTTdDSDAwMDAwMDAwMDAwMDAwMDAwMDMiLCJuYW1lIjoiQm9iIiwicm9sZSI6InJlYWN0aXZlIiwiZml4ZWQiOmZhbHNlfQ:1xPdkR:GKQnSfa_BB_JNnYkxyTp71ouvKpLl-Risrq3gS0ljvk" id="cast-01JM7CH0000000000000000003-shown"><select name="role" id="cast-01JM7CH0000000000000000003-role"><option value="primary">Primary</option><option value="reactive" selected>Reactive</option><option value="silent">Silent</option></select><input type="checkbox" name="fixed" title="The engine never escalates or lowers a fixed role" id="cast-01JM7CH0000000000000000003-fixed"><label for="cast-01JM7CH0000000000000000003-fixed">Fixed</label><button type="submit" class="set-role">Set role</button></form><form method="post" action="/stories/01JM7ST0000000000000000001/characters/01JM7CH0000000000000000003/weight/" class="cast-weight-form inline"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="idempotency_key" value="IDEMPOTENCY-KEY"><input type="hidden" name="shown" value="eyJzdG9yeV9pZCI6IjAxSk03U1QwMDAwMDAwMDAwMDAwMDAwMDAxIiwiY2lkIjoiMDFKTTdDSDAwMDAwMDAwMDAwMDAwMDAwMDMiLCJuYW1lIjoiQm9iIiwicm9sZSI6InJlYWN0aXZlIiwiZml4ZWQiOmZhbHNlfQ:1xPdkR:GKQnSfa_BB_JNnYkxyTp71ouvKpLl-Risrq3gS0ljvk"><input type="hidden" name="weight" value="minor"><button type="submit" class="set-weight" title="Minor: sparse partition, scaled hot-memory budget, rendered only when named">Make minor</button></form><a class="button promote" href="/stories/01JM7ST0000000000000000001/characters/01JM7CH0000000000000000003/promote/">Promote to catalog</a><a class="button danger erase" href="/erasure/new/?kind=character&amp;subject=01JM7CH0000000000000000003&amp;scope=story&amp;story=01JM7ST0000000000000000001">Erase…</a></li></ul><p class="muted roles-note">Roles take effect only when the story's profile renders characters one by one (couldn't read this story's configuration)</p><p class="cast-actions"><a class="button add-character" href="/stories/01JM7ST0000000000000000001/characters/new/">Add character (3/20)</a></p></dd><dt>Created</dt><dd><time datetime="2026-11-01T09:12:44.512031Z" title="2026-11-01T09:12:44.512031Z">2026-11-01 09:12:44 UTC</time></dd></dl><p><span class="actions"><a class="button" href="/stories/01JM7ST0000000000000000001/archive/?name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Archive</a><a class="button" href="/stories/01JM7ST0000000000000000001/delete/?name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Delete</a></span><a class="button" href="/engine/rebuild/01JM7ST0000000000000000001/?name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Rebuild projections</a><a class="history-link" href="/stories/01JM7ST0000000000000000001/history/">History</a> · <span class="story-pages" role="navigation" aria-label="Story pages"><a href="/stories/01JM7ST0000000000000000001/rewrites/">Rewrite</a> · <a href="/stories/01JM7ST0000000000000000001/amendments/">Amendments</a> · <a href="/stories/01JM7ST0000000000000000001/backfill/">Backfill</a> · <a href="/stories/01JM7ST0000000000000000001/export/">Export</a> · <a href="/stories/01JM7ST0000000000000000001/operations/">Operations</a></span><a class="inspect-link" href="/stories/01JM7ST0000000000000000001/inspect/">Inspect</a><a class="settings-link" href="/stories/01JM7ST0000000000000000001/settings/">Settings</a><a class="config-tab" href="/stories/01JM7ST0000000000000000001/config/">Config</a><a class="providers-link" href="/stories/01JM7ST0000000000000000001/providers/">Providers</a><a href="/stories/">All stories</a></p><details id="ownership" class="ownership"><summary>Owner &amp; relations</summary><dl class="owner"><dt>Owner</dt><dd class="owner-principal"><a href="/principals/p-owner/"><code>p-owner</code></a></dd></dl><p class="no-relations">No relations.</p><form class="transfer-owner" method="get" action="/ownership/story/01JM7ST0000000000000000001/owner/"><input type="hidden" name="current" value="p-owner"><input type="hidden" name="name" value="Harbour Ledger"><input type="hidden" name="next" value="/stories/01JM7ST0000000000000000001/"><label for="id_transfer_principal">New owner</label><input type="text" name="principal" autocomplete="off" spellcheck="false" placeholder="p-owner" required id="id_transfer_principal" list="dl-id_transfer_principal"><datalist id="dl-id_transfer_principal"></datalist><button type="submit">Transfer…</button></form><form class="add-relation" method="post" action="/ownership/story/01JM7ST0000000000000000001/relations/add/"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="idempotency_key" value="IDEMPOTENCY-KEY"><input type="hidden" name="name" value="Harbour Ledger"><input type="hidden" name="next" value="/stories/01JM7ST0000000000000000001/"><label for="id_relation_principal">Principal</label><input type="text" name="principal" autocomplete="off" spellcheck="false" required id="id_relation_principal" list="dl-id_relation_principal"><datalist id="dl-id_relation_principal"></datalist><label for="id_relation_relation">Relation</label><input type="text" name="relation" pattern="[ \t]*[A-Za-z0-9_\-]{1,64}[ \t]*" maxlength="64" autocomplete="off" spellcheck="false" list="dl-relations-story" required id="id_relation_relation"><datalist id="dl-relations-story"><option value="editor"></option><option value="co_author"></option><option value="player"></option></datalist><button type="submit">Add relation</button></form></details><div class="play"><section class="play-left"><div id="transcript"><h2>Transcript <small>as Mara · player view <span class="player-view">character</span> · audience filter <span class="audience-filter" title="none">None (perception off: every beat in full)</span></small></h2><p class="field transcript-player-view"><label for="transcript-player-view">Player view</label><select name="player_view" id="transcript-player-view" hx-get="/stories/01JM7ST0000000000000000001/transcript/?viewpoint=character%3A01JM7CH0000000000000000001" hx-include="[name=snapshot]" hx-target="#transcript" hx-swap="outerHTML"><option value="" selected>story setting</option><option value="character">Character (filtered)</option><option value="story">Story (everything, marked)</option></select></p><ol class="transcript"><li class="turn-controls" id="turn-0"><a class="button rewind" href="/stories/01JM7ST0000000000000000001/rewind/0/?rev=20&amp;head=4&amp;name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Rewind to start</a><a class="button fork" href="/stories/01JM7ST0000000000000000001/fork/0/?rev=20&amp;head=4&amp;name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Fork from here</a></li><li class="item channel-say" data-operation="01JB2Z8Y5Q3W6K9M1N4P7R0OP1"><a href="/stories/01JM7ST0000000000000000001/?operation=01JB2Z8Y5Q3W6K9M1N4P7R0OP1&amp;origin=generated" hx-get="/stories/01JM7ST0000000000000000001/inspector/?operation=01JB2Z8Y5Q3W6K9M1N4P7R0OP1&amp;origin=generated" hx-include="[name=snapshot]" hx-target="#inspector" title="Show this turn's report">T1</a><span class="channel">say</span><strong>01JB2Z8Y5Q3W6K9M1N4P7R0T3A</strong>: <span class="text">Is the ferry late again?</span></li><li class="item channel-message" data-operation="01JB2Z8Y5Q3W6K9M1N4P7R0OP1"><a href="/stories/01JM7ST0000000000000000001/?operation=01JB2Z8Y5Q3W6K9M1N4P7R0OP1&amp;origin=generated" hx-get="/stories/01JM7ST0000000000000000001/inspector/?operation=01JB2Z8Y5Q3W6K9M1N4P7R0OP1&amp;origin=generated" hx-include="[name=snapshot]" hx-target="#inspector" title="Show this turn's report">T1</a><span class="channel">message</span><strong>01JB2Z8Y5Q3W6K9M1N4P7R0T3B</strong>: <span class="text">[stub generation 1b602790b1a2] Mara: &quot;Is the ferry late again?&quot;</span><div id="feedback-play-01M5R0QNTZV2CSB478YYC57Y3W" class="feedback feedback-collapsed"><a class="feedback-rate" href="/stories/01JM7ST0000000000000000001/messages/01M5R0QNTZV2CSB478YYC57Y3W/feedback/?view=play&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F" hx-get="/stories/01JM7ST0000000000000000001/messages/01M5R0QNTZV2CSB478YYC57Y3W/feedback/?view=play&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F" hx-target="#feedback-play-01M5R0QNTZV2CSB478YYC57Y3W" hx-swap="outerHTML">Rate</a></div></li><li class="turn-controls" id="turn-1"><a class="button rewind" href="/stories/01JM7ST0000000000000000001/rewind/1/?rev=20&amp;head=4&amp;name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Rewind to here</a><a class="button fork" href="/stories/01JM7ST0000000000000000001/fork/1/?rev=20&amp;head=4&amp;name=Harbour+Ledger&amp;next=%2Fstories%2F01JM7ST0000000000000000001%2F">Fork from here</a></li></ol></div><div id="turn-status"></div><div id="play-form-area"><nav class="tabs"><a href="/stories/01JM7ST0000000000000000001/?tab=turn" hx-get="/stories/01JM7ST0000000000000000001/?tab=turn" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]" aria-current="page">Turn</a><a href="/stories/01JM7ST0000000000000000001/?tab=ingest" hx-get="/stories/01JM7ST0000000000000000001/?tab=ingest" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]">Ingest</a><a href="/stories/01JM7ST0000000000000000001/?tab=direct" hx-get="/stories/01JM7ST0000000000000000001/?tab=direct" hx-target="#play-form-area" hx-swap="outerHTML" hx-include="#play-form-area [name=snapshot], #play-form-area [name=output_viewpoint], #play-form-area [name=transcript_player_view]">Direct</a></nav><div id="turn-form"><h2>Play a turn</h2><form method="post" action="/stories/01JM7ST0000000000000000001/turn/" class="turn-form"
+        hx-post="/stories/01JM7ST0000000000000000001/turn/" hx-target="#inspector" hx-swap="innerHTML"
+        hx-disable="this" hx-sync="this:drop" hx-config="timeout:645s"><input type="hidden" name="csrfmiddlewaretoken" value="CSRF"><input type="hidden" name="idempotency_key" value="IDEMPOTENCY-KEY"><input type="hidden" name="snapshot" value=".eJx9UUtPwzAM_iso5wp1PITUG3CZEDvBrZoiN_HAkCbFTYamqf8dZ1uLEFNztD9_r-wVWVWpcvG0unt5Lf-9hSqUhxYFswRuQuKLZ7RvyDLvI8TUywZMpC3KxEAfVVXXR77H5Xm-FTCoInLCdTEDvRLovSMjxBtw_Tz4WsAPoRmh60JZ3EByUW8Jv7tAXowp8y7SJiJXswZjYq8tgnXkJfnN7WVZKEZvkSWuT84VqqMOj2vlKObwHbLBLlLwIyYXhL8XwJHyeppwcHm9n-ugqkV5LPjUw1wNZ_BDdhJ4p1vpg7KetIG5CDGj22BxMoxfCb1BHViyTlPKh-AxpF5HQt2IwucU4qSmD6QfaP5E7BzskA-fMNEZ9MAU9HkXw_ADJCPM4A:1xPdkR:ZrmqhL517bEmmiIR-jMxyJTJsHCHwHzzEsl6KBNuE8c"><input type="hidden" name="transcript_player_view" id="turn-transcript-player-view" value=""><fieldset><div class="field field-actor"><label for="id_actor">Actor:</label><select name="actor" id="id_actor"><option value="01JM7CH0000000000000000001" selected>Mara</option><option value="01JM7CH0000000000000000002">Alice</option><option value="01JM7CH0000000000000000003">Bob</option></select></div><div class="field field-say"><label for="id_say">Say:</label><textarea name="say" cols="40" rows="3" maxlength="8000" id="id_say"></textarea></div><div class="field field-whisper_to"><label for="id_whisper_to">Whisper to:</label><select name="whisper_to" size="3" disabled aria-describedby="gate-whisper-to" title="Couldn&#x27;t read this story&#x27;s configuration — reload" id="id_whisper_to" multiple><option value="01JM7CH0000000000000000001">Mara</option><option value="01JM7CH0000000000000000002">Alice</option><option value="01JM7CH0000000000000000003">Bob</option></select><small class="gate-reason" id="gate-whisper-to">Couldn&#x27;t read this story&#x27;s configuration — reload</small></div><div class="field field-do"><label for="id_do">Do:</label><textarea name="do" cols="40" rows="2" maxlength="8000" id="id_do"></textarea></div><div class="field field-output_viewpoint"><label for="id_output_viewpoint">Output viewpoint:</label><select name="output_viewpoint" id="id_output_viewpoint" hx-get="/stories/01JM7ST0000000000000000001/transcript/" hx-target="#transcript" hx-swap="outerHTML" hx-include="[name=snapshot], #turn-form [name=transcript_player_view]"><option value="default" selected>Story default (Mara)</option><option value="character:01JM7CH0000000000000000001">Mara</option><option value="character:01JM7CH0000000000000000002">Alice</option><option value="character:01JM7CH0000000000000000003">Bob</option></select></div><div class="field field-player_view"><label for="id_player_view">Player view:</label><select name="player_view" disabled aria-describedby="gate-player-view" title="Couldn&#x27;t read this story&#x27;s configuration — reload" id="id_player_view"><option value="" selected>Story setting (character)</option><option value="character">Character (audience-filtered)</option><option value="story">Story (every beat)</option></select><small class="gate-reason" id="gate-player-view">Couldn&#x27;t read this story&#x27;s configuration — reload</small></div><div class="field field-render_character_ids"><label for="id_render_character_ids">Render characters:</label><select name="render_character_ids" size="3" aria-describedby="id_render_character_ids_helptext" id="id_render_character_ids" multiple><option value="01JM7CH0000000000000000001">Mara</option><option value="01JM7CH0000000000000000002">Alice</option><option value="01JM7CH0000000000000000003">Bob</option></select><small>blank = everyone except the actor</small></div><fieldset class="multi-character" disabled aria-describedby="gate-multi-character" title="Couldn&#x27;t read this story&#x27;s configuration — reload"><legend>Multi-character</legend><small class="gate-reason" id="gate-multi-character">Couldn&#x27;t read this story&#x27;s configuration — reload</small><div class="field field-interaction_mode"><label for="id_interaction_mode">Interaction mode:</label><select name="interaction_mode" id="id_interaction_mode"><option value="" selected>Story setting (sequential)</option><option value="sequential">Sequential</option><option value="simultaneous">Simultaneous</option></select></div><div class="field field-sequence_order"><label for="id_sequence_order">Sequence order:</label><select name="sequence_order" id="id_sequence_order"><option value="" selected>Story setting (request order)</option><option value="request">Request order</option><option value="director">Director</option></select></div><div class="field field-simultaneous_tie_break"><label for="id_simultaneous_tie_break">Tie-break:</label><select name="simultaneous_tie_break" id="id_simultaneous_tie_break"><option value="" selected>Story setting (request order)</option><option value="request_order">Request order</option><option value="director">Director</option></select></div><div class="field field-reactive_interjections"><label for="id_reactive_interjections">Reactive interjections:</label><select name="reactive_interjections" id="id_reactive_interjections"><option value="" selected>Story setting (Off)</option><option value="on">On</option><option value="off">Off</option></select></div><table class="multi-character-cast"><thead><tr><th>Character</th><th>Render order</th><th>Role this turn</th></tr></thead><tbody><tr><td>Alice</td><td><select name="order_01JM7CH0000000000000000002" aria-label="Render order: Alice" id="id_order_01JM7CH0000000000000000002"><option value="" selected>—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></td><td><select name="role_01JM7CH0000000000000000002" aria-label="Role this turn: Alice" id="id_role_01JM7CH0000000000000000002"><option value="" selected>Stored: Reactive</option><option value="primary">Primary</option><option value="reactive">Reactive</option><option value="silent">Silent</option></select></td></tr><tr><td>Bob</td><td><select name="order_01JM7CH0000000000000000003" aria-label="Render order: Bob" id="id_order_01JM7CH0000000000000000003"><option value="" selected>—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></td><td><select name="role_01JM7CH0000000000000000003" aria-label="Role this turn: Bob" id="id_role_01JM7CH0000000000000000003"><option value="" selected>Stored: Reactive</option><option value="primary">Primary</option><option value="reactive">Reactive</option><option value="silent">Silent</option></select></td></tr></tbody></table></fieldset><div class="field field-length"><label for="id_length">Length:</label><select name="length" id="id_length"><option value="" selected>Engine default</option><option value="short">short</option><option value="medium">medium</option><option value="long">long</option><option value="custom">number (below)</option></select></div><div class="field field-length_custom"><label for="id_length_custom">Length (number):</label><input type="number" name="length_custom" id="id_length_custom"></div><div class="field field-temperature"><label for="id_temperature">Temperature:</label><input type="number" name="temperature" step="any" id="id_temperature"></div><div class="field field-top_p"><label for="id_top_p">top_p:</label><input type="number" name="top_p" step="any" id="id_top_p"></div><div class="field field-characters_present"><label for="id_characters_present">Characters present:</label><select name="characters_present" size="3" id="id_characters_present" multiple><option value="01JM7CH0000000000000000001">Mara</option><option value="01JM7CH0000000000000000002">Alice</option><option value="01JM7CH0000000000000000003">Bob</option></select></div><div class="field field-recent_messages"><label for="id_recent_messages">Recent messages:</label><textarea name="recent_messages" cols="40" rows="3" aria-describedby="id_recent_messages_helptext" id="id_recent_messages"></textarea><small>Up to 20 lines, each `Name: text`.</small></div><div class="field field-max_calls"><label for="id_max_calls">Max calls:</label><input type="number" name="max_calls" id="id_max_calls"></div><div class="field field-deadline_s"><label for="id_deadline_s">Deadline (seconds):</label><input type="number" name="deadline_s" step="any" id="id_deadline_s"></div><button type="submit">Send</button><span class="htmx-indicator">Running…</span></fieldset></form></div></div></section><section class="play-right"><h2>Inspector</h2><div id="inspector"><p class="notice"><strong>Select a turn to see its report.</strong></p></div></section></div></main><footer>Epistrel Console 0.1.1</footer></body></html>

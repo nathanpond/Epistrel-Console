@@ -30,7 +30,7 @@
 {% if rows %}
 <table class="profiles">
   <thead>
-    <tr><th>Name</th><th>Id</th><th>Current version</th><th>Preset</th><th>Default</th><th>Owner</th><th>Deleted</th></tr>
+    <tr><th>Name</th><th>Id</th><th>Current version</th><th>Quality</th><th>Preset</th><th>Default</th><th>Owner</th><th>Deleted</th></tr>
   </thead>
   <tbody>
     {% for row in rows %}
@@ -38,6 +38,7 @@
       <td><a href="{{ row.url }}">{{ row.profile.name }}</a></td>
       <td><code>{{ row.profile.id }}</code></td>
       <td>{{ row.profile.current_version }}</td>
+      <td class="quality-cell">{% if row.certifications_url %}<a class="certifications-link" href="{{ row.certifications_url }}">{% include "console/_quality.html" with quality=row.quality %}</a>{% else %}{% include "console/_quality.html" with quality=row.quality %}{% endif %}</td>
       <td>{% if row.profile.preset %}<span class="badge preset">preset</span>{% else %}—{% endif %}</td>
       <td>{% if row.is_default %}<span class="badge default-marker">default</span>{% else %}—{% endif %}</td>
       <td>{{ row.profile.owner_principal|principal_link }}</td>

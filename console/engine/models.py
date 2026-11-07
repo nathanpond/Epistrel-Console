@@ -18,7 +18,7 @@ a string without an offset, or one that doesn't parse, fails the field.
 
 import types
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from datetime import datetime
 from typing import Any, ClassVar, Literal, Self, Union
@@ -168,7 +168,18 @@ class HealthResponse(Model):
     content_logging: bool = False
 
 
-StoryStatus = Literal["active", "archived", "paused", "blocked_by_erasure"]
+StoryStatus = Literal["active", "archived", "paused", "blocked_by_erasure", "importing"]
+"""The recorded ``StoryStatus`` enum (a test pins it), for the story list's filter. The status
+fields themselves are open enums (#183's rule, E15): M7 added ``importing``, so a status the
+Console does not know yet is kept as its string."""
+
+ChainMembership = Literal["active", "discarded", "dormant", "superseded", "pruned"]
+"""The recorded ``Membership`` enum (a test pins it). :attr:`VariantChain.membership` is an open
+enum (E15): M7 added ``pruned``."""
+
+QualityStatusValue = Literal["certified", "uncertified", "stale"]
+"""The recorded ``QualityStatusValue`` enum (a test pins it). :attr:`FloorsMet.status` and
+:class:`CertificationLost`'s statuses are open enums (E15)."""
 
 
 @dataclass(frozen=True)
@@ -186,13 +197,14 @@ class StorySummary(Model):
 
     ``name`` is ``None`` for a story held ``blocked_by_erasure``. Times are the Engine's ISO
     strings (render them with the ``engine_time`` filter). M6 adds ``engine_profile`` (the
-    story's profile version and whether it is pinned).
+    story's profile version and whether it is pinned). M7 opens ``status`` (E15; ``importing``
+    is new, :data:`StoryStatus` lists the recorded values).
     """
 
     id: str
     name: str | None
     owner_principal: str
-    status: StoryStatus
+    status: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
     timeline_revision: int
     next_turn_index: int
     content_rating: StoryRating
@@ -211,7 +223,8 @@ class StoryList(Model):
 
 @dataclass(frozen=True)
 class ModelCall(Model):
-    """``ModelCall``: one model call attempt as a turn reports it. M6 adds ``stage``."""
+    """``ModelCall``: one model call attempt as a turn reports it. M6 adds ``stage``; M7 adds
+    ``probe`` (a certification probe call)."""
 
     purpose: str
     model: str
@@ -224,6 +237,7 @@ class ModelCall(Model):
     finish_reason: str | None = None
     request_id: str | None = None
     stage: str | None = None  # M6: the turn stage its budget charged it to (no schema enum)
+    probe: bool = False
 
 
 @dataclass(frozen=True)
@@ -263,7 +277,17 @@ class TurnGuardrail(Model):
 
 @dataclass(frozen=True)
 class QualityStatus(Model):
-    status: Literal["certified", "uncertified", "stale"]
+    """``QualityStatus``: the configuration's FR-PROF-16 quality status. M7 adds the matching
+    certification (``certification_id``), the floors it passed or failed, the intervention
+    types it covered or had too few samples of, and why it was invalidated (all optional)."""
+
+    status: QualityStatusValue
+    certification_id: str | None = None
+    failed_floors: list[str] | None = None
+    floors_passed: list[str] | None = None
+    intervention_types_covered: list[str] | None = None
+    intervention_types_insufficient: list[str] | None = None
+    invalidated_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -358,7 +382,8 @@ class OperationRecord(Model):
 
     ``label`` is an open enum (C2): its enum grew in M6 (``staged_turn``), so a label the Console
     does not know yet is kept as its string (:data:`OperationLabel` lists the recorded ones).
-    M6 adds ``staged`` (a staged turn's operation).
+    M6 adds ``staged`` (a staged turn's operation). M7 adds ``materialization`` and
+    ``perception`` (raw, E15).
     """
 
     id: str
@@ -386,6 +411,8 @@ class OperationRecord(Model):
     result: StoredResult | None = None
     stages: list[OperationStage] = field(default_factory=list)
     staged: bool = False
+    materialization: dict[str, Any] | None = None
+    perception: dict[str, Any] | None = None
 
 
 # --- Eval hooks and read sets (#139; #147 reuses them) ------------------------------------------
@@ -853,6 +880,9 @@ class History(Model):
 
     ``from_json`` reads each turn's M6 ``state_effects`` and ``notices`` entry by entry (D15):
     an entry that doesn't parse is left out, and that turn's ``unparsed`` keeps the raw list.
+
+    M7 adds ``view`` (``corrected`` or ``as_recorded``, an open enum), ``boundary_tx`` and the
+    raw ``derived`` and ``erasure_markers`` (E15).
     """
 
     items: list[Any]
@@ -866,6 +896,10 @@ class History(Model):
     next_before_turn: int | None
     audit: list[Any] | None = None
     summary: list[SummarySegment] | None = None
+    view: str | None = open_enum(default=None)
+    boundary_tx: str | None = None
+    derived: dict[str, Any] | None = None
+    erasure_markers: list[dict[str, Any]] | None = None
 
     @classmethod
     def from_json(cls, obj: object) -> Self | None:
@@ -1004,6 +1038,16 @@ class Reconcile(Model):
 
 
 @dataclass(frozen=True)
+class CoverageGap(Model):
+    """``CoverageGap`` (M7): a span of turns a capability has no data for (a forward-only
+    upgrade's gap, FR-PROF-15)."""
+
+    capability: str
+    from_turn: int
+    to_turn: int
+
+
+@dataclass(frozen=True)
 class RespondResponse(Model):
     """``RespondResponse``: one finished turn (``POST /stories/{id}/respond``'s 200).
 
@@ -1020,6 +1064,9 @@ class RespondResponse(Model):
     M6 adds the turn's world changes: ``state_effects``, ``settled_effects``, ``notices`` and
     ``reconciliation_required`` are read entry by entry the same way (D15); ``clock`` and
     ``reconciliation`` are single objects and stay strict (a malformed one fails the answer).
+
+    M7 adds ``coverage_gaps`` (turn spans a capability has no data for), read entry by entry
+    the same way (D15).
     """
 
     timeline_revision: int
@@ -1060,6 +1107,7 @@ class RespondResponse(Model):
     reconciliation_required: list[RequiredEffect] = field(default_factory=list)
     clock: TurnClock | None = None
     reconciliation: ReconciliationCount | None = None
+    coverage_gaps: list[CoverageGap] = field(default_factory=list)
 
     unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
 
@@ -1078,6 +1126,7 @@ class RespondResponse(Model):
             ("settled_effects", StateEffect),
             ("notices", Notice),
             ("reconciliation_required", RequiredEffect),
+            ("coverage_gaps", CoverageGap),
         )
         unparsed = _keep_parsing(cls, obj, lenient)
         parsed = _from_json(cls, obj)
@@ -1327,10 +1376,17 @@ class OmniscientStoryCharacter(Model):
 
 @dataclass(frozen=True)
 class StoryPauseProgress(Model):
-    """``StoryPauseProgressBody``: records checked, of how many."""
+    """``StoryPauseProgressBody``: records checked, of how many. Read leniently (E10, #295): a
+    backfill's pause carries its own progress (``phase``, ``chunks_done``, ``chunks_total``) if the
+    Engine's story read ever serves it (nathanpond/Epistrel#783: at ``5cb073b`` that read answers
+    500 instead), so every member is optional and a strict ``{done, total}`` never fails the whole
+    ``Story`` read."""
 
-    done: int
-    total: int
+    done: int | None = None
+    total: int | None = None
+    chunks_done: int | None = None
+    chunks_total: int | None = None
+    phase: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1363,11 +1419,13 @@ class ChainRef(Model):
 
 @dataclass(frozen=True)
 class VariantChain(Model):
-    """``VariantChainBody``: one variant chain of the story's timeline."""
+    """``VariantChainBody``: one variant chain of the story's timeline. M7 opens
+    ``membership`` (E15; ``pruned`` is new, :data:`ChainMembership` lists the recorded values).
+    """
 
     turn: int
     variant: int
-    membership: Literal["active", "discarded", "dormant", "superseded"]
+    membership: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
     tip_turn: int
     turn_count: int
     membership_tx: str | None
@@ -1389,9 +1447,25 @@ class Variants(Model):
 @dataclass(frozen=True)
 class RegenerateResult(RespondResponse):
     """``RegeneratedBody`` (``POST /stories/{id}/regenerate``): the respond body for the new
-    variant of the latest turn, plus ``previous_variant`` (now dormant, swap back to it)."""
+    variant of the latest turn, plus ``previous_variant`` (now dormant, swap back to it).
+    M7's ``coverage_gaps`` come from :class:`RespondResponse` (read entry by entry)."""
 
     previous_variant: int = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class DirectedPending(Model):
+    """``DirectedPendingBody`` (M7, ``POST /stories/{id}/regenerate``'s 202): a directed
+    regenerate that waits on a rewrite session (``disposition`` ``awaiting_rewrite``).
+    ``previous_variant`` is raw; ``rewrite_session`` is the held session (#292), parsed
+    strictly. A write answer: strict (E15)."""
+
+    previous_variant: dict[str, Any]
+    rewrite_session: RewriteSession
+    timeline_revision: int
+    disposition: str = "awaiting_rewrite"
+    warnings: list[str] = field(default_factory=list)
+    idempotency_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1596,18 +1670,38 @@ class ScenarioOrigin(Model):
 
 
 @dataclass(frozen=True)
+class AmendmentChecks(Model):
+    """``AmendmentChecksBody`` (M7): how many amendment checks a story has pending, and the
+    rewrite session they belong to."""
+
+    count: int
+    session_id: str | None = None
+
+
+@dataclass(frozen=True)
+class StoryPruning(Model):
+    """``PruningBody`` (M7): a story's prune policy (raw, E15), when it last pruned and when its
+    next scheduled prune runs. Every member is required and nullable."""
+
+    policy: dict[str, Any] | None
+    last_prune_at: str | None
+    next_run_at: str | None
+
+
+@dataclass(frozen=True)
 class Story(Model):
     """``StoryBody``: one story as ``GET /stories/{id}`` returns it.
 
     ``characters`` holds raw items, because the schema's item is a union
     (``OmniscientCharacterBody`` or ``CharacterBody``); :attr:`cast` parses them. M6:
-    ``engine_profile`` is a :class:`StoryProfileRef` (with ``pinned``).
+    ``engine_profile`` is a :class:`StoryProfileRef` (with ``pinned``). M7 opens ``status``
+    (E15; ``importing`` is new) and adds ``amendment_checks_pending`` and ``pruning``.
     """
 
     id: str
     name: str | None
     owner_principal: str
-    status: StoryStatus
+    status: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
     timeline_revision: int
     next_turn_index: int
     content_rating: StoryRating
@@ -1621,6 +1715,8 @@ class Story(Model):
     variant_chains: list[VariantChain]
     pause: StoryPause | None = None
     scenario: ScenarioOrigin | None = None
+    amendment_checks_pending: AmendmentChecks | None = None
+    pruning: StoryPruning | None = None
 
     @property
     def cast(self) -> list[StoryCharacter]:
@@ -1661,10 +1757,11 @@ class StoryCreated(Model):
 
 @dataclass(frozen=True)
 class StoryStatusChange(Model):
-    """``StatusBody``: a story's status and revision after an archive or unarchive."""
+    """``StatusBody``: a story's status and revision after an archive or unarchive. M7 opens
+    ``status`` (E15)."""
 
     timeline_revision: int
-    status: StoryStatus
+    status: str = open_enum()
     idempotency_key: str | None = None
 
 
@@ -1754,12 +1851,36 @@ class RatingVersionList(Model):
 
 
 @dataclass(frozen=True)
+class ModelTiers(Model):
+    """``ModelTiers`` (M7, #227): the deployment's model tiers; ``strongest`` is the model id a
+    profile's ``"@strongest"`` routes resolve to (``None``: each such purpose uses its own
+    configured model)."""
+
+    strongest: str | None = None
+
+
+@dataclass(frozen=True)
 class DeploymentSettings(Model):
     """``SettingsBody``: every deployment setting, flat, with ``config_revision``. M6 adds
     ``provider_allowed_hosts`` (the hosts a provider manifest may call).
 
     ``profile_defaults`` (a nested profile document) and ``feedback_retention`` (an enum or an
     integer) are raw JSON.
+
+    M7 adds 23 settings, appended after M6's (schema order), with the schema's defaults:
+    - bundle (export and import): ``bundle_export_ttl_hours``, ``bundle_max_entries``,
+      ``bundle_max_entry_bytes``, ``bundle_max_uncompressed_bytes``;
+    - certification canary: ``certification_canary_enabled``,
+      ``certification_canary_interval_s``, ``certification_canary_sample_size``,
+      ``certification_canary_seeds``, ``certification_recertify_interval_s``;
+    - dependency search: ``dependency_search_max_depth``, ``dependency_search_max_results``;
+    - directive: ``directive_steer_ttl_minutes``;
+    - Lite author facts and reach: ``lite_author_facts_max``, ``lite_reach_chunk_messages``,
+      ``lite_reach_chunk_tokens``, ``lite_reach_deadline_seconds``, ``lite_reach_max_calls``,
+      ``lite_reach_parallelism``;
+    - model tiers: ``model_tiers`` (:class:`ModelTiers`);
+    - rewrite: ``rewrite_ambiguity_margin``, ``rewrite_max_open_sessions``,
+      ``rewrite_session_ttl_minutes``, ``rewrite_stale_retries``.
     """
 
     config_revision: int
@@ -1828,6 +1949,29 @@ class DeploymentSettings(Model):
     uncertain_below: float = 0.5
     validation_model_calls: int = 0
     worker_heartbeat_timeout: float = 60.0
+    bundle_export_ttl_hours: int = 24
+    bundle_max_entries: int = 100000
+    bundle_max_entry_bytes: int = 1073741824
+    bundle_max_uncompressed_bytes: int = 4294967296
+    certification_canary_enabled: bool = False
+    certification_canary_interval_s: int = 604800
+    certification_canary_sample_size: int = 50
+    certification_canary_seeds: int = 1
+    certification_recertify_interval_s: int | None = None
+    dependency_search_max_depth: int = 3
+    dependency_search_max_results: int = 500
+    directive_steer_ttl_minutes: int = 1440
+    lite_author_facts_max: int = 50
+    lite_reach_chunk_messages: int = 60
+    lite_reach_chunk_tokens: int = 12000
+    lite_reach_deadline_seconds: int = 120
+    lite_reach_max_calls: int = 24
+    lite_reach_parallelism: int = 4
+    model_tiers: ModelTiers = field(default_factory=ModelTiers)
+    rewrite_ambiguity_margin: float = 0.15
+    rewrite_max_open_sessions: int = 5
+    rewrite_session_ttl_minutes: int = 1440
+    rewrite_stale_retries: int = 2
 
 
 # --- Engine operations panel (#50): rebuild and configuration changes --------------------------
@@ -2056,7 +2200,10 @@ class RetrievalBody(Model):
     ``from_json`` reads ``canon``, ``profiles``, ``context.items`` and ``context.dropped`` entry
     by entry (#135 convention 12): an entry that doesn't parse is left out, and ``unparsed``
     keeps that section's raw list (by its dotted name) for its "More", so one bad entry never
-    fails the page. ``unparsed`` is the Console's, not the schema's (not a dataclass field)."""
+    fails the page. ``unparsed`` is the Console's, not the schema's (not a dataclass field).
+
+    M7 adds ``coverage_gaps`` (turn spans a capability has no data for), read the same way; a
+    value that isn't a list reads as ``[]``, with the raw value kept in ``unparsed`` too."""
 
     position: list[int]
     resolution: ResolutionBody
@@ -2073,8 +2220,9 @@ class RetrievalBody(Model):
     model_calls: int
     embedding_model_version: str | None
     timings: dict[str, float]
+    coverage_gaps: list[CoverageGap] = field(default_factory=list)
 
-    unparsed: ClassVar[dict[str, list[Any]]] = {}
+    unparsed: ClassVar[dict[str, Any]] = {}
 
     @classmethod
     def from_json(cls, obj: object) -> Self | None:
@@ -2083,12 +2231,15 @@ class RetrievalBody(Model):
         obj = dict(obj)
         if isinstance(obj.get("context"), dict):
             obj["context"] = dict(obj["context"])
-        unparsed: dict[str, list[Any]] = {}
+        unparsed: dict[str, Any] = {}
+        if "coverage_gaps" in obj and not isinstance(obj["coverage_gaps"], list):
+            unparsed["coverage_gaps"] = obj.pop("coverage_gaps")  # reads as its default, []
         lenient: tuple[tuple[str, type[Model]], ...] = (
             ("canon", CanonBody),
             ("profiles", EntityProfileBody),
             ("context.items", ContextItemBody),
             ("context.dropped", DroppedBody),
+            ("coverage_gaps", CoverageGap),
         )
         for name, model in lenient:
             *outer, key = name.split(".")
@@ -2693,7 +2844,10 @@ class BeliefItem(Model):
     valid-time in story-minutes). ``provenance_kind`` is that transition's kind (an open enum,
     ``None`` exactly when ``provenance`` is) and ``provenance_source_character`` its testimony
     source (``None`` unless the kind is ``testimony``), Engine #654. ``proposition`` stays raw
-    JSON (C2); :attr:`proposition_view` is its typed view."""
+    JSON (C2); :attr:`proposition_view` is its typed view.
+
+    M7 adds ``attributed_holder_id``, ``attributed_level``, ``depth`` and
+    ``speaker_character_id`` (a nested belief's holder, level and depth, and who said it)."""
 
     belief_id: str
     proposition_id: str
@@ -2711,6 +2865,10 @@ class BeliefItem(Model):
     valid_from: int | None
     valid_to: int | None
     tx_from: str
+    attributed_holder_id: str | None = None
+    attributed_level: str | None = None
+    depth: int | None = None
+    speaker_character_id: str | None = None
 
     @property
     def proposition_view(self) -> Proposition | None:
@@ -4326,6 +4484,17 @@ class ScenarioPublished(Model):
 
 
 @dataclass(frozen=True)
+class FloorsMet(Model):
+    """``FloorsMet`` (M7): a profile version's quality: the fingerprint certified, its status
+    (an open enum, E15: :data:`QualityStatusValue` lists the recorded values) and the floors it
+    met."""
+
+    fingerprint: str
+    floors_met: list[str]
+    status: str = open_enum()
+
+
+@dataclass(frozen=True)
 class EngineProfile(Model):
     """``EngineProfile`` (#78): a profile at one version. ``version`` is the one read (the
     latest unless the read named another), ``current_version`` the latest. ``settings`` is what
@@ -4334,7 +4503,8 @@ class EngineProfile(Model):
 
     ``settings`` is compared with an object schema of any keys: the recorded schema spells out
     the modules delivered when it was recorded, and the Console shows whatever this deployment
-    delivers (the contract test widens it)."""
+    delivers (the contract test widens it). M7 adds ``quality`` (the version's certification
+    floors)."""
 
     id: str
     name: str
@@ -4346,6 +4516,7 @@ class EngineProfile(Model):
     created_at: str
     updated_at: str
     deleted_at: str | None
+    quality: FloorsMet | None = None
 
 
 @dataclass(frozen=True)
@@ -4454,13 +4625,21 @@ MediaKind = Literal["image", "video"]
 class SubjectRef(Model):
     """``SubjectRef`` / ``DepictedSubject``: a story ``character``, a ``catalog_character`` or a
     ``persona``, by id. One model for an asset's ``depicted_subjects`` and erasure's subject
-    (#86)."""
+    (#86).
+
+    M7 adds ``story`` (``SubjectRef`` only, Engine #504): the story a story character erased
+    from the catalog belongs to. ``DepictedSubject`` has no ``story``; the contract test widens
+    it by this one optional member, as it widens ``EntryLocation`` (#64)."""
 
     kind: SubjectKind
     id: str
+    story: str | None = None
 
     def to_json(self) -> dict[str, str]:
-        return {"kind": self.kind, "id": self.id}
+        body = {"kind": self.kind, "id": self.id}
+        if self.story is not None:
+            body["story"] = self.story
+        return body
 
 
 @dataclass(frozen=True)
@@ -4541,6 +4720,7 @@ MaterializedOutcome = Literal[
     "state",
     "clock",
     "event",
+    "kept_existing",
 ]
 
 
@@ -4598,7 +4778,7 @@ class InactiveItem(Model):
 @dataclass(frozen=True)
 class MaterializedEntry(Model):
     """``MaterializedEntry``: one item a structured creation materialized and its outcomes (M6
-    adds ``state``, ``clock`` and ``event``)."""
+    adds ``state``, ``clock`` and ``event``; M7 adds ``kept_existing``)."""
 
     field_ref: str
     location: EntryLocation
@@ -4679,24 +4859,58 @@ class BackfillEstimate(Model):
 
 
 @dataclass(frozen=True)
+class TurnSpan(Model):
+    """``TurnSpan`` (M7): a span of turns, both ends inclusive."""
+
+    from_turn: int
+    to_turn: int
+
+
+@dataclass(frozen=True)
 class Backfill(Model):
+    """``epistrel__core__profiles__impact__Backfill``: whether a profile change needs a
+    backfill, and its estimate. The name is the Console's (M7 renamed the component, E15). M7
+    adds ``range`` (the turns the backfill covers)."""
+
     needed: bool
     estimate: BackfillEstimate | None = None
+    range: TurnSpan | None = None
+
+
+@dataclass(frozen=True)
+class ForwardOnlyGap(Model):
+    """``ForwardOnlyGap`` (M7): the capabilities a forward-only upgrade leaves without data, up
+    to ``through_turn``."""
+
+    capabilities: list[str]
+    through_turn: int
 
 
 @dataclass(frozen=True)
 class AffectedStory(Model):
-    """``AffectedStory``: one story a profile change reaches (empty for a creation)."""
+    """``AffectedStory``: one story a profile change reaches (empty for a creation).
+
+    M7 makes ``upgrade_unavailable`` optional (``False``) and adds ``data_kept_dormant``,
+    ``deferred_to_materialize`` and ``summary_backfill`` (raw, E15), ``forward_only_gap``,
+    ``genesis_conflicts_unchecked``, ``queue_position`` and ``upgrade_mode`` (``backfill`` or
+    ``forward_only``, an open enum)."""
 
     story_id: str
     capabilities_gained: list[str]
     capabilities_lost: list[str]
     backfill: Backfill
-    upgrade_unavailable: bool
     capabilities_after: list[str] | None = None
     fingerprint_before: str | None = None
     fingerprint_after: str | None = None
     quality_status_after: QualityStatus | None = None
+    upgrade_unavailable: bool = False
+    data_kept_dormant: bool = False
+    deferred_to_materialize: dict[str, Any] | None = None
+    forward_only_gap: ForwardOnlyGap | None = None
+    genesis_conflicts_unchecked: bool | None = None
+    queue_position: int | None = None
+    summary_backfill: dict[str, Any] | None = None
+    upgrade_mode: str | None = open_enum(default=None)
 
 
 @dataclass(frozen=True)
@@ -4712,11 +4926,24 @@ class ProfileValidationWarning(Model):
 
 
 @dataclass(frozen=True)
+class CertificationLost(Model):
+    """``CertificationLost`` (M7): a certification the change invalidates, its quality status
+    before and after (``from``/``to``: Python keywords, read through ``JSON_NAME``; open enums,
+    :data:`QualityStatusValue` lists the recorded values) and the story it was for."""
+
+    certification_id: str
+    from_status: str = field(metadata={JSON_NAME: "from", OPEN_ENUM: True})
+    to_status: str = field(metadata={JSON_NAME: "to", OPEN_ENUM: True})
+    story_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ImpactReport(Model):
     """``ImpactReport`` (#109): what the engine profile means for the story: the scenario's
     recommendations it leaves unmet, the warnings, the guarantees lost, and the capabilities,
     quality status and fingerprints after. M6 adds ``budget_warnings`` (the profile validator's
-    warnings for the configuration after the change; informational)."""
+    warnings for the configuration after the change; informational). M7 adds
+    ``certifications_lost`` (strict, as a write answer's list is, D15)."""
 
     affected_stories: list[AffectedStory]
     affected_count: int
@@ -4729,6 +4956,7 @@ class ImpactReport(Model):
     fingerprint_after: str | None = None
     guarantees_gained: list[str] = field(default_factory=list)
     budget_warnings: list[ProfileValidationWarning] = field(default_factory=list)
+    certifications_lost: list[CertificationLost] = field(default_factory=list)
 
 
 # --- engine profile writes (#84) -----------------------------------------------------------------
@@ -4828,7 +5056,8 @@ class ProfileValidation(Model):
 class ProfileWritten(Model):
     """``ProfileBody``: the profile after a create or a copy, at its latest version, with the
     deployment's ``config_revision``. ``settings`` is raw, as on :class:`EngineProfile`. M6 adds
-    ``warnings`` (what would refuse the profile's turns without making it invalid)."""
+    ``warnings`` (what would refuse the profile's turns without making it invalid). M7 adds
+    ``quality`` (the version's certification floors)."""
 
     config_revision: int
     id: str
@@ -4843,18 +5072,33 @@ class ProfileWritten(Model):
     deleted_at: str | None
     idempotency_key: str | None = None
     warnings: list[ProfileValidationWarning] = field(default_factory=list)
+    quality: FloorsMet | None = None
+
+
+@dataclass(frozen=True)
+class QueuedBackfill(Model):
+    """``Queued`` (M7): a backfill a profile edit queued for one pinned story, its job and its
+    place in the queue."""
+
+    id: str
+    job_id: str
+    status: str
+    story_id: str
+    queue_position: int | None = None
 
 
 @dataclass(frozen=True)
 class ProfileEdit(Model):
     """``ProfileEditBody``: an edit's two stages. ``applied`` false: the ``impact`` report held
-    it back and nothing was written (``result`` ``None``)."""
+    it back and nothing was written (``result`` ``None``). M7 adds ``backfills`` (the backfills
+    the edit queued; strict, as a write answer's list is, D15)."""
 
     config_revision: int
     applied: bool
     impact: ImpactReport
     result: EngineProfile | None
     idempotency_key: str | None = None
+    backfills: list[QueuedBackfill] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -4910,7 +5154,8 @@ class EffectiveConfig(Model):
     """``EffectiveConfig``: the deployment's defaults, the profile and version, the story's
     overrides, every delivered setting at its effective value, and the configuration's
     fingerprint, capabilities and quality status. The settings documents stay raw, so modules
-    a later Engine delivers survive (the contract test widens them)."""
+    a later Engine delivers survive (the contract test widens them). M7 adds
+    ``pending_backfill`` (raw, E15)."""
 
     story_id: str
     deployment_defaults: dict[str, Any]
@@ -4920,13 +5165,24 @@ class EffectiveConfig(Model):
     fingerprint: str
     capabilities: list[str]
     quality_status: QualityStatus
+    pending_backfill: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class BackfillStarted(Model):
+    """``BackfillStartedBody`` (M7): the backfill a story profile write started (its 202)."""
+
+    id: str
+    job_id: str
+    status: str
 
 
 @dataclass(frozen=True)
 class StoryProfileWrite(Model):
     """``StoryProfileWriteBody``: an assignment's or an overrides write's two stages.
     ``applied`` false: the ``impact`` report held it back and nothing was written (``result``
-    ``None``); applied, ``result`` is the story's effective configuration after it."""
+    ``None``); applied, ``result`` is the story's effective configuration after it. M7 adds
+    ``backfill``: the backfill the write started, when it answers 202."""
 
     timeline_revision: int
     applied: bool
@@ -4934,6 +5190,7 @@ class StoryProfileWrite(Model):
     result: EffectiveConfig | None
     config_revision: int
     idempotency_key: str | None = None
+    backfill: BackfillStarted | None = None
 
 
 # --- principal lookup (#76) -----------------------------------------------------------------------
@@ -5409,7 +5666,8 @@ class FeedbackHistoryEntry(Model):
 class MessageFeedback(Model):
     """``Feedback``: the requesting principal's rating of one generated message (``rating``
     ``None`` when the principal has none), its ``context`` (``None`` without a rating) and the
-    ``history`` of earlier values, newest first."""
+    ``history`` of earlier values, newest first. M7 renames ``compacted_at`` to ``pruned_at``
+    (ADR-175: compaction is now pruning): when the rated message was pruned, the rating kept."""
 
     story_id: str
     message_id: str
@@ -5419,7 +5677,7 @@ class MessageFeedback(Model):
     rating: int | None
     tags: list[str]
     text: str | None
-    compacted_at: str | None
+    pruned_at: str | None
     created_at: str | None
     updated_at: str | None
     context: FeedbackContext | None
@@ -5494,10 +5752,22 @@ class ReferencingStory(Model):
 
 
 @dataclass(frozen=True)
+class PromotedDraft(Model):
+    """``PromotedDraftBody`` (M7): a catalog draft an erasure promoted in place of an erased
+    character: the catalog and story character ids, its companions, and the follow-up (raw)."""
+
+    catalog_id: str
+    character_id: str
+    companion_ids: list[str]
+    follow_up: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ErasureResult(Model):
     """``ErasureBody``: what an erasure did, or (``dry_run``) would do. ``subject`` is the
     Engine's ``{kind, id}`` object (:attr:`subject_ref` reads it); ``residue`` is ``None`` when
-    no scan ran (a dry run)."""
+    no scan ran (a dry run). M7 adds ``promoted_drafts`` (the catalog drafts an erasure promoted;
+    strict, as a write answer's list is, D15)."""
 
     config_revision: int
     dry_run: bool
@@ -5519,6 +5789,7 @@ class ErasureResult(Model):
     residue: int | None = None
     candidates_remaining: int = 0
     candidates: list[ErasureCandidate] = field(default_factory=list)
+    promoted_drafts: list[PromotedDraft] = field(default_factory=list)
 
     @property
     def subject_ref(self) -> SubjectRef | None:
@@ -6116,13 +6387,18 @@ class ReconciliationListing(Model):
     provider idempotency key), provider, ``status`` (a plain string), why it's listed
     (``reason``, an open enum) and since when. The value, effect (raw), outcome,
     re-verification and compensating effect are optional, so a row an erasure redacted
-    (``{outbox_id, provider, status, reason, since}``) parses."""
+    (``{outbox_id, provider, status, reason, since}``) parses.
 
-    outbox_id: str
+    M7 makes ``outbox_id`` optional and adds ``request_id`` (Engine #661): a consumer-applied
+    effect is keyed by its request id and has no outbox id. ``reason`` gains
+    ``imported_unsettled``."""
+
     provider: str
     status: str
     reason: str = field(metadata={OPEN_ENUM: True})  # spelled out: a required field follows
     since: str
+    outbox_id: str | None = None
+    request_id: str | None = None
     value: str | None = None
     effect: dict[str, Any] | None = None
     outcome: ListingOutcome | None = None
@@ -6222,3 +6498,1081 @@ class MemoryList(Model):
     @classmethod
     def from_json(cls, obj: object) -> Self | None:
         return _lenient_page(cls, obj, (("memories", ListedMemory),))
+
+
+# --- M7: history rewrites, directives, amendments and merge (#292) ---------------------------
+#
+# E15 (D15/C2 extended): preview entries, ``reach``, ``report``, ``last_error``, an option's
+# ``effect`` and ``resolution_mode`` (a string or ``{"threshold": …}``) stay raw JSON; every
+# schema enum is an ``open_enum``; session ``state``/``kind`` and amendment ``status``/``kind``
+# are plain strings. The read pages (``RewriteList.items``, ``AmendmentPage.items``) and
+# ``RewriteSession.questions`` are read entry by entry; the write answers
+# (:class:`RewriteSessionWritten`, :class:`RewriteApplied`, :class:`Directive`,
+# :class:`DirectedPending`) are strict, and a session nested inside one is parsed strictly
+# (``_from_json``), so one bad question fails the whole answer (``bad_response``).
+
+
+@dataclass(frozen=True)
+class HeldRender(Model):
+    """``HeldRender``: the reply a directed regenerate held back for review, and the model calls
+    it took."""
+
+    message_text: str
+    model_calls: int
+
+
+@dataclass(frozen=True)
+class QuestionOption(Model):
+    """``QuestionOption``: one answer a rewrite question offers; ``effect`` is raw (E15)."""
+
+    id: str
+    label: str
+    effect: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RewriteQuestion(Model):
+    """``RewriteQuestion``: what a rewrite session asks the author, its options, the recommended
+    one and why, and (once answered) the answer and who gave it. ``severity`` (``high`` or
+    ``low``) is an open enum."""
+
+    id: str
+    kind: str
+    prompt: str
+    options: list[QuestionOption]
+    recommended_option_id: str
+    recommendation_reason: str
+    accepted_recommendation: bool | None = None
+    answer_option_id: str | None = None
+    answer_text: str | None = None
+    answered_at: str | None = None
+    answered_by: str | None = None
+    required: bool = True
+    severity: str | None = open_enum(default=None)
+
+
+@dataclass(frozen=True)
+class BlastRadius(Model):
+    """``BlastRadius``: what a rewrite reaches: incidental mentions, cascaded justifications and
+    irreducible conflicts, each entry raw (E15)."""
+
+    cascaded: list[dict[str, Any]] = field(default_factory=list)
+    incidental: list[dict[str, Any]] = field(default_factory=list)
+    irreducible: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RewritePreview(Model):
+    """``epistrel__orchestrator__rewrite__api__Preview``: a rewrite's plan at ``base_revision``
+    (``plan_hash`` names it): the changes and their blast radius, relabels, refused changes,
+    notifications, timing uncertainties, suggested ports, new entities and the Lite pipeline's
+    ``reach``. Every entry list is raw (E15)."""
+
+    base_revision: int
+    plan_hash: str
+    blast_radius: BlastRadius = field(default_factory=BlastRadius)
+    blast_radius_truncated: bool = False
+    changes: list[dict[str, Any]] = field(default_factory=list)
+    new_entities: list[dict[str, Any]] = field(default_factory=list)
+    notifications: list[dict[str, Any]] = field(default_factory=list)
+    reach: dict[str, Any] | None = None
+    refused_changes: list[dict[str, Any]] = field(default_factory=list)
+    relabels: list[dict[str, Any]] = field(default_factory=list)
+    suggested_ports: list[dict[str, Any]] = field(default_factory=list)
+    timing_uncertain: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RewriteSession(Model):
+    """``RewriteSession`` (FR-REWRITE-1..7): a history rewrite (or an undo, redo, merge,
+    directive or directed resolution: ``kind``) and where it stands (``state``; both plain
+    strings). ``resolution_mode`` is raw (a string or ``{"threshold": …}``); ``pipeline``
+    (``structured`` or ``lite``) and ``preview_mode`` are open enums. ``from_json`` reads
+    ``questions`` entry by entry (E15: a bad question never hides the session), keeping the raw
+    list in ``unparsed`` (a page shows only ``rejected_entries`` of it)."""
+
+    id: str
+    story_id: str
+    kind: str
+    state: str
+    instruction: str | None
+    resolution_mode: Any
+    preview_mode: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    pipeline: str = field(metadata={OPEN_ENUM: True})
+    principal: str
+    created_at: str
+    updated_at: str
+    expires_at: str
+    base_revision: int | None = None
+    held_render: HeldRender | None = None
+    last_error: dict[str, Any] | None = None
+    preview: RewritePreview | None = None
+    questions: list[RewriteQuestion] = field(default_factory=list)
+    report: dict[str, Any] | None = None
+    result_amendment_id: str | None = None
+    stale_count: int = 0
+    target_amendment_id: str | None = None
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("questions", RewriteQuestion),))
+
+
+@dataclass(frozen=True)
+class RewriteApply(Model):
+    """``Applied``: the amendment an apply under ``apply_directly`` wrote, its report (raw) and
+    the story's revision after it."""
+
+    amendment_id: str
+    report: dict[str, Any]
+    timeline_revision: int
+
+
+@dataclass(frozen=True)
+class RewriteSessionWritten(RewriteSession):
+    """``RewriteSessionBody``: a session write's answer (open, answers, cancel, undo, redo,
+    merge): the session plus the story's revision, the apply an ``apply_directly`` open ran
+    (``apply``) and the key. A write answer: strict (E15), questions included. The added
+    fields are keyword-only so ``timeline_revision`` stays required after the parent's
+    defaults."""
+
+    timeline_revision: int = field(kw_only=True)
+    apply: RewriteApply | None = field(default=None, kw_only=True)
+    idempotency_key: str | None = field(default=None, kw_only=True)
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        parsed = _from_json(cls, obj)
+        return parsed if isinstance(parsed, cls) else None
+
+    @property
+    def session(self) -> RewriteSession:
+        """The session itself (E3 reads ``RewriteSessionWritten.session``)."""
+        return self
+
+
+@dataclass(frozen=True)
+class RewriteSummary(Model):
+    """``RewriteSummary``: one session as the story's rewrite list shows it."""
+
+    id: str
+    kind: str
+    state: str
+    instruction: str | None
+    open_questions: int
+    created_at: str
+    updated_at: str
+    expires_at: str
+
+
+@dataclass(frozen=True)
+class RewriteList(Model):
+    """``RewriteList``: a page of the story's rewrite sessions (``next_cursor`` continues).
+    ``from_json`` reads ``items`` entry by entry (E15)."""
+
+    items: list[RewriteSummary]
+    next_cursor: str | None = None
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", RewriteSummary),))
+
+
+@dataclass(frozen=True)
+class RewriteApplied(Model):
+    """``AppliedBody``: an applied rewrite: the session after it (parsed strictly, E15), the
+    amendment it wrote, its report (raw) and the story's revision."""
+
+    timeline_revision: int
+    session: RewriteSession
+    amendment_id: str
+    report: dict[str, Any]
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class DirectiveApplied(Model):
+    """``DirectiveApplied``: what a durable directive wrote at its slot, by id (a Lite story's
+    lasting ``author_fact`` is ``{id, position, text}``)."""
+
+    author_fact: dict[str, str] | None = None
+    beliefs: list[str] = field(default_factory=list)
+    clock: list[str] = field(default_factory=list)
+    facts: list[str] = field(default_factory=list)
+    outbox_ids: list[str] = field(default_factory=list)
+    scheduled_events: list[str] = field(default_factory=list)
+    state_changes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Directive(Model):
+    """``DirectiveBody`` (FR-DIRECT-1,2): how a directive was classified and what became of it
+    (``disposition``: ``steer_queued`` with its ``steer_text``, ``applied`` at ``position``, or
+    the 202's ``routed_to_rewrite`` with its ``rewrite_session``, parsed strictly), and any
+    ``hints``. A write answer: strict (E15)."""
+
+    timeline_revision: int
+    directive_id: str
+    classification: str
+    disposition: str
+    applied: DirectiveApplied | None = None
+    hints: list[str] = field(default_factory=list)
+    idempotency_key: str | None = None
+    position: str | None = None
+    rewrite_session: RewriteSession | None = None
+    steer_text: str | None = None
+
+
+@dataclass(frozen=True)
+class AmendmentSummary(Model):
+    """``AmendmentSummary``: one amendment as the story's list shows it: its ``kind`` and
+    ``status`` (plain strings), author, transaction time, part count, the session that made it
+    and its undo/redo links."""
+
+    id: str
+    kind: str
+    status: str
+    author: str
+    tx_time: str
+    parts_count: int
+    redoes: str | None = None
+    reverted_by: str | None = None
+    session_id: str | None = None
+    undoes: str | None = None
+
+
+@dataclass(frozen=True)
+class AmendmentPage(Model):
+    """``AmendmentPage``: a page of the story's amendments. ``from_json`` reads ``items`` entry
+    by entry (E15)."""
+
+    items: list[AmendmentSummary]
+    next_cursor: str | None = None
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", AmendmentSummary),))
+
+
+@dataclass(frozen=True)
+class AmendmentDetail(AmendmentSummary):
+    """``AmendmentDetail``: an amendment with its parts, what it relies on and what depends on
+    it (all raw, E15), and whether the parts were cut short."""
+
+    dependents: list[dict[str, Any]] = field(default_factory=list)
+    parts: list[dict[str, Any]] = field(default_factory=list)
+    relies_on: list[dict[str, Any]] = field(default_factory=list)
+    truncated: bool = False
+
+
+# --- M7: backfill and profile upgrades (#292) ------------------------------------------------
+#
+# E15: a backfill's ``report`` and ``subject``, a statement's ``value`` and a conflict's
+# ``resolution`` stay raw; job and conflict ``status`` are plain strings.
+# ``StoryBackfill.conflict_list`` is read entry by entry (the schema types its items as any
+# JSON, so the contract test widens it to ``Conflict``); the write answers are strict.
+
+
+@dataclass(frozen=True)
+class TurnRange(Model):
+    """``TurnRange``: the turns a backfill covers, both ends inclusive."""
+
+    from_turn: int
+    to_turn: int
+
+
+@dataclass(frozen=True)
+class Estimate(Model):
+    """``Estimate``: a backfill's estimated model calls, tokens and duration."""
+
+    model_calls: int
+    tokens: int
+    duration_s: float
+
+
+@dataclass(frozen=True)
+class BackfillProgress(Model):
+    """``Progress``: a backfill's phase, its chunks done of the total, and the turns it has
+    reconciled through of the last one it covers."""
+
+    phase: str
+    chunks_done: int
+    chunks_total: int
+    reconciled_through_turn: int | None
+    last_turn: int
+
+
+@dataclass(frozen=True)
+class ConflictCounts(Model):
+    """``ConflictCounts``: a backfill's conflicts by status."""
+
+    open: int = 0
+    resolved: int = 0
+    uncertain: int = 0
+
+
+@dataclass(frozen=True)
+class Recommended(Model):
+    """``Recommended``: the statement a conflict recommends (``choose``) and why."""
+
+    choose: str
+    reason: str = "last_mention"
+
+
+@dataclass(frozen=True)
+class ConflictStatement(Model):
+    """``Statement``: one quoted statement a backfill conflict weighs: where it was said, by whom
+    and from which source, and the value it states (raw)."""
+
+    statement_id: str
+    event_id: str | None
+    turn: int
+    position: int
+    speaker: str | None
+    source: str
+    quote: str | None
+    value: Any
+
+
+@dataclass(frozen=True)
+class BackfillConflict(Model):
+    """``Conflict`` (#230): statements a backfill found that disagree about ``subject`` (raw),
+    its recommendation and, once resolved, the resolution (raw), who resolved it and when."""
+
+    id: str
+    status: str
+    subject: dict[str, Any]
+    statements: list[ConflictStatement]
+    recommended: Recommended | None
+    resolution: dict[str, Any] | None
+    resolved_by: str | None
+    resolved_at: str | None
+
+
+@dataclass(frozen=True)
+class StoryBackfill(Model):
+    """``epistrel__core__backfill__Backfill`` (FR-PROF-9): the story's backfill: its status and
+    kind, the capabilities and turns it covers, its progress and conflict counts, who asked and
+    when, its error, its ``report`` (raw) and ``conflict_list``. ``from_json`` reads
+    ``conflict_list`` entry by entry (E15)."""
+
+    id: str
+    status: str
+    kind: str
+    capabilities: list[str]
+    range: TurnRange
+    progress: BackfillProgress
+    conflicts: ConflictCounts
+    requested_by: str
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    error: str | None
+    conflict_list: list[BackfillConflict] = field(default_factory=list)
+    report: dict[str, Any] = field(default_factory=dict)
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("conflict_list", BackfillConflict),))
+
+
+@dataclass(frozen=True)
+class GapFillPreview(Model):
+    """``epistrel__core__backfill__Preview``: what a gap fill would do: whether it is needed,
+    its estimate, the turns and the capabilities."""
+
+    needed: bool
+    estimate: Estimate
+    range: TurnRange
+    capabilities: list[str]
+
+
+@dataclass(frozen=True)
+class GapFill(Model):
+    """``GapFillBody``: a gap fill's two stages, or a paused backfill's resume. ``backfill`` is
+    raw: a :class:`GapFillPreview` (read through :attr:`preview`) or the resume's own object
+    (the schema's member is ``Preview | object | null``). ``started``: the 202's queued
+    backfill. A resume's preview has ``conflicts_open`` and the open ``conflicts``; its apply
+    ``conflicts_made_uncertain``. A write answer: strict (E15)."""
+
+    timeline_revision: int
+    applied: bool
+    backfill: Any
+    conflicts: list[BackfillConflict] | None = None
+    conflicts_made_uncertain: int | None = None
+    conflicts_open: int | None = None
+    idempotency_key: str | None = None
+    started: BackfillStarted | None = None
+
+    @property
+    def preview(self) -> GapFillPreview | None:
+        return GapFillPreview.from_json(self.backfill)
+
+
+@dataclass(frozen=True)
+class BackfillCancelled(Model):
+    """``BackfillCancelledBody``: the backfill after a cancel (parsed strictly)."""
+
+    timeline_revision: int
+    backfill: StoryBackfill
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class BackfillConflictResolved(Model):
+    """``epistrel__api__routes__backfill__ResolvedBody``: the conflict after its resolution and
+    the backfill's state (raw)."""
+
+    timeline_revision: int
+    conflict: BackfillConflict
+    backfill: dict[str, Any]
+    idempotency_key: str | None = None
+
+
+# --- M7: certification and evals (#292) ------------------------------------------------------
+#
+# E15: a certification's ``floors_*`` items, ``host``, ``models`` and ``sample_sizes``, and a
+# run's ``estimate``/``report`` stay raw (:meth:`Certification.floors_view` types the floors);
+# an eval run's ``suites``/``requirements`` too. ``EvalRun.source`` is an open enum.
+
+
+@dataclass(frozen=True)
+class RunEstimate(Model):
+    """``RunEstimate``: a certification run's estimated model calls, tokens, duration and cost."""
+
+    model_calls: int
+    tokens: int
+    duration_s: float
+    cost: float | None = None
+
+
+@dataclass(frozen=True)
+class CertificationRunRequested(Model):
+    """``CertificationRunBody``: a profile certification request's two stages: the estimate for
+    the fingerprint and suites (200, no ``run_id``), or with ``confirm`` the queued run and its
+    job (202)."""
+
+    config_revision: int
+    estimate: RunEstimate
+    fingerprint: str
+    suites: list[str]
+    idempotency_key: str | None = None
+    job_id: str | None = None
+    run_id: str | None = None
+
+
+@dataclass(frozen=True)
+class StoryCertificationRunRequested(CertificationRunRequested):
+    """``StoryCertificationRunBody``: a story certification request's answer, plus the story's
+    revision (keyword-only: required after the parent's defaults)."""
+
+    timeline_revision: int = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class CertificationRun(Model):
+    """``CertificationRun``: one certification run: what it certifies (fingerprint, profile
+    version, story), its suites, seeds and sample, the estimate (raw), status and job, the
+    certification it made and its report (raw), who asked and when, and its error."""
+
+    id: str
+    kind: str
+    fingerprint: str
+    profile_id: str
+    profile_version: int
+    story_id: str | None
+    suites: list[str]
+    seeds: int
+    sample: int | None
+    estimate: dict[str, Any]
+    status: str
+    job_id: str | None
+    certification_id: str | None
+    report: dict[str, Any] | None
+    requested_by: str
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    error: str | None
+
+
+@dataclass(frozen=True)
+class FloorResult(Model):
+    """``FloorResult``: one floor a certification checked: the metric and rule, the floor and
+    the measured mean, spread, samples, seeds and upper bound, the verdict and the intervention
+    type. A typed view of a :class:`Certification`'s raw floor items."""
+
+    metric_id: str
+    rule: str
+    n: int
+    seeds: int
+    verdict: str
+    floor: float | None = None
+    intervention_type: str | None = None
+    mean: float | None = None
+    sd: float | None = None
+    upper_bound_95: float | None = None
+
+
+@dataclass(frozen=True)
+class Certification(Model):
+    """``Certification`` (FR-PROF-16): a certification record: the fingerprint, profile version
+    and preset it certifies, the models (raw), the floors passed, failed and insufficient (raw
+    items, :meth:`floors_view`), the intervention types, the judge, sample sizes and seeds, the
+    model tier, host (raw) and report, when it ran and was recorded, and its status and
+    invalidation."""
+
+    id: str
+    fingerprint: str
+    profile_id: str | None
+    profile_version: int | None
+    preset: str | None
+    models: dict[str, Any]
+    quality_settings_hash: str | None
+    floors_passed: list[dict[str, Any]]
+    floors_failed: list[dict[str, Any]]
+    floors_insufficient: list[dict[str, Any]]
+    intervention_types_covered: list[str]
+    intervention_types_insufficient: list[str]
+    judge_calibrated: bool
+    sample_sizes: dict[str, Any]
+    seed_count: int
+    model_tier: str
+    host: dict[str, Any]
+    report_path: str | None
+    report_sha256: str
+    run_at: str
+    recorded_at: str
+    recorded_via: str
+    status: str
+    invalidated_at: str | None
+    invalidated_reason: str | None
+    invalidated_by_run_id: str | None
+
+    def floors_view(self) -> tuple[list[FloorResult], list[FloorResult], list[FloorResult]]:
+        """``(passed, failed, insufficient)`` as :class:`FloorResult`, an item that doesn't
+        parse skipped."""
+
+        def typed(items: list[dict[str, Any]]) -> list[FloorResult]:
+            return [f for f in (FloorResult.from_json(i) for i in items) if f is not None]
+
+        return (
+            typed(self.floors_passed),
+            typed(self.floors_failed),
+            typed(self.floors_insufficient),
+        )
+
+
+@dataclass(frozen=True)
+class CertificationPage(Model):
+    """``CertificationPage``: a page of certifications. ``from_json`` reads ``items`` entry by
+    entry (E15)."""
+
+    items: list[Certification]
+    next_cursor: str | None = None
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", Certification),))
+
+
+@dataclass(frozen=True)
+class CertificationImported(Model):
+    """``CertificationImportedBody``: an imported certification record, and whether it was
+    stored (``False``: the same record was already there)."""
+
+    config_revision: int
+    certification_id: str
+    stored: bool
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CertificationInvalidated(Model):
+    """``CertificationInvalidatedBody``: a certification after its invalidation."""
+
+    config_revision: int
+    certification_id: str
+    status: str
+    invalidated_reason: str
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class EvalMetric(Model):
+    """``EvalMetric``: one metric of an eval run: its value against its floor, the requirement it
+    measures, its sample size and verdict."""
+
+    id: str
+    verdict: str
+    floor: float | None = None
+    requirement: str | None = None
+    sample_size: int | None = None
+    value: float | None = None
+
+
+@dataclass(frozen=True)
+class EvalRun(Model):
+    """``EvalRun``: one eval run report: when and where it ran, against which model, preset and
+    fingerprint, its suites and requirements (raw, E15: any JSON value, a dict when well formed),
+    sample size, seeds, metrics and verdict.
+    ``source`` (``committed`` or ``certification``) is an open enum. ``run_id`` is a report
+    path stem, not a ULID (E16)."""
+
+    run_id: str
+    date: str | None = None
+    fingerprint: str | None = None
+    host: str | None = None
+    metrics: list[EvalMetric] | None = None
+    model: str | None = None
+    model_version: str | None = None
+    preset: str | None = None
+    requirements: Any = field(default_factory=dict)  # raw (E15): a non-dict is shown whole
+    sample_size: int | None = None
+    seeds: list[int] | None = None
+    source: str = open_enum(default="committed")
+    suites: Any = field(default_factory=dict)  # raw (E15): a non-dict is shown whole
+    verdict: str | None = None
+
+
+@dataclass(frozen=True)
+class EvalRunPage(Model):
+    """``EvalRunPage``: a page of eval runs. ``from_json`` reads ``items`` entry by entry
+    (E15)."""
+
+    items: list[EvalRun]
+    next_cursor: str | None = None
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("items", EvalRun),))
+
+
+# --- M7: pruning, export and import (#292) ---------------------------------------------------
+#
+# E15: prune ``retained``, ``to_delete`` (viewed through :meth:`PruneImpact.targets`),
+# ``lost_operations``, ``suggestions`` and ``deleted``, export ``manifest``/``error`` and import
+# ``report``/``error``/``progress`` stay raw. ``ImportJob.status`` and an exclusion's ``reason``
+# are open enums; every other job ``status`` is a plain string.
+
+
+@dataclass(frozen=True)
+class PrunePosition(Model):
+    """``Position``: a turn and variant."""
+
+    turn: int
+    variant: int
+
+
+@dataclass(frozen=True)
+class PruneTarget(Model):
+    """``PruneTarget``: a chain a pruning would delete (``kind``: ``discarded_tail`` or
+    ``dormant_continuation``, an open enum), from and to which positions (the JSON's
+    ``from``/``to``), its operation count and when it left the active chain."""
+
+    id: str
+    kind: str = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    from_position: PrunePosition = field(metadata={JSON_NAME: "from"})
+    to_position: PrunePosition = field(metadata={JSON_NAME: "to"})
+    operations: int
+    flipped_at: str | None = None
+
+
+@dataclass(frozen=True)
+class PruneExcluded(Model):
+    """``Excluded``: a target the pruning leaves alone and why (``reason``, an open enum), with
+    the amendments or settling changes that hold it."""
+
+    target: str
+    reason: str = field(metadata={OPEN_ENUM: True})
+    amendment_ids: list[str] = field(default_factory=list)
+    settling_change_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PruneImpact(Model):
+    """``PruneImpact``: what a pruning would delete (``to_delete``, raw: target lists by group,
+    :meth:`targets`), the operations that would stop being possible, what is retained, the
+    targets excluded and the suggestions (raw, E15)."""
+
+    to_delete: dict[str, Any]
+    lost_operations: list[dict[str, Any]]
+    retained: dict[str, Any]
+    excluded: list[PruneExcluded]
+    suggestions: list[dict[str, Any]]
+
+    def targets(self) -> dict[str, list[PruneTarget]]:
+        """``to_delete`` typed, by group; an entry (or a group) that doesn't parse is skipped."""
+        out: dict[str, list[PruneTarget]] = {}
+        for group, items in self.to_delete.items():
+            if isinstance(items, list):
+                parsed = (PruneTarget.from_json(i) for i in items)
+                out[group] = [t for t in parsed if t is not None]
+        return out
+
+
+@dataclass(frozen=True)
+class PruneResult(Model):
+    """``PruneResult``: an applied pruning: its operation, its id, the revision after it and
+    what it deleted (raw)."""
+
+    operation_id: str
+    prune_id: str
+    timeline_revision: int
+    deleted: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class Pruned(Model):
+    """``PruneBody`` (FR-STORE-19,32): a pruning's two stages: ``applied`` false holds it with
+    the ``impact`` report (``result`` ``None``). A write answer: strict (E15)."""
+
+    timeline_revision: int
+    applied: bool
+    impact: PruneImpact
+    result: PruneResult | None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class PruneRun(Model):
+    """``PruneRun``: one past pruning: its trigger (``manual`` or ``policy``, a plain string), the
+    policy and impact (raw), who and when, and the revision after it."""
+
+    prune_id: str
+    trigger: str
+    policy: dict[str, Any] | None
+    principal: str
+    at: str
+    timeline_revision: int | None
+    impact: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class PruneRuns(Model):
+    """``PruneRuns``: the story's past prunings. ``from_json`` reads ``prune_runs`` entry by
+    entry (E15)."""
+
+    prune_runs: list[PruneRun]
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("prune_runs", PruneRun),))
+
+
+@dataclass(frozen=True)
+class ExportStarted(Model):
+    """``ExportStartedBody``: an export job queued (202)."""
+
+    timeline_revision: int
+    job_id: str
+    story_id: str
+    status: str
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ExportJob(Model):
+    """``ExportJob``: an export job's status, the revision it exported, the bundle's manifest
+    (raw), size, digest and expiry, and its error (raw)."""
+
+    job_id: str
+    story_id: str
+    status: str
+    exported_revision: int | None
+    manifest: dict[str, Any] | None
+    size: int | None
+    sha256: str | None
+    expires_at: str | None
+    error: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class ImportImpact(Model):
+    """``ImportImpactBody``: an import its profile's impact report held back (200, ``applied``
+    false, nothing created). A write answer: strict (E15)."""
+
+    config_revision: int
+    impact: ImpactReport
+    applied: bool = False
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ImportStarted(Model):
+    """``ImportStartedBody``: an import job queued (202) and the story it is creating."""
+
+    config_revision: int
+    job_id: str
+    status: str
+    story_id: str
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ImportJob(Model):
+    """``ImportJob``: an import job's status (an open enum), the story it created (``None`` once
+    refused), its stage, progress (raw: ``{done, total}`` as the Engine counts it; ``None`` when
+    absent), report and error (raw)."""
+
+    job_id: str
+    status: str = field(metadata={OPEN_ENUM: True})
+    story_id: str | None
+    error: dict[str, Any] | None = None
+    progress: Any = None
+    report: dict[str, Any] | None = None
+    stage: str | None = None
+
+
+# --- M7: story operations, outbox and definitions (#292) -------------------------------------
+#
+# E15: an outbox row's ``effect`` stays raw; operation ``kind``/``status`` and outbox
+# ``status``/``membership`` are plain strings; ``label`` and ``output_viewpoint`` are open
+# enums. ``StoryOperations.operations`` and ``Outbox.rows`` are read entry by entry.
+
+
+@dataclass(frozen=True)
+class OperationSummary(Model):
+    """``OperationSummaryBody``: one of the story's operations as its list shows it."""
+
+    operation_id: str
+    kind: str
+    label: str | None = field(metadata={OPEN_ENUM: True})  # spelled out: required fields follow
+    status: str
+    staged: bool
+    narrative_turn: int | None
+    turn_variant: int | None
+    principal: str
+    started_at: str
+    committed_at: str | None
+
+
+@dataclass(frozen=True)
+class StoryOperations(Model):
+    """``OperationsBody``: a page of the story's operations (``next_after`` continues).
+    ``from_json`` reads ``operations`` entry by entry (E15)."""
+
+    story_id: str
+    operations: list[OperationSummary]
+    next_after: str | None
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("operations", OperationSummary),))
+
+
+@dataclass(frozen=True)
+class OutboxPosition(Model):
+    """``OutboxPosition``: where an outbox row was written (``turn``/``variant`` ``None`` for an
+    inter-turn row before the first turn)."""
+
+    turn: int | None
+    variant: int | None
+    slot_k: int
+    beat: int
+    step: int
+
+
+@dataclass(frozen=True)
+class OutboxRow(Model):
+    """``OutboxRow`` (FR-EXT-10): one external effect the story dispatched: provider, status and
+    membership (plain strings), position, the effect (raw) and value, its attempts, claim and
+    send times, outcome, and its compensation links. A row an erasure redacted keeps only the
+    required members (``redacted``)."""
+
+    outbox_id: str
+    provider: str
+    status: str
+    position: OutboxPosition
+    membership: str
+    created_at: str
+    attempts: int = 0
+    claimed_at: str | None = None
+    compensated_by: str | None = None
+    compensates: str | None = None
+    contingent: bool = False
+    effect: dict[str, Any] | None = None
+    outcome: ListingOutcome | None = None
+    redacted: bool = False
+    sent_at: str | None = None
+    value: str | None = None
+
+
+@dataclass(frozen=True)
+class Outbox(Model):
+    """``OutboxBody``: a page of the story's outbox rows (``next_after`` continues), always read
+    as omniscient. ``from_json`` reads ``rows`` entry by entry (E15)."""
+
+    rows: list[OutboxRow]
+    next_after: str | None
+    output_viewpoint: str = open_enum(default="omniscient")
+
+    unparsed: ClassVar[dict[str, list[Any] | dict[str, Any]]] = {}
+
+    @classmethod
+    def from_json(cls, obj: object) -> Self | None:
+        return _lenient_page(cls, obj, (("rows", OutboxRow),))
+
+
+@dataclass(frozen=True)
+class ListingResolved(Model):
+    """``epistrel__api__routes__reconciliation__ResolvedBody``: a listing resolved by hand
+    (``applied_elsewhere`` or ``abandoned``) at an inter-turn slot, its reasons, operation and
+    the story's revision."""
+
+    timeline_revision: int
+    request_id: str
+    resolution: str
+    reasons: list[str]
+    position: str
+    slot: dict[str, int]
+    operation_id: str
+    idempotency_key: str | None = None
+
+    @property
+    def slot_position(self) -> NarrativePosition | None:
+        return _five_part(self.slot)
+
+
+@dataclass(frozen=True)
+class StateDefinition(Model):
+    """``StateDefinitionBody``: a State's stored definition (raw), who declared it, the
+    configuration revision it was last written at (#329's D8 base) and the story's revision."""
+
+    name: str
+    definition: dict[str, Any]
+    created_by: str
+    config_revision: int | None
+    timeline_revision: int
+    output_viewpoint: str
+
+
+# --- M7: typed refusal details (#292) ---------------------------------------------------------
+#
+# Not schema components (no contract rows): readers of the ``details`` a refusal carries, so
+# pages never pick through ``EngineError.details`` themselves. Each ``from_details`` returns
+# ``None`` only for a ``details`` that isn't a mapping; any mapping (``{}`` included) gives an
+# object whose malformed members are ``None`` (or empty), never an exception.
+
+
+def _detail_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _detail_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+@dataclass(frozen=True)
+class DoneTotal:
+    """A ``{done, total}`` progress pair."""
+
+    done: int
+    total: int
+
+    @classmethod
+    def from_json(cls, value: object) -> DoneTotal | None:
+        if not isinstance(value, Mapping):
+            return None
+        done, total = _detail_int(value.get("done")), _detail_int(value.get("total"))
+        return None if done is None or total is None else cls(done, total)
+
+
+@dataclass(frozen=True)
+class RewriteStaleDetails:
+    """409 ``rewrite_stale``'s details (#299): ``reason`` (``base_mismatch``,
+    ``pipeline_changed``, or absent for a recomputed plan), the new ``base_revision`` and
+    ``preview``, the ``new_questions`` that parse, the carried answers (raw), the ``reasons``
+    (``[]`` when not a list) and the ``stale_count``."""
+
+    reason: str | None
+    base_revision: int | None
+    preview: RewritePreview | None
+    new_questions: list[RewriteQuestion]
+    carried_answers: Any
+    reasons: list[Any]
+    stale_count: int | None
+
+    @classmethod
+    def from_details(cls, details: object) -> RewriteStaleDetails | None:
+        if not isinstance(details, Mapping):
+            return None
+        raw_questions = details.get("new_questions")
+        questions = raw_questions if isinstance(raw_questions, list) else []
+        reasons = details.get("reasons")
+        return cls(
+            reason=_detail_str(details.get("reason")),
+            base_revision=_detail_int(details.get("base_revision")),
+            preview=RewritePreview.from_json(details.get("preview")),
+            new_questions=[
+                q for q in (RewriteQuestion.from_json(e) for e in questions) if q is not None
+            ],
+            carried_answers=details.get("carried_answers"),
+            reasons=list(reasons) if isinstance(reasons, list) else [],
+            stale_count=_detail_int(details.get("stale_count")),
+        )
+
+
+@dataclass(frozen=True)
+class ImportingDetails:
+    """409 ``story_importing``'s details (E10): the story, its import job, the job's stage and
+    progress (``None`` unless both ``done`` and ``total`` are integers)."""
+
+    story_id: str | None
+    job_id: str | None
+    stage: str | None
+    progress: DoneTotal | None
+
+    @classmethod
+    def from_details(cls, details: object) -> ImportingDetails | None:
+        if not isinstance(details, Mapping):
+            return None
+        return cls(
+            story_id=_detail_str(details.get("story_id")),
+            job_id=_detail_str(details.get("job_id")),
+            stage=_detail_str(details.get("stage")),
+            progress=DoneTotal.from_json(details.get("progress")),
+        )
+
+
+@dataclass(frozen=True)
+class PauseDetails:
+    """409 ``story_paused``'s details for a backfill (E10's backfill branch): the ``cause``
+    (``backfill`` or ``backfill_conflicts``), the job, its progress (raw: a backfill reports
+    its own shape; a rating check's ``{done, total}`` reads unchanged), and while it waits on
+    the author the open conflicts and the backfill's id."""
+
+    cause: str | None
+    job_id: str | None
+    progress: dict[str, Any] | None
+    conflicts_open: int | None
+    backfill_id: str | None
+
+    @classmethod
+    def from_details(cls, details: object) -> PauseDetails | None:
+        if not isinstance(details, Mapping):
+            return None
+        progress = details.get("progress")
+        return cls(
+            cause=_detail_str(details.get("cause")),
+            job_id=_detail_str(details.get("job_id")),
+            progress=dict(progress) if isinstance(progress, Mapping) else None,
+            conflicts_open=_detail_int(details.get("conflicts_open")),
+            backfill_id=_detail_str(details.get("backfill_id")),
+        )

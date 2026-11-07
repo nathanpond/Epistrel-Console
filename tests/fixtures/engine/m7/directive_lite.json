@@ -1,0 +1,18 @@
+{
+  "timeline_revision": 21,
+  "directive_id": "01JM7DV0000000000000000004",
+  "classification": "durable",
+  "disposition": "applied",
+  "position": "4⁺1",
+  "steer_text": null,
+  "rewrite_session": null,
+  "hints": [],
+  "applied": {
+    "author_fact": {
+      "id": "01JM7FA0000000000000000005",
+      "position": "4⁺1",
+      "text": "It has been raining since dawn."
+    }
+  },
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

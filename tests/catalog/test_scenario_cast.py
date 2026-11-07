@@ -1342,15 +1342,23 @@ def nested_details(html: str, seed_id: str) -> str:
     return html[start : html.index('value="remove:', start)]
 
 
+def test_nested_note_has_no_606(operator_client: Client, engine: FakeEngine) -> None:
+    """#328: nested beliefs read back now (#327), so the note keeps only the module line."""
+    from console.forms.scenario_cast import NESTED_NOTE
+
+    assert NESTED_NOTE == "Needs the nested_beliefs module; without it the seed stays deferred."
+    nested = nested_details(m5_page(operator_client, engine).content.decode(), M5.format(4))
+    assert NESTED_NOTE in nested
+    assert "#606" not in nested
+    assert "read nested beliefs back" not in nested
+
+
 def test_nested_details_open_for_kind_nested_or_values(
     operator_client: Client, engine: FakeEngine
 ) -> None:
     response = m5_page(operator_client, engine)
     html = response.content.decode()
-    note = (
-        "Needs the nested_beliefs module; without it the seed stays deferred. The Console "
-        "can&#x27;t read nested beliefs back yet (Engine #606)."
-    )
+    note = "Needs the nested_beliefs module; without it the seed stays deferred."
     opened = '<details class="nested-belief" open><summary>Nested belief</summary>'
     closed = '<details class="nested-belief"><summary>Nested belief</summary>'
     nested = nested_details(html, M5.format(4))  # kind nested, with content

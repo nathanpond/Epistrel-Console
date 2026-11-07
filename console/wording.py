@@ -33,6 +33,13 @@ matched on ``code`` alone:
 - ``revision_conflict`` → ``console.timeline.reload_message(details.current_revision)``;
 - ``erased_subject_referenced`` → :data:`ERASED_TEXT` "This text refers to an erased subject —
   nothing was saved" (#48's);
+- ``pruned`` (409, #293: a swap, untruncate or fork of a chain a prune discarded, FR-STORE-19)
+  → :data:`PRUNED_TEXT` "That chain was pruned — its records are gone, so it can't be restored",
+  no URL;
+- ``story_importing`` (409, E10, #295: the story is being imported) →
+  ``console.portability.importing_refusal(exc)``: "This story is being imported — its pages open
+  once the import ends (<stage>, <done>/<total>)", linked to its import job (``engine:import-job``,
+  "" while unregistered);
 - ``idempotency_conflict``, any other code, and a non-``EngineError`` → ``None``: the caller
   renders #43's ``panel_for(exc)``.
 
@@ -71,8 +78,8 @@ codes, beside the field they name, using convention 18 first. Two more wordings 
   panel.
 
 Where the Console reconstructs or omits what the Engine doesn't serve, the page says so once,
-naming the request: nested beliefs (#606) on Knowledge (#189's shell notice), the perception
-trace (#607) on the grid. Respond's undeclared 409 (#608) is noted in code comments only.
+naming the request: the perception trace (#607) on the grid. Respond's undeclared 409 (#608) is
+noted in code comments only.
 """
 
 from collections.abc import Iterable, Mapping
@@ -90,6 +97,7 @@ MINOR = "minor"
 MINOR_SUFFIX = " (minor)"
 UNKNOWN_CHARACTER = "That character isn't in this story's cast"
 ERASED_TEXT = "This text refers to an erased subject — nothing was saved"
+PRUNED_TEXT = "That chain was pruned — its records are gone, so it can't be restored"  # #293
 
 
 def humanised(value: str) -> str:
@@ -169,4 +177,10 @@ def write_refusal(exc: EngineClientError, story_id: str, verb_phrase: str) -> Wr
         return WriteRefusal(reload_message(exc.details.get("current_revision")))
     if exc.code == "erased_subject_referenced":
         return WriteRefusal(ERASED_TEXT)
+    if exc.code == "pruned":
+        return WriteRefusal(PRUNED_TEXT)
+    if exc.code == "story_importing":
+        from console.portability import importing_refusal  # portability imports WriteRefusal
+
+        return importing_refusal(exc)
     return None

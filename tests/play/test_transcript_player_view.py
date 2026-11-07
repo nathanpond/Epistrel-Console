@@ -631,7 +631,7 @@ def test_tab_links_keep_transcript_player_view(operator_client: Client, engine: 
         '#play-form-area [name=transcript_player_view]"'
     )
     tabs = html.split('<nav class="tabs">')[1].split("</nav>")[0]
-    assert tabs.count(include) == 2
+    assert tabs.count(include) == 3  # Turn, Ingest and #300's Direct
     engine.reset()
     response = operator_client.get(
         f"/stories/{STORY}/",

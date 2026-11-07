@@ -20,6 +20,17 @@ at every viewpoint) and whether it is an unfinished staged turn (D13's Incomplet
 "no reply"); on an omniscient read each beat carries the changes it committed (K6).
 
 #53 builds its timeline controls onto these groups.
+
+M7 (#304): the history **as originally recorded** (``view=as_recorded``, FR-STORE-23) reuses
+:func:`turn_groups` for its items; this module holds its wording (:data:`AS_RECORDED_NOTE`,
+:data:`AS_RECORDED_CONTROLS_NOTE`, :data:`ERASED_SINCE`, the checkpoint refusals), the checkpoint
+reader :func:`parse_boundary` (D7's ``N`` / ``N+k``), :func:`checkpoint_text`,
+:func:`erasure_rows` and :func:`derived_rows` (``derived`` raw, E15; E23's rules). E2's
+``AS_RECORDED_LINE`` and ``OMNISCIENT_REQUIRED_TEXT`` stay in :mod:`console.rewrites` (E1).
+
+M7 (#305): :func:`line_edit_url` builds a row's "Edit this line…" link (``Row.edit_url``) into
+the line-edit page (``stories:line-edit``, D19), which :func:`turn_groups` sets when its caller
+passes ``next_url``.
 """
 
 import json
@@ -30,7 +41,7 @@ from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils.text import slugify
 
 from console.effects import INCOMPLETE_TEXT, INCOMPLETE_TITLE, engine_operation_url
@@ -48,11 +59,14 @@ from console.engine.models import (
     Verdict,
     beat_entries,
 )
+from console.ids import is_ulid
 from console.inspect import retrieval_url
 from console.models import EngineOperation
 from console.notices import NoticeCards
+from console.raw import EMPTY, plural
 from console.turn_trace import MorePart, TurnTrace, declared_beat, inline_json
 from console.wording import character_label, humanised
+from console.world import slot_turn_text
 
 if TYPE_CHECKING:
     from console.feedback import FeedbackWidget
@@ -330,6 +344,8 @@ class Row:
     # the raw entries that didn't parse.
     beat_changes: tuple[StateChangeRow, ...] = ()
     beat_changes_unparsed: tuple[Any, ...] = ()
+    # #305: "Edit this line…" (``stories:line-edit``), set by :func:`line_edit_url`.
+    edit_url: str | None = None
 
     @property
     def beat_effects_summary(self) -> str:
@@ -397,6 +413,42 @@ def is_reply(item: HistoryItem) -> bool:
     return item.kind == REPLY_KIND or item.channel in REPLY_CHANNELS
 
 
+LINE_EDIT_NAME = "stories:line-edit"
+AS_RECORDED_VIEW = "as_recorded"
+
+
+def line_edit_url(
+    story_id: str,
+    item: HistoryItem,
+    *,
+    chain: str | None,
+    view: str | None = None,
+    next_url: str = "",
+) -> str | None:
+    """#305: the row's "Edit this line…" link, ``stories:line-edit?event_id=<message_id>&turn=
+    <turn>&next=<next_url>``. ``None`` (no link) while the name is unregistered (D19), on a
+    dormant chain's view (``chain`` set: the Engine answers ``record_inactive``), on #304's
+    as-recorded view (``view == "as_recorded"``), for an audit record or erasure marker, a
+    redacted or quarantined item, a ``message_id`` that isn't a ULID, and the setup (turn
+    ``None`` or 0). The caller passes ``None`` itself for a ``same_message`` row."""
+    if chain or view == AS_RECORDED_VIEW:
+        return None
+    if item.channel == AUDIT_CHANNEL or item.kind in (REJECTED_KIND, MARKER_KIND):
+        return None
+    if item.redacted or item.quarantined or not item.turn:
+        return None
+    if not is_ulid(item.message_id) or not story_id:
+        return None
+    try:
+        base = reverse(LINE_EDIT_NAME, args=[story_id])
+    except NoReverseMatch:
+        return None
+    query = {"event_id": item.message_id, "turn": str(item.turn)}
+    if next_url:
+        query["next"] = next_url
+    return f"{base}?{urlencode(query)}"
+
+
 def turn_groups(
     history: History,
     items: Sequence[HistoryItem],
@@ -407,6 +459,9 @@ def turn_groups(
     actor_filtered: bool,
     omniscient: bool = False,
     story_id: str = "",
+    chain: str | None = None,
+    view: str | None = None,
+    next_url: str | None = None,
 ) -> list[TurnGroup]:
     """The page's turns in ascending order. Audit records render under their turn only for
     turns on this page (an erasure marker with no turn under turn 0, which only the oldest page
@@ -416,7 +471,11 @@ def turn_groups(
 
     #254: each group gets its ``TurnSummary``'s State changes (the first summary of a
     ``(turn, variant)`` wins) and ``incomplete``; with ``omniscient``, each row its beat's
-    changes. ``labels`` name the scopes (C4); ``story_id`` builds the outbox links (D11)."""
+    changes. ``labels`` name the scopes (C4); ``story_id`` builds the outbox links (D11).
+
+    #305: with ``next_url`` given (the History view passes its own URL), each row's
+    "Edit this line…" link comes from :func:`line_edit_url` (``chain`` and ``view`` gate it);
+    a ``same_message`` row never carries one. Every other caller leaves it out: no link."""
     from console.renders import is_reaction, render_order_line  # console.renders imports us
     from console.turn_world import state_change_rows  # console.turn_world → console.world
 
@@ -469,6 +528,11 @@ def turn_groups(
             ),
             beat_changes=beat_changes,
             beat_changes_unparsed=beat_unparsed,
+            edit_url=(
+                None
+                if same or next_url is None
+                else line_edit_url(story_id, item, chain=chain, view=view, next_url=next_url)
+            ),
         )
         owner = group(item.turn or 0, item.variant)
         if item.kind == REPLY_KIND and not any(r.item.kind == REPLY_KIND for r in owner.rows):
@@ -904,3 +968,106 @@ def chain_tip(chains: Sequence[VariantChain], variant: str) -> int | None:
         if chain_key(chain) == variant:
             return chain.tip_turn
     return None
+
+
+# --- As originally recorded (#304) --------------------------------------------------------------
+
+AS_RECORDED_NOTE = (
+    "What the story held when this checkpoint committed, before any later amendment, discard or "
+    "derived record. Read-only: rewrites, swaps and forks act on the corrected story."
+)
+AS_RECORDED_CONTROLS_NOTE = (
+    "Not used on the as-recorded view: every category is shown, audit included"
+)
+ERASED_SINCE = "Erased since: {count} — erased content can't be shown as it was recorded"
+CHECKPOINT_NOT_FOUND = "No checkpoint at {checkpoint} was ever committed on this chain"
+NO_CHECKPOINT_YET = "No committed checkpoint on this chain"
+CHECKPOINT_INCOMPLETE = (
+    "That checkpoint's staged turn is still under way — try again once it settles"
+)
+INVALID_VIEW_TEXT = "The Engine didn't recognise this history view (a Console bug; report it)"
+DERIVED_KINDS = (
+    ("facts", "Facts"),
+    ("beliefs", "Beliefs"),
+    ("memories", "Memories"),
+    ("states", "States"),
+)
+_CHECKPOINT = re.compile(r"^([0-9]+)(?:\+([0-9]+))?$")
+
+
+def parse_boundary(text: str | None) -> tuple[int, int | None] | None:
+    """D7's cleaned boundary ``"12"`` / ``"12+1"`` → ``(12, None)`` / ``(12, 1)``; anything
+    else (``None``, blank, malformed) → ``None``."""
+    if not isinstance(text, str):
+        return None
+    match = _CHECKPOINT.match(text)
+    if match is None:
+        return None
+    k = match.group(2)
+    return int(match.group(1)), int(k) if k is not None else None
+
+
+def checkpoint_text(checkpoint: str | None, latest_turn: int | None = None) -> str:
+    """The header's checkpoint: D7's "turn 2" / "turn 2⁺¹" for a requested checkpoint, else
+    "the latest (turn <n>)" (the answer's ``as_of``); a malformed one as given."""
+    parsed = parse_boundary(checkpoint)
+    if parsed is not None:
+        return slot_turn_text(*parsed)
+    if checkpoint:
+        return checkpoint
+    return f"the latest (turn {latest_turn if latest_turn is not None else EMPTY})"
+
+
+@dataclass(frozen=True)
+class ErasureRow:
+    """One erasure marker of an as-recorded answer (``{erasure_id, at}``, E15 raw): each
+    missing member reads "—" (E23), with the raw entry kept for More when it is malformed."""
+
+    erasure_id: str
+    at: str | None  # the raw ISO time, for ``engine_time``; ``None`` reads "—"
+    raw: Any = None  # the entry, when it isn't a well-formed marker
+
+
+def erasure_rows(markers: object) -> list[ErasureRow]:
+    """The answer's ``erasure_markers`` in the Engine's order; a non-list reads as none."""
+    if not isinstance(markers, list):
+        return []
+    rows = []
+    for entry in markers:
+        found = entry if isinstance(entry, Mapping) else {}
+        erasure_id, at = found.get("erasure_id"), found.get("at")
+        shown_id = erasure_id if isinstance(erasure_id, str) and erasure_id else None
+        shown_at = at if isinstance(at, str) and at else None
+        well_formed = shown_id is not None and shown_at is not None
+        rows.append(ErasureRow(shown_id or EMPTY, shown_at, None if well_formed else entry))
+    return rows
+
+
+def erased_since(count: int) -> str:
+    """ "Erased since: 1 erasure — …" (C11 pluralisation)."""
+    return ERASED_SINCE.format(count=plural(count, "erasure"))
+
+
+@dataclass(frozen=True)
+class DerivedRow:
+    """One "Records at the checkpoint" row: "Facts · 1", the entries raw (E15) for More."""
+
+    key: str
+    label: str
+    count: str  # "1", or "—" for a missing or non-list member
+    entries: tuple[Any, ...] = ()
+
+
+def derived_rows(derived: object) -> list[DerivedRow] | None:
+    """The four rows from the answer's ``derived`` (facts, beliefs, memories, States); ``None``
+    when ``derived`` is null or not an object (the section is left out)."""
+    if not isinstance(derived, Mapping):
+        return None
+    rows = []
+    for key, label in DERIVED_KINDS:
+        value = derived.get(key)
+        if isinstance(value, list):
+            rows.append(DerivedRow(key, label, f"{len(value):,}", tuple(value)))
+        else:
+            rows.append(DerivedRow(key, label, EMPTY))
+    return rows

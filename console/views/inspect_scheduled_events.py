@@ -8,8 +8,7 @@ order:
 1. the shell's effective-config and story reads;
 2. one ``GET /stories/{id}/scheduled-events?viewpoint=<form value>`` (D4's
    :class:`~console.forms.world.WorldViewpointForm`: omniscient by default, never the story's
-   default viewpoint; ``?viewpoint=`` is undeclared in the Engine's OpenAPI, D18, Engine bug
-   nathanpond/Epistrel#682, and sent anyway);
+   default viewpoint; ``?viewpoint=`` is declared since Engine M7, nathanpond/Epistrel#682);
 3. one ``GET /stories/{id}/clock`` for the "Now" and stops lines. Its failure (held included)
    is the plain "Couldn't read the clock" line, logged, and never fails the list.
 

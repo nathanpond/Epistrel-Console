@@ -1,0 +1,17 @@
+{
+  "config_revision": 30,
+  "estimate": {
+    "model_calls": 1200,
+    "tokens": 2400000,
+    "duration_s": 5400.0,
+    "cost": 18.5
+  },
+  "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+  "suites": [
+    "quality",
+    "smoke"
+  ],
+  "job_id": "01JM7JB0000000000000000005",
+  "run_id": "01JM7CR0000000000000000001",
+  "idempotency_key": "01JM7KY0000000000000000001"
+}

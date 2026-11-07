@@ -11,7 +11,7 @@ and the context the rating was given under) or unavailable. HTMX answers replace
 {% else %}
   {% with f=fb.feedback %}
   {% if f %}<p class="feedback-header"><strong>Turn {{ f.turn }}, variant {{ f.variant }}</strong> — rating as {{ f.principal|principal_link }}</p>
-  {% if f.compacted_at %}<p class="muted">Message compacted at {{ f.compacted_at|engine_time }}; the rating is kept</p>{% endif %}{% endif %}
+  {% if f.pruned_at %}<p class="muted">Message pruned at {{ f.pruned_at|engine_time }}; the rating is kept</p>{% endif %}{% endif %}
   {% if fb.notice %}<p class="feedback-notice" role="status">{{ fb.notice }}</p>{% endif %}
   {% if fb.error %}{% include "console/_engine_error.html" with engine_error=fb.error %}{% endif %}
   {% if f %}

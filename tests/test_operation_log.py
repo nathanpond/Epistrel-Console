@@ -713,3 +713,38 @@ def test_engine_label_text() -> None:
     assert engine_label_text("") == ""
     assert engine_label_text("staged_turn") == "Staged turn"
     assert engine_label_text("rating_check") == "Rating check"
+
+
+BACKFILL_JOB = "01JM7JB0000000000000000001"
+
+
+def _backfill(client: EngineClient) -> None:
+    with contextlib.suppress(EngineError):  # the job id is what's under test, not the parse
+        client.start_backfill(STORY, ignore_warnings=True, idempotency_key=KEY)
+
+
+def test_a_started_backfill_records_its_nested_job_id(operator: Any) -> None:
+    """E19 (#292): a 202 whose job id is nested in ``started`` (``start_backfill``) records it
+    as the row's job, ``queued``. **Complement:** a top-level ``job_id`` still wins, and a 202
+    with neither records no job."""
+    started = {"id": "01JM7BF0000000000000000001", "job_id": BACKFILL_JOB, "status": "queued"}
+    nested = {"timeline_revision": 3, "applied": True, "backfill": None, "started": started}
+    for answer in (nested, {**nested, "job_id": "01JM7JB0000000000000000002"}, {"applied": True}):
+        transport = httpx.MockTransport(lambda r, a=answer: httpx.Response(202, json=a))
+        _backfill(client_for(operator, transport))
+    first, top, none = EngineOperation.objects.order_by("id")
+    assert (first.outcome, first.job_id) == (EngineOperation.Outcome.QUEUED, BACKFILL_JOB)
+    assert top.job_id == "01JM7JB0000000000000000002"
+    assert none.job_id is None
+
+
+def test_a_replayed_backfill_start_is_ok(operator: Any) -> None:
+    """A replayed 202 that names its job only through ``started`` is ``ok``, as a replayed job
+    202 is (#81)."""
+    started = {"id": "01JM7BF0000000000000000001", "job_id": BACKFILL_JOB, "status": "queued"}
+    body = {"timeline_revision": 3, "applied": True, "backfill": None, "started": started}
+    headers = {"Idempotent-Replay": "true"}
+    transport = httpx.MockTransport(lambda r: httpx.Response(202, json=body, headers=headers))
+    _backfill(client_for(operator, transport))
+    row = EngineOperation.objects.get()
+    assert (row.outcome, row.replayed, row.job_id) == ("ok", True, BACKFILL_JOB)

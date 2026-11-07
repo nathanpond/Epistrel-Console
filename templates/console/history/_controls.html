@@ -1,7 +1,23 @@
-{# The history controls (#52), inside the GET form; the viewpoint select re-renders this fragment with HTMX so the audit box and the player view (#62) follow it. #}
+{# The history controls (#52), inside the GET form; the viewpoint select re-renders this fragment with HTMX so the audit box and the player view (#62) follow it. The View select (#304) comes first and re-renders it the same way: "As originally recorded" disables the viewpoint (E2's AS_RECORDED_LINE) and every control the Engine doesn't read there (one note; each submitted value rides in a hidden input so switching back restores it), and Checkpoint replaces "As of turn". #}
 {% with form=controls.form %}
 <div id="history-controls">
   {% if controls.show_errors and form.non_field_errors %}<div class="errors">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="field field-view">{{ form.view.label_tag }} {{ form.view }}{% if controls.show_errors %}{{ form.view.errors }}{% endif %}</div>
+  {% if form.as_recorded %}
+  <div class="field field-viewpoint"><label for="id_viewpoint">Viewpoint:</label> <select name="viewpoint" id="id_viewpoint" disabled>{% for value, label in form.viewpoint.field.choices %}<option value="{{ value }}"{% if value == "omniscient" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select> <small class="muted as-recorded-line">{{ controls.as_recorded_line }}</small></div>
+  <div class="field field-player_view"><label for="id_player_view">Player view:</label> <select name="player_view" id="id_player_view" disabled>{% for value, label in form.player_view.field.choices %}<option value="{{ value }}"{% if form.player_view.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% if form.player_view_kept %}<input type="hidden" name="player_view" value="{{ form.player_view_kept }}">{% endif %}</div>
+  <div class="field field-checkpoint">{{ form.checkpoint.label_tag }} {{ form.checkpoint }} <small class="muted">{{ form.checkpoint.help_text }}</small>
+    {% if controls.show_errors %}{{ form.checkpoint.errors }}{% endif %}{% if controls.checkpoint_error %}<p class="error checkpoint-error">{{ controls.checkpoint_error }}</p>{% endif %}</div>
+  <div class="field field-actor_character_id">{{ form.actor_character_id.label_tag }} {{ form.actor_character_id }}</div>
+  <div class="field field-include_audit"><label><input type="checkbox" name="include_audit" value="1" id="id_include_audit" disabled{% if form.include_audit.value %} checked{% endif %}> Include audit</label></div>
+  <div class="field field-include_summary"><label><input type="checkbox" name="include_summary" value="1" id="id_include_summary" disabled{% if form.include_summary.value %} checked{% endif %}> Include summary</label></div>
+  <div class="field field-traces"><label><input type="checkbox" name="traces" value="1" id="id_traces" disabled{% if form.traces.value %} checked{% endif %}> Show all traces</label></div>
+  <div class="field field-limit">{{ form.limit.label_tag }} {{ form.limit }}</div>
+  <p class="muted as-recorded-controls-note">{{ controls.as_recorded_controls_note }}</p>
+  {% for name, value in form.carried %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  {% if form.variant.value %}<input type="hidden" name="variant" value="{{ form.variant.value }}">{% endif %}
+  {% if controls.show_errors %}{{ form.variant.errors }}{% endif %}
+  {% else %}
   <div class="field field-viewpoint">{{ form.viewpoint.label_tag }} {{ form.viewpoint }}{% if controls.show_errors %}{{ form.viewpoint.errors }}{% endif %}</div>
   <div class="field field-player_view"><label for="id_player_view">Player view:</label> <select name="player_view" id="id_player_view"{% if controls.player_view_disabled %} disabled{% endif %}>{% for value, label in form.player_view.field.choices %}<option value="{{ value }}"{% if form.player_view.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% if controls.player_view_disabled %}{% if form.player_view_kept %}<input type="hidden" name="player_view" value="{{ form.player_view_kept }}">{% endif %} <small class="muted player-view-note">applies to a character viewpoint</small>{% endif %}
     {% if controls.show_errors %}{{ form.player_view.errors }}{% endif %}</div>
@@ -19,5 +35,6 @@
   <div class="field field-limit">{{ form.limit.label_tag }} {{ form.limit }}{% if controls.show_errors %}{{ form.limit.errors }}{% endif %}</div>
   {% if form.variant.value %}<input type="hidden" name="variant" value="{{ form.variant.value }}">{% endif %}
   {% if controls.show_errors %}{{ form.before_turn.errors }}{{ form.variant.errors }}{% endif %}
+  {% endif %}
 </div>
 {% endwith %}

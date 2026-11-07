@@ -110,18 +110,21 @@ from console.inspect import (
     unavailable_for,
 )
 from console.operation_log import note_engine_record
+from console.raw import plural
 from console.retrieval import (
     KEEP_FIELDS,
     Filters,
     Names,
     candidates,
     episodic_skipped,
+    gap_lines,
     legend,
     mention_rows,
     placed,
     time_view,
 )
 from console.retrieval import more as retrieval_more
+from console.rewrites import rewrite_session_url
 from console.turn_trace import (
     COMMITTED,
     TURN_KIND,
@@ -298,11 +301,50 @@ def inspect_page(
     return render(request, context.pop(TEMPLATE_KEY, template), context)
 
 
+# #331: the story read's pending amendment support checks (Engine #239), on the Overview and
+# the Play page. "{checks}" is pluralised (E23).
+CHECKS_TEXT = (
+    "{count} amendment support {checks} waiting for your answer — earlier amendments changed "
+    "something later lines relied on"
+)
+# Added when the read names no session (a read without the omniscient viewpoint, R2-Q34).
+CHECKS_OMNISCIENT_SUFFIX = " (open the story as omniscient to see where)"
+
+
+@dataclass(frozen=True)
+class ChecksLine:
+    """The pending-checks line: its text, and the rewrite session to answer them in (``""`` when
+    the read names none or ``stories:rewrite`` does not resolve, D19)."""
+
+    text: str
+    url: str
+
+
+def amendment_checks_line(story: Story | None, story_id: str) -> ChecksLine | None:
+    """The line for ``story``'s ``amendment_checks_pending`` (#331); ``None`` for no story, no
+    field, or a ``count`` that is not an int above 0. A blank or non-string ``session_id`` counts
+    as absent: the text gains :data:`CHECKS_OMNISCIENT_SUFFIX` and the url is ``""``."""
+    checks = story.amendment_checks_pending if story is not None else None
+    if checks is None:
+        return None
+    count: object = checks.count
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        return None
+    count_text, word = plural(count, "check").split(" ", 1)
+    text = CHECKS_TEXT.format(count=count_text, checks=word)
+    session_id: object = checks.session_id
+    if not isinstance(session_id, str) or not session_id.strip():
+        return ChecksLine(text + CHECKS_OMNISCIENT_SUFFIX, "")
+    return ChecksLine(text, rewrite_session_url(story_id, session_id) or "")
+
+
 def _overview(ctx: InspectContext) -> dict[str, Any]:
     """The Overview (#151), from the shell's effective-config read alone (no other Engine read):
-    the header line, the reported capabilities, the module table and the capability-map link."""
+    the header line, the reported capabilities, the module table and the capability-map link;
+    #331's pending-checks line from the shell's story read."""
     config = ctx.config
     return {
+        "checks": amendment_checks_line(ctx.story, ctx.story_id),
         "profile_flags": profile_flags(config),
         "fingerprint_short": overview_fingerprint(config.fingerprint),
         "pipeline": setting(ctx.effective, SETTINGS[PIPELINE]),
@@ -635,6 +677,7 @@ def _ask(ctx: InspectContext, form: RetrievalForm, names: Names, context: dict[s
         actions=MEMORY_ACTIONS_TEMPLATE,  # convention 14: #143's row actions
         actions_next=ctx.request.get_full_path(),  # where a row action returns
         more=retrieval_more(body),
+        coverage_gaps=gap_lines(ctx.story_id, body),  # #332
     )
 
 

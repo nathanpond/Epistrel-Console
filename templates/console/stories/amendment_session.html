@@ -1,0 +1,39 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#303: plan an undo or a redo of an amendment (stories:amendment-undo / stories:amendment-redo,
+console/views/amendments.py _open_session). In order: E2's omniscient line, #302's summary <dl>
+(a GET) or "Amendment <short id>" linked (a POST, which reads no amendment), the explanation,
+then one of: E5's not-found sentence (not_found), E2's text (refusal) or #43's panel
+(read_error) for a failed read; E5's ineligible sentence and the matching action (ineligible,
+action); or the form (the write's refusal or #43's panel above it, E4's modes, the key, the
+submit and Cancel). The back link shows in every state.
+Context: spec, amendment_id, amendment_url, summary, posted, explanation, not_found, refusal,
+read_error, ineligible, action, use_redo_hint, form, idempotency_key, write_refusal,
+refusal_url, refusal_link, write_error, submit_text, cancel_text, back_text.
+{% endcomment %}
+{% load console_format inspect_tags %}
+{% block story_page %}
+{% include "console/rewrites/_omniscient.html" %}
+<section class="amendment-open amendment-{{ spec.css }}">
+  {% if summary %}{% include "console/stories/_amendment_summary.html" with row=summary %}
+  {% elif posted %}<p class="amendment-ref">Amendment {% if amendment_url %}<a href="{{ amendment_url }}">{{ amendment_id|engine_id }}</a>{% else %}{{ amendment_id|engine_id }}{% endif %}</p>{% endif %}
+  <p class="explanation">{{ explanation }}</p>
+  {% if not_found %}<p class="not-found amendment-not-found">{{ not_found }}</p>
+  {% elif refusal %}<p class="errorlist amendment-refusal" role="alert">{{ refusal }}</p>
+  {% elif read_error %}{% include "console/_engine_error.html" with engine_error=read_error %}
+  {% elif ineligible %}<p class="warning ineligible">{{ ineligible }}</p>
+  {% if action %}{% include "console/stories/_amendment_action.html" %}{% endif %}
+  {% elif form %}
+  {% if write_error %}{% include "console/_engine_error.html" with engine_error=write_error %}{% endif %}
+  {% if write_refusal %}<p class="errorlist rewrite-refusal" role="alert">{{ write_refusal|code_spans }}{% if refusal_url %} <a href="{{ refusal_url }}">{{ refusal_link }}</a>{% endif %}</p>{% endif %}
+  <form method="post" class="amendment-open-form">
+    {% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    {{ form.non_field_errors }}
+    {% include "console/rewrites/_modes.html" with form=form %}
+    <button type="submit">{{ submit_text }}</button>{% if amendment_url %} <a class="cancel" href="{{ amendment_url }}">{{ cancel_text }}</a>{% endif %}
+  </form>
+  {% endif %}
+</section>
+<p class="back">{% if amendment_url %}<a href="{{ amendment_url }}">{{ back_text }}</a>{% else %}{{ back_text }}{% endif %}</p>
+{% endblock %}

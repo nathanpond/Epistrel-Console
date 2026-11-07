@@ -1,0 +1,152 @@
+{
+  "config_revision": 31,
+  "applied": true,
+  "result": {
+    "id": "00000000000000000000PRF002",
+    "name": "Full",
+    "owner_principal": "system",
+    "preset": true,
+    "version": 5,
+    "current_version": 5,
+    "settings": {
+      "pipeline": "structured",
+      "memory": {
+        "rolling_summary": {
+          "enabled": false
+        },
+        "episodic": {
+          "enabled": true,
+          "k": 40,
+          "hybrid_search": true,
+          "reranking": false
+        },
+        "consolidation": {
+          "enabled": true,
+          "cadence_turns": 20
+        }
+      },
+      "pins": {
+        "enabled": true,
+        "max_pinned": 50
+      },
+      "verification": {
+        "level": "entailment",
+        "extraction_mode": "always",
+        "entailment_gate": 1.0,
+        "contradiction_checking": true,
+        "shape_tightening": "on"
+      },
+      "commitment": {
+        "enabled": true,
+        "salience": "rules_and_model",
+        "salience_bias": "balanced"
+      },
+      "repair": {
+        "max_attempts": 1,
+        "polish": {
+          "enabled": true,
+          "max_regenerations": 2
+        }
+      },
+      "budgets": {
+        "model_calls": 16,
+        "deadline_ms": 60000
+      },
+      "models": {
+        "generation": {
+          "temperature": 0.8,
+          "top_p": 0.95,
+          "response_length": "medium"
+        }
+      },
+      "character_knowledge": {
+        "partitions": true,
+        "nested_beliefs": {
+          "enabled": true,
+          "depth": 2
+        },
+        "lazy_resolution": true,
+        "testimony": "model",
+        "max_adjudications_per_turn": 2,
+        "max_lazy_resolutions_per_turn": 20
+      },
+      "perception": {
+        "level": "full"
+      },
+      "multi_character": {
+        "renders": "per_character",
+        "interjection_max_words": 6
+      },
+      "clock": {
+        "level": "on",
+        "time_claims": true,
+        "scheduled_stops": true
+      },
+      "states": {
+        "level": "on"
+      }
+    },
+    "created_at": "2026-10-01T09:00:00Z",
+    "updated_at": "2026-11-04T09:00:00Z",
+    "deleted_at": null,
+    "quality": {
+      "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+      "status": "certified",
+      "floors_met": [
+        "NFR-QUAL-2.false_support"
+      ]
+    }
+  },
+  "idempotency_key": "01JM7KY0000000000000000001",
+  "impact": {
+    "affected_stories": [
+      {
+        "story_id": "01JM7ST0000000000000000001",
+        "capabilities_gained": [
+          "commitment"
+        ],
+        "capabilities_lost": [],
+        "backfill": {
+          "needed": true,
+          "estimate": {
+            "model_calls": 12,
+            "tokens": 18000,
+            "duration_s": 40.0
+          },
+          "range": {
+            "from_turn": 1,
+            "to_turn": 3
+          }
+        },
+        "upgrade_unavailable": false,
+        "capabilities_after": [
+          "structured",
+          "episodic"
+        ],
+        "fingerprint_before": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "fingerprint_after": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+        "quality_status_after": {
+          "status": "certified",
+          "certification_id": "01JM7CT0000000000000000001"
+        }
+      }
+    ],
+    "affected_count": 1,
+    "recommendations_unmet": [],
+    "guarantees_lost": [],
+    "warnings": [],
+    "capabilities_after": null,
+    "quality_status_after": null,
+    "fingerprint_before": null,
+    "fingerprint_after": null
+  },
+  "backfills": [
+    {
+      "story_id": "01JM7ST0000000000000000001",
+      "id": "01JM7BF0000000000000000004",
+      "job_id": "01JM7JB0000000000000000004",
+      "status": "queued",
+      "queue_position": 1
+    }
+  ]
+}

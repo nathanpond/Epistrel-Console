@@ -16,11 +16,12 @@
   <fieldset class="settings-section" id="settings-{{ title|slugify }}">
     <legend>{{ title }}</legend>
     {% if title == "External providers" %}{% url 'engine:providers' as providers_url %}{% if providers_url %}<p class="muted">Registered providers: <a href="{{ providers_url }}">Providers</a></p>{% endif %}{% endif %}
+    {% if title == "Model tiers" %}{% url 'models:list' as models_url %}{% if models_url %}<p class="muted">Models: <a href="{{ models_url }}">Model configuration</a></p>{% endif %}{% endif %}
     {% for row in rows %}
     <div class="field field-{{ row.name }}">
-      <label for="{{ row.field.id_for_label }}"><code>{{ row.name }}</code></label>
+      <label for="{{ row.field.id_for_label }}"><code>{{ row.code }}</code>{% if row.label %} {{ row.label }}{% endif %}</label>
       {{ row.field }}{% if row.unit %} <span class="unit">{{ row.unit }}</span>{% endif %}
-      {% if row.clear %}<label class="clear">{{ row.clear }} Clear</label>{% endif %}
+      {% if row.clear %}<label class="clear"{% if row.clear.help_text %} title="{{ row.clear.help_text }}"{% endif %}>{{ row.clear }} Clear</label>{% endif %}
       <small class="muted">{{ row.field.help_text }}</small>
       {{ row.field.errors }}
     </div>

@@ -1,0 +1,19 @@
+{% comment %}
+One open conflict's resolve form (#309; console/forms/backfill.py ConflictResolveForm, E21).
+Context: resolve (views.backfill.ResolveBlock: form, key, action_url, error, error_url, panel),
+resolve_label and accept_label. The radios carry each statement's id (the recommendation's
+pre-selected); "Accept the recommendation" shows only when the conflict has one.
+{% endcomment %}<form method="post" action="{{ resolve.action_url }}" class="resolve-conflict">{% csrf_token %}
+    <input type="hidden" name="idempotency_key" value="{{ resolve.key }}">
+    {% if resolve.error %}<p class="warning resolve-error">{{ resolve.error }}{% if resolve.error_url %} <a href="{{ resolve.error_url }}">Details</a>{% endif %}</p>
+    {% endif %}{% if resolve.panel %}{% include "console/_engine_error.html" with engine_error=resolve.panel %}
+    {% endif %}{% if resolve.form.non_field_errors %}{{ resolve.form.non_field_errors }}
+    {% endif %}<fieldset class="resolve-choice">
+      <legend>Settle it</legend>
+      {% for radio in resolve.form.radio_rows %}<label for="{{ radio.id }}"><input type="radio" name="choose" value="{{ radio.value }}" id="{{ radio.id }}"{% if radio.checked %} checked{% endif %}> <span{% if radio.title %} title="{{ radio.title }}"{% endif %}>{{ radio.label }}</span></label>
+      {% endfor %}{{ resolve.form.choose.errors }}
+    </fieldset>
+    <p class="resolve-value"><label for="{{ resolve.form.value.id_for_label }}">{{ resolve.form.value.label }}</label> {{ resolve.form.value }} <span class="help">{{ resolve.form.value.help_text }}</span></p>
+    {{ resolve.form.value.errors }}
+    <button type="submit">{{ resolve_label }}</button>{% if resolve.form.has_recommendation %} <button type="submit" name="accept" value="1">{{ accept_label }}</button>{% endif %}
+  </form>

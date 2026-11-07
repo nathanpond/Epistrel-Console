@@ -8,12 +8,14 @@
 <p class="profile-actions">
   {% if not profile.deleted_at %}<a class="button edit" href="{{ edit_url }}">{% if is_latest %}Edit{% else %}Edit latest (v{{ profile.current_version }}){% endif %}</a>{% endif %}
   <a class="button copy" href="{{ copy_url }}">Copy</a>
+  {% if not profile.deleted_at %}<a class="button upgrade-pinned" href="{% url 'profiles:upgrade-pinned' profile.id %}">Upgrade pinned stories…</a>{% endif %}
+  {% if not profile.deleted_at %}<a class="button certify" href="{% url 'profiles:certify' profile.id %}{% if not is_latest %}?version={{ profile.version }}{% endif %}">Request a certification run…</a>{% endif %}
   {% if not profile.deleted_at %}{% if is_default %}<button type="button" class="danger delete" disabled>Delete</button> <small class="muted default-no-delete">{{ default_no_delete }}</small>{% else %}<a class="button danger delete" href="{{ delete_url }}">Delete</a>{% endif %}{% endif %}
 </p>
 {% for warning in warnings %}<p class="warning">{{ warning }}</p>{% endfor %}
 <dl class="profile">
   <dt>Id</dt><dd><code>{{ profile.id }}</code></dd>
-  <dt>Version</dt><dd class="version">Version {{ profile.version }} of {{ profile.current_version }}{% if not is_latest %} — <a class="latest" href="{{ latest_url }}">latest</a>{% endif %} · <a class="versions" href="{{ versions_url }}">Versions</a></dd>
+  <dt>Version</dt><dd class="version">Version {{ profile.version }} of {{ profile.current_version }}{% if not is_latest %} — <a class="latest" href="{{ latest_url }}">latest</a>{% endif %} · <a class="versions" href="{{ versions_url }}">Versions</a>{% if certifications_url %} · <a class="certifications" href="{{ certifications_url }}">Certifications</a>{% endif %}</dd>
   <dt>Owner</dt><dd>{{ profile.owner_principal|principal_link }}</dd>
   <dt>Badges</dt><dd>{% if profile.preset %}<span class="badge preset">preset</span> {% endif %}{% if is_default %}<span class="badge default-marker">Deployment default</span>{% endif %}{% if not profile.preset and not is_default %}—{% endif %}</dd>
   <dt>Created</dt><dd>{{ profile.created_at|engine_time }}</dd>

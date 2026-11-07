@@ -1,0 +1,42 @@
+{% extends "console/inspect/effects.html" %}
+{% comment %}
+The Effects tab's Outbox section (#325, console/views/inspect_outbox.py): one
+GET /stories/{id}/outbox after the shell's reads, never gated (E12), always omniscient (E2: the
+line, no viewpoint picker). In order: the omniscient line, the scope line, CURSOR_DROPPED, the
+filter form (E22: "Filter", "Clear filters" while a filter or a cursor is set), then the count
+line, the D15 unreadable notice, the rows (_outbox_row.html, the Engine's order; one spanning row
+per rejected entry) or the empty line, and First page / Next page. An error (convention 10)
+replaces everything after the form. Context: scope_line, filter_form, filter_url, clear_url,
+cursor_dropped, list_read, rows, rejected, rejected_text, count, unreadable, empty, next_url,
+first_url, next_text, first_text, not_found, omniscient_required, outbox_error, story_id.
+{% endcomment %}
+{% load console_format %}
+{% block effects_content %}
+{% include "console/rewrites/_omniscient.html" with variant="outbox" %}
+<p class="section-intro muted outbox-scope">{{ scope_line }}</p>
+{% if cursor_dropped %}<p class="notice cursor-dropped">{{ cursor_dropped }}</p>{% endif %}
+<form method="get" action="{{ filter_url }}" class="outbox-filter">
+  {% for field in filter_form %}<span class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</span>
+  {% endfor %}<button type="submit">Filter</button>{% if clear_url %} <a class="clear-filters" href="{{ clear_url }}">Clear filters</a>{% endif %}
+</form>
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% elif omniscient_required %}<p class="errorlist omniscient-required" role="alert">{{ omniscient_required }}</p>
+{% elif outbox_error %}{% include "console/_engine_error.html" with engine_error=outbox_error %}
+{% elif list_read %}
+{% if count %}<p class="outbox-count">{{ count }}</p>{% endif %}
+{% if unreadable %}<p class="notice outbox-unreadable">{{ unreadable }}</p>{% endif %}
+{% if rows %}
+<table class="outbox">
+  <thead><tr><th>Outbox id</th><th>Provider</th><th>Provider value</th><th>Status</th><th>Effect</th><th>Declared at</th><th>Timeline</th><th>Waits on it</th><th>Compensation</th><th>Attempts and times</th><th>Latest outcome</th><th>More</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% include "console/inspect/_outbox_row.html" %}
+  {% endfor %}{% for raw in rejected %}<tr class="rejected">
+    <td colspan="12">{{ rejected_text }}<details><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details></td>
+  </tr>
+  {% endfor %}</tbody>
+</table>
+{% elif rejected %}{% for raw in rejected %}<details class="rejected-entry"><summary>More</summary><pre>{{ raw|pretty_json }}</pre></details>
+{% endfor %}{% elif empty %}<p class="none">{{ empty }}{% if first_url %} <a href="{{ first_url }}">{{ first_text }}</a>{% endif %}</p>{% endif %}
+{% if rows or rejected %}{% if next_url or first_url %}<p class="paging">{% if first_url %}<a href="{{ first_url }}">{{ first_text }}</a>{% endif %}{% if first_url and next_url %} · {% endif %}{% if next_url %}<a href="{{ next_url }}">{{ next_text }}</a>{% endif %}</p>{% endif %}{% endif %}
+{% endif %}
+{% endblock %}

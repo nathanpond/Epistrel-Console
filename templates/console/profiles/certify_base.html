@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% comment %}
+#314: the profile frame of console/certify.html (console/views/certify.py certify_profile). It
+fills the same {% block story_page %} the story frame does, so one template serves both. Context:
+page_label, profile_name, detail_url, not_found_text (a 404 profile read), profile_error (#43's
+panel for any other failed read; no form).
+{% endcomment %}
+{% block title %}{{ page_label }} · {{ profile_name }}{% endblock %}
+{% block heading %}{{ profile_name }}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ detail_url }}">Back to the profile</a></p>
+<h2>{{ page_label }}</h2>
+{% if not_found_text %}<p class="not-found">{{ not_found_text }}</p>
+{% elif profile_error %}{% include "console/_engine_error.html" with engine_error=profile_error %}
+{% else %}{% block story_page %}{% endblock %}{% endif %}
+{% endblock %}

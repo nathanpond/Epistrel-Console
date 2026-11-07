@@ -27,6 +27,23 @@ Incomplete badge come from the history read itself, worded without units (D5, D1
 
 An HTMX request (the viewpoint select's ``change``) gets the controls fragment alone, so the
 audit box enables and disables live; without JavaScript the form refuses audit server-side.
+
+M7 (#304): View "As originally recorded" (``view=as_recorded``) is built by
+:func:`_as_recorded_page`: after the story and variants reads, one
+``GET /stories/{id}/history?view=as_recorded&viewpoint=omniscient`` (``as_of`` the checkpoint,
+``variant`` the chain) and **no** settings, effective-config, predicates or turn-trace read
+(Explain, Perception, notices, traces and policy names are corrected-view features). The page is
+read-only (:attr:`Page.as_recorded`: no feedback widget, no Explain/Perception/Report link, no
+paging). A refusal of the checkpoint (404 ``checkpoint_not_found``, 409 ``checkpoint_incomplete``,
+422 ``validation_error`` on ``query.as_of``) is shown beside Checkpoint
+(:attr:`Controls.checkpoint_error`); 403 ``omniscient_required`` and 422 ``invalid_view`` are
+Console bugs, worded and logged; anything else is #43's panel, as on main. The View select
+re-renders the controls over HTMX like the viewpoint select.
+
+M7 (#305): each editable row of the corrected, active-chain view carries "Edit this line…"
+(:func:`console.history.line_edit_url`, ``next`` this page's full path), built from the history
+read already made: no extra Engine read. A ``?variant=`` chain view and the as-recorded view
+offer none.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -47,23 +64,39 @@ from console.engine.client import EngineClient, EngineClientError, EngineError, 
 from console.engine.models import History, HistoryItem, Story, SummarySegment, VariantChain
 from console.engine_access import engine_client_for
 from console.engine_errors import ErrorPanel, is_htmx, log_engine_error, panel_for
+from console.engine_form_errors import engine_field_errors
 from console.feedback import FeedbackWidget, collapsed, first_parts
-from console.forms.history import HistoryForm, as_of_options
+from console.forms.history import AS_RECORDED, HistoryForm, as_of_options
+from console.held import is_held
 from console.history import (
+    AS_RECORDED_CONTROLS_NOTE,
+    AS_RECORDED_NOTE,
+    AS_RECORDED_VIEW,
+    CHECKPOINT_INCOMPLETE,
+    CHECKPOINT_NOT_FOUND,
+    INVALID_VIEW_TEXT,
+    NO_CHECKPOINT_YET,
     NOT_LOADED,
     UNAVAILABLE,
     BeatTrace,
+    DerivedRow,
+    ErasureRow,
     TurnGroup,
     audience_filter_label,
     audit_record,
     beat_trace,
     chain_key,
     chain_tip,
+    checkpoint_text,
+    derived_rows,
+    erased_since,
+    erasure_rows,
     explain_query,
     explain_url,
     inspector_url,
     is_structured,
     operation_links,
+    parse_boundary,
     policy_names,
     report_item,
     split_audit,
@@ -72,12 +105,22 @@ from console.history import (
     turn_label,
 )
 from console.inspect import is_structured_pipeline
+from console.nav import story_links
 from console.notices import notice_cards, overridden_notices
 from console.operation_log import note_engine_record
 from console.perception import perception_url, turn_links_perception
+from console.portability import is_importing, prune_url
 from console.predicates import predicate_names
+from console.rewrites import AS_RECORDED_LINE, OMNISCIENT_REQUIRED_TEXT
 from console.story_pause import is_paused, pause_banner
-from console.timeline import ARCHIVED_NOTE, PAUSED_NOTE, Basis, Link
+from console.timeline import (
+    ARCHIVED_NOTE,
+    PAUSED_NOTE,
+    PRUNED_CHAIN_NOTE,
+    PRUNED_MEMBERSHIP,
+    Basis,
+    Link,
+)
 from console.turn_trace import TurnTrace, read_turn_trace
 from console.world import viewpoint_line
 
@@ -88,6 +131,17 @@ TRACE_WORKERS = 4
 TRACE_DEADLINE_S = 10.0  # shared by every trace read of one page
 TRACE_CAP_NOTE = f"Escalation and repair loaded for the first {TRACE_TURNS_MAX} turns on this page."
 TIMEOUT = "timeout"
+CHECKPOINT_NOT_FOUND_CODE = "checkpoint_not_found"
+CHECKPOINT_INCOMPLETE_CODE = "checkpoint_incomplete"
+OMNISCIENT_REQUIRED_CODE = "omniscient_required"
+INVALID_VIEW_CODE = "invalid_view"
+VALIDATION_ERROR_CODE = "validation_error"
+HTMX_ATTRS = {
+    "hx-trigger": "change",
+    "hx-target": "#history-controls",
+    "hx-swap": "outerHTML",
+    "hx-include": "closest form",
+}
 
 
 @dataclass(frozen=True)
@@ -102,6 +156,10 @@ class Controls:
     audit_disabled: bool
     show_errors: bool  # not on the HTMX re-render, which only follows the viewpoint select
     player_view_disabled: bool = False  # an explicit omniscient viewpoint (#62)
+    # #304: a refusal of the as-recorded checkpoint, shown under Checkpoint.
+    checkpoint_error: str = ""
+    as_recorded_line: str = AS_RECORDED_LINE  # E2, beside the disabled viewpoint (#304)
+    as_recorded_controls_note: str = AS_RECORDED_CONTROLS_NOTE
 
 
 @dataclass(frozen=True)
@@ -110,8 +168,13 @@ class ChainRow:
     key: str
     view_url: str
     parent: str
-    swap: Link | None = None  # every chain but the active one (#53)
-    fork: Link | None = None  # fork along this chain, through its tip (#53)
+    swap: Link | None = None  # every chain but the active one (#53) and a pruned one (#293)
+    fork: Link | None = None  # fork along this chain, through its tip (#53); not when pruned
+    note: str = ""  # a pruned chain's PRUNED_CHAIN_NOTE (#293)
+
+    @property
+    def pruned(self) -> bool:
+        return self.chain.membership == PRUNED_MEMBERSHIP
 
 
 @dataclass(frozen=True)
@@ -127,6 +190,9 @@ class Page:
     newest_url: str = ""
     chain: str = ""  # the variant parameter, when set
     clear_chain_url: str = ""
+    # ``?variant=`` naming a pruned chain, answered 409 ``pruned`` (#293): the note and "Clear
+    # chain" stand in for the error panel.
+    pruned_note: str = ""
     settings_error: ErrorPanel | None = None
     legend: bool = False  # a structured beat is shown: the verdict legend (#147)
     classification_legend: bool = False  # a classified say is shown: the legend line (#207)
@@ -138,6 +204,25 @@ class Page:
     # shown change carries an outbox id.
     world_viewpoint: str = ""
     outbox_notice: SafeString | str = ""
+    # #304: the history as originally recorded. Read-only: no per-row write or corrected-only
+    # control renders (#305's "Edit this line…" link renders only when this is False).
+    as_recorded: bool = False
+    checkpoint_text: str = ""  # "turn 2", "turn 2⁺¹", "the latest (turn 3)"
+    erased_since: str = ""  # ERASED_SINCE, "" with no erasure marker
+    erasures: list[ErasureRow] = field(default_factory=list)
+    derived: list[DerivedRow] | None = None  # None: ``derived`` is null, the section is left out
+    back_url: str = ""  # "See turn <N> corrected"
+    back_turn: int | None = None
+    # A checkpoint refusal (copied into ``Controls.checkpoint_error``): the items area shows only
+    # main's "nothing was read" line.
+    as_recorded_error: str = ""
+    # 403 ``omniscient_required`` / 422 ``invalid_view``: the worded Console bug, with ``error``
+    # (#43's panel) collapsed under it.
+    error_text: str = ""
+
+    @property
+    def as_recorded_note(self) -> str:
+        return AS_RECORDED_NOTE
 
 
 def _url(story_id: str, params: QueryDict) -> str:
@@ -167,25 +252,27 @@ def _variants(
 
 
 def _controls(
-    story: Story, form: HistoryForm, chains: list[VariantChain], *, show_errors: bool = True
+    story: Story,
+    form: HistoryForm,
+    chains: list[VariantChain],
+    *,
+    show_errors: bool = True,
+    checkpoint_error: str = "",
 ) -> Controls:
     head = max(story.next_turn_index - 1, 0)
     variant = form.value("variant")
     tip = chain_tip(chains, variant) if variant else None
     last = tip if tip is not None else head
     url = reverse("stories:history", args=[story.id])
-    form.fields["viewpoint"].widget.attrs.update(
-        {
-            "hx-get": url,
-            "hx-trigger": "change",
-            "hx-target": "#history-controls",
-            "hx-swap": "outerHTML",
-            "hx-include": "closest form",
-        }
-    )
+    for name in ("view", "viewpoint"):  # #304: the View select follows the viewpoint's lead
+        form.fields[name].widget.attrs.update({"hx-get": url, **HTMX_ATTRS})
     form.fields["as_of"].widget.attrs.update(
         {"list": "as-of-turns", "placeholder": f"head ({last})"}
     )
+    form.fields["checkpoint"].widget.attrs.update({"placeholder": "latest"})
+    if form.as_recorded:  # #304: shown, but not read on this view
+        for name in ("actor_character_id", "limit"):
+            form.fields[name].widget.attrs["disabled"] = True
     return Controls(
         story.id,
         form,
@@ -194,15 +281,42 @@ def _controls(
         as_of_options(last),
         audit_disabled=not form.omniscient,
         show_errors=show_errors,
-        player_view_disabled=form.omniscient,
+        player_view_disabled=form.omniscient or form.as_recorded,
+        checkpoint_error=checkpoint_error,
     )
+
+
+def switched_view(params: QueryDict) -> QueryDict:
+    """The HTMX View switch (#304): a valid ``as_of`` pre-fills Checkpoint going to the
+    as-recorded view, and a valid checkpoint's turn (``N`` of ``N+k``) pre-fills ``as_of``
+    going back, when the other control wasn't submitted."""
+    data = params.copy()
+    if data.get("view") == AS_RECORDED:
+        as_of = data.get("as_of", "")
+        if "checkpoint" not in data and as_of.isascii() and as_of.isdigit():
+            data["checkpoint"] = str(int(as_of))
+    elif "as_of" not in data:
+        parsed = parse_boundary(data.get("checkpoint"))
+        if parsed is not None:
+            data["as_of"] = str(parsed[0])
+    return data
+
+
+PRUNABLE_MEMBERSHIPS = frozenset({"discarded", "dormant"})  # #317: what a pruning can delete
+
+
+def prunable(chains: list[VariantChain]) -> bool:
+    """#317: whether any chain is ``discarded`` or ``dormant`` (History's Prune link shows only
+    then; a ``pruned`` chain, #293, doesn't count)."""
+    return any(chain.membership in PRUNABLE_MEMBERSHIPS for chain in chains)
 
 
 def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) -> list[ChainRow]:
     """Each chain with its "view" link (``viewpoint``, ``limit`` and ``player_view`` kept,
     ``variant`` set) and
     its Swap (not on the active chain; ``&check=1`` when it ``requires_check``) and Fork links,
-    carrying the story read's revision and head (#53)."""
+    carrying the story read's revision and head (#53). A pruned chain (#293) gets none of the
+    three, only :data:`PRUNED_CHAIN_NOTE`: the Engine refuses each with 409 ``pruned``."""
     story_id = story.id
     basis = Basis(
         story_id,
@@ -217,11 +331,14 @@ def _chain_rows(request: HttpRequest, story: Story, chains: list[VariantChain]) 
     for chain in chains:
         key = chain_key(chain)
         params = QueryDict(mutable=True)
-        for name in ("viewpoint", "limit", "player_view"):
+        for name in ("viewpoint", "limit", "player_view", "view", "checkpoint"):
             if request.GET.get(name):
                 params[name] = request.GET[name]
         params["variant"] = key
         parent = f"{chain.parent.turn}:{chain.parent.variant}" if chain.parent else "—"
+        if chain.membership == PRUNED_MEMBERSHIP:
+            rows.append(ChainRow(chain, key, "", parent, note=PRUNED_CHAIN_NOTE))
+            continue
         swap = (
             basis.swap(chain.turn, chain.variant, requires_check=chain.requires_check)
             if chain.membership != "active"
@@ -238,7 +355,11 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         history = client.get_history(story.id, **query)
     except EngineClientError as exc:
         log_engine_error(request, exc)
-        return Page(error=panel_for(exc), chain=query["variant"] or "")
+        variant = query["variant"] or ""
+        if variant and isinstance(exc, EngineError) and exc.code == PRUNED_MEMBERSHIP:
+            clear = _url(story.id, _with(request, variant=None))
+            return Page(chain=variant, clear_chain_url=clear, pruned_note=PRUNED_CHAIN_NOTE)
+        return Page(error=panel_for(exc), chain=variant)
     cast = story.cast
     labels = cast_helpers.character_labels(cast)
     items, audit_items = split_audit(history)
@@ -263,6 +384,8 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
         actor_filtered=bool(query["actor_character_id"]),
         omniscient=history.output_viewpoint == cast_helpers.OMNISCIENT,
         story_id=story.id,
+        chain=query["variant"] or None,  # #305: a dormant chain's lines offer no Edit link
+        next_url=request.get_full_path(),
     )
     _with_feedback(groups, collapsed(story.id, "transcript", request.get_full_path()))
     variant = query["variant"] or ""
@@ -297,7 +420,7 @@ def _page(client: EngineClient, request: HttpRequest, story: Story, form: Histor
             else audience_filter_label(history.audience_filter)
         ),
         world_viewpoint=_world_viewpoint(history, groups, labels),
-        outbox_notice=outbox_list_notice_html() if _dispatched(groups) else "",
+        outbox_notice=(outbox_list_notice_html(story_id=story.id) if _dispatched(groups) else ""),
     )
 
 
@@ -544,25 +667,146 @@ def _with_feedback(groups: list[TurnGroup], widget: Callable[[str], FeedbackWidg
         ]
 
 
+# --- As originally recorded (#304) --------------------------------------------------------------
+
+
+def _checkpoint_refusal(exc: EngineError, checkpoint: str | None) -> str:
+    """The text shown beside Checkpoint for a refusal of it, else ""."""
+    if exc.code == CHECKPOINT_NOT_FOUND_CODE:
+        if not checkpoint:
+            return NO_CHECKPOINT_YET
+        return CHECKPOINT_NOT_FOUND.format(checkpoint=checkpoint_text(checkpoint))
+    if exc.code == CHECKPOINT_INCOMPLETE_CODE:
+        return CHECKPOINT_INCOMPLETE
+    if exc.code == VALIDATION_ERROR_CODE:
+        return _as_of_message(exc)
+    return ""
+
+
+def _as_of_message(exc: EngineError) -> str:
+    """A ``validation_error`` on ``query.as_of``: the failure's message (its ``field``, or a
+    ``loc`` list, ending in ``as_of``), else the error's; "" when no failure names it."""
+    for failure in engine_field_errors(exc):
+        if failure.path.split(".")[-1] == "as_of":
+            return failure.message or exc.message
+    listed = exc.details.get("errors") if isinstance(exc.details, Mapping) else None
+    for entry in listed if isinstance(listed, list) else []:
+        loc = entry.get("loc") if isinstance(entry, Mapping) else None
+        if isinstance(loc, list) and loc and str(loc[-1]) == "as_of":
+            message = entry.get("message", entry.get("msg"))
+            return message if isinstance(message, str) and message else exc.message
+    return ""
+
+
+def _back_url(
+    request: HttpRequest, story_id: str, checkpoint: str | None
+) -> tuple[str, int | None]:
+    """ "See turn <N> corrected": this page with ``view`` and ``checkpoint`` dropped, and
+    ``as_of`` the checkpoint's turn (turn N for ``N+k``; none for the latest). ``variant`` and
+    the carried corrected controls are kept."""
+    parsed = parse_boundary(checkpoint)
+    turn = parsed[0] if parsed is not None else None
+    params = _with(
+        request,
+        view=None,
+        checkpoint=None,
+        before_turn=None,
+        as_of=None if turn is None else str(turn),
+    )
+    return _url(story_id, params), turn
+
+
+def _as_recorded_page(
+    client: EngineClient, request: HttpRequest, story: Story, form: HistoryForm
+) -> Page:
+    """The history as originally recorded (#304): one history read, rendered read-only."""
+    query = form.query()
+    checkpoint = query["as_of"]
+    variant = query["variant"] or ""
+    try:
+        history = client.get_history(story.id, **query)
+    except EngineClientError as exc:
+        if is_held(exc) or is_importing(exc):
+            raise  # #87's held page and E10's importing page (the middleware)
+        log_engine_error(request, exc)
+        if variant and isinstance(exc, EngineError) and exc.code == PRUNED_MEMBERSHIP:
+            clear = _url(story.id, _with(request, variant=None))
+            return Page(chain=variant, clear_chain_url=clear, pruned_note=PRUNED_CHAIN_NOTE)
+        if isinstance(exc, EngineError):
+            beside = _checkpoint_refusal(exc, checkpoint)
+            if beside:
+                return Page(as_recorded=True, as_recorded_error=beside, chain=variant)
+            bug = {
+                OMNISCIENT_REQUIRED_CODE: OMNISCIENT_REQUIRED_TEXT,
+                INVALID_VIEW_CODE: INVALID_VIEW_TEXT,
+            }
+            if exc.code in bug:
+                return Page(
+                    as_recorded=True, error=panel_for(exc), error_text=bug[exc.code], chain=variant
+                )
+        return Page(as_recorded=True, error=panel_for(exc), chain=variant)
+    labels = cast_helpers.character_labels(story.cast)
+    items, audit_items = split_audit(history)
+    links = operation_links(story.id, [i.operation_id for i in [*items, *audit_items]])
+    records = [audit_record(i, {}) for i in audit_items]  # policy ids bare, by design
+    groups = turn_groups(
+        history,
+        items,
+        records,
+        labels=labels,
+        links=links,
+        actor_filtered=False,
+        omniscient=True,
+        story_id=story.id,
+        chain=variant or None,
+        view=AS_RECORDED_VIEW,  # #305: read-only, so no "Edit this line…" on any row
+        next_url=request.get_full_path(),
+    )
+    erasures = erasure_rows(history.erasure_markers)
+    back_url, back_turn = _back_url(request, story.id, checkpoint)
+    return Page(
+        history=history,
+        viewpoint_label=cast_helpers.viewpoint_label(cast_helpers.OMNISCIENT, story.cast),
+        groups=groups,
+        chain=variant,
+        clear_chain_url=_url(story.id, _with(request, variant=None)) if variant else "",
+        as_recorded=True,
+        checkpoint_text=checkpoint_text(checkpoint, history.as_of),
+        erased_since=erased_since(len(erasures)) if erasures else "",
+        erasures=erasures,
+        derived=derived_rows(history.derived),
+        back_url=back_url,
+        back_turn=back_turn,
+    )
+
+
 @require_safe
 def history(request: HttpRequest, story_id: str) -> HttpResponse:
     client = engine_client_for(request)
     story = client.get_story(story_id)
-    form = HistoryForm(request.GET, cast=story.cast)
-    if is_htmx(request):
+    htmx = is_htmx(request)
+    form = HistoryForm(switched_view(request.GET) if htmx else request.GET, cast=story.cast)
+    if htmx:
         chains = _variants(client, request, story_id)[0] if form.value("variant") else []
         controls = _controls(story, form, chains, show_errors=False)
         return render(request, CONTROLS_TEMPLATE, {"controls": controls})
     chains, variants_error = _variants(client, request, story_id)
-    page = _page(client, request, story, form) if form.is_valid() else None
+    page = None
+    if form.is_valid():
+        build = _as_recorded_page if form.as_recorded else _page
+        page = build(client, request, story, form)
+    checkpoint_error = page.as_recorded_error if page is not None else ""
     context = {
         "story": story,
-        "controls": _controls(story, form, chains),
+        "controls": _controls(story, form, chains, checkpoint_error=checkpoint_error),
         "page": page,
         "chains": _chain_rows(request, story, chains),
+        "prunable_chains": prunable(chains),  # #317: the Prune link
+        "prune_url": prune_url(story_id),
         "variants_error": variants_error,
         "archived_note": ARCHIVED_NOTE if story.status == "archived" else "",
         "paused_note": PAUSED_NOTE if is_paused(story) else "",
         "pause_banner": pause_banner(story),  # #80
+        "page_links": story_links(story.id, None),  # E11 (#296): no Engine read
     }
     return render(request, PAGE_TEMPLATE, context)

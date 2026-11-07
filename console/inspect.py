@@ -394,6 +394,12 @@ def _m6_unavailable(
     return Unavailable(module, SETTINGS[module], _m6_wording(module, value, level))
 
 
+LITE_REWRITES = "lite_rewrites"
+LITE_REWRITES_TEXT = (
+    "History rewrites need a planner for this story's pipeline (`lite_rewrites` is off)"
+)
+
+
 def unavailable_for(
     module: str, effective: Mapping[str, Any] | None = None, level: str | None = None
 ) -> Unavailable:
@@ -402,7 +408,11 @@ def unavailable_for(
     pipeline clause, the partitions prerequisite and the value "(this story runs …)" names, in
     :func:`m5_gate`'s order, and ``level`` is the perception level asked for. An M6 module
     (#239) is worded in :func:`m6_gate`'s order, ``level`` then being a :data:`WORLD_LEVELS` rung
-    (``prompt_only`` or ``on``; ignored for the two clock flags)."""
+    (``prompt_only`` or ``on``; ignored for the two clock flags). ``lite_rewrites`` (#294, E5)
+    has its own sentence: the Engine refuses a history rewrite when the story's pipeline has no
+    planner, which the Console can't predict from the effective configuration."""
+    if module == LITE_REWRITES:
+        return Unavailable(LITE_REWRITES, None, LITE_REWRITES_TEXT)
     if module in M6_MODULES:
         _check_world_level(level)
         return _m6_unavailable(module, effective, level)
@@ -1022,6 +1032,9 @@ WORLD_SECTIONS: tuple[Section, ...] = (
 )
 EFFECTS_SECTIONS: tuple[Section, ...] = (
     ("inspect:reconciliation", "Reconciliation", None, None),  # #249
+    # E12 (#296): ungated (the Engine serves the outbox read under every configuration); #325
+    # registered its URL (D3's rule leaves the row out of a urlconf without it).
+    ("inspect:outbox", "Outbox", None, None),  # #325
     ("inspect:effects-trail", "Effects trail", STATES, WORLD_ON),  # #255
 )
 TAB_SECTIONS: Mapping[Tab, tuple[Section, ...]] = {

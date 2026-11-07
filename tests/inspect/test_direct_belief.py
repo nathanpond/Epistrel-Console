@@ -30,7 +30,7 @@ from console.forms.beliefs import (
     CONFIDENCE_ALONE,
     HOLDER_NO_PARTITION,
     MISSING_KEYS,
-    NOT_READABLE,
+    NESTED_READS,
     NOT_THE_HOLDER,
     OUT_OF_ORDER,
     SCALAR_INVALID,
@@ -305,7 +305,9 @@ def test_form_lists_the_cast(operator_client: Client, engine: FakeEngine) -> Non
     assert levels == ["", "unknown", "suspected", "believed", "known"]
     assert "Nested: the holder thinks someone believes it" in html
     assert "The holder thinks … believes it" in html
-    assert escape(NOT_READABLE) in html
+    assert f'<p class="muted nested-reads">{NESTED_READS}</p>' in fieldset(html)
+    assert "not-readable" not in html
+    assert "#606" not in html
     assert 'min="' not in html
     assert 'max="' not in html
     assert f'href="{BELIEFS_URL}"' in html  # Back to beliefs
@@ -510,7 +512,8 @@ def test_nested_off_fieldset_greyed_not_hidden(operator_client: Client, engine: 
     )
     assert NESTED_OFF in nested
     assert f'<option value="{BOB}">Bob</option>' in nested
-    assert escape(NOT_READABLE) in nested
+    assert NESTED_READS in nested
+    assert "not-readable" not in nested
 
 
 def test_nested_key_missing_reads_gate_unread(operator_client: Client, engine: FakeEngine) -> None:
@@ -587,7 +590,8 @@ def test_result_first_order(operator_client: Client, engine: FakeEngine) -> None
     assert f"{P}BW01" in more.group(1)  # lineage id
     assert "Raw response" in more.group(1)
     assert "Suspected · 0.300" in more.group(1)  # the transition's confidence
-    assert escape(NOT_READABLE) not in html.split('class="belief-written"')[1]
+    assert "not-readable" not in html
+    assert "#606" not in html
 
 
 def test_result_nested(operator_client: Client, engine: FakeEngine) -> None:
@@ -598,10 +602,111 @@ def test_result_nested(operator_client: Client, engine: FakeEngine) -> None:
         detail(html, "kind") == "Nested: Alice thinks Bob thinks Pat (player) believes it (depth 3)"
     )
     assert detail(html, "confidence") == "Known"
+    see = f"{BELIEFS_URL}?character={ALICE}&amp;proposition_id={P}PP05&amp;kind=nested"
+    assert f'<a class="see-belief" href="{see}">See Alice&#x27;s nested beliefs</a>' in html
+    assert "not-readable" not in html
+    assert "#606" not in html
+    assert f'<a class="direct-another" href="{URL}?holder={ALICE}">' in html
+
+
+# --- #328: where a written belief reads back ---
+
+
+def see_link(html: str) -> tuple[str, str] | None:
+    found = re.search(r'<a class="see-belief" href="([^"]*)">(.*?)</a>', html)
+    return None if found is None else (unescape(found.group(1)), unescape(found.group(2)))
+
+
+def test_nested_written_links_nested_beliefs(operator_client: Client, engine: FakeEngine) -> None:
+    answer(engine, "belief_written_nested_d2")
+    html = post(operator_client, attributed_to_1=BOB)
+    link = see_link(html)
+    assert link is not None
+    url, label = link
+    assert url == f"{BELIEFS_URL}?character={ALICE}&proposition_id={P}PP05&kind=nested"
+    assert label == "See Alice's nested beliefs"
+    assert "not-readable" not in html
+    assert "#606" not in html
+
+
+def test_nested_written_link_opens_the_nested_page(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """The link's target is #327's Kind = Nested page (it resolves and reads that kind)."""
+    answer(engine, "belief_written_nested_d2")
+    link = see_link(post(operator_client, attributed_to_1=BOB))
+    assert link is not None
+    response = operator_client.get(link[0])
+    assert response.status_code == 200
+    assert response.context["kind"] == "nested"
+
+
+def test_first_order_written_link_unchanged(operator_client: Client, engine: FakeEngine) -> None:
+    html = post(operator_client)
+    assert see_link(html) == (
+        f"{BELIEFS_URL}?character={ALICE}&proposition_id={P}PP05",
+        "See Alice's belief",
+    )
+    assert "kind" not in re.findall(r'class="see-belief" href="([^"]*)"', html)[0]
+    assert "not-readable" not in html
+
+
+def test_unknown_kind_written_has_no_link(operator_client: Client, engine: FakeEngine) -> None:
+    written = fixture("belief_written_first_order")
+    written["belief"]["kind"] = "speech_act"
+    engine.respond("POST", WRITE, 201, json=written)
+    html = post(operator_client)
+    assert '<h3 class="belief-written">Belief written</h3>' in html
     assert 'class="see-belief"' not in html
     assert "See Alice" not in html
-    assert escape(NOT_READABLE) in html.split('class="belief-written"')[1]
+    assert "not-readable" not in html
     assert f'<a class="direct-another" href="{URL}?holder={ALICE}">' in html
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_nested_fieldset_shows_where_it_reads(
+    operator_client: Client, engine: FakeEngine, enabled: bool
+) -> None:
+    configure(engine, {NESTED_ENABLED: enabled})
+    nested = fieldset(get(operator_client))
+    assert (" disabled " in nested.split(">", 1)[0] + " ") is not enabled
+    reads = "A nested belief shows on Knowledge › Beliefs with Kind = Nested"  # noqa: RUF001
+    assert reads == NESTED_READS
+    assert f'<p class="muted nested-reads">{NESTED_READS}</p>' in nested
+    assert "not-readable" not in nested
+
+
+REPO = Path(__file__).resolve().parents[2]
+OLD_PHRASES = tuple(
+    phrase.replace("'", quote)
+    for phrase in ("can't read nested beliefs back", "can't be read back yet")
+    for quote in ("'", "\u2019")
+)
+COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
+
+
+def _exempted(path: Path, text: str) -> str:
+    """The Knowledge shell's {% comment %} saying #606 was delivered (#327) is the exemption."""
+    if path == REPO / "templates" / "console" / "inspect" / "knowledge.html":
+        return COMMENT.sub(lambda m: "" if "delivered" in m.group(0) else m.group(0), text)
+    return text
+
+
+def test_no_606_sentence_left() -> None:
+    scanned = 0
+    for top in ("console", "templates"):
+        for path in sorted((REPO / top).rglob("*")):
+            if "__pycache__" in path.parts or path.suffix not in (".py", ".html"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            scanned += 1
+            assert "#606" not in _exempted(path, text), path
+            lowered = text.lower()
+            for phrase in OLD_PHRASES:
+                assert phrase not in lowered, (path, phrase)
+    assert scanned > 100
+    shell = (REPO / "templates" / "console" / "inspect" / "knowledge.html").read_text()
+    assert "#606" in shell  # the exemption is still needed: #327's "delivered" comment
 
 
 def test_closed_listed(operator_client: Client, engine: FakeEngine) -> None:

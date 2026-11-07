@@ -26,11 +26,21 @@ or copy, ``impact.budget_warnings`` on an applied edit), never from the earlier 
 which only places its warnings on the form's fields. A held edit's impact page shows the
 answer's ``budget_warnings`` through the impact report alone; "Apply anyway" names them once, in
 an info flash after the success flash.
+
+#311 (E14, E8): when the held report needs a backfill (any listed story's ``backfill.needed``,
+``upgrade_unavailable`` false), "Apply anyway" asks backfill-or-forward-only. The token's ``base``
+then carries ``upgrade_choice: true`` and the report as the Engine answered it (``impact``,
+uncapped: up to 1,000 stories, inside the one compressed token), so a missing or invalid mode
+re-renders the impact page from it with the field's error and no write. ``profile_apply`` reads
+the mode only under ``upgrade_choice``, after main's schema-digest and version checks, and sends
+it as ``upgrade_mode``; without it the confirming body is main's. The applied flash names the
+backfills the edit queued (``ProfileEdit.backfills``, linked to each story's Backfill page) or,
+after a forward-only choice, the coverage gap left behind.
 """
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any
+from typing import Any, Literal, cast
 from urllib.parse import urlencode
 
 from django.contrib import messages
@@ -73,10 +83,15 @@ from console.forms.profiles import (
     ProfileEditForm,
     copy_name,
 )
+from console.forms.upgrades import UpgradeModeForm
 from console.ids import new_ulid
+from console.impact import more_count
 from console.merge_patch import _same
 from console.profile_schema import get_profile_schema_cached
+from console.raw import plural
+from console.upgrades import backfill_url
 from console.views.profiles import DELETED_NO_EDIT, detail_url
+from console.views.story_config import model_json
 
 FORM_KIND = "profile-form"
 APPLY_KIND = "profile-apply"
@@ -103,6 +118,14 @@ IS_DEFAULT_TEXT = "The deployment default can't be deleted — choose another de
 UPGRADE_UNAVAILABLE = (
     "This story has history the Engine can't backfill — it keeps its current configuration"
 )
+APPLY_FORM_ID = "profile-apply"
+UPGRADE_CHOICE = "upgrade_choice"
+BACKFILLS_QUEUED = "; backfills queued for {stories} — each pauses only while its own runs"
+FORWARD_ONLY_GAP = "; earlier turns keep a coverage gap (fill it from each story's Backfill page)"
+COUNT_LINE = "{stories} data-producing capability with history"
+COUNT_TAIL = " (of the first 1,000 listed)"
+
+UpgradeMode = Literal["backfill", "forward_only"]
 
 
 # --- page facts -----------------------------------------------------------------------------------
@@ -528,10 +551,12 @@ def _put(
     key: str,
     data: Mapping[str, list[str]] | None = None,
     warn_in_flash: bool = True,
+    upgrade_mode: UpgradeMode | None = None,
 ) -> HttpResponse:
-    """``PUT`` the form's edit. Applied: the success flash, with the answer's
-    ``impact.budget_warnings`` as its suffix, or (``warn_in_flash`` False, "Apply anyway") as an
-    info flash after it. Held: the impact page with a signed "Apply anyway" payload."""
+    """``PUT`` the form's edit (``upgrade_mode`` only when given, #311). Applied: the success
+    flash, with the answer's ``impact.budget_warnings`` as its suffix, or (``warn_in_flash``
+    False, "Apply anyway") as an info flash after it. Held: the impact page with a signed "Apply
+    anyway" payload, ``upgrade_choice`` re-derived from the new report."""
     name, settings = form.cleaned_data["name"], form.settings()
     try:
         edit = client.update_engine_profile(
@@ -540,6 +565,7 @@ def _put(
             settings=settings,
             ignore_warnings=ignore_warnings,
             idempotency_key=key,
+            upgrade_mode=upgrade_mode,
         )
     except EngineClientError as exc:
         log_engine_error(request, exc)
@@ -550,25 +576,37 @@ def _put(
     if edit.applied:
         warnings = edit.impact.budget_warnings
         suffix = _warning_suffix(warnings) if warn_in_flash else ""
-        messages.success(request, _applied_text(edit, facts, name) + suffix)
+        text = _applied_text(edit, facts, name, client, upgrade_mode)
+        if isinstance(text, SafeString):
+            messages.success(request, format_html("{}{}", text, suffix), extra_tags="safe")
+        else:
+            messages.success(request, text + suffix)
         if not warn_in_flash and warnings:
             messages.info(request, "Warnings: " + _warning_texts(warnings))
         return redirect(detail_url(facts.profile_id))
-    token = twostage.sign(
-        APPLY_KIND,
-        facts.profile_id,
-        {"name": name, "settings": settings},
-        {
-            "facts": facts.signed(),
-            "data": dict(data) if data is not None else _posted_data(request),
-        },
-    )
-    return _impact_page(request, client, facts, edit.impact, token)
+    base: dict[str, Any] = {
+        "facts": facts.signed(),
+        "data": dict(data) if data is not None else _posted_data(request),
+    }
+    choice = needs_upgrade_choice(edit.impact)
+    if choice:
+        base.update({UPGRADE_CHOICE: True, "impact": model_json(edit.impact)})
+    token = twostage.sign(APPLY_KIND, facts.profile_id, {"name": name, "settings": settings}, base)
+    upgrade_form = _upgrade_form() if choice else None
+    return _impact_page(request, client, facts, edit.impact, token, upgrade_form=upgrade_form)
 
 
-def _applied_text(edit: ProfileEdit, facts: FormFacts, name: str) -> str:
+def _applied_text(
+    edit: ProfileEdit,
+    facts: FormFacts,
+    name: str,
+    client: EngineClient,
+    upgrade_mode: str | None = None,
+) -> str | SafeString:
     """ "Saved — version N" (and how many stories follow it), "Renamed — no new version", or
-    "No change — the Engine found nothing to save"."""
+    "No change — the Engine found nothing to save". #311: then the backfills the edit queued
+    (one link each, in queue order: a ``SafeString``), else, after a forward-only choice that
+    left a gap, the gap sentence; without either, main's plain text."""
     result = edit.result
     version = result.current_version if result is not None else None
     if version is not None and version != facts.version:
@@ -578,13 +616,80 @@ def _applied_text(edit: ProfileEdit, facts: FormFacts, name: str) -> str:
             text += "; 1 story follows it from its next turn"
         elif count > 1:
             text += f"; {count} stories follow it from their next turn"
-        return text
-    if name != facts.name:
-        return "Renamed — no new version"
-    return "No change — the Engine found nothing to save"
+    elif name != facts.name:
+        text = "Renamed — no new version"
+    else:
+        text = "No change — the Engine found nothing to save"
+    if edit.backfills:
+        return _backfills_text(client, text, edit)
+    gap = any(s.forward_only_gap is not None for s in edit.impact.affected_stories)
+    if upgrade_mode == "forward_only" and gap:
+        return text + FORWARD_ONLY_GAP
+    return text
+
+
+def _backfills_text(client: EngineClient, text: str, edit: ProfileEdit) -> str | SafeString:
+    """``text`` and "; backfills queued for N stories — …: A (#1), B (#2)": the first
+    :data:`LIST_CAP` by queue position (nulls last, ties in the Engine's order), named through
+    one ``story_labels`` call (a failed read: the id), each linked to its Backfill page (D19:
+    plain text while unregistered), then main's "…and N more"."""
+    backfills = edit.backfills
+    ordered = sorted(backfills, key=lambda b: (b.queue_position is None, b.queue_position or 0))
+    shown = ordered[:LIST_CAP]
+    labels = story_labels(client, [b.story_id for b in shown])
+    parts: list[tuple[str | None, str, str]] = []
+    for backfill in shown:
+        label = labels.get(backfill.story_id)
+        position = f" (#{backfill.queue_position})" if backfill.queue_position is not None else ""
+        parts.append(
+            (
+                backfill_url(backfill.story_id),
+                label.text if label is not None and label.text else backfill.story_id,
+                position,
+            )
+        )
+    clause = BACKFILLS_QUEUED.format(stories=plural(len(backfills), "story", "stories"))
+    more = _more(len(backfills), LIST_CAP)
+    if not any(url for url, _, _ in parts):
+        return f"{text}{clause}: " + ", ".join(f"{t}{p}" for _, t, p in parts) + more
+    items = [
+        format_html('<a href="{}">{}</a>{}', url, label, position)
+        if url
+        else format_html("{}{}", label, position)
+        for url, label, position in parts
+    ]
+    return format_html("{}{}: {}{}", text, clause, SafeString(", ".join(items)), more)
 
 
 # --- impact ---------------------------------------------------------------------------------------
+
+
+def needs_upgrade_choice(impact: ImpactReport) -> bool:
+    """#311: whether "Apply anyway" asks the upgrade mode: a listed story gains data-producing
+    capability with history (``backfill.needed``) and can take an upgrade (``upgrade_unavailable``
+    false, as every M7 Engine answers; a story the Engine can't upgrade keeps its configuration
+    whatever the mode)."""
+    return bool(_backfill_rows(impact))
+
+
+def _backfill_rows(impact: ImpactReport) -> list[str]:
+    return [
+        s.story_id
+        for s in impact.affected_stories
+        if s.backfill.needed and not s.upgrade_unavailable
+    ]
+
+
+def count_line(impact: ImpactReport) -> str:
+    """ "N following stories gain data-producing capability with history" (C11 plural, verb
+    agreeing), " (of the first 1,000 listed)" when the report lists only some."""
+    n = len(_backfill_rows(impact))
+    stories = plural(n, "following story gains", "following stories gain")
+    return COUNT_LINE.format(stories=stories) + (COUNT_TAIL if more_count(impact) else "")
+
+
+def _upgrade_form(data: Any = None) -> UpgradeModeForm:
+    return UpgradeModeForm(data, form_id=APPLY_FORM_ID)
 
 
 def _impact_page(
@@ -593,7 +698,12 @@ def _impact_page(
     facts: FormFacts,
     impact: ImpactReport,
     token: str,
+    *,
+    upgrade_form: UpgradeModeForm | None = None,
 ) -> HttpResponse:
+    """The held edit's report and its "Apply anyway" (a fresh key each render). With
+    ``upgrade_form`` (#311) the page renders the confirm form itself, the radios above its
+    buttons and joined by ``form="profile-apply"``; without it, the partial's own form."""
     ids = [s.story_id for s in impact.affected_stories]
     context = {
         "facts": facts,
@@ -605,10 +715,16 @@ def _impact_page(
         "apply_url": reverse("profiles:apply", args=[facts.profile_id]),
         "signed_payload": token,
         "cancel_url": edit_url(facts.profile_id),
-        "show_apply": True,
+        "show_apply": upgrade_form is None,
         "idempotency_key": new_ulid(),  # the confirming POST's own key (#64 convention 3)
         "upgrade_unavailable_text": UPGRADE_UNAVAILABLE,
     }
+    if upgrade_form is not None:
+        context.update(
+            upgrade_form=upgrade_form,
+            apply_form_id=APPLY_FORM_ID,
+            count_line=count_line(impact),
+        )
     return render(request, "console/profiles/impact.html", context)
 
 
@@ -643,6 +759,12 @@ def profile_apply(request: HttpRequest, profile_id: str) -> HttpResponse:
     stale = _version_check(request, client, facts, form, shown)
     if stale is not None:
         return stale
+    upgrade_mode: UpgradeMode | None = None
+    if base.get(UPGRADE_CHOICE) is True:
+        upgrade_form = _upgrade_form(request.POST)
+        if not upgrade_form.is_valid():
+            return _mode_missing(request, client, facts, base, upgrade_form)
+        upgrade_mode = cast(UpgradeMode, upgrade_form.mode())
     # A payload signed before #234 may carry a "warnings" list: ignored, never read.
     return _put(
         request,
@@ -654,7 +776,26 @@ def profile_apply(request: HttpRequest, profile_id: str) -> HttpResponse:
         key=posted_idempotency_key(request),
         data={str(k): list(v) for k, v in raw_data.items() if isinstance(v, list)},
         warn_in_flash=False,
+        upgrade_mode=upgrade_mode,
     )
+
+
+def _mode_missing(
+    request: HttpRequest,
+    client: EngineClient,
+    facts: FormFacts,
+    base: Mapping[str, Any],
+    upgrade_form: UpgradeModeForm,
+) -> HttpResponse:
+    """A choice-bearing confirm with no valid mode: the impact page again from the report signed
+    in ``base``, the posted token unchanged, a fresh key and the field's error; no write. A
+    report that can't be rebuilt reads as expired (zero calls past the page reads)."""
+    impact = ImpactReport.from_json(base.get("impact"))
+    if impact is None:
+        messages.error(request, twostage.EXPIRED_TEXT)
+        return redirect(edit_url(facts.profile_id))
+    token = request.POST.get(twostage.CONFIRM_FIELD, "")
+    return _impact_page(request, client, facts, impact, token, upgrade_form=upgrade_form)
 
 
 # --- copy -----------------------------------------------------------------------------------------

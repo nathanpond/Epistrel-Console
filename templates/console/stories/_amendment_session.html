@@ -1,0 +1,5 @@
+{% load inspect_tags %}{% comment %}
+#302: the rewrite session that recorded an amendment, linked through E6's rewrite_session_url
+(plain <code> while unregistered, "—" for none). Context: row (an AmendmentRow). No trailing
+newline.
+{% endcomment %}{% if not row.session_id %}—{% elif row.session_url %}<a href="{{ row.session_url }}">{{ row.session_id|engine_id }}</a>{% else %}{{ row.session_id|engine_id }}{% endif %}

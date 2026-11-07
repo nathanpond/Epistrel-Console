@@ -1,0 +1,5 @@
+{# E4 (#294): RewriteModesForm's two fields. Context: form (a form mixing in RewriteModesForm). #}
+<p>{{ form.resolution.label_tag }} {{ form.resolution }}</p>{{ form.resolution.errors }}
+<details{% if form.apply_directly.value %} open{% endif %}><summary>Advanced</summary>
+  <p>{{ form.apply_directly }} {{ form.apply_directly.label_tag }}</p>{{ form.apply_directly.errors }}
+</details>

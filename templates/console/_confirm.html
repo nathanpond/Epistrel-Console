@@ -12,7 +12,7 @@
     <input type="hidden" name="next" value="{{ next_url }}">
     {% for name, value in page.hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">
     {% endfor %}
-    {% if page.fields_template %}{% include page.fields_template %}{% endif %}{% if page.error %}
+    {% if page.fields_template %}{% include page.fields_template %}{% endif %}{% if page.typed_name %}{% include "console/_typed_confirm.html" %}{% endif %}{% if page.error %}
     <p class="errorlist confirm-error">{{ page.error|code_spans }}{% if page.error_url and page.error_link %} — <a href="{{ page.error_url }}">{{ page.error_link }}</a>{% endif %}</p>{% endif %}{% if page.blocked %}
     <p class="warning">{{ page.blocked }}</p>{% endif %}
     <button type="submit"{% if page.blocked %} disabled{% endif %}{% if page.danger %} class="danger"{% endif %}>{{ page.confirm_label }}</button>{% if page.buttons_template %}

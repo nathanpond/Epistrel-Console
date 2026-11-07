@@ -6,7 +6,9 @@ this module's own extraction, from ``lite_history.json`` (a hand-written, schema
 body: say + do of one message, a multi-line reply, a quarantined input with ``<script>`` in it,
 a redacted reply, an ingested turn). #203 added the generated turns' "Report" header link to the
 history golden (every generated turn gets one, Lite included); #250 linked its unlogged
-operation ids to the Engine operation page; nothing else changed."""
+operation ids to the Engine operation page; #305 added each editable row's "Edit this line…"
+link (not on the redacted or quarantined items, nor the do of a say + do message); nothing else
+changed."""
 
 import json
 from typing import Any

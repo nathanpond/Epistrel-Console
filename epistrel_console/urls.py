@@ -9,13 +9,22 @@ from console.ids import UlidConverter
 from console.states import StateNameConverter
 from console.views import (
     acting,
+    amendments,
+    backfill,
     catalog_characters,
     catalog_lifecycle,
     catalog_scenarios,
+    certification_admin,
+    certifications,
+    certify,
+    directives,
     engine_panel,
     erasure,
+    eval_runs,
+    exports,
     feedback,
     history,
+    imports,
     inspect,
     inspect_beliefs,
     inspect_canon,
@@ -27,6 +36,8 @@ from console.views import (
     inspect_ledger,
     inspect_memories,
     inspect_memory,
+    inspect_merge,
+    inspect_outbox,
     inspect_predicates,
     inspect_reconciliation,
     inspect_scene,
@@ -36,6 +47,7 @@ from console.views import (
     inspect_state_proposals,
     inspect_state_set,
     inspect_states,
+    line_edit,
     media,
     media_picker,
     media_proxy,
@@ -50,15 +62,21 @@ from console.views import (
     principals,
     profile_defaults,
     profile_edit,
+    profile_upgrade,
     profiles,
     providers,
+    prune,
     rating_suggestion,
     ratings,
+    rewrite_answers,
+    rewrite_apply,
+    rewrites,
     status,
     stories,
     story_characters,
     story_config,
     story_from_scenario,
+    story_operations,
     story_providers,
     story_rating,
     story_settings,
@@ -89,7 +107,15 @@ story_patterns = (
         path("<str:story_id>/", play.play, name="detail"),
         path("<str:story_id>/turn/", play.turn, name="turn"),
         path("<str:story_id>/ingest/", play.ingest, name="ingest"),
+        # #300 (E11): the Play page's Direct tab POST.
+        path("<str:story_id>/direct/", directives.direct, name="direct"),
         path("<str:story_id>/operations/<str:operation_id>/poll/", play.poll, name="poll"),
+        # #324 (E11): the story's operations as the Engine lists them, beside the poll path.
+        path(
+            "<str:story_id>/operations/",
+            story_operations.operations_list,
+            name="operations-list",
+        ),
         path("<str:story_id>/inspector/", play.inspector, name="inspector"),
         path("<str:story_id>/transcript/", play.transcript, name="transcript"),
         # #185: Override a co-author notice for this session (no Engine call; ``<ulid:…>``).
@@ -99,6 +125,50 @@ story_patterns = (
             name="override-notice",
         ),
         path("<str:story_id>/history/", history.history, name="history"),
+        # #305 (E11): edit one recorded line from History (a line-edit rewrite session).
+        path("<str:story_id>/history/line/", line_edit.line_edit, name="line-edit"),
+        # #297 (E11): the story's Rewrite page and one rewrite session (``<ulid:…>``).
+        path("<str:story_id>/rewrites/", rewrites.rewrites, name="rewrites"),
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/",
+            rewrites.rewrite,
+            name="rewrite",
+        ),
+        # #298: the session's questions form posts here (POST only).
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/answers/",
+            rewrite_answers.answers,
+            name="rewrite-answers",
+        ),
+        # #299 (E11): apply a session's plan (POST) and cancel it behind a confirm page.
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/apply/",
+            rewrite_apply.apply,
+            name="rewrite-apply",
+        ),
+        path(
+            "<str:story_id>/rewrites/<ulid:session_id>/cancel/",
+            rewrite_apply.cancel,
+            name="rewrite-cancel",
+        ),
+        # #302 (E11): the story's amendments and one amendment (``<ulid:…>``).
+        path("<str:story_id>/amendments/", amendments.amendments, name="amendments"),
+        path(
+            "<str:story_id>/amendments/<ulid:amendment_id>/",
+            amendments.amendment,
+            name="amendment",
+        ),
+        # #303 (E11): plan an undo or a redo of an amendment as a rewrite session.
+        path(
+            "<str:story_id>/amendments/<ulid:amendment_id>/undo/",
+            amendments.amendment_undo,
+            name="amendment-undo",
+        ),
+        path(
+            "<str:story_id>/amendments/<ulid:amendment_id>/redo/",
+            amendments.amendment_redo,
+            name="amendment-redo",
+        ),
         # #195: one turn's perception trace, reconstructed per character.
         path(
             "<str:story_id>/turns/<int:turn>/perception/",
@@ -197,6 +267,29 @@ story_patterns = (
             story_rating.rating_check,
             name="rating-check",
         ),
+        # #308: the story's Backfill page (?banner=1, ?partial=1) and its cancel confirm.
+        path("<str:story_id>/backfill/", backfill.backfill_page, name="backfill"),
+        path("<str:story_id>/backfill/cancel/", backfill.backfill_cancel, name="backfill-cancel"),
+        # #309: start a gap fill or finish a paused one (one URL, ``mode``), resolve a conflict.
+        path("<str:story_id>/backfill/start/", backfill.backfill_start, name="backfill-start"),
+        # #314: request a certification run of the story's configuration, estimate first.
+        path("<str:story_id>/certify/", certify.certify_story, name="certify"),
+        path(
+            "<str:story_id>/backfill/conflicts/<str:conflict_id>/",
+            backfill.backfill_conflict,
+            name="backfill-conflict",
+        ),
+        # #317: prune after a dry run (and the past prunings), then the typed-name confirm.
+        path("<str:story_id>/prune/", prune.prune, name="prune"),
+        path("<str:story_id>/prune/confirm/", prune.prune_confirm, name="prune-confirm"),
+        # #319: export the story (its snapshot), follow the export job, download its bundle.
+        path("<str:story_id>/export/", exports.export, name="export"),
+        path("<str:story_id>/export/<ulid:job_id>/", exports.export_job, name="export-job"),
+        path(
+            "<str:story_id>/export/<ulid:job_id>/bundle/",
+            exports.export_download,
+            name="export-download",
+        ),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),
@@ -230,6 +323,8 @@ inspect_patterns = (
         path("canon/<ulid:fact_id>/lineage/", inspect_canon.lineage, name="canon-lineage"),
         # #146: write author canon (commit and its result page again; lock, unlock, supersede).
         path("canon/new/", inspect_canon.new_fact, name="canon-new"),
+        # #306: Merge entities (E11), a rewrite session of kind ``entity_merge``.
+        path("canon/merge/", inspect_merge.entity_merge, name="entity-merge"),
         path("canon/written/", inspect_canon.written, name="canon-written"),
         path("canon/<ulid:fact_id>/lock/", inspect_canon.lock, name="canon-lock"),
         path("canon/<ulid:fact_id>/unlock/", inspect_canon.unlock, name="canon-unlock"),
@@ -251,7 +346,8 @@ inspect_patterns = (
         # EFFECTS_SECTIONS): World's States world/states/ (#242), Proposed States
         # world/states/proposals/ (#266), Clock world/clock/ (#243), Scheduled events
         # world/scheduled-events/ (#244), External values world/external-values/ (#248); Effects'
-        # Reconciliation effects/reconciliation/ (#249) and Effects trail effects/trail/ (#255).
+        # Reconciliation effects/reconciliation/ (#249), Outbox effects/outbox/ (#325, E12) and
+        # Effects trail effects/trail/ (#255).
         # Per-State pages live under the singular world/state/<name>/… (#242, #251, #265), so the
         # fixed world/states/new/ (#261) and world/states/proposals/ never shadow a State named
         # "new" or "proposals".
@@ -353,6 +449,8 @@ inspect_patterns = (
             inspect_reconciliation.reconciliation,
             name="reconciliation",
         ),
+        # #325: the Outbox section (every outbox row the story committed, each at #outbox-<id>).
+        path("effects/outbox/", inspect_outbox.outbox, name="outbox"),
         # #256: settle a listed effect now (confirm page, then the call) and its result again.
         path(
             "effects/reconciliation/settled/",
@@ -374,6 +472,18 @@ inspect_patterns = (
             "effects/reconciliation/<str:outbox_id>/compensate/",
             inspect_reconciliation.compensate,
             name="compensate",
+        ),
+        # #326: resolve a request-keyed or imported_unsettled listing (confirm page, then the
+        # call) and its result again; ``listing`` is the Engine's {listing} (E11).
+        path(
+            "effects/reconciliation/resolved/",
+            inspect_reconciliation.resolved,
+            name="resolved",
+        ),
+        path(
+            "effects/reconciliation/<str:listing>/resolve/",
+            inspect_reconciliation.resolve_listing,
+            name="resolve-listing",
         ),
         # #255: the Effects trail section (every State change the story's turns committed).
         path("effects/trail/", inspect_effects_trail.effects_trail, name="effects-trail"),
@@ -491,6 +601,37 @@ engine_patterns = (
             profile_defaults.profile_defaults_edit,
             name="profile-defaults",
         ),
+        # #313: the deployment's certifications, one record, and a certification run's job page.
+        path("certifications/", certifications.certifications, name="certifications"),
+        path(
+            "certifications/<str:certification_id>/",
+            certifications.certification,
+            name="certification",
+        ),
+        path(
+            "certification-runs/<str:run_id>/",
+            certifications.certification_run,
+            name="certification-run",
+        ),
+        # #315: invalidate a certification (confirm page) and import a hand run's record (a
+        # sibling of certifications/, so an id "import" is never shadowed).
+        path(
+            "certifications/<str:certification_id>/invalidate/",
+            certification_admin.certification_invalidate,
+            name="certification-invalidate",
+        ),
+        path(
+            "certification-import/",
+            certification_admin.certification_import,
+            name="certification-import",
+        ),
+        # #316: the Engine's eval runs (committed reports and certification runs) and one run.
+        path("evals/", eval_runs.eval_runs, name="eval-runs"),
+        path("evals/<str:run_id>/", eval_runs.eval_run, name="eval-run"),
+        # #320: import a bundle as a new story (form, impact confirm, refusals).
+        path("import/", imports.import_page, name="import"),
+        # #321: one import job (stage, progress, validation report; ?partial=1 polls it).
+        path("import/<ulid:job_id>/", imports.import_job, name="import-job"),
     ],
     "engine",
 )
@@ -613,6 +754,14 @@ profile_patterns = (
         path("<str:profile_id>/apply/", profile_edit.profile_apply, name="apply"),
         path("<str:profile_id>/copy/", profile_edit.profile_copy, name="copy"),
         path("<str:profile_id>/delete/", profile_edit.profile_delete, name="delete"),
+        # #310: upgrade the profile's pinned stories (E8's two stages on one URL).
+        path(
+            "<str:profile_id>/upgrade-pinned/",
+            profile_upgrade.upgrade_pinned,
+            name="upgrade-pinned",
+        ),
+        # #314: request a certification run, estimate first (E8's two stages on one URL).
+        path("<str:profile_id>/certify/", certify.certify_profile, name="certify"),
     ],
     "profiles",
 )

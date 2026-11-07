@@ -264,8 +264,8 @@ def test_binding_incomplete_for_a_provider_without_a_row_shows_at_the_top(
 
 
 def test_not_found_lands_on_the_provider_row(operator_client: Client, engine: FakeEngine) -> None:
-    # D18: POST /stories doesn't declare this 404 (Engine bug nathanpond/Epistrel#682).
-    engine.respond_undeclared(
+    # D18: POST /stories' 404, declared since Engine M7 (#682).
+    engine.respond(
         "POST",
         "/stories",
         404,
@@ -282,13 +282,21 @@ def test_not_found_lands_on_the_provider_row(operator_client: Client, engine: Fa
 def test_a_404_naming_no_sent_binding_is_the_error_panel(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    engine.respond_undeclared(
-        "POST", "/stories", 404, json=error_422("not_found", "gone", provider="vault")
-    )
+    # D18: declared since Engine M7 (#682).
+    engine.respond("POST", "/stories", 404, json=error_422("not_found", "gone", provider="vault"))
     html = operator_client.post(URL, form_data(GUILD)).content.decode()
     assert "The Engine rejected the story" not in html
     assert "isn&#x27;t registered (anymore)" not in html
     assert "not_found" in html  # the panel names the code
+
+
+def test_the_stories_404_is_declared_since_engine_m7(engine: FakeEngine) -> None:
+    """**Complement** (#291): ``respond_undeclared`` now refuses ``POST /stories``' 404, which
+    the route declares since Engine M7 (#682)."""
+    with pytest.raises(ValueError, match="declares 404"):
+        engine.respond_undeclared(
+            "POST", "/stories", 404, json=error_422("not_found", "gone", provider="vault")
+        )
 
 
 def test_external_id_validation_lands_on_its_input(

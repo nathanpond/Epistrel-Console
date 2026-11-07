@@ -1,0 +1,5 @@
+{% comment %}
+#315: the invalidate confirm page's reason and note (console/forms/certification_admin.py
+InvalidateFields), inside #43's Confirm form. Context: fields.
+{% endcomment %}<fieldset class="field field-reason"><legend>{{ fields.reason.label }}</legend>{{ fields.reason.errors }}{{ fields.reason }}</fieldset>
+    <p class="field field-note">{{ fields.note.errors }}{{ fields.note.label_tag }}<br>{{ fields.note }}<br><small class="muted help">{{ fields.note.help_text }}</small></p>

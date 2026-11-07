@@ -1,0 +1,8 @@
+{% for heading, rows in view.preview.radius %}<h4>{{ heading }} ({{ rows|length }})</h4>
+{% if rows %}<table class="radius">
+  <thead><tr><th>Record</th><th>Action</th><th>Excerpt</th><th>Position</th><th>Severity</th><th>Reason</th><th>Options</th><th></th></tr></thead>
+  <tbody>{% for row in rows %}
+    <tr><td>{{ row.record_text }}</td><td>{{ row.action_text }}</td><td>{% if row.excerpt %}<q>{{ row.excerpt }}</q>{% else %}—{% endif %}</td><td>{{ row.position_text }}</td><td>{% if row.severity %}<span class="badge{% if row.severity_raw == "high" %} severity-high{% elif row.severity_raw == "low" %} severity-low{% endif %}" title="{{ row.severity_raw }}">{{ row.severity }}</span>{% else %}—{% endif %}</td><td>{{ row.reason_text }}</td><td>{{ row.options_text }}</td><td class="more"><details><summary>More</summary><pre>{{ row.more }}</pre></details></td></tr>{% endfor %}
+  </tbody>
+</table>{% else %}<p>None</p>{% endif %}
+{% endfor %}

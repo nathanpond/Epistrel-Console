@@ -337,3 +337,170 @@ def test_the_m6_id_rule_skips_provider_side_values() -> None:
         "outbox_id": "c",
     }
     assert sorted(_m6_id_strings(body)) == ["a", "b", "c"]
+
+
+# #292 (E16, E20): each M7 fixture and the answer it is (method, route template, status), the
+# page-story fixtures folded in at reconcile included. The ``*_bad_item.json`` files are not
+# schema-valid on purpose (the leniency tests read them); ``bundle.epistrel.tgz`` is binary.
+M7_REWRITES = "/stories/{story_id}/rewrites"
+M7_SESSION = "/stories/{story_id}/rewrites/{session_id}"
+M7_FIXTURES = {
+    "story": ("GET", "/stories/{story_id}", 200),
+    # rewrites
+    "rewrite_open": ("POST", M7_REWRITES, 201),
+    "rewrite_session": ("GET", M7_SESSION, 200),
+    "rewrite_session_lite": ("GET", M7_SESSION, 200),
+    "rewrite_session_applied": ("GET", M7_SESSION, 200),
+    "rewrite_session_directed": ("GET", M7_SESSION, 200),
+    "rewrites": ("GET", M7_REWRITES, 200),
+    "rewrite_applied": ("POST", f"{M7_SESSION}/apply", 200),
+    "rewrite_cancelled": ("POST", f"{M7_SESSION}/cancel", 200),
+    # directives
+    "directive_steer": ("POST", "/stories/{story_id}/directives", 200),
+    "directive_applied": ("POST", "/stories/{story_id}/directives", 200),
+    "directive_routed": ("POST", "/stories/{story_id}/directives", 202),
+    "directive_lite": ("POST", "/stories/{story_id}/directives", 200),
+    "directed_pending": ("POST", "/stories/{story_id}/regenerate", 202),
+    # amendments and merge
+    "amendments": ("GET", "/stories/{story_id}/amendments", 200),
+    "amendment": ("GET", "/stories/{story_id}/amendments/{amendment_id}", 200),
+    "undo_session": ("POST", "/stories/{story_id}/amendments/{amendment_id}/undo", 201),
+    "redo_session": ("POST", "/stories/{story_id}/amendments/{amendment_id}/redo", 201),
+    "merge_session": ("POST", "/stories/{story_id}/entities/merge", 201),
+    # backfill
+    "backfill_preview": ("POST", "/stories/{story_id}/backfill", 200),
+    "backfill_started": ("POST", "/stories/{story_id}/backfill", 202),
+    "backfill_resume_preview": ("POST", "/stories/{story_id}/backfill", 200),
+    "backfill_extracting": ("GET", "/stories/{story_id}/backfill", 200),
+    "backfill_paused": ("GET", "/stories/{story_id}/backfill", 200),
+    "backfill_completed": ("GET", "/stories/{story_id}/backfill", 200),
+    "backfill_cancelled": ("DELETE", "/stories/{story_id}/backfill", 200),
+    "backfill_conflict_resolved": ("POST", "/stories/{story_id}/backfill/conflicts/{cid}", 200),
+    # upgrades
+    "upgrade_pinned_impact": ("POST", "/engine-profiles/{profile_id}/upgrade-pinned", 200),
+    "upgrade_pinned_applied": ("POST", "/engine-profiles/{profile_id}/upgrade-pinned", 200),
+    # certification
+    "certification_estimate": ("POST", "/engine-profiles/{profile_id}/certification-runs", 200),
+    "certification_queued": ("POST", "/engine-profiles/{profile_id}/certification-runs", 202),
+    "story_certification_estimate": ("POST", "/stories/{story_id}/certification-runs", 200),
+    "certification_run": ("GET", "/certification-runs/{run_id}", 200),
+    "certification_run_running": ("GET", "/certification-runs/{run_id}", 200),
+    "certifications": ("GET", "/certifications", 200),
+    "certification": ("GET", "/certifications/{certification_id}", 200),
+    "certification_imported": ("POST", "/admin/certifications/import", 200),
+    "certification_invalidated": (
+        "POST",
+        "/admin/certifications/{certification_id}/invalidate",
+        200,
+    ),
+    # evals
+    "eval_runs": ("GET", "/admin/evals/runs", 200),
+    "eval_run": ("GET", "/admin/evals/runs/{run_id}", 200),
+    # pruning, export and import
+    "prune_impact": ("POST", "/stories/{story_id}/prune", 200),
+    "prune_applied": ("POST", "/stories/{story_id}/prune", 200),
+    "prune_runs": ("GET", "/stories/{story_id}/prune-runs", 200),
+    "export_started": ("POST", "/admin/stories/{story_id}/export", 202),
+    "export_job_running": ("GET", "/admin/stories/exports/{job_id}", 200),
+    "export_job_ready": ("GET", "/admin/stories/exports/{job_id}", 200),
+    "export_job_failed": ("GET", "/admin/stories/exports/{job_id}", 200),
+    "export_job_expired": ("GET", "/admin/stories/exports/{job_id}", 200),
+    "import_impact": ("POST", "/admin/stories/import", 200),
+    "import_started": ("POST", "/admin/stories/import", 202),
+    "import_job_running": ("GET", "/admin/stories/imports/{job_id}", 200),
+    "import_job_ready": ("GET", "/admin/stories/imports/{job_id}", 200),
+    "import_job_refused": ("GET", "/admin/stories/imports/{job_id}", 200),
+    # catch-up
+    "operations": ("GET", "/stories/{story_id}/operations", 200),
+    "outbox": ("GET", "/stories/{story_id}/outbox", 200),
+    "listing_resolved": ("POST", "/stories/{story_id}/reconciliation/{listing}/resolve", 200),
+    "state_definition": ("GET", "/stories/{story_id}/states/{name}/definition", 200),
+    # existing calls
+    "presets": ("GET", "/engine-profiles", 200),
+    "beliefs_nested": ("GET", "/stories/{story_id}/inspect/beliefs", 200),
+    # page-story fixtures (E16, folded into #292)
+    "history_as_recorded": ("GET", "/stories/{story_id}/history", 200),  # #304
+    "rewrite_two_questions": ("GET", M7_SESSION, 200),  # #298
+    "rewrite_line_edit": ("POST", M7_REWRITES, 201),  # #305
+    "impact_preview_backfill": ("PUT", "/stories/{story_id}/engine-profile", 200),  # #307
+    "assign_backfill_started": ("PUT", "/stories/{story_id}/engine-profile", 202),  # #307
+    "profile_edit_backfill_impact": ("PUT", "/engine-profiles/{profile_id}", 200),  # #311
+    "profile_edit_backfills_applied": ("PUT", "/engine-profiles/{profile_id}", 200),  # #311
+    "reconciliation_m7": ("GET", "/stories/{story_id}/reconciliation", 200),  # #326
+}
+M7_ID_KEYS = frozenset({"id", "compensates", "compensated_by", "undoes", "redoes", "reverted_by"})
+# E16's skips: a question's ``options`` (``o1``…) and the option ids naming them, a floor's
+# ``metric_id`` (a metric name), and ``models`` (model names under ``id``).
+M7_SKIPPED = frozenset(
+    {"options", "recommended_option_id", "answer_option_id", "metric_id", "models"}
+)
+# The answers that carry no Engine id at all (estimates, an eval report, a State definition).
+M7_ID_LESS = frozenset(
+    {
+        "backfill_preview",
+        "certification_estimate",
+        "story_certification_estimate",
+        "eval_runs",
+        "eval_run",
+        "state_definition",
+    }
+)
+# An eval ``run_id`` is a report path stem and a metric's ``id`` a metric name, not ULIDs (E16):
+# skipped in the eval fixtures only.
+M7_EVAL_FIXTURES = frozenset({"eval_runs", "eval_run"})
+M7_EVAL_SKIPPED = frozenset({"run_id", "metrics"})
+
+
+def _m7_id_strings(value: object, key: str | None = None, *, skip: frozenset[str]) -> list[str]:
+    """Every string in ``value`` under a key that names an id: ``id``, ``*_id``, ``*_ids``
+    (each item), and the outbox and amendment links (:data:`M7_ID_KEYS`); keys in ``skip`` (a
+    subtree too) are passed over."""
+    if key in skip:
+        return []
+    if isinstance(value, dict):
+        return [s for k, v in value.items() for s in _m7_id_strings(v, k, skip=skip)]
+    if isinstance(value, list):
+        inner = "id" if key is not None and key.endswith("_ids") else None
+        return [s for v in value for s in _m7_id_strings(v, inner, skip=skip)]
+    named = key is not None and (key in M7_ID_KEYS or key.endswith("_id"))
+    return [value] if named and isinstance(value, str) else []
+
+
+@pytest.mark.parametrize("name", sorted(M7_FIXTURES))
+def test_m7_fixtures_validate(fake_engine: FakeEngine, name: str) -> None:
+    from console.ids import is_ulid
+    from tests.fixtures import ENGINE
+
+    method, route, status = M7_FIXTURES[name]
+    body = json.loads((ENGINE / "m7" / f"{name}.json").read_text(encoding="utf-8"))
+    fake_engine.respond(method, route, status, json=body)  # validated against the schema
+    skip = M7_SKIPPED | (M7_EVAL_SKIPPED if name in M7_EVAL_FIXTURES else frozenset())
+    ids = _m7_id_strings(body, skip=skip)
+    assert bool(ids) is (name not in M7_ID_LESS)
+    assert [i for i in ids if not is_ulid(i)] == []
+
+
+def test_every_m7_fixture_is_in_the_table() -> None:
+    """**Complement:** a file in ``glob("m7/*.json")`` (but a ``*_bad_item.json``) missing from
+    the table fails."""
+    from tests.fixtures import ENGINE
+
+    files = {p.stem for p in (ENGINE / "m7").glob("*.json") if not p.stem.endswith("_bad_item")}
+    assert files == set(M7_FIXTURES)
+    assert len(M7_FIXTURES) == 67
+
+
+def test_the_m7_id_rule_skips_option_and_metric_names() -> None:
+    """The id rule reads the amendment links and ``*_ids`` items and skips E16's names: option
+    ids, a floor's metric and model names; an eval ``run_id`` only where it is skipped."""
+    body = {
+        "reverted_by": "a",
+        "entity_ids": ["b"],
+        "options": [{"id": "o1"}],
+        "recommended_option_id": "o1",
+        "floors": [{"metric_id": "NFR-QUAL-1.x"}],
+        "models": {"generation": {"id": "claude"}},
+        "run_id": "full-2026-11-05",
+    }
+    assert sorted(_m7_id_strings(body, skip=M7_SKIPPED)) == ["a", "b", "full-2026-11-05"]
+    assert sorted(_m7_id_strings(body, skip=M7_SKIPPED | M7_EVAL_SKIPPED)) == ["a", "b"]

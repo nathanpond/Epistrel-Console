@@ -1,0 +1,55 @@
+{% extends "console/engine/page_base.html" %}
+{% comment %}
+#320: import a bundle as a new story (engine:import, console/views/imports.py). stage "form": the
+restore line, a started result (started_text, started_key: before #321 registers the job page),
+a re-held report shown without a confirm (impact, with notice above the form), #43's panel
+(engine_error), a form-level error (form_error), then the form (form; refusal on its field or
+above; kept_token/keep_text: the kept spool's hidden field and box). stage "impact": the held
+line, "Nothing was created yet", facts, the report (console/_impact_report.html) and
+console/_two_stage.html (token, confirm_url, confirm_label, cancel_url, confirm_key). Both end
+with the recent imports (recent: RecentRow list) and not_listed_note.
+{% endcomment %}
+{% block engine_page %}{% load console_format principals %}
+<p class="restore-line">{{ restore_line }}</p>
+{% if stage == "impact" %}
+<section class="import-impact">
+  <p class="held">{{ held_line }}</p>
+  <p class="nothing-created"><strong>{{ nothing_created }}</strong></p>
+  <dl class="import-facts">{% for label, value in facts %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+  {% include "console/_impact_report.html" %}
+  {% include "console/_two_stage.html" with idempotency_key=confirm_key %}
+</section>
+{% else %}
+{% if started_text %}<div class="import-started"><p class="started">{{ started_text }}</p><p class="muted key-tail">Idempotency key <code>{{ started_key }}</code></p></div>{% endif %}
+{% if impact %}{% include "console/_impact_report.html" %}{% endif %}
+{% if notice %}<p class="warning notice" role="alert">{{ notice }}</p>{% endif %}
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if form_error %}<p class="refusal form-error" role="alert">{{ form_error }}</p>{% endif %}
+{% if refusal and not refusal.field %}<div class="refusal" role="alert"><p class="refusal-text">{{ refusal.text }}</p>{% if refusal.note %}<p class="refusal-note">{{ refusal.note }}</p>{% endif %}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="import-form">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  {{ form.non_field_errors }}
+  {% for field in form.visible_fields %}{% if field.name != "keep_spool" %}<div class="field field-{{ field.name }}">{{ field.errors }}{% if refusal and refusal.field == field.name %}<span class="refusal" role="alert"><span class="refusal-text">{{ refusal.text }}</span>{% if refusal.note %}<br><small class="refusal-note">{{ refusal.note }}</small>{% endif %}</span><br>{% endif %}{% if field.name == "upgrade_mode" %}<span class="label">{{ field.label }}</span>{% else %}{{ field.label_tag }}{% endif %} {{ field }}{% if field.help_text %}<br><small class="muted help">{{ field.help_text }}</small>{% endif %}</div>
+  {% if field.name == "file" and kept_token %}<div class="field field-keep-spool"><input type="hidden" name="spool" value="{{ kept_token }}"><label><input type="checkbox" name="keep_spool" value="1" checked> {{ keep_text }}</label></div>
+  {% endif %}{% endif %}{% endfor %}<p><button type="submit">{{ import_button }}</button></p>
+</form>
+{% endif %}
+<section class="recent-imports">
+  <h3>{{ recent_heading }}</h3>
+  {% if recent %}<table class="recent-imports">
+    <thead><tr><th>Started</th><th>By</th><th>Outcome</th><th>Job</th><th>New story</th></tr></thead>
+    <tbody>
+      {% for row in recent %}<tr class="recent-import">
+        <td>{{ row.started_at|engine_time }}</td>
+        <td>{{ row.principal|principal_link }}</td>
+        <td><span class="outcome" title="{{ row.outcome }}">{{ row.outcome|humanised }}</span></td>
+        <td>{% if row.job_url %}<a href="{{ row.job_url }}"><code>{{ row.job_id }}</code></a>{% else %}<code>{{ row.job_id }}</code>{% endif %}</td>
+        <td>{% if row.story_url %}<a href="{{ row.story_url }}"><code>{{ row.story_id }}</code></a>{% elif row.story_id %}<code>{{ row.story_id }}</code>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="none">{{ no_imports }}</p>{% endif %}
+  <p class="muted not-listed">{{ not_listed_note }}</p>
+</section>
+{% endblock %}

@@ -1,0 +1,334 @@
+{
+  "timeline_revision": 21,
+  "config_revision": 30,
+  "applied": true,
+  "result": {
+    "story_id": "01JM7ST0000000000000000001",
+    "deployment_defaults": {
+      "memory": {
+        "episodic": {
+          "enabled": false,
+          "k": 8,
+          "hybrid_search": true,
+          "reranking": false,
+          "weight_similarity": 0.6,
+          "weight_recency": 0.2,
+          "weight_importance": 0.2,
+          "recency_half_life_turns": 100,
+          "retrieval_token_budget": 3000
+        },
+        "consolidation": {
+          "enabled": false,
+          "cadence_turns": 20,
+          "window_memories": 50
+        },
+        "hot_set": {
+          "memories_per_character": 2000,
+          "vectors_per_story": 50000,
+          "importance_floor": 0.2,
+          "retirement_max_lag": 50,
+          "retain_retired_vectors": false,
+          "retain_dormant_vectors": false
+        },
+        "rolling_summary": {
+          "enabled": true,
+          "window_messages": 30,
+          "compress_threshold_tokens": 6000
+        }
+      },
+      "verification": {
+        "level": "off",
+        "extraction_mode": "gated",
+        "entailment_gate": 1.0,
+        "contradiction_checking": false,
+        "implication_max_depth": 3,
+        "entailment_min_confidence": 0.6,
+        "safe_disposition": "repair",
+        "shape_tightening": "on"
+      },
+      "commitment": {
+        "enabled": false,
+        "salience": "rules",
+        "salience_bias": "balanced"
+      },
+      "repair": {
+        "max_attempts": 0,
+        "implication_threshold": 2,
+        "polish": {
+          "enabled": true,
+          "max_regenerations": 2
+        }
+      },
+      "render": {
+        "max_beats": 6,
+        "working_memory_beats": 20,
+        "prompt_token_budget": 6000
+      },
+      "character_knowledge": {
+        "partitions": false,
+        "nested_beliefs": {
+          "enabled": false,
+          "depth": 2
+        },
+        "lazy_resolution": false,
+        "testimony": "off",
+        "max_adjudications_per_turn": 2,
+        "max_lazy_resolutions_per_turn": 20
+      },
+      "perception": {
+        "level": "none"
+      },
+      "multi_character": {
+        "renders": "combined",
+        "interjection_max_words": 6
+      },
+      "clock": {
+        "level": "off",
+        "time_claims": false,
+        "scheduled_stops": false
+      },
+      "states": {
+        "level": "off"
+      },
+      "pipeline": "lite",
+      "pins": {
+        "enabled": true,
+        "max_pinned": 50
+      },
+      "budgets": {
+        "model_calls": null,
+        "deadline_ms": 45000
+      },
+      "models": {
+        "purposes": {
+          "generation": {
+            "model": null
+          },
+          "guardrail_check": {
+            "model": null
+          },
+          "lite_summary": {
+            "model": null
+          }
+        },
+        "generation": {
+          "temperature": 0.8,
+          "top_p": 0.95,
+          "response_length": "medium"
+        }
+      }
+    },
+    "profile": {
+      "id": "00000000000000000000PRF002",
+      "version": 4,
+      "pinned": false,
+      "deleted": false
+    },
+    "overrides": {
+      "revision": 0,
+      "settings": {}
+    },
+    "effective": {
+      "memory": {
+        "episodic": {
+          "enabled": true,
+          "k": 40,
+          "hybrid_search": true,
+          "reranking": false,
+          "weight_similarity": 0.6,
+          "weight_recency": 0.2,
+          "weight_importance": 0.2,
+          "recency_half_life_turns": 100,
+          "retrieval_token_budget": 3000
+        },
+        "consolidation": {
+          "enabled": true,
+          "cadence_turns": 20,
+          "window_memories": 50
+        },
+        "hot_set": {
+          "memories_per_character": 2000,
+          "vectors_per_story": 50000,
+          "importance_floor": 0.2,
+          "retirement_max_lag": 50,
+          "retain_retired_vectors": false,
+          "retain_dormant_vectors": false
+        },
+        "rolling_summary": {
+          "enabled": false,
+          "window_messages": 30,
+          "compress_threshold_tokens": 6000
+        }
+      },
+      "verification": {
+        "level": "entailment",
+        "extraction_mode": "always",
+        "entailment_gate": 1.0,
+        "contradiction_checking": true,
+        "implication_max_depth": 3,
+        "entailment_min_confidence": 0.6,
+        "safe_disposition": "repair",
+        "shape_tightening": "on"
+      },
+      "commitment": {
+        "enabled": true,
+        "salience": "rules_and_model",
+        "salience_bias": "balanced"
+      },
+      "repair": {
+        "max_attempts": 1,
+        "implication_threshold": 2,
+        "polish": {
+          "enabled": true,
+          "max_regenerations": 2
+        }
+      },
+      "render": {
+        "max_beats": 6,
+        "working_memory_beats": 20,
+        "prompt_token_budget": 6000
+      },
+      "character_knowledge": {
+        "partitions": true,
+        "nested_beliefs": {
+          "enabled": true,
+          "depth": 2
+        },
+        "lazy_resolution": true,
+        "testimony": "model",
+        "max_adjudications_per_turn": 2,
+        "max_lazy_resolutions_per_turn": 20
+      },
+      "perception": {
+        "level": "full"
+      },
+      "multi_character": {
+        "renders": "per_character",
+        "interjection_max_words": 6
+      },
+      "clock": {
+        "level": "on",
+        "time_claims": true,
+        "scheduled_stops": true
+      },
+      "states": {
+        "level": "on"
+      },
+      "pipeline": "structured",
+      "pins": {
+        "enabled": true,
+        "max_pinned": 50
+      },
+      "budgets": {
+        "model_calls": 16,
+        "deadline_ms": 60000
+      },
+      "models": {
+        "purposes": {
+          "generation": {
+            "model": null
+          },
+          "guardrail_check": {
+            "model": null
+          },
+          "lite_summary": {
+            "model": null
+          }
+        },
+        "generation": {
+          "temperature": 0.8,
+          "top_p": 0.95,
+          "response_length": "medium"
+        }
+      }
+    },
+    "fingerprint": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+    "capabilities": [
+      "budgets",
+      "clock",
+      "commitment",
+      "consolidation",
+      "contradiction_checking",
+      "episodic",
+      "lazy_resolution",
+      "models",
+      "multi_character:per_character",
+      "nested_beliefs",
+      "partitions",
+      "perception:full",
+      "pins",
+      "polish",
+      "repair",
+      "scheduled_stops",
+      "states",
+      "structured",
+      "testimony:model",
+      "time_claims",
+      "verification:entailment"
+    ],
+    "quality_status": {
+      "status": "certified",
+      "certification_id": "01JM7CT0000000000000000001",
+      "floors_passed": [
+        "NFR-QUAL-2.false_contradiction",
+        "NFR-QUAL-2.false_support",
+        "NFR-QUAL-4.recall",
+        "NFR-QUAL-5.valid_after_retry",
+        "NFR-QUAL-9.within_range",
+        "smoke.turn_completed"
+      ]
+    },
+    "pending_backfill": {
+      "id": "01JM7BF0000000000000000003"
+    }
+  },
+  "idempotency_key": "01JM7KY0000000000000000001",
+  "impact": {
+    "affected_stories": [
+      {
+        "story_id": "01JM7ST0000000000000000001",
+        "capabilities_gained": [
+          "commitment",
+          "episodic"
+        ],
+        "capabilities_lost": [],
+        "backfill": {
+          "needed": true,
+          "estimate": {
+            "model_calls": 12,
+            "tokens": 18000,
+            "duration_s": 40.0
+          },
+          "range": {
+            "from_turn": 1,
+            "to_turn": 3
+          }
+        },
+        "upgrade_unavailable": false,
+        "capabilities_after": [
+          "structured",
+          "episodic"
+        ],
+        "fingerprint_before": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "fingerprint_after": "sha256:4710ae26cb731c016d2b86c747e7d3e40e7e9b0a3cfda00bfe60118230039b4b",
+        "quality_status_after": {
+          "status": "certified",
+          "certification_id": "01JM7CT0000000000000000001"
+        }
+      }
+    ],
+    "affected_count": 1,
+    "recommendations_unmet": [],
+    "guarantees_lost": [],
+    "warnings": [],
+    "capabilities_after": null,
+    "quality_status_after": null,
+    "fingerprint_before": null,
+    "fingerprint_after": null
+  },
+  "backfill": {
+    "id": "01JM7BF0000000000000000003",
+    "job_id": "01JM7JB0000000000000000003",
+    "status": "queued"
+  }
+}

@@ -1,0 +1,35 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#319: the story's Export page (stories:export, console/views/exports.py). The snapshot line
+(snapshot_line, "an import" linked while engine:import resolves), a refusal (refusal) or #43's
+panel (engine_error) above the "Export now" form (export_url, export_key, export_label), then
+"Recent exports from this Console": recent ((RecentJob, job page url) pairs, newest first),
+latest_text (only with exactly 20 rows) and not_listed_note.
+{% endcomment %}
+{% block story_page %}{% load console_format principals %}
+<p class="snapshot-line">{{ snapshot_line }}</p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if refusal %}<p class="refusal" role="alert">{% if refusal.url %}<a href="{{ refusal.url }}">{{ refusal.text }}</a>{% else %}{{ refusal.text }}{% endif %}</p>{% endif %}
+<form method="post" action="{{ export_url }}" class="export-now">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ export_key }}">
+  <button type="submit">{{ export_label }}</button>
+</form>
+<section class="recent-exports">
+  <h3>Recent exports from this Console</h3>
+  {% if recent %}<table class="recent-exports">
+    <thead><tr><th>Started</th><th>By</th><th>Outcome</th><th>Job</th></tr></thead>
+    <tbody>
+      {% for row, url in recent %}<tr class="recent-export">
+        <td>{{ row.started_at|engine_time }}</td>
+        <td>{{ row.principal|principal_link }}</td>
+        <td><span class="outcome" title="{{ row.outcome }}">{{ row.outcome|humanised }}</span></td>
+        <td><a href="{{ url }}"><code>{{ row.job_id }}</code></a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if latest_text %}<p class="muted latest">{{ latest_text }}</p>{% endif %}
+  {% else %}<p class="none">No exports from this Console yet.</p>{% endif %}
+  <p class="muted not-listed">{{ not_listed_note }}</p>
+</section>
+{% endblock %}

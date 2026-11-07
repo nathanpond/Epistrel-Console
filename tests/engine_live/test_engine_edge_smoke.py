@@ -6,11 +6,15 @@ Run by ci.yml's engine-smoke job against the Engine ``edge`` image; locally, see
 
 import re
 import time
+from typing import Any
+from uuid import uuid4
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 
 from console.engine.client import ENGINE_PROFILES_PAGE, EngineClient, EngineError
+from console.engine.models import CertificationRunRequested, EngineProfile
 from console.engine_api_check import check_engine_api
 from console.engine_probe import probe
 from console.ids import new_ulid
@@ -18,6 +22,19 @@ from console.models import EngineOperation
 from tests.plugins.engine_live import live_key, live_url
 
 pytestmark = pytest.mark.engine_live
+
+# Engine M7's seeded presets (#293, absorbing #282): ``Structured`` became Full in place (same id,
+# version 4; versions 1 to 3 stay pinnable), beside Lite, Standard and Max.
+LITE_PROFILE_ID = "00000000000000000000PRF001"
+FULL_PROFILE_ID = "00000000000000000000PRF002"
+STANDARD_PROFILE_ID = "00000000000000000000PRF003"
+MAX_PROFILE_ID = "00000000000000000000PRF004"
+PRESET_NAMES = {
+    LITE_PROFILE_ID: "Lite",
+    STANDARD_PROFILE_ID: "Standard",
+    FULL_PROFILE_ID: "Full",
+    MAX_PROFILE_ID: "Max",
+}
 
 
 @pytest.fixture
@@ -131,7 +148,10 @@ def test_story_create_archive_list_delete_live(
             listing = operator_client.get("/stories/").content.decode()
             assert f"<code>{story_id}</code>" in listing  # archived stories are listed
             row = listing[listing.index(f"<code>{story_id}</code>") :]
-            assert '<td class="status">archived</td>' in row[: row.index("</tr>")]
+            assert (
+                '<td class="status"><span title="archived">Archived</span></td>'
+                in row[: row.index("</tr>")]
+            )
             assert "<td>2</td>" in row[: row.index("</tr>")]  # the cast
         finally:
             deleted = operator_client.post(
@@ -450,9 +470,9 @@ def test_two_primary_sequential_turn_live(
     url: str, key: str, operator_client: Client, operator: object
 ) -> None:
     """#200: as ``test_play_one_turn_live``, on a story with a player and two non-players
-    assigned the seeded ``Structured`` profile v2 (per-character renders): one turn from the play
-    view naming both non-players as render characters, sequentially, answers 200 with an
-    ``order`` of length 2."""
+    assigned the seeded Full v2 (formerly Structured v2) profile (per-character renders): one
+    turn from the play view naming both non-players as render characters, sequentially, answers
+    200 with an ``order`` of length 2."""
     client = EngineClient(url, key, principal="console:smoke")
     ratings = client.list_content_ratings()
     created = client.create_story(
@@ -473,7 +493,7 @@ def test_two_primary_sequential_turn_live(
     try:
         client.assign_engine_profile(
             story_id,
-            _structured_profile(client),
+            _full_profile(client),
             ignore_warnings=True,
             idempotency_key=new_ulid(),
             version=2,
@@ -510,19 +530,42 @@ def test_two_primary_sequential_turn_live(
         _delete_when_idle(client, story_id)
 
 
-def _structured_profile(client: EngineClient) -> str:
-    """The id of the one profile named exactly ``Structured`` (no hard-coded id)."""
-    names: list[str] = []
-    found: list[str] = []
+def _full_profile(client: EngineClient) -> str:
+    """The Full preset's id, read by its stable id (#282): it must be named ``Full``, be a
+    preset and be at version 4 or later, so a renamed or moved seed fails loudly rather than
+    silently testing another profile."""
+    profile = client.get_engine_profile(FULL_PROFILE_ID)
+    assert profile.name == "Full", f"{FULL_PROFILE_ID} is named {profile.name!r}, not 'Full'"
+    assert profile.preset is True, f"{FULL_PROFILE_ID} is not a preset"
+    assert profile.current_version >= 4, f"Full is at version {profile.current_version}"
+    return FULL_PROFILE_ID
+
+
+def _every_profile(client: EngineClient) -> list[EngineProfile]:
+    """Every listed profile (``include_deleted`` off), through every cursor."""
+    found: list[EngineProfile] = []
     cursor: str | None = None
     while True:
         profiles, cursor = client.list_engine_profiles(cursor=cursor, limit=ENGINE_PROFILES_PAGE)
-        names.extend(p.name for p in profiles)
-        found.extend(p.id for p in profiles if p.name == "Structured")
+        found.extend(profiles)
         if not cursor:
-            break
-    assert len(found) == 1, f"expected one profile named 'Structured', saw {names}"
-    return found[0]
+            return found
+
+
+@pytest.mark.engine_auth
+def test_m7_presets_live(url: str, key: str) -> None:
+    """#293: the profile list names Lite, Standard, Full and Max at their four stable ids, each a
+    preset, with Full at version 4 or later (other profiles are tolerated). **Complement:** no
+    profile is named ``Structured`` any more."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profiles = _every_profile(client)
+    by_id = {p.id: p for p in profiles}
+    for profile_id, name in PRESET_NAMES.items():
+        assert profile_id in by_id, f"{name} ({profile_id}) is not listed"
+        assert by_id[profile_id].name == name
+        assert by_id[profile_id].preset is True
+    assert by_id[FULL_PROFILE_ID].current_version >= 4
+    assert [p.id for p in profiles if p.name == "Structured"] == []
 
 
 def _knowledge_story(client: EngineClient, profile: str, version: int) -> str:
@@ -558,11 +601,11 @@ def _knowledge_story(client: EngineClient, profile: str, version: int) -> str:
 
 @pytest.mark.engine_auth
 def test_m5_knowledge_reads_live(url: str, key: str) -> None:
-    """#186: on ``Structured`` v2 (partitions on) the three knowledge reads answer empty pages
-    for a story with no turn; **Complement:** on v1 ("Structured (M4)", no partitions) each is
-    409 ``module_off``."""
+    """#186: on Full v2 (formerly Structured v2; partitions on) the three knowledge reads answer
+    empty pages for a story with no turn; **Complement:** on Full v1 (formerly Structured v1,
+    "Structured (M4)", no partitions) each is 409 ``module_off``."""
     client = EngineClient(url, key, principal="console:smoke")
-    profile = _structured_profile(client)
+    profile = _full_profile(client)
     stories: list[str] = []
     try:
         on = _knowledge_story(client, profile, 2)
@@ -591,13 +634,14 @@ def test_m5_knowledge_reads_live(url: str, key: str) -> None:
 
 @pytest.mark.engine_auth
 def test_m6_world_live(url: str, key: str) -> None:
-    """#232: on ``Structured`` v3 (States and the clock on) a story with no turn reads no
-    States, a clock at ``on`` and offset 0, no scheduled events and nothing to reconcile, and
-    the provider registry parses; a declared ``gold`` set by +5 answers 15 at an inter-turn
-    slot after turn 0, and the clock advances 30 minutes. **Complement:** on v2 (no States, no
-    clock) ``get_states`` and ``advance_clock`` are 409 ``module_off`` naming their module."""
+    """#232: on Full v3 (formerly Structured v3; States and the clock on) a story with no turn
+    reads no States, a clock at ``on`` and offset 0, no scheduled events and nothing to
+    reconcile, and the provider registry parses; a declared ``gold`` set by +5 answers 15 at an
+    inter-turn slot after turn 0, and the clock advances 30 minutes. **Complement:** on Full v2
+    (formerly Structured v2; no States, no clock) ``get_states`` and ``advance_clock`` are 409
+    ``module_off`` naming their module."""
     client = EngineClient(url, key, principal="console:smoke")
-    profile = _structured_profile(client)
+    profile = _full_profile(client)
     stories: list[str] = []
     try:
         on = _knowledge_story(client, profile, 3)
@@ -656,3 +700,367 @@ def test_m6_world_live(url: str, key: str) -> None:
     finally:
         for story_id in stories:
             _delete_when_idle(client, story_id)
+
+
+PRESET_IDS = set(PRESET_NAMES)
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _export_ready(client: EngineClient, story_id: str, *, wait: float = 60.0) -> str:
+    """Export the story and poll its job once a second until ``ready`` (E24: 60 s cap); the
+    job id. A story the edge can't export skips the case with the code (E24's precondition)."""
+    try:
+        started = client.export_story(story_id, idempotency_key=uuid4().hex)
+    except EngineError as exc:
+        if exc.http_status in {409, 422}:
+            pytest.skip(f"the edge refused the export: {exc.code}")
+        raise
+    deadline = time.monotonic() + wait
+    while True:
+        job = client.export_status(started.job_id)
+        if job.status == "ready":
+            return started.job_id
+        assert job.status in {"queued", "running"}, (job.status, job.error)
+        assert time.monotonic() < deadline, f"export still {job.status} after {wait:.0f} s"
+        time.sleep(1.0)
+
+
+@pytest.mark.engine_auth
+def test_m7_portability_live(url: str, key: str) -> None:
+    """#292: on a Full v4 story with no turn, the rewrite, amendment, outbox and prune-run lists
+    answer empty, the operations list parses, there is no backfill, a pruning answers its
+    impact unapplied, an export becomes ``ready`` and its bundle starts with the gzip magic,
+    the certification and eval lists parse and the preset filter names the four presets.
+    **Complement:** an unknown State's definition is 404, and the story is deleted in a
+    ``finally``."""
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    try:
+        assert client.list_rewrites(story).items == []
+        assert client.list_amendments(story).items == []
+        assert client.list_outbox(story).rows == []
+        assert client.list_prune_runs(story).prune_runs == []
+        assert client.list_operations(story).story_id == story
+        with pytest.raises(EngineError) as missing:
+            client.get_backfill(story)
+        assert missing.value.code == "backfill_not_found"
+        pruned = client.prune_story(
+            story, ignore_warnings=False, expected_revision=None, idempotency_key=uuid4().hex
+        )
+        assert pruned.applied is False
+        job_id = _export_ready(client, story)
+        with client.open_export_bundle(job_id) as bundle:
+            assert bundle.status == 200
+            head = next(bundle.iter_bytes(2))
+        assert head[:2] == GZIP_MAGIC
+        client.list_certifications()
+        client.list_eval_runs()
+        presets, _ = client.list_engine_profiles(preset=True)
+        assert {p.id for p in presets} == PRESET_IDS
+        with pytest.raises(EngineError) as unknown:
+            client.get_state_definition(story, "nope")
+        assert unknown.value.http_status == 404
+    finally:
+        _delete_when_idle(client, story)
+
+
+BACKFILL_ENDED = frozenset({"completed", "cancelled", "failed"})
+
+
+@pytest.mark.engine_auth
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "nathanpond/Epistrel#783: GET /stories/{id} answers 500 while a backfill pauses the "
+        "story (StoryPauseProgressBody requires {done, total})"
+    ),
+)
+def test_backfill_pause_story_read_live(url: str, key: str) -> None:
+    """#295 (E10's suspected Engine bug): on a Full story pinned below v4 with one played turn,
+    assigning v4 with ``upgrade_mode: backfill`` starts a backfill; while it runs, the story read
+    answers 200 with ``pause.cause == "backfill"``. Skips when the edge lacks the presets, starts
+    no backfill, or the backfill ends before any read sees the pause."""
+    client = EngineClient(url, key, principal="console:smoke")
+    profile = _full_profile(client)
+    # Full v3 -> v4 gains no data-producing capability on the edge, so nothing is backfilled;
+    # v1 -> v4 gains several (partitions, States, the clock), which starts one.
+    story = _knowledge_story(client, profile, 1)
+    try:
+        [player] = [c.id for c in client.get_story(story).cast if c.is_player]
+        client.respond(
+            story,
+            {"actor_character_id": player, "player_input": {"say": "Is the ferry late?"}},
+            idempotency_key=new_ulid(),
+            prefer_async=False,
+        )
+        written = client.assign_engine_profile(
+            story,
+            profile,
+            ignore_warnings=True,
+            idempotency_key=new_ulid(),
+            version=4,
+            upgrade_mode="backfill",
+        )
+        if written.backfill is None:
+            pytest.skip("assigning Full v4 started no backfill on this edge")
+        deadline = time.monotonic() + 120.0
+        while time.monotonic() < deadline:
+            read = client.get_story(story)  # the 500 (#783) raises EngineError here
+            if read.pause is not None:
+                assert read.pause.cause == "backfill"
+                return
+            try:
+                status = client.get_backfill(story).status
+            except EngineError as exc:
+                status = exc.code
+            if status in BACKFILL_ENDED or status == "backfill_not_found":
+                pytest.skip(f"the backfill ended ({status}) before a read saw the pause")
+            time.sleep(0.25)  # a stub backfill runs for seconds: once a second could miss it
+        pytest.fail("the backfill neither paused the story nor ended within 120 s")
+    finally:
+        _delete_when_idle(client, story, wait=120.0)
+
+
+def _certification_estimate(client: EngineClient) -> CertificationRunRequested | None:
+    """An unconfirmed request on Full: the estimate, or ``None`` for the edge's 503
+    ``certification_unavailable`` (no eval harness), which passes as an answer."""
+    refused: EngineError | None = None
+    try:
+        return client.request_certification_run_profile(
+            FULL_PROFILE_ID, confirm=False, idempotency_key=new_ulid()
+        )
+    except EngineError as exc:
+        refused = exc
+    assert (refused.http_status, refused.code) == (503, "certification_unavailable")
+    return None
+
+
+@pytest.mark.engine_auth
+@pytest.mark.xfail(
+    strict=True,
+    reason="#337: the edge image ships no eval sets, so every estimate is 0 model calls",
+)
+def test_certification_estimate_live(url: str, key: str) -> None:
+    """#314: an unconfirmed certification request on Full answers its estimate (model calls,
+    the fingerprint and the suites) with no run, or 503 ``certification_unavailable``; both
+    pass. The complement is :func:`test_certification_estimate_queues_nothing_live`."""
+    client = EngineClient(url, key, principal="console:smoke")
+    answer = _certification_estimate(client)
+    if answer is None:
+        return
+    assert answer.fingerprint
+    assert answer.suites
+    assert answer.run_id is None
+    assert answer.estimate.model_calls > 0
+
+
+@pytest.mark.engine_auth
+def test_certification_estimate_queues_nothing_live(url: str, key: str) -> None:
+    """#314's **complement:** the estimate creates no run (no ``run_id`` or ``job_id``), and the
+    fingerprint's certifications are the same before and after it (a 503 passes, no skip)."""
+    client = EngineClient(url, key, principal="console:smoke")
+    first = _certification_estimate(client)
+    if first is None:
+        return
+    assert first.run_id is None
+    assert first.job_id is None
+    before = [c.id for c in client.list_certifications(fingerprint=first.fingerprint).items]
+    again = _certification_estimate(client)
+    assert again is not None
+    assert again.run_id is None
+    assert again.job_id is None
+    after = [c.id for c in client.list_certifications(fingerprint=first.fingerprint).items]
+    assert after == before
+
+
+@pytest.mark.engine_auth
+def test_export_through_the_console_live(url: str, key: str, operator_client: Client) -> None:
+    """#319: export the smoke's story from the Console's Export page, poll the job to ``ready``
+    (E24: once a second, 60 s cap), then download it through the Console: the first two bytes
+    are the gzip magic and the size is the job's. **Complement:** the story is deleted in a
+    ``finally``."""
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            started = operator_client.post(
+                f"/stories/{story}/export/", {"idempotency_key": new_ulid()}
+            )
+            assert started.status_code == 303, started.content.decode()
+            match = re.fullmatch(rf"/stories/{story}/export/([0-9A-Z]{{26}})/", started["Location"])
+            assert match is not None, started["Location"]
+            job_id = match.group(1)
+            deadline = time.monotonic() + 60.0
+            while True:
+                job = client.export_status(job_id)
+                if job.status == "ready":
+                    break
+                assert job.status in {"queued", "running"}, (job.status, job.error)
+                assert time.monotonic() < deadline, f"export still {job.status} after 60 s"
+                time.sleep(1.0)
+            page = operator_client.get(started["Location"]).content.decode()
+            assert "Ready to download" in page
+            download = operator_client.get(f"{started['Location']}bundle/")
+            assert download.status_code == 200
+            body = b"".join(download.streaming_content)  # type: ignore[attr-defined]
+        assert body[:2] == GZIP_MAGIC
+        assert len(body) == job.size
+        assert url not in download["Content-Disposition"]
+    finally:
+        _delete_when_idle(client, story)
+
+
+IMPORT_ENDED = frozenset({"ready", "refused", "failed"})
+IMPORT_STARTED = re.compile(r"Import started: job <code>([0-9A-Z]{26})</code>")
+
+
+def _console_import(operator_client: Client, url: str, key: str, content: bytes) -> str:
+    """#320/#321: import ``content`` (a bundle) through the Engine panel's Import page with
+    "Forward only", posting "Import anyway" when the Engine warns; the import job's id (from
+    #321's 303 to the job page, else #320's "Import started" line)."""
+    upload = SimpleUploadedFile("smoke.epistrel.tgz", content, content_type="application/gzip")
+    with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+        page = operator_client.post(
+            "/engine/import/",
+            {"file": upload, "upgrade_mode": "forward_only", "idempotency_key": new_ulid()},
+        )
+        assert page.status_code in (200, 303), page.content.decode()
+        html = page.content.decode()
+        if "confirm_token" in html:  # the impact warned: confirm it
+            token = re.search(r'name="confirm_token" value="([^"]+)"', html)
+            assert token is not None
+            page = operator_client.post(
+                "/engine/import/",
+                {"confirm_token": token.group(1), "idempotency_key": new_ulid()},
+            )
+            html = page.content.decode()
+        if page.status_code == 303:  # #321 registered the job page
+            found = re.search(r"/engine/import/([0-9A-Z]{26})/", page["Location"])
+        else:
+            found = IMPORT_STARTED.search(html)
+        assert found is not None, html
+    return found.group(1)
+
+
+@pytest.mark.engine_auth
+def test_import_through_the_console_live(
+    url: str, key: str, operator_client: Client, settings: Any, tmp_path: Any
+) -> None:
+    """#320 (E24): export the smoke's story (#319's helper), then import its bundle through the
+    Engine panel's Import page with "Forward only"; when the Engine warns, post "Import anyway".
+    The Engine answers 202, a 303 to #321's job page (before #321 the page showed "Import
+    started: job …"); the job is polled through ``import_status`` once a second (120 s cap) until
+    it ends. Then (#321) the Console's job page is polled every 2 s (120 s cap) until it reads
+    "Imported", and its story link opens a story that is ``active`` or ``paused``.
+    **Complement:** both stories are deleted in a ``finally``."""
+    settings.DATA_DIR = tmp_path
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    created: list[str] = []
+    try:
+        job_id = _export_ready(client, story)
+        with client.open_export_bundle(job_id) as bundle:
+            assert bundle.status == 200
+            content = b"".join(bundle.iter_bytes())
+        import_job = _console_import(operator_client, url, key, content)
+        deadline = time.monotonic() + 120.0
+        while True:
+            job = client.import_status(import_job)
+            if job.story_id:
+                created.append(job.story_id)
+            if job.status in IMPORT_ENDED:
+                break
+            assert time.monotonic() < deadline, f"import still {job.status} after 120 s"
+            time.sleep(1.0)
+        assert job.status == "ready", (job.status, job.error)
+        assert job.story_id is not None
+        assert job.story_id != story  # always a new story
+        # #321 (E24): the Console's job page, polled every 2 s (120 s cap), reads "Imported"
+        # and its story link opens a story that is active or paused.
+        job_page = f"/engine/import/{import_job}/"
+        deadline = time.monotonic() + 120.0
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            while True:
+                shown = operator_client.get(f"{job_page}?partial=1").content.decode()
+                if "Imported</strong>" in shown:
+                    break
+                assert "hx-trigger" in shown, shown  # still polling, never ended otherwise
+                assert time.monotonic() < deadline, "the job page isn't Imported after 120 s"
+                time.sleep(2.0)
+            full = operator_client.get(job_page)
+            assert full.status_code == 200
+            html = full.content.decode()
+            link = re.search(r'<a class="import-story" href="(/stories/([0-9A-Z]{26})/)">', html)
+            assert link is not None, html
+            assert link.group(2) == job.story_id
+            assert "Errors (" in html
+            opened = operator_client.get(link.group(1))
+            assert opened.status_code == 200
+        assert client.get_story(job.story_id).status in {"active", "paused"}
+    finally:
+        for made in dict.fromkeys(created):
+            _delete_when_idle(client, made)
+        _delete_when_idle(client, story)
+
+
+@pytest.mark.engine_auth
+def test_resolve_an_imported_unsettled_row_live(
+    url: str, key: str, operator_client: Client, settings: Any, tmp_path: Any
+) -> None:
+    """#326: import the smoke's exported story through the Console (#320/#321's
+    :func:`_console_import`), then resolve its first parked ``imported_unsettled`` row as
+    abandoned through ``inspect:resolve-listing``; the next reconciliation read no longer lists
+    it. Skips when the imported story lists no such row (the smoke's story commits no effect).
+    **Complement:** both stories are deleted in a ``finally``."""
+    settings.DATA_DIR = tmp_path
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    created: list[str] = []
+    try:
+        job_id = _export_ready(client, story)
+        with client.open_export_bundle(job_id) as bundle:
+            assert bundle.status == 200
+            content = b"".join(bundle.iter_bytes())
+        import_job = _console_import(operator_client, url, key, content)
+        deadline = time.monotonic() + 120.0
+        while True:
+            job = client.import_status(import_job)
+            if job.story_id:
+                created.append(job.story_id)
+            if job.status in IMPORT_ENDED:
+                break
+            assert time.monotonic() < deadline, f"import still {job.status} after 120 s"
+            time.sleep(1.0)
+        assert job.status == "ready", (job.status, job.error)
+        assert job.story_id is not None
+        imported = job.story_id
+        parked = [
+            listing.outbox_id
+            for listing in client.get_reconciliation(imported).listings
+            if listing.reason == "imported_unsettled" and listing.outbox_id
+        ]
+        if not parked:
+            pytest.skip("the imported story lists no imported_unsettled row")
+        outbox_id = parked[0]
+        revision = client.get_story(imported).timeline_revision
+        resolve = f"/stories/{imported}/inspect/effects/reconciliation/{outbox_id}/resolve/"
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            response = operator_client.post(
+                resolve,
+                {
+                    "idempotency_key": new_ulid(),
+                    "confirmed": "1",
+                    "resolution": "abandoned",
+                    "expected_revision": str(revision),
+                    "listed_reason": "imported_unsettled",
+                },
+            )
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert f"{outbox_id}</code> marked abandoned" in html, html
+        remaining = [listing.outbox_id for listing in client.get_reconciliation(imported).listings]
+        assert outbox_id not in remaining
+    finally:
+        for made in dict.fromkeys(created):
+            _delete_when_idle(client, made)
+        _delete_when_idle(client, story)

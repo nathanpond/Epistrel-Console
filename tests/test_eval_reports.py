@@ -579,15 +579,14 @@ def test_the_operations_page_links_eval_reports(operator_client: Client) -> None
     assert '<a href="/operations/evals/">Eval reports</a>' in response.content.decode()
 
 
-def test_the_page_notes_eval_runs_are_not_served(
-    operator_client: Client, engine: FakeEngine
-) -> None:
+def test_the_page_links_eval_runs(operator_client: Client, engine: FakeEngine) -> None:
+    """#316 replaced the stale "#532" line with a link to the Engine panel's Eval runs."""
     html = page(operator_client)
     assert "<title>Eval reports · Epistrel Console</title>" in html
-    assert (
-        "Eval runs aren't served by the Engine yet "
-        '(<a href="https://github.com/nathanpond/Epistrel/issues/532">nathanpond/Epistrel#532</a>)'
-    ) in html
+    assert "Per-run results: " in html
+    assert ">Eval runs</a></p>" in html
+    assert "aren't served" not in html
+    assert "aren&#x27;t served" not in html
 
 
 # --- the client and the models -----------------------------------------------------------------

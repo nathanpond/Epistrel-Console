@@ -111,16 +111,20 @@ now and compensate.
   `CONFIG_REVISION_TEXT`) instead and, as POST-redirect-GET, flash "<Humanised member>: saved"
   (C3, convention 23).
 - **Nothing to change (configuration writes).** When the Engine accepts a configuration write
-  that changed nothing, the answer's `config_revision` equals the one the page rendered from:
-  the shell's effective-config read's `config_revision` for a story's configuration (#265's
-  definition PATCH, #243's clock PATCH), the signed snapshot's for a deployment write (#246's
-  provider replace, #241's settings). Then the page flashes `ENGINE_NOTHING_CHANGED` "The
-  Engine found nothing to change" (info) in place of the "saved" lines, and still redirects.
+  that changed nothing, the answer's `config_revision` equals the one the page rendered from.
+  *(D8, amended by #329.)* The base a story configuration write compares against is the
+  revision the page rendered from: for a State's definition, the definition read's
+  `config_revision` (#329: the revision of its last change; `null` is unknown); for the clock
+  settings there is none, because no story read carries a configuration revision, so the
+  comparison is dropped there and the saved flash always shows (#270). Deployment writes keep
+  the signed snapshot's (#246's provider replace, #241's settings). Then the page flashes
+  `ENGINE_NOTHING_CHANGED` "The Engine found nothing to change" (info) in place of the "saved"
+  lines, and still redirects.
   When the base revision is unknown, or the answer carries no `config_revision` (#247's binding
   PUT, whose answer has only `timeline_revision`), the usual flash shows; the Console's own
   "untouched sends nothing" check (C9) stays first everywhere.
   `console.world.nothing_changed(answer_revision, base_revision) -> bool` is the one
-  comparison; #265, #243, #246, #241 and #247 cite this rule.
+  comparison; #265/#329, #246, #241 and #247 cite this rule.
 - **Re-rendering a refused or invalid form (every slot write and configuration write; the
   confirm page counts as the form).**
   - *Local invalid input* (the Console's own checks, a gate refusal, a bad snapshot): nothing
@@ -244,30 +248,32 @@ Codes outside slot writes (`invalid_manifest`, `provider_in_use`, `binding_incom
 C5 first.
 
 **D18 — Engine gaps, said once (owner #235; convention 24's rule).**
-- **Outbox list.** D11's notice.
+- **Outbox list (nathanpond/Epistrel#679, closed).** Delivered by Engine M7 (`list_outbox`):
+  `outbox_list_notice_html(story_id=…)` links the Effects tab's Outbox section (E17, #295; D11's
+  old notice while `inspect:outbox` is unregistered).
 - **Inter-turn slots in History, and no State change log.** The history read doesn't list
   inter-turn slot operations: `HistoryItemModel`/`TurnSummaryModel` carry no `slot_k`, and
   items come from the transcript. No Engine read lists a story's slots or its State changes
   across turns and slots. #209's slot field carries the exported
   `console.world.SLOTS_NOT_LISTED` = "History doesn't list inter-turn slots; a State's "since"
   position or a write's result names one"; #255's trail lists turn changes only and says so.
-- **Undeclared `viewpoint`.** `?viewpoint=` on `GET …/states`, `GET …/states/{name}` and `GET
-  …/scheduled-events` is undeclared (Engine bug nathanpond/Epistrel#682) in the Engine's
-  OpenAPI. This goes in code comments and is a candidate Engine request; no page notice.
-- **No State definition read.** `GET …/states/{name}` answers only `visibility` and `unit` of a
-  definition's mutable members, and no route returns a definition. #265 pre-fills those two,
-  shows the Console's own last record as possibly stale, and cites `STATE_DEFINITION_REQUEST`
-  (the Engine request the planner files, "Engine request (State definition read,
-  nathanpond/Epistrel#680)").
+- **`viewpoint` on the States and scheduled-event reads.** Declared since Engine M7
+  (nathanpond/Epistrel#682): `?viewpoint=` on `GET …/states`, `GET …/states/{name}` and `GET
+  …/scheduled-events` is in the Engine's OpenAPI. No page notice.
+- **State definition read (nathanpond/Epistrel#680, closed).** Read by `get_state_definition`;
+  #329 uses its `config_revision` as D8's base (E17, #295). `STATE_DEFINITION_REQUEST` stays
+  for history; no page cites it since #329.
+- **Operations by label (nathanpond/Epistrel#681, closed).** Story operations are listed by
+  `list_operations` (#324) (E17, #295).
 - **No State-proposal analysis status read.** The 202's `job_id` has no read, so #266 flashes
   "queued" and asks for a reload rather than polling.
 - **`StateBody` has no `provider_id`.** An external State's owner reads "External" with no
   provider (#242); the provider shows in #247 and #248.
 - **`ExternalReadItemBody` names no State.** It carries `state_id` only, and no read maps ids
   to names, so #248 labels a read by provider and value name.
-- **`POST /stories` doesn't declare its 404.** A `provider_bindings` entry naming an
-  unregistered provider answers 404 `not_found` (`details.provider`, `ProviderNotFound`),
-  undeclared among the route's responses. #259 handles it by `details.provider`.
+- **`POST /stories`'s 404.** Declared since Engine M7 (#682): a `provider_bindings` entry
+  naming an unregistered provider answers 404 `not_found` (`details.provider`,
+  `ProviderNotFound`). #259 handles it by `details.provider`.
 - **History has no `whisper_to`.** The history read doesn't return a turn's whisper target, so
   #263's correction can't carry a whisper over (its help says so).
 - **Clock anchor components are the anchoring offset's, not now's.** `ClockBody.anchor`'s

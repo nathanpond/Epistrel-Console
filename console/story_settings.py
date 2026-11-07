@@ -1,9 +1,10 @@
 """A story's settings as the settings page shows them (#54): which fields the Console edits, what
 each one's default is, and whether the story overrides it.
 
-The page edits fourteen settable settings: #54's seven, Engine M5's six (#197: player
-authority, player view and the multi-character settings) and Engine M6's one (#233: co-author
-knowledge, FR-RESP-14). The Engine's settings read fills
+The page edits seventeen settable settings: #54's seven, Engine M5's six (#197: player
+authority, player view and the multi-character settings), Engine M6's one (#233: co-author
+knowledge, FR-RESP-14) and Engine M7's three (#318: the prune policy, FR-STORE-32; the backfill
+conflict policy, FR-PROF-10; ambiguous retcon timing, FR-STORE-20). The Engine's settings read fills
 defaults in and carries no override marker, so the marker is worked out here (planner, replan
 2026-10-24):
 
@@ -11,8 +12,9 @@ defaults in and carries no override marker, so the marker is worked out here (pl
   deployment's own setting from ``GET /admin/settings`` for :data:`DEPLOYMENT_DEFAULTS`
   ("unknown" when that read failed); "default (sequential)" for interaction mode, or
   "default (scenario: <value>)" when genesis kept the scenario's mode inactive
-  (:func:`scenario_mode`); "default (request order)" for sequence order and tie-break; plain
-  "default" for the viewpoint. Any value is "story" (a stored ``state:<name>`` tie-break too);
+  (:func:`scenario_mode`); "default (request order)" for sequence order and tie-break;
+  "default (off)" for the prune policy (:data:`NULL_MARKER_TEXT`); plain "default" for the
+  viewpoint. Any value is "story" (a stored ``state:<name>`` tie-break too);
 - the others compare against :data:`CONSTANT_DEFAULTS` (Engine ``core/settings_schema.py``): a
   value equal to the default reads "default" (an override with the same value cannot be told
   apart), anything else "story".
@@ -53,6 +55,10 @@ SETTABLE = (
     "sequence_order",
     "simultaneous_tie_break",
     "reactive_interjections",
+    # Engine M7 (#318).
+    "prune_policy",
+    "backfill_conflict_policy",
+    "ambiguous_retcon_timing",
 )
 POLICIES = "policies"
 # Defaults the Engine fills in itself (Engine ``core/settings_schema.py``).
@@ -64,12 +70,16 @@ CONSTANT_DEFAULTS: dict[str, Any] = {
     "co_author_knowledge": "confirm",
     "player_view": "character",
     "reactive_interjections": False,
+    "backfill_conflict_policy": "last_mention",
+    "ambiguous_retcon_timing": "include_if_possible",
 }
 # Nullable settings whose ``null`` means the deployment's setting of the same name.
 DEPLOYMENT_DEFAULTS = ("turn_queue_max", "lite_summary_chunk", "audit_retention_days")
 # Engine M5's nullable multi-character settings (``null``: the Engine's default, below).
 MULTI_CHARACTER = ("interaction_mode", "sequence_order", "simultaneous_tie_break")
-NULLABLE = (*DEPLOYMENT_DEFAULTS, "default_output_viewpoint", *MULTI_CHARACTER)
+NULLABLE = (*DEPLOYMENT_DEFAULTS, "default_output_viewpoint", *MULTI_CHARACTER, "prune_policy")
+# What a null setting means where the marker names it: "default (<text>)" (#318).
+NULL_MARKER_TEXT = {"prune_policy": "off"}
 # Story settings that became engine-profile overrides (Engine M3; 422 ``superseded``).
 SUPERSEDED = (
     "generation_settings",
@@ -94,6 +104,9 @@ LABELS = {
     "sequence_order": "Sequence order (sequential turns)",
     "simultaneous_tie_break": "Tie-break (simultaneous turns)",
     "reactive_interjections": "Reactive interjections",
+    "prune_policy": "Automatic pruning (days)",
+    "backfill_conflict_policy": "Backfill conflicts",
+    "ambiguous_retcon_timing": "Ambiguous retcon timing",
 }
 STORY = "story"
 DEFAULT = "default"
@@ -114,8 +127,8 @@ BUDGET_SOURCES = {
 
 ENGINE_DEFAULT = ""
 BOOLEAN_SELECT = [("false", "Off"), ("true", "On")]
-# Each of M5's and M6's settings' explicit choices (never an Engine-default entry); #198 and
-# #233 reuse them.
+# Each of M5's, M6's and M7's settings' explicit choices (never an Engine-default entry); #198,
+# #233 and #318 reuse them.
 SETTING_CHOICES: dict[str, list[tuple[str, str]]] = {
     "player_authority": [
         ("own_character", "Own character only"),
@@ -133,11 +146,38 @@ SETTING_CHOICES: dict[str, list[tuple[str, str]]] = {
     "sequence_order": [("request", "Request order"), ("director", "Director")],
     "simultaneous_tie_break": [("request_order", "Request order"), ("director", "Director")],
     "reactive_interjections": BOOLEAN_SELECT,
+    "backfill_conflict_policy": [
+        ("last_mention", "Latest statement wins"),
+        ("first_mention", "Earliest statement wins"),
+        ("ask", "Ask me (the story stays paused until I resolve them)"),
+    ],
+    "ambiguous_retcon_timing": [
+        ("include_if_possible", "Include it wherever it might apply (marked timing uncertain)"),
+        ("ask_author", "Ask me when the rewrite is planned"),
+    ],
 }
 # When co-author knowledge matters (#233): the settings, new-story and scenario forms' help.
 CO_AUTHOR_KNOWLEDGE_HELP = (
     "Only under Co-author player authority with per-character partitions on; no effect under Lite."
 )
+# Engine M7's three (#318): the settings page's help.
+PRUNE_POLICY_HELP = (
+    "Prune this story's discarded tails and dormant continuations older than this many days, in "
+    "the Engine's daily run (1 to 3650). Blank: never prune automatically. Setting it deletes "
+    "nothing by itself."
+)
+BACKFILL_CONFLICT_HELP = (
+    "How a backfill settles the story's old text contradicting itself; read when a backfill "
+    "starts. The losing statements stay in the transcript as in-world claims."
+)
+RETCON_TIMING_HELP = (
+    "How a rewrite places a correction whose time the story clock can't decide. No effect under "
+    "Lite."
+)
+# ``PrunePolicy.older_than_days`` (the recorded bounds).
+PRUNE_MIN_DAYS = 1
+PRUNE_MAX_DAYS = 3650
+PRUNE_DAYS = "older_than_days"
 # The Engine's ``state:<name>`` tie-break (M6; 422 ``not_yet`` until then).
 STATE_TIE_BREAK = re.compile(r"^state:[a-z][a-z0-9_]{0,63}$")
 INTERACTION_MODES = ("sequential", "simultaneous")
@@ -147,6 +187,18 @@ NULL_DEFAULT_TEXT = {
     "sequence_order": "request order",
     "simultaneous_tie_break": "request order",
 }
+
+
+def policy_days(value: object) -> int | None:
+    """A stored prune policy's day count when it is well formed: exactly ``{older_than_days}``,
+    a non-bool int within 1 to 3650. ``None`` for ``null`` and for any other value (an odd policy,
+    which the page renders blank and never resends unless changed)."""
+    if not isinstance(value, Mapping) or set(value) != {PRUNE_DAYS}:
+        return None
+    days = value[PRUNE_DAYS]
+    if isinstance(days, bool) or not isinstance(days, int):
+        return None
+    return days if PRUNE_MIN_DAYS <= days <= PRUNE_MAX_DAYS else None
 
 
 def engine_default_choice(text: str) -> tuple[str, str]:
@@ -256,6 +308,8 @@ def marker(
             return Marker(STORY, STORY)
         if name in MULTI_CHARACTER:
             return Marker(DEFAULT, f"default ({null_default_text(name, inactive)})")
+        if name in NULL_MARKER_TEXT:
+            return Marker(DEFAULT, f"default ({NULL_MARKER_TEXT[name]})")
         if name not in DEPLOYMENT_DEFAULTS:
             return Marker(DEFAULT, DEFAULT)
         if deployment is None or deployment.get(name) is None:
@@ -299,7 +353,9 @@ def setting_groups(
     """The recorded ``setting`` enum as select groups: current settings, the
     ``participation:<id>`` keys given as ``(name, label)`` (#197; the enum lists none), historical
     ones (the superseded dials), profile overrides, the story's rating and profile, and its
-    required providers ("Providers", M6). A name the groups do not expect goes to "Other"."""
+    required providers ("Providers", M6). A dotted name whose root is settable goes under
+    "Settings" (``prune_policy.older_than_days``, #318). A name the groups do not expect goes to
+    "Other"."""
     groups: dict[str, list[tuple[str, str]]] = {
         "Settings": [],
         "Participation": list(participation),
@@ -311,7 +367,7 @@ def setting_groups(
     }
     for name in names:
         root = name.split(".", 1)[0]
-        if name in SETTABLE:
+        if name in SETTABLE or root in SETTABLE:
             group = "Settings"
         elif root in SUPERSEDED:
             group = "Historical"

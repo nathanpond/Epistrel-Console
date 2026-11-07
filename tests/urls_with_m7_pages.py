@@ -1,0 +1,135 @@
+"""The one shared M7 stub urlconf (#294, E6/E24): the Console's real routes plus a one-line stub
+view for every URL name E6's helpers reverse and every E11 page row, mounted at E11's paths, so
+an M7 link helper's linked case can be tested before the page's owner registers it.
+
+Django searches one resolver per namespace, so each namespace's list (``stories:``,
+``inspect:``, ``engine:``, ``profiles:``) is rebuilt with any real pattern of a stub's name
+dropped first, the stubs appended, and remounted in place of the real include (D19's
+``tests/urls_with_engine_operation.py`` mechanism, which stays as it is). The file therefore
+keeps working as owners land.
+
+**Page stories add a stub here, and never create another stub urlconf.** #292's test-local
+``stories:rewrite`` stub was folded in, then dropped once #297 registered the real session page
+(the linked cases of its footer and amendment links render the real page here). #302's
+``stories:amendments``/``stories:amendment`` stubs went the same way, as did #313's
+``engine:certification`` and ``engine:certification-run`` and #315's
+``engine:certification-invalidate`` and ``engine:certification-import``, #319's three
+``stories:export*`` stubs and #320's ``engine:import``.
+
+**The frames (#296).** ``stories:rewrites`` renders through
+:func:`console.views.story_pages.story_page` and ``engine:certifications`` through
+:func:`~console.views.story_pages.engine_page`, both with :func:`recording_build`
+(``stories:rewrites`` keeps this probe after #297 registers the real Rewrite page, and
+``engine:certifications`` after #313 registers the real list, so under this urlconf
+``/stories/<id>/rewrites/`` and ``/engine/certifications/`` are the probes, not the pages): it
+appends its context to :data:`BUILT` and answers :data:`BUILD`'s callable when a test set one,
+else ``{}`` (``tests/test_story_pages.py``'s autouse fixture clears both). Every other stub
+answers "stub".
+
+**E6's ``NOT_YET_REGISTERED`` rule.** The complement test ("under the real urlconf none of
+these reverses") asserts only the names in :data:`NOT_YET_REGISTERED`. Each owner removes its
+own names from that set in the PR that registers them, so a parallel story's CI never goes red
+for a name it doesn't own.
+"""
+
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
+
+from django.http import HttpRequest, HttpResponse
+from django.urls import URLPattern, URLResolver, include, path
+
+from console.views.story_pages import (
+    EnginePageContext,
+    StoryPageContext,
+    engine_page,
+    story_page,
+)
+from epistrel_console import urls as real
+
+STORY_PAGE_TEMPLATE = "console/stories/page_base.html"
+ENGINE_PAGE_TEMPLATE = "console/engine/page_base.html"
+Built = Callable[[Any], Mapping[str, Any] | HttpResponse]
+BUILT: list[StoryPageContext | EnginePageContext] = []
+BUILD: list[Built] = []  # at most one: the test's build behind recording_build
+
+
+def stub(request: HttpRequest, **kwargs: str) -> HttpResponse:
+    return HttpResponse("stub")
+
+
+def recording_build(ctx: StoryPageContext | EnginePageContext) -> Mapping[str, Any] | HttpResponse:
+    BUILT.append(ctx)
+    return BUILD[0](ctx) if BUILD else {}
+
+
+def rewrites_frame(request: HttpRequest, story_id: str) -> HttpResponse:
+    return story_page(request, story_id, STORY_PAGE_TEMPLATE, recording_build)
+
+
+def certifications_frame(request: HttpRequest) -> HttpResponse:
+    return engine_page(request, ENGINE_PAGE_TEMPLATE, recording_build)
+
+
+def _rebuilt(
+    patterns: tuple[Sequence[URLPattern | URLResolver], str], stubs: list[URLPattern]
+) -> tuple[list[URLPattern | URLResolver], str]:
+    names = {p.name for p in stubs}
+    kept = [p for p in patterns[0] if getattr(p, "name", None) not in names]
+    return [*kept, *stubs], patterns[1]
+
+
+S = "<str:story_id>/"
+STORY_STUBS = [
+    # #296's frame probe for ``tests/test_story_pages.py``: it shadows #297's real Rewrite page
+    # under this urlconf only (the real ``stories:rewrite`` session page is served here).
+    path(f"{S}rewrites/", rewrites_frame, name="rewrites"),
+    path(f"{S}rewrites/<ulid:session_id>/answers/", stub, name="rewrite-answers"),  # #298
+    path(f"{S}rewrites/<ulid:session_id>/apply/", stub, name="rewrite-apply"),  # #299
+    path(f"{S}rewrites/<ulid:session_id>/cancel/", stub, name="rewrite-cancel"),  # #299
+    path(f"{S}direct/", stub, name="direct"),  # #300
+    path(f"{S}backfill/", stub, name="backfill"),  # #308
+    path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
+    path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
+    path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
+]
+# Every inspect page is registered (#325's outbox, #326's resolve-listing and resolved).
+INSPECT_STUBS: list[URLPattern] = []
+ENGINE_STUBS = [
+    # #296's frame probe for ``tests/test_story_pages.py``: it shadows #313's real Certifications
+    # list under this urlconf only (#313's real detail and run pages are served here).
+    path("certifications/", certifications_frame, name="certifications"),
+]
+# Every profile page is registered (#310's upgrade-pinned, #314's certify).
+PROFILE_STUBS: list[URLPattern] = []
+
+MOUNTS = {
+    "stories/": _rebuilt(real.story_patterns, STORY_STUBS),
+    "stories/<str:story_id>/inspect/": _rebuilt(real.inspect_patterns, INSPECT_STUBS),
+    "engine/": _rebuilt(real.engine_patterns, ENGINE_STUBS),
+    "profiles/": _rebuilt(real.profile_patterns, PROFILE_STUBS),
+}
+
+STUB_NAMES = frozenset(
+    f"{namespace}:{p.name}"
+    for namespace, stubs in (
+        ("stories", STORY_STUBS),
+        ("inspect", INSPECT_STUBS),
+        ("engine", ENGINE_STUBS),
+        ("profiles", PROFILE_STUBS),
+    )
+    for p in stubs
+)
+
+# E6: the stubbed names no real pattern registers yet. Each owner removes its own names in the
+# PR that registers them; the complement test asserts only these.
+NOT_YET_REGISTERED: frozenset[str] = frozenset()  # #326 registered the last two
+
+
+def _remounted(pattern: URLPattern | URLResolver) -> URLPattern | URLResolver:
+    mount = str(pattern.pattern)
+    return path(mount, include(MOUNTS[mount])) if mount in MOUNTS else pattern
+
+
+urlpatterns: list[URLPattern | URLResolver] = [
+    _remounted(p) for p in real.urlpatterns if isinstance(p, URLPattern | URLResolver)
+]

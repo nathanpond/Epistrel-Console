@@ -7,7 +7,8 @@
   result rendered from the operation log's row (#44).
 - ``/engine/settings/``: every deployment setting, editable (merge patch, only changed settings
   sent), and the deployment's profile defaults, read-only (``/engine/profile-defaults/edit/``,
-  #84, edits them).
+  #84, edits them). The page also reads the content ratings and the model configuration (#323:
+  the strongest-model select's options); either read failing leaves its field read-only.
 - ``/engine/config-changes/``: the deployment's configuration changes, grouped by revision.
 """
 
@@ -39,6 +40,7 @@ from console.engine.client import EngineClientError, EngineError, EngineUnreacha
 from console.engine.models import (
     ContentRatingSummary,
     DeploymentSettings,
+    ModelConfig,
     RebuildQueued,
     RebuildResult,
     StorySummary,
@@ -49,9 +51,18 @@ from console.engine_errors import ErrorPanel, log_engine_error, panel_for
 from console.engine_form_errors import apply_engine_errors, engine_field_errors
 from console.engine_probe import HEARTBEAT_LATE_S, OVERDUE_ALERT_S, ProbeResult
 from console.forms.config_changes import ConfigChangeFilterForm
-from console.forms.deployment import DeploymentSettingsForm, profile_default_rows
+from console.forms.deployment import (
+    MODEL_TIER_NOT_SET,
+    MODEL_TIER_UNLISTED,
+    MODEL_TIERS,
+    DeploymentSettingsForm,
+    profile_default_rows,
+    strongest,
+)
+from console.forms.stories import IMPORTING_STATUS
 from console.ids import new_ulid
 from console.models import EngineOperation
+from console.nav import engine_links
 from console.operation_log import REBUILD_KIND, queued_job_id, queued_job_text
 from console.world import ENGINE_NOTHING_CHANGED, nothing_changed
 
@@ -76,6 +87,8 @@ SETTINGS_ALIASES = {
 HOSTS = "provider_allowed_hosts"
 # A refusal of one ``provider_allowed_hosts`` entry (or of the list) (#241).
 _HOST_PATH = re.compile(r"^(?:body\.)?provider_allowed_hosts(?:\[(\d+)\])?$")
+# A refusal of ``model_tiers.strongest`` (422 ``unknown_model``) (#323).
+_TIER_PATH = re.compile(r"^(?:body\.)?model_tiers(?:\.strongest)?$")
 BAD_RESPONSE = "bad_response"
 
 
@@ -159,10 +172,14 @@ class StoryOption:
 
 def story_option(story: StorySummary) -> StoryOption:
     """A rebuild-select option: held stories are listed without a name and cannot be rebuilt
-    (503 ``erasure_pending``); archived ones can (maintenance is allowed there)."""
+    (503 ``erasure_pending``); archived ones can (maintenance is allowed there). An importing
+    story is listed disabled, "<name> (importing)": a rebuild is refused with 409
+    ``story_importing`` (#293)."""
     if story.status == HELD:
         return StoryOption(story.id, "", f"(held) …{story.id[-6:]}", True)
     label = story.name or story.id
+    if story.status == IMPORTING_STATUS:
+        return StoryOption(story.id, story.name or "", f"{label} (importing)", True)
     if story.status != "active":
         label = f"{label} ({story.status})"
     return StoryOption(story.id, story.name or "", label, False)
@@ -185,6 +202,7 @@ def engine_home(request: HttpRequest) -> HttpResponse:
         "stories": stories,
         "stories_error": stories_error,
         "story_names": signing.dumps(names, salt=NAMES_SALT, compress=True),
+        "engine_page_links": engine_links(None),  # E11 (#296): no Engine read
     }
     return render(request, "console/engine/home.html", context)
 
@@ -317,15 +335,39 @@ def rating_options(ratings: list[ContentRatingSummary], current: str) -> list[tu
     return options
 
 
+def listed_models(config: ModelConfig) -> list[str]:
+    """Every distinct model id the model configuration's purposes name (the embedding
+    purpose's included), sorted: what ``model_tiers.strongest`` may be (#323)."""
+    return sorted({entry.model for entry in config.purposes.values() if entry.model})
+
+
+def model_tier_options(ids: list[str], current: str | None) -> list[tuple[str, str]]:
+    """The strongest-model select: "Not set", the listed ids, and a stored id the list lacks,
+    kept and labelled so (the Engine would refuse it on a new save)."""
+    options = [("", MODEL_TIER_NOT_SET), *((model, model) for model in ids)]
+    if current and current not in ids:
+        options.append((current, MODEL_TIER_UNLISTED.format(id=current)))
+    return options
+
+
 @dataclass(frozen=True)
 class SettingsPage:
     settings: dict[str, Any]  # ``SettingsBody`` as read
     ratings: list[tuple[str, str]] | None  # None: the ratings read failed
+    models: list[str] | None = None  # the listed model ids; None: the model-config read failed
 
     def signed(self) -> str:
         return signing.dumps(
-            {"settings": self.settings, "ratings": self.ratings}, salt=SNAPSHOT_SALT, compress=True
+            {"settings": self.settings, "ratings": self.ratings, "models": self.models},
+            salt=SNAPSHOT_SALT,
+            compress=True,
         )
+
+    @property
+    def model_options(self) -> list[tuple[str, str]] | None:
+        if self.models is None:
+            return None
+        return model_tier_options(self.models, strongest(self.settings.get(MODEL_TIERS)))
 
     @classmethod
     def unsigned(cls, value: str) -> SettingsPage | None:
@@ -337,7 +379,9 @@ class SettingsPage:
             return None
         ratings = raw.get("ratings")
         options = [(str(v), str(label)) for v, label in ratings] if ratings is not None else None
-        return cls(raw["settings"], options)
+        models = raw.get("models")  # absent (an older snapshot): read-only, never a re-read
+        ids = [str(m) for m in models] if isinstance(models, list) else None
+        return cls(raw["settings"], options, ids)
 
     @property
     def revision(self) -> int:
@@ -346,7 +390,8 @@ class SettingsPage:
 
 
 def _read_settings(request: HttpRequest) -> SettingsPage:
-    """``GET /admin/settings`` (errors escape) and the ratings (a failure degrades the field)."""
+    """``GET /admin/settings`` (errors escape), the ratings and the model configuration (a
+    failure of either degrades its field to read-only)."""
     client = engine_client_for(request)
     settings = client.get_deployment_settings()
     try:
@@ -356,7 +401,12 @@ def _read_settings(request: HttpRequest) -> SettingsPage:
     except EngineClientError as exc:
         log_engine_error(request, exc)
         ratings = None
-    return SettingsPage(asdict(settings), ratings)
+    try:
+        models: list[str] | None = listed_models(client.list_model_config())
+    except EngineClientError as exc:
+        log_engine_error(request, exc)
+        models = None
+    return SettingsPage(asdict(settings), ratings, models)
 
 
 def _render_settings(
@@ -370,7 +420,9 @@ def _render_settings(
     """``idempotency_key`` is the posted key a re-render keeps (D8: local invalid input, or an
     unknown outcome); otherwise a fresh one is minted (#43)."""
     if page is not None and form is None:
-        form = DeploymentSettingsForm(original=page.settings, ratings=page.ratings)
+        form = DeploymentSettingsForm(
+            original=page.settings, ratings=page.ratings, models=page.model_options
+        )
     context: dict[str, Any] = {
         "page": page,
         "form": form,
@@ -395,7 +447,9 @@ def _place_settings_error(
         form.add_error(None, f"Moved to profile defaults: {details.get('replacement', EMPTY)}")
         return True
     if exc.http_status == 422:
-        rest = _place_host_errors(exc, form, sent)
+        rest = _place_tier_errors(exc, form)
+        if rest is not None:
+            rest = _place_host_errors(rest, form, sent)
         if rest is not None:
             apply_engine_errors(rest, form, aliases=SETTINGS_ALIASES)
         return True
@@ -434,6 +488,24 @@ def _place_host_errors(
         if index is not None and index < len(entries):
             message = f"Line {index + 1} (`{entries[index]}`): {message}"
         form.add_error(HOSTS, message)
+    return _without(exc, _HOST_PATH)
+
+
+def _place_tier_errors(exc: EngineError, form: DeploymentSettingsForm) -> EngineError | None:
+    """Place the refusals of ``model_tiers`` / ``model_tiers.strongest`` (422 ``unknown_model``)
+    on the strongest-model field (#323), the Engine's message as is. Returns what is left, as
+    :func:`_place_host_errors` does."""
+    failures = [f for f in engine_field_errors(exc) if _TIER_PATH.match(f.path)]
+    if not failures:
+        return exc
+    for failure in failures:
+        form.add_error(MODEL_TIERS, failure.message or exc.message)
+    return _without(exc, _TIER_PATH)
+
+
+def _without(exc: EngineError, path: re.Pattern[str]) -> EngineError | None:
+    """``exc`` with the field failures whose path matches ``path`` removed (``details.errors[]``
+    and ``details.field``), or ``None`` when no field failure is left."""
     details = dict(exc.details)
     listed = details.get("errors")
     if isinstance(listed, list):
@@ -443,11 +515,11 @@ def _place_host_errors(
             if not (
                 isinstance(item, dict)
                 and isinstance(item.get("field"), str)
-                and _HOST_PATH.match(item["field"])
+                and path.match(item["field"])
             )
         ]
     field = details.get("field")
-    if isinstance(field, str) and _HOST_PATH.match(field):
+    if isinstance(field, str) and path.match(field):
         del details["field"]
     rest = EngineError(exc.code, exc.message, details, exc.http_status, retry_after=exc.retry_after)
     return rest if engine_field_errors(rest) else None
@@ -481,7 +553,9 @@ def deployment_settings(request: HttpRequest) -> HttpResponse:
         return _render_settings(request, page)
 
     page = SettingsPage.unsigned(request.POST.get(SNAPSHOT_FIELD, "")) or _read_settings(request)
-    form = DeploymentSettingsForm(request.POST, original=page.settings, ratings=page.ratings)
+    form = DeploymentSettingsForm(
+        request.POST, original=page.settings, ratings=page.ratings, models=page.model_options
+    )
     key = posted_idempotency_key(request)
     if not form.is_valid():
         return _render_settings(request, page, form=form, idempotency_key=key)  # D8: nothing sent

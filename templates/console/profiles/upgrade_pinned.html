@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% comment %}
+#310: upgrade a profile's pinned stories (console/views/profile_upgrade.py). stage is "form" (the
+upgrade mode), "held" (the impact with "Upgrade anyway"), "result" (applied), "text" (a not-found
+or deleted line) or "error" (#43's panel alone).
+{% endcomment %}
+{% load console_format inspect_tags %}
+{% block title %}{{ heading }} — Engine profiles — Epistrel Console{% endblock %}
+{% block heading %}{{ heading }}{% endblock %}
+{% block content %}
+<p><a class="back" href="{{ detail_url }}">Back to the profile</a></p>
+{% if engine_error %}{% include "console/_engine_error.html" %}{% endif %}
+{% if stage == "text" %}<p class="upgrade-text">{{ text }}</p>
+{% elif stage == "form" %}
+<form method="post" action="{% url 'profiles:upgrade-pinned' profile_id %}" class="upgrade-pinned-form">
+  {% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+  <p class="upgrade-line">{{ line }}</p>
+  <fieldset class="upgrade-mode">
+    <legend>{{ form.upgrade_mode.label }}</legend>
+    {{ form.upgrade_mode.errors }}{{ form.upgrade_mode }}
+    <p class="muted upgrade-help">{{ form.upgrade_mode.help_text }}</p>
+  </fieldset>
+  <p><button type="submit">Show the impact</button> <a href="{{ detail_url }}">Cancel</a></p>
+</form>
+{% elif stage == "held" %}
+<p class="held">{{ held_text }}</p>
+<p class="upgrade-mode">Upgrade mode: {{ upgrade_mode_text }} · <a class="change-mode" href="{{ change_mode_url }}">{{ change_mode_label }}</a></p>
+{% include "console/_impact_report.html" %}
+{% include "console/_two_stage.html" %}
+{% elif stage == "result" %}
+<p class="upgrade-result">{{ result_text }}</p>
+{% if not none_pinned %}
+<p class="upgrade-mode">Upgrade mode: {{ upgrade_mode_text }}</p>
+{% include "console/_impact_report.html" %}
+{% if queued %}<h3>Queued backfills</h3>
+<table class="queued-backfills">
+  <thead><tr><th>Story</th><th>Backfill</th><th>Job</th><th>Status</th><th>Queue position</th></tr></thead>
+  <tbody>{% for row in queued %}<tr id="queued-{{ row.story_id }}">
+    <td>{% if row.url %}<a href="{{ row.url }}">{% endif %}{% if row.name %}{{ row.name }} {% endif %}<code>{{ row.story_id }}</code>{% if row.url %}</a>{% endif %}{% if row.note %} <small class="muted">({{ row.note }})</small>{% endif %}</td>
+    <td class="backfill-link">{% if row.backfill_url %}<a href="{{ row.backfill_url }}">Backfill</a>{% else %}Backfill{% endif %}</td>
+    <td><code>{{ row.job_id }}</code></td>
+    <td class="status" title="{{ row.status_raw }}">{{ row.status_text }}</td>
+    <td class="queue-position">{{ row.queue_text }}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+<p class="queue-line">{{ queue_line }}</p>{% endif %}
+{% endif %}
+<p class="muted key-tail">Idempotency key <code>{{ key_tail }}</code></p>
+{% endif %}
+{% endblock %}

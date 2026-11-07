@@ -178,7 +178,9 @@ def _section(ctx: InspectContext) -> dict[str, Any]:
     empty = ""
     if not blocks:
         empty = EMPTY_CURSOR_PAGE if paged else EMPTY_TRY_OLDER if next_cursor else EMPTY_TEXT
-    outbox_notice: SafeString | str = outbox_list_notice_html() if dispatched else ""
+    outbox_notice: SafeString | str = (
+        outbox_list_notice_html(story_id=ctx.story_id) if dispatched else ""
+    )
     context.update(
         trail=history,
         blocks=blocks,

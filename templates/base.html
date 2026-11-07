@@ -140,6 +140,10 @@
     .quality { font-size: 0.85em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; color: #57606a; background: #f6f8fa; }
     .quality-certified { color: #116329; border-color: #1a7f37; background: #dafbe1; }
     .quality-stale { color: #7d4e00; border-color: #9a6700; background: #fff8c5; }
+    .verdict-badge { font-size: 0.85em; padding: 0 0.4rem; border: 1px solid #8c959f; border-radius: 0.3rem; } /* #316: the text carries the meaning */
+    .verdict-pass { border-color: #1a7f37; font-weight: 600; }
+    .verdict-fail { border-color: #cf222e; border-width: 2px; font-weight: 600; }
+    .verdict-other { border-style: dashed; }
     table.effective-config td.effective { background: #fff8c5; font-weight: 600; }
     table.effective-config td pre { margin: 0; }
     tr.quarantined td { background: #ffebe9; }
@@ -204,6 +208,9 @@
     table.retrieval-timings tr.total th, table.retrieval-timings tr.total td { border-top: 2px solid #8c959f; font-weight: 600; }
     table.retrieval-canon span.chip { padding: 0 0.3rem; border: 1px solid #d0d7de; border-radius: 3px; background: #f6f8fa; }
     strong.over-budget { color: #cf222e; }
+    /* E11 (#296): the M7 page nav rows inside the story and Engine link lines */
+    .story-pages, .engine-pages { display: inline; }
+    .story-pages a[aria-current="page"], .engine-pages a[aria-current="page"] { font-weight: 700; }
     footer { margin-top: 2rem; color: #666; font-size: 0.9em; }
     /* #139: a turn's eval hooks and read set */
     details.turn-trace { margin: 0.8rem 0; }

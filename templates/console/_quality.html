@@ -1,0 +1,5 @@
+{% load inspect_tags %}{% comment %}
+E13's one quality badge (#295, console/certification.py). Context: quality (a QualityLine, from the
+view or the quality_line filter: {% include "console/_quality.html" with quality=status|quality_line %});
+None renders "—".
+{% endcomment %}{% if quality %}<span class="quality{% if quality.css_class %} {{ quality.css_class }}{% endif %}" title="{{ quality.title }}">{{ quality.text }}</span>{% if quality.certification_id %} {% if quality.certification_url %}<a class="certification-link" href="{{ quality.certification_url }}">{{ quality.certification_id|engine_id }}</a>{% else %}{{ quality.certification_id|engine_id }}{% endif %}{% endif %}{% if quality.floors %} <span class="quality-floors">{{ quality.floors }}</span>{% endif %}{% else %}—{% endif %}

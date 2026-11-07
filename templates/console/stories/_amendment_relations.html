@@ -1,0 +1,5 @@
+{% load inspect_tags %}{% comment %}
+#302: an amendment's Relations lines (console.amendments.relation_lines; "—" when none), each id
+linked through E6's amendment_url (plain <code> while unregistered, D19). Context: row (an
+AmendmentRow). No trailing newline.
+{% endcomment %}{% for line in row.relations %}<span class="relation">{{ line.label }} {% if line.url %}<a href="{{ line.url }}">{{ line.amendment_id|engine_id }}</a>{% else %}{{ line.amendment_id|engine_id }}{% endif %}</span>{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}

@@ -317,7 +317,8 @@ def test_reactivated_swap_lists_its_effects(operator_client: Client, engine: Fak
     assert f'<a href="{RECONCILIATION}#outbox-{BOX1}">' in html
     assert f'<a href="{RECONCILIATION}#outbox-{BOX2}">' in html
     assert f'<a href="{RECONCILIATION}">2 effects to reconcile</a>' in html
-    assert str(outbox_list_notice_html()) in html
+    assert str(outbox_list_notice_html(story_id=STORY)) in html  # E17 (#325)
+    assert "no list of every row yet" not in html
 
 
 def test_reactivated_fork_points_at_the_source(operator_client: Client, engine: FakeEngine) -> None:

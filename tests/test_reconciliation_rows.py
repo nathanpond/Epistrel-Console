@@ -14,6 +14,7 @@ from console.reconciliation import (
     count_text,
     effect_text,
     listing_row,
+    resolvable,
     unreadable_text,
 )
 
@@ -137,3 +138,141 @@ def test_count_and_unreadable_wording() -> None:
     )
     assert unreadable_text(1) == "1 listing couldn't be read — see More"
     assert unreadable_text(3) == "3 listings couldn't be read — see More"
+
+
+REQUEST = "req-01JM7RQ0000000000000000001"
+
+
+@override_settings(ROOT_URLCONF=ACTIONS)
+def test_a_listing_without_an_outbox_id_has_no_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#291 (Engine #661): a request-keyed row, even with a settleable reason, has no Settle now
+    or Compensate (#326 gives it Resolve, its only action) and anchors on ``request-<id>``; it is
+    never redacted. **Complement:** ``reverse`` is never called with ``None``, and an
+    outbox-keyed row with the same reason keeps both actions (a settleable reason:
+    ``unconfirmed`` isn't one, so it would have none either way)."""
+    from django.urls import reverse as real
+
+    import console.reconciliation as reconciliation
+
+    def strict(name: str, args: list[Any] | None = None, **kwargs: Any) -> str:
+        assert None not in (args or []), (name, args)
+        return real(name, args=args, **kwargs)
+
+    monkeypatch.setattr(reconciliation, "reverse", strict)
+    keyed = listing(outbox_id=None, request_id=REQUEST, value=None, effect=None)
+    row = listing_row(keyed, STORY, set(), story=story())
+    assert [a.label for a in row.actions] == ["Applied elsewhere…", "Abandoned…"]
+    assert (row.anchor, row.outbox_id, row.request_id) == (f"request-{REQUEST}", None, REQUEST)
+    assert row.redacted is False
+    assert row.effect_text == "—"
+    outbox = listing_row(listing(), STORY, set(), story=story())
+    assert outbox.anchor == f"outbox-{OUTBOX}"
+    assert [a.label for a in outbox.actions] == ["Settle now", "Compensate"]
+    assert all(f"%23outbox-{OUTBOX}" in a.url for a in outbox.actions)  # next= is the anchor
+    neither = listing_row(listing(outbox_id=None), STORY, set())
+    assert (neither.anchor, neither.actions) == (None, ())
+
+
+def test_a_request_keyed_row_renders_its_anchor_and_request_id() -> None:
+    from django.template.loader import render_to_string
+
+    keyed = listing(outbox_id=None, request_id=REQUEST, value=None, effect=None)
+    context = {"actions_gate": None, "gate_id": "gate"}
+    html = render_to_string(
+        "console/inspect/_listing_row.html",
+        {**context, "row": listing_row(keyed, STORY, set())},
+    )
+    assert f'<tr id="request-{REQUEST}" class="listing">' in html
+    assert (
+        f'<td class="outbox">Request <code>{REQUEST}</code> '
+        "<small>Applied by the consumer (no outbox row)</small></td>"
+    ) in html
+    assert f"<dt>Request id</dt><dd><code>{REQUEST}</code></dd>" in html
+    assert html.index("<dt>Reason</dt>") < html.index("<dt>Request id</dt>")
+    outbox = render_to_string(
+        "console/inspect/_listing_row.html",
+        {**context, "row": listing_row(listing(), STORY, set())},
+    )
+    assert f'<tr id="outbox-{OUTBOX}" class="listing">' in outbox
+    assert "Request id" not in outbox
+    bare = render_to_string(
+        "console/inspect/_listing_row.html",
+        {**context, "row": listing_row(listing(outbox_id=None), STORY, set())},
+    )
+    assert '<tr class="listing">' in bare
+    assert '<td class="outbox">—</td>' in bare
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        # A request-keyed row: its request_id, whatever its reason.
+        ({"outbox_id": None, "request_id": REQUEST, "reason": "reservation_expired"}, REQUEST),
+        ({"outbox_id": None, "request_id": REQUEST}, REQUEST),  # late_success_after_expiry
+        # A parked imported row: its outbox id (a redacted one too: the Engine decides).
+        ({"reason": "imported_unsettled"}, OUTBOX),
+        ({"reason": "imported_unsettled", "value": None, "effect": None}, OUTBOX),
+        # Outbox rows with another reason: settleable or not, no Resolve.
+        ({}, None),
+        ({"reason": "unconfirmed"}, None),
+        ({"reason": "settlement_conflict"}, None),
+        # Neither id, or a blank request id.
+        ({"outbox_id": None}, None),
+        ({"outbox_id": None, "request_id": ""}, None),
+        ({"outbox_id": None, "request_id": "   "}, None),
+        ({"outbox_id": None, "reason": "imported_unsettled"}, None),
+    ],
+)
+def test_resolvable(changes: dict[str, Any], expected: str | None) -> None:
+    body: dict[str, Any] = {
+        "outbox_id": OUTBOX,
+        "provider": "bank",
+        "value": "balance",
+        "status": "claimed",
+        "reason": "late_success_after_expiry",
+        "since": "2026-10-31T18:05:00Z",
+        "effect": {"state": "gold", "delta": -500},
+        **changes,
+    }
+    parsed = ReconciliationListing.from_json(body)
+    assert parsed is not None
+    assert resolvable(parsed) == expected
+
+
+@override_settings(ROOT_URLCONF=ACTIONS)
+def test_resolve_links_carry_the_listing_id_and_query() -> None:
+    """#326: each Resolve link names its resolution, the listing id from :func:`resolvable` and
+    #249's query, ``next`` the row's anchor. **Complement:** an imported row gets no Settle now
+    and a request row's links never name an outbox id."""
+    from urllib.parse import parse_qs, urlsplit
+
+    imported = listing_row(listing(reason="imported_unsettled"), STORY, set(), story=story())
+    keyed = listing_row(
+        listing(outbox_id=None, request_id=REQUEST, value=None), STORY, set(), story=story()
+    )
+    section = f"/stories/{STORY}/inspect/effects/reconciliation/"
+    for row, listing_id, anchor in (
+        (imported, OUTBOX, f"outbox-{OUTBOX}"),
+        (keyed, REQUEST, f"request-{REQUEST}"),
+    ):
+        assert [a.label for a in row.actions] == ["Applied elsewhere…", "Abandoned…"]
+        for action, resolution in zip(row.actions, ("applied_elsewhere", "abandoned"), strict=True):
+            split = urlsplit(action.url)
+            assert split.path == f"{section}{listing_id}/resolve/"
+            query = parse_qs(split.query)
+            assert query["resolution"] == [resolution]
+            assert query["expected_revision"] == ["12"]
+            assert query["provider"] == ["bank"]
+            assert query["next"] == [f"{section}#{anchor}"]
+            assert "state" not in query
+    assert parse_qs(urlsplit(imported.actions[0].url).query)["listed_reason"] == [
+        "imported_unsettled"
+    ]
+    assert "value" not in parse_qs(urlsplit(keyed.actions[0].url).query)
+
+
+def test_resolve_links_need_the_route() -> None:
+    """#64's nav rule: without ``inspect:resolve-listing`` neither link renders."""
+    with override_settings(ROOT_URLCONF="tests.inspect.urls_without_reconciliation_actions"):
+        row = listing_row(listing(reason="imported_unsettled"), STORY, set())
+    assert row.actions == ()
