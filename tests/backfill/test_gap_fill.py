@@ -18,6 +18,7 @@ from console.backfill import (
     IN_PROGRESS_TEXT,
     NOTHING_TO_FILL,
     PAUSES_LINE,
+    not_fillable_text,
 )
 from console.engine.models import Backfill, BackfillEstimate
 from console.impact import backfill_text
@@ -393,6 +394,36 @@ def test_capability_validation_error_on_checkboxes(
     section = gap_section(response.content.decode())
     fieldset = section.split('<fieldset class="capabilities">', 1)[1].split("</fieldset>", 1)[0]
     assert "not on: canon_extras" in fieldset
+    assert 'class="engine-error' not in section
+    assert len(writes(no_backfill)) == 1
+
+
+ENGINE_NOT_ENABLED = "a gap fill names capabilities the story's configuration has on"
+
+
+def test_refused_capabilities_are_named_on_the_checkboxes(
+    operator_client: Client, no_backfill: FakeEngine
+) -> None:
+    """#340: the live Engine's 422 for a capability it can't gap-fill (``details.not_enabled``)
+    names the refused capabilities in plain words, not the Engine's misleading message."""
+    no_backfill.respond(
+        "POST",
+        BACKFILL_PATH,
+        422,
+        json=error_json(
+            "validation_error",
+            ENGINE_NOT_ENABLED,
+            field="body.capabilities",
+            not_enabled=["pins", "perception:full"],
+        ),
+    )
+    response = post(operator_client, mode="start", capabilities=["pins", "perception:full"])
+    section = gap_section(response.content.decode())
+    fieldset = section.split('<fieldset class="capabilities">', 1)[1].split("</fieldset>", 1)[0]
+    assert escape(not_fillable_text(["pins", "perception:full"])) in fieldset
+    assert "pins, perception:full" in fieldset
+    # The complement: the Engine's own wording isn't shown, and nothing went above the form.
+    assert escape(ENGINE_NOT_ENABLED) not in section
     assert 'class="engine-error' not in section
     assert len(writes(no_backfill)) == 1
 

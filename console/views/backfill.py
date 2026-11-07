@@ -66,8 +66,10 @@ again; "no Engine call" means no write.
   renders ``_gap_fill_preview.html`` signed under ``backfill-start`` with ``base``
   ``{preview}`` (no token when ``needed`` is false). The Engine's state wins over the posted
   mode. Refusals at either stage re-render the plain form with the reason (nothing to fill, in
-  progress, ``validation_error`` at ``body.capabilities`` on the checkboxes, E10, C5, else the
-  panel); a confirm-stage refusal keeps the signed preview above it, muted. An unknown outcome
+  progress, ``validation_error`` at ``body.capabilities`` on the checkboxes (one naming
+  ``details.not_enabled`` reads :func:`~console.backfill.not_fillable_text`, #340), E10, C5,
+  else the panel); a confirm-stage refusal keeps the signed preview above it, muted (a stale
+  resume's ``nothing_to_backfill`` shows the gap-fill form instead, #352). An unknown outcome
   on the confirm re-renders the same confirm (token and key) with #43's panel.
 - **The page's ``#gap-fill`` section** (:func:`_default_gap`): the "Fill coverage gaps…" form
   when there is no backfill or it ended, "Finish now…" while it waits on conflicts, nothing
@@ -138,6 +140,7 @@ from console.backfill import (
     conflict_url,
     finished_text,
     gap_fill_preview,
+    not_fillable_text,
     pending_change,
     resolved_text,
     resume_line,
@@ -859,6 +862,13 @@ def _answered(
     return _render_page(request, story_id, PageExtras(gap=factory))
 
 
+def _not_enabled(exc: EngineError) -> list[str]:
+    """The capabilities a gap fill's 422 refused (``details.not_enabled``, #340): the Engine
+    fills only its data-producing capabilities, named without a ``:mode`` suffix."""
+    found = exc.details.get("not_enabled")
+    return [c for c in found if isinstance(c, str)] if isinstance(found, list) else []
+
+
 def _start_refused(
     request: HttpRequest,
     story_id: str,
@@ -885,6 +895,8 @@ def _start_refused(
         changes["error"] = NOTHING_TO_FILL
     elif exc.code == IN_PROGRESS:
         changes["error"] = IN_PROGRESS_TEXT
+    elif exc.code == VALIDATION_ERROR and _not_enabled(exc):
+        errors = [(CAPABILITIES, not_fillable_text(_not_enabled(exc)))]
     elif exc.code == VALIDATION_ERROR:
         failures = engine_field_errors(exc)
         errors = [
