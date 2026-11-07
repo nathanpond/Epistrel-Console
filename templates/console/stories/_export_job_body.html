@@ -1,0 +1,20 @@
+{% comment %}
+#319: an export job's polled block body (E7's export kind), inside console/_job_poll.html.
+Context: export (ExportJob; None before a read answered), job/job_id (job_poll_context), facts
+(ready only), ready, download_url, filename (None: no "saves as"), manifest, error_lines
+(ErrorLines: a failed job, or an expired one whose error is set), export_again (failed or
+expired) with export_url/export_key/export_again_label, held (D17's fragment), not_found and
+poll_panel.
+{% endcomment %}{% load console_format %}{% if held %}{% include "console/stories/_held.html" %}{% elif not_found %}<p class="not-found">{{ not_found }}</p>{% elif poll_panel %}{% include "console/_engine_error.html" with engine_error=poll_panel %}{% elif export %}{% include "console/_job_status.html" %}
+{% if ready %}<p class="download"><a class="download-link" href="{{ download_url }}">Download</a>{% if filename %} — saves as <code>{{ filename }}</code>{% endif %}</p>
+<details class="manifest"><summary>More</summary><pre>{{ manifest }}</pre></details>{% endif %}
+{% if error_lines %}<div class="export-error">
+  <p class="warning error-code"><strong title="{{ error_lines.code_raw }}">{{ error_lines.code_text }}</strong></p>
+  {% if error_lines.known_text %}<p class="error-text">{{ error_lines.known_text }}</p>{% endif %}
+  {% if error_lines.reason_text %}<p class="error-reason">{{ error_lines.reason_text }}</p>{% endif %}
+  <details><summary>More</summary><pre>{{ error_lines.more }}</pre></details>
+</div>{% endif %}
+{% if export_again %}<form method="post" action="{{ export_url }}" class="export-again">{% csrf_token %}
+  <input type="hidden" name="idempotency_key" value="{{ export_key }}">
+  <button type="submit">{{ export_again_label }}</button>
+</form>{% endif %}{% endif %}

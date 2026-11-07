@@ -21,6 +21,7 @@ from console.views import (
     engine_panel,
     erasure,
     eval_runs,
+    exports,
     feedback,
     history,
     inspect,
@@ -272,6 +273,14 @@ story_patterns = (
         # #317: prune after a dry run (and the past prunings), then the typed-name confirm.
         path("<str:story_id>/prune/", prune.prune, name="prune"),
         path("<str:story_id>/prune/confirm/", prune.prune_confirm, name="prune-confirm"),
+        # #319: export the story (its snapshot), follow the export job, download its bundle.
+        path("<str:story_id>/export/", exports.export, name="export"),
+        path("<str:story_id>/export/<ulid:job_id>/", exports.export_job, name="export-job"),
+        path(
+            "<str:story_id>/export/<ulid:job_id>/bundle/",
+            exports.export_download,
+            name="export-download",
+        ),
         path("<str:story_id>/archive/", stories.story_archive, name="archive"),
         path("<str:story_id>/unarchive/", stories.story_unarchive, name="unarchive"),
         path("<str:story_id>/delete/", stories.story_delete, name="delete"),

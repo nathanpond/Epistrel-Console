@@ -13,7 +13,8 @@ keeps working as owners land.
 (the linked cases of its footer and amendment links render the real page here). #302's
 ``stories:amendments``/``stories:amendment`` stubs went the same way, as did #313's
 ``engine:certification`` and ``engine:certification-run`` and #315's
-``engine:certification-invalidate`` and ``engine:certification-import``.
+``engine:certification-invalidate`` and ``engine:certification-import``, and #319's three
+``stories:export*`` stubs.
 
 **The frames (#296).** ``stories:rewrites`` renders through
 :func:`console.views.story_pages.story_page` and ``engine:certifications`` through
@@ -90,9 +91,6 @@ STORY_STUBS = [
     path(f"{S}backfill/start/", stub, name="backfill-start"),  # #309
     path(f"{S}backfill/cancel/", stub, name="backfill-cancel"),  # #308
     path(f"{S}backfill/conflicts/<str:conflict_id>/", stub, name="backfill-conflict"),  # #309
-    path(f"{S}export/", stub, name="export"),  # #319
-    path(f"{S}export/<ulid:job_id>/", stub, name="export-job"),  # #319
-    path(f"{S}export/<ulid:job_id>/bundle/", stub, name="export-download"),  # #319
     path(f"{S}operations/", stub, name="operations-list"),  # #324
 ]
 INSPECT_STUBS = [
@@ -137,9 +135,6 @@ NOT_YET_REGISTERED = frozenset(
         "inspect:outbox",
         "inspect:resolve-listing",
         "inspect:resolved",
-        "stories:export",
-        "stories:export-download",
-        "stories:export-job",
         "stories:operations-list",
     }
 )

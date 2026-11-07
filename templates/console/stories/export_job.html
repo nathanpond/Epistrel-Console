@@ -1,0 +1,10 @@
+{% extends "console/stories/page_base.html" %}
+{% comment %}
+#319: one export job (stories:export-job, console/views/exports.py), E7's export job page:
+console/_job_poll.html around _export_job_body.html, polling every 2s until ready, failed or
+expired. not_found: "Not found (no such export)" / "Not found (that export isn't this story's)".
+{% endcomment %}
+{% block story_page %}
+{% if not_found %}<p class="not-found">{{ not_found }}</p>
+{% else %}{% include "console/_job_poll.html" %}{% endif %}
+{% endblock %}

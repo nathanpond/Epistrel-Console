@@ -50,9 +50,15 @@ def test_bundle_filename_falls_back_to_story() -> None:
 
 
 def test_the_url_helpers_are_none_while_unregistered() -> None:
-    assert export_url(STORY) is None
-    assert export_job_url(STORY, JOB) is None
     assert import_job_url(JOB) is None
+
+
+def test_export_urls_once_registered() -> None:
+    """#319 registered ``stories:export`` and ``stories:export-job``: the real urlconf reverses
+    them."""
+    assert export_url(STORY) == f"/stories/{STORY}/export/"
+    assert export_job_url(STORY, JOB) == f"/stories/{STORY}/export/{JOB}/"
+    assert export_url("") is None
 
 
 def test_prune_url_once_registered() -> None:

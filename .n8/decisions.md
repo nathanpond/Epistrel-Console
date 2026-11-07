@@ -3676,3 +3676,21 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** The `engine_live` case `test_prune_policy_live` ran against #291's `n8-291-smoke` stack on `127.0.0.1:18000`, which stays up. The stack's `GET /stories/{id}` returns `pruning.next_run_at` once a policy is set and `null` after it is cleared.
   **Why:** E24 requires the live case. The stack is shared.
   **Issue:** #318
+- **Decision:** The ready `?partial=1` render reads the story once more (`get_story`) to name the file (`bundle_filename`), because the partial skips the frame and the ready state is usually reached by a poll. If that read fails, the "saves as" part is left out and Download stays. Every other partial render makes only the `export_status` read.
+  **Why:** The planner's note says the partial makes only the status read, but then the most common path to "Ready" would show no filename (the AC's Download line names it). The read happens once, on the terminal render. If this is wrong, the cost is one extra read per finished export.
+  **Issue:** #319
+- **Decision:** The export error renders as its own lines in `templates/console/stories/_export_job_body.html`. These are the code humanised, `EXPORT_ERROR_TEXT[code]`, the humanised `reason` and the raw error under More. The view passes `error=None` to `_job_status.html` so its generic block (code plus `message`) stays silent. That leaves `_job_status.html` unchanged. Facts show only on `ready`, not on `expired`. An expired job with an `error` adds the humanised code line. "Export again" shows on failed and expired.
+  **Why:** The Engine's export `error` has no `message`, and the AC orders different lines. Changing the shared template would affect #321's import page.
+  **Issue:** #319
+- **Decision:** Several smaller calls:
+  - Recent exports show the full job id in `<code>`, linked. The AC says "the job id", and the job block shows the full id too.
+  - Outcomes go through the `humanised` filter ("Queued"/"Ok"/"Error"), with the raw value in `title`.
+  - Any 404 on `export_status` counts as "no such export", the way `poll_failure` treats a 404.
+  - The download's HEAD answers an empty `StreamingHttpResponse`, so CommonMiddleware adds no `Content-Length`.
+  - An unreachable or timed-out stream is #43's panel inside the job page's frame at 502/504. So is an unreachable story or status read.
+  - `media_proxy._Body` is now the public `StreamedBody`, with keyword `logger`/`what` (defaults unchanged). The download logs "export <job id>: stream cut short" to `console.exports`.
+  **Why:** These are the story's discretion notes applied. The `logger`/`what` keywords are the smallest change that lets the download reuse `StreamedBody` and log to `console.exports` as the planner asked.
+  **Issue:** #319
+- **Decision:** Registering the three routes moved the nav goldens, which now read Rewrite · Amendments · Backfill · Export. The goldens are `REGISTERED_NAV` in the play and history tests, `test_nav.test_rewrite_link_once_registered` (plus the export-job/download parent asserts), `inspect/test_shell` and `test_story_pages.test_the_story_nav_shows_backfill_under_the_real_urlconf`. `test_portability_helpers`'s "export urls are None" lines moved to a registered-case test. The live export smoke `test_export_through_the_console_live` ran against `n8-291-smoke` on 127.0.0.1:18000, and the stack was left running.
+  **Why:** This is E24's regenerate-in-the-registering-story rule.
+  **Issue:** #319

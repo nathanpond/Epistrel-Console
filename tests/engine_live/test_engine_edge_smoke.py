@@ -869,3 +869,40 @@ def test_certification_estimate_queues_nothing_live(url: str, key: str) -> None:
     assert again.job_id is None
     after = [c.id for c in client.list_certifications(fingerprint=first.fingerprint).items]
     assert after == before
+
+
+@pytest.mark.engine_auth
+def test_export_through_the_console_live(url: str, key: str, operator_client: Client) -> None:
+    """#319: export the smoke's story from the Console's Export page, poll the job to ``ready``
+    (E24: once a second, 60 s cap), then download it through the Console: the first two bytes
+    are the gzip magic and the size is the job's. **Complement:** the story is deleted in a
+    ``finally``."""
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, FULL_PROFILE_ID, 4)
+    try:
+        with override_settings(ENGINE_URL=url, ENGINE_SERVICE_KEY=key):
+            started = operator_client.post(
+                f"/stories/{story}/export/", {"idempotency_key": new_ulid()}
+            )
+            assert started.status_code == 303, started.content.decode()
+            match = re.fullmatch(rf"/stories/{story}/export/([0-9A-Z]{{26}})/", started["Location"])
+            assert match is not None, started["Location"]
+            job_id = match.group(1)
+            deadline = time.monotonic() + 60.0
+            while True:
+                job = client.export_status(job_id)
+                if job.status == "ready":
+                    break
+                assert job.status in {"queued", "running"}, (job.status, job.error)
+                assert time.monotonic() < deadline, f"export still {job.status} after 60 s"
+                time.sleep(1.0)
+            page = operator_client.get(started["Location"]).content.decode()
+            assert "Ready to download" in page
+            download = operator_client.get(f"{started['Location']}bundle/")
+            assert download.status_code == 200
+            body = b"".join(download.streaming_content)  # type: ignore[attr-defined]
+        assert body[:2] == GZIP_MAGIC
+        assert len(body) == job.size
+        assert url not in download["Content-Disposition"]
+    finally:
+        _delete_when_idle(client, story)
