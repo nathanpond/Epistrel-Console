@@ -78,8 +78,8 @@ codes, beside the field they name, using convention 18 first. Two more wordings 
   panel.
 
 Where the Console reconstructs or omits what the Engine doesn't serve, the page says so once,
-naming the request: nested beliefs (#606) on Knowledge (#189's shell notice), the perception
-trace (#607) on the grid. Respond's undeclared 409 (#608) is noted in code comments only.
+naming the request: the perception trace (#607) on the grid. Respond's undeclared 409 (#608) is
+noted in code comments only.
 """
 
 from collections.abc import Iterable, Mapping

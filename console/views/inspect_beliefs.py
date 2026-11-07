@@ -80,7 +80,7 @@ from console.engine_errors import EMPTY, log_engine_error, panel_for
 from console.forms.beliefs import (
     NESTED_LEGEND,
     NESTED_LINE,
-    NOT_READABLE,
+    NESTED_READS,
     DirectBeliefForm,
     gated_fields,
     nested_depth,
@@ -363,6 +363,23 @@ def parse_written(raw: object) -> tuple[BeliefWritten, list[Any]] | None:
     return None if parsed is None else (parsed, bad)
 
 
+def _see(
+    story_id: str, belief: AuthoredBelief, holder_id: str, names: Mapping[str, str]
+) -> tuple[str | None, str | None]:
+    """The result page's "See …" link and its label: a first-order write's belief row, a nested
+    write's Kind = Nested page (#328, for that holder and proposition); none for another kind."""
+    holder = character_label(holder_id, names)
+    if belief.kind == FIRST_ORDER:
+        url = beliefs_url(story_id, character=holder_id, proposition_id=belief.proposition_id)
+        return url, f"See {holder}'s belief"
+    if belief.kind == NESTED:
+        url = beliefs_url(
+            story_id, character=holder_id, proposition_id=belief.proposition_id, kind=NESTED
+        )
+        return url, f"See {holder}'s nested beliefs"
+    return None, None
+
+
 def _written(
     ctx: InspectContext,
     written: BeliefWritten,
@@ -379,6 +396,7 @@ def _written(
     belief, transition = written.belief, written.transition
     holder_id = belief.holder_character_id
     first_order = belief.kind == FIRST_ORDER
+    see_url, see_label = _see(story_id, belief, holder_id, names)
     return {
         TEMPLATE_KEY: WRITTEN_TEMPLATE,
         "written": written,
@@ -416,11 +434,8 @@ def _written(
         "replayed": row is not None and row.replayed,
         "report_url": written_report_url(story_id, row.pk) if row is not None else None,
         "first_order": first_order,
-        "see_url": beliefs_url(story_id, character=holder_id, proposition_id=belief.proposition_id)
-        if first_order
-        else None,
-        "see_label": f"See {character_label(holder_id, names)}'s belief",
-        "not_readable": None if first_order else NOT_READABLE,
+        "see_url": see_url,
+        "see_label": see_label,
         "again_url": direct_url(story_id, holder_id),
     }
 
@@ -526,7 +541,7 @@ def _context(ctx: InspectContext, form: DirectBeliefForm, holder: str) -> dict[s
         "nested_gate": gate,
         "nested_legend": NESTED_LEGEND,
         "nested_line": NESTED_LINE,
-        "not_readable": NOT_READABLE,
+        "nested_reads": NESTED_READS,
     }
 
 

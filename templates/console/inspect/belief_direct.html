@@ -6,7 +6,8 @@ refusal or #43's panel stays above the form; the result page (belief_written.htm
 page on success. The Nested fieldset is greyed (never hidden) when the nested_beliefs gate is
 closed (nested_gate, #188's gate_attrs and _gated_control.html). Context: form, idempotency_key
 (fresh on every render), action_url, back_url, predicates_url, cast_unavailable, prefill_failed,
-nested_gate, nested_legend, nested_line, not_readable, refusal and refusal_url, write_error.
+nested_gate, nested_legend, nested_line, nested_reads (#328: where a nested belief reads back),
+refusal and refusal_url, write_error.
 {% endcomment %}
 {% block title %}Inspect · Direct a belief · {{ story_name }}{% endblock %}
 {% block knowledge_content %}
@@ -32,7 +33,7 @@ nested_gate, nested_legend, nested_line, not_readable, refusal and refusal_url, 
     {% if form.nested_errors %}<ul class="errorlist nested-errors">{% for error in form.nested_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
     {% for field in form.attributed_fields %}<div class="field field-{{ field.name }}">{{ field.label_tag }} {{ field }}{{ field.errors }}</div>
     {% endfor %}<div class="field field-attributed_confidence_level">{{ form.attributed_confidence_level.label_tag }} {{ form.attributed_confidence_level }}{{ form.attributed_confidence_level.errors }}</div>
-    <p class="notice not-readable">{{ not_readable }}</p>
+    <p class="muted nested-reads">{{ nested_reads }}</p>
   </fieldset>
   <p><button type="submit" class="belief-write">Write belief</button> <a href="{{ back_url }}">Cancel</a></p>
 </form>

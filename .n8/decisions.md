@@ -3824,3 +3824,15 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** These existing tests were adapted to the retired #606 notice and the new Kind select. `test_beliefs.test_first_order_notice_shown` now looks for "nested" after the beliefs form's `</form>`, because the select now contains "Nested". In `test_knowledge_shell`, the `NOTICE`/`NOTICE_START` asserts became "aren't readable" absent, and the subnav ordering is re-anchored on the stub section's content (`EMPTY`). `test_no_nested_belief_notice` runs on the real urlconf for Beliefs, Divergences and Exposures.
   **Why:** The story's test plan asks for these changes. The first-order assertion itself is unchanged. Cost if wrong: none.
   **Issue:** #327
+- **Decision:** #328's "See" link and label come from one helper, `_see` in `console/views/inspect_beliefs.py`: first-order keeps main's URL and label, `nested` adds `kind=nested` with "See <holder>'s nested beliefs", any other kind returns (None, None), so `see_label` is None whenever `see_url` is.
+  **Why:** the story asks for both together; one helper keeps them in step. Cost if wrong: nil (context-only).
+  **Issue:** #328
+- **Decision:** `NESTED_READS` contains "›", so its line (and the test's literal) carries `# noqa: RUF001`, as `imports_status.PARKED_NOTE` does.
+  **Why:** the story quotes the text exactly; the noqa is the repo's precedent for typographic characters.
+  **Issue:** #328
+- **Decision:** #328 adds `test_nested_written_link_opens_the_nested_page` beyond the test plan: it follows the nested link and checks #327's page renders with `kind == "nested"`.
+  **Why:** it pins the key link (written page → Kind = Nested) end to end, not just the query string. Cost: one cheap test.
+  **Issue:** #328
+- **Decision:** the no-#606 scan (`test_no_606_sentence_left`) also asserts `knowledge.html` still contains "#606", so the exemption fails loudly once #327's comment no longer needs it; #327's comment already says "delivered", so no flag was needed. `console/engine/openapi.json` mentions #606 but is outside the scan (`*.py`/`*.html` only, as planned).
+  **Why:** an exemption with nothing to exempt is a silent gap. Cost if wrong: a future edit of that comment fails this test and must drop the last assert.
+  **Issue:** #328

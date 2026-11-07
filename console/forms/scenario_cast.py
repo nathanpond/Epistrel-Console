@@ -116,10 +116,7 @@ GROUP_NAME_USED = "Already used by row {row}"
 GROUP_IS_LEVEL = "{name} is an audience level"
 GROUP_IS_ROLE = "A role has this id: the group would hide the role in audiences"
 CONFIDENCE_HELP = "How sure the holder is of a belief seed."
-NESTED_NOTE = (
-    "Needs the nested_beliefs module; without it the seed stays deferred. The Console can't "
-    "read nested beliefs back yet (Engine #606)."
-)
+NESTED_NOTE = "Needs the nested_beliefs module; without it the seed stays deferred."
 NESTED_NEEDS_BOTH = "A nested belief needs both the role and what it believes"
 NESTED_SELF = "A role can't be its own attributed holder"
 RELATIONSHIPS_HELP = (
