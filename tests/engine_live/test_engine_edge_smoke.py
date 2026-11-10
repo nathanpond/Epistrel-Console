@@ -1064,3 +1064,57 @@ def test_resolve_an_imported_unsettled_row_live(
         for made in dict.fromkeys(created):
             _delete_when_idle(client, made)
         _delete_when_idle(client, story)
+
+
+@pytest.mark.engine_auth
+def test_profile_list_quality_live(url: str, key: str) -> None:
+    """#339: every listed preset carries its ``quality`` (nathanpond/Epistrel#789), the same
+    status its single read gives. An Engine before #789 (the release smoke's) skips."""
+    client = EngineClient(url, key, principal="console:smoke")
+    by_id = {p.id: p for p in _every_profile(client)}
+    if by_id[FULL_PROFILE_ID].quality is None:
+        pytest.skip("this Engine's profile list carries no quality (before Epistrel#789)")
+    for profile_id in PRESET_NAMES:
+        listed = by_id[profile_id].quality
+        assert listed is not None, profile_id
+        single = client.get_engine_profile(profile_id).quality
+        assert single is not None, profile_id
+        assert (listed.status, listed.fingerprint) == (single.status, single.fingerprint)
+
+
+@pytest.mark.engine_auth
+def test_gap_fillable_boxes_preview_live(url: str, key: str) -> None:
+    """#340: on a Full story, every ``gap_fillable`` name (nathanpond/Epistrel#790) is accepted
+    by the gap fill's preview (200, or 409 ``nothing_to_backfill`` on a story with no turns),
+    with ``ignore_warnings`` off so nothing is queued. **Complement:** a capability outside it
+    is 422 ``validation_error`` naming it in ``details.not_enabled``. An Engine before #790
+    skips."""
+    client = EngineClient(url, key, principal="console:smoke")
+    story = _knowledge_story(client, _full_profile(client), 4)
+    try:
+        config = client.get_effective_config(story)
+        if config.gap_fillable is None:
+            pytest.skip("this Engine's effective config has no gap_fillable (before Epistrel#790)")
+        assert config.gap_fillable, "a Full story has data-producing capabilities"
+        assert config.gap_fillable == sorted(config.gap_fillable)
+        assert not [c for c in config.gap_fillable if ":" in c]
+        answers: dict[str, str] = {}
+        for name in config.gap_fillable:
+            try:
+                client.start_backfill(
+                    story, capabilities=[name], ignore_warnings=False, idempotency_key=new_ulid()
+                )
+                answers[name] = "preview"
+            except EngineError as exc:
+                answers[name] = exc.code
+        assert set(answers.values()) <= {"preview", "nothing_to_backfill"}, answers
+        refused = [c for c in config.capabilities if c not in config.gap_fillable]
+        assert refused, "Full enables capabilities a gap fill can't fill"
+        with pytest.raises(EngineError) as caught:
+            client.start_backfill(
+                story, capabilities=[refused[0]], ignore_warnings=False, idempotency_key=new_ulid()
+            )
+        assert caught.value.code == "validation_error"
+        assert caught.value.details.get("not_enabled") == [refused[0]]
+    finally:
+        _delete_when_idle(client, story)
