@@ -4055,3 +4055,14 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Blocker:** PR #367 is not merged. Its `gate` is red only from `engine-smoke`'s two #366 failures (Engine M8 drift: model-config `image_check` sources `"unset"`). Everything else passed: `test`, `docker`, `lint`, `types`, `engine-release-smoke` and CodeQL. Options are on PR #367: (a) a separate #366 PR first (recommended), (b) fold the fix into #367, or (c) wait for Console M8's re-record. The PR is labelled `blocked` + `needs-owner-action`.
   **Why:** the gate can't be bypassed, and fixing #366 inline would be scope creep into unplanned M8 work.
   **Issue:** #366, PR #367
+- **Decision (owner):** The owner chose option (a) for the PR #367 blocker: fix #366 in its own PR first. PR #368 merged as cb4c124, with every check green (`engine-smoke` and `gate` included). Its scope was only what's needed for the model-config read to work on edge 7f9f125:
+  - The recording gains `Sources`, `ModelConfigEntry`/`Item`/`Mutation` and the new `ConfigWarning`, copied verbatim from Engine 7f9f125 and equal to live.
+  - `ConfigSource` gains `"unset"`. An unset value shows as "no default", not "not set": `NOT_SET` already renders "— (not set)".
+  - `endpoint` is a keyword-only optional field, widened in the contract test for the 0.2.0 release smoke.
+  - `ModelConfigMutation.warnings` is parsed.
+  - Rendering `endpoint` and the warnings is left to Console M8, so that plan should include it (with #365).
+  **Why:** the gate can't be bypassed, and the owner picked the separate-PR path.
+  **Issue:** #366, PR #368, PR #367
+- **Decision:** I merged `main` (with #368) into `milestone/m7-verification-fixes-2` instead of rebasing. The one conflict, in `tests/engine/test_contract.py`'s `_widened` constants, docstring and body, was resolved by keeping both widenings: #339/#340's and #366's.
+  **Why:** the branch is already pushed and has a PR. A merge keeps the per-story commits, and the squash flattens it anyway.
+  **Issue:** PR #367
