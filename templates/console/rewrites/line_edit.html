@@ -2,11 +2,12 @@
 {% comment %}
 #305: edit one recorded line (stories:line-edit, console/views/line_edit.py). E2's omniscient
 line (no viewpoint picker); then NO_LINE_TEXT alone (no_line), or: the recorded line (each
-matched item's header and its text in a quote block; SHARED_MESSAGE_NOTE for several), LINE_UNREAD
+matched item's header and its text in a quote block; SHARED_MESSAGE_NOTE for several;
+RECOMPOSED_NOTE for a structured turn's recomposed message, #364), LINE_UNREAD
 when it couldn't be read, a turn's choice links when it holds several messages; the write's
 refusal (beat_required's choice links after it) or #43's panel; the form (New text, the hidden
 target, E4's modes, "Plan the edit"). "← Back to History" in every state.
-Context: no_line, read, line_unread, shared_note, several_text, form, idempotency_key, refusal,
+Context: no_line, read, line_unread, shared_note, recomposed_note, several_text, form, idempotency_key, refusal,
 refusal_url, refusal_link, beat_choices, write_error, back_url, back_text, submit_text.
 {% endcomment %}
 {% load console_format erasure %}
@@ -19,6 +20,7 @@ refusal_url, refusal_link, beat_choices, write_error, back_url, back_text, submi
     <p class="line-header">{{ line.header }}</p>
     <blockquote class="line-text">{{ line.text|mark_erased }}</blockquote>{% endfor %}
     {% if shared_note %}<p class="notice shared-message">{{ shared_note }}</p>{% endif %}
+    {% if recomposed_note %}<p class="notice recomposed-line">{{ recomposed_note }}</p>{% endif %}
   </div>{% endif %}
   {% if line_unread %}<p class="warning line-unread">{{ line_unread }}</p>{% endif %}
   {% if several_text %}<p class="several-lines">{{ several_text }}</p>

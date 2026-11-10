@@ -24,7 +24,12 @@ from console.rewrites import (
     PLANNED_TEXT,
     REACH_FAILED_TEXT,
 )
-from console.views.line_edit import LINE_UNREAD, NO_LINE_TEXT, SHARED_MESSAGE_NOTE
+from console.views.line_edit import (
+    LINE_UNREAD,
+    NO_LINE_TEXT,
+    RECOMPOSED_NOTE,
+    SHARED_MESSAGE_NOTE,
+)
 from tests.fakes.engine import FakeEngine
 from tests.fixtures import engine_fixture
 from tests.play.helpers import error_json
@@ -190,6 +195,70 @@ def test_shared_message_joins_and_notes(operator_client: Client, engine: FakeEng
     assert "Turn 2 · beat 1 · Mara · do" in html
     assert textarea(html) == "\nShow me the ledger, Bob.\nHolds out a hand."
     assert SHARED_MESSAGE_NOTE in html
+
+
+REPLY = "01JM7EV0000000000000000003"
+REPLY_TEXT = "Alice admits she forged it."
+
+
+def reply_history(*, structured: bool) -> dict[str, Any]:
+    """``line_history`` plus turn 2's composed reply (``message_rendered``, no ``propositions``).
+    ``structured``: the turn's other items keep the fixture's ``propositions`` (a structured
+    turn, whose reply the read recomposes); otherwise no item carries it (a Lite turn)."""
+    body = line_history()
+    if not structured:
+        for item in body["items"]:
+            item.pop("propositions", None)
+    reply = _item(
+        beat=None,
+        kind="message_rendered",
+        actor_character_id=ALICE,
+        channel="message",
+        text=REPLY_TEXT,
+        message_id=REPLY,
+    )
+    reply.pop("propositions", None)
+    body["items"].append(reply)
+    return body
+
+
+def test_recomposed_reply_skips_the_unchanged_check(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#364: a structured turn's composed message is pre-filled under RECOMPOSED_NOTE with no
+    ``original``, so submitting it unchanged reaches the Engine (its ``rewrite_noop`` decides)."""
+    serve(engine, reply_history(structured=True))
+    html = get(operator_client, f"event_id={REPLY}&turn=2")
+    assert textarea(html) == f"\n{REPLY_TEXT}"
+    assert escape(RECOMPOSED_NOTE) in html
+    assert '<input type="hidden" name="original" id="id_original">' in html
+    opened(engine)
+    response = post(operator_client, event_id=REPLY, original="", new_text=REPLY_TEXT)
+    assert response.status_code == 303
+    assert sent(engine)["line_edit"] == {"event_id": REPLY, "new_text": REPLY_TEXT}
+
+
+def test_lite_reply_keeps_the_unchanged_check(operator_client: Client, engine: FakeEngine) -> None:
+    """Complement (#364): a reply in a turn with no ``propositions`` (a Lite turn stores the text
+    the read shows) keeps ``original`` and no note, and an unchanged submit is refused locally."""
+    serve(engine, reply_history(structured=False))
+    html = get(operator_client, f"event_id={REPLY}&turn=2")
+    assert f'name="original" value="{REPLY_TEXT}"' in html
+    assert escape(RECOMPOSED_NOTE) not in html
+    response = post(operator_client, event_id=REPLY, original=REPLY_TEXT, new_text=REPLY_TEXT)
+    assert escape(LINE_UNCHANGED) in new_text_errors(response.content.decode())
+    assert not writes(engine)
+
+
+def test_a_structured_beat_line_keeps_the_unchanged_check(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """Complement (#364): a structured turn's beat stores its own text; only the composed reply is
+    recomposed."""
+    serve(engine, reply_history(structured=True))
+    html = get(operator_client, f"event_id={LINE}&turn=2")
+    assert f'name="original" value="{LINE_TEXT}"' in html
+    assert escape(RECOMPOSED_NOTE) not in html
 
 
 def test_unread_line_still_offers_the_form(operator_client: Client, engine: FakeEngine) -> None:

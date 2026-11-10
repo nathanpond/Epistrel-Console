@@ -57,8 +57,9 @@ de-duplicated in that order.
 **#305 — the line edit.** :class:`LineEditForm` is ``new_text`` (kept verbatim: only
 ``\r\n``/``\r`` become ``\n``; whitespace-only is blank; at most :data:`LINE_MAX` characters;
 unchanged from the hidden ``original`` is :data:`LINE_UNCHANGED`, checked only when the page read
-the line) plus E4's modes and the hidden target. :func:`line_target` parses the target from a
-query or the POST, :class:`LineTarget` carries it.
+the line and it isn't a structured turn's recomposed message, #364) plus E4's modes and the
+hidden target. :func:`line_target` parses the target from a query or the POST,
+:class:`LineTarget` carries it.
 """
 
 from __future__ import annotations
