@@ -65,6 +65,9 @@ def value_text(value: object) -> str:
     return str(value)
 
 
+UNSET_MARKER = "no default"  # #366: an ``unset`` source (Engine M8's ``image_check``)
+
+
 @dataclass(frozen=True)
 class Sourced:
     """One effective value and where it came from (``source`` is ``None`` on ``default``)."""
@@ -72,7 +75,7 @@ class Sourced:
     value: object
     source: str | None
     origin: str  # the purpose the value comes from: itself, its parent, or "default"
-    marker: str  # "own", "inherited from <parent>", "default", or "" on default
+    marker: str  # "own", "inherited from <parent>", "default", "no default", or "" on default
 
     @property
     def text(self) -> str:
@@ -131,6 +134,8 @@ def _sourced(purpose: str, value: object, source: str | None) -> Sourced:
         if parent is None:
             return Sourced(value, "inherited", "parent", "inherited")
         return Sourced(value, "inherited", parent, f"inherited from {parent}")
+    if source == "unset":  # #366: no row sets it and the purpose has no default (image_check)
+        return Sourced(value, "unset", purpose, UNSET_MARKER)
     return Sourced(value, "default", DEFAULT, "default")
 
 

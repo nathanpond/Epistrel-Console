@@ -3393,14 +3393,15 @@ class ConfigChanges(Model):
 
 # --- Model configuration (#46) -----------------------------------------------------------------
 
-ConfigSource = Literal["own", "inherited", "default"]
+ConfigSource = Literal["own", "inherited", "default", "unset"]
 
 
 @dataclass(frozen=True)
 class ConfigSources(Model):
     """``Sources``: where each effective value came from (``params`` per key). ``inherited``
     is the purpose's parent row (``lite_summary`` → ``consolidation``), ``default`` the
-    ``default`` row; a param no row sets has no key."""
+    ``default`` row; a param no row sets has no key. Engine M8 adds ``unset``: ``image_check``
+    has no default, so its unconfigured values come from nowhere (#366)."""
 
     base_url: ConfigSource
     model: ConfigSource
@@ -3423,6 +3424,10 @@ class ModelConfigEntry(Model):
     api_key: str | None
     api_key_fingerprint: str | None
     sources: ConfigSources
+    # Engine M8 (#366): the purpose's endpoint, or ``None``. Required in the schema; optional
+    # here because an Engine before M8 (the release smoke's) omits it. Keyword-only so the
+    # subclasses' required fields can follow it.
+    endpoint: str | None = field(default=None, kw_only=True)
 
     @property
     def api_key_set(self) -> bool:
@@ -3448,10 +3453,20 @@ class ModelConfigItem(ModelConfigEntry):
 
 
 @dataclass(frozen=True)
+class ConfigWarning(Model):
+    """``ConfigWarning`` (Engine M8, #366): ``code`` is ``image_check_unset`` today (an image
+    adapter was enabled with no ``image_check`` model configured), read as an open string."""
+
+    code: str = open_enum()
+
+
+@dataclass(frozen=True)
 class ModelConfigMutation(ModelConfigItem):
-    """``ModelConfigMutation``: one purpose after a write, with the revision it produced."""
+    """``ModelConfigMutation``: one purpose after a write, with the revision it produced.
+    Engine M8 adds ``warnings`` (#366): what the write allowed that the operator should know."""
 
     idempotency_key: str | None = None
+    warnings: list[ConfigWarning] = field(default_factory=list)
 
 
 # --- The embedding re-embed run (#150) ----------------------------------------------------------
