@@ -156,9 +156,10 @@ def test_the_list_shows_each_profile_and_marks_the_deployment_default(
     engine.respond("GET", LIST, 200, json=page(profile(), other))
     html = get(operator_client, URL)
     lite = cells(html, f"profile-{LITE}")
-    assert lite == ["Lite", LITE, "2", "—", "preset", "default", "system", "—"]  # #312: Quality
+    # #312: Quality; the list carries it since nathanpond/Epistrel#789 (#339).
+    assert lite == ["Lite", LITE, "2", "Uncertified", "preset", "default", "system", "—"]
     mine = cells(html, f"profile-{OTHER}")
-    assert mine == ["Mine", OTHER, "3", "—", "—", "—", "alice", "—"]
+    assert mine == ["Mine", OTHER, "3", "Uncertified", "—", "—", "alice", "—"]
     assert f'href="/profiles/{LITE}/"' in html
     assert params(engine) == [("limit", "50")]
 

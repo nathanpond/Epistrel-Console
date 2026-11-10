@@ -21,6 +21,12 @@ with their texts joined by a newline (:data:`SHARED_MESSAGE_NOTE` when there are
 an empty box with no ``original``. By turn with no beat over several messages, each message is a
 choice link (as ``beat_required``'s are) and the box is empty.
 
+**A recomposed line** (#364, E18): a structured turn's composed message (a matched
+``message_rendered`` item in a turn where some item carries ``propositions``) is recomposed by the
+omniscient read, so its text may not be what the Engine stores. It is still pre-filled, but under
+:data:`RECOMPOSED_NOTE`, and with no ``original``: the local "unchanged" check is skipped and the
+Engine's ``rewrite_noop`` decides.
+
 **Submitting** (POST, PRG): an invalid form makes no write. A valid one calls ``open_rewrite``
 once with :meth:`LineEditForm.body`, then 303s to the session page with E21's flash
 (:func:`console.rewrites.session_write_flash`, verb :data:`OPENED_VERB`). A refusal re-renders
@@ -54,7 +60,7 @@ from console.forms.rewrites import (
     normalised_line,
 )
 from console.held import is_held
-from console.history import narrated_label, split_audit
+from console.history import REPLY_KIND, narrated_label, split_audit
 from console.ids import is_ulid, new_ulid
 from console.portability import is_importing
 from console.raw import EMPTY
@@ -83,6 +89,10 @@ NEW_TEXT = "new_text"
 NO_LINE_TEXT = "That isn't a line of this story — open it from History"
 LINE_UNREAD = "The line's current text couldn't be read — the Engine will still find it by its id"
 SHARED_MESSAGE_NOTE = "This message holds several lines; the new text replaces all of them"
+RECOMPOSED_NOTE = (
+    "This message was composed from the turn's beats, and the text shown is recomposed for an "
+    "omniscient read — the Engine may hold other text, so it decides whether your edit changes it"
+)
 SEVERAL_MESSAGES_TEXT = BEAT_REQUIRED_TEXT  # by turn, no beat, several messages (planner)
 BACK_TEXT = "← Back to History"
 BEAT_CHOICE = "Beat {beat}"
@@ -110,12 +120,14 @@ class Choice:
 @dataclass
 class LineRead:
     """What the page read of the line: the matched items, the prefill (``None`` when unread),
-    the back link's fragment, and the choices when a turn holds several messages."""
+    the back link's fragment, the choices when a turn holds several messages, and whether the
+    prefill is a structured turn's recomposed message (#364)."""
 
     items: list[LineItem] = field(default_factory=list)
     original: str | None = None
     fragment: str = ""
     choices: list[Choice] = field(default_factory=list)
+    recomposed: bool = False
 
     @property
     def shared(self) -> bool:
@@ -205,6 +217,19 @@ def _read(ctx: StoryPageContext, target: LineTarget, back: str) -> LineRead:
         items=[LineItem(_header(i, labels), i.text) for i in matched],
         original="\n".join(normalised_line(i.text) for i in matched),
         fragment=f"#turn-{first.turn}-{variant}",
+        recomposed=_recomposed(items, matched),
+    )
+
+
+def _recomposed(items: list[HistoryItem], matched: list[HistoryItem]) -> bool:
+    """Whether ``matched`` is a structured turn's composed message (#364): a ``message_rendered``
+    item whose turn and variant hold an item carrying ``propositions`` (the Engine sets it on
+    every structured beat). The omniscient read recomposes that message from the beats."""
+    first = matched[0]
+    return any(i.kind == REPLY_KIND for i in matched) and any(
+        i.propositions is not None
+        for i in items
+        if i.turn == first.turn and i.variant == first.variant
     )
 
 
@@ -239,7 +264,9 @@ def _initial(target: LineTarget, read: LineRead, back: str) -> dict[str, Any]:
         "turn": "" if target.turn is None else str(target.turn),
         "beat": "" if target.beat is None else str(target.beat),
         "next": back,
-        "original": read.original or "",
+        # A recomposed line carries no ``original``: the local unchanged check would compare
+        # against text the Engine may not hold (#364).
+        "original": "" if read.recomposed else read.original or "",
     }
 
 
@@ -251,6 +278,7 @@ def _context(
         "read": read,
         "line_unread": LINE_UNREAD if read.original is None and not read.choices else "",
         "shared_note": SHARED_MESSAGE_NOTE if read.shared else "",
+        "recomposed_note": RECOMPOSED_NOTE if read.recomposed else "",
         "several_text": SEVERAL_MESSAGES_TEXT if read.choices else "",
         "form": form,
         "idempotency_key": key,

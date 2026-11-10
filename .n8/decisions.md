@@ -4019,3 +4019,50 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision (owner):** #339 takes option (a): an Engine request, filed as nathanpond/Epistrel#789, to fill `quality` on each `GET /engine-profiles` item. #340 takes option (a): an Engine read of a story's gap-fillable capabilities, filed as nathanpond/Epistrel#790, which also asks for the inverted `not_enabled` message to be fixed. Both stay `blocked`, now on the Engine. `needs-owner-action` was removed.
   **Why:** the owner approved the recommendations ("recommendations good"). Neither needs a Console per-profile read or a hardcoded copy of Engine internals.
   **Issue:** #339, #340
+
+## /n8-exec M7 (verification fixes, round 2) — 2026-11-09
+
+- **Decision (preflight):** This run's scope is M7's open work. Two re-verify bugs: #363 (docs) and #364. Two stories the Engine has now unblocked: #339 and #340. nathanpond/Epistrel#789 and #790 merged in Engine PR #817 (7f9f125, 2026-11-10 00:44 UTC). #314 stays blocked: #337's Engine request was never filed. #273 closes with its last covering story (#314), so it stays open too. The drift check found no unreconciled Ad-hoc entry naming M7. Before branching, the owner's pending state PR #362 (decisions only, green) was squash-merged so this log would not conflict.
+  **Why:** these are the only M7 items with an actionable path. Everything else open in M7 is blocked on the Engine.
+  **Issue:** #339, #340, #363, #364, #314
+- **Decision:** #363 was fixed by its second offered option. E24 is now posted verbatim as a third conventions comment on PR #338 ("part 3/3"), so PR #338's comments hold E1–E24. Two other edits were refused by the session's permission classifier and not retried: #294's AC parenthetical, and PR #338's body line that says the E text "is also in the M7 milestone description". #294's AC still says "first two comments (E1–E24)", and the PR body's milestone line still stands.
+  **Why:** #363's Fix names posting E24 as a third comment as acceptable. The leftover wording is cosmetic, and changing it needs the owner (or a permission rule).
+  **Issue:** #363
+- **Decision:** #364 got the interim fix. A matched `message_rendered` item in a turn where some item carries `propositions` counts as recomposed. It is still pre-filled, but under `RECOMPOSED_NOTE`, with no hidden `original`, so the local "unchanged" check is skipped and the Engine's `rewrite_noop` decides. A Lite reply and a structured beat keep the check. E18 now cites #364 and #360.
+  **Why:** the Console cannot see the Engine's `composed` payload flag (Engine `core/history.py::_recomposed`). `propositions` on the turn's items is the existing structured-turn signal (`console/history.py::explain_query`). The issue's Expected allowed either skipping the check or saying the text is recomposed, so the page does both. The full fix still waits on #360.
+  **Issue:** #364
+- **Decision (schema, deviation):** The #789/#790 deltas were applied to `console/engine/openapi.json` alone, copied verbatim from Engine `docs/openapi.json` at 7f9f125: components `ListedProfile` (new), `ProfileListBody` and `EffectiveConfig`, plus the three operations `GET /engine-profiles`, `POST /stories/{id}/backfill` and `GET /stories/{id}/effective-config`. This was not a full re-record.
+  **Why:** a full re-record at 7f9f125 also brings in Engine M8 (Images): 23 operations added and 35 components changed. Adapting the client to that is Console M8's #291-equivalent story, not M7 verification work. The recording is now ed2be26 plus these deltas, so `engine_schema --check` against edge still reports the M8 drift that #365 tracks. Console M8's plan must include the full re-record.
+  **Issue:** #339, #340, #365
+- **Decision:** The contract test's `_widened` now reads `EffectiveConfig.gap_fillable` as optional and nullable, and the profile list's items as `EngineProfile` (`quality` optional). Two new tests pin the widening: `test_the_effective_config_widens_only_its_settings_documents` (extended) and `test_the_profile_list_widens_only_its_items_to_engine_profile`. The model field is `gap_fillable: list[str] | None = None`.
+  **Why:** the release smoke runs against Engine 0.2.0, which sends neither field. A required field would break every effective-config read there. This follows the #79 and #295 widening pattern. Older-Engine tests serve their bodies through `FakeEngine.side_effect`, which skips schema validation: the strict recording rejects them.
+  **Issue:** #339, #340
+- **Decision:** The gap-fill boxes are `gap_fillable` when the Engine sends it. An empty list shows no box and `NOTHING_GAP_FILLABLE`. Without the field (an older Engine), the boxes fall back to `capabilities`, with #340's Rule 1 refusal text. The Console keeps its own refusal sentence over the Engine's corrected message.
+  **Why:** owner option (a). The fallback keeps today's option-(d) behaviour on an Engine before #790.
+  **Issue:** #340
+- **Decision:** Every effective-config fixture gained `gap_fillable`. The values were computed from each fixture's own `effective` document with the Engine's `coverage.capabilities_of` at 7f9f125, run from a temporary Engine worktree: for example Full v4 is `clock, commitment, consolidation, nested_beliefs, partitions, perception, pipeline, states, verification`, and Lite is `pipeline`. `m7/presets.json` has `quality` on every item again (`PRESET_QUALITY`), and `other_profile()` carries an uncertified `quality`. The #339 dash tests now serve an older Engine's list without `quality`. `m7/backfill_preview.json` and the gap-fill tests use `consolidation` (fillable) instead of `episodic`. The backfill records (`backfill_completed` and its siblings) keep `episodic`; their gap-fill-kind lists were not in #340's scope.
+  **Why:** the fake Engine validates every served body against the recording, which now requires both fields. Engine code gives exact values without waiting for the edge image. They are checked live before merge (see below).
+  **Issue:** #339, #340
+- **Decision (live verification):** I ran Engine `edge` @ 7f9f125 locally on 127.0.0.1:18000 (compose project `n8-340-smoke`, stub adapter) and tore it down afterwards. Your own Engine stack on :8000 was not touched. The three components and three operations I patched into the recording equal the live document exactly. The live `gap_fillable` for fresh Lite and Full v4 stories equals the fixtures. The two new live tests pass: `test_profile_list_quality_live` and `test_gap_fillable_boxes_preview_live`. The live presets are all `uncertified` on edge. The fixtures keep `PRESET_QUALITY`'s mix of certified, uncertified and stale, which the badge tests need.
+  **Why:** the plan's verification step ("check the badge live", "every offered box previews").
+  **Issue:** #339, #340
+- **Decision (discovered work):** Filed #366 (`needs-triage`). On edge 7f9f125 (Engine M8), `GET /admin/model-config` gives `image_check` sources of `"unset"`, so the whole read is `bad_response`. Two live smoke tests fail on it: `test_model_purpose_edit_key_and_drop_live` and `test_strongest_model_tier_live`. I did not fix it here. It's Engine M8 drift outside #339/#340, and #365 tracks the rest of that drift. Expect it to turn every Console PR's `engine-smoke` red, this one included.
+  **Why:** discovered work outside the story is filed, not fixed inline.
+  **Issue:** #366, #340
+- **Decision:** #314 stays open and blocked. #337, the Engine request for eval sets in the image, still needs the owner to file it on nathanpond/Epistrel. #273 stays open until #314 merges.
+  **Why:** neither was unblocked by Engine #817.
+  **Issue:** #314, #337, #273
+- **Blocker:** PR #367 is not merged. Its `gate` is red only from `engine-smoke`'s two #366 failures (Engine M8 drift: model-config `image_check` sources `"unset"`). Everything else passed: `test`, `docker`, `lint`, `types`, `engine-release-smoke` and CodeQL. Options are on PR #367: (a) a separate #366 PR first (recommended), (b) fold the fix into #367, or (c) wait for Console M8's re-record. The PR is labelled `blocked` + `needs-owner-action`.
+  **Why:** the gate can't be bypassed, and fixing #366 inline would be scope creep into unplanned M8 work.
+  **Issue:** #366, PR #367
+- **Decision (owner):** The owner chose option (a) for the PR #367 blocker: fix #366 in its own PR first. PR #368 merged as cb4c124, with every check green (`engine-smoke` and `gate` included). Its scope was only what's needed for the model-config read to work on edge 7f9f125:
+  - The recording gains `Sources`, `ModelConfigEntry`/`Item`/`Mutation` and the new `ConfigWarning`, copied verbatim from Engine 7f9f125 and equal to live.
+  - `ConfigSource` gains `"unset"`. An unset value shows as "no default", not "not set": `NOT_SET` already renders "— (not set)".
+  - `endpoint` is a keyword-only optional field, widened in the contract test for the 0.2.0 release smoke.
+  - `ModelConfigMutation.warnings` is parsed.
+  - Rendering `endpoint` and the warnings is left to Console M8, so that plan should include it (with #365).
+  **Why:** the gate can't be bypassed, and the owner picked the separate-PR path.
+  **Issue:** #366, PR #368, PR #367
+- **Decision:** I merged `main` (with #368) into `milestone/m7-verification-fixes-2` instead of rebasing. The one conflict, in `tests/engine/test_contract.py`'s `_widened` constants, docstring and body, was resolved by keeping both widenings: #339/#340's and #366's.
+  **Why:** the branch is already pushed and has a PR. A merge keeps the per-story commits, and the squash flattens it anyway.
+  **Issue:** PR #367

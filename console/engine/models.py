@@ -5170,7 +5170,9 @@ class EffectiveConfig(Model):
     overrides, every delivered setting at its effective value, and the configuration's
     fingerprint, capabilities and quality status. The settings documents stay raw, so modules
     a later Engine delivers survive (the contract test widens them). M7 adds
-    ``pending_backfill`` (raw, E15)."""
+    ``pending_backfill`` (raw, E15) and ``gap_fillable`` (nathanpond/Epistrel#790, Console #340):
+    the capabilities a gap fill accepts, sorted, with no ``:mode`` suffix. The schema requires
+    it; it is optional here because an Engine before #790 (the release smoke's) omits it."""
 
     story_id: str
     deployment_defaults: dict[str, Any]
@@ -5181,6 +5183,7 @@ class EffectiveConfig(Model):
     capabilities: list[str]
     quality_status: QualityStatus
     pending_backfill: dict[str, Any] | None = None
+    gap_fillable: list[str] | None = None
 
 
 @dataclass(frozen=True)

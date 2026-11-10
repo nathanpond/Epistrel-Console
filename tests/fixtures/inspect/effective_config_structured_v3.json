@@ -258,6 +258,17 @@
     "time_claims",
     "verification:entailment"
   ],
+  "gap_fillable": [
+    "clock",
+    "commitment",
+    "consolidation",
+    "nested_beliefs",
+    "partitions",
+    "perception",
+    "pipeline",
+    "states",
+    "verification"
+  ],
   "quality_status": {
     "status": "uncertified"
   }

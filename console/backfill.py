@@ -155,6 +155,7 @@ PAUSES_LINE = (
     "The story pauses while it runs; nothing is regenerated, only re-derived from the transcript"
 )
 CAPABILITIES_UNREAD = "The capability list couldn't be read"
+NOTHING_GAP_FILLABLE = "This story's configuration has no capability a gap fill can re-derive"
 NOT_FILLABLE_TEXT = (
     "The Engine can't gap-fill {capabilities}: it fills only the capabilities that "
     "produce data (named without a mode)"

@@ -16,6 +16,7 @@ from console import twostage
 from console.backfill import (
     CAPABILITIES_UNREAD,
     IN_PROGRESS_TEXT,
+    NOTHING_GAP_FILLABLE,
     NOTHING_TO_FILL,
     PAUSES_LINE,
     not_fillable_text,
@@ -93,10 +94,38 @@ def test_gap_fill_form_on_no_backfill_page(
     assert f'action="{START}"' in section
     assert '<input type="hidden" name="mode" value="start">' in section
     boxes = re.findall(r'<input type="checkbox" name="capabilities" value="([^"]+)"', section)
-    assert boxes == list(config()["capabilities"])  # the effective config's, in its order
+    # #340: the effective config's gap_fillable, in its order, not its capabilities.
+    assert boxes == list(config()["gap_fillable"])
+    assert "perception:full" not in boxes
+    assert "episodic" not in boxes
     assert not re.search(r'type="checkbox"[^>]*checked', section)
     assert '<button type="submit">Preview</button>' in section
     assert writes(no_backfill) == []
+
+
+def test_an_engine_without_gap_fillable_offers_the_capabilities(
+    operator_client: Client, no_backfill: FakeEngine
+) -> None:
+    """#340: an Engine before nathanpond/Epistrel#790 sends no ``gap_fillable`` (served
+    unvalidated: the recording requires it). The boxes fall back to ``capabilities``."""
+    body = config()
+    body.pop("gap_fillable")
+    no_backfill.side_effect("GET", CONFIG_PATH, lambda _request: httpx.Response(200, json=body))
+    section = gap_section(operator_client.get(PAGE).content.decode())
+    boxes = re.findall(r'<input type="checkbox" name="capabilities" value="([^"]+)"', section)
+    assert boxes == list(body["capabilities"])
+    assert escape(NOTHING_GAP_FILLABLE) not in section
+
+
+def test_nothing_gap_fillable_shows_no_boxes_and_the_note(
+    operator_client: Client, no_backfill: FakeEngine
+) -> None:
+    """#340: an empty ``gap_fillable`` offers no box and says why."""
+    no_backfill.respond("GET", CONFIG_PATH, 200, json=config(gap_fillable=[]))
+    section = gap_section(operator_client.get(PAGE).content.decode())
+    assert 'type="checkbox"' not in section
+    assert escape(NOTHING_GAP_FILLABLE) in section
+    assert escape(CAPABILITIES_UNREAD) not in section
 
 
 def test_a_running_backfill_shows_no_gap_fill_form(
@@ -144,7 +173,7 @@ def test_preview_shows_estimate_and_range(operator_client: Client, no_backfill: 
     assert response.status_code == 200
     assert bodies(no_backfill) == [{"ignore_warnings": False}]
     section = gap_section(html)
-    assert "Capabilities: episodic, commitment" in section
+    assert "Capabilities: consolidation, commitment" in section
     assert "Turns 1–5" in section  # noqa: RUF001
     assert estimate_text() in section
     assert "12 model calls, 18,000 tokens, ~40 s" in section
@@ -158,8 +187,8 @@ def test_preview_shows_estimate_and_range(operator_client: Client, no_backfill: 
 
 def test_ticked_capabilities_are_sent(operator_client: Client, no_backfill: FakeEngine) -> None:
     no_backfill.respond("POST", BACKFILL_PATH, 200, json=preview_body())
-    post(operator_client, mode="start", capabilities=["episodic"])
-    assert bodies(no_backfill) == [{"capabilities": ["episodic"], "ignore_warnings": False}]
+    post(operator_client, mode="start", capabilities=["consolidation"])
+    assert bodies(no_backfill) == [{"capabilities": ["consolidation"], "ignore_warnings": False}]
 
 
 def test_a_one_turn_range_and_no_capabilities(
@@ -174,7 +203,7 @@ def test_a_one_turn_range_and_no_capabilities(
 
 def test_start_resends_the_signed_body(operator_client: Client, no_backfill: FakeEngine) -> None:
     no_backfill.respond("POST", BACKFILL_PATH, 200, json=preview_body())
-    html = post(operator_client, mode="start", capabilities=["episodic"]).content.decode()
+    html = post(operator_client, mode="start", capabilities=["consolidation"]).content.decode()
     data = confirm_data(html)
     assert data["mode"] == "start"
     assert data["idempotency_key"] != KEY  # the partial's fresh key (#43)
@@ -184,7 +213,10 @@ def test_start_resends_the_signed_body(operator_client: Client, no_backfill: Fak
     assert response.status_code == 303
     assert response["Location"] == PAGE
     _, second = writes(no_backfill)
-    assert json.loads(second.content) == {"capabilities": ["episodic"], "ignore_warnings": True}
+    assert json.loads(second.content) == {
+        "capabilities": ["consolidation"],
+        "ignore_warnings": True,
+    }
     assert second.headers["Idempotency-Key"] == data["idempotency_key"]
     [flash] = flashes(response)
     assert flash.startswith("Gap fill started — follow it below — idempotency key <code>")
@@ -369,11 +401,11 @@ def test_a_resume_finished_at_once_redirects(operator_client: Client, engine: Fa
 
 def test_in_progress_refusal(operator_client: Client, no_backfill: FakeEngine) -> None:
     no_backfill.respond("POST", BACKFILL_PATH, 409, json=error_json("backfill_in_progress"))
-    response = post(operator_client, mode="start", capabilities=["episodic"])
+    response = post(operator_client, mode="start", capabilities=["consolidation"])
     section = gap_section(response.content.decode())
     assert response.status_code == 200
     assert IN_PROGRESS_TEXT in section
-    assert re.search(r'value="episodic"[^>]*checked', section)  # the bound form keeps the box
+    assert re.search(r'value="consolidation"[^>]*checked', section)  # the bound form keeps the box
     assert len(writes(no_backfill)) == 1
     assert KEY not in section  # an answered refusal mints a fresh key
 
@@ -398,7 +430,8 @@ def test_capability_validation_error_on_checkboxes(
     assert len(writes(no_backfill)) == 1
 
 
-ENGINE_NOT_ENABLED = "a gap fill names capabilities the story's configuration has on"
+# The Engine's own message since nathanpond/Epistrel#790 (it read the opposite before).
+ENGINE_NOT_ENABLED = "a gap fill names capabilities it can't fill"
 
 
 def test_refused_capabilities_are_named_on_the_checkboxes(

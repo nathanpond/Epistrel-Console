@@ -73,9 +73,12 @@ again; "no Engine call" means no write.
   on the confirm re-renders the same confirm (token and key) with #43's panel.
 - **The page's ``#gap-fill`` section** (:func:`_default_gap`): the "Fill coverage gaps…" form
   when there is no backfill or it ended, "Finish now…" while it waits on conflicts, nothing
-  while it runs. The checkboxes are the frame's effective configuration's ``capabilities``
-  (no second read); a failed read or an empty list shows none and
-  :data:`~console.backfill.CAPABILITIES_UNREAD`.
+  while it runs. The checkboxes are the frame's effective configuration's ``gap_fillable``
+  (no second read; #340, nathanpond/Epistrel#790), the only names the Engine's gap fill
+  accepts; an empty list shows none and :data:`~console.backfill.NOTHING_GAP_FILLABLE`. An
+  Engine before #790 sends no ``gap_fillable``: the boxes are then ``capabilities``, and a
+  refused one gets :func:`~console.backfill.not_fillable_text`. A failed read, or an empty
+  ``capabilities`` there, shows none and :data:`~console.backfill.CAPABILITIES_UNREAD`.
 """
 
 import dataclasses
@@ -121,6 +124,7 @@ from console.backfill import (
     NO_BACKFILL,
     NOT_AWAITING_TEXT,
     NOT_CANCELLABLE_TEXT,
+    NOTHING_GAP_FILLABLE,
     NOTHING_TO_FILL,
     OMNISCIENT_NOTE,
     OPEN,
@@ -392,7 +396,11 @@ class PageExtras:
 
 
 def _capability_choices(ctx: StoryPageContext) -> tuple[list[str], str]:
+    """The gap fill's boxes and the note under them (module docstring, #340)."""
     config = ctx.config
+    if config is not None and config.gap_fillable is not None:
+        fillable = list(config.gap_fillable)
+        return fillable, "" if fillable else NOTHING_GAP_FILLABLE
     found = list(config.capabilities) if config is not None else []
     return found, "" if found else CAPABILITIES_UNREAD
 

@@ -450,6 +450,9 @@ EFFECTIVE_DOCUMENTS = ("deployment_defaults", "effective")
 OWNERSHIP_BODIES = ("OwnerBody", "StoryOwnerBody", "RelationBody", "StoryRelationBody")
 CORE_BACKFILL = "epistrel__core__backfill__Backfill"
 CONFLICT_REF = {"$ref": "#/components/schemas/Conflict"}
+GAP_FILLABLE = "gap_fillable"
+PROFILE_LIST = "ProfileListBody"
+ENGINE_PROFILE_REF = {"$ref": "#/components/schemas/EngineProfile"}
 ENDPOINT = "endpoint"
 MODEL_CONFIG_BODIES = ("ModelConfigEntry", "ModelConfigItem", "ModelConfigMutation")
 
@@ -460,8 +463,10 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
     any object (#78). The owner and relation bodies carry both revisions, optional (#79).
     ``DepictedSubject`` gains ``SubjectRef``'s optional ``story`` (#291). ``StoryPauseProgressBody``
-    is read leniently (#295). The model-config bodies' ``endpoint`` (Engine M8, #366) is optional:
-    an Engine before M8 (the release smoke's) omits it."""
+    is read leniently (#295). ``EffectiveConfig.gap_fillable`` (#340) and the profile list's
+    ``quality`` (#339) are optional: an Engine before nathanpond/Epistrel#789/#790 (the release
+    smoke's) omits them. The model-config bodies' ``endpoint`` (Engine M8, #366) is optional:
+    an Engine before M8 omits it."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -498,6 +503,16 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
         }
     )
     progress["required"] = []
+    # #340: ``gap_fillable`` (nathanpond/Epistrel#790) is required in the schema; the model reads
+    # it optional and nullable, so an Engine before #790 still parses (the boxes then fall back).
+    effective = schemas["EffectiveConfig"]
+    effective["properties"][GAP_FILLABLE] = {
+        "anyOf": [effective["properties"][GAP_FILLABLE], {"type": "null"}]
+    }
+    effective["required"] = [r for r in effective["required"] if r != GAP_FILLABLE]
+    # #339: the list's items are ``ListedProfile`` (``EngineProfile`` with ``quality`` required,
+    # nathanpond/Epistrel#789); the one ``EngineProfile`` model reads both, ``quality`` optional.
+    schemas[PROFILE_LIST]["properties"]["items"]["items"] = ENGINE_PROFILE_REF
     # #366: Engine M8's ``endpoint`` is required on the model-config bodies; the models read it
     # optional (still nullable), so an Engine before M8 parses.
     for name in MODEL_CONFIG_BODIES:
@@ -1109,7 +1124,8 @@ def test_profile_body_settings_is_the_only_widening_of_profile_body() -> None:
 
 def test_the_effective_config_widens_only_its_settings_documents() -> None:
     """#85: ``EffectiveConfig`` differs by its two settings documents and ``OverridesRef`` by
-    ``settings`` alone, each an object in the recorded schema (of the modules it knew)."""
+    ``settings`` alone, each an object in the recorded schema (of the modules it knew). #340
+    adds ``gap_fillable``, an array in the recording, made nullable and not required."""
     schemas = DOC["components"]["schemas"]
     widened = WIDENED["components"]["schemas"]
     for component, keys in (
@@ -1117,10 +1133,32 @@ def test_the_effective_config_widens_only_its_settings_documents() -> None:
         ("OverridesRef", ["settings"]),
     ):
         recorded = schemas[component]["properties"]
-        assert sorted(
-            k for k in recorded if recorded[k] != widened[component]["properties"][k]
-        ) == sorted(keys)
+        differs = [k for k in recorded if recorded[k] != widened[component]["properties"][k]]
+        extra = [GAP_FILLABLE] if component == "EffectiveConfig" else []
+        assert sorted(differs) == sorted(keys + extra)
         assert all(recorded[k]["type"] == "object" for k in keys)
+    assert schemas["EffectiveConfig"]["properties"][GAP_FILLABLE]["type"] == "array"
+    assert GAP_FILLABLE in schemas["EffectiveConfig"]["required"]
+    assert GAP_FILLABLE not in widened["EffectiveConfig"]["required"]
+
+
+def test_the_profile_list_widens_only_its_items_to_engine_profile() -> None:
+    """#339: ``ListedProfile`` is ``EngineProfile`` with ``quality`` required and not nullable,
+    so reading the list's items as ``EngineProfile`` widens nothing but ``quality``."""
+    schemas = DOC["components"]["schemas"]
+    listed, profile = schemas["ListedProfile"], schemas["EngineProfile"]
+    differs = [
+        k for k in listed["properties"] if listed["properties"][k] != profile["properties"][k]
+    ]
+    assert differs == ["quality"]
+    assert set(listed["properties"]) == set(profile["properties"])
+    floors = {"$ref": "#/components/schemas/FloorsMet"}
+    assert listed["properties"]["quality"]["$ref"] == floors["$ref"]
+    assert floors in profile["properties"]["quality"]["anyOf"]
+    assert set(listed["required"]) - set(profile["required"]) == {"quality"}
+    assert set(profile["required"]) <= set(listed["required"])
+    widened = WIDENED["components"]["schemas"][PROFILE_LIST]["properties"]["items"]["items"]
+    assert widened == ENGINE_PROFILE_REF
 
 
 def test_the_model_config_bodies_widen_only_endpoints_requirement() -> None:

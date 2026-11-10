@@ -266,6 +266,17 @@
       "time_claims",
       "verification:entailment"
     ],
+    "gap_fillable": [
+      "clock",
+      "commitment",
+      "consolidation",
+      "nested_beliefs",
+      "partitions",
+      "perception",
+      "pipeline",
+      "states",
+      "verification"
+    ],
     "quality_status": {
       "status": "certified",
       "certification_id": "01JM7CT0000000000000000001",
