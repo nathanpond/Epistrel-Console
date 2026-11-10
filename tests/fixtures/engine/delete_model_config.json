@@ -20,5 +20,6 @@
             "stop": "default"
         }
     },
+    "endpoint": null,
     "purpose": "guardrail_check"
 }

@@ -450,6 +450,8 @@ EFFECTIVE_DOCUMENTS = ("deployment_defaults", "effective")
 OWNERSHIP_BODIES = ("OwnerBody", "StoryOwnerBody", "RelationBody", "StoryRelationBody")
 CORE_BACKFILL = "epistrel__core__backfill__Backfill"
 CONFLICT_REF = {"$ref": "#/components/schemas/Conflict"}
+ENDPOINT = "endpoint"
+MODEL_CONFIG_BODIES = ("ModelConfigEntry", "ModelConfigItem", "ModelConfigMutation")
 
 
 def _widened(doc: dict[str, Any]) -> dict[str, Any]:
@@ -458,7 +460,8 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
     publish's answer, #66) is compared against this. ``EngineProfile.settings`` is widened to
     any object (#78). The owner and relation bodies carry both revisions, optional (#79).
     ``DepictedSubject`` gains ``SubjectRef``'s optional ``story`` (#291). ``StoryPauseProgressBody``
-    is read leniently (#295)."""
+    is read leniently (#295). The model-config bodies' ``endpoint`` (Engine M8, #366) is optional:
+    an Engine before M8 (the release smoke's) omits it."""
     import copy
 
     widened = copy.deepcopy(doc)
@@ -495,6 +498,11 @@ def _widened(doc: dict[str, Any]) -> dict[str, Any]:
         }
     )
     progress["required"] = []
+    # #366: Engine M8's ``endpoint`` is required on the model-config bodies; the models read it
+    # optional (still nullable), so an Engine before M8 parses.
+    for name in MODEL_CONFIG_BODIES:
+        body = schemas[name]
+        body["required"] = [r for r in body["required"] if r != ENDPOINT]
     return widened
 
 
@@ -1113,6 +1121,18 @@ def test_the_effective_config_widens_only_its_settings_documents() -> None:
             k for k in recorded if recorded[k] != widened[component]["properties"][k]
         ) == sorted(keys)
         assert all(recorded[k]["type"] == "object" for k in keys)
+
+
+def test_the_model_config_bodies_widen_only_endpoints_requirement() -> None:
+    """#366: each model-config body differs from the recording only in that ``endpoint``, a
+    nullable string it requires, is no longer required."""
+    for name in MODEL_CONFIG_BODIES:
+        recorded = DOC["components"]["schemas"][name]
+        widened = WIDENED["components"]["schemas"][name]
+        assert recorded["properties"] == widened["properties"], name
+        assert ENDPOINT in recorded["required"], name
+        assert set(recorded["required"]) - set(widened["required"]) == {ENDPOINT}, name
+        assert {"type": "null"} in recorded["properties"][ENDPOINT]["anyOf"], name
 
 
 def test_a_scenario_card_read_matches_the_card_component() -> None:

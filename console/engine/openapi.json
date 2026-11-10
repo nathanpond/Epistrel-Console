@@ -6014,6 +6014,21 @@
         "title": "ConfigReplacement",
         "type": "object"
       },
+      "ConfigWarning": {
+        "description": "Something a write allowed that the operator should know: ``image_check_unset`` (an\nimage adapter was enabled while no ``image_check`` model is configured, so every\nimage-output policy fails closed, #254).",
+        "properties": {
+          "code": {
+            "const": "image_check_unset",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ConfigWarning",
+        "type": "object"
+      },
       "Conflict": {
         "description": "A contradiction the backfill met (``GET /stories/{id}/backfill``'s ``conflict_list``).",
         "properties": {
@@ -19935,6 +19950,17 @@
             ],
             "title": "Base Url"
           },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
           "model": {
             "anyOf": [
               {
@@ -19961,7 +19987,8 @@
           "params",
           "api_key",
           "api_key_fingerprint",
-          "sources"
+          "sources",
+          "endpoint"
         ],
         "title": "ModelConfigEntry",
         "type": "object"
@@ -20007,6 +20034,17 @@
             "title": "Config Revision",
             "type": "integer"
           },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
           "model": {
             "anyOf": [
               {
@@ -20038,6 +20076,7 @@
           "api_key",
           "api_key_fingerprint",
           "sources",
+          "endpoint",
           "purpose",
           "config_revision"
         ],
@@ -20085,6 +20124,17 @@
             "title": "Config Revision",
             "type": "integer"
           },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
           "idempotency_key": {
             "anyOf": [
               {
@@ -20118,6 +20168,13 @@
           },
           "sources": {
             "$ref": "#/components/schemas/Sources"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -20128,6 +20185,7 @@
           "api_key",
           "api_key_fingerprint",
           "sources",
+          "endpoint",
           "purpose"
         ],
         "title": "ModelConfigMutation",
@@ -42478,13 +42536,14 @@
         "type": "object"
       },
       "Sources": {
-        "description": "Where each effective value came from, per field (``params`` per key): ``own``, ``inherited``\n(the row of the purpose this one defaults to: ``rating_suggestion`` → ``guardrail_check``)\nor ``default``.",
+        "description": "Where each effective value came from, per field (``params`` per key): ``own``, ``inherited``\n(the row of the purpose this one defaults to: ``rating_suggestion`` → ``guardrail_check``),\n``default``, or ``unset`` (``image_check``, which has no default, before it is\nconfigured).",
         "properties": {
           "api_key": {
             "enum": [
               "own",
               "inherited",
-              "default"
+              "default",
+              "unset"
             ],
             "title": "Api Key",
             "type": "string"
@@ -42493,7 +42552,8 @@
             "enum": [
               "own",
               "inherited",
-              "default"
+              "default",
+              "unset"
             ],
             "title": "Base Url",
             "type": "string"
@@ -42502,7 +42562,8 @@
             "enum": [
               "own",
               "inherited",
-              "default"
+              "default",
+              "unset"
             ],
             "title": "Model",
             "type": "string"
@@ -42512,7 +42573,8 @@
               "enum": [
                 "own",
                 "inherited",
-                "default"
+                "default",
+                "unset"
               ],
               "type": "string"
             },
