@@ -21,7 +21,8 @@
                     "temperature": "own",
                     "stop": "own"
                 }
-            }
+            },
+            "endpoint": null
         },
         "generation": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -42,7 +43,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "guardrail_check": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -63,7 +65,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "consolidation": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -88,7 +91,8 @@
                     "stop": "default",
                     "seed": "own"
                 }
-            }
+            },
+            "endpoint": null
         },
         "lite_summary": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -113,7 +117,8 @@
                     "stop": "default",
                     "seed": "inherited"
                 }
-            }
+            },
+            "endpoint": null
         },
         "rating_suggestion": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -134,7 +139,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "quality_judge": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -155,7 +161,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "importance_scoring": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -176,7 +183,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "entailment": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -197,7 +205,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "salience_detection": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -218,7 +227,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "extraction_backstop": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -239,7 +249,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "regeneration": {
             "base_url": "http://host.docker.internal:11434/v1",
@@ -260,7 +271,8 @@
                     "temperature": "default",
                     "stop": "default"
                 }
-            }
+            },
+            "endpoint": null
         },
         "embedding": {
             "base_url": null,
@@ -273,7 +285,8 @@
                 "model": "own",
                 "api_key": "own",
                 "params": {}
-            }
+            },
+            "endpoint": null
         }
     }
 }

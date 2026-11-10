@@ -78,6 +78,34 @@ def test_list_renders_own_inherited_and_default_markers(
     assert cells(html, "quality_judge")[API_KEY] == "not set"
 
 
+# Engine M8's image_check as edge 7f9f125 lists it before it is configured (#366).
+IMAGE_CHECK_UNSET: dict[str, Any] = {
+    "base_url": None,
+    "model": None,
+    "params": {},
+    "api_key": None,
+    "api_key_fingerprint": None,
+    "sources": {"base_url": "unset", "model": "unset", "api_key": "unset", "params": {}},
+    "endpoint": None,
+}
+
+
+def test_an_unset_purpose_reads_and_says_it_has_no_default(
+    operator_client: Client, engine: FakeEngine
+) -> None:
+    """#366: an ``unset`` source (``image_check`` has no default) no longer fails the whole
+    read: the row renders, each unset value marked "no default"."""
+    answer_list(engine, image_check=IMAGE_CHECK_UNSET)
+    html = operator_client.get("/models/").content.decode()
+    assert 'class="engine-error' not in html
+    image_check = cells(html, "image_check")
+    assert image_check[BASE_URL] == "— (not set) no default"
+    assert image_check[MODEL] == "— (not set) no default"
+    assert image_check[API_KEY] == "not set"
+    # **Complement:** the other rows keep their markers.
+    assert cells(html, "consolidation")[MODEL] == "m-cons own"
+
+
 def test_inherited_marker_names_the_parent_from_the_engines_sources(
     operator_client: Client, engine: FakeEngine
 ) -> None:
