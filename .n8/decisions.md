@@ -4052,3 +4052,6 @@ Changes made outside the n8SDLC commands that deviate from what planned issues a
 - **Decision:** #314 stays open and blocked. #337, the Engine request for eval sets in the image, still needs the owner to file it on nathanpond/Epistrel. #273 stays open until #314 merges.
   **Why:** neither was unblocked by Engine #817.
   **Issue:** #314, #337, #273
+- **Blocker:** PR #367 is not merged. Its `gate` is red only from `engine-smoke`'s two #366 failures (Engine M8 drift: model-config `image_check` sources `"unset"`). Everything else passed: `test`, `docker`, `lint`, `types`, `engine-release-smoke` and CodeQL. Options are on PR #367: (a) a separate #366 PR first (recommended), (b) fold the fix into #367, or (c) wait for Console M8's re-record. The PR is labelled `blocked` + `needs-owner-action`.
+  **Why:** the gate can't be bypassed, and fixing #366 inline would be scope creep into unplanned M8 work.
+  **Issue:** #366, PR #367
