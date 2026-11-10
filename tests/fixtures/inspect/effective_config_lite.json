@@ -188,6 +188,9 @@
     "pins",
     "polish"
   ],
+  "gap_fillable": [
+    "pipeline"
+  ],
   "quality_status": {
     "status": "uncertified"
   }

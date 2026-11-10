@@ -28,5 +28,6 @@
   },
   "created_at": "2026-10-01T09:00:00Z",
   "updated_at": "2026-10-20T12:30:00Z",
-  "deleted_at": null
+  "deleted_at": null,
+  "quality": {"fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "status": "uncertified", "floors_met": []}
 }

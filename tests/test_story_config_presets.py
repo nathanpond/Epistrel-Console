@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from html import unescape
 from typing import Any
 
+import httpx
 import pytest
 from django.contrib.messages import get_messages
 from django.http import HttpRequest
@@ -45,6 +46,7 @@ from tests.profile_helpers import (
     profile,
     schema_body,
     with_quality,
+    without_quality,
 )
 from tests.ratings.helpers import error, hidden, text
 from tests.test_story_config import form_data
@@ -249,8 +251,14 @@ def test_preset_table_rows(operator_client: Client, engine: FakeEngine) -> None:
 def test_preset_table_without_quality_reads_a_dash(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """#339: the live preset list carries no ``quality``: each row's Quality cell reads "—",
-    the rest of the row renders, and no profile is read one by one."""
+    """#339: an Engine before nathanpond/Epistrel#789 lists no ``quality``: each row's Quality
+    cell reads "—", the rest of the row renders, and no profile is read one by one."""
+
+    def older_engine(request: httpx.Request) -> httpx.Response:
+        page = presets_answer() if request.url.params.get("preset") == "true" else full_list()
+        return httpx.Response(200, json=without_quality(page))
+
+    engine.side_effect("GET", LIST, older_engine)
     response = operator_client.get(CONFIG)
     assert response.status_code == 200
     rows = preset_rows(response.content.decode())

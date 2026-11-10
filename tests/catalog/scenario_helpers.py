@@ -74,6 +74,8 @@ def profile(profile_id: str, name: str, **changes: Any) -> dict[str, Any]:
         "created_at": "2026-10-01T09:00:00.000000Z",
         "updated_at": "2026-10-01T09:00:00.000000Z",
         "deleted_at": None,
+        # The profile list requires it since nathanpond/Epistrel#789 (#339).
+        "quality": {"fingerprint": "sha256:" + "1" * 64, "status": "uncertified", "floors_met": []},
     }
     return {**body, **changes}
 

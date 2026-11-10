@@ -20,9 +20,10 @@ A radio's label is "Turn <n> — <speaker or source>: <value>", then the quote i
 isn't null. The value is E23's: a string as is, else compact JSON cut at
 :data:`~console.raw.CELL_LIMIT` with the full text in ``title``.
 
-:class:`GapFillForm` is the "Fill coverage gaps…" form: one checkbox per capability of the
-effective configuration (in its order, labelled with the raw id; none ticked means "every
-capability that has a gap") and the hidden ``mode`` (``start`` | ``resume``) that
+:class:`GapFillForm` is the "Fill coverage gaps…" form: one checkbox per capability the view
+offers (the effective configuration's ``gap_fillable``, else its ``capabilities`` on an Engine
+before nathanpond/Epistrel#790, #340; in its order, labelled with the raw id; none ticked means
+"every capability that has a gap") and the hidden ``mode`` (``start`` | ``resume``) that
 ``stories:backfill-start`` branches on. The checkbox values are not checked against the list
 here: the Engine refuses a capability the story doesn't have on (422 at
 ``body.capabilities``), which lands on the checkboxes.

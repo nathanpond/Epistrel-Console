@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import quote
 
+import httpx
 import pytest
 from django.http import HttpRequest
 from django.test import Client, override_settings
@@ -35,6 +36,7 @@ from tests.profile_helpers import (
     profile,
     schema_body,
     with_quality,
+    without_quality,
 )
 
 pytestmark = pytest.mark.django_db
@@ -322,7 +324,7 @@ def profile_list(client: Client) -> str:
 
 
 def answer_presets_with_quality(engine: FakeEngine) -> None:
-    """The list as it would answer once the Engine fills ``quality`` (#339: it doesn't yet)."""
+    """The list with every preset's quality (the live shape since nathanpond/Epistrel#789)."""
     engine.respond("GET", LIST, 200, json=with_quality(engine_fixture("m7/presets")))
 
 
@@ -369,13 +371,14 @@ def test_a_stale_profile_row_links_its_certifications(
         assert "certifications-link" not in quality_cell(html, other["id"])
 
 
-def test_the_live_preset_list_reads_a_dash_per_row(
+def test_a_list_without_quality_reads_a_dash_per_row(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """#339: the live list carries no ``quality`` (``m7/presets.json``): every row reads "—",
+    """#339: an Engine before nathanpond/Epistrel#789 lists no ``quality``: every row reads "—",
     with no badge, no certifications link and no extra read."""
-    presets = engine_fixture("m7/presets")["items"]
-    assert not [p for p in presets if "quality" in p]  # the live shape
+    page = without_quality(engine_fixture("m7/presets"))
+    presets = page["items"]
+    engine.side_effect("GET", LIST, lambda _request: httpx.Response(200, json=page))
     with override_settings(ROOT_URLCONF=M7_URLS):
         html = profile_list(operator_client)
     for preset in presets:
@@ -387,9 +390,11 @@ def test_the_live_preset_list_reads_a_dash_per_row(
 def test_a_profile_without_quality_reads_a_dash(
     operator_client: Client, engine: FakeEngine
 ) -> None:
-    """**Complement:** "—" with no ``quality``, and the list makes exactly main's calls."""
+    """**Complement:** "—" with no ``quality`` (an Engine before nathanpond/Epistrel#789, served
+    unvalidated: the recording requires it), and the list makes exactly main's calls."""
     bare = {k: v for k, v in profile().items() if k != "quality"}
-    engine.respond("GET", LIST, 200, json={"items": [bare], "next_cursor": None})
+    page = {"items": [bare], "next_cursor": None}
+    engine.side_effect("GET", LIST, lambda _request: httpx.Response(200, json=page))
     html = profile_list(operator_client)
     assert quality_cell(html, bare["id"]) == "—"
     assert [(r.method, r.url.path, str(r.url.params)) for r in engine.requests] == [

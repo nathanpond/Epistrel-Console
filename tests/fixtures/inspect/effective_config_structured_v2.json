@@ -238,6 +238,15 @@
     "testimony:model",
     "verification:entailment"
   ],
+  "gap_fillable": [
+    "commitment",
+    "consolidation",
+    "nested_beliefs",
+    "partitions",
+    "perception",
+    "pipeline",
+    "verification"
+  ],
   "quality_status": {
     "status": "uncertified"
   }

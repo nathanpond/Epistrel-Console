@@ -68,9 +68,18 @@ PRESET_QUALITY: dict[str, dict[str, Any]] = {
         "floors_met": [],
     },
 }
-"""The presets' ``quality`` as the single-profile read carries it. The list read leaves it out
-on the live Engine (#339: ``m7/presets.json`` has the live shape); :func:`with_quality` adds it
-back for the badge tests, the shape a list that fills ``quality`` would answer."""
+"""The presets' ``quality``, as both the single-profile read and (since nathanpond/Epistrel#789,
+#339) the list read carry it: ``m7/presets.json``'s items hold these. :func:`with_quality`
+re-applies them; :func:`without_quality` gives the list an Engine before #789 answers."""
+
+
+def without_quality(page: dict[str, Any]) -> dict[str, Any]:
+    """A copy of a profile list page with no item's ``quality``: an Engine before
+    nathanpond/Epistrel#789 (#339). The recording requires it, so serve this unvalidated."""
+    found = copy.deepcopy(page)
+    for item in found["items"]:
+        item.pop("quality", None)
+    return found
 
 
 def with_quality(page: dict[str, Any]) -> dict[str, Any]:

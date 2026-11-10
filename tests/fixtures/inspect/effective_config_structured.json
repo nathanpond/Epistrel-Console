@@ -194,6 +194,12 @@
     "pins",
     "polish"
   ],
+  "gap_fillable": [
+    "commitment",
+    "consolidation",
+    "pipeline",
+    "verification"
+  ],
   "quality_status": {
     "status": "uncertified"
   }
