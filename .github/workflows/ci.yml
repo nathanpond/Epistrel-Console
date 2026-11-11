@@ -54,7 +54,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.3  # exact: setup-uv publishes no floating major tag
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.14"
@@ -75,7 +75,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.3  # exact: setup-uv publishes no floating major tag
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.14"
@@ -93,7 +93,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.3  # exact: setup-uv publishes no floating major tag
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.14"
@@ -117,7 +117,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.3  # exact: setup-uv publishes no floating major tag
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.14"
@@ -159,7 +159,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.3  # exact: setup-uv publishes no floating major tag
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.14"
@@ -211,7 +211,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.2  # exact: setup-uv publishes no floating major tag
+      - uses: astral-sh/setup-uv@v10.3.3  # exact: setup-uv publishes no floating major tag
         with:
           version: ${{ env.UV_VERSION }}
           python-version: "3.14"
