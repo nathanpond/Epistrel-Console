@@ -2,7 +2,7 @@
 # Multi-stage build: uv installs the dependencies into /app/.venv; the runtime stage copies only
 # that and the app. The Engine repo's Dockerfile is the reference for this layout.
 
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 # uv is pinned to an exact release (resolved 2026-10-24); Dependabot's docker ecosystem bumps it.
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
@@ -22,7 +22,7 @@ COPY templates ./templates
 # secret key file is ever written into an image layer and nothing touches /data at build time.
 RUN DJANGO_DEBUG=1 /app/.venv/bin/python manage.py collectstatic --noinput
 
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     DJANGO_DEBUG=0 \
